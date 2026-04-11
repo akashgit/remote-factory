@@ -1,0 +1,18 @@
+[project]
+name = "remote-factory"
+version = "0.1.0"
+description = "Domain-agnostic multi-agent software evolution loop"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.0"]
+
+[project.scripts]
+factory = "factory.cli:main"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "ruff>=0.8"]

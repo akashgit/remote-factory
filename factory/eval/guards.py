@@ -1,0 +1,161 @@
+"""Guard rules — safety checks that must pass before any change is kept."""
+
+import subprocess
+from pathlib import Path
+
+
+def _run_git(args: list[str], cwd: Path) -> str:
+    """Run a git command and return stripped stdout."""
+    result = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def check_eval_immutable(project_path: Path, tree_before: str) -> str | None:
+    """Guard: eval/ directory must not be modified by the change.
+
+    Compare git ls-tree snapshot taken before the change with current state.
+    Returns a violation string if eval/ was modified, None otherwise.
+    """
+    try:
+        tree_after = _run_git(["ls-tree", "HEAD", "eval/"], project_path)
+    except subprocess.CalledProcessError:
+        tree_after = ""
+
+    if tree_before != tree_after:
+        return "eval/ directory was modified"
+    return None
+
+
+def check_git_clean(project_path: Path) -> str | None:
+    """Guard: working tree must be clean (no uncommitted changes).
+
+    Returns a violation string if dirty, None otherwise.
+    """
+    status = _run_git(["status", "--porcelain"], project_path)
+    if status:
+        return f"Working tree is dirty: {status}"
+    return None
+
+
+def check_experiment_branch(project_path: Path, baseline_sha: str) -> str | None:
+    """Guard: changes must be on an experiment branch from baseline.
+
+    More flexible than single-commit — allows multiple commits but verifies
+    the branch diverged from the expected baseline.
+    Returns a violation string if the branch is not rooted at baseline, None otherwise.
+    """
+    try:
+        merge_base = _run_git(["merge-base", baseline_sha, "HEAD"], project_path)
+    except subprocess.CalledProcessError:
+        return f"Cannot find merge-base between {baseline_sha} and HEAD"
+
+    if merge_base != baseline_sha:
+        return f"Branch is not rooted at baseline {baseline_sha} (merge-base: {merge_base})"
+
+    # Verify at least one commit exists
+    log_output = _run_git(["log", "--oneline", f"{baseline_sha}..HEAD"], project_path)
+    if not log_output.strip():
+        return "No commits between baseline and HEAD"
+
+    return None
+
+
+def _glob_match(filepath: str, pattern: str) -> bool:
+    """Match a filepath against a glob pattern, supporting ** for recursive matching."""
+    import re
+
+    # Convert ** glob to regex: ** matches any number of path segments
+    regex_pattern = ""
+    i = 0
+    while i < len(pattern):
+        if pattern[i:i + 3] == "**/":
+            regex_pattern += "(?:.+/)?"
+            i += 3
+        elif pattern[i:i + 2] == "**":
+            regex_pattern += ".*"
+            i += 2
+        elif pattern[i] == "*":
+            regex_pattern += "[^/]*"
+            i += 1
+        elif pattern[i] == "?":
+            regex_pattern += "[^/]"
+            i += 1
+        elif pattern[i] == ".":
+            regex_pattern += r"\."
+            i += 1
+        else:
+            regex_pattern += re.escape(pattern[i])
+            i += 1
+
+    return bool(re.fullmatch(regex_pattern, filepath))
+
+
+def check_scope(project_path: Path, baseline_sha: str, allowed_scope: list[str]) -> str | None:
+    """Guard: changed files must be within the declared scope.
+
+    Uses fnmatch-style patterns from factory.md scope.
+    Returns a violation string if files outside scope were modified, None otherwise.
+    """
+    try:
+        diff_output = _run_git(["diff", "--name-only", f"{baseline_sha}..HEAD"], project_path)
+    except subprocess.CalledProcessError:
+        return "Cannot determine changed files"
+
+    if not diff_output.strip():
+        return None
+
+    changed_files = diff_output.strip().splitlines()
+    out_of_scope: list[str] = []
+
+    for changed_file in changed_files:
+        matched = any(_glob_match(changed_file, pattern) for pattern in allowed_scope)
+        if not matched:
+            out_of_scope.append(changed_file)
+
+    if out_of_scope:
+        return f"Files outside scope: {', '.join(out_of_scope)}"
+    return None
+
+
+def snapshot_eval_tree(project_path: Path) -> str:
+    """Take a snapshot of eval/ tree for later comparison."""
+    try:
+        return _run_git(["ls-tree", "HEAD", "eval/"], project_path)
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def check_all(
+    project_path: Path,
+    baseline_sha: str,
+    eval_tree_before: str | None = None,
+    allowed_scope: list[str] | None = None,
+) -> list[str]:
+    """Run all guards, return list of violation strings (empty = pass)."""
+    violations: list[str] = []
+
+    if eval_tree_before is not None:
+        v = check_eval_immutable(project_path, eval_tree_before)
+        if v:
+            violations.append(v)
+
+    v = check_git_clean(project_path)
+    if v:
+        violations.append(v)
+
+    v = check_experiment_branch(project_path, baseline_sha)
+    if v:
+        violations.append(v)
+
+    if allowed_scope is not None:
+        v = check_scope(project_path, baseline_sha, allowed_scope)
+        if v:
+            violations.append(v)
+
+    return violations
