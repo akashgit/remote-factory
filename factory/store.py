@@ -51,6 +51,15 @@ class ExperimentStore:
         parsed: dict[str, str | list[str] | float] = {}
         current_section: str | None = None
         list_buffer: list[str] = []
+        in_code_block = False
+
+        # Section name mapping: template heading → config key
+        section_map: dict[str, str] = {
+            "command": "eval_command",
+            "threshold": "eval_threshold",
+            "modifiable": "scope",
+            "read_only": "read_only",
+        }
 
         def _flush_list() -> None:
             if current_section and list_buffer:
@@ -59,9 +68,31 @@ class ExperimentStore:
 
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped.startswith("# "):
+
+            # Skip HTML comments
+            if stripped.startswith("<!--") and stripped.endswith("-->"):
+                continue
+
+            # Track code fences
+            if stripped.startswith("```"):
+                in_code_block = not in_code_block
+                continue
+
+            if in_code_block:
+                # Content inside code blocks is treated as a value
+                if stripped and current_section:
+                    parsed[current_section] = stripped
+                continue
+
+            if stripped.startswith("#"):
                 _flush_list()
-                current_section = stripped[2:].strip().lower().replace(" ", "_")
+                level = len(stripped) - len(stripped.lstrip("#"))
+                heading = stripped.lstrip("#").strip().lower().replace(" ", "_")
+                mapped = section_map.get(heading, heading)
+                if level <= 2:
+                    current_section = mapped
+                else:
+                    current_section = mapped
             elif stripped.startswith("- ") and current_section:
                 list_buffer.append(stripped[2:].strip())
             elif stripped and current_section and not list_buffer:
