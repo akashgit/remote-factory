@@ -49,8 +49,11 @@ def {fn_name}() -> dict:
             score = 1.0
         else:
             # Partial score: count output lines as a rough error metric
-            error_lines = [l for l in result.stdout.splitlines() if l.strip()]
-            score = max(0.0, 1.0 - len(error_lines) * 0.05)
+            error_lines = [l for l in (result.stdout + result.stderr).splitlines() if l.strip()]
+            if not error_lines:
+                score = 0.0
+            else:
+                score = max(0.0, 1.0 - len(error_lines) * 0.05)
         return {{
             "name": {dim.name!r},
             "score": score,
