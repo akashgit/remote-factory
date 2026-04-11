@@ -1,7 +1,8 @@
 """Guard rules — safety checks that must pass before any change is kept."""
 
+import fnmatch
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePath
 
 
 def _run_git(args: list[str], cwd: Path) -> str:
@@ -68,32 +69,32 @@ def check_experiment_branch(project_path: Path, baseline_sha: str) -> str | None
 
 def _glob_match(filepath: str, pattern: str) -> bool:
     """Match a filepath against a glob pattern, supporting ** for recursive matching."""
-    import re
+    if "**" in pattern:
+        # Split on first ** occurrence to get prefix and suffix
+        parts = pattern.split("**", 1)
+        prefix, suffix = parts
+        # Remove trailing slash from prefix
+        prefix = prefix.rstrip("/")
+        # Remove leading slash from suffix
+        suffix = suffix.lstrip("/")
 
-    # Convert ** glob to regex: ** matches any number of path segments
-    regex_pattern = ""
-    i = 0
-    while i < len(pattern):
-        if pattern[i:i + 3] == "**/":
-            regex_pattern += "(?:.+/)?"
-            i += 3
-        elif pattern[i:i + 2] == "**":
-            regex_pattern += ".*"
-            i += 2
-        elif pattern[i] == "*":
-            regex_pattern += "[^/]*"
-            i += 1
-        elif pattern[i] == "?":
-            regex_pattern += "[^/]"
-            i += 1
-        elif pattern[i] == ".":
-            regex_pattern += r"\."
-            i += 1
-        else:
-            regex_pattern += re.escape(pattern[i])
-            i += 1
+        if prefix and not filepath.startswith(prefix + "/"):
+            return False
 
-    return bool(re.fullmatch(regex_pattern, filepath))
+        remaining = filepath[len(prefix):].lstrip("/") if prefix else filepath
+
+        if suffix:
+            # suffix is a pattern like "*.py" — match it against the filename
+            # or any sub-path within the remaining path
+            return fnmatch.fnmatch(remaining, suffix) or fnmatch.fnmatch(
+                remaining, "*/" + suffix
+            )
+        # No suffix: ** at end matches everything under the prefix
+        return True
+
+    # For non-** patterns, use PurePath.match which correctly treats * as
+    # not crossing directory separators
+    return PurePath(filepath).match(pattern)
 
 
 def check_scope(project_path: Path, baseline_sha: str, allowed_scope: list[str]) -> str | None:
