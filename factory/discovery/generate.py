@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 from pathlib import Path
 
 from factory.models import EvalDimension, EvalProfile
@@ -31,7 +32,7 @@ import sys
 def _generate_eval_function(dim: EvalDimension) -> str:
     """Generate a Python function for one eval dimension."""
     fn_name = f"eval_{dim.name}"
-    parts = dim.command.split()
+    parts = shlex.split(dim.command)
     cmd_list = repr(parts)
 
     return f'''\
