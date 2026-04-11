@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from factory.eval.guards import (
+    _glob_match,
     check_eval_immutable,
     check_experiment_branch,
     check_git_clean,
@@ -112,6 +113,32 @@ class TestCheckScope:
     def test_no_changes(self, git_project):
         baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
         assert check_scope(git_project, baseline, ["src/**/*.py"]) is None
+
+
+class TestGlobMatch:
+    """Tests for _glob_match with ** and * patterns."""
+
+    @pytest.mark.parametrize(
+        "pattern, filepath, expected",
+        [
+            # ** matching across directories
+            ("factory/**/*.py", "factory/eval/runner.py", True),
+            ("factory/**/*.py", "factory/agents/prompts/builder.md", False),
+            ("factory/**/*.py", "tests/test_guards.py", False),
+            ("tests/**/*.py", "tests/test_guards.py", True),
+            ("tests/**/*.py", "tests/eval/test_runner.py", True),
+            # ** at the beginning
+            ("**/*.md", "README.md", True),
+            ("**/*.md", "factory/agents/prompts/builder.md", True),
+            # ** at the end (match everything under prefix)
+            ("templates/**", "templates/factory_config.md", True),
+            # Single * (no directory crossing)
+            ("factory/agents/prompts/*.md", "factory/agents/prompts/builder.md", True),
+            ("factory/agents/prompts/*.md", "factory/agents/prompts/sub/nested.md", False),
+        ],
+    )
+    def test_glob_patterns(self, pattern: str, filepath: str, expected: bool):
+        assert _glob_match(filepath, pattern) is expected
 
 
 class TestCheckAll:
