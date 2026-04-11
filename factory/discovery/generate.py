@@ -49,7 +49,7 @@ def {fn_name}() -> dict:
             score = 1.0
         else:
             # Partial score: count output lines as a rough error metric
-            error_lines = [l for l in (result.stdout + result.stderr).splitlines() if l.strip()]
+            error_lines = [ln for ln in (result.stdout + result.stderr).splitlines() if ln.strip()]
             if not error_lines:
                 score = 0.0
             else:
