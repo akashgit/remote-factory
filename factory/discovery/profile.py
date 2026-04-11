@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from factory.models import EvalDimension, EvalProfile, ProjectProfile
+
+EvalTier = Literal["explicit", "discovered", "researched", "fallback"]
 
 
 def build_eval_profile(project: ProjectProfile) -> EvalProfile:
@@ -14,7 +18,7 @@ def build_eval_profile(project: ProjectProfile) -> EvalProfile:
       - Tier 0 (fallback): minimal build/import checks
     """
     dimensions: list[EvalDimension] = []
-    tier = "fallback"
+    tier: EvalTier = "fallback"
 
     # Tier 2: Discovered evals from existing tooling
     if project.test_command:
