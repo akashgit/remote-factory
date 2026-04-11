@@ -25,7 +25,21 @@ class TestDetectState:
         (factory_dir / "config.json").write_text('{"goal":"x","scope":[],"guards":[],"eval_command":"x","eval_threshold":0.8,"constraints":[]}')
         assert detect_state(tmp_project) == ProjectState.HAS_FACTORY
 
-    def test_evals_pending_review(self, tmp_project):
+    def test_evals_pending_review_without_config(self, tmp_project):
+        """After discover: eval_profile.json exists but config.json does not."""
+        factory_dir = tmp_project / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "eval_profile.json").write_text(json.dumps({
+            "project_type": "bot",
+            "dimensions": [],
+            "tier": "discovered",
+            "confidence": 0.8,
+            "human_reviewed": False,
+        }))
+        assert detect_state(tmp_project) == ProjectState.EVALS_PENDING_REVIEW
+
+    def test_evals_pending_review_with_config(self, tmp_project):
+        """After init but before human review: both config.json and unreviewed eval_profile exist."""
         factory_dir = tmp_project / ".factory"
         factory_dir.mkdir()
         (factory_dir / "config.json").write_text('{"goal":"x","scope":[],"guards":[],"eval_command":"x","eval_threshold":0.8,"constraints":[]}')

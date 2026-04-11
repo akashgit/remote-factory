@@ -49,17 +49,21 @@ def detect_state(project_path: Path) -> ProjectState:
 
     Logic:
       1. Path doesn't exist or has no .git -> NO_REPO
-      2. Has .git + .factory/config.json + reviewed evals -> HAS_FACTORY
-      3. Has .git + .factory/config.json + unreviewed evals -> EVALS_PENDING_REVIEW
+      2. eval_profile.json exists with human_reviewed=False -> EVALS_PENDING_REVIEW
+      3. .factory/config.json exists -> HAS_FACTORY
       4. Has .git, open plan/implementation GitHub issues -> REPO_INCOMPLETE
       5. Has .git, no open issues -> NO_FACTORY
     """
     if not project_path.exists() or not (project_path / ".git").exists():
         return ProjectState.NO_REPO
 
+    # Check for pending eval review BEFORE checking for full factory.
+    # This handles the discover → review → init flow where eval_profile.json
+    # exists but config.json does not yet.
+    if _has_pending_eval_review(project_path):
+        return ProjectState.EVALS_PENDING_REVIEW
+
     if (project_path / ".factory" / "config.json").exists():
-        if _has_pending_eval_review(project_path):
-            return ProjectState.EVALS_PENDING_REVIEW
         return ProjectState.HAS_FACTORY
 
     if _has_open_plan_issues(project_path):

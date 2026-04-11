@@ -28,12 +28,20 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
+    from factory.discovery.generate import write_eval_script
     from factory.discovery.introspect import introspect_project
     from factory.discovery.profile import build_eval_profile
+    from factory.store import ExperimentStore
 
     project_path = Path(args.path)
     profile = introspect_project(project_path)
     eval_profile = build_eval_profile(profile)
+
+    # Persist artifacts so detect_state can find them
+    store = ExperimentStore(project_path)
+    store.factory_dir.mkdir(exist_ok=True)
+    _run(store.save_eval_profile(eval_profile))
+    write_eval_script(eval_profile, project_path)
 
     output = {
         "project": profile.model_dump(),
