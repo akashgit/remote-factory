@@ -5,6 +5,7 @@
 from factory.discovery.introspect import introspect_project
 from factory.discovery.profile import build_eval_profile
 from factory.discovery.generate import generate_eval_script, write_eval_script
+from factory.models import EvalDimension, EvalProfile
 
 
 class TestIntrospect:
@@ -125,3 +126,39 @@ class TestGenerateEvalScript:
         script = generate_eval_script(profile)
         for dim in profile.dimensions:
             assert f"eval_{dim.name}" in script
+
+    def test_command_with_quoted_args(self):
+        dim = EvalDimension(
+            name="integration",
+            command='uv run pytest -k "test_integration"',
+            weight=1.0,
+            parser="exit_code",
+            description="Run integration tests",
+            source="discovered",
+        )
+        profile = EvalProfile(
+            project_type="cli_tool",
+            dimensions=[dim],
+            tier="discovered",
+            confidence=0.8,
+        )
+        script = generate_eval_script(profile)
+        assert "['uv', 'run', 'pytest', '-k', 'test_integration']" in script
+
+    def test_simple_command(self):
+        dim = EvalDimension(
+            name="unit",
+            command="uv run pytest -v",
+            weight=1.0,
+            parser="exit_code",
+            description="Run unit tests",
+            source="discovered",
+        )
+        profile = EvalProfile(
+            project_type="cli_tool",
+            dimensions=[dim],
+            tier="discovered",
+            confidence=0.8,
+        )
+        script = generate_eval_script(profile)
+        assert "['uv', 'run', 'pytest', '-v']" in script
