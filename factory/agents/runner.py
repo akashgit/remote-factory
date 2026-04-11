@@ -36,9 +36,10 @@ def resolve_prompt(role: AgentRole, project_path: Path | None = None) -> str:
     if default_path.exists():
         return default_path.read_text()
 
+    override_hint = f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
     raise FileNotFoundError(
         f"No prompt found for agent role '{role}'. "
-        f"Expected at {default_path} or {project_path / '.factory' / 'agents' / f'{role}.md'}"
+        f"Expected at {default_path}{override_hint}"
     )
 
 
@@ -88,4 +89,4 @@ async def invoke_agent(
     if proc.returncode != 0:
         logger.warning("%s agent exited with code %d: %s", role, proc.returncode, stderr[:200])
 
-    return stdout, proc.returncode
+    return stdout, proc.returncode or 0
