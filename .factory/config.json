@@ -1,0 +1,22 @@
+{
+  "goal": "Domain-agnostic multi-agent software evolution loop that can auto-discover evals and continuously improve any software project.",
+  "scope": [
+    "factory/**/*.py",
+    "factory/agents/prompts/*.md",
+    "tests/**/*.py",
+    "templates/**"
+  ],
+  "guards": [
+    "Do not delete or overwrite existing tests",
+    "Do not modify files outside the declared scope",
+    "Do not introduce secrets or credentials into the repository",
+    "Do not modify test fixtures that other tests depend on"
+  ],
+  "eval_command": "python eval/score.py",
+  "eval_threshold": 0.8,
+  "constraints": [
+    "Prefer small, incremental changes over large rewrites",
+    "Each change should be accompanied by at least one test",
+    "Follow the existing code style and conventions"
+  ]
+}

@@ -1,0 +1,1 @@
+Fix 3 mypy errors in profile.py and runner.py to bring type_check to 1.0

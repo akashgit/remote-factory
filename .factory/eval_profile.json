@@ -1,0 +1,44 @@
+{
+  "project_type": "bot",
+  "dimensions": [
+    {
+      "name": "tests",
+      "command": "uv run pytest -v",
+      "weight": 0.45454545454545453,
+      "parser": "exit_code",
+      "regex_pattern": null,
+      "description": "Run test suite: uv run pytest -v",
+      "source": "discovered"
+    },
+    {
+      "name": "lint",
+      "command": "uv run ruff check .",
+      "weight": 0.2727272727272727,
+      "parser": "exit_code",
+      "regex_pattern": null,
+      "description": "Run linter: uv run ruff check .",
+      "source": "discovered"
+    },
+    {
+      "name": "type_check",
+      "command": "uv run mypy factory/",
+      "weight": 0.13636363636363635,
+      "parser": "exit_code",
+      "regex_pattern": null,
+      "description": "Run type checker: uv run mypy factory/",
+      "source": "researched"
+    },
+    {
+      "name": "coverage",
+      "command": "uv run pytest --cov=factory --cov-report=term -q",
+      "weight": 0.13636363636363635,
+      "parser": "exit_code",
+      "regex_pattern": null,
+      "description": "Measure test coverage",
+      "source": "researched"
+    }
+  ],
+  "tier": "discovered",
+  "confidence": 0.8,
+  "human_reviewed": true
+}

@@ -1,0 +1,2 @@
+id	timestamp	hypothesis	change_summary	issue_number	pr_number	score_before	score_after	delta	verdict	cost_usd	notes
+1	2026-04-11T18:00:39.162536	Fix 3 mypy errors in profile.py and runner.py	Added EvalTier type alias, fixed None path handling, fixed returncode type. Type_check 0.75 → 1.0. Composite 0.966 → 1.0.						keep		
