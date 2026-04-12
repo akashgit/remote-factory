@@ -1,9 +1,14 @@
 """Tests for factory.agents — prompt loading and resolution."""
 
+from pathlib import Path
 
 import pytest
 
 from factory.agents.runner import resolve_prompt, AgentRole, _PROMPTS_DIR
+
+
+# Path to the project root (parent of factory/)
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestResolvePrompt:
@@ -51,3 +56,48 @@ class TestResolvePrompt:
         for role in roles:
             prompt = resolve_prompt(role)
             assert prompt.startswith("# "), f"Prompt for {role} should start with '# '"
+
+
+class TestResearcherPromptModes:
+    """Verify the researcher prompt contains both Discovery and Research modes."""
+
+    def test_has_mode_1_discovery(self):
+        prompt = resolve_prompt("researcher")
+        assert "Mode 1" in prompt
+        assert "Discovery" in prompt
+
+    def test_has_mode_2_research(self):
+        prompt = resolve_prompt("researcher")
+        assert "Mode 2" in prompt
+        assert "Research" in prompt
+
+    def test_has_discovery_output(self):
+        prompt = resolve_prompt("researcher")
+        assert "Output (Discovery)" in prompt
+
+    def test_has_research_output(self):
+        prompt = resolve_prompt("researcher")
+        assert "Output (Research)" in prompt
+
+
+class TestClaudeAgentsResearcher:
+    """Verify the .claude/agents/researcher.md subagent definition exists and is valid."""
+
+    def test_subagent_file_exists(self):
+        agent_file = _PROJECT_ROOT / ".claude" / "agents" / "researcher.md"
+        assert agent_file.exists(), (
+            f"Expected .claude/agents/researcher.md at {agent_file}"
+        )
+
+    def test_subagent_has_frontmatter(self):
+        agent_file = _PROJECT_ROOT / ".claude" / "agents" / "researcher.md"
+        content = agent_file.read_text()
+        assert content.startswith("---"), "Subagent file should start with YAML frontmatter"
+        # Find closing frontmatter delimiter
+        end = content.find("---", 3)
+        assert end != -1, "Subagent file should have closing frontmatter delimiter"
+        frontmatter = content[3:end]
+        assert "name:" in frontmatter
+        assert "researcher" in frontmatter
+        assert "tools:" in frontmatter
+        assert "WebSearch" in frontmatter
