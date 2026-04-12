@@ -188,8 +188,25 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
     Returns a list of note summaries (first 200 chars of each note).
     Gracefully returns empty list if vault doesn't exist.
     """
-    from factory.obsidian.notes import _get_vault_path, _KNOWLEDGE_DIR, _PROJECTS_DIR
+    from factory.obsidian.notes import (
+        _get_vault_path,
+        _KNOWLEDGE_DIR,
+        _PROJECTS_DIR,
+        obsidian_search_vault,
+    )
 
+    # Try obsidian-cli search first
+    search_result = obsidian_search_vault(project_name)
+    if search_result and "no matches" not in search_result.lower():
+        summaries: list[str] = []
+        for line in search_result.strip().split("\n"):
+            line = line.strip()
+            if line and len(line) > 5:
+                summaries.append(line[:200])
+        if summaries:
+            return summaries
+
+    # Fall back to direct file reading
     vault = _get_vault_path()
     if not vault.exists():
         return []

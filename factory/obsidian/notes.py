@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
@@ -117,6 +118,70 @@ def _get_vault_path() -> Path:
 def _ensure_dir(path: Path) -> None:
     """Create directory and parents if needed."""
     path.mkdir(parents=True, exist_ok=True)
+
+
+# ── Obsidian CLI wrappers ────────────────────────────────────
+
+
+def _obsidian_available() -> bool:
+    """Check if the obsidian CLI is available and Obsidian is running."""
+    try:
+        result = subprocess.run(
+            ["obsidian", "vault", "list"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _obsidian_create(name: str, content: str, vault: str = "factory") -> bool:
+    """Create a note via obsidian-cli. Returns True on success."""
+    try:
+        result = subprocess.run(
+            [
+                "obsidian", "create",
+                f"vault={vault}", f"name={name}", f"content={content}", "silent",
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _obsidian_read(name: str, vault: str = "factory") -> str | None:
+    """Read a note via obsidian-cli. Returns content or None."""
+    try:
+        result = subprocess.run(
+            ["obsidian", "read", f"vault={vault}", f"file={name}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.stdout if result.returncode == 0 else None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def _obsidian_search(query: str, vault: str = "factory", limit: int = 10) -> str | None:
+    """Search the vault via obsidian-cli. Returns results or None."""
+    try:
+        result = subprocess.run(
+            [
+                "obsidian", "search",
+                f"vault={vault}", f"query={query}", f"limit={limit}",
+            ],
+            capture_output=True, text=True, timeout=10,
+        )
+        return result.stdout if result.returncode == 0 else None
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+
+
+def obsidian_search_vault(
+    query: str, vault: str = "factory", limit: int = 10,
+) -> str | None:
+    """Search the factory vault. Returns results from obsidian-cli, or None if unavailable."""
+    return _obsidian_search(query, vault, limit)
 
 
 def init_vault(vault_path: Path | None = None) -> Path:
@@ -257,7 +322,13 @@ def write_experiment_note(
     if record.pr_number:
         lines.append(f"- PR: #{record.pr_number}")
 
-    note_path.write_text("\n".join(lines) + "\n")
+    content = "\n".join(lines) + "\n"
+
+    # Try obsidian-cli first, fall back to direct write
+    note_name = f"{_PROJECTS_DIR}/{project_name}/Experiments/{project_name}-{record.id:03d}"
+    if not _obsidian_create(note_name, content):
+        note_path.write_text(content)
+
     return note_path
 
 
@@ -320,7 +391,13 @@ def write_project_dashboard(
         lines.append("- No experiments yet")
     lines.append("")
 
-    note_path.write_text("\n".join(lines) + "\n")
+    content = "\n".join(lines) + "\n"
+
+    # Try obsidian-cli first, fall back to direct write
+    note_name = f"{_PROJECTS_DIR}/{project_name}/{project_name}"
+    if not _obsidian_create(note_name, content):
+        note_path.write_text(content)
+
     return note_path
 
 
@@ -352,7 +429,13 @@ def write_strategy_note(
         strategy_content,
     ]
 
-    note_path.write_text("\n".join(lines) + "\n")
+    content = "\n".join(lines) + "\n"
+
+    # Try obsidian-cli first, fall back to direct write
+    note_name = f"{_PROJECTS_DIR}/{project_name}/Strategies/{project_name}-{date_str}"
+    if not _obsidian_create(note_name, content):
+        note_path.write_text(content)
+
     return note_path
 
 
@@ -409,5 +492,10 @@ def update_memory_index(projects: list[dict] | None = None) -> Path:
     lines.append("")
 
     memory_path = vault / "MEMORY.md"
-    memory_path.write_text("\n".join(lines))
+    content = "\n".join(lines)
+
+    # Try obsidian-cli first, fall back to direct write
+    if not _obsidian_create("MEMORY", content):
+        memory_path.write_text(content)
+
     return memory_path

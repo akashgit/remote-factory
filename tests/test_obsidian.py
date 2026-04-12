@@ -1,11 +1,14 @@
 """Tests for factory.obsidian — note creation with Obsidian frontmatter."""
 
+import subprocess
 from datetime import datetime
+from unittest.mock import Mock
 
 import pytest
 
 from factory.models import CompositeScore, EvalResult, ExperimentRecord
 from factory.obsidian.notes import (
+    _obsidian_create as _real_obsidian_create,
     init_vault,
     update_memory_index,
     write_experiment_note,
@@ -16,8 +19,14 @@ from factory.obsidian.notes import (
 
 @pytest.fixture(autouse=True)
 def set_vault_path(obsidian_vault, monkeypatch):
-    """Set OBSIDIAN_VAULT_PATH to temp dir for all tests."""
+    """Set OBSIDIAN_VAULT_PATH to temp dir and disable obsidian-cli for all tests."""
     monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(obsidian_vault))
+    # Disable obsidian-cli so write functions always fall back to direct file I/O.
+    # Individual tests in TestObsidianCli override this as needed.
+    monkeypatch.setattr(
+        "factory.obsidian.notes._obsidian_create",
+        lambda name, content, vault="factory": False,
+    )
 
 
 @pytest.fixture
@@ -228,3 +237,77 @@ class TestAutoInit:
         assert (vault / ".obsidian").is_dir()
         assert (vault / "10-Projects").is_dir()
         assert (vault / "MEMORY.md").exists()
+
+
+class TestObsidianCli:
+    def test_obsidian_available_when_missing(self, monkeypatch):
+        """obsidian_available returns False when CLI not found."""
+        monkeypatch.setattr(
+            "factory.obsidian.notes.subprocess.run",
+            Mock(side_effect=FileNotFoundError),
+        )
+        from factory.obsidian.notes import _obsidian_available
+
+        assert _obsidian_available() is False
+
+    def test_obsidian_available_when_timeout(self, monkeypatch):
+        """obsidian_available returns False on timeout."""
+        monkeypatch.setattr(
+            "factory.obsidian.notes.subprocess.run",
+            Mock(side_effect=subprocess.TimeoutExpired("obsidian", 5)),
+        )
+        from factory.obsidian.notes import _obsidian_available
+
+        assert _obsidian_available() is False
+
+    def test_obsidian_create_success(self, monkeypatch):
+        """obsidian_create returns True on success."""
+        mock_run = Mock(return_value=Mock(returncode=0))
+        monkeypatch.setattr("factory.obsidian.notes.subprocess.run", mock_run)
+        # Restore real _obsidian_create (autouse fixture replaces it with a no-op)
+        monkeypatch.setattr("factory.obsidian.notes._obsidian_create", _real_obsidian_create)
+
+        assert _real_obsidian_create("test", "content") is True
+        mock_run.assert_called_once()
+
+    def test_obsidian_create_fallback(self, monkeypatch):
+        """obsidian_create returns False when CLI not available."""
+        monkeypatch.setattr(
+            "factory.obsidian.notes.subprocess.run",
+            Mock(side_effect=FileNotFoundError),
+        )
+        from factory.obsidian.notes import _obsidian_create
+
+        assert _obsidian_create("test", "content") is False
+
+    def test_write_experiment_tries_cli_first(
+        self, monkeypatch, sample_record, obsidian_vault,
+    ):
+        """write_experiment_note tries obsidian-cli before file write."""
+        calls: list[list[str]] = []
+        original_run = subprocess.run
+
+        def mock_run(*args, **kwargs):
+            if args and args[0] and args[0][0] == "obsidian":
+                calls.append(args[0])
+                return Mock(returncode=1)  # CLI fails
+            return original_run(*args, **kwargs)
+
+        monkeypatch.setattr("factory.obsidian.notes.subprocess.run", mock_run)
+        # Restore real _obsidian_create so it actually calls subprocess.run
+        monkeypatch.setattr("factory.obsidian.notes._obsidian_create", _real_obsidian_create)
+        path = write_experiment_note("test-project", sample_record)
+        # Should have tried CLI
+        assert any("obsidian" in str(c) for c in calls)
+        # Should have fallen back to file write
+        assert path.exists()
+
+    def test_obsidian_search_vault(self, monkeypatch):
+        """obsidian_search_vault returns results on success."""
+        mock_run = Mock(return_value=Mock(returncode=0, stdout="result1\nresult2\n"))
+        monkeypatch.setattr("factory.obsidian.notes.subprocess.run", mock_run)
+        from factory.obsidian.notes import obsidian_search_vault
+
+        result = obsidian_search_vault("test query")
+        assert result is not None
+        assert "result1" in result
