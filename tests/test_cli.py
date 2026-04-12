@@ -1,10 +1,14 @@
 """Tests for factory.cli — CLI subcommand routing."""
 
+import asyncio
 import json
 import subprocess
+from datetime import datetime
 from unittest.mock import patch
 
 from factory.cli import main, build_parser
+from factory.models import ExperimentRecord
+from factory.store import ExperimentStore
 
 
 class TestParser:
@@ -73,6 +77,55 @@ class TestCmdDiscover:
         output = json.loads(capsys.readouterr().out)
         assert output["project"]["language"] == "python"
         assert output["eval_profile"]["tier"] in ("discovered", "researched", "fallback")
+
+
+class TestCmdStatus:
+    def test_status_parser(self):
+        parser = build_parser()
+        args = parser.parse_args(["status", "/some/path"])
+        assert args.command == "status"
+
+    def test_status_no_factory(self, tmp_project, capsys):
+        result = main(["status", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "no_factory" in out
+        assert str(tmp_project) in out
+
+    def test_status_with_factory(self, tmp_project, capsys, sample_config):
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        exp_id = asyncio.run(store.begin("Improve performance"))
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="Improve performance",
+            change_summary="Optimized hot path",
+            issue_number=None, pr_number=None,
+            score_before=0.8, score_after=0.95, delta=0.15,
+            verdict="keep", cost_usd=None, notes="",
+        )
+        asyncio.run(store.finalize(exp_id, record))
+
+        result = main(["status", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "has_factory" in out
+        assert "1 total" in out
+        assert "1 kept" in out
+        assert "0 reverted" in out
+        assert "Improve performance" in out
+        assert "0.950" in out
+        assert sample_config.goal in out
+
+    def test_status_with_factory_no_experiments(self, tmp_project, capsys, sample_config):
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+
+        result = main(["status", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "has_factory" in out
+        assert "Experiments: none" in out
 
 
 class TestCmdHistory:
