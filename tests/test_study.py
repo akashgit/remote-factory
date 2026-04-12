@@ -238,8 +238,8 @@ class TestStudyProject:
         project_path = tmp_path / "myapp"
         project_path.mkdir()
 
-        # Create an Obsidian note
-        notes_dir = tmp_path / "vault" / "Work" / "Factory" / "Projects"
+        # Create an Obsidian note under the new per-project structure
+        notes_dir = tmp_path / "vault" / "10-Projects" / "myapp"
         notes_dir.mkdir(parents=True)
         (notes_dir / "myapp.md").write_text(
             "---\ntags:\n  - factory\n---\n\n# Dashboard for myapp\nSome content here."
@@ -437,7 +437,7 @@ class TestReadObsidianNotes:
         vault = tmp_path / "vault"
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
 
-        experiments_dir = vault / "Work" / "Factory" / "Experiments"
+        experiments_dir = vault / "10-Projects" / "myapp" / "Experiments"
         experiments_dir.mkdir(parents=True)
         (experiments_dir / "myapp-001.md").write_text(
             "---\ntags:\n  - factory\n---\n\n# Experiment #1\nImproved performance."
@@ -451,10 +451,14 @@ class TestReadObsidianNotes:
         vault = tmp_path / "vault"
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
 
-        for subdir in ["Experiments", "Projects", "Strategies"]:
-            d = vault / "Work" / "Factory" / subdir
+        project_dir = vault / "10-Projects" / "myapp"
+        for subdir in ["Experiments", "Strategies"]:
+            d = project_dir / subdir
             d.mkdir(parents=True)
             (d / "myapp-note.md").write_text(f"---\n---\n\n# {subdir} note")
+        # Also create dashboard
+        project_dir.mkdir(parents=True, exist_ok=True)
+        (project_dir / "myapp.md").write_text("---\n---\n\n# Dashboard note")
 
         summaries = _read_obsidian_notes("myapp")
         assert len(summaries) == 3
@@ -476,9 +480,9 @@ class TestReadObsidianNotes:
         vault = tmp_path / "vault"
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
 
-        projects_dir = vault / "Work" / "Factory" / "Projects"
-        projects_dir.mkdir(parents=True)
-        (projects_dir / "myapp.md").write_text(
+        project_dir = vault / "10-Projects" / "myapp"
+        project_dir.mkdir(parents=True)
+        (project_dir / "myapp.md").write_text(
             "---\ntags:\n  - factory\n  - project\ndate: 2026-04-11\n---\n\nActual content here."
         )
 
@@ -491,10 +495,24 @@ class TestReadObsidianNotes:
         vault = tmp_path / "vault"
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
 
-        projects_dir = vault / "Work" / "Factory" / "Projects"
-        projects_dir.mkdir(parents=True)
-        (projects_dir / "myapp.md").write_text("x" * 500)
+        project_dir = vault / "10-Projects" / "myapp"
+        project_dir.mkdir(parents=True)
+        (project_dir / "myapp.md").write_text("x" * 500)
 
         summaries = _read_obsidian_notes("myapp")
         assert len(summaries) == 1
         assert len(summaries[0]) == 200
+
+    def test_cross_project_knowledge(self, tmp_path, monkeypatch):
+        vault = tmp_path / "vault"
+        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+
+        concepts_dir = vault / "20-Knowledge" / "Concepts"
+        concepts_dir.mkdir(parents=True)
+        (concepts_dir / "caching.md").write_text(
+            "---\ntags:\n  - concept\n---\n\n# Caching patterns for APIs"
+        )
+
+        summaries = _read_obsidian_notes("myapp")
+        assert len(summaries) == 1
+        assert "Caching patterns" in summaries[0]
