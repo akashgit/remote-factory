@@ -234,9 +234,27 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.path).resolve()
+
+    # Read the SKILL.md from the remote-factory repo root
+    skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
+    try:
+        skill_content = skill_path.read_text()
+    except FileNotFoundError:
+        print(f"Error: SKILL.md not found at {skill_path}", file=sys.stderr)
+        return 1
+
+    prompt = (
+        "You are the Factory orchestrator. "
+        "Follow the skill instructions below to run the factory loop on the project.\n\n"
+        "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
+        "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
+        f"Project path: {project_path}\n\n"
+        f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
+    )
+
     try:
         subprocess.run(
-            ["claude", "-p", f"Run the factory skill on {project_path}"],
+            ["claude", "-p", prompt, "--dangerously-skip-permissions"],
             cwd=project_path,
             check=True,
         )
