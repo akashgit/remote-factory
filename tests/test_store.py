@@ -133,6 +133,89 @@ class TestEvalProfile:
         assert await store.read_eval_profile() is None
 
 
+class TestStatePersistence:
+    """Tests for experiment state persistence edge cases (issue #12)."""
+
+    async def test_finalize_missing_experiment_dir(self, store, sample_config):
+        """finalize() should create the experiment dir if it was deleted (e.g. git clean)."""
+        await store.init(sample_config)
+        exp_id = await store.begin("H1")
+        # Simulate git clean wiping the experiment dir
+        exp_dir = store.factory_dir / "experiments" / f"{exp_id:03d}"
+        import shutil
+        shutil.rmtree(exp_dir)
+        assert not exp_dir.exists()
+
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="H1", change_summary="stuff",
+            issue_number=None, pr_number=None,
+            score_before=0.8, score_after=0.9, delta=0.1,
+            verdict="keep", cost_usd=None, notes="",
+        )
+        # Should NOT raise FileNotFoundError
+        await store.finalize(exp_id, record)
+        assert (exp_dir / "verdict.json").exists()
+
+    async def test_begin_idempotent_no_crash(self, store, sample_config):
+        """begin() does not crash if the experiment dir already exists."""
+        await store.init(sample_config)
+        exp_id = await store.begin("H1")
+        exp_dir = store.factory_dir / "experiments" / f"{exp_id:03d}"
+        assert exp_dir.exists()
+        # Calling begin() again should succeed (creates next experiment)
+        exp_id2 = await store.begin("H2")
+        assert exp_id2 == exp_id + 1
+
+    async def test_begin_does_not_overwrite_hypothesis(self, store, sample_config):
+        """begin() should not overwrite an existing hypothesis.md in the dir."""
+        await store.init(sample_config)
+        exp_id = await store.begin("Original")
+        exp_dir = store.factory_dir / "experiments" / f"{exp_id:03d}"
+        assert exp_dir.exists()
+        assert (exp_dir / "hypothesis.md").read_text() == "Original"
+        # Simulate a re-run: delete the hypothesis and call begin with same dir
+        # Since next_id skips past existing dirs, we test the mkdir exist_ok path
+        # by pre-creating the next dir before calling begin
+        next_id = exp_id + 1
+        next_dir = store.factory_dir / "experiments" / f"{next_id:03d}"
+        next_dir.mkdir(parents=True, exist_ok=True)
+        (next_dir / "hypothesis.md").write_text("Pre-existing")
+        # next_id() will see dirs 001 and 002, return 3
+        id3 = await store.begin("Third")
+        assert id3 == next_id + 1
+        # Pre-existing hypothesis should be untouched
+        assert (next_dir / "hypothesis.md").read_text() == "Pre-existing"
+
+    async def test_finalize_then_load_history_roundtrip(self, store, sample_config):
+        """finalize() followed by load_history() should return the same data."""
+        await store.init(sample_config)
+        exp_id = await store.begin("Increase coverage")
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime(2025, 1, 15, 12, 0, 0),
+            hypothesis="Increase coverage",
+            change_summary="Added tests for edge cases",
+            issue_number=42, pr_number=99,
+            score_before=0.75, score_after=0.92, delta=0.17,
+            verdict="keep", cost_usd=1.23, notes="All green",
+        )
+        await store.finalize(exp_id, record)
+        history = await store.load_history()
+        assert len(history) == 1
+        loaded = history[0]
+        assert loaded.id == exp_id
+        assert loaded.hypothesis == "Increase coverage"
+        assert loaded.change_summary == "Added tests for edge cases"
+        assert loaded.issue_number == 42
+        assert loaded.pr_number == 99
+        assert loaded.score_before == 0.75
+        assert loaded.score_after == 0.92
+        assert loaded.delta == 0.17
+        assert loaded.verdict == "keep"
+        assert loaded.cost_usd == 1.23
+        assert loaded.notes == "All green"
+
+
 class TestStrategy:
     async def test_write_and_read_strategy(self, store, sample_config):
         await store.init(sample_config)
