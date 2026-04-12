@@ -3,13 +3,110 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 
 from factory.models import CompositeScore, ExperimentRecord
 
-_DEFAULT_VAULT = Path.home() / "Library" / "Mobile Documents" / "personal-vault"
-_FACTORY_DIR = "Work/Factory"
+_DEFAULT_VAULT = Path.home() / "obsidian-vaults" / "factory"
+
+_PROJECTS_DIR = "10-Projects"
+_KNOWLEDGE_DIR = "20-Knowledge"
+_FACTORY_META_DIR = "00-Factory"
+_TEMPLATES_DIR = "_templates"
+
+# ── Template content ──────────────────────────────────────────
+
+_TEMPLATE_EXPERIMENT = """\
+---
+tags:
+  - factory
+  - experiment
+  - {{project}}
+project: {{project}}
+experiment_id: {{id}}
+verdict: {{verdict}}
+score_delta: {{delta}}
+date: {{date}}
+source: factory-evaluator
+---
+
+# Experiment #{{id}}: {{hypothesis}}
+
+## Hypothesis
+{{hypothesis}}
+
+## Result
+**{{verdict}}** — score changed from {{before}} to {{after}} ({{delta}})
+
+## What Changed
+{{summary}}
+
+## Links
+- [[{{project}}]]
+"""
+
+_TEMPLATE_DECISION = """\
+---
+tags:
+  - factory
+  - decision
+  - {{project}}
+project: {{project}}
+date: {{date}}
+context: {{context}}
+outcome: {{outcome}}
+source: factory-orchestrator
+---
+
+# Decision: {{title}}
+
+## Context
+{{context}}
+
+## Alternatives Considered
+{{alternatives}}
+
+## Decision
+{{decision}}
+
+## Outcome
+{{outcome}}
+"""
+
+_TEMPLATE_STRATEGY = """\
+---
+tags:
+  - factory
+  - strategy
+  - {{project}}
+date: {{date}}
+source: factory-strategist
+---
+
+# Strategy: {{project}} — {{date}}
+
+{{content}}
+"""
+
+_TEMPLATE_PROJECT = """\
+---
+tags:
+  - factory
+  - project
+  - {{project}}
+---
+
+# Factory: {{project}}
+
+## Status
+- **State**: {{state}}
+- **Current Score**: {{score}}
+
+## Recent Experiments
+(populated by archivist)
+"""
 
 
 def _get_vault_path() -> Path:
@@ -22,6 +119,72 @@ def _ensure_dir(path: Path) -> None:
     path.mkdir(parents=True, exist_ok=True)
 
 
+def init_vault(vault_path: Path | None = None) -> Path:
+    """Create the full factory vault structure. Returns the vault path."""
+    vault = vault_path if vault_path is not None else _get_vault_path()
+
+    # .obsidian/
+    _ensure_dir(vault / ".obsidian")
+
+    # 00-Factory/
+    factory_meta = vault / _FACTORY_META_DIR
+    _ensure_dir(factory_meta)
+    _ensure_dir(factory_meta / "Decisions")
+
+    dashboard_path = factory_meta / "Dashboard.md"
+    if not dashboard_path.exists():
+        dashboard_path.write_text(
+            "# Factory Dashboard\n\nCentral hub for all factory-managed projects.\n"
+        )
+
+    patterns_path = factory_meta / "Patterns.md"
+    if not patterns_path.exists():
+        patterns_path.write_text(
+            "# Cross-Project Patterns\n\nRecurring patterns discovered across projects.\n"
+        )
+
+    # 10-Projects/
+    _ensure_dir(vault / _PROJECTS_DIR)
+
+    # 20-Knowledge/
+    _ensure_dir(vault / _KNOWLEDGE_DIR / "Concepts")
+    _ensure_dir(vault / _KNOWLEDGE_DIR / "Sources")
+
+    # _templates/
+    templates = vault / _TEMPLATES_DIR
+    _ensure_dir(templates)
+
+    template_files = {
+        "experiment.md": _TEMPLATE_EXPERIMENT,
+        "decision.md": _TEMPLATE_DECISION,
+        "strategy.md": _TEMPLATE_STRATEGY,
+        "project.md": _TEMPLATE_PROJECT,
+    }
+    for name, content in template_files.items():
+        tpath = templates / name
+        if not tpath.exists():
+            tpath.write_text(content)
+
+    # MEMORY.md
+    memory_path = vault / "MEMORY.md"
+    if not memory_path.exists():
+        memory_path.write_text(
+            "# Factory Memory Index\n\n"
+            "Pointer file for factory agents.\n\n"
+            "## Projects\n\n(none yet)\n"
+        )
+
+    return vault
+
+
+def _auto_init_vault() -> Path:
+    """Get vault path and auto-create structure if needed."""
+    vault = _get_vault_path()
+    if not (vault / ".obsidian").exists():
+        init_vault(vault)
+    return vault
+
+
 def write_experiment_note(
     project_name: str,
     record: ExperimentRecord,
@@ -29,8 +192,8 @@ def write_experiment_note(
     score_after: CompositeScore | None = None,
 ) -> Path:
     """Create an Obsidian note for a completed experiment."""
-    vault = _get_vault_path()
-    experiments_dir = vault / _FACTORY_DIR / "Experiments"
+    vault = _auto_init_vault()
+    experiments_dir = vault / _PROJECTS_DIR / project_name / "Experiments"
     _ensure_dir(experiments_dir)
 
     filename = f"{project_name}-{record.id:03d}.md"
@@ -52,6 +215,7 @@ def write_experiment_note(
         f"verdict: {record.verdict}",
         f"score_delta: {record.delta if record.delta is not None else 0.0}",
         f"date: {date_str}",
+        "source: factory-evaluator",
         "---",
         "",
         f"# Experiment #{record.id}: {record.hypothesis[:80]}",
@@ -105,8 +269,8 @@ def write_project_dashboard(
     eval_dimensions: list[dict] | None = None,
 ) -> Path:
     """Create or update the project dashboard note."""
-    vault = _get_vault_path()
-    projects_dir = vault / _FACTORY_DIR / "Projects"
+    vault = _auto_init_vault()
+    projects_dir = vault / _PROJECTS_DIR / project_name
     _ensure_dir(projects_dir)
 
     filename = f"{project_name}.md"
@@ -138,7 +302,10 @@ def write_project_dashboard(
     if eval_dimensions:
         lines.append("## Eval Dimensions")
         for dim in eval_dimensions:
-            lines.append(f"- {dim.get('name', '?')} ({dim.get('weight', 0):.1%} weight) — {dim.get('description', '')}")
+            lines.append(
+                f"- {dim.get('name', '?')} ({dim.get('weight', 0):.1%} weight)"
+                f" — {dim.get('description', '')}"
+            )
         lines.append("")
 
     # Recent experiments (last 5)
@@ -146,7 +313,9 @@ def write_project_dashboard(
     recent = records[-5:] if records else []
     for r in reversed(recent):
         delta = f"{r.delta:+.4f}" if r.delta is not None else "n/a"
-        lines.append(f"- [[{project_name}-{r.id:03d}]] — {r.hypothesis[:50]} ({r.verdict.upper()}, {delta})")
+        lines.append(
+            f"- [[{project_name}-{r.id:03d}]] — {r.hypothesis[:50]} ({r.verdict.upper()}, {delta})"
+        )
     if not recent:
         lines.append("- No experiments yet")
     lines.append("")
@@ -160,8 +329,8 @@ def write_strategy_note(
     strategy_content: str,
 ) -> Path:
     """Write a strategy snapshot to Obsidian."""
-    vault = _get_vault_path()
-    strategies_dir = vault / _FACTORY_DIR / "Strategies"
+    vault = _auto_init_vault()
+    strategies_dir = vault / _PROJECTS_DIR / project_name / "Strategies"
     _ensure_dir(strategies_dir)
 
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -175,6 +344,7 @@ def write_strategy_note(
         "  - strategy",
         f"  - {project_name}",
         f"date: {date_str}",
+        "source: factory-strategist",
         "---",
         "",
         f"# Strategy: {project_name} — {date_str}",
@@ -184,3 +354,60 @@ def write_strategy_note(
 
     note_path.write_text("\n".join(lines) + "\n")
     return note_path
+
+
+def update_memory_index(projects: list[dict] | None = None) -> Path:
+    """Regenerate MEMORY.md at vault root with project listing.
+
+    If *projects* is None, scans ``10-Projects/`` for subdirectories and
+    reads each dashboard note for the latest score.
+    """
+    vault = _get_vault_path()
+
+    if projects is None:
+        projects = []
+        projects_root = vault / _PROJECTS_DIR
+        if projects_root.exists():
+            for subdir in sorted(projects_root.iterdir()):
+                if not subdir.is_dir():
+                    continue
+                name = subdir.name
+                dashboard = subdir / f"{name}.md"
+                score = "n/a"
+                exp_count = 0
+                if dashboard.exists():
+                    content = dashboard.read_text(errors="replace")
+                    score_match = re.search(r"\*\*Current Score\*\*:\s*(\S+)", content)
+                    if score_match:
+                        score = score_match.group(1)
+                    exp_match = re.search(r"\*\*Experiments Run\*\*:\s*(\d+)", content)
+                    if exp_match:
+                        exp_count = int(exp_match.group(1))
+                projects.append({
+                    "name": name,
+                    "score": score,
+                    "experiments": exp_count,
+                })
+
+    lines = [
+        "# Factory Memory Index",
+        "",
+        "Pointer file for factory agents.",
+        "",
+        "## Projects",
+        "",
+    ]
+
+    if projects:
+        for p in projects:
+            lines.append(
+                f"- [[{p['name']}]] — score: {p['score']}, {p['experiments']} experiments"
+            )
+    else:
+        lines.append("(none yet)")
+
+    lines.append("")
+
+    memory_path = vault / "MEMORY.md"
+    memory_path.write_text("\n".join(lines))
+    return memory_path
