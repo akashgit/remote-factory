@@ -210,13 +210,44 @@ The factory is initialized. Run the inner improvement loop using all 6 agent rol
 
 ### Step 0: Observe (Researcher Agent)
 
-The Researcher reads interaction logs, git history, and prior experiment outcomes, then writes structured observations for the Strategist.
+The Researcher performs both local analysis and deep external research.
+
+**Step 0a: Local Study**
 
 ```bash
 uv run python -m factory study "$PROJECT_PATH"
 ```
 
-This writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. If the command fails (non-zero exit), log the error and proceed to Step 1 -- the Strategist can still function without observations, but the hypotheses will be less informed.
+This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`.
+
+**Step 0b: Deep Research (via Subagent)**
+
+Spawn the researcher subagent to perform web-based research and vault knowledge synthesis:
+
+```bash
+claude -p "$(cat <<'PROMPT'
+You are the Researcher agent for the Software Factory.
+Load your base prompt from ~/cursor-projects/remote-factory/factory/agents/prompts/researcher.md — use Mode 2 (Research).
+
+Project: $PROJECT_PATH
+
+## Context
+$(cat "$PROJECT_PATH/factory.md" 2>/dev/null || echo "No factory.md")
+$(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo "No local observations")
+$(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
+
+## Task
+1. Read the local observations already generated
+2. Use WebSearch to find 5-10 relevant external resources for this project
+3. Use WebFetch to deeply read the top 3-5 results
+4. Read the factory vault for prior knowledge: ~/obsidian-vaults/factory/
+5. Write comprehensive research report to $PROJECT_PATH/.factory/strategy/research.md
+6. Write any new external source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/
+PROMPT
+)" --dangerously-skip-permissions
+```
+
+If the deep research subagent fails, proceed to Step 1 — the Strategist can work from local observations alone.
 
 ### Step 1: Hypothesize (Strategist Agent)
 
@@ -235,6 +266,8 @@ $(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No exper
 $(cat "$PROJECT_PATH/factory.md")
 
 $(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo "No observations from Researcher")
+
+$(cat "$PROJECT_PATH/.factory/strategy/research.md" 2>/dev/null || echo "No deep research available")
 
 $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo "No prior strategy")
 
