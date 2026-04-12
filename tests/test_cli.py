@@ -1,7 +1,8 @@
 """Tests for factory.cli — CLI subcommand routing."""
 
 import json
-
+import subprocess
+from unittest.mock import patch
 
 from factory.cli import main, build_parser
 
@@ -83,3 +84,118 @@ class TestCmdHistory:
         result = main(["history", str(tmp_project)])
         assert result == 0
         assert "No experiments" in capsys.readouterr().out
+
+    def test_history_with_records(self, tmp_project, capsys, sample_config):
+        """history displays formatted table when records exist."""
+        import asyncio
+        from datetime import datetime
+        from factory.store import ExperimentStore
+        from factory.models import ExperimentRecord
+
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        exp_id = asyncio.run(store.begin("Test hypothesis"))
+        record = ExperimentRecord(
+            id=exp_id,
+            timestamp=datetime.now(),
+            hypothesis="Test hypothesis",
+            change_summary="Changed stuff",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.80,
+            score_after=0.85,
+            delta=0.05,
+            verdict="keep",
+            cost_usd=1.23,
+            notes="",
+        )
+        asyncio.run(store.finalize(exp_id, record))
+        result = main(["history", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "keep" in out
+        assert "Test hypothesis" in out
+
+
+class TestCmdRun:
+    def test_run_missing_claude_binary(self, tmp_path, capsys):
+        """cmd_run returns 1 when claude CLI is not found."""
+        with patch("factory.cli.subprocess.run", side_effect=FileNotFoundError):
+            result = main(["run", str(tmp_path)])
+        assert result == 1
+        assert "not found" in capsys.readouterr().err
+
+    def test_run_claude_nonzero_exit(self, tmp_path, capsys):
+        """cmd_run returns 1 when claude CLI exits non-zero."""
+        with patch(
+            "factory.cli.subprocess.run",
+            side_effect=subprocess.CalledProcessError(2, "claude"),
+        ):
+            result = main(["run", str(tmp_path)])
+        assert result == 1
+        assert "exited with code 2" in capsys.readouterr().err
+
+    def test_run_success(self, tmp_path):
+        """cmd_run returns 0 when claude CLI succeeds."""
+        with patch("factory.cli.subprocess.run") as mock_run:
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_run.assert_called_once()
+
+
+class TestCmdEval:
+    def test_eval_failing(self, tmp_project, capsys, sample_config):
+        """cmd_eval returns 1 when eval fails."""
+        import asyncio
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+
+        # The eval_command won't exist, so this will fail
+        result = main(["eval", str(tmp_project)])
+        assert result == 1
+
+
+class TestCmdNotify:
+    def test_notify_no_config(self, tmp_project, capsys, caplog, sample_config):
+        """cmd_notify warns when telegram is not configured."""
+        import asyncio
+        import logging
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+
+        with caplog.at_level(logging.WARNING):
+            result = main(["notify", str(tmp_project)])
+        assert result == 0
+        assert "Digest sent" in capsys.readouterr().out
+
+
+class TestCmdInit:
+    def test_init_missing_factory_md(self, tmp_project, capsys):
+        """cmd_init returns 1 when factory.md is missing."""
+        result = main(["init", str(tmp_project)])
+        assert result == 1
+        assert "factory.md not found" in capsys.readouterr().err
+
+    def test_init_with_factory_md(self, tmp_project, capsys):
+        """cmd_init succeeds when factory.md exists."""
+        (tmp_project / "factory.md").write_text(
+            "# Factory\n\n## Goal\nBuild stuff\n\n## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n## Constraints\n- small changes\n"
+        )
+        result = main(["init", str(tmp_project)])
+        assert result == 0
+        assert "Initialized" in capsys.readouterr().out
+
+
+class TestMainErrorHandling:
+    def test_main_catches_exception(self, capsys):
+        """main catches exceptions from handlers and returns 1."""
+        with patch("factory.cli.cmd_detect", side_effect=RuntimeError("boom")):
+            result = main(["detect", "/some/path"])
+        assert result == 1
+        assert "boom" in capsys.readouterr().err
