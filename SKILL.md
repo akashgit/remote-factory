@@ -236,7 +236,20 @@ After Review mode completes, the project is in `has_factory` state. Proceed to *
 
 ## Mode: Improve (`has_factory`)
 
-The factory is initialized. Run the inner improvement loop using all 6 agent roles: **Researcher** (observe), **Strategist** (hypothesize), **Evaluator** (measure), **Builder** (implement), **Reviewer** (guard), and **Archivist** (record). Each role maps to a concrete CLI invocation.
+The factory is initialized. The factory agent acts as the **CEO/orchestrator** — it reads reports, makes decisions, and delegates ALL execution to specialist agents. It never runs evals, guards, or code analysis directly.
+
+**Six agent roles:** **Researcher** (observe), **Strategist** (hypothesize), **Evaluator** (measure), **Builder** (implement), **Reviewer** (guard), and **Archivist** (record).
+
+**CEO responsibilities:**
+- Read reports from agents and make keep/revert decisions citing specific data
+- Delegate ALL execution to specialist agents
+- Handle administrative bookkeeping (begin, finalize, commit, create issues)
+- NEVER run eval commands directly (delegate to Evaluator agent)
+- NEVER run guard commands directly (delegate to Reviewer agent)
+- NEVER analyze code directly (delegate to appropriate agent)
+
+**Archivist as async background note-taker:**
+The Archivist is NOT a one-shot step at the end. It is the CEO's persistent background writer, spawned asynchronously (fire-and-forget, non-blocking) at multiple points throughout the workflow to record decisions, findings, and patterns to the factory vault.
 
 ### Step 0: Observe (Researcher Agent)
 
@@ -279,6 +292,27 @@ PROMPT
 
 If the deep research subagent fails, proceed to Step 1 — the Strategist can work from local observations alone.
 
+**Async Archivist — record research findings (fire-and-forget):**
+
+```bash
+claude -p "$(cat <<'PROMPT'
+You are the Archivist agent for the Software Factory.
+Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/archivist.md
+
+Project: $PROJECT_PATH
+
+## Task (async — background note-taking)
+Record the Researcher's findings to the factory vault.
+1. Read: cat "$PROJECT_PATH/.factory/strategy/observations.md"
+2. Read: cat "$PROJECT_PATH/.factory/strategy/research.md"
+3. Write new source notes to ~/factory-vault/20-Knowledge/Sources/
+4. Update the project research log in the vault
+PROMPT
+)" --dangerously-skip-permissions &
+```
+
+> **Note:** The `&` makes this non-blocking. The CEO does not wait for the Archivist.
+
 ### Step 1: Hypothesize (Strategist Agent)
 
 The Strategist reads the Researcher's observations (from `.factory/strategy/observations.md`), analyzes the codebase and eval scores, and generates prioritized hypotheses.
@@ -317,19 +351,50 @@ PROMPT
 )" --dangerously-skip-permissions
 ```
 
+**Async Archivist — record strategy decisions (fire-and-forget):**
+
+```bash
+claude -p "$(cat <<'PROMPT'
+You are the Archivist agent for the Software Factory.
+Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/archivist.md
+
+Project: $PROJECT_PATH
+
+## Task (async — background note-taking)
+Record the Strategist's decisions and reasoning to the factory vault.
+1. Read: cat "$PROJECT_PATH/.factory/strategy/current.md"
+2. Write a strategy snapshot to the vault
+3. Update the project dashboard with current strategy
+PROMPT
+)" --dangerously-skip-permissions &
+```
+
 ### Step 2: Execute (Per Hypothesis)
 
 For each hypothesis in `strategy/current.md`, in priority order:
 
 #### 2a. Baseline Eval (Evaluator Agent -- before)
 
-The Evaluator records the project score **before** any changes are made. This is the baseline that the Builder's work will be measured against.
+The CEO delegates the baseline eval to the Evaluator agent. The Evaluator records the project score **before** any changes are made.
 
 ```bash
-uv run python -m factory eval "$PROJECT_PATH"
+claude -p "$(cat <<'PROMPT'
+You are the Evaluator agent for the Software Factory.
+Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/evaluator.md
+
+Project: $PROJECT_PATH
+
+## Task
+Run the baseline eval and report the score.
+1. Run: uv run python -m factory eval "$PROJECT_PATH"
+2. Parse the JSON output
+3. Print the composite score and per-dimension breakdown to stdout
+4. If eval crashes, report the error clearly
+PROMPT
+)" --dangerously-skip-permissions
 ```
 
-Save the output -- this is `score_before`. If the eval crashes, see **Error Recovery: Eval Crash** below. Do not proceed to the Builder until a valid baseline score is recorded.
+Save the output -- this is `score_before`. If the Evaluator reports a crash, see **Error Recovery: Eval Crash** below. Do not proceed to the Builder until a valid baseline score is recorded.
 
 #### 2b. Begin Experiment
 
@@ -400,25 +465,55 @@ If the Builder fails (non-zero exit, no PR opened, or builder comments a questio
 
 #### 2e. Guard Check (Reviewer Agent)
 
-The Reviewer enforces sacred rules and scope constraints on the Builder's PR branch. It runs **before** the post-change eval to catch violations early.
+The CEO delegates the guard check and code review to the Reviewer agent. The Reviewer enforces sacred rules and scope constraints on the Builder's PR branch.
 
 ```bash
 BASELINE_SHA=$(git log --format=%H -1 main)
-uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA" --check-scope
+claude -p "$(cat <<'PROMPT'
+You are the Reviewer agent for the Software Factory.
+Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/reviewer.md
+
+Project: $PROJECT_PATH
+Experiment: $EXP_ID
+Baseline SHA: $BASELINE_SHA
+
+## Task
+Review the Builder's changes.
+1. Run guard check: uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA" --check-scope
+2. Read the PR diff: gh pr diff <pr-number> -R <owner>/<repo>
+3. Assess code quality against acceptance criteria
+4. Print your verdict to stdout: PASS or FAIL with details
+PROMPT
+)" --dangerously-skip-permissions
 ```
 
-- If output is `clean` --> proceed to Evaluator (Step 2f)
-- If output shows `VIOLATION:` --> **revert and finalize as error** (see Error Recovery: Guard Violation below). Do not run the post-change eval.
+- If the Reviewer reports `PASS` --> proceed to Evaluator (Step 2f)
+- If the Reviewer reports `FAIL` or any `VIOLATION:` --> **revert and finalize as error** (see Error Recovery: Guard Violation below). Do not run the post-change eval.
 
 #### 2f. Post-change Eval (Evaluator Agent -- after)
 
-The Evaluator scores the project **after** the Builder's changes, on the PR branch. This score is compared against the baseline from Step 2a.
+The CEO delegates the post-change eval to the Evaluator agent. The Evaluator scores the project **after** the Builder's changes, on the PR branch.
 
 ```bash
-uv run python -m factory eval "$PROJECT_PATH"
+claude -p "$(cat <<'PROMPT'
+You are the Evaluator agent for the Software Factory.
+Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/evaluator.md
+
+Project: $PROJECT_PATH
+
+## Task
+Run the post-change eval and report the score.
+1. Run: uv run python -m factory eval "$PROJECT_PATH"
+2. Parse the JSON output
+3. Print the composite score and per-dimension breakdown to stdout
+4. Compare against baseline score: $SCORE_BEFORE
+5. State whether the hypothesis was validated
+6. If eval crashes, report the error clearly
+PROMPT
+)" --dangerously-skip-permissions
 ```
 
-Save the output -- this is `score_after`. If the eval crashes, see **Error Recovery: Eval Crash** below.
+Save the output -- this is `score_after`. If the Evaluator reports a crash, see **Error Recovery: Eval Crash** below.
 
 #### 2g. Decide: Keep or Revert
 
@@ -450,19 +545,7 @@ Compare `score_after` vs `score_before`:
         --issue $ISSUE_NUM
     ```
 
-### Step 3: Record (Archivist Agent)
-
-After all hypotheses have been executed, the Archivist writes experiment notes and updates the project dashboard. This runs in two phases: first the CLI command to generate structured archives, then the agent to write Obsidian notes.
-
-#### 3a. Generate Archives
-
-```bash
-uv run python -m factory archive "$PROJECT_PATH"
-```
-
-This reads the experiment history and writes structured archive files to `.factory/archive/`. If the command fails, log the error and proceed to Step 3b -- the Archivist agent can still write notes from the experiment history directly.
-
-#### 3b. Write Obsidian Notes
+**Async Archivist — record experiment outcome (fire-and-forget):**
 
 ```bash
 claude -p "$(cat <<'PROMPT'
@@ -471,17 +554,27 @@ Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prom
 
 Project: $PROJECT_PATH
 
-## Task
-1. Read the experiment history: uv run python -m factory history "$PROJECT_PATH"
-2. Read the archive output: cat "$PROJECT_PATH/.factory/archive/" 2>/dev/null
-3. Write Obsidian experiment notes for each new experiment
-4. Update the project dashboard
-5. Write a strategy snapshot
-
-Target vault: the user's personal Obsidian vault pathWork/Factory/
+## Task (async — background note-taking)
+Record the experiment outcome and decision rationale.
+1. Read experiment history: uv run python -m factory history "$PROJECT_PATH"
+2. Write an experiment note for experiment $EXP_ID (verdict: $VERDICT)
+3. Record the decision rationale: score_before=$SCORE_BEFORE, score_after=$SCORE_AFTER
+4. Update the project dashboard with the latest experiment result
 PROMPT
-)" --dangerously-skip-permissions
+)" --dangerously-skip-permissions &
 ```
+
+> **Ad-hoc archiving:** At any point during the workflow, if the CEO observes a cross-project pattern or has something worth remembering, spawn an async Archivist to record it to the vault.
+
+### Step 3: Finalize Archive (Archivist Agent)
+
+The Archivist has been recording throughout the workflow via async background spawns. This final step ensures completeness and updates MEMORY.md.
+
+```bash
+uv run python -m factory archive "$PROJECT_PATH"
+```
+
+This reads the experiment history, writes structured archive files to `.factory/archive/`, and regenerates MEMORY.md. If the command fails, log the error — the async Archivist notes written earlier still provide coverage.
 
 ### Step 4: Notify
 
@@ -496,6 +589,52 @@ cd "$PROJECT_PATH"
 git add .factory/
 git commit -m "factory: log experiment results and update strategy"
 ```
+
+---
+
+## Parallel Execution Protocol
+
+For hypotheses with non-overlapping file scopes, execute them in parallel:
+
+1. **Prepare all experiments**: For each independent hypothesis:
+   - `factory begin --hypothesis "..."` --> get $EXP_ID
+   - Create branch: `git branch experiment/$EXP_ID main`
+   - Create GitHub issue
+
+2. **Spawn builders in parallel**: Launch all builders simultaneously
+   - Each builder works in an isolated worktree (via `isolation: worktree`)
+   - Builders do not share state -- they read from the issue and write to their branch
+
+3. **Review independently**: As each builder completes:
+   - Spawn Reviewer to check guards and code quality
+   - Spawn Evaluator to score the changes
+   - CEO makes keep/revert decision
+
+4. **Merge in priority order**: Merge kept experiments from highest to lowest priority
+   - After each merge, re-evaluate remaining experiments for conflicts
+   - If a merge causes conflicts with a pending experiment, rebase and re-eval
+
+### Scaling Rules
+- Simple improvements (1-2 hypotheses): sequential execution
+- Moderate scope (3-5 hypotheses): parallel builders, sequential review
+- Large scope (5+ hypotheses): wave-based execution -- batch into waves of 3-5
+
+---
+
+## Decision Framework (from Persona)
+
+When making keep/revert decisions, apply these heuristics:
+
+1. **Simple > Complex**: Prefer the simpler change. If two approaches achieve similar scores, keep the one with fewer lines changed.
+2. **Multi-signal evaluation**: Never decide based on a single metric. Check: tests pass, lint clean, score improved, no guard violations, code is readable.
+3. **Cost consciousness**: Track token/API costs per experiment. Prefer cheaper approaches for equivalent outcomes.
+4. **Quality bar** (all must be true to keep):
+   - Works correctly (tests pass)
+   - Observable (changes are logged/traced)
+   - Evaluated (scores measured before and after)
+   - Documented (clear commit messages, PR description)
+   - Maintainable (clean code, no hacks)
+5. **When stuck**: Pick the simpler option, record reasoning in the vault, move on.
 
 ---
 
