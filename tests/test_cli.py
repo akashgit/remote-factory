@@ -245,6 +245,76 @@ class TestCmdInit:
         assert "Initialized" in capsys.readouterr().out
 
 
+class TestCmdArchive:
+    def test_archive_parser(self):
+        parser = build_parser()
+        args = parser.parse_args(["archive", "/some/path"])
+        assert args.command == "archive"
+        assert args.path == "/some/path"
+
+    def test_archive_no_experiments(self, tmp_project, capsys, sample_config):
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        result = main(["archive", str(tmp_project)])
+        assert result == 0
+        assert "Nothing to archive" in capsys.readouterr().out
+
+    def test_archive_with_experiments(self, tmp_project, capsys, sample_config):
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        exp_id = asyncio.run(store.begin("Improve throughput"))
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="Improve throughput",
+            change_summary="Optimized pipeline",
+            issue_number=None, pr_number=None,
+            score_before=0.7, score_after=0.85, delta=0.15,
+            verdict="keep", cost_usd=0.5, notes="",
+        )
+        asyncio.run(store.finalize(exp_id, record))
+
+        with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
+             patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
+             patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
+             patch("factory.obsidian.notes._get_vault_path",
+                   return_value=tmp_project / "vault"):
+            result = main(["archive", str(tmp_project)])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Archived 1 experiments" in out
+        mock_exp.assert_called_once()
+        mock_dash.assert_called_once()
+        mock_strat.assert_not_called()
+
+    def test_archive_with_strategy(self, tmp_project, capsys, sample_config):
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        exp_id = asyncio.run(store.begin("Test hypothesis"))
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="Test hypothesis",
+            change_summary="Changed stuff",
+            issue_number=None, pr_number=None,
+            score_before=0.8, score_after=0.85, delta=0.05,
+            verdict="keep", cost_usd=None, notes="",
+        )
+        asyncio.run(store.finalize(exp_id, record))
+        asyncio.run(store.write_strategy("Focus on reliability."))
+
+        with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
+             patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
+             patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
+             patch("factory.obsidian.notes._get_vault_path",
+                   return_value=tmp_project / "vault"):
+            result = main(["archive", str(tmp_project)])
+
+        assert result == 0
+        mock_exp.assert_called_once()
+        mock_dash.assert_called_once()
+        mock_strat.assert_called_once()
+
+
 class TestMainErrorHandling:
     def test_main_catches_exception(self, capsys):
         """main catches exceptions from handlers and returns 1."""
