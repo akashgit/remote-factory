@@ -80,6 +80,49 @@ class TestResearcherPromptModes:
         assert "Output (Research)" in prompt
 
 
+class TestInvokeAgentsParallel:
+    @pytest.mark.asyncio
+    async def test_runs_multiple_agents(self, tmp_path, monkeypatch):
+        """invoke_agents_parallel runs multiple agents concurrently."""
+        from factory.agents.runner import invoke_agents_parallel
+
+        call_count = 0
+
+        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True):
+            nonlocal call_count
+            call_count += 1
+            return (f"output-{role}", 0)
+
+        monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
+
+        tasks: list[tuple[AgentRole, str]] = [
+            ("builder", "task 1"),
+            ("evaluator", "task 2"),
+        ]
+        results = await invoke_agents_parallel(tasks, tmp_path)
+        assert len(results) == 2
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_all_results(self, tmp_path, monkeypatch):
+        """invoke_agents_parallel returns results from all agents."""
+        from factory.agents.runner import invoke_agents_parallel
+
+        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True):
+            return (f"output-{role}", 0)
+
+        monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
+
+        tasks: list[tuple[AgentRole, str]] = [
+            ("builder", "task 1"),
+            ("reviewer", "task 2"),
+            ("evaluator", "task 3"),
+        ]
+        results = await invoke_agents_parallel(tasks, tmp_path)
+        assert len(results) == 3
+        assert all(rc == 0 for _, rc in results)
+
+
 class TestClaudeAgentsResearcher:
     """Verify the .claude/agents/researcher.md subagent definition exists and is valid."""
 
