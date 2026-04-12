@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import signal
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -287,27 +289,14 @@ def _is_github_url(path: str) -> bool:
 
 
 
-def cmd_run(args: argparse.Namespace) -> int:
-    path = args.path
-
-    # If a GitHub URL is provided, clone into a temp directory
-    if _is_github_url(path):
-        tmp_dir = tempfile.mkdtemp(prefix="factory-")
-        subprocess.run(["git", "clone", path, tmp_dir], check=True)
-        print(f"Cloned {path} to {tmp_dir}")
-        project_path = Path(tmp_dir).resolve()
-    else:
-        project_path = Path(path).resolve()
-
-    # Read the SKILL.md from the remote-factory repo root
+def _run_single_cycle(project_path: Path, mode: str) -> int:
+    """Execute a single factory run cycle. Returns 0 on success, 1 on error."""
     skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
     try:
         skill_content = skill_path.read_text()
     except FileNotFoundError:
         print(f"Error: SKILL.md not found at {skill_path}", file=sys.stderr)
         return 1
-
-    mode = getattr(args, "mode", "improve")
 
     if mode == "discover":
         prompt = (
@@ -341,6 +330,74 @@ def cmd_run(args: argparse.Namespace) -> int:
     except subprocess.CalledProcessError as e:
         print(f"Error: claude exited with code {e.returncode}", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    path = args.path
+
+    # If a GitHub URL is provided, clone into a temp directory
+    if _is_github_url(path):
+        tmp_dir = tempfile.mkdtemp(prefix="factory-")
+        subprocess.run(["git", "clone", path, tmp_dir], check=True)
+        print(f"Cloned {path} to {tmp_dir}")
+        project_path = Path(tmp_dir).resolve()
+    else:
+        project_path = Path(path).resolve()
+
+    mode = getattr(args, "mode", "improve")
+    loop = getattr(args, "loop", False)
+
+    if not loop:
+        return _run_single_cycle(project_path, mode)
+
+    # Heartbeat loop mode
+    interval: int = getattr(args, "interval", 1800)
+    max_cycles: int | None = getattr(args, "max_cycles", None)
+    shutdown_requested = False
+
+    def _shutdown_handler(signum: int, frame: object) -> None:
+        nonlocal shutdown_requested
+        shutdown_requested = True
+
+    old_sigterm = signal.signal(signal.SIGTERM, _shutdown_handler)
+    old_sigint = signal.signal(signal.SIGINT, _shutdown_handler)
+
+    cycle = 0
+    start_time = time.monotonic()
+
+    try:
+        while True:
+            cycle += 1
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            print(f"[factory] Cycle {cycle} started at {ts}")
+
+            _run_single_cycle(project_path, mode)
+
+            if shutdown_requested:
+                break
+
+            if max_cycles is not None and cycle >= max_cycles:
+                break
+
+            print(f"[factory] Cycle {cycle} completed. Sleeping for {interval}s...")
+
+            try:
+                time.sleep(interval)
+            except (KeyboardInterrupt, SystemExit):
+                shutdown_requested = True
+
+            if shutdown_requested:
+                break
+    finally:
+        signal.signal(signal.SIGTERM, old_sigterm)
+        signal.signal(signal.SIGINT, old_sigint)
+
+    elapsed = time.monotonic() - start_time
+    print(
+        f"[factory] Shutting down gracefully after {cycle} cycles."
+        f" Total runtime: {elapsed:.0f}s"
+    )
     return 0
 
 
@@ -424,6 +481,18 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["discover", "improve"],
         default="improve",
         help="Run mode: discover (auto-detect evals) or improve (default improvement loop)",
+    )
+    p.add_argument(
+        "--loop", action="store_true", default=False,
+        help="Enable heartbeat mode: run continuously with sleep between cycles",
+    )
+    p.add_argument(
+        "--interval", type=int, default=1800,
+        help="Seconds to sleep between cycles (default: 1800)",
+    )
+    p.add_argument(
+        "--max-cycles", type=int, default=None,
+        help="Maximum number of cycles (default: unlimited)",
     )
 
     return parser
