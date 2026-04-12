@@ -13,6 +13,7 @@ from factory.study import (
     _read_obsidian_notes,
     _search_similar_projects,
     study_project,
+    study_project_local,
 )
 
 
@@ -174,11 +175,11 @@ class TestExtractMessages:
         assert len(messages[0]["text"]) == 500
 
 
-class TestStudyProject:
+class TestStudyProjectLocal:
     def test_no_logs_returns_message(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         with patch("factory.study._search_similar_projects", return_value=[]):
-            result = study_project(tmp_path / "nonexistent")
+            result = study_project_local(tmp_path / "nonexistent")
         assert "No interaction logs found." in result
         assert "## Similar Projects" in result
         assert "## Prior Knowledge (Obsidian)" in result
@@ -202,7 +203,7 @@ class TestStudyProject:
         (log_dir / "conv.jsonl").write_text("\n".join(lines))
 
         with patch("factory.study._search_similar_projects", return_value=[]):
-            result = study_project(project_path)
+            result = study_project_local(project_path)
         assert "# Interaction Study" in result
         assert "myapp" in result
         assert "1 conversation log(s)" in result
@@ -225,7 +226,7 @@ class TestStudyProject:
             },
         ]
         with patch("factory.study._search_similar_projects", return_value=similar):
-            result = study_project(project_path)
+            result = study_project_local(project_path)
         assert "## Similar Projects" in result
         assert "org/cool-project" in result
         assert "42 stars" in result
@@ -246,9 +247,25 @@ class TestStudyProject:
         )
 
         with patch("factory.study._search_similar_projects", return_value=[]):
-            result = study_project(project_path)
+            result = study_project_local(project_path)
         assert "## Prior Knowledge (Obsidian)" in result
         assert "Dashboard for myapp" in result
+
+
+class TestStudyProject:
+    def test_delegates_to_local(self, tmp_path, monkeypatch):
+        """study_project() delegates to study_project_local() for backward compat."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            local_result = study_project_local(tmp_path / "nonexistent")
+            wrapper_result = study_project(tmp_path / "nonexistent")
+        assert local_result == wrapper_result
+
+    def test_no_logs_returns_message(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project(tmp_path / "nonexistent")
+        assert "No interaction logs found." in result
 
 
 class TestCmdStudy:

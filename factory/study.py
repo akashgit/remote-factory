@@ -250,8 +250,8 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
     return summaries
 
 
-def study_project(project_path: Path) -> str:
-    """Read interaction logs and produce an observations summary."""
+def study_project_local(project_path: Path) -> str:
+    """Read interaction logs and produce an observations summary (local only)."""
     log_files = _find_log_files(project_path)
 
     all_messages: list[dict] = []
@@ -309,3 +309,8 @@ def study_project(project_path: Path) -> str:
         lines.append("No prior notes found.")
 
     return "\n".join(lines)
+
+
+def study_project(project_path: Path) -> str:
+    """Study a project — local analysis. Deep research available via researcher subagent."""
+    return study_project_local(project_path)
