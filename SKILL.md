@@ -206,11 +206,21 @@ After Review mode completes, the project is in `has_factory` state. Proceed to *
 
 ## Mode: Improve (`has_factory`)
 
-The factory is initialized. Run the inner improvement loop: observe the current state, form hypotheses, execute changes via builder agents, guard-check, eval, and keep or revert.
+The factory is initialized. Run the inner improvement loop using all 6 agent roles: **Researcher** (observe), **Strategist** (hypothesize), **Evaluator** (measure), **Builder** (implement), **Reviewer** (guard), and **Archivist** (record). Each role maps to a concrete CLI invocation.
 
-### Step 1: Observe (Strategist Agent)
+### Step 0: Observe (Researcher Agent)
 
-Invoke the Strategist agent to gather context and generate hypotheses:
+The Researcher reads interaction logs, git history, and prior experiment outcomes, then writes structured observations for the Strategist.
+
+```bash
+uv run python -m factory study "$PROJECT_PATH"
+```
+
+This writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. If the command fails (non-zero exit), log the error and proceed to Step 1 -- the Strategist can still function without observations, but the hypotheses will be less informed.
+
+### Step 1: Hypothesize (Strategist Agent)
+
+The Strategist reads the Researcher's observations (from `.factory/strategy/observations.md`), analyzes the codebase and eval scores, and generates prioritized hypotheses.
 
 ```bash
 claude -p "$(cat <<'PROMPT'
@@ -223,6 +233,8 @@ Project: $PROJECT_PATH
 $(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
 
 $(cat "$PROJECT_PATH/factory.md")
+
+$(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo "No observations from Researcher")
 
 $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo "No prior strategy")
 
@@ -246,13 +258,15 @@ PROMPT
 
 For each hypothesis in `strategy/current.md`, in priority order:
 
-#### 2a. Record Baseline Score
+#### 2a. Baseline Eval (Evaluator Agent -- before)
+
+The Evaluator records the project score **before** any changes are made. This is the baseline that the Builder's work will be measured against.
 
 ```bash
 uv run python -m factory eval "$PROJECT_PATH"
 ```
 
-Save the output -- this is `score_before`.
+Save the output -- this is `score_before`. If the eval crashes, see **Error Recovery: Eval Crash** below. Do not proceed to the Builder until a valid baseline score is recorded.
 
 #### 2b. Begin Experiment
 
@@ -289,9 +303,9 @@ EOF
 
 Save the issue number as `$ISSUE_NUM`.
 
-#### 2d. Build (Builder Agent)
+#### 2d. Implement (Builder Agent)
 
-Invoke the Builder agent to implement the issue:
+The Builder agent implements the hypothesis as a PR. It works in isolation on a feature branch.
 
 ```bash
 claude -p "$(cat <<'PROMPT'
@@ -319,25 +333,29 @@ PROMPT
 )" --dangerously-skip-permissions
 ```
 
+If the Builder fails (non-zero exit, no PR opened, or builder comments a question on the issue), see **Error Recovery: Builder Failure** below. Do not proceed to the Reviewer until a PR exists.
+
 #### 2e. Guard Check (Reviewer Agent)
 
-After the builder finishes, check sacred rules:
+The Reviewer enforces sacred rules and scope constraints on the Builder's PR branch. It runs **before** the post-change eval to catch violations early.
 
 ```bash
 BASELINE_SHA=$(git log --format=%H -1 main)
-uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA"
+uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA" --check-scope
 ```
 
-- If output is `clean` --> proceed to eval
-- If output shows `VIOLATION:` --> **revert and finalize as error** (see Error Recovery)
+- If output is `clean` --> proceed to Evaluator (Step 2f)
+- If output shows `VIOLATION:` --> **revert and finalize as error** (see Error Recovery: Guard Violation below). Do not run the post-change eval.
 
-#### 2f. Eval After
+#### 2f. Post-change Eval (Evaluator Agent -- after)
+
+The Evaluator scores the project **after** the Builder's changes, on the PR branch. This score is compared against the baseline from Step 2a.
 
 ```bash
 uv run python -m factory eval "$PROJECT_PATH"
 ```
 
-Save the output -- this is `score_after`.
+Save the output -- this is `score_after`. If the eval crashes, see **Error Recovery: Eval Crash** below.
 
 #### 2g. Decide: Keep or Revert
 
@@ -369,9 +387,19 @@ Compare `score_after` vs `score_before`:
         --issue $ISSUE_NUM
     ```
 
-### Step 3: Log (Archivist Agent)
+### Step 3: Record (Archivist Agent)
 
-After all hypotheses have been executed, invoke the Archivist to record the cycle:
+After all hypotheses have been executed, the Archivist writes experiment notes and updates the project dashboard. This runs in two phases: first the CLI command to generate structured archives, then the agent to write Obsidian notes.
+
+#### 3a. Generate Archives
+
+```bash
+uv run python -m factory archive "$PROJECT_PATH"
+```
+
+This reads the experiment history and writes structured archive files to `.factory/archive/`. If the command fails, log the error and proceed to Step 3b -- the Archivist agent can still write notes from the experiment history directly.
+
+#### 3b. Write Obsidian Notes
 
 ```bash
 claude -p "$(cat <<'PROMPT'
@@ -382,9 +410,10 @@ Project: $PROJECT_PATH
 
 ## Task
 1. Read the experiment history: uv run python -m factory history "$PROJECT_PATH"
-2. Write Obsidian experiment notes for each new experiment
-3. Update the project dashboard
-4. Write a strategy snapshot
+2. Read the archive output: cat "$PROJECT_PATH/.factory/archive/" 2>/dev/null
+3. Write Obsidian experiment notes for each new experiment
+4. Update the project dashboard
+5. Write a strategy snapshot
 
 Target vault: ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/memories/Work/Factory/
 PROMPT
