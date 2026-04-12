@@ -4,9 +4,9 @@ import asyncio
 import json
 import subprocess
 from datetime import datetime
-from unittest.mock import patch
+from unittest.mock import patch, call
 
-from factory.cli import main, build_parser
+from factory.cli import main, build_parser, _is_github_url
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -313,6 +313,116 @@ class TestCmdArchive:
         mock_exp.assert_called_once()
         mock_dash.assert_called_once()
         mock_strat.assert_called_once()
+
+
+
+class TestGitHubUrlDetection:
+    def test_https_url_detected(self):
+        assert _is_github_url("https://github.com/user/repo") is True
+
+    def test_https_url_with_git_suffix(self):
+        assert _is_github_url("https://github.com/user/repo.git") is True
+
+    def test_ssh_url_detected(self):
+        assert _is_github_url("git@github.com:user/repo.git") is True
+
+    def test_local_path_not_detected(self):
+        assert _is_github_url("/some/local/path") is False
+
+    def test_relative_path_not_detected(self):
+        assert _is_github_url("./relative/path") is False
+
+    def test_other_url_not_detected(self):
+        assert _is_github_url("https://gitlab.com/user/repo") is False
+
+
+class TestRunModeFlag:
+    def test_mode_default_is_improve(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.mode == "improve"
+
+    def test_mode_discover(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--mode", "discover"])
+        assert args.mode == "discover"
+
+    def test_mode_improve_explicit(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--mode", "improve"])
+        assert args.mode == "improve"
+
+
+class TestRunWithGitHubUrl:
+    def test_run_clones_https_url(self, capsys):
+        """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes claude."""
+        url = "https://github.com/user/repo"
+        with patch("factory.cli.subprocess.run") as mock_run, \
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"):
+            result = main(["run", url])
+
+        assert result == 0
+        assert mock_run.call_count == 2
+        # First call: git clone
+        clone_call = mock_run.call_args_list[0]
+        assert clone_call == call(
+            ["git", "clone", url, "/tmp/factory-abc"], check=True,
+        )
+        # Second call: claude -p
+        claude_call = mock_run.call_args_list[1]
+        assert claude_call[0][0][0] == "claude"
+
+        out = capsys.readouterr().out
+        assert "Cloned https://github.com/user/repo to /tmp/factory-abc" in out
+
+    def test_run_clones_ssh_url(self, capsys):
+        """cmd_run clones a GitHub SSH URL into a temp dir."""
+        url = "git@github.com:user/repo.git"
+        with patch("factory.cli.subprocess.run") as mock_run, \
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"):
+            result = main(["run", url])
+
+        assert result == 0
+        clone_call = mock_run.call_args_list[0]
+        assert clone_call == call(
+            ["git", "clone", url, "/tmp/factory-xyz"], check=True,
+        )
+        out = capsys.readouterr().out
+        assert f"Cloned {url} to /tmp/factory-xyz" in out
+
+    def test_run_local_path_no_clone(self, tmp_path):
+        """cmd_run with a local path does not clone."""
+        with patch("factory.cli.subprocess.run") as mock_run:
+            result = main(["run", str(tmp_path)])
+
+        assert result == 0
+        # Only one subprocess call (claude), no git clone
+        mock_run.assert_called_once()
+        args = mock_run.call_args[0][0]
+        assert args[0] == "claude"
+
+    def test_run_discover_mode_prompt(self, tmp_path):
+        """cmd_run with --mode=discover uses the Discover mode prompt."""
+        with patch("factory.cli.subprocess.run") as mock_run:
+            result = main(["run", str(tmp_path), "--mode", "discover"])
+
+        assert result == 0
+        claude_call = mock_run.call_args
+        prompt = claude_call[0][0][2]  # ["claude", "-p", prompt, ...]
+        assert "Discover mode" in prompt
+        assert "Do NOT run the Improve loop" in prompt
+
+    def test_run_improve_mode_prompt(self, tmp_path):
+        """cmd_run with --mode=improve (default) uses the Improve mode prompt."""
+        with patch("factory.cli.subprocess.run") as mock_run:
+            result = main(["run", str(tmp_path), "--mode", "improve"])
+
+        assert result == 0
+        claude_call = mock_run.call_args
+        prompt = claude_call[0][0][2]
+        assert "Follow the skill instructions below" in prompt
+        # The improve prompt should NOT start with the discover preamble
+        assert prompt.startswith("You are the Factory orchestrator. Follow the skill")
 
 
 class TestMainErrorHandling:

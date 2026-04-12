@@ -7,6 +7,7 @@ import asyncio
 import json
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -280,8 +281,23 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+def _is_github_url(path: str) -> bool:
+    """Return True if path looks like a GitHub URL."""
+    return path.startswith("https://github.com/") or path.startswith("git@github.com:")
+
+
+
 def cmd_run(args: argparse.Namespace) -> int:
-    project_path = Path(args.path).resolve()
+    path = args.path
+
+    # If a GitHub URL is provided, clone into a temp directory
+    if _is_github_url(path):
+        tmp_dir = tempfile.mkdtemp(prefix="factory-")
+        subprocess.run(["git", "clone", path, tmp_dir], check=True)
+        print(f"Cloned {path} to {tmp_dir}")
+        project_path = Path(tmp_dir).resolve()
+    else:
+        project_path = Path(path).resolve()
 
     # Read the SKILL.md from the remote-factory repo root
     skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
@@ -291,14 +307,27 @@ def cmd_run(args: argparse.Namespace) -> int:
         print(f"Error: SKILL.md not found at {skill_path}", file=sys.stderr)
         return 1
 
-    prompt = (
-        "You are the Factory orchestrator. "
-        "Follow the skill instructions below to run the factory loop on the project.\n\n"
-        "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
-        "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
-        f"Project path: {project_path}\n\n"
-        f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
-    )
+    mode = getattr(args, "mode", "improve")
+
+    if mode == "discover":
+        prompt = (
+            "You are the Factory orchestrator. "
+            "Run Discover mode: introspect the project, auto-detect eval dimensions, "
+            "and generate the eval harness. Do NOT run the Improve loop.\n\n"
+            "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
+            "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
+            f"Project path: {project_path}\n\n"
+            f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
+        )
+    else:
+        prompt = (
+            "You are the Factory orchestrator. "
+            "Follow the skill instructions below to run the factory loop on the project.\n\n"
+            "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
+            "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
+            f"Project path: {project_path}\n\n"
+            f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
+        )
 
     try:
         subprocess.run(
@@ -389,7 +418,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     # run
     p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
-    p.add_argument("path", help="Path to the project")
+    p.add_argument("path", help="Path to the project or GitHub URL")
+    p.add_argument(
+        "--mode",
+        choices=["discover", "improve"],
+        default="improve",
+        help="Run mode: discover (auto-detect evals) or improve (default improvement loop)",
+    )
 
     return parser
 
