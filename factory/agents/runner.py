@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -64,12 +65,17 @@ async def invoke_agent(
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
+    # Clean environment: remove VIRTUAL_ENV so the target project's own
+    # venv is used (prevents mypy/pytest from checking wrong packages).
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=project_path,
+            env=env,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             proc.communicate(), timeout=timeout
