@@ -7,6 +7,9 @@ FACTORY_TAG = "factory"
 EXPERIMENT_TAG = "experiment"
 PROJECT_TAG = "project"
 STRATEGY_TAG = "strategy"
+DECISION_TAG = "decision"
+CONCEPT_TAG = "concept"
+SOURCE_TAG = "source"
 
 # Required frontmatter fields per note type
 EXPERIMENT_FRONTMATTER = [
@@ -27,6 +30,14 @@ STRATEGY_FRONTMATTER = [
     "date",
 ]
 
+DECISION_FRONTMATTER = [
+    "tags",
+    "project",
+    "date",
+    "context",
+    "outcome",
+]
+
 
 def experiment_tags(project_name: str) -> list[str]:
     """Return standard tags for an experiment note."""
@@ -41,3 +52,13 @@ def project_tags(project_name: str) -> list[str]:
 def strategy_tags(project_name: str) -> list[str]:
     """Return standard tags for a strategy note."""
     return [FACTORY_TAG, STRATEGY_TAG, project_name]
+
+
+def decision_tags(project_name: str) -> list[str]:
+    """Return standard tags for a decision note."""
+    return [FACTORY_TAG, DECISION_TAG, project_name]
+
+
+def wikilink(title: str) -> str:
+    """Return an Obsidian wikilink."""
+    return f"[[{title}]]"
