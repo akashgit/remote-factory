@@ -44,6 +44,14 @@ Write `.factory/strategy/current.md` with this format:
 - <changes that failed before and why — learn from history>
 ```
 
+## Research Input
+
+When the Researcher provides a research report (at `.factory/strategy/research.md`), use the external findings to:
+- Identify patterns from similar projects that could improve this one
+- Rank hypotheses that address gaps revealed by best practices
+- Reference specific external projects or techniques in hypothesis rationale
+- Avoid reinventing solutions that already exist in the ecosystem
+
 ## Rules
 
 - Each hypothesis must be scoped to one PR's worth of work
