@@ -28,7 +28,7 @@ PROJECT_PATH="$(pwd)"
 ```bash
 cd ~/factory-projects/remote-factory
 source .venv/bin/activate
-python -m factory detect "$PROJECT_PATH"
+uv run python -m factory detect "$PROJECT_PATH"
 ```
 
 This prints one of five states:
@@ -74,7 +74,7 @@ PROMPT
 2. **After the delegate finishes**, re-run state detection:
 
 ```bash
-python -m factory detect "$PROJECT_PATH"
+uv run python -m factory detect "$PROJECT_PATH"
 ```
 
 3. If the state has advanced to `no_factory`, continue to **Discover mode**. If still `incomplete`, the delegate left work for Akash -- stop and report status.
@@ -88,7 +88,7 @@ The repo exists but the factory hasn't been set up. Auto-discover eval dimension
 ### Step 1: Run Discovery
 
 ```bash
-python -m factory discover "$PROJECT_PATH"
+uv run python -m factory discover "$PROJECT_PATH"
 ```
 
 This introspects the project (language, framework, project type, test/lint/type-check commands) and:
@@ -107,7 +107,7 @@ cat "$PROJECT_PATH/eval/score.py"
 ### Step 3: Re-detect State
 
 ```bash
-python -m factory detect "$PROJECT_PATH"
+uv run python -m factory detect "$PROJECT_PATH"
 ```
 
 State should now be `evals_pending_review`. Continue to **Review mode**.
@@ -179,7 +179,7 @@ Edit `factory.md` to fill in:
 ### Step 5: Initialize the Factory Store
 
 ```bash
-python -m factory init "$PROJECT_PATH"
+uv run python -m factory init "$PROJECT_PATH"
 ```
 
 This parses `factory.md` into `.factory/config.json` and creates the experiment store.
@@ -187,7 +187,7 @@ This parses `factory.md` into `.factory/config.json` and creates the experiment 
 ### Step 6: Run Baseline Eval
 
 ```bash
-python -m factory eval "$PROJECT_PATH"
+uv run python -m factory eval "$PROJECT_PATH"
 ```
 
 Record the baseline score. This is the starting point -- all future changes must score at or above this level.
@@ -220,7 +220,7 @@ Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prom
 Project: $PROJECT_PATH
 
 ## Context
-$(python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
+$(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
 
 $(cat "$PROJECT_PATH/factory.md")
 
@@ -228,7 +228,7 @@ $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo "No prior
 
 $(cd "$PROJECT_PATH" && git log --oneline -20)
 
-$(python -m factory eval "$PROJECT_PATH")
+$(uv run python -m factory eval "$PROJECT_PATH")
 
 ## Task
 Observe the project state, analyze patterns, and write 1-3 hypotheses to
@@ -249,7 +249,7 @@ For each hypothesis in `strategy/current.md`, in priority order:
 #### 2a. Record Baseline Score
 
 ```bash
-python -m factory eval "$PROJECT_PATH"
+uv run python -m factory eval "$PROJECT_PATH"
 ```
 
 Save the output -- this is `score_before`.
@@ -257,7 +257,7 @@ Save the output -- this is `score_before`.
 #### 2b. Begin Experiment
 
 ```bash
-python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
+uv run python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 This prints the experiment ID. Save it as `$EXP_ID`.
@@ -325,7 +325,7 @@ After the builder finishes, check sacred rules:
 
 ```bash
 BASELINE_SHA=$(git log --format=%H -1 main)
-python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA"
+uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA"
 ```
 
 - If output is `clean` --> proceed to eval
@@ -334,7 +334,7 @@ python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA"
 #### 2f. Eval After
 
 ```bash
-python -m factory eval "$PROJECT_PATH"
+uv run python -m factory eval "$PROJECT_PATH"
 ```
 
 Save the output -- this is `score_after`.
@@ -347,7 +347,7 @@ Compare `score_after` vs `score_before`:
   - Merge the PR: `gh pr merge <pr-number> -R <owner>/<repo>`
   - Finalize the experiment:
     ```bash
-    python -m factory finalize "$PROJECT_PATH" \
+    uv run python -m factory finalize "$PROJECT_PATH" \
         --id $EXP_ID \
         --verdict keep \
         --hypothesis "<hypothesis>" \
@@ -361,7 +361,7 @@ Compare `score_after` vs `score_before`:
   - Revert any changes: `git checkout main`
   - Finalize the experiment:
     ```bash
-    python -m factory finalize "$PROJECT_PATH" \
+    uv run python -m factory finalize "$PROJECT_PATH" \
         --id $EXP_ID \
         --verdict revert \
         --hypothesis "<hypothesis>" \
@@ -381,7 +381,7 @@ Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prom
 Project: $PROJECT_PATH
 
 ## Task
-1. Read the experiment history: python -m factory history "$PROJECT_PATH"
+1. Read the experiment history: uv run python -m factory history "$PROJECT_PATH"
 2. Write Obsidian experiment notes for each new experiment
 3. Update the project dashboard
 4. Write a strategy snapshot
@@ -394,7 +394,7 @@ PROMPT
 ### Step 4: Notify
 
 ```bash
-python -m factory notify "$PROJECT_PATH"
+uv run python -m factory notify "$PROJECT_PATH"
 ```
 
 ### Step 5: Commit Factory State
@@ -409,14 +409,14 @@ git commit -m "factory: log experiment results and update strategy"
 
 ## Sacred Rules
 
-These rules are **inviolable**. They are checked by `python -m factory guard` before any change is kept. A violation means the change is reverted, no exceptions.
+These rules are **inviolable**. They are checked by `uv run python -m factory guard` before any change is kept. A violation means the change is reverted, no exceptions.
 
 1. **Do not delete or overwrite existing tests** -- tests may be extended but never removed
 2. **Do not modify files outside the declared scope** -- `factory.md` defines which files are modifiable
 3. **Do not introduce secrets or credentials** -- no API keys, tokens, or passwords in the repo
 4. **Do not lower the eval threshold** -- the bar only goes up
 5. **Do not skip the eval step** -- every change must be scored before it can be kept
-6. **Do not merge without guard check passing** -- `python -m factory guard` must print `clean`
+6. **Do not merge without guard check passing** -- `uv run python -m factory guard` must print `clean`
 
 ---
 
@@ -430,7 +430,7 @@ If the builder invocation fails (non-zero exit, no PR opened, or builder comment
 2. If the builder posted a question, answer it and re-invoke the builder
 3. If the builder crashed, finalize the experiment as error:
    ```bash
-   python -m factory finalize "$PROJECT_PATH" \
+   uv run python -m factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict error \
        --hypothesis "<hypothesis>" \
@@ -440,14 +440,14 @@ If the builder invocation fails (non-zero exit, no PR opened, or builder comment
 
 ### Eval Crash
 
-If `python -m factory eval` fails (non-zero exit without producing a valid score):
+If `uv run python -m factory eval` fails (non-zero exit without producing a valid score):
 
 1. Check the eval script: `cat "$PROJECT_PATH/eval/score.py"`
 2. Check for syntax errors or missing dependencies
 3. If fixable, fix the eval script and retry
 4. If not fixable, finalize the experiment as error:
    ```bash
-   python -m factory finalize "$PROJECT_PATH" \
+   uv run python -m factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict error \
        --notes "Eval crashed: <error output>"
@@ -455,14 +455,14 @@ If `python -m factory eval` fails (non-zero exit without producing a valid score
 
 ### Guard Violation
 
-If `python -m factory guard` reports violations:
+If `uv run python -m factory guard` reports violations:
 
 1. The change **must be reverted** -- no exceptions
 2. Close the PR without merging: `gh pr close <pr-number> -R <owner>/<repo>`
 3. Revert to the pre-experiment state: `git checkout main`
 4. Finalize as revert with the violation details:
    ```bash
-   python -m factory finalize "$PROJECT_PATH" \
+   uv run python -m factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict revert \
        --notes "Guard violation: <violation details>"
@@ -518,6 +518,6 @@ Write `$PROJECT_PATH/.factory/strategy/current.md` with:
 If context has been compacted and prior details are lost:
 
 1. Read `$PROJECT_PATH/.factory/strategy/current.md`
-2. Run `python -m factory history "$PROJECT_PATH"` to see experiment log
+2. Run `uv run python -m factory history "$PROJECT_PATH"` to see experiment log
 3. Check open issues and PRs: `gh issue list -R <owner>/<repo> --state open`
 4. Continue from the "Next action" in the strategy file
