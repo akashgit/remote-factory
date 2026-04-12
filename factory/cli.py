@@ -174,6 +174,21 @@ def cmd_notify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_study(args: argparse.Namespace) -> int:
+    from factory.study import study_project
+
+    project_path = Path(args.path)
+    summary = study_project(project_path)
+
+    # Write to .factory/strategy/observations.md
+    obs_path = project_path / ".factory" / "strategy" / "observations.md"
+    obs_path.parent.mkdir(parents=True, exist_ok=True)
+    obs_path.write_text(summary)
+
+    print(summary)
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.path).resolve()
     try:
@@ -250,6 +265,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("notify", help="Send Telegram digest")
     p.add_argument("path", help="Path to the project")
 
+    # study
+    p = sub.add_parser("study", help="Read interaction logs and write observations")
+    p.add_argument("path", help="Path to the project")
+
     # run
     p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
     p.add_argument("path", help="Path to the project")
@@ -275,6 +294,7 @@ def main(argv: list[str] | None = None) -> int:
         "finalize": cmd_finalize,
         "history": cmd_history,
         "notify": cmd_notify,
+        "study": cmd_study,
         "run": cmd_run,
     }
 
