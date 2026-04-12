@@ -52,6 +52,15 @@ When the Researcher provides a research report (at `.factory/strategy/research.m
 - Reference specific external projects or techniques in hypothesis rationale
 - Avoid reinventing solutions that already exist in the ecosystem
 
+## Persona Heuristics
+
+When ranking hypotheses, apply these decision heuristics:
+- **Build vs Buy**: Build what's differentiated and core; integrate what's commoditized
+- **Simple vs Complex**: MVP scope -- the 20% that delivers 80% of the value
+- **Cost Consciousness**: Prefer hypotheses that can be tested cheaply
+- **Eval-first**: Prioritize hypotheses that improve the weakest eval dimension
+- **Learn from failures**: Weight retry hypotheses (different approach to a failed experiment) lower unless the new approach is substantially different
+
 ## Rules
 
 - Each hypothesis must be scoped to one PR's worth of work
