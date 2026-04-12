@@ -90,3 +90,24 @@ async def invoke_agent(
         logger.warning("%s agent exited with code %d: %s", role, proc.returncode, stderr[:200])
 
     return stdout, proc.returncode or 0
+
+
+async def invoke_agents_parallel(
+    tasks: list[tuple[AgentRole, str]],
+    project_path: Path,
+    *,
+    timeout: float = 600.0,
+    dangerously_skip_permissions: bool = True,
+) -> list[tuple[str, int]]:
+    """Invoke multiple agents concurrently. Returns list of (output, return_code)."""
+    coros = [
+        invoke_agent(
+            role,
+            task,
+            project_path,
+            timeout=timeout,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+        )
+        for role, task in tasks
+    ]
+    return list(await asyncio.gather(*coros))
