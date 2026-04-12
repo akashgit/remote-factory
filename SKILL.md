@@ -50,6 +50,36 @@ This prints one of five states:
 
 ---
 
+## Obsidian Integration
+
+The factory uses an Obsidian vault named "factory" as its institutional memory. Agents can interact with it using:
+
+### obsidian-cli commands
+- `obsidian create vault="factory" name="path/to/note" content="..." silent` -- create a note
+- `obsidian read vault="factory" file="note name"` -- read a note
+- `obsidian search vault="factory" query="search term" limit=10` -- search the vault
+- `obsidian append vault="factory" file="note name" content="..."` -- append to a note
+- `obsidian property:set vault="factory" name="status" value="done" file="note name"` -- set a property
+
+### Vault structure
+```
+~/obsidian-vaults/factory/
+├── 00-Factory/          # Cross-project knowledge (Dashboard, Patterns, Decisions)
+├── 10-Projects/{name}/  # Per-project notes (Experiments, Strategies, Decisions)
+├── 20-Knowledge/        # Concepts and external Sources
+├── _templates/          # Note templates
+└── MEMORY.md            # Thin pointer index for agent orientation
+```
+
+### Syntax (obsidian-markdown)
+- Wikilinks: `[[note name]]`, `[[note name|display text]]`, `[[note#heading]]`
+- Embeds: `![[note]]`, `![[image.png|300]]`
+- Callouts: `> [!tip] Title` (types: note, info, tip, warning, danger, example, quote)
+- Tags: `#factory`, `#experiment`, `#strategy`
+- Properties: YAML frontmatter between `---` markers
+
+---
+
 ## Mode: Build (`no_repo` / `incomplete`)
 
 The project either doesn't exist or has open plan/implementation issues. Invoke the delegate skill to scaffold or continue building.
