@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import os
+import signal
 import subprocess
 from datetime import datetime
 from unittest.mock import patch, call
@@ -432,3 +434,113 @@ class TestMainErrorHandling:
             result = main(["detect", "/some/path"])
         assert result == 1
         assert "boom" in capsys.readouterr().err
+
+
+class TestHeartbeatParserFlags:
+    def test_loop_flag_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.loop is False
+
+    def test_loop_flag_enabled(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--loop"])
+        assert args.loop is True
+
+    def test_interval_default_1800(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.interval == 1800
+
+    def test_interval_custom(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--interval", "60"])
+        assert args.interval == 60
+
+    def test_max_cycles_default_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.max_cycles is None
+
+    def test_max_cycles_custom(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--max-cycles", "5"])
+        assert args.max_cycles == 5
+
+
+class TestHeartbeatLoop:
+    def test_no_loop_single_run(self, tmp_path):
+        """Without --loop, cmd_run executes exactly one cycle."""
+        with patch("factory.cli.subprocess.run") as mock_run:
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_run.assert_called_once()
+
+    def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
+        """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
+        with patch("factory.cli.subprocess.run") as mock_run, \
+             patch("factory.cli.time.sleep") as mock_sleep:
+            result = main([
+                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "10",
+            ])
+        assert result == 0
+        # 3 cycles = 3 subprocess calls (claude)
+        assert mock_run.call_count == 3
+        # sleep called between cycles: after cycle 1 and 2, not after cycle 3
+        assert mock_sleep.call_count == 2
+        mock_sleep.assert_called_with(10)
+
+        out = capsys.readouterr().out
+        assert "[factory] Cycle 1 started at" in out
+        assert "[factory] Cycle 2 started at" in out
+        assert "[factory] Cycle 3 started at" in out
+        assert "[factory] Shutting down gracefully after 3 cycles." in out
+
+    def test_loop_single_cycle(self, tmp_path, capsys):
+        """--max-cycles=1 runs one cycle, no sleep, then exits."""
+        with patch("factory.cli.subprocess.run"):
+            result = main([
+                "run", str(tmp_path), "--loop", "--max-cycles", "1",
+            ])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "[factory] Cycle 1 started at" in out
+        assert "[factory] Shutting down gracefully after 1 cycles." in out
+
+    def test_loop_graceful_sigterm(self, tmp_path, capsys):
+        """SIGTERM during sleep causes clean exit."""
+        def _interrupt_during_sleep(interval: int) -> None:
+            # Simulate SIGTERM arriving during sleep
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        with patch("factory.cli.subprocess.run"), \
+             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "[factory] Shutting down gracefully after 1 cycles." in out
+
+    def test_loop_graceful_sigint(self, tmp_path, capsys):
+        """SIGINT during sleep causes clean exit."""
+        def _interrupt_during_sleep(interval: int) -> None:
+            os.kill(os.getpid(), signal.SIGINT)
+
+        with patch("factory.cli.subprocess.run"), \
+             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "[factory] Shutting down gracefully after 1 cycles." in out
+
+    def test_loop_logs_sleep_message(self, tmp_path, capsys):
+        """Verify the sleep log message appears between cycles."""
+        with patch("factory.cli.subprocess.run"), \
+             patch("factory.cli.time.sleep"):
+            result = main([
+                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "60",
+            ])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "[factory] Cycle 1 completed. Sleeping for 60s..." in out
