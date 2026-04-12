@@ -232,6 +232,54 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 
+def cmd_archive(args: argparse.Namespace) -> int:
+    from factory.obsidian.notes import (
+        write_experiment_note,
+        write_project_dashboard,
+        write_strategy_note,
+    )
+    from factory.state import detect_state
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path)
+    store = ExperimentStore(project_path)
+    records = _run(store.load_history())
+
+    if not records:
+        print("Nothing to archive.")
+        return 0
+
+    project_name = project_path.name
+    state = detect_state(project_path).value
+
+    # Write experiment notes
+    for record in records:
+        write_experiment_note(project_name, record)
+
+    # Build eval_dimensions list for dashboard
+    eval_dimensions: list[dict] | None = None
+    profile = _run(store.read_eval_profile())
+    if profile:
+        eval_dimensions = [d.model_dump() for d in profile.dimensions]
+
+    # Current score from latest experiment
+    scores = [r.score_after for r in records if r.score_after is not None]
+    current_score = scores[-1] if scores else None
+
+    write_project_dashboard(project_name, state, current_score, records, eval_dimensions)
+
+    # Write strategy note if strategy exists
+    strategy_text = _run(store.read_strategy())
+    if strategy_text:
+        write_strategy_note(project_name, strategy_text)
+
+    from factory.obsidian.notes import _get_vault_path
+
+    vault_path = _get_vault_path()
+    print(f"Archived {len(records)} experiments to {vault_path}")
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.path).resolve()
 
@@ -335,6 +383,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
 
 
+    # archive
+    p = sub.add_parser("archive", help="Write experiment notes to Obsidian vault")
+    p.add_argument("path", help="Path to the project")
+
     # run
     p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
     p.add_argument("path", help="Path to the project")
@@ -362,6 +414,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "archive": cmd_archive,
         "run": cmd_run,
     }
 
