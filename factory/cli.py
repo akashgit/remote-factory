@@ -189,6 +189,49 @@ def cmd_study(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_status(args: argparse.Namespace) -> int:
+    from factory.state import detect_state
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    state = detect_state(project_path)
+    print(f"Project: {project_path}")
+    print(f"State: {state.value}")
+
+    if state.value == "has_factory":
+        store = ExperimentStore(project_path)
+        try:
+            config = _run(store.read_config())
+        except FileNotFoundError:
+            config = None
+
+        # Try to read latest eval score
+        profile = _run(store.read_eval_profile())
+        if profile:
+            dims = ", ".join(d.name for d in profile.dimensions)
+            print(f"Eval dimensions: {dims}")
+
+        records = _run(store.load_history())
+        if records:
+            kept = sum(1 for r in records if r.verdict == "keep")
+            reverted = sum(1 for r in records if r.verdict == "revert")
+            total = len(records)
+            print(f"Experiments: {total} total ({kept} kept, {reverted} reverted)")
+            last = records[-1]
+            print(f'Last experiment: #{last.id} — "{last.hypothesis}" ({last.verdict})')
+            scores = [r.score_after for r in records if r.score_after is not None]
+            if scores:
+                print(f"Latest score: {scores[-1]:.3f}")
+        else:
+            print("Experiments: none")
+
+        if config:
+            print(f"Goal: {config.goal}")
+
+    return 0
+
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.path).resolve()
     try:
@@ -269,6 +312,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("study", help="Read interaction logs and write observations")
     p.add_argument("path", help="Path to the project")
 
+    # status
+    p = sub.add_parser("status", help="Print project status summary")
+    p.add_argument("path", help="Path to the project")
+
+
     # run
     p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
     p.add_argument("path", help="Path to the project")
@@ -295,6 +343,7 @@ def main(argv: list[str] | None = None) -> int:
         "history": cmd_history,
         "notify": cmd_notify,
         "study": cmd_study,
+        "status": cmd_status,
         "run": cmd_run,
     }
 
