@@ -278,6 +278,7 @@ class TestCmdArchive:
         with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
              patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
              patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
+             patch("factory.obsidian.notes.update_memory_index"), \
              patch("factory.obsidian.notes._get_vault_path",
                    return_value=tmp_project / "vault"):
             result = main(["archive", str(tmp_project)])
@@ -307,6 +308,7 @@ class TestCmdArchive:
         with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
              patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
              patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
+             patch("factory.obsidian.notes.update_memory_index"), \
              patch("factory.obsidian.notes._get_vault_path",
                    return_value=tmp_project / "vault"):
             result = main(["archive", str(tmp_project)])
@@ -316,6 +318,21 @@ class TestCmdArchive:
         mock_dash.assert_called_once()
         mock_strat.assert_called_once()
 
+
+
+class TestCmdVaultInit:
+    def test_vault_init_parser(self):
+        parser = build_parser()
+        args = parser.parse_args(["vault-init"])
+        assert args.command == "vault-init"
+
+    def test_vault_init_calls_init_vault(self, tmp_path, capsys, monkeypatch):
+        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+        result = main(["vault-init"])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "Factory vault initialized" in out
+        assert (tmp_path / "vault" / ".obsidian").is_dir()
 
 
 class TestGitHubUrlDetection:

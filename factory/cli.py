@@ -237,6 +237,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_archive(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import (
+        update_memory_index,
         write_experiment_note,
         write_project_dashboard,
         write_strategy_note,
@@ -276,10 +277,21 @@ def cmd_archive(args: argparse.Namespace) -> int:
     if strategy_text:
         write_strategy_note(project_name, strategy_text)
 
+    # Update MEMORY.md index
+    update_memory_index()
+
     from factory.obsidian.notes import _get_vault_path
 
     vault_path = _get_vault_path()
     print(f"Archived {len(records)} experiments to {vault_path}")
+    return 0
+
+
+def cmd_vault_init(args: argparse.Namespace) -> int:
+    from factory.obsidian.notes import init_vault
+
+    vault_path = init_vault()
+    print(f"Factory vault initialized at {vault_path}")
     return 0
 
 
@@ -473,6 +485,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("archive", help="Write experiment notes to Obsidian vault")
     p.add_argument("path", help="Path to the project")
 
+    # vault-init
+    p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
+
     # run
     p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
     p.add_argument("path", help="Path to the project or GitHub URL")
@@ -519,6 +534,7 @@ def main(argv: list[str] | None = None) -> int:
         "study": cmd_study,
         "status": cmd_status,
         "archive": cmd_archive,
+        "vault-init": cmd_vault_init,
         "run": cmd_run,
     }
 
