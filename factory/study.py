@@ -188,22 +188,55 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
     Returns a list of note summaries (first 200 chars of each note).
     Gracefully returns empty list if vault doesn't exist.
     """
-    from factory.obsidian.notes import _get_vault_path, _FACTORY_DIR
+    from factory.obsidian.notes import _get_vault_path, _KNOWLEDGE_DIR, _PROJECTS_DIR
 
     vault = _get_vault_path()
     if not vault.exists():
         return []
 
-    # Search across Experiments, Projects, and Strategies
     summaries: list[str] = []
-    for subdir in ["Experiments", "Projects", "Strategies"]:
-        notes_dir = vault / _FACTORY_DIR / subdir
+
+    # Project-specific notes
+    project_dir = vault / _PROJECTS_DIR / project_name
+    for subdir in ["Experiments", "Strategies"]:
+        notes_dir = project_dir / subdir
         if not notes_dir.exists():
             continue
         for note_path in sorted(notes_dir.glob(f"{project_name}*.md")):
             try:
                 content = note_path.read_text(errors="replace")
                 # Skip frontmatter
+                if content.startswith("---"):
+                    end = content.find("---", 3)
+                    if end != -1:
+                        content = content[end + 3:].strip()
+                summary = content[:200].strip()
+                if summary:
+                    summaries.append(summary)
+            except OSError:
+                continue
+
+    # Project dashboard
+    dashboard = project_dir / f"{project_name}.md"
+    if dashboard.exists():
+        try:
+            content = dashboard.read_text(errors="replace")
+            if content.startswith("---"):
+                end = content.find("---", 3)
+                if end != -1:
+                    content = content[end + 3:].strip()
+            summary = content[:200].strip()
+            if summary:
+                summaries.append(summary)
+        except OSError:
+            pass
+
+    # Cross-project knowledge
+    knowledge_dir = vault / _KNOWLEDGE_DIR / "Concepts"
+    if knowledge_dir.exists():
+        for note_path in sorted(knowledge_dir.glob("*.md")):
+            try:
+                content = note_path.read_text(errors="replace")
                 if content.startswith("---"):
                     end = content.find("---", 3)
                     if end != -1:
