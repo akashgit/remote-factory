@@ -129,11 +129,17 @@ class ExperimentStore:
         return max(ids) + 1 if ids else 1
 
     async def begin(self, hypothesis: str) -> int:
-        """Create experiments/NNN/hypothesis.md, return the experiment ID."""
+        """Create experiments/NNN/hypothesis.md, return the experiment ID.
+
+        Idempotent: if the next experiment dir already exists (e.g. from a
+        previous interrupted run), return its ID without crashing.
+        """
         exp_id = await self.next_id()
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
-        exp_dir.mkdir(parents=True)
-        (exp_dir / "hypothesis.md").write_text(hypothesis)
+        exp_dir.mkdir(parents=True, exist_ok=True)
+        hyp_path = exp_dir / "hypothesis.md"
+        if not hyp_path.exists():
+            hyp_path.write_text(hypothesis)
         return exp_id
 
     async def save_eval(
@@ -162,8 +168,12 @@ class ExperimentStore:
         (exp_dir / "changes.diff").write_text(result.stdout)
 
     async def finalize(self, exp_id: int, record: ExperimentRecord) -> None:
-        """Write verdict.json and append row to results.tsv."""
+        """Write verdict.json and append row to results.tsv.
+
+        Creates the experiment directory if it is missing (e.g. after git clean).
+        """
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
+        exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / "verdict.json").write_text(
             json.dumps(record.model_dump(), indent=2, default=str) + "\n"
         )
