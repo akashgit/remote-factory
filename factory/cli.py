@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import signal
 import subprocess
 import sys
@@ -300,6 +301,174 @@ def _is_github_url(path: str) -> bool:
     return path.startswith("https://github.com/") or path.startswith("git@github.com:")
 
 
+# ── tmux integration ──────────────────────────────────────────
+
+
+_TMUX_SESSION_PREFIX = "factory-"
+
+
+def _tmux_session_name(project_path: Path) -> str:
+    """Derive a tmux session name from a project path."""
+    return f"{_TMUX_SESSION_PREFIX}{project_path.name}"
+
+
+def _tmux_available() -> bool:
+    """Check if tmux is installed."""
+    try:
+        subprocess.run(["tmux", "-V"], capture_output=True, check=True)
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return False
+
+
+def cmd_tmux(args: argparse.Namespace) -> int:
+    """Launch factory run inside a detached tmux session."""
+    if not _tmux_available():
+        print("Error: tmux is not installed.", file=sys.stderr)
+        return 1
+
+    project_path = Path(args.path).resolve()
+    session = args.session or _tmux_session_name(project_path)
+
+    # Check if session already exists
+    check = subprocess.run(
+        ["tmux", "has-session", "-t", session],
+        capture_output=True,
+    )
+    if check.returncode == 0:
+        if args.attach:
+            print(f"Attaching to existing session: {session}")
+            os.execvp("tmux", ["tmux", "attach-session", "-t", session])
+        print(f"Session '{session}' already running. Use --attach or:")
+        print(f"  tmux attach -t {session}")
+        return 0
+
+    # Build the factory run command
+    factory_root = Path(__file__).resolve().parent.parent
+    run_cmd_parts = [
+        f"cd {factory_root}",
+        "source .venv/bin/activate",
+        # Ensure Vertex AI env vars are set
+        "export CLAUDE_CODE_USE_VERTEX=1",
+        "export CLOUD_ML_REGION=your-region",
+        "export ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project",
+        # Ensure gcloud SDK is on PATH
+        'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
+    ]
+
+    run_args = f"uv run python -m factory run {project_path}"
+    if args.mode:
+        run_args += f" --mode {args.mode}"
+    if args.loop:
+        run_args += " --loop"
+    if args.interval:
+        run_args += f" --interval {args.interval}"
+    if args.max_cycles is not None:
+        run_args += f" --max-cycles {args.max_cycles}"
+
+    run_cmd_parts.append(run_args)
+    shell_cmd = " && ".join(run_cmd_parts)
+
+    # Create detached tmux session
+    result = subprocess.run(
+        ["tmux", "new-session", "-d", "-s", session, "-x", "200", "-y", "50", shell_cmd],
+    )
+    if result.returncode != 0:
+        print(f"Error: failed to create tmux session '{session}'", file=sys.stderr)
+        return 1
+
+    print(f"Factory launched in tmux session: {session}")
+    print(f"  tmux attach -t {session}    # attach")
+    print(f"  tmux kill-session -t {session}  # stop")
+
+    if args.attach:
+        os.execvp("tmux", ["tmux", "attach-session", "-t", session])
+
+    return 0
+
+
+def cmd_tmux_ls(args: argparse.Namespace) -> int:
+    """List running factory tmux sessions."""
+    if not _tmux_available():
+        print("Error: tmux is not installed.", file=sys.stderr)
+        return 1
+
+    result = subprocess.run(
+        ["tmux", "list-sessions", "-F", "#{session_name}\t#{session_created}\t#{session_windows}"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print("No tmux sessions running.")
+        return 0
+
+    factory_sessions = []
+    for line in result.stdout.strip().splitlines():
+        parts = line.split("\t")
+        name = parts[0]
+        if name.startswith(_TMUX_SESSION_PREFIX):
+            created = datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d %H:%M") if len(parts) > 1 else "?"
+            factory_sessions.append((name, created))
+
+    if not factory_sessions:
+        print("No factory sessions running.")
+        return 0
+
+    print(f"{'Session':<30} {'Started':<20}")
+    print("-" * 50)
+    for name, created in factory_sessions:
+        print(f"{name:<30} {created:<20}")
+    return 0
+
+
+def cmd_tmux_stop(args: argparse.Namespace) -> int:
+    """Stop a factory tmux session."""
+    if not _tmux_available():
+        print("Error: tmux is not installed.", file=sys.stderr)
+        return 1
+
+    if args.session:
+        session = args.session
+    elif args.path:
+        session = _tmux_session_name(Path(args.path).resolve())
+    else:
+        # Stop all factory sessions
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print("No tmux sessions running.")
+            return 0
+
+        killed = 0
+        for name in result.stdout.strip().splitlines():
+            if name.startswith(_TMUX_SESSION_PREFIX):
+                subprocess.run(["tmux", "kill-session", "-t", name])
+                print(f"Stopped: {name}")
+                killed += 1
+
+        if killed == 0:
+            print("No factory sessions running.")
+        else:
+            print(f"Stopped {killed} session(s).")
+        return 0
+
+    # Kill specific session
+    check = subprocess.run(
+        ["tmux", "has-session", "-t", session],
+        capture_output=True,
+    )
+    if check.returncode != 0:
+        print(f"Session '{session}' not found.")
+        return 1
+
+    subprocess.run(["tmux", "kill-session", "-t", session])
+    print(f"Stopped: {session}")
+    return 0
+
+
 
 def _run_single_cycle(project_path: Path, mode: str) -> int:
     """Execute a single factory run cycle. Returns 0 on success, 1 on error."""
@@ -510,6 +679,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum number of cycles (default: unlimited)",
     )
 
+    # tmux — launch factory run in a detached tmux session
+    p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--session", default=None, help="Custom tmux session name")
+    p.add_argument(
+        "--mode",
+        choices=["discover", "improve"],
+        default="improve",
+        help="Run mode (default: improve)",
+    )
+    p.add_argument("--loop", action="store_true", default=False, help="Enable loop mode")
+    p.add_argument("--interval", type=int, default=1800, help="Loop interval in seconds")
+    p.add_argument("--max-cycles", type=int, default=None, help="Max cycles for loop mode")
+    p.add_argument("--attach", action="store_true", default=False,
+                    help="Attach to session after creating")
+
+    # tmux-ls — list factory tmux sessions
+    sub.add_parser("tmux-ls", help="List running factory tmux sessions")
+
+    # tmux-stop — stop factory tmux sessions
+    p = sub.add_parser("tmux-stop", help="Stop factory tmux session(s)")
+    p.add_argument("--session", default=None, help="Session name to stop")
+    p.add_argument("--path", default=None, help="Project path (derives session name)")
+
     return parser
 
 
@@ -536,6 +729,9 @@ def main(argv: list[str] | None = None) -> int:
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,
         "run": cmd_run,
+        "tmux": cmd_tmux,
+        "tmux-ls": cmd_tmux_ls,
+        "tmux-stop": cmd_tmux_stop,
     }
 
     try:
