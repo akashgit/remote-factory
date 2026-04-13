@@ -91,6 +91,16 @@ def build_eval_profile(project: ProjectProfile) -> EvalProfile:
             source="fallback",
         ))
 
+    # Always add observability coverage (universally applicable, inline eval)
+    dimensions.append(EvalDimension(
+        name="observability",
+        command="(inline)",
+        weight=0.10,
+        parser="json",
+        description="Analyze logging coverage, structured logging, and request tracing",
+        source="researched",
+    ))
+
     # Normalize weights to sum to 1.0
     weight_sum = sum(d.weight for d in dimensions)
     if weight_sum > 0 and abs(weight_sum - 1.0) > 1e-9:
