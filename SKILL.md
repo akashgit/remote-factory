@@ -261,7 +261,13 @@ The Researcher performs both local analysis and deep external research.
 uv run python -m factory study "$PROJECT_PATH"
 ```
 
-This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`.
+This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`. The study now includes an **Observability Coverage** section that analyzes:
+- Function logging coverage (what fraction of functions have log statements)
+- Structured logging (JSON/structured output vs ad-hoc format strings)
+- Request tracing (unique IDs for correlating log lines)
+- Uninstrumented files (source files with zero logging)
+
+**If observability score is below 0.5**, the Strategist MUST generate at least one hypothesis to improve logging/telemetry as HIGH PRIORITY. Observable projects are foundational — the factory needs logs to learn from production behavior.
 
 **Step 0b: Deep Research (via Subagent)**
 
