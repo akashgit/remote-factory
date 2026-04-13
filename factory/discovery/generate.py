@@ -8,6 +8,92 @@ from pathlib import Path
 from factory.models import EvalDimension, EvalProfile
 
 
+# ---------------------------------------------------------------------------
+# Inline observability eval — embedded directly in generated eval/score.py
+# ---------------------------------------------------------------------------
+# Uses __WEIGHT__ as a placeholder, replaced at generation time.
+# Escaping notes:
+#   - \\b in this non-raw string → \b in the output (regex word boundary)
+#   - \\n in "\\n".join(...) → "\n".join(...) in the output (newline joiner)
+#   - f-string braces are literal (outer string is not an f-string)
+
+_OBSERVABILITY_TEMPLATE = '''\
+def eval_observability() -> dict:
+    """Analyze observability coverage: logging, structured logging, request tracing."""
+    import ast
+    import re
+    from pathlib import Path
+
+    skip = {
+        "tests", "test", ".venv", "venv", "node_modules", "__pycache__",
+        ".git", ".factory", "eval", "dist", "build", ".mypy_cache",
+    }
+    log_pats = [
+        r"\\blogger\\.\\w+\\(",
+        r"\\blogging\\.\\w+\\(",
+        r"\\blog\\.\\w+\\(",
+        r"\\bconsole\\.\\w+\\(",
+    ]
+    struct_pats = [r"\\bstructlog\\b", r"\\bpino\\b", r"\\bwinston\\b",
+                   r"\\bslog\\.\\w+\\(", r"\\btracing::"]
+    trace_pats = [r"request.id|req.id|trace.id", r"\\bcontextvars\\b|ContextVar",
+                  r"\\bopentelemetry\\b", r"trace.context|TraceContext|span"]
+
+    sources = [f for f in Path(".").rglob("*.py")
+               if not any(p in f.parts for p in skip)]
+    total_fn = logged_fn = total_log = 0
+    has_struct = has_trace = False
+
+    for src in sources:
+        try:
+            code = src.read_text(errors="replace")
+        except OSError:
+            continue
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            continue
+        lines = code.splitlines()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if node.name.startswith("__"):
+                    continue
+                total_fn += 1
+                start = node.lineno - 1
+                end = node.end_lineno or start + 1
+                body = "\\n".join(lines[start:end])
+                for pat in log_pats:
+                    if re.search(pat, body):
+                        logged_fn += 1
+                        break
+        for pat in log_pats:
+            total_log += len(re.findall(pat, code))
+        for pat in struct_pats:
+            if re.search(pat, code):
+                has_struct = True
+        for pat in trace_pats:
+            if re.search(pat, code, re.IGNORECASE):
+                has_trace = True
+
+    if total_fn == 0:
+        return {"name": "observability", "score": 0.0, "weight": __WEIGHT__,
+                "passed": True, "details": "No functions found to analyze"}
+
+    cov = logged_fn / total_fn
+    density = min(1.0, total_log / max(total_fn, 1))
+    score = 0.40 * cov + 0.25 * float(has_struct) + 0.20 * float(has_trace) + 0.15 * density
+
+    details = (f"coverage={cov:.0%} ({logged_fn}/{total_fn}), "
+               f"structured={'yes' if has_struct else 'no'}, "
+               f"tracing={'yes' if has_trace else 'no'}, "
+               f"density={density:.0%}")
+
+    return {"name": "observability", "score": round(score, 3), "weight": __WEIGHT__,
+            "passed": score >= 0.3, "details": details}
+
+'''
+
+
 _HEADER = '''\
 #!/usr/bin/env python3
 """Auto-generated eval script for the Software Factory.
@@ -91,12 +177,20 @@ if __name__ == "__main__":
 '''
 
 
+def _generate_observability_function(weight: float) -> str:
+    """Generate the inline observability eval function with the given weight."""
+    return _OBSERVABILITY_TEMPLATE.replace("__WEIGHT__", repr(weight))
+
+
 def generate_eval_script(profile: EvalProfile) -> str:
     """Generate the full eval/score.py content from an EvalProfile."""
     parts = [_HEADER]
 
     for dim in profile.dimensions:
-        parts.append(_generate_eval_function(dim))
+        if dim.name == "observability":
+            parts.append(_generate_observability_function(dim.weight))
+        else:
+            parts.append(_generate_eval_function(dim))
 
     fn_names = [f"eval_{dim.name}" for dim in profile.dimensions]
     eval_list = ", ".join(fn_names)
