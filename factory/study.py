@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -9,6 +10,284 @@ import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+# ---------- Observability coverage analysis ----------
+
+
+def _find_source_files(project_path: Path, language: str) -> list[Path]:
+    """Find source files (excluding tests, venvs, generated code)."""
+    skip_dirs = {
+        "tests", "test", ".venv", "venv", "node_modules", "__pycache__",
+        ".git", ".factory", "eval", "dist", "build", ".mypy_cache",
+    }
+    ext = {
+        "python": ".py",
+        "typescript": ".ts",
+        "go": ".go",
+        "rust": ".rs",
+    }.get(language, ".py")
+
+    sources: list[Path] = []
+    for f in project_path.rglob(f"*{ext}"):
+        if any(part in skip_dirs for part in f.relative_to(project_path).parts):
+            continue
+        sources.append(f)
+    return sources
+
+
+def _count_functions_python(source: str) -> int:
+    """Count function and method definitions in Python source using AST."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return 0
+    count = 0
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # Skip dunder methods and private helpers under 3 lines
+            if not node.name.startswith("__"):
+                count += 1
+    return count
+
+
+def _count_functions_generic(source: str) -> int:
+    """Count function definitions using regex (for non-Python languages)."""
+    # Match common function patterns: def, fn, func, function, async fn, etc.
+    patterns = [
+        r"\bdef\s+\w+",
+        r"\bfn\s+\w+",
+        r"\bfunc\s+\w+",
+        r"\bfunction\s+\w+",
+        r"\basync\s+function\s+\w+",
+        r"(?:export\s+)?(?:const|let)\s+\w+\s*=\s*(?:async\s+)?\(",
+    ]
+    total = 0
+    for p in patterns:
+        total += len(re.findall(p, source))
+    return total
+
+
+def _analyze_file_observability(path: Path, language: str) -> dict:
+    """Analyze a single source file for observability patterns.
+
+    Returns dict with: functions, logged_functions, has_structured_logging,
+    has_request_tracing, log_statements, patterns_found.
+    """
+    try:
+        source = path.read_text(errors="replace")
+    except OSError:
+        return {"functions": 0, "logged_functions": 0, "log_statements": 0, "patterns_found": []}
+
+    # Count functions
+    if language == "python":
+        func_count = _count_functions_python(source)
+    else:
+        func_count = _count_functions_generic(source)
+
+    # Count log statements
+    log_patterns = [
+        r"\blogger\.\w+\(",           # logger.info(), logger.error(), etc.
+        r"\blogging\.\w+\(",          # logging.info(), etc.
+        r"\blog\.\w+\(",              # log.info(), etc.
+        r"\bconsole\.\w+\(",          # console.log(), etc. (JS/TS)
+        r"\bprint\(",                 # print() as logging (weak signal)
+        r"\bslog\.\w+\(",            # Go slog
+        r"\btracing::\w+!",           # Rust tracing
+    ]
+    log_stmt_count = 0
+    for p in log_patterns:
+        log_stmt_count += len(re.findall(p, source))
+
+    # Detect structured logging
+    structured_patterns = {
+        "structlog": r"\bstructlog\b",
+        "json_logger": r"\bjson.logger\b|python.json.logger",
+        "structured_fields": r"logger\.\w+\([^)]*\w+=\w+",  # logger.info("event", key=val)
+        "slog": r"\bslog\.\w+\(",
+        "pino": r"\bpino\b",
+        "winston": r"\bwinston\b",
+        "tracing_crate": r"\btracing::",
+    }
+    patterns_found: list[str] = []
+    for name, pattern in structured_patterns.items():
+        if re.search(pattern, source):
+            patterns_found.append(name)
+
+    has_structured = bool(patterns_found)
+
+    # Detect request tracing
+    tracing_patterns = {
+        "request_id": r"request.id|req.id|trace.id|correlation.id|x.request.id",
+        "contextvars": r"\bcontextvars\b|ContextVar",
+        "opentelemetry": r"\bopentelemetry\b|from opentelemetry",
+        "trace_context": r"trace.context|TraceContext|span",
+    }
+    tracing_found: list[str] = []
+    for name, pattern in tracing_patterns.items():
+        if re.search(pattern, source, re.IGNORECASE):
+            tracing_found.append(name)
+
+    # Estimate "logged functions" — functions near a log statement
+    # Simple heuristic: split source into function blocks, check for log calls
+    logged_functions = 0
+    if language == "python":
+        try:
+            tree = ast.parse(source)
+            lines = source.splitlines()
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node.name.startswith("__"):
+                        continue
+                    func_start = node.lineno - 1
+                    func_end = node.end_lineno or func_start + 1
+                    func_body = "\n".join(lines[func_start:func_end])
+                    for p in log_patterns:
+                        if re.search(p, func_body):
+                            logged_functions += 1
+                            break
+        except SyntaxError:
+            pass
+    else:
+        # Rough heuristic for non-Python: assume 50% of log statements are in functions
+        logged_functions = min(func_count, log_stmt_count // 2) if log_stmt_count else 0
+
+    return {
+        "functions": func_count,
+        "logged_functions": logged_functions,
+        "log_statements": log_stmt_count,
+        "has_structured_logging": has_structured,
+        "has_request_tracing": bool(tracing_found),
+        "patterns_found": patterns_found + tracing_found,
+    }
+
+
+def _analyze_observability(project_path: Path, language: str = "python") -> dict:
+    """Analyze observability coverage across all source files.
+
+    Returns a summary dict with:
+    - observability_score: 0.0-1.0 composite
+    - function_coverage: fraction of functions with logging
+    - total_functions, logged_functions, total_log_statements
+    - has_structured_logging, has_request_tracing
+    - logging_framework: detected framework name or None
+    - gaps: list of files with low observability
+    - recommendations: prioritized list of improvements
+    """
+    if language == "unknown":
+        # Try to detect from project files
+        if (project_path / "pyproject.toml").exists():
+            language = "python"
+        elif (project_path / "package.json").exists():
+            language = "typescript"
+
+    sources = _find_source_files(project_path, language)
+    if not sources:
+        return {
+            "observability_score": 0.0,
+            "function_coverage": 0.0,
+            "total_functions": 0,
+            "logged_functions": 0,
+            "total_log_statements": 0,
+            "has_structured_logging": False,
+            "has_request_tracing": False,
+            "logging_framework": None,
+            "gaps": [],
+            "recommendations": ["No source files found to analyze."],
+        }
+
+    total_functions = 0
+    total_logged = 0
+    total_log_stmts = 0
+    all_patterns: list[str] = []
+    has_structured = False
+    has_tracing = False
+    gaps: list[str] = []
+
+    for src in sources:
+        analysis = _analyze_file_observability(src, language)
+        total_functions += analysis["functions"]
+        total_logged += analysis["logged_functions"]
+        total_log_stmts += analysis["log_statements"]
+        all_patterns.extend(analysis["patterns_found"])
+        if analysis["has_structured_logging"]:
+            has_structured = True
+        if analysis["has_request_tracing"]:
+            has_tracing = True
+
+        # Flag files with functions but no logging
+        if analysis["functions"] > 0 and analysis["log_statements"] == 0:
+            rel = str(src.relative_to(project_path))
+            gaps.append(f"{rel} ({analysis['functions']} functions, 0 log statements)")
+
+    # Detect logging framework
+    framework = None
+    pattern_counts: dict[str, int] = {}
+    for p in all_patterns:
+        pattern_counts[p] = pattern_counts.get(p, 0) + 1
+    if "structlog" in pattern_counts:
+        framework = "structlog"
+    elif "json_logger" in pattern_counts:
+        framework = "python-json-logger"
+    elif "pino" in pattern_counts:
+        framework = "pino"
+    elif "winston" in pattern_counts:
+        framework = "winston"
+    elif "slog" in pattern_counts:
+        framework = "slog"
+    elif "tracing_crate" in pattern_counts:
+        framework = "tracing"
+
+    # Compute scores
+    func_coverage = total_logged / total_functions if total_functions > 0 else 0.0
+    log_density = min(1.0, total_log_stmts / max(total_functions, 1))
+
+    # Composite: 40% function coverage, 25% structured logging, 20% request tracing,
+    # 15% log density
+    observability_score = (
+        0.40 * func_coverage
+        + 0.25 * (1.0 if has_structured else 0.0)
+        + 0.20 * (1.0 if has_tracing else 0.0)
+        + 0.15 * log_density
+    )
+
+    # Generate recommendations
+    recommendations: list[str] = []
+    if not has_structured:
+        recommendations.append(
+            "Add structured logging (structlog for Python, pino for Node.js) "
+            "for machine-parseable log output"
+        )
+    if not has_tracing:
+        recommendations.append(
+            "Add request ID tracing (contextvars + unique ID per request) "
+            "for end-to-end request correlation"
+        )
+    if func_coverage < 0.5:
+        recommendations.append(
+            f"Improve logging coverage: only {total_logged}/{total_functions} functions "
+            f"({func_coverage:.0%}) have log statements"
+        )
+    if gaps:
+        top_gaps = gaps[:5]
+        recommendations.append(
+            f"Add logging to uninstrumented files: {', '.join(top_gaps)}"
+        )
+    if not recommendations:
+        recommendations.append("Observability looks good — all key patterns present")
+
+    return {
+        "observability_score": round(observability_score, 3),
+        "function_coverage": round(func_coverage, 3),
+        "total_functions": total_functions,
+        "logged_functions": total_logged,
+        "total_log_statements": total_log_stmts,
+        "has_structured_logging": has_structured,
+        "has_request_tracing": has_tracing,
+        "logging_framework": framework,
+        "gaps": gaps,
+        "recommendations": recommendations,
+    }
 
 
 def _path_to_slug(project_path: Path) -> str:
@@ -314,6 +593,33 @@ def study_project_local(project_path: Path) -> str:
             lines.append(f"- [{proj['name']}]({proj['url']}) ({stars} stars){desc_part}")
     else:
         lines.append("No similar projects found.")
+
+    # Observability coverage analysis
+    from factory.discovery.introspect import _detect_language
+    language = _detect_language(project_path)
+    obs = _analyze_observability(project_path, language)
+
+    lines.extend(["", "## Observability Coverage"])
+    lines.append(f"- **Score:** {obs['observability_score']:.1%}")
+    lines.append(
+        f"- **Function coverage:** {obs['logged_functions']}/{obs['total_functions']} "
+        f"functions have logging ({obs['function_coverage']:.0%})"
+    )
+    lines.append(f"- **Total log statements:** {obs['total_log_statements']}")
+    lines.append(f"- **Structured logging:** {'Yes' if obs['has_structured_logging'] else 'No'}")
+    if obs["logging_framework"]:
+        lines.append(f"- **Framework:** {obs['logging_framework']}")
+    lines.append(f"- **Request tracing:** {'Yes' if obs['has_request_tracing'] else 'No'}")
+
+    if obs["gaps"]:
+        lines.extend(["", "### Uninstrumented Files"])
+        for gap in obs["gaps"][:10]:
+            lines.append(f"- {gap}")
+
+    if obs["recommendations"]:
+        lines.extend(["", "### Observability Recommendations"])
+        for rec in obs["recommendations"]:
+            lines.append(f"- {rec}")
 
     # Prior knowledge from Obsidian vault
     project_name = project_path.name

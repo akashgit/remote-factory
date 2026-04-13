@@ -1,0 +1,14 @@
+{
+  "id": 17,
+  "timestamp": "2026-04-11 20:46:11.946035",
+  "hypothesis": "Wire up Obsidian integration with factory archive command",
+  "change_summary": "cmd_archive handler + 4 tests, wires up dead Obsidian modules",
+  "issue_number": 21,
+  "pr_number": 25,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

@@ -1,0 +1,1 @@
+Add factory status command

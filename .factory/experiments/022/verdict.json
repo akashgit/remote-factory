@@ -1,0 +1,14 @@
+{
+  "id": 22,
+  "timestamp": "2026-04-11 21:38:14.065484",
+  "hypothesis": "Deep researcher subagent with WebSearch/WebFetch and vault-based knowledge",
+  "change_summary": "Dual-mode researcher prompt (Discovery + Research), .claude/agents/researcher.md subagent, SKILL.md Step 0 deep research, research.md wired into Strategist",
+  "issue_number": null,
+  "pr_number": 31,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

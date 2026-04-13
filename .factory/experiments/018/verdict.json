@@ -1,0 +1,14 @@
+{
+  "id": 18,
+  "timestamp": "2026-04-11 20:50:21.312359",
+  "hypothesis": "Wire up all 6 agent roles in SKILL.md Improve mode",
+  "change_summary": "Added Researcher (step 0), enhanced Strategist, Evaluator before/after, Builder, Reviewer with --check-scope, and Archivist with archive command",
+  "issue_number": 24,
+  "pr_number": 27,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

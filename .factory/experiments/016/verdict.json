@@ -1,0 +1,14 @@
+{
+  "id": 16,
+  "timestamp": "2026-04-11 20:48:04.539010",
+  "hypothesis": "Accept GitHub URL in factory run",
+  "change_summary": "cmd_run accepts GitHub URLs, auto-clones, --mode flag, 14 new tests",
+  "issue_number": 20,
+  "pr_number": 26,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

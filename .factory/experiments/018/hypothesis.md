@@ -1,0 +1,1 @@
+Wire up all 6 agent roles in SKILL.md

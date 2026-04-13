@@ -1,0 +1,1 @@
+Wire obsidian-cli into factory notes and agent prompts — use obsidian create/read/search instead of raw file writes

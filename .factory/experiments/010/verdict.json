@@ -1,0 +1,14 @@
+{
+  "id": 10,
+  "timestamp": "2026-04-11 20:20:05.356030",
+  "hypothesis": "Add factory study command to read interaction logs",
+  "change_summary": "New factory/study.py module + cmd_study CLI handler + 19 tests",
+  "issue_number": 11,
+  "pr_number": 16,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

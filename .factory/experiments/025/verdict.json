@@ -1,0 +1,14 @@
+{
+  "id": 25,
+  "timestamp": "2026-04-11 21:50:05.163223",
+  "hypothesis": "CEO refactor \u2014 factory as orchestrator with async archivist and delegated eval/guard",
+  "change_summary": "Factory delegates eval/guard to agents; archivist spawned async after research/strategy/decisions; parallel execution protocol; persona decision framework; invoke_agents_parallel()",
+  "issue_number": null,
+  "pr_number": 33,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

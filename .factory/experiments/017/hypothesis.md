@@ -1,0 +1,1 @@
+Wire up Obsidian integration with factory archive command

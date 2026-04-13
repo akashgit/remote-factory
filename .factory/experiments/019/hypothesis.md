@@ -1,0 +1,1 @@
+Add web search to factory study — Researcher finds inspiration from similar projects

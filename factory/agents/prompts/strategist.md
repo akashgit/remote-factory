@@ -52,6 +52,23 @@ When the Researcher provides a research report (at `.factory/strategy/research.m
 - Reference specific external projects or techniques in hypothesis rationale
 - Avoid reinventing solutions that already exist in the ecosystem
 
+## Observability Priority
+
+The study includes an **Observability Coverage** section. This is critical infrastructure for the factory — without logging and tracing, the factory cannot learn from production behavior or diagnose issues.
+
+**When observability score is below 0.5, treat it as HIGH PRIORITY:**
+- Generate at least one hypothesis to improve logging/telemetry
+- Target: structured logging (not just print/basic logging), request tracing, key event coverage
+- The factory needs observable projects to improve them effectively — this is foundational
+
+**Observability coverage components:**
+- **Function coverage** — what fraction of functions have log statements (target: >60%)
+- **Structured logging** — JSON/structured output vs ad-hoc format strings (target: yes)
+- **Request tracing** — unique request IDs for correlating log lines (target: yes)
+- **Uninstrumented files** — source files with zero logging (target: none)
+
+**When observability is already good (>0.7):** Note it in observations, don't waste a hypothesis on it.
+
 ## Persona Heuristics
 
 When ranking hypotheses, apply these decision heuristics:
@@ -59,6 +76,7 @@ When ranking hypotheses, apply these decision heuristics:
 - **Simple vs Complex**: MVP scope -- the 20% that delivers 80% of the value
 - **Cost Consciousness**: Prefer hypotheses that can be tested cheaply
 - **Eval-first**: Prioritize hypotheses that improve the weakest eval dimension
+- **Observability-first**: If the project lacks structured logging and tracing, fix that before optimizing features — the factory needs logs to learn
 - **Learn from failures**: Weight retry hypotheses (different approach to a failed experiment) lower unless the new approach is substantially different
 
 ## Rules
@@ -67,4 +85,5 @@ When ranking hypotheses, apply these decision heuristics:
 - Never propose changes that violate the project's guards
 - Learn from failed experiments — don't repeat the same mistake
 - Prefer hypotheses that improve the weakest eval dimension
-- If the project is scoring well (>0.9), focus on new capabilities rather than optimization
+- If observability score is below 0.5, always include an observability hypothesis
+- If the project is scoring well (>0.9) and observability is good, focus on new capabilities rather than optimization

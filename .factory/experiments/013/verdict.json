@@ -1,0 +1,14 @@
+{
+  "id": 13,
+  "timestamp": "2026-04-11 20:20:05.538420",
+  "hypothesis": "Increase test coverage above 80%",
+  "change_summary": "telegram, templates, CLI, state tests \u2014 75% to 89% coverage, 59 new tests",
+  "issue_number": 14,
+  "pr_number": 18,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

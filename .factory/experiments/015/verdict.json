@@ -1,0 +1,14 @@
+{
+  "id": 15,
+  "timestamp": "2026-04-11 20:22:01.092195",
+  "hypothesis": "Fix cmd_run and SKILL.md to use uv run",
+  "change_summary": "cmd_run reads SKILL.md, passes --dangerously-skip-permissions, 27 uv run replacements in SKILL.md",
+  "issue_number": 13,
+  "pr_number": 19,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

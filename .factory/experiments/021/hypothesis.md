@@ -1,0 +1,1 @@
+Dedicated factory Obsidian vault with per-project structure and provenance tagging

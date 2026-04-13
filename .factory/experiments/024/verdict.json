@@ -1,0 +1,14 @@
+{
+  "id": 24,
+  "timestamp": "2026-04-11 21:44:52.615535",
+  "hypothesis": "Wire obsidian-cli into factory notes and agent prompts",
+  "change_summary": "Added _obsidian_create/read/search wrappers with fallback; archivist prompt uses obsidian-cli; Obsidian Integration section in SKILL.md; 6 new CLI tests",
+  "issue_number": null,
+  "pr_number": 32,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

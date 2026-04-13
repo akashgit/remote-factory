@@ -1,0 +1,14 @@
+{
+  "id": 2,
+  "timestamp": "2026-04-11 18:36:00.640123",
+  "hypothesis": "Rewrite factory evals with meaningful metrics",
+  "change_summary": "6 domain-specific dimensions: tests, lint, type_check, coverage (parsed %), guard_patterns, config_parser. Coverage correctly reports 75% (was 1.0). Score recalibrated.",
+  "issue_number": 5,
+  "pr_number": 10,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

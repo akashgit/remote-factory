@@ -1,0 +1,1 @@
+Replace direct file writes with obsidian-cli calls and wire obsidian skills into agent prompts

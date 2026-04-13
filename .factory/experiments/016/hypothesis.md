@@ -1,0 +1,1 @@
+Accept GitHub URL in factory run

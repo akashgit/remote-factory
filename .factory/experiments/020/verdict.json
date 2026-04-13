@@ -1,0 +1,14 @@
+{
+  "id": 20,
+  "timestamp": "2026-04-11 20:53:43.096180",
+  "hypothesis": "Add heartbeat loop to factory run \u2014 persistent autonomous operation with --loop flag",
+  "change_summary": "Added --loop, --interval, --max-cycles flags; graceful SIGTERM/SIGINT; cycle logging; 12 new tests",
+  "issue_number": 23,
+  "pr_number": 28,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

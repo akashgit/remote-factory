@@ -1,0 +1,1 @@
+Deep researcher subagent with WebSearch/WebFetch and vault-based knowledge

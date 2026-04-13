@@ -1,0 +1,1 @@
+Add heartbeat loop to factory run — persistent autonomous operation with --loop flag

@@ -1,0 +1,14 @@
+{
+  "id": 11,
+  "timestamp": "2026-04-11 20:20:05.448968",
+  "hypothesis": "Fix experiment state persistence and add status command",
+  "change_summary": "finalize() mkdir, begin() idempotent, cmd_status + 8 tests",
+  "issue_number": 12,
+  "pr_number": 17,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

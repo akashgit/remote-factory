@@ -1,0 +1,14 @@
+{
+  "id": 19,
+  "timestamp": "2026-04-11 20:54:56.835845",
+  "hypothesis": "Add web search to factory study \u2014 Researcher finds inspiration from similar projects",
+  "change_summary": "Added _extract_keywords, _search_similar_projects (gh search repos), _read_obsidian_notes; study output now includes Similar Projects and Prior Knowledge sections; 20 new tests",
+  "issue_number": 22,
+  "pr_number": 29,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

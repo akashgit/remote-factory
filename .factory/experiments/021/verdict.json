@@ -1,0 +1,14 @@
+{
+  "id": 21,
+  "timestamp": "2026-04-11 21:28:58.701842",
+  "hypothesis": "Dedicated factory Obsidian vault with per-project structure and provenance tagging",
+  "change_summary": "New vault at ~/obsidian-vaults/factory/ with 00-Factory, 10-Projects, 20-Knowledge structure; init_vault, auto_init, update_memory_index; provenance tags; 12 new tests",
+  "issue_number": null,
+  "pr_number": 30,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}
