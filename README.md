@@ -110,6 +110,9 @@ uv sync
 | `factory status <path>` | Print project status summary |
 | `factory archive <path>` | Write experiment notes to Obsidian vault |
 | `factory run <path>` | Run a full factory cycle (for cron/automation) |
+| `factory tmux <path>` | Launch factory in a detached tmux session |
+| `factory tmux-ls` | List running factory tmux sessions |
+| `factory tmux-stop` | Stop factory tmux session(s) |
 
 ## Project Structure
 
@@ -176,6 +179,32 @@ The factory uses a dedicated Obsidian vault (`~/obsidian-vaults/factory/`) for i
 ├── _templates/          # Note templates
 └── MEMORY.md            # Thin pointer index for agent orientation
 ```
+
+## Running in tmux
+
+For SSH sessions or long-running factory jobs, launch in tmux so the factory survives disconnects:
+
+```bash
+# Launch factory on a project (detached)
+factory tmux ~/cursor-projects/cloud-gateway --loop --interval 1800
+
+# With max cycles
+factory tmux ~/cursor-projects/cloud-gateway --loop --max-cycles 5
+
+# Attach to watch progress
+factory tmux ~/cursor-projects/cloud-gateway --attach
+
+# List running factory sessions
+factory tmux-ls
+
+# Stop a session
+factory tmux-stop --session factory-cloud-gateway
+
+# Stop all factory sessions
+factory tmux-stop
+```
+
+The session is named `factory-<project-name>` by default (e.g., `factory-cloud-gateway`). Vertex AI env vars are automatically set inside the tmux session.
 
 ## Environment
 
