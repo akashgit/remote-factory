@@ -6,7 +6,11 @@ import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+import structlog
+
 from factory.obsidian.notes import _get_vault_path, _PROJECTS_DIR
+
+log = structlog.get_logger()
 
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
@@ -100,7 +104,9 @@ def scan_vault(
     """
     vault = vault_path if vault_path is not None else _get_vault_path()
     projects_dir = vault / _PROJECTS_DIR
+    log.debug("scan_vault_start", vault=str(vault), days=days, target_date=str(target_date))
     if not projects_dir.exists():
+        log.debug("scan_vault_no_projects_dir", path=str(projects_dir))
         return {}
 
     if target_date is not None:
@@ -150,6 +156,11 @@ def scan_vault(
                 "experiments": experiments,
             }
 
+    log.info(
+        "scan_vault_complete",
+        project_count=len(projects),
+        experiment_count=sum(len(p["experiments"]) for p in projects.values()),
+    )
     return projects
 
 
@@ -166,6 +177,7 @@ def format_digest(
         start = end - timedelta(days=days)
         title = f"Factory Digest — {start.isoformat()} to {end.isoformat()}"
 
+    log.debug("format_digest", project_count=len(projects), target_date=str(target_date))
     lines = [f"# {title}", ""]
 
     if not projects:
