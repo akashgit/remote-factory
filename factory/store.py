@@ -8,7 +8,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+import structlog
+
 from factory.models import CompositeScore, EvalProfile, ExperimentRecord, FactoryConfig
+
+log = structlog.get_logger()
 
 
 TSV_COLUMNS = [
@@ -27,6 +31,7 @@ class ExperimentStore:
 
     async def init(self, config: FactoryConfig) -> None:
         """Create .factory/ structure with config.json, results.tsv, experiments/, strategy/."""
+        log.info("store_init", project=str(self.project_path), goal=config.goal)
         self.factory_dir.mkdir(exist_ok=True)
         (self.factory_dir / "experiments").mkdir(exist_ok=True)
         (self.factory_dir / "strategy").mkdir(exist_ok=True)
@@ -42,9 +47,11 @@ class ExperimentStore:
             writer = csv.writer(buf, dialect="excel-tab")
             writer.writerow(TSV_COLUMNS)
             tsv_path.write_text(buf.getvalue())
+        log.debug("store_init_complete", factory_dir=str(self.factory_dir))
 
     async def reparse_config(self) -> FactoryConfig:
         """Re-read factory.md from project root, regenerate config.json."""
+        log.debug("reparse_config_start", project=str(self.project_path))
         factory_md = self.project_path / "factory.md"
         text = factory_md.read_text()
 
@@ -114,19 +121,23 @@ class ExperimentStore:
         (self.factory_dir / "config.json").write_text(
             json.dumps(config.model_dump(), indent=2) + "\n"
         )
+        log.info("reparse_config_complete", goal=config.goal, scope_count=len(config.scope))
         return config
 
     async def next_id(self) -> int:
         """Return max existing experiment ID + 1, or 1 if none exist."""
         experiments_dir = self.factory_dir / "experiments"
         if not experiments_dir.exists():
+            log.debug("next_id_no_experiments_dir")
             return 1
         ids = [
             int(d.name)
             for d in experiments_dir.iterdir()
             if d.is_dir() and d.name.isdigit()
         ]
-        return max(ids) + 1 if ids else 1
+        next_val = max(ids) + 1 if ids else 1
+        log.debug("next_id_computed", next_id=next_val, existing_count=len(ids))
+        return next_val
 
     async def begin(self, hypothesis: str) -> int:
         """Create experiments/NNN/hypothesis.md, return the experiment ID.
@@ -135,6 +146,7 @@ class ExperimentStore:
         previous interrupted run), return its ID without crashing.
         """
         exp_id = await self.next_id()
+        log.info("experiment_begin", exp_id=exp_id, hypothesis=hypothesis[:80])
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
         exp_dir.mkdir(parents=True, exist_ok=True)
         hyp_path = exp_dir / "hypothesis.md"
@@ -149,6 +161,7 @@ class ExperimentStore:
         score: CompositeScore,
     ) -> None:
         """Write eval_before.json or eval_after.json into the experiment dir."""
+        log.debug("save_eval", exp_id=exp_id, phase=phase, score=score.total)
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
         filename = f"eval_{phase}.json"
         (exp_dir / filename).write_text(
@@ -157,6 +170,7 @@ class ExperimentStore:
 
     async def save_diff(self, exp_id: int) -> None:
         """Capture git diff HEAD~1 into changes.diff."""
+        log.debug("save_diff", exp_id=exp_id)
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
         result = subprocess.run(
             ["git", "diff", "HEAD~1"],
@@ -172,6 +186,12 @@ class ExperimentStore:
 
         Creates the experiment directory if it is missing (e.g. after git clean).
         """
+        log.info(
+            "experiment_finalize",
+            exp_id=exp_id,
+            verdict=record.verdict,
+            delta=record.delta,
+        )
         exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
         exp_dir.mkdir(parents=True, exist_ok=True)
         (exp_dir / "verdict.json").write_text(
@@ -200,6 +220,7 @@ class ExperimentStore:
         """Parse results.tsv into a list of ExperimentRecords."""
         tsv_path = self.factory_dir / "results.tsv"
         if not tsv_path.exists():
+            log.debug("load_history_no_tsv", path=str(tsv_path))
             return []
 
         records: list[ExperimentRecord] = []
@@ -220,16 +241,23 @@ class ExperimentStore:
                     cost_usd=float(row["cost_usd"]) if row["cost_usd"] else None,
                     notes=row["notes"],
                 ))
+        log.debug("load_history_complete", record_count=len(records))
         return records
 
     async def read_config(self) -> FactoryConfig:
         """Read .factory/config.json and return a FactoryConfig."""
+        log.debug("read_config", path=str(self.factory_dir / "config.json"))
         config_path = self.factory_dir / "config.json"
         data = json.loads(config_path.read_text())
         return FactoryConfig(**data)
 
     async def save_eval_profile(self, profile: EvalProfile) -> None:
         """Write .factory/eval_profile.json."""
+        log.info(
+            "save_eval_profile",
+            dimension_count=len(profile.dimensions),
+            human_reviewed=profile.human_reviewed,
+        )
         (self.factory_dir / "eval_profile.json").write_text(
             json.dumps(profile.model_dump(), indent=2) + "\n"
         )
@@ -238,19 +266,24 @@ class ExperimentStore:
         """Read .factory/eval_profile.json, return None if missing."""
         profile_path = self.factory_dir / "eval_profile.json"
         if not profile_path.exists():
+            log.debug("read_eval_profile_not_found", path=str(profile_path))
             return None
         data = json.loads(profile_path.read_text())
+        log.debug("read_eval_profile_loaded", dimension_count=len(data.get("dimensions", [])))
         return EvalProfile(**data)
 
     async def read_strategy(self) -> str | None:
         """Read strategy/current.md, return None if missing."""
         strategy_path = self.factory_dir / "strategy" / "current.md"
         if not strategy_path.exists():
+            log.debug("read_strategy_not_found")
             return None
+        log.debug("read_strategy_loaded", path=str(strategy_path))
         return strategy_path.read_text()
 
     async def write_strategy(self, content: str) -> None:
         """Write strategy/current.md."""
+        log.info("write_strategy", content_length=len(content))
         strategy_path = self.factory_dir / "strategy" / "current.md"
         strategy_path.parent.mkdir(parents=True, exist_ok=True)
         strategy_path.write_text(content)
