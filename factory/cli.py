@@ -23,6 +23,13 @@ def _run(coro):  # noqa: ANN001, ANN202
 # ── subcommand handlers ────────────────────────────────────────
 
 
+def cmd_home(args: argparse.Namespace) -> int:
+    """Print the factory installation root directory."""
+    factory_home = Path(__file__).resolve().parent.parent
+    print(factory_home)
+    return 0
+
+
 def cmd_detect(args: argparse.Namespace) -> int:
     from factory.state import detect_state
 
@@ -400,10 +407,10 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     run_cmd_parts = [
         f"cd {factory_root}",
         "source .venv/bin/activate",
-        # Ensure Vertex AI env vars are set
-        "export CLAUDE_CODE_USE_VERTEX=1",
-        "export CLOUD_ML_REGION=your-region",
-        "export ANTHROPIC_VERTEX_PROJECT_ID=your-gcp-project",
+        # Ensure Vertex AI env vars are set (inherit from current env)
+        f"export CLAUDE_CODE_USE_VERTEX={os.environ.get('CLAUDE_CODE_USE_VERTEX', '1')}",
+        f"export CLOUD_ML_REGION={os.environ.get('CLOUD_ML_REGION', 'your-region')}",
+        f"export ANTHROPIC_VERTEX_PROJECT_ID={os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', '')}",
         # Ensure gcloud SDK is on PATH
         'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
     ]
@@ -644,6 +651,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sub = parser.add_subparsers(dest="command")
 
+    # home
+    sub.add_parser("home", help="Print factory installation root directory")
+
     # detect
     p = sub.add_parser("detect", help="Print project state")
     p.add_argument("path", help="Path to the project")
@@ -784,6 +794,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     handlers = {
+        "home": cmd_home,
         "detect": cmd_detect,
         "discover": cmd_discover,
         "init": cmd_init,
