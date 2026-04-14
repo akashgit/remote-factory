@@ -546,7 +546,76 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
     return file_summaries
 
 
-def study_project_local(project_path: Path) -> str:
+def _detect_self_improvement(project_path: Path) -> bool:
+    """Return True if the target project is the factory itself."""
+    return (
+        (project_path / "factory" / "cli.py").exists()
+        and (project_path / "factory" / "insights.py").exists()
+    )
+
+
+def _load_cross_project_insights(
+    project_path: Path,
+    projects_dir: Path,
+) -> str:
+    """Load and format cross-project insights. Writes insights.md as side effect."""
+    from factory.insights import (
+        analyze,
+        discover_projects,
+        format_insights,
+        load_all_histories,
+    )
+
+    project_paths = discover_projects(projects_dir)
+    if not project_paths:
+        return ""
+
+    histories = load_all_histories(project_paths)
+    if not histories:
+        return ""
+
+    insights = analyze(histories)
+    report = format_insights(insights)
+
+    # Write insights.md as side effect
+    out_path = project_path / ".factory" / "strategy" / "insights.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+
+    # Return a summary for inclusion in observations
+    total_exp = sum(p.experiment_count for p in insights.projects)
+    total_kept = sum(p.keep_count for p in insights.projects)
+    overall_rate = total_kept / total_exp if total_exp > 0 else 0.0
+    project_names = [p.name for p in insights.projects]
+
+    summary_lines = [
+        "## Cross-Project Insights",
+        "",
+        f"Analyzed {len(insights.projects)} projects ({', '.join(project_names)}), "
+        f"{total_exp} experiments, {overall_rate:.0%} overall keep rate.",
+        "",
+    ]
+
+    if insights.winning_categories:
+        summary_lines.append(
+            f"**Winning categories:** {', '.join(insights.winning_categories)}"
+        )
+    if insights.losing_categories:
+        summary_lines.append(
+            f"**Risky categories:** {', '.join(insights.losing_categories)}"
+        )
+    if insights.patterns:
+        summary_lines.append("")
+        summary_lines.append("**Patterns:**")
+        for p in insights.patterns[:5]:
+            summary_lines.append(f"- {p.name}: {p.description}")
+
+    summary_lines.append("")
+    summary_lines.append(f"Full report: {out_path}")
+    return "\n".join(summary_lines)
+
+
+def study_project_local(project_path: Path, **kwargs: object) -> str:
     """Read interaction logs and produce an observations summary (local only)."""
     log_files = _find_log_files(project_path)
 
@@ -631,9 +700,40 @@ def study_project_local(project_path: Path) -> str:
     else:
         lines.append("No prior notes found.")
 
+    # Cross-project insights
+    projects_dir = kwargs.get("projects_dir")
+    if projects_dir:
+        insights_text = _load_cross_project_insights(project_path, Path(str(projects_dir)))
+        if insights_text:
+            lines.extend(["", insights_text])
+
+    # Self-improvement context
+    if _detect_self_improvement(project_path):
+        lines.extend([
+            "",
+            "## Self-Improvement Context",
+            "",
+            "This project IS the factory. The Strategist should explore the full design space:",
+            "",
+            "| Dimension | Description |",
+            "|---|---|",
+            "| Features | New user-facing capabilities |",
+            "| Bug fixes | Crash fixes, error handling |",
+            "| Instrumentation | Logging, tracing, telemetry |",
+            "| Flow changes | Architectural refactors |",
+            "| New agents | Adding or splitting agent roles |",
+            "| Prompt engineering | Agent prompt rewrites |",
+            "| Eval improvements | Scoring refinements, new dimensions |",
+            "| Knowledge management | Vault structure, archival quality |",
+            "| Infrastructure | CI/CD, tmux, scheduling |",
+            "| Self-evolution | Meta-learning, self-analysis |",
+            "",
+            "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
+        ])
+
     return "\n".join(lines)
 
 
-def study_project(project_path: Path) -> str:
+def study_project(project_path: Path, **kwargs: object) -> str:
     """Study a project — local analysis. Deep research available via researcher subagent."""
-    return study_project_local(project_path)
+    return study_project_local(project_path, **kwargs)

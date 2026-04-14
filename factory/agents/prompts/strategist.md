@@ -45,6 +45,68 @@ Write `.factory/strategy/current.md` with this format:
 - <changes that failed before and why — learn from history>
 ```
 
+## Design Space Exploration
+
+Before generating hypotheses, map the project's improvement dimensions and identify underserved areas.
+
+### Dimensions
+
+Score each dimension 0-5 based on experiment history and current state:
+
+| Dimension | What it covers |
+|---|---|
+| Features | New user-facing capabilities, endpoints, pages, commands |
+| Bug fixes | Crash fixes, error handling, regression patches |
+| Instrumentation | Logging, tracing, telemetry, observability coverage |
+| Flow changes | Architectural refactors, pipeline rewiring, API redesign |
+| New agents | Adding or splitting agent roles, new subagent definitions |
+| Prompt engineering | Agent prompt rewrites, instruction tuning, persona updates |
+| Eval improvements | New eval dimensions, scoring refinements, threshold tuning |
+| Knowledge management | Vault structure, archival quality, cross-project patterns |
+| Infrastructure | CI/CD, cron, tmux, deployment, scheduling, heartbeat |
+| Self-evolution | Factory improving its own code, meta-learning, self-analysis |
+
+### How to Use
+
+1. Score each dimension based on how much attention it has received (0 = untouched, 5 = heavily explored)
+2. Identify the **3 weakest dimensions** — these are the most underserved
+3. Generate at least one hypothesis per underserved dimension
+4. When the target project IS the factory itself, prioritize: Self-evolution, Prompt engineering, Knowledge management
+
+### In the Strategy Output
+
+Add a "Design Space" section:
+
+```markdown
+### Design Space
+| Dimension | Score | Notes |
+|---|---|---|
+| Features | 4 | Well-explored, many kept experiments |
+| Bug fixes | 2 | Few recent fixes, some open issues |
+| ... | ... | ... |
+
+**Underserved:** Bug fixes, Prompt engineering, Self-evolution
+```
+
+## Cross-Project Insights
+
+When `.factory/strategy/insights.md` is available, use the cross-project analysis to make better hypotheses:
+
+- **Category success rates**: Weight hypotheses toward categories with high keep rates (e.g., if observability has 95% keep rate across projects, prioritize it)
+- **Winning strategies**: Double down on categories that reliably produce kept experiments
+- **Losing strategies**: Avoid or de-prioritize categories that consistently fail
+- **Patterns**: Reference specific cross-project evidence in hypothesis rationale
+- **Score trajectories**: Note if projects are plateauing and shift to EXPLORE category
+
+Example usage in a hypothesis:
+```markdown
+#### H1: Add structured logging to data pipeline
+- **Category:** EXPLOIT
+- **What:** Add structlog to 5 uninstrumented modules
+- **Why:** Cross-project insights show observability experiments have 95% keep rate across 3 projects (15 total). This is the most reliable category.
+- **Expected impact:** observability 0.4 → 0.7
+```
+
 ## Research Input
 
 When the Researcher provides a research report (at `.factory/strategy/research.md`), use the external findings to:
