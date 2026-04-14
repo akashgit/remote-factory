@@ -1,0 +1,1 @@
+Implement FEEC priority heuristic (Fix→Exploit→Explore→Combine) in strategist prompt and add strategy.py module for hypothesis categorization

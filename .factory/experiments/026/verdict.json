@@ -1,0 +1,14 @@
+{
+  "id": 26,
+  "timestamp": "2026-04-13 21:51:04.416609",
+  "hypothesis": "Fix mypy redefinition error in study.py and land the digest feature",
+  "change_summary": "Renamed shadowed summaries variable to file_summaries (type_check 0.95->1.0). Added factory digest command with 22 tests.",
+  "issue_number": 34,
+  "pr_number": 35,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

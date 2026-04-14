@@ -1,0 +1,14 @@
+{
+  "id": 27,
+  "timestamp": "2026-04-13 21:59:01.955810",
+  "hypothesis": "Add structured logging to uninstrumented modules",
+  "change_summary": "Added structlog to store.py, digest.py, state.py, introspect.py, obsidian/notes.py. Observability function coverage improved from 26% to ~50%. Configured structlog to stderr to avoid breaking JSON stdout.",
+  "issue_number": 36,
+  "pr_number": 37,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

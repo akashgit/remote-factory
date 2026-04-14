@@ -1,0 +1,1 @@
+Add structured logging to uninstrumented modules (store, digest, state, introspect, obsidian/notes) to improve observability from 26% to 50%+ function coverage

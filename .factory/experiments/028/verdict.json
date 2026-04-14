@@ -1,0 +1,14 @@
+{
+  "id": 28,
+  "timestamp": "2026-04-13 22:03:10.549849",
+  "hypothesis": "Implement FEEC priority heuristic in strategist",
+  "change_summary": "Added factory/strategy.py with FEEC categorization (Fix>Exploit>Explore>Combine), stuck detection, and hypothesis ranking. Updated strategist prompt with FEEC framework. 41 new tests, coverage 80%->81%.",
+  "issue_number": 38,
+  "pr_number": 39,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}
