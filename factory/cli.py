@@ -236,6 +236,20 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 
+def cmd_digest(args: argparse.Namespace) -> int:
+    from factory.digest import format_digest, scan_vault
+
+    target_date = None
+    if args.date:
+        from datetime import date as date_cls
+        target_date = date_cls.fromisoformat(args.date)
+
+    projects = scan_vault(target_date=target_date, days=args.days)
+    output = format_digest(projects, target_date=target_date, days=args.days)
+    print(output)
+    return 0
+
+
 def cmd_archive(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import (
         update_memory_index,
@@ -650,6 +664,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
 
 
+    # digest
+    p = sub.add_parser("digest", help="Summarize recent factory activity across projects")
+    p.add_argument("--date", default=None, help="Show activity for a specific date (YYYY-MM-DD)")
+    p.add_argument("--days", type=int, default=7, help="Number of days to look back (default: 7)")
+
     # archive
     p = sub.add_parser("archive", help="Write experiment notes to Obsidian vault")
     p.add_argument("path", help="Path to the project")
@@ -726,6 +745,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "digest": cmd_digest,
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,
         "run": cmd_run,
