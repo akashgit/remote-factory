@@ -3,7 +3,7 @@ name = "remote-factory"
 version = "0.1.0"
 description = "Domain-agnostic multi-agent software evolution loop"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.0"]
+dependencies = ["pydantic>=2.0", "structlog>=24.0"]
 
 [project.scripts]
 factory = "factory.cli:main"
