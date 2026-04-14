@@ -1,7 +1,5 @@
 """Tests for factory.eval.runner — eval subprocess execution."""
 
-import pytest
-
 from factory.eval.runner import run_eval
 
 
