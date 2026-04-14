@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime
 from pathlib import Path
 
+import structlog
+
 from factory.models import (
     CrossProjectInsights,
     ExperimentRecord,
@@ -13,6 +15,8 @@ from factory.models import (
     Pattern,
     ProjectSummary,
 )
+
+log = structlog.get_logger()
 
 # ── hypothesis classification ────────────────────────────────────
 
@@ -71,6 +75,7 @@ def classify_hypothesis(text: str) -> str:
 def discover_projects(projects_dir: Path) -> list[Path]:
     """Find all factory-managed projects by scanning for .factory/results.tsv."""
     if not projects_dir.exists():
+        log.debug("discover_projects_skip", reason="dir_not_found", path=str(projects_dir))
         return []
     projects: list[Path] = []
     for child in sorted(projects_dir.iterdir()):
@@ -79,6 +84,7 @@ def discover_projects(projects_dir: Path) -> list[Path]:
         tsv = child / ".factory" / "results.tsv"
         if tsv.exists():
             projects.append(child)
+    log.info("discover_projects_complete", count=len(projects), dir=str(projects_dir))
     return projects
 
 
@@ -97,6 +103,8 @@ def load_all_histories(
         records = asyncio.run(store.load_history())
         if records:
             histories[path.name] = records
+            log.debug("load_history_complete", project=path.name, record_count=len(records))
+    log.info("load_all_histories_complete", project_count=len(histories))
     return histories
 
 
@@ -163,7 +171,7 @@ def analyze(
     # Extract patterns
     patterns = _extract_patterns(outcomes, category_stats)
 
-    return CrossProjectInsights(
+    result = CrossProjectInsights(
         projects=projects,
         outcomes=outcomes,
         category_stats=category_stats,
@@ -172,6 +180,15 @@ def analyze(
         patterns=patterns,
         generated_at=datetime.now(),
     )
+    log.info(
+        "analyze_complete",
+        project_count=len(projects),
+        outcome_count=len(outcomes),
+        winning=sorted(winning),
+        losing=sorted(losing),
+        pattern_count=len(patterns),
+    )
+    return result
 
 
 def _extract_patterns(
