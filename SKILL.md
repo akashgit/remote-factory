@@ -331,6 +331,20 @@ PROMPT
 
 > **Note:** The `&` makes this non-blocking. The CEO does not wait for the Archivist.
 
+### Step 0c: Evolve Agent Playbooks (ACE Self-Improvement)
+
+If the factory is improving itself, run ACE to evolve agent playbooks from cross-project experiment data:
+
+```bash
+factory ace "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
+```
+
+This analyzes experiment outcomes (keep/revert verdicts, score deltas, category patterns) across all managed projects and produces per-agent behavioral playbooks with empirically-backed DO/DON'T rules. Playbooks are stored at `$FACTORY_HOME/factory/agents/playbooks/<role>.md` and auto-injected into agent prompts.
+
+**When to run:** Every cycle when the factory is improving itself. The playbooks evolve incrementally — each run merges new patterns with existing bullets, deduplicates, and prunes net-negative items.
+
+**Skip condition:** If the factory is improving a target project (not itself), skip this step — playbooks are already injected from the factory's own `agents/playbooks/` directory.
+
 ### Step 1: Hypothesize (Strategist Agent)
 
 The Strategist reads the Researcher's observations (from `.factory/strategy/observations.md`), analyzes the codebase and eval scores, and generates prioritized hypotheses.
