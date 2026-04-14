@@ -3,7 +3,11 @@
 import subprocess
 from pathlib import Path
 
+import structlog
+
 from factory.models import ProjectState
+
+log = structlog.get_logger()
 
 
 def _has_open_plan_issues(project_path: Path) -> bool:
@@ -18,8 +22,10 @@ def _has_open_plan_issues(project_path: Path) -> bool:
                 timeout=15,
             )
             if result.returncode == 0 and result.stdout.strip() not in ("", "[]"):
+                log.debug("open_plan_issues_found", label=label)
                 return True
         except (subprocess.TimeoutExpired, FileNotFoundError):
+            log.debug("open_plan_issues_check_failed", label=label)
             return False
     return False
 
@@ -39,8 +45,11 @@ def _has_pending_eval_review(project_path: Path) -> bool:
 
     try:
         data = json.loads(profile_path.read_text())
-        return data.get("human_reviewed", False) is False
+        pending = data.get("human_reviewed", False) is False
+        log.debug("pending_eval_review_check", human_reviewed=data.get("human_reviewed"), pending=pending)
+        return pending
     except (json.JSONDecodeError, KeyError):
+        log.debug("pending_eval_review_parse_error", path=str(profile_path))
         return False
 
 
@@ -54,19 +63,26 @@ def detect_state(project_path: Path) -> ProjectState:
       4. Has .git, open plan/implementation GitHub issues -> REPO_INCOMPLETE
       5. Has .git, no open issues -> NO_FACTORY
     """
+    log.debug("detect_state_start", project=str(project_path))
+
     if not project_path.exists() or not (project_path / ".git").exists():
+        log.info("detect_state_result", state=ProjectState.NO_REPO.value)
         return ProjectState.NO_REPO
 
     # Check for pending eval review BEFORE checking for full factory.
     # This handles the discover → review → init flow where eval_profile.json
     # exists but config.json does not yet.
     if _has_pending_eval_review(project_path):
+        log.info("detect_state_result", state=ProjectState.EVALS_PENDING_REVIEW.value)
         return ProjectState.EVALS_PENDING_REVIEW
 
     if (project_path / ".factory" / "config.json").exists():
+        log.info("detect_state_result", state=ProjectState.HAS_FACTORY.value)
         return ProjectState.HAS_FACTORY
 
     if _has_open_plan_issues(project_path):
+        log.info("detect_state_result", state=ProjectState.REPO_INCOMPLETE.value)
         return ProjectState.REPO_INCOMPLETE
 
+    log.info("detect_state_result", state=ProjectState.NO_FACTORY.value)
     return ProjectState.NO_FACTORY
