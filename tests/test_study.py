@@ -6,9 +6,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from factory.study import (
+    _detect_self_improvement,
     _extract_keywords,
     _extract_messages,
     _find_log_files,
+    _load_cross_project_insights,
     _path_to_slug,
     _read_obsidian_notes,
     _search_similar_projects,
@@ -533,3 +535,191 @@ class TestReadObsidianNotes:
         summaries = _read_obsidian_notes("myapp")
         assert len(summaries) == 1
         assert "Caching patterns" in summaries[0]
+
+
+# ── TestDetectSelfImprovement ─────────────────────────────────────
+
+
+class TestDetectSelfImprovement:
+    def test_detects_factory_project(self, tmp_path):
+        factory_dir = tmp_path / "factory"
+        factory_dir.mkdir()
+        (factory_dir / "cli.py").write_text("# cli")
+        (factory_dir / "insights.py").write_text("# insights")
+        assert _detect_self_improvement(tmp_path) is True
+
+    def test_rejects_non_factory_project(self, tmp_path):
+        assert _detect_self_improvement(tmp_path) is False
+
+    def test_rejects_partial_factory(self, tmp_path):
+        factory_dir = tmp_path / "factory"
+        factory_dir.mkdir()
+        (factory_dir / "cli.py").write_text("# cli")
+        # Missing insights.py
+        assert _detect_self_improvement(tmp_path) is False
+
+
+# ── TestLoadCrossProjectInsights ──────────────────────────────────
+
+
+class TestLoadCrossProjectInsights:
+    def test_loads_from_multi_project_dir(self, tmp_path):
+        # Create two projects with TSV data
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+        for name in ["alpha", "beta"]:
+            proj = projects_dir / name
+            proj.mkdir()
+            factory = proj / ".factory"
+            factory.mkdir()
+            lines = [
+                "id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+                "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes",
+                f"1\t2026-04-13T12:00:00\tFix a bug in {name}\tsummary\t\t\t\t\t\tkeep\t\t",
+            ]
+            (factory / "results.tsv").write_text("\n".join(lines) + "\n")
+
+        # Target project for output
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / ".factory").mkdir()
+
+        result = _load_cross_project_insights(target, projects_dir)
+        assert "Cross-Project Insights" in result
+        assert "alpha" in result
+        assert "beta" in result
+        # Check insights.md was written
+        insights_path = target / ".factory" / "strategy" / "insights.md"
+        assert insights_path.exists()
+
+    def test_returns_empty_for_no_projects(self, tmp_path):
+        empty_dir = tmp_path / "empty"
+        empty_dir.mkdir()
+        target = tmp_path / "target"
+        target.mkdir()
+        result = _load_cross_project_insights(target, empty_dir)
+        assert result == ""
+
+    def test_returns_empty_for_no_histories(self, tmp_path):
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+        proj = projects_dir / "empty-proj"
+        proj.mkdir()
+        factory = proj / ".factory"
+        factory.mkdir()
+        (factory / "results.tsv").write_text(
+            "id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+            "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes\n"
+        )
+        target = tmp_path / "target"
+        target.mkdir()
+        result = _load_cross_project_insights(target, projects_dir)
+        assert result == ""
+
+
+# ── TestStudyWithInsights ─────────────────────────────────────────
+
+
+class TestStudyWithInsights:
+    def test_observations_include_cross_project(self, tmp_path, monkeypatch):
+        # Set up a minimal project so study_project doesn't crash
+        monkeypatch.setattr("factory.study._find_log_files", lambda _: [])
+        monkeypatch.setattr("factory.study._search_similar_projects", lambda _: [])
+        monkeypatch.setattr("factory.study._read_obsidian_notes", lambda _: [])
+        monkeypatch.setattr(
+            "factory.study._analyze_observability",
+            lambda _path, _lang: {
+                "observability_score": 0.5,
+                "function_coverage": 0.5,
+                "total_functions": 10,
+                "logged_functions": 5,
+                "total_log_statements": 20,
+                "has_structured_logging": True,
+                "has_request_tracing": False,
+                "logging_framework": "structlog",
+                "gaps": [],
+                "recommendations": [],
+            },
+        )
+        monkeypatch.setattr(
+            "factory.discovery.introspect._detect_language",
+            lambda _: "python",
+        )
+
+        # Create projects dir with data
+        projects_dir = tmp_path / "projects"
+        projects_dir.mkdir()
+        proj = projects_dir / "some-project"
+        proj.mkdir()
+        factory = proj / ".factory"
+        factory.mkdir()
+        lines = [
+            "id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+            "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes",
+            "1\t2026-04-13T12:00:00\tFix a bug\tsummary\t\t\t\t\t\tkeep\t\t",
+        ]
+        (factory / "results.tsv").write_text("\n".join(lines) + "\n")
+
+        # Target project
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / ".factory").mkdir()
+
+        summary = study_project(target, projects_dir=str(projects_dir))
+        assert "Cross-Project Insights" in summary
+
+    def test_self_improvement_context_added(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("factory.study._find_log_files", lambda _: [])
+        monkeypatch.setattr("factory.study._search_similar_projects", lambda _: [])
+        monkeypatch.setattr("factory.study._read_obsidian_notes", lambda _: [])
+        monkeypatch.setattr(
+            "factory.study._analyze_observability",
+            lambda _path, _lang: {
+                "observability_score": 0.5,
+                "function_coverage": 0.5,
+                "total_functions": 10,
+                "logged_functions": 5,
+                "total_log_statements": 20,
+                "has_structured_logging": True,
+                "has_request_tracing": False,
+                "logging_framework": "structlog",
+                "gaps": [],
+                "recommendations": [],
+            },
+        )
+        monkeypatch.setattr(
+            "factory.discovery.introspect._detect_language",
+            lambda _: "python",
+        )
+
+        # Make project look like the factory
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / ".factory").mkdir()
+        factory_dir = target / "factory"
+        factory_dir.mkdir()
+        (factory_dir / "cli.py").write_text("# cli")
+        (factory_dir / "insights.py").write_text("# insights")
+
+        summary = study_project(target)
+        assert "Self-Improvement Context" in summary
+        assert "Self-evolution" in summary
+
+
+# ── TestCmdStudyProjectsDir ───────────────────────────────────────
+
+
+class TestCmdStudyProjectsDir:
+    def test_parser_accepts_projects_dir(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["study", "/some/path", "--projects-dir", "/other/path"])
+        assert args.projects_dir == "/other/path"
+
+    def test_parser_projects_dir_default_is_none(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["study", "/some/path"])
+        assert args.projects_dir is None
