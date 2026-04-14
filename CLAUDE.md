@@ -1,23 +1,98 @@
-# Remote Factory — Dev Instructions
+# CLAUDE.md
 
-## Build
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build & Run
+
 ```bash
-uv sync
+uv sync                          # Install all deps (including dev group)
+factory --help                   # Verify CLI entry point
 ```
 
 ## Test
+
 ```bash
-pytest -v
+pytest -v                        # Full suite
+pytest tests/test_models.py -v   # Single file
+pytest -k "test_detect" -v       # By name pattern
+pytest --cov                     # With coverage
 ```
 
-## Lint
+Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`. Shared fixtures (`tmp_project`, `sample_config`, `python_project`, `obsidian_vault`) live in `tests/conftest.py`.
+
+## Lint & Type Check
+
 ```bash
-ruff check .
+ruff check .                     # Lint
+ruff check --fix .               # Lint with autofix
+mypy factory/                    # Type check
 ```
 
 ## Style
-- Python 3.11+ (use `X | Y` unions, not `Union[X, Y]`)
+
+- Python 3.11+ — use `X | Y` unions, not `Union[X, Y]`
 - Snake_case everywhere
 - 100 char line length (enforced by ruff)
-- All Pydantic models use `ConfigDict(strict=True)`
-- Async/await by default
+- All Pydantic models use `ConfigDict(strict=True, extra="forbid")`
+- Async/await by default — library functions in `store.py` and `eval/runner.py` are async, the CLI wraps them with `asyncio.run()`
+- Structured logging via `structlog` — use `log = structlog.get_logger()` at module level
+
+## Architecture
+
+The factory is a **three-layer system** that evolves any software project through automated improvement cycles:
+
+### Layer 1: Python CLI (`factory/`)
+
+Pure tools that don't make decisions. Entry point is `factory/cli.py` → `factory.cli:main` (registered as `factory` script in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict.
+
+### Layer 2: Skill (`SKILL.md`)
+
+An orchestration protocol loaded into Claude Code's context via `/factory`. Defines the workflow state machine: detect project state → route to mode (Build/Discover/Review/Improve) → coordinate agents.
+
+### Layer 3: Agents (`factory/agents/`)
+
+Six specialist Claude Code subprocesses spawned by the orchestrator. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Agents are invoked as `claude -p` subprocesses with `--dangerously-skip-permissions`.
+
+### Key data flow
+
+1. **State detection** (`factory/state.py`): Checks git, `.factory/config.json`, and `eval_profile.json` to determine one of 5 `ProjectState` enum values
+2. **Discovery** (`factory/discovery/`): `introspect.py` → `profile.py` → `generate.py` — detects project language/framework, builds an `EvalProfile` of dimensions, generates `eval/score.py`
+3. **Eval** (`factory/eval/`): `runner.py` executes the eval command as a subprocess, expects JSON stdout `{"results": [...]}`. Growth dimensions (`growth.py`) are computed locally and merged at 50/50 with project hygiene dimensions. `scorer.py` computes the weighted composite
+4. **Strategy** (`factory/strategy.py`): FEEC priority heuristic (Fix > Exploit > Explore > Combine) classifies hypotheses by keyword matching, with stuck detection after 3+ consecutive same-category reverts
+5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts
+
+### Target project's `.factory/` layout
+
+```
+.factory/
+├── config.json           # Parsed from factory.md (FactoryConfig model)
+├── eval_profile.json     # Discovered eval dimensions (EvalProfile model)
+├── results.tsv           # Append-only experiment history
+├── experiments/
+│   └── 001/              # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
+├── strategy/             # observations.md, current.md, insights.md, research.md
+└── agents/               # Per-project agent prompt overrides
+```
+
+### Models
+
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`. The `Notifier` protocol defines the async notification interface.
+
+## Environment
+
+Requires Google Vertex AI for Claude access:
+```bash
+export CLAUDE_CODE_USE_VERTEX=1
+export CLOUD_ML_REGION=your-region
+export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
+```
+
+## Running the factory
+
+```bash
+factory run /path/to/project                    # Single cycle
+factory run /path/to/project --loop --interval 1800  # Continuous
+factory tmux /path/to/project --loop            # In detached tmux session
+```
+
+`factory run` invokes `claude -p` with SKILL.md content, effectively launching an autonomous orchestration session. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles.

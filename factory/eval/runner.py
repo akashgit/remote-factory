@@ -1,4 +1,13 @@
-"""EvalRunner — run eval commands as subprocesses and parse results."""
+"""EvalRunner — compute mandatory dimensions and merge with project-specific evals.
+
+The factory's eval system has 11 mandatory dimensions that apply to every project:
+  - 6 hygiene dimensions (tests, lint, type_check, coverage, guard_patterns, config_parser)
+  - 5 growth dimensions (capability_surface, experiment_diversity, observability,
+    research_grounding, factory_effectiveness)
+
+Projects can ADD dimensions via eval/score.py but cannot remove any of the 11.
+The mandatory dimensions are computed by the factory itself, not by per-project scripts.
+"""
 
 import asyncio
 import json
@@ -6,6 +15,7 @@ import os
 from pathlib import Path
 
 from factory.eval.growth import compute_growth_results
+from factory.eval.hygiene import compute_hygiene_results
 from factory.eval.scorer import compute_composite
 from factory.models import CompositeScore, EvalResult
 
@@ -28,35 +38,43 @@ def _error_score(message: str, details: str = "") -> CompositeScore:
     )
 
 
-def _merge_with_growth(
+def _merge_all(
+    hygiene_results: list[EvalResult],
     project_results: list[EvalResult],
-    project_path: Path,
+    growth_results: list[EvalResult],
 ) -> list[EvalResult]:
-    """Merge project-specific (hygiene) results with universal growth dimensions.
+    """Merge mandatory hygiene + project-specific additions + mandatory growth.
 
-    Normalizes weights so that:
-      - Project-specific dimensions get 50% of the composite
-      - Growth dimensions get 50% of the composite
+    Weight distribution:
+      - Hygiene (mandatory 6): 50% of composite
+      - Growth (mandatory 5): 50% of composite
+      - Project-specific additions: bonus dimensions, normalized into the hygiene half
+
+    If the project's eval/score.py returns dimensions with the same name as a
+    mandatory dimension, the project version is ignored (mandatory wins).
     """
-    # Compute growth dimensions
-    growth_dicts = compute_growth_results(project_path)
-    growth_results = [EvalResult(**r) for r in growth_dicts]
+    # Names of mandatory dimensions — project can't override these
+    mandatory_names = {r.name for r in hygiene_results} | {r.name for r in growth_results}
 
-    # Normalize project weights to sum to 0.50
-    proj_weight_sum = sum(r.weight for r in project_results)
-    if proj_weight_sum > 0:
-        normalized_project = [
+    # Filter project results to only truly additional dimensions
+    additional = [r for r in project_results if r.name not in mandatory_names]
+
+    # Normalize hygiene weights to sum to 0.50
+    all_hygiene = list(hygiene_results) + additional
+    hygiene_weight_sum = sum(r.weight for r in all_hygiene)
+    if hygiene_weight_sum > 0:
+        normalized_hygiene = [
             EvalResult(
                 name=r.name,
                 score=r.score,
-                weight=(r.weight / proj_weight_sum) * 0.50,
+                weight=(r.weight / hygiene_weight_sum) * 0.50,
                 passed=r.passed,
                 details=r.details,
             )
-            for r in project_results
+            for r in all_hygiene
         ]
     else:
-        normalized_project = project_results
+        normalized_hygiene = all_hygiene
 
     # Normalize growth weights to sum to 0.50
     growth_weight_sum = sum(r.weight for r in growth_results)
@@ -74,26 +92,22 @@ def _merge_with_growth(
     else:
         normalized_growth = growth_results
 
-    return normalized_project + normalized_growth
+    return normalized_hygiene + normalized_growth
 
 
-async def run_eval(
+async def _run_project_eval(
     eval_command: str,
     project_path: Path,
-    threshold: float,
     timeout: float = 120.0,
-) -> CompositeScore:
-    """Run eval_command in project_path, parse JSON stdout, return CompositeScore.
+) -> list[EvalResult]:
+    """Run the project's eval/score.py (if it exists) and return additional results.
 
-    Expected JSON format: {"results": [{"name", "score", "weight", "passed", "details"}, ...]}
-
-    After parsing the project's eval results (hygiene dimensions), universal
-    growth dimensions are computed and merged in at a 50/50 weight split.
+    Returns an empty list if the command fails or returns no results.
+    These are project-specific ADDITIONS to the mandatory 11 dimensions.
     """
     parts = eval_command.split()
 
-    # Clean environment: remove VIRTUAL_ENV so the target project's own
-    # venv is used (prevents mypy/pytest from checking wrong packages).
+    # Clean environment
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
 
     try:
@@ -110,30 +124,48 @@ async def run_eval(
     except asyncio.TimeoutError:
         proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
-        return _error_score("Eval timed out", f"Timeout after {timeout}s")
-    except FileNotFoundError as e:
-        return _error_score("Eval command not found", str(e))
-
-    stdout = stdout_bytes.decode()
-    stderr = stderr_bytes.decode()
+        return []
+    except FileNotFoundError:
+        return []
 
     if proc.returncode != 0:
-        return _error_score(
-            "Eval exited with non-zero status",
-            f"exit code {proc.returncode}: {stderr}",
-        )
+        return []
 
+    stdout = stdout_bytes.decode()
     try:
         data = json.loads(stdout)
-    except json.JSONDecodeError:
-        return _error_score("Invalid JSON output", stdout[:500])
+        return [EvalResult(**r) for r in data["results"]]
+    except (json.JSONDecodeError, KeyError, TypeError):
+        return []
 
-    try:
-        project_results = [EvalResult(**r) for r in data["results"]]
-    except (KeyError, TypeError, Exception) as e:
-        return _error_score("Failed to parse eval results", str(e))
 
-    # Merge project-specific hygiene dimensions with universal growth dimensions
-    merged = _merge_with_growth(project_results, project_path)
+async def run_eval(
+    eval_command: str,
+    project_path: Path,
+    threshold: float,
+    timeout: float = 120.0,
+) -> CompositeScore:
+    """Compute all 11 mandatory dimensions + any project-specific additions.
 
+    1. Compute 6 mandatory hygiene dimensions (auto-detect project tooling)
+    2. Run project's eval/score.py for additional dimensions (optional)
+    3. Compute 5 mandatory growth dimensions
+    4. Merge all with 50/50 hygiene/growth split
+    5. Return composite score
+    """
+    # Step 1: Mandatory hygiene (always runs)
+    hygiene_dicts = compute_hygiene_results(project_path)
+    hygiene_results = [EvalResult(**r) for r in hygiene_dicts]
+
+    # Step 2: Project-specific additions (optional, additive only)
+    project_results = await _run_project_eval(eval_command, project_path, timeout)
+
+    # Step 3: Mandatory growth (always runs)
+    growth_dicts = compute_growth_results(project_path)
+    growth_results = [EvalResult(**r) for r in growth_dicts]
+
+    # Step 4: Merge all dimensions
+    merged = _merge_all(hygiene_results, project_results, growth_results)
+
+    # Step 5: Compute composite
     return compute_composite(merged, guard_violations=[], threshold=threshold)
