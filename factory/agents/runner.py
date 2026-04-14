@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from factory.ace.injector import inject_playbook, load_playbook
+
 logger = logging.getLogger(__name__)
 
 AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"]
@@ -30,18 +32,32 @@ def resolve_prompt(role: AgentRole, project_path: Path | None = None) -> str:
         override_path = project_path / ".factory" / "agents" / f"{role}.md"
         if override_path.exists():
             logger.info("Using project-specific prompt for %s: %s", role, override_path)
-            return override_path.read_text()
+            prompt = override_path.read_text()
+            # Auto-inject evolved playbook even with project overrides
+            playbook = load_playbook(role)
+            if playbook:
+                prompt = inject_playbook(prompt, playbook)
+                logger.info("Injected playbook for %s (project override)", role)
+            return prompt
 
     # Fall back to factory default
     default_path = _PROMPTS_DIR / f"{role}.md"
-    if default_path.exists():
-        return default_path.read_text()
+    if not default_path.exists():
+        override_hint = f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
+        raise FileNotFoundError(
+            f"No prompt found for agent role '{role}'. "
+            f"Expected at {default_path}{override_hint}"
+        )
 
-    override_hint = f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
-    raise FileNotFoundError(
-        f"No prompt found for agent role '{role}'. "
-        f"Expected at {default_path}{override_hint}"
-    )
+    prompt = default_path.read_text()
+
+    # Auto-inject evolved playbook if one exists for this role
+    playbook = load_playbook(role)
+    if playbook:
+        prompt = inject_playbook(prompt, playbook)
+        logger.info("Injected playbook for %s", role)
+
+    return prompt
 
 
 async def invoke_agent(
