@@ -255,13 +255,19 @@ The Archivist is NOT a one-shot step at the end. It is the CEO's persistent back
 
 The Researcher performs both local analysis and deep external research.
 
-**Step 0a: Local Study**
+**Step 0a: Local Study + Cross-Project Insights**
 
 ```bash
-uv run python -m factory study "$PROJECT_PATH"
+uv run python -m factory study "$PROJECT_PATH" --projects-dir ~/cursor-projects
 ```
 
-This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`. The study now includes an **Observability Coverage** section that analyzes:
+This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`. When `--projects-dir` is provided, it also:
+- Discovers all factory-managed projects in that directory
+- Loads experiment histories, classifies hypotheses, and computes category success rates
+- Writes cross-project insights to `$PROJECT_PATH/.factory/strategy/insights.md`
+- Includes a summary in observations.md for the Strategist
+
+The study also includes an **Observability Coverage** section that analyzes:
 - Function logging coverage (what fraction of functions have log statements)
 - Structured logging (JSON/structured output vs ad-hoc format strings)
 - Request tracing (unique IDs for correlating log lines)
@@ -338,6 +344,8 @@ $(cat "$PROJECT_PATH/factory.md")
 $(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo "No observations from Researcher")
 
 $(cat "$PROJECT_PATH/.factory/strategy/research.md" 2>/dev/null || echo "No deep research available")
+
+$(cat "$PROJECT_PATH/.factory/strategy/insights.md" 2>/dev/null || echo "No cross-project insights available")
 
 $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo "No prior strategy")
 
