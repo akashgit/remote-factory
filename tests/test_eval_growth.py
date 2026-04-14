@@ -14,7 +14,7 @@ from factory.eval.growth import (
     eval_observability,
     eval_research_grounding,
 )
-from factory.eval.runner import _merge_with_growth
+from factory.eval.runner import _merge_all
 from factory.models import EvalResult
 
 
@@ -74,38 +74,64 @@ class TestGrowthWeights:
 
 class TestMergeWithGrowth:
     def test_normalizes_to_50_50(self):
-        """Project results get 50%, growth gets 50%."""
-        project_results = [
+        """Hygiene gets 50%, growth gets 50%."""
+        hygiene_results = [
             EvalResult(name="tests", score=1.0, weight=0.6, passed=True, details="ok"),
             EvalResult(name="lint", score=1.0, weight=0.4, passed=True, details="ok"),
         ]
-        merged = _merge_with_growth(project_results, PROJECT_ROOT)
+        growth_results = [
+            EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
+        ]
+        merged = _merge_all(hygiene_results, [], growth_results)
 
-        project_weight = sum(r.weight for r in merged if r.name in {"tests", "lint"})
+        hygiene_weight = sum(r.weight for r in merged if r.name in {"tests", "lint"})
         growth_weight = sum(
             r.weight for r in merged
             if r.name not in {"tests", "lint"}
         )
 
-        assert abs(project_weight - 0.50) < 1e-9
+        assert abs(hygiene_weight - 0.50) < 1e-9
         assert abs(growth_weight - 0.50) < 1e-9
-        assert abs(project_weight + growth_weight - 1.0) < 1e-9
+        assert abs(hygiene_weight + growth_weight - 1.0) < 1e-9
 
     def test_total_dimensions(self):
-        """Should be project dims + 5 growth dims."""
-        project_results = [
+        """Should be hygiene dims + 5 growth dims."""
+        hygiene_results = [
             EvalResult(name="tests", score=1.0, weight=0.5, passed=True, details=""),
             EvalResult(name="lint", score=1.0, weight=0.5, passed=True, details=""),
         ]
-        merged = _merge_with_growth(project_results, PROJECT_ROOT)
-        assert len(merged) == 7  # 2 project + 5 growth
+        growth_results = [
+            EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
+        ]
+        merged = _merge_all(hygiene_results, [], growth_results)
+        assert len(merged) == 7  # 2 hygiene + 5 growth
 
-    def test_preserves_project_scores(self):
-        """Project scores should not be altered by merging."""
+    def test_project_additions_merged(self):
+        """Project-specific additions are merged into the hygiene half."""
+        hygiene_results = [
+            EvalResult(name="tests", score=1.0, weight=0.5, passed=True, details=""),
+            EvalResult(name="lint", score=1.0, weight=0.5, passed=True, details=""),
+        ]
         project_results = [
+            EvalResult(name="ui_renders", score=0.9, weight=0.5, passed=True, details="ok"),
+        ]
+        growth_results = [
+            EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
+        ]
+        merged = _merge_all(hygiene_results, project_results, growth_results)
+        assert len(merged) == 8  # 2 hygiene + 1 project + 5 growth
+        names = {r.name for r in merged}
+        assert "ui_renders" in names
+
+    def test_preserves_scores(self):
+        """Scores should not be altered by merging."""
+        hygiene_results = [
             EvalResult(name="tests", score=0.75, weight=1.0, passed=True, details=""),
         ]
-        merged = _merge_with_growth(project_results, PROJECT_ROOT)
+        growth_results = [
+            EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
+        ]
+        merged = _merge_all(hygiene_results, [], growth_results)
         test_result = next(r for r in merged if r.name == "tests")
         assert test_result.score == 0.75
 

@@ -1,82 +1,93 @@
-"""Tests for factory.eval.runner — eval subprocess execution."""
+"""Tests for factory.eval.runner — mandatory dimensions + project eval execution."""
 
 from factory.eval.runner import run_eval
 
 
 class TestRunEval:
-    async def test_successful_eval(self, tmp_path):
-        """Valid eval script that outputs correct JSON."""
+    async def test_always_has_mandatory_dimensions(self, tmp_path):
+        """Even with no project eval, all 11 mandatory dimensions are present."""
+        # No eval/score.py — just mandatory dimensions
+        result = await run_eval("true", tmp_path, threshold=0.0)
+        names = {r.name for r in result.results}
+        # 6 hygiene + 5 growth = 11 mandatory
+        assert "tests" in names
+        assert "lint" in names
+        assert "type_check" in names
+        assert "coverage" in names
+        assert "guard_patterns" in names
+        assert "config_parser" in names
+        assert "capability_surface" in names
+        assert "experiment_diversity" in names
+        assert "observability" in names
+        assert "research_grounding" in names
+        assert "factory_effectiveness" in names
+        assert len(result.results) >= 11
+
+    async def test_project_additions_merged(self, tmp_path):
+        """Project eval/score.py can add extra dimensions beyond the 11."""
         script = tmp_path / "score.py"
         script.write_text(
             'import json, sys\n'
             'json.dump({"results": ['
-            '{"name": "tests", "score": 0.9, "weight": 0.6, "passed": True, "details": "ok"},'
-            '{"name": "lint", "score": 1.0, "weight": 0.4, "passed": True, "details": "clean"}'
+            '{"name": "ui_renders", "score": 0.9, "weight": 0.5, "passed": True, "details": "ok"},'
+            '{"name": "api_health", "score": 1.0, "weight": 0.5, "passed": True, "details": "up"}'
             ']}, sys.stdout)\n'
         )
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
-        assert result.total > 0.0
-        # 2 project + 5 growth dimensions
-        assert len(result.results) == 7
-        project_names = {r.name for r in result.results[:2]}
-        assert project_names == {"tests", "lint"}
+        result = await run_eval(f"python {script}", tmp_path, threshold=0.0)
+        names = {r.name for r in result.results}
+        # 11 mandatory + 2 project additions
+        assert "ui_renders" in names
+        assert "api_health" in names
+        assert len(result.results) >= 13
 
-    async def test_command_not_found(self, tmp_path):
-        """Non-existent command returns error score."""
-        result = await run_eval("nonexistent_command_xyz", tmp_path, threshold=0.8)
-        assert result.passed is False
-        assert result.total == 0.0
-        assert result.results[0].name == "error"
-
-    async def test_timeout(self, tmp_path):
-        """Script that hangs is killed after timeout."""
-        script = tmp_path / "hang.py"
-        script.write_text("import time\ntime.sleep(60)\n")
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8, timeout=1.0)
-        assert result.passed is False
-        assert result.total == 0.0
-        assert "Timeout" in result.results[0].details
-
-    async def test_nonzero_exit(self, tmp_path):
-        """Script that exits with non-zero returns error score."""
-        script = tmp_path / "fail.py"
-        script.write_text("import sys\nsys.exit(1)\n")
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
-        assert result.passed is False
-        assert result.total == 0.0
-        assert "exit code" in result.results[0].details.lower()
-
-    async def test_invalid_json(self, tmp_path):
-        """Script that outputs non-JSON returns error score."""
-        script = tmp_path / "bad.py"
-        script.write_text('print("not json at all")\n')
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
-        assert result.passed is False
-        assert result.total == 0.0
-        assert result.results[0].name == "error"
-
-    async def test_malformed_results(self, tmp_path):
-        """Script that outputs JSON without proper results array."""
-        script = tmp_path / "malformed.py"
-        script.write_text(
-            'import json, sys\n'
-            'json.dump({"results": [{"wrong": "keys"}]}, sys.stdout)\n'
-        )
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
-        assert result.passed is False
-        assert result.total == 0.0
-
-    async def test_threshold_failure(self, tmp_path):
-        """Score below threshold means passed=False."""
-        script = tmp_path / "low.py"
+    async def test_project_cannot_override_mandatory(self, tmp_path):
+        """If project eval returns a dimension with the same name as mandatory, it's ignored."""
+        script = tmp_path / "score.py"
         script.write_text(
             'import json, sys\n'
             'json.dump({"results": ['
-            '{"name": "tests", "score": 0.3, "weight": 1.0, "passed": False, "details": "failing"}'
+            '{"name": "tests", "score": 0.0, "weight": 1.0, "passed": false, "details": "fake override"}'
             ']}, sys.stdout)\n'
         )
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
+        result = await run_eval(f"python {script}", tmp_path, threshold=0.0)
+        # The "tests" dimension should come from hygiene, not the project override
+        test_results = [r for r in result.results if r.name == "tests"]
+        assert len(test_results) == 1
+        assert "fake override" not in test_results[0].details
+
+    async def test_failed_project_eval_still_has_mandatory(self, tmp_path):
+        """If project eval command fails, mandatory dimensions still run."""
+        result = await run_eval("nonexistent_command_xyz", tmp_path, threshold=0.0)
+        names = {r.name for r in result.results}
+        # All 11 mandatory should still be present
+        assert len(names) >= 11
+        assert "tests" in names
+        assert "capability_surface" in names
+
+    async def test_threshold_applied_to_composite(self, tmp_path):
+        """Composite score is checked against threshold."""
+        result = await run_eval("true", tmp_path, threshold=0.99)
+        # With neutral scores (0.5) for undetected tools, composite will be < 0.99
         assert result.passed is False
-        # Project score is 0.3 but gets 50% weight; growth adds ~0.25
-        # Total should be well below the 0.8 threshold
-        assert result.total < 0.8
+
+    async def test_timeout_project_eval(self, tmp_path):
+        """Project eval timeout doesn't prevent mandatory dimensions."""
+        script = tmp_path / "hang.py"
+        script.write_text("import time\ntime.sleep(60)\n")
+        result = await run_eval(f"python {script}", tmp_path, threshold=0.0, timeout=1.0)
+        # Mandatory dimensions still computed
+        names = {r.name for r in result.results}
+        assert len(names) >= 11
+
+    async def test_weight_split_is_50_50(self, tmp_path):
+        """Hygiene dimensions get 50% total weight, growth gets 50%."""
+        result = await run_eval("true", tmp_path, threshold=0.0)
+        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser"}
+        growth_names = {
+            "capability_surface", "experiment_diversity", "observability",
+            "research_grounding", "factory_effectiveness",
+        }
+        hygiene_weight = sum(r.weight for r in result.results if r.name in hygiene_names)
+        growth_weight = sum(r.weight for r in result.results if r.name in growth_names)
+        assert abs(hygiene_weight - 0.50) < 0.01
+        assert abs(growth_weight - 0.50) < 0.01
