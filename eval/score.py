@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Eval script for the Remote Factory.
 
-Runs 6 evaluation dimensions and outputs JSON to stdout.
+Runs 6 project-specific (hygiene) evaluation dimensions and outputs JSON
+to stdout. The factory's eval runner injects universal growth dimensions
+on top of these, so this script only needs to cover project health.
 
 Output format:
     {"results": [{"name": str, "score": float, "weight": float, "passed": bool, "details": str}, ...]}
@@ -80,7 +82,7 @@ def eval_tests() -> dict:
         }
 
 
-# ── Dimension 2: lint (weight 0.10) ──────────────────────────────
+# ── Dimension 2: lint (weight 0.15) ──────────────────────────────
 
 
 def eval_lint() -> dict:
@@ -97,7 +99,7 @@ def eval_lint() -> dict:
             return {
                 "name": "lint",
                 "score": 1.0,
-                "weight": 0.10,
+                "weight": 0.15,
                 "passed": True,
                 "details": "No lint errors",
             }
@@ -117,7 +119,7 @@ def eval_lint() -> dict:
         return {
             "name": "lint",
             "score": round(score, 4),
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": False,
             "details": details,
         }
@@ -125,7 +127,7 @@ def eval_lint() -> dict:
         return {
             "name": "lint",
             "score": 0.0,
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": False,
             "details": "Timed out after 120s",
         }
@@ -133,7 +135,7 @@ def eval_lint() -> dict:
         return {
             "name": "lint",
             "score": 0.0,
-            "weight": 0.10,
+            "weight": 0.15,
             "passed": False,
             "details": f"Error: {exc}",
         }
@@ -249,7 +251,7 @@ def eval_coverage() -> dict:
         }
 
 
-# ── Dimension 5: guard_patterns (weight 0.15) ────────────────────
+# ── Dimension 5: guard_patterns (weight 0.10) ────────────────────
 
 
 def eval_guard_patterns() -> dict:
@@ -260,7 +262,7 @@ def eval_guard_patterns() -> dict:
         return {
             "name": "guard_patterns",
             "score": 0.0,
-            "weight": 0.15,
+            "weight": 0.10,
             "passed": False,
             "details": f"Could not import _glob_match: {exc}",
         }
@@ -293,7 +295,7 @@ def eval_guard_patterns() -> dict:
         return {
             "name": "guard_patterns",
             "score": round(score, 4),
-            "weight": 0.15,
+            "weight": 0.10,
             "passed": ok,
             "details": "; ".join(results_detail),
         }
@@ -301,7 +303,7 @@ def eval_guard_patterns() -> dict:
         return {
             "name": "guard_patterns",
             "score": 0.0,
-            "weight": 0.15,
+            "weight": 0.10,
             "passed": False,
             "details": f"Error running guard pattern tests: {exc}",
         }
