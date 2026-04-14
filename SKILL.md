@@ -16,19 +16,24 @@ TRIGGER when: user says /factory, or the session is started with a factory promp
 
 Before doing anything, determine the project and its state.
 
-### Step 1: Identify the Project Path
+### Step 1: Resolve Factory Home
+
+```bash
+# Resolve the factory installation root (works regardless of where it's cloned)
+FACTORY_HOME="$(factory home)"
+```
+
+### Step 2: Identify the Project Path
 
 ```bash
 # Use the current working directory, or the path the user provided
 PROJECT_PATH="$(pwd)"
 ```
 
-### Step 2: Detect Project State
+### Step 3: Detect Project State
 
 ```bash
-cd ~/factory-projects/remote-factory
-source .venv/bin/activate
-uv run python -m factory detect "$PROJECT_PATH"
+factory detect "$PROJECT_PATH"
 ```
 
 This prints one of five states:
@@ -41,7 +46,7 @@ This prints one of five states:
 | `has_factory`           | Factory fully initialized, evals reviewed        | Improve mode   |
 | `no_factory`            | Repo exists, no factory setup                    | Discover mode  |
 
-### Step 3: Route to Mode
+### Step 4: Route to Mode
 
 - `no_repo` or `incomplete` --> **Build mode**
 - `no_factory` --> **Discover mode**
@@ -90,8 +95,9 @@ The project either doesn't exist or has open plan/implementation issues. Invoke 
 
 ```bash
 claude -p "$(cat <<'PROMPT'
-You are Akash's delegate. Load your persona from ~/.claude/skills/delegate/persona.md
-and execute the delegate workflow from ~/.claude/skills/delegate/SKILL.md.
+You are a delegate responsible for building projects from scratch.
+Load the delegate skill from $FACTORY_HOME/factory/agents/prompts/delegate.md if it exists,
+otherwise follow these instructions directly.
 
 Target project: $PROJECT_PATH
 
@@ -104,7 +110,7 @@ PROMPT
 2. **After the delegate finishes**, re-run state detection:
 
 ```bash
-uv run python -m factory detect "$PROJECT_PATH"
+factory detect "$PROJECT_PATH"
 ```
 
 3. If the state has advanced to `no_factory`, continue to **Discover mode**. If still `incomplete`, the delegate left work for Akash -- stop and report status.
@@ -118,7 +124,7 @@ The repo exists but the factory hasn't been set up. Auto-discover eval dimension
 ### Step 1: Run Discovery
 
 ```bash
-uv run python -m factory discover "$PROJECT_PATH"
+factory discover "$PROJECT_PATH"
 ```
 
 This introspects the project (language, framework, project type, test/lint/type-check commands) and:
@@ -137,7 +143,7 @@ cat "$PROJECT_PATH/eval/score.py"
 ### Step 3: Re-detect State
 
 ```bash
-uv run python -m factory detect "$PROJECT_PATH"
+factory detect "$PROJECT_PATH"
 ```
 
 State should now be `evals_pending_review`. Continue to **Review mode**.
@@ -193,7 +199,7 @@ profile_path.write_text(json.dumps(profile, indent=2))
 Copy the template and fill it in based on the project:
 
 ```bash
-cp ~/factory-projects/remote-factory/templates/factory_config.md "$PROJECT_PATH/factory.md"
+cp $FACTORY_HOME/templates/factory_config.md "$PROJECT_PATH/factory.md"
 ```
 
 Edit `factory.md` to fill in:
@@ -209,7 +215,7 @@ Edit `factory.md` to fill in:
 ### Step 5: Initialize the Factory Store
 
 ```bash
-uv run python -m factory init "$PROJECT_PATH"
+factory init "$PROJECT_PATH"
 ```
 
 This parses `factory.md` into `.factory/config.json` and creates the experiment store.
@@ -217,7 +223,7 @@ This parses `factory.md` into `.factory/config.json` and creates the experiment 
 ### Step 6: Run Baseline Eval
 
 ```bash
-uv run python -m factory eval "$PROJECT_PATH"
+factory eval "$PROJECT_PATH"
 ```
 
 Record the baseline score. This is the starting point -- all future changes must score at or above this level.
@@ -258,7 +264,7 @@ The Researcher performs both local analysis and deep external research.
 **Step 0a: Local Study + Cross-Project Insights**
 
 ```bash
-uv run python -m factory study "$PROJECT_PATH" --projects-dir ~/factory-projects
+factory study "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
 ```
 
 This writes local observations to `$PROJECT_PATH/.factory/strategy/observations.md`. When `--projects-dir` is provided, it also:
@@ -282,14 +288,14 @@ Spawn the researcher subagent to perform web-based research and vault knowledge 
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Researcher agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/researcher.md — use Mode 2 (Research).
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/researcher.md — use Mode 2 (Research).
 
 Project: $PROJECT_PATH
 
 ## Context
 $(cat "$PROJECT_PATH/factory.md" 2>/dev/null || echo "No factory.md")
 $(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo "No local observations")
-$(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
+$(factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
 
 ## Task
 1. Read the local observations already generated
@@ -309,7 +315,7 @@ If the deep research subagent fails, proceed to Step 1 — the Strategist can wo
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Archivist agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/archivist.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/archivist.md
 
 Project: $PROJECT_PATH
 
@@ -332,12 +338,12 @@ The Strategist reads the Researcher's observations (from `.factory/strategy/obse
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Strategist agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/strategist.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/strategist.md
 
 Project: $PROJECT_PATH
 
 ## Context
-$(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
+$(factory history "$PROJECT_PATH" 2>/dev/null || echo "No experiments yet")
 
 $(cat "$PROJECT_PATH/factory.md")
 
@@ -351,7 +357,7 @@ $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo "No prior
 
 $(cd "$PROJECT_PATH" && git log --oneline -20)
 
-$(uv run python -m factory eval "$PROJECT_PATH")
+$(factory eval "$PROJECT_PATH")
 
 ## Task
 Observe the project state, analyze patterns, and write 1-3 hypotheses to
@@ -370,7 +376,7 @@ PROMPT
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Archivist agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/archivist.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/archivist.md
 
 Project: $PROJECT_PATH
 
@@ -394,13 +400,13 @@ The CEO delegates the baseline eval to the Evaluator agent. The Evaluator record
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Evaluator agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/evaluator.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/evaluator.md
 
 Project: $PROJECT_PATH
 
 ## Task
 Run the baseline eval and report the score.
-1. Run: uv run python -m factory eval "$PROJECT_PATH"
+1. Run: factory eval "$PROJECT_PATH"
 2. Parse the JSON output
 3. Print the composite score and per-dimension breakdown to stdout
 4. If eval crashes, report the error clearly
@@ -413,7 +419,7 @@ Save the output -- this is `score_before`. If the Evaluator reports a crash, see
 #### 2b. Begin Experiment
 
 ```bash
-uv run python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
+factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 This prints the experiment ID. Save it as `$EXP_ID`.
@@ -452,7 +458,7 @@ The Builder agent implements the hypothesis as a PR. It works in isolation on a 
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Builder agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/builder.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/builder.md
 
 ## Task
 Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
@@ -485,7 +491,7 @@ The CEO delegates the guard check and code review to the Reviewer agent. The Rev
 BASELINE_SHA=$(git log --format=%H -1 main)
 claude -p "$(cat <<'PROMPT'
 You are the Reviewer agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/reviewer.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/reviewer.md
 
 Project: $PROJECT_PATH
 Experiment: $EXP_ID
@@ -493,7 +499,7 @@ Baseline SHA: $BASELINE_SHA
 
 ## Task
 Review the Builder's changes.
-1. Run guard check: uv run python -m factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA" --check-scope
+1. Run guard check: factory guard "$PROJECT_PATH" --baseline "$BASELINE_SHA" --check-scope
 2. Read the PR diff: gh pr diff <pr-number> -R <owner>/<repo>
 3. Assess code quality against acceptance criteria
 4. Print your verdict to stdout: PASS or FAIL with details
@@ -511,13 +517,13 @@ The CEO delegates the post-change eval to the Evaluator agent. The Evaluator sco
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Evaluator agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/evaluator.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/evaluator.md
 
 Project: $PROJECT_PATH
 
 ## Task
 Run the post-change eval and report the score.
-1. Run: uv run python -m factory eval "$PROJECT_PATH"
+1. Run: factory eval "$PROJECT_PATH"
 2. Parse the JSON output
 3. Print the composite score and per-dimension breakdown to stdout
 4. Compare against baseline score: $SCORE_BEFORE
@@ -537,7 +543,7 @@ Compare `score_after` vs `score_before`:
   - Merge the PR: `gh pr merge <pr-number> -R <owner>/<repo>`
   - Finalize the experiment:
     ```bash
-    uv run python -m factory finalize "$PROJECT_PATH" \
+    factory finalize "$PROJECT_PATH" \
         --id $EXP_ID \
         --verdict keep \
         --hypothesis "<hypothesis>" \
@@ -551,7 +557,7 @@ Compare `score_after` vs `score_before`:
   - Revert any changes: `git checkout main`
   - Finalize the experiment:
     ```bash
-    uv run python -m factory finalize "$PROJECT_PATH" \
+    factory finalize "$PROJECT_PATH" \
         --id $EXP_ID \
         --verdict revert \
         --hypothesis "<hypothesis>" \
@@ -564,13 +570,13 @@ Compare `score_after` vs `score_before`:
 ```bash
 claude -p "$(cat <<'PROMPT'
 You are the Archivist agent for the Software Factory.
-Load your base prompt from ~/factory-projects/remote-factory/factory/agents/prompts/archivist.md
+Load your base prompt from $FACTORY_HOME/factory/agents/prompts/archivist.md
 
 Project: $PROJECT_PATH
 
 ## Task (async — background note-taking)
 Record the experiment outcome and decision rationale.
-1. Read experiment history: uv run python -m factory history "$PROJECT_PATH"
+1. Read experiment history: factory history "$PROJECT_PATH"
 2. Write an experiment note for experiment $EXP_ID (verdict: $VERDICT)
 3. Record the decision rationale: score_before=$SCORE_BEFORE, score_after=$SCORE_AFTER
 4. Update the project dashboard with the latest experiment result
@@ -585,7 +591,7 @@ PROMPT
 The Archivist has been recording throughout the workflow via async background spawns. This final step ensures completeness and updates MEMORY.md.
 
 ```bash
-uv run python -m factory archive "$PROJECT_PATH"
+factory archive "$PROJECT_PATH"
 ```
 
 This reads the experiment history, writes structured archive files to `.factory/archive/`, and regenerates MEMORY.md. If the command fails, log the error — the async Archivist notes written earlier still provide coverage.
@@ -593,7 +599,7 @@ This reads the experiment history, writes structured archive files to `.factory/
 ### Step 4: Notify
 
 ```bash
-uv run python -m factory notify "$PROJECT_PATH"
+factory notify "$PROJECT_PATH"
 ```
 
 ### Step 5: Commit Factory State
@@ -654,14 +660,14 @@ When making keep/revert decisions, apply these heuristics:
 
 ## Sacred Rules
 
-These rules are **inviolable**. They are checked by `uv run python -m factory guard` before any change is kept. A violation means the change is reverted, no exceptions.
+These rules are **inviolable**. They are checked by `factory guard` before any change is kept. A violation means the change is reverted, no exceptions.
 
 1. **Do not delete or overwrite existing tests** -- tests may be extended but never removed
 2. **Do not modify files outside the declared scope** -- `factory.md` defines which files are modifiable
 3. **Do not introduce secrets or credentials** -- no API keys, tokens, or passwords in the repo
 4. **Do not lower the eval threshold** -- the bar only goes up
 5. **Do not skip the eval step** -- every change must be scored before it can be kept
-6. **Do not merge without guard check passing** -- `uv run python -m factory guard` must print `clean`
+6. **Do not merge without guard check passing** -- `factory guard` must print `clean`
 
 ---
 
@@ -675,7 +681,7 @@ If the builder invocation fails (non-zero exit, no PR opened, or builder comment
 2. If the builder posted a question, answer it and re-invoke the builder
 3. If the builder crashed, finalize the experiment as error:
    ```bash
-   uv run python -m factory finalize "$PROJECT_PATH" \
+   factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict error \
        --hypothesis "<hypothesis>" \
@@ -685,14 +691,14 @@ If the builder invocation fails (non-zero exit, no PR opened, or builder comment
 
 ### Eval Crash
 
-If `uv run python -m factory eval` fails (non-zero exit without producing a valid score):
+If `factory eval` fails (non-zero exit without producing a valid score):
 
 1. Check the eval script: `cat "$PROJECT_PATH/eval/score.py"`
 2. Check for syntax errors or missing dependencies
 3. If fixable, fix the eval script and retry
 4. If not fixable, finalize the experiment as error:
    ```bash
-   uv run python -m factory finalize "$PROJECT_PATH" \
+   factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict error \
        --notes "Eval crashed: <error output>"
@@ -700,14 +706,14 @@ If `uv run python -m factory eval` fails (non-zero exit without producing a vali
 
 ### Guard Violation
 
-If `uv run python -m factory guard` reports violations:
+If `factory guard` reports violations:
 
 1. The change **must be reverted** -- no exceptions
 2. Close the PR without merging: `gh pr close <pr-number> -R <owner>/<repo>`
 3. Revert to the pre-experiment state: `git checkout main`
 4. Finalize as revert with the violation details:
    ```bash
-   uv run python -m factory finalize "$PROJECT_PATH" \
+   factory finalize "$PROJECT_PATH" \
        --id $EXP_ID \
        --verdict revert \
        --notes "Guard violation: <violation details>"
@@ -763,6 +769,6 @@ Write `$PROJECT_PATH/.factory/strategy/current.md` with:
 If context has been compacted and prior details are lost:
 
 1. Read `$PROJECT_PATH/.factory/strategy/current.md`
-2. Run `uv run python -m factory history "$PROJECT_PATH"` to see experiment log
+2. Run `factory history "$PROJECT_PATH"` to see experiment log
 3. Check open issues and PRs: `gh issue list -R <owner>/<repo> --state open`
 4. Continue from the "Next action" in the strategy file
