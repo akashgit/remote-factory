@@ -182,7 +182,11 @@ def cmd_study(args: argparse.Namespace) -> int:
     from factory.study import study_project
 
     project_path = Path(args.path)
-    summary = study_project(project_path)
+    kwargs: dict[str, object] = {}
+    projects_dir = getattr(args, "projects_dir", None)
+    if projects_dir:
+        kwargs["projects_dir"] = str(Path(projects_dir).expanduser().resolve())
+    summary = study_project(project_path, **kwargs)
 
     # Write to .factory/strategy/observations.md
     obs_path = project_path / ".factory" / "strategy" / "observations.md"
@@ -247,6 +251,40 @@ def cmd_digest(args: argparse.Namespace) -> int:
     projects = scan_vault(target_date=target_date, days=args.days)
     output = format_digest(projects, target_date=target_date, days=args.days)
     print(output)
+    return 0
+
+
+def cmd_insights(args: argparse.Namespace) -> int:
+    from factory.insights import (
+        analyze,
+        discover_projects,
+        format_insights,
+        load_all_histories,
+    )
+
+    project_path = Path(args.path).resolve()
+    projects_dir = Path(args.projects_dir).expanduser().resolve()
+    project_paths = discover_projects(projects_dir)
+
+    if not project_paths:
+        print("No factory-managed projects found.")
+        return 0
+
+    histories = load_all_histories(project_paths)
+    if not histories:
+        print("No experiment histories found.")
+        return 0
+
+    insights = analyze(histories)
+    report = format_insights(insights)
+
+    # Write to .factory/strategy/insights.md
+    out_path = project_path / ".factory" / "strategy" / "insights.md"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(report)
+
+    print(report)
+    print(f"\nWritten to {out_path}")
     return 0
 
 
@@ -658,11 +696,23 @@ def build_parser() -> argparse.ArgumentParser:
     # study
     p = sub.add_parser("study", help="Read interaction logs and write observations")
     p.add_argument("path", help="Path to the project")
+    p.add_argument(
+        "--projects-dir", default=None,
+        help="Directory containing factory-managed projects for cross-project insights",
+    )
 
     # status
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+
+    # insights
+    p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
+    p.add_argument("path", help="Path to the project (insights.md written here)")
+    p.add_argument(
+        "--projects-dir", default="~/factory-projects",
+        help="Directory containing factory-managed projects (default: ~/factory-projects)",
+    )
 
     # digest
     p = sub.add_parser("digest", help="Summarize recent factory activity across projects")
@@ -745,6 +795,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "insights": cmd_insights,
         "digest": cmd_digest,
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,

@@ -36,7 +36,7 @@ You have access to these Obsidian skills:
 For each completed experiment, create a note:
 
 ```bash
-obsidian create vault="factory" name="10-Projects/{project}/Experiments/{project}-{NNN}" content="---
+obsidian create vault="factory" path="10-Projects/{project}/Experiments/{project}-{NNN}" content="---
 tags:
   - factory
   - experiment
@@ -70,7 +70,7 @@ source: factory-archivist
 ### 2. Update Project Dashboard
 
 ```bash
-obsidian create vault="factory" name="10-Projects/{project}/{project}" content="---
+obsidian create vault="factory" path="10-Projects/{project}/{project}" content="---
 tags:
   - factory
   - project
@@ -93,7 +93,7 @@ tags:
 ### 3. Record Strategy Snapshots
 
 ```bash
-obsidian create vault="factory" name="10-Projects/{project}/Strategies/{project}-{date}" content="---
+obsidian create vault="factory" path="10-Projects/{project}/Strategies/{project}-{date}" content="---
 tags:
   - factory
   - strategy
@@ -124,7 +124,7 @@ Discovered in [[{project}]] experiment #{id}.
 Create a `.base` file for each project's experiment history:
 
 ```bash
-obsidian create vault="factory" name="10-Projects/{project}/Experiments.base" content="filters: 'file.folder.contains(\"{project}/Experiments\")'
+obsidian create vault="factory" path="10-Projects/{project}/Experiments.base" content="filters: 'file.folder.contains(\"{project}/Experiments\")'
 formulas:
   verdict_emoji: 'if(verdict == \"keep\", \"✅\", if(verdict == \"revert\", \"❌\", \"⚠️\"))'
 views:
@@ -146,9 +146,40 @@ uv run python -m factory archive "{project_path}"
 
 This runs `update_memory_index()` which regenerates MEMORY.md.
 
+## Aggressive Documentation Protocol
+
+The factory's institutional memory is only as good as what gets written. Follow this protocol on EVERY invocation.
+
+### Pre-flight Checklist
+
+Before completing your task, verify ALL of these:
+
+1. **Experiment note written?** — After any keep/revert/error verdict, write the experiment note immediately. Do not skip this.
+2. **Dashboard updated?** — After any experiment, update the project dashboard with the latest stats.
+3. **Strategy snapshot?** — After any strategy change, write a dated strategy snapshot.
+4. **Source notes?** — After research, write a source note for EACH new finding (not just a summary).
+5. **Patterns updated?** — If you notice a cross-project pattern, append it to `00-Factory/Patterns.md`.
+
+### Documentation Rules
+
+- Write BOTH the experiment note AND the dashboard update — not just one
+- Write source notes for EACH external finding, not a single combined note
+- Include quantitative data: scores, deltas, keep rates
+- Use wikilinks to connect related notes: `[[project-name]]`, `[[experiment-NNN]]`
+- If obsidian-cli fails on any note, fall back to direct file writes immediately — do not skip the note
+- After ALL notes are written, run: `uv run python -m factory archive "$PROJECT_PATH"` to update MEMORY.md
+
+### Common Mistakes to Avoid
+
+- Writing only the experiment note but forgetting the dashboard
+- Writing a single "research summary" instead of individual source notes
+- Skipping documentation when the experiment verdict is "error"
+- Not updating Patterns.md when the same category fails across multiple projects
+
 ## Rules
 
 - Always use `vault="factory"` in obsidian-cli commands
+- For nested paths (containing `/`), use `path=` instead of `name=` in obsidian-cli commands
 - Use `silent` flag to prevent notes from opening in Obsidian
 - Use wikilinks `[[note]]` for cross-references between notes
 - Tag every note with `factory` and the relevant type tag

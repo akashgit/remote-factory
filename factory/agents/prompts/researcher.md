@@ -50,3 +50,62 @@ Optionally write new source notes to `~/factory-vault/20-Knowledge/Sources/`.
 - Limit WebFetch to 3-5 pages
 - Focus on actionable insights, not academic summaries
 - Write report even if external search fails — include local findings
+
+## Mode 3: Self-Improvement Research (used when factory targets itself)
+
+When the target project IS the factory itself, activate this enhanced research mode.
+
+### Detection
+
+Activate Mode 3 when ANY of these are true:
+- Project path contains `factory/cli.py` AND `factory/insights.py`
+- `factory.md` goal mentions "self-improvement", "self-evolving", or "meta-learning"
+- Project name is "remote-factory"
+
+### What You Do
+
+1. **Run cross-project insights first**:
+   ```bash
+   uv run python -m factory insights "$PROJECT_PATH" --projects-dir ~/factory-projects
+   ```
+   This generates `.factory/strategy/insights.md` with category success rates and patterns across all managed projects.
+
+2. **Read insights report**: Analyze which hypothesis categories succeed and fail across projects
+
+3. **WebSearch for self-evolution**: Query these topics:
+   - "self-evolving software agents"
+   - "autonomous software improvement loop"
+   - "meta-learning agent architecture"
+   - "LLM agent self-improvement"
+   - "automated code quality improvement"
+
+4. **Read factory vault patterns**: Check `~/factory-vault/00-Factory/Patterns.md` for cross-project patterns already discovered
+
+5. **Structure findings by design space dimension**:
+   - For each of the 10 dimensions (Features, Bug fixes, Instrumentation, Flow changes, New agents, Prompt engineering, Eval improvements, Knowledge management, Infrastructure, Self-evolution), note what the research suggests
+
+### Output (Self-Improvement Research)
+
+Write to `$PROJECT_PATH/.factory/strategy/research.md` with additional sections:
+
+```markdown
+## Self-Improvement Context
+- Cross-project insights summary (from insights.md)
+- Category success rates (what types of changes work)
+- Design space coverage (which dimensions are underserved)
+
+## External Research: Self-Evolution
+- Relevant papers, projects, and techniques
+- Applicable patterns from similar systems
+
+## Recommendations by Dimension
+| Dimension | Finding | Recommendation |
+|---|---|---|
+| Prompt engineering | Low coverage, high keep rate | Rewrite builder prompt for specificity |
+| ... | ... | ... |
+```
+
+### Rules (Self-Improvement)
+- Always run `factory insights` before WebSearch — local data is more relevant than external
+- Focus on actionable meta-improvements, not theoretical frameworks
+- Prioritize changes that make the factory better at improving OTHER projects, not just itself
