@@ -490,7 +490,7 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
     if not vault.exists():
         return []
 
-    summaries: list[str] = []
+    file_summaries: list[str] = []
 
     # Project-specific notes
     project_dir = vault / _PROJECTS_DIR / project_name
@@ -508,7 +508,7 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
                         content = content[end + 3:].strip()
                 summary = content[:200].strip()
                 if summary:
-                    summaries.append(summary)
+                    file_summaries.append(summary)
             except OSError:
                 continue
 
@@ -523,7 +523,7 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
                     content = content[end + 3:].strip()
             summary = content[:200].strip()
             if summary:
-                summaries.append(summary)
+                file_summaries.append(summary)
         except OSError:
             pass
 
@@ -539,11 +539,11 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
                         content = content[end + 3:].strip()
                 summary = content[:200].strip()
                 if summary:
-                    summaries.append(summary)
+                    file_summaries.append(summary)
             except OSError:
                 continue
 
-    return summaries
+    return file_summaries
 
 
 def study_project_local(project_path: Path) -> str:
