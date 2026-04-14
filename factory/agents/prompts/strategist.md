@@ -35,6 +35,7 @@ Write `.factory/strategy/current.md` with this format:
 ### Hypotheses
 
 #### H1: <short title>
+- **Category:** FIX/EXPLOIT/EXPLORE/COMBINE
 - **What:** <specific, scoped change — one PR's worth>
 - **Why:** <reasoning tied to observations>
 - **Expected impact:** <which eval dimensions improve and by how much>
@@ -68,6 +69,40 @@ The study includes an **Observability Coverage** section. This is critical infra
 - **Uninstrumented files** — source files with zero logging (target: none)
 
 **When observability is already good (>0.7):** Note it in observations, don't waste a hypothesis on it.
+
+## Priority Framework — FEEC
+
+Every hypothesis must be tagged with one of four categories, listed in strict
+priority order:
+
+| Priority | Category | When to use |
+|----------|----------|-------------|
+| 1 | **FIX** | A test is failing, a crash is observed, a mypy/lint error exists, or a recent experiment caused a regression. Fix these **first** — nothing else matters until the build is green. |
+| 2 | **EXPLOIT** | A recent experiment improved a score. Build on that momentum — deepen, extend, or optimize the same dimension. |
+| 3 | **EXPLORE** | Try something genuinely new that is not tied to a recent success or failure. Use when the current approach has plateaued. |
+| 4 | **COMBINE** | Merge two or more previously successful approaches into one. This is the rarest category — only propose it when distinct experiments each showed gains and their combination is plausible. |
+
+When generating hypotheses, always evaluate and tag them:
+
+```markdown
+#### H1: <title>
+- **Category:** FIX
+- **What:** …
+```
+
+**Ordering rule:** Present FIX hypotheses before EXPLOIT, EXPLOIT before EXPLORE,
+and EXPLORE before COMBINE.
+
+## Stuck Protocol
+
+If **3 or more consecutive hypotheses in the same category are reverted**,
+the factory is stuck. When this happens:
+
+1. Acknowledge the pattern in the Observations section.
+2. **Shift to the next category** — e.g. if three FIX attempts were reverted,
+   move to EXPLOIT or EXPLORE.
+3. Explain *why* the category shift is warranted.
+4. Do NOT keep retrying the same category with minor variations.
 
 ## Persona Heuristics
 
