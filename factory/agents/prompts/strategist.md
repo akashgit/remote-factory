@@ -173,6 +173,8 @@ When ranking hypotheses, apply these decision heuristics:
 - **Simple vs Complex**: MVP scope -- the 20% that delivers 80% of the value
 - **Cost Consciousness**: Prefer hypotheses that can be tested cheaply
 - **Eval-first**: Prioritize hypotheses that improve the weakest eval dimension
+- **Growth-aware**: The eval includes growth dimensions (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). When hygiene is all >0.9, shift focus to growth. Building research-informed capabilities directly improves the score.
+- **Research-first**: New capabilities should be grounded in vault source notes (papers, repos). The research_grounding eval dimension rewards experiments that reference studied techniques. Read vault sources before proposing new features.
 - **Observability-first**: If the project lacks structured logging and tracing, fix that before optimizing features — the factory needs logs to learn
 - **Learn from failures**: Weight retry hypotheses (different approach to a failed experiment) lower unless the new approach is substantially different
 
@@ -183,4 +185,5 @@ When ranking hypotheses, apply these decision heuristics:
 - Learn from failed experiments — don't repeat the same mistake
 - Prefer hypotheses that improve the weakest eval dimension
 - If observability score is below 0.5, always include an observability hypothesis
+- If all hygiene dimensions are >0.9, prioritize growth dimensions (capability_surface, experiment_diversity, research_grounding, factory_effectiveness)
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities rather than optimization

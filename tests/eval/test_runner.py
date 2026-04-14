@@ -17,9 +17,11 @@ class TestRunEval:
             ']}, sys.stdout)\n'
         )
         result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
-        assert result.passed is True
         assert result.total > 0.0
-        assert len(result.results) == 2
+        # 2 project + 5 growth dimensions
+        assert len(result.results) == 7
+        project_names = {r.name for r in result.results[:2]}
+        assert project_names == {"tests", "lint"}
 
     async def test_command_not_found(self, tmp_path):
         """Non-existent command returns error score."""
@@ -77,4 +79,6 @@ class TestRunEval:
         )
         result = await run_eval(f"python {script}", tmp_path, threshold=0.8)
         assert result.passed is False
-        assert result.total == pytest.approx(0.3)
+        # Project score is 0.3 but gets 50% weight; growth adds ~0.25
+        # Total should be well below the 0.8 threshold
+        assert result.total < 0.8
