@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Literal
 
+import structlog
+
 from factory.models import EvalDimension, EvalProfile, ProjectProfile
+
+log = structlog.get_logger()
 
 EvalTier = Literal["explicit", "discovered", "researched", "fallback"]
 
@@ -116,6 +120,14 @@ def build_eval_profile(project: ProjectProfile) -> EvalProfile:
         "fallback": 0.2,
     }[tier]
 
+    log.info(
+        "build_eval_profile_complete",
+        project=project.name,
+        tier=tier,
+        confidence=confidence,
+        dimension_count=len(dimensions),
+        dimensions=[d.name for d in dimensions],
+    )
     return EvalProfile(
         project_type=project.project_type,
         dimensions=dimensions,
