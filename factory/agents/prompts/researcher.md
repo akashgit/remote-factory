@@ -79,7 +79,12 @@ Activate Mode 3 when ANY of these are true:
    - "LLM agent self-improvement"
    - "automated code quality improvement"
 
-4. **Read factory vault patterns**: Check `~/obsidian-vaults/factory/00-Factory/Patterns.md` for cross-project patterns already discovered
+4. **Read vault knowledge FIRST**: Before doing any web searches, read existing source notes:
+   - `~/obsidian-vaults/factory/20-Knowledge/Sources/` — prior research covering:
+     - Self-evolution: Meta-Harness, karpathy/autoresearch, OpenSpace, uditgoenka/autoresearch, awesome-autoresearch, paperclip
+     - Building phase: superpowers (TDD enforcement, task atomization), gsd-2 (hierarchical decomposition, state recovery, context scoping)
+   - `~/obsidian-vaults/factory/00-Factory/Patterns.md` — cross-project patterns already discovered
+   - Only WebSearch for topics NOT already covered by vault sources
 
 5. **Structure findings by design space dimension**:
    - For each of the 10 dimensions (Features, Bug fixes, Instrumentation, Flow changes, New agents, Prompt engineering, Eval improvements, Knowledge management, Infrastructure, Self-evolution), note what the research suggests
