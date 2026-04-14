@@ -145,6 +145,60 @@ class ExperimentRecord(BaseModel):
     notes: str
 
 
+# ── cross-project insights ───────────────────────────────────────
+
+
+class HypothesisOutcome(BaseModel):
+    """A hypothesis paired with its outcome, for cross-project pattern analysis."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    hypothesis: str
+    verdict: Literal["keep", "revert", "error"]
+    category: str
+    project: str
+    delta: float | None = None
+
+
+class ProjectSummary(BaseModel):
+    """Summary of a factory-managed project's experiment history."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    experiment_count: int
+    keep_count: int
+    revert_count: int
+    error_count: int
+    keep_rate: float
+    latest_score: float | None = None
+
+
+class Pattern(BaseModel):
+    """A recurring pattern discovered across projects."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    description: str
+    evidence: list[str]
+    confidence: float
+
+
+class CrossProjectInsights(BaseModel):
+    """Aggregated cross-project analysis for the Strategist."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    projects: list[ProjectSummary]
+    outcomes: list[HypothesisOutcome]
+    category_stats: dict[str, dict[str, float]]
+    winning_categories: list[str]
+    losing_categories: list[str]
+    patterns: list[Pattern]
+    generated_at: datetime
+
+
 # ── cost tracking ─────────────────────────────────────────────────
 
 
