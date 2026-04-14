@@ -247,6 +247,53 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 
+def cmd_ace(args: argparse.Namespace) -> int:
+    """Run ACE self-improvement on agent playbooks."""
+    from factory.ace.curator import curate_playbook
+    from factory.ace.models import Playbook
+    from factory.ace.reflector import reflect_on_experiments
+
+    project_path = Path(args.path).resolve()
+    projects_dir = Path(args.projects_dir).expanduser().resolve()
+    dry_run = getattr(args, "dry_run", False)
+
+    # Step 1: Reflect — analyze experiment data, generate candidate bullets
+    candidates = reflect_on_experiments(projects_dir, project_path)
+
+    if not candidates:
+        print("No candidate playbook bullets generated (not enough experiment data).")
+        return 0
+
+    # Step 2: Curate — merge with existing playbooks, prune
+    playbooks_dir = Path(__file__).parent / "agents" / "playbooks"
+    playbooks_dir.mkdir(parents=True, exist_ok=True)
+
+    for role, items in candidates.items():
+        # Load existing playbook if any
+        playbook_path = playbooks_dir / f"{role}.md"
+        if playbook_path.exists():
+            existing = Playbook.from_markdown(playbook_path.read_text())
+        else:
+            existing = Playbook.empty(role)
+
+        # Curate: merge candidates, prune, cap
+        updated = curate_playbook(existing, items)
+
+        if dry_run:
+            print(f"\n{'=' * 60}")
+            print(f"DRY RUN — {role} ({len(items)} candidates → {len(updated.items)} items)")
+            print(f"{'=' * 60}")
+            print(updated.to_markdown())
+        else:
+            playbook_path.write_text(updated.to_markdown())
+            print(f"  {role}: {len(updated.items)} items → {playbook_path}")
+
+    if not dry_run:
+        print(f"\nPlaybooks updated in {playbooks_dir}")
+
+    return 0
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     from factory.digest import format_digest, scan_vault
 
@@ -724,6 +771,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing factory-managed projects (default: ~/factory-projects)",
     )
 
+    # ace
+    p = sub.add_parser("ace", help="Run ACE self-improvement on agent playbooks")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument(
+        "--projects-dir", default="~/factory-projects",
+        help="Directory containing factory-managed projects (default: ~/factory-projects)",
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", default=False,
+        help="Print candidates without writing playbooks",
+    )
+
     # digest
     p = sub.add_parser("digest", help="Summarize recent factory activity across projects")
     p.add_argument("--date", default=None, help="Show activity for a specific date (YYYY-MM-DD)")
@@ -807,6 +866,7 @@ def main(argv: list[str] | None = None) -> int:
         "study": cmd_study,
         "status": cmd_status,
         "insights": cmd_insights,
+        "ace": cmd_ace,
         "digest": cmd_digest,
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,
