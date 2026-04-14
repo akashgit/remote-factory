@@ -8,7 +8,11 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import structlog
+
 from factory.models import CompositeScore, ExperimentRecord
+
+log = structlog.get_logger()
 
 _DEFAULT_VAULT = Path.home() / "obsidian-vaults" / "factory"
 
@@ -187,6 +191,7 @@ def obsidian_search_vault(
 def init_vault(vault_path: Path | None = None) -> Path:
     """Create the full factory vault structure. Returns the vault path."""
     vault = vault_path if vault_path is not None else _get_vault_path()
+    log.info("init_vault", vault=str(vault))
 
     # .obsidian/
     _ensure_dir(vault / ".obsidian")
@@ -239,6 +244,7 @@ def init_vault(vault_path: Path | None = None) -> Path:
             "## Projects\n\n(none yet)\n"
         )
 
+    log.debug("init_vault_complete", vault=str(vault))
     return vault
 
 
@@ -246,6 +252,7 @@ def _auto_init_vault() -> Path:
     """Get vault path and auto-create structure if needed."""
     vault = _get_vault_path()
     if not (vault / ".obsidian").exists():
+        log.info("auto_init_vault_triggered", vault=str(vault))
         init_vault(vault)
     return vault
 
@@ -257,6 +264,7 @@ def write_experiment_note(
     score_after: CompositeScore | None = None,
 ) -> Path:
     """Create an Obsidian note for a completed experiment."""
+    log.debug("write_experiment_note", project=project_name, exp_id=record.id, verdict=record.verdict)
     vault = _auto_init_vault()
     experiments_dir = vault / _PROJECTS_DIR / project_name / "Experiments"
     _ensure_dir(experiments_dir)
@@ -327,6 +335,7 @@ def write_experiment_note(
     # Try obsidian-cli first, fall back to direct write
     note_name = f"{_PROJECTS_DIR}/{project_name}/Experiments/{project_name}-{record.id:03d}"
     if not _obsidian_create(note_name, content):
+        log.debug("write_experiment_note_fallback_to_file", path=str(note_path))
         note_path.write_text(content)
 
     return note_path
@@ -340,6 +349,12 @@ def write_project_dashboard(
     eval_dimensions: list[dict] | None = None,
 ) -> Path:
     """Create or update the project dashboard note."""
+    log.debug(
+        "write_project_dashboard",
+        project=project_name,
+        state=state,
+        record_count=len(records),
+    )
     vault = _auto_init_vault()
     projects_dir = vault / _PROJECTS_DIR / project_name
     _ensure_dir(projects_dir)
@@ -396,6 +411,7 @@ def write_project_dashboard(
     # Try obsidian-cli first, fall back to direct write
     note_name = f"{_PROJECTS_DIR}/{project_name}/{project_name}"
     if not _obsidian_create(note_name, content):
+        log.debug("write_project_dashboard_fallback_to_file", path=str(note_path))
         note_path.write_text(content)
 
     return note_path
@@ -406,6 +422,7 @@ def write_strategy_note(
     strategy_content: str,
 ) -> Path:
     """Write a strategy snapshot to Obsidian."""
+    log.debug("write_strategy_note", project=project_name)
     vault = _auto_init_vault()
     strategies_dir = vault / _PROJECTS_DIR / project_name / "Strategies"
     _ensure_dir(strategies_dir)
@@ -434,6 +451,7 @@ def write_strategy_note(
     # Try obsidian-cli first, fall back to direct write
     note_name = f"{_PROJECTS_DIR}/{project_name}/Strategies/{project_name}-{date_str}"
     if not _obsidian_create(note_name, content):
+        log.debug("write_strategy_note_fallback_to_file", path=str(note_path))
         note_path.write_text(content)
 
     return note_path
@@ -446,6 +464,7 @@ def update_memory_index(projects: list[dict] | None = None) -> Path:
     reads each dashboard note for the latest score.
     """
     vault = _get_vault_path()
+    log.debug("update_memory_index", vault=str(vault))
 
     if projects is None:
         projects = []
@@ -496,6 +515,8 @@ def update_memory_index(projects: list[dict] | None = None) -> Path:
 
     # Try obsidian-cli first, fall back to direct write
     if not _obsidian_create("MEMORY", content):
+        log.debug("update_memory_index_fallback_to_file", path=str(memory_path))
         memory_path.write_text(content)
 
+    log.info("update_memory_index_complete", project_count=len(projects))
     return memory_path
