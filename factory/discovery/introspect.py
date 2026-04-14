@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import structlog
+
 from factory.models import ProjectProfile
+
+log = structlog.get_logger()
 
 
 def _read_json(path: Path) -> dict:
@@ -33,20 +37,24 @@ def _read_toml_rough(path: Path) -> dict[str, str]:
 def _detect_language(project_path: Path) -> str:
     """Detect primary language from project files."""
     if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
-        return "python"
-    if (project_path / "package.json").exists():
-        return "typescript"
-    if (project_path / "Cargo.toml").exists():
-        return "rust"
-    if (project_path / "go.mod").exists():
-        return "go"
-    if (project_path / "Package.swift").exists():
-        return "swift"
-    return "unknown"
+        lang = "python"
+    elif (project_path / "package.json").exists():
+        lang = "typescript"
+    elif (project_path / "Cargo.toml").exists():
+        lang = "rust"
+    elif (project_path / "go.mod").exists():
+        lang = "go"
+    elif (project_path / "Package.swift").exists():
+        lang = "swift"
+    else:
+        lang = "unknown"
+    log.debug("detect_language", language=lang)
+    return lang
 
 
 def _detect_project_type(project_path: Path, language: str) -> str:
     """Infer project type from README, directory structure, and config files."""
+    log.debug("detect_project_type_start", language=language)
     readme_text = ""
     for name in ("README.md", "README.rst", "README.txt", "README"):
         readme_path = project_path / name
@@ -56,35 +64,44 @@ def _detect_project_type(project_path: Path, language: str) -> str:
 
     # Check for bot indicators
     if any(kw in readme_text for kw in ("telegram", "discord", "slack bot", "chatbot")):
+        log.debug("detect_project_type_result", project_type="bot")
         return "bot"
 
     # Check for web app indicators
     if (project_path / "next.config.js").exists() or (project_path / "next.config.ts").exists():
+        log.debug("detect_project_type_result", project_type="web_app")
         return "web_app"
     if any(kw in readme_text for kw in ("fastapi", "django", "flask", "web app", "webapp")):
+        log.debug("detect_project_type_result", project_type="web_app")
         return "web_app"
 
     # Check for CLI indicators
     if language == "python":
         toml_data = _read_toml_rough(project_path / "pyproject.toml")
         if "scripts" in str(toml_data):
+            log.debug("detect_project_type_result", project_type="cli_tool")
             return "cli_tool"
     if any(kw in readme_text for kw in ("cli", "command-line", "command line")):
+        log.debug("detect_project_type_result", project_type="cli_tool")
         return "cli_tool"
 
     # Check for library indicators
     if any(kw in readme_text for kw in ("library", "sdk", "package", "pip install", "npm install")):
+        log.debug("detect_project_type_result", project_type="library")
         return "library"
 
     # Check for service indicators
     if any(kw in readme_text for kw in ("service", "api", "server", "daemon")):
+        log.debug("detect_project_type_result", project_type="service")
         return "service"
 
+    log.debug("detect_project_type_result", project_type="unknown")
     return "unknown"
 
 
 def _detect_framework(project_path: Path, language: str) -> str | None:
     """Detect framework from dependencies."""
+    log.debug("detect_framework_start", language=language)
     if language == "python":
         toml_text = ""
         if (project_path / "pyproject.toml").exists():
@@ -185,6 +202,7 @@ def _has_ci(project_path: Path) -> bool:
 
 def introspect_project(project_path: Path) -> ProjectProfile:
     """Analyze a project directory and return its profile."""
+    log.info("introspect_project_start", project=str(project_path))
     language = _detect_language(project_path)
     project_type = _detect_project_type(project_path, language)
     framework = _detect_framework(project_path, language)
@@ -213,7 +231,7 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         else:
             package_manager = "npm"
 
-    return ProjectProfile(
+    profile = ProjectProfile(
         name=project_path.name,
         language=language,
         framework=framework,
@@ -227,3 +245,14 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         type_check_command=type_check_cmd,
         package_manager=package_manager,
     )
+    log.info(
+        "introspect_project_complete",
+        name=profile.name,
+        language=language,
+        project_type=project_type,
+        framework=framework,
+        has_tests=profile.has_tests,
+        has_linter=profile.has_linter,
+        has_ci=profile.has_ci,
+    )
+    return profile
