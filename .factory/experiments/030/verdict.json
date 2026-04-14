@@ -1,0 +1,14 @@
+{
+  "id": 30,
+  "timestamp": "2026-04-13 22:29:07.487203",
+  "hypothesis": "Add structlog logging to insights.py and discovery/profile.py",
+  "change_summary": "Added structured logging to 2 uninstrumented modules. Function logging coverage improved.",
+  "issue_number": 0,
+  "pr_number": 41,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}

@@ -1,0 +1,1 @@
+Add structlog logging to 4 uninstrumented files: insights.py, models.py, discovery/profile.py, obsidian/templates.py

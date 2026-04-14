@@ -1,42 +1,42 @@
-## Strategy — 2026-04-13 (Cycle 4 — Hardening & Observability — COMPLETE)
+## Strategy — 2026-04-13 (Cycle 5 — Fix & Harden — COMPLETE)
 
 ### Results
-All 3 hypotheses kept. Composite score: 0.945 → 0.9525.
+Both hypotheses kept. Composite score: 0.9325 → 0.9575.
 
 | # | Exp | Hypothesis | Verdict | Score | PR |
 |---|-----|-----------|---------|-------|----|
-| H1 | 26 | Fix mypy error + land digest feature | KEEP | 0.945→0.95 | #35 |
-| H2 | 27 | Add structured logging to 5 uninstrumented modules | KEEP | 0.95 (maintained) | #37 |
-| H3 | 28 | FEEC priority heuristic in strategist | KEEP | 0.95→0.9525 | #39 |
+| H1 | 29 | Fix 5 mypy errors + land cross-project insights module | KEEP | 0.9325→0.955 | #40 |
+| H2 | 30 | Add structlog logging to insights.py and profile.py | KEEP | 0.955→0.9575 | #41 |
 
 ### What Changed
-- **type_check:** 0.95→1.0 (fixed mypy redefinition in study.py)
-- **coverage:** 80%→81% (41 new tests for strategy.py)
-- **observability:** function logging coverage improved from 26% to ~50% (structlog added to store, digest, state, introspect, obsidian/notes)
-- **new feature:** `factory digest` command for vault activity summaries
-- **new feature:** `factory/strategy.py` FEEC module for principled hypothesis ordering
-- **strategist prompt:** updated with FEEC framework and stuck protocol
+- **type_check:** 0.75→1.0 (fixed variable shadowing in insights.py, object→str cast in study.py)
+- **coverage:** 0.82→0.83 (new tests for insights and prompts modules)
+- **observability:** structlog added to insights.py (4 log points) and discovery/profile.py (1 log point)
+- **new feature:** cross-project insights module (category stats, pattern discovery, winning/losing strategies)
+- **new feature:** insights CLI command, --projects-dir flag for study
+- **agent prompts:** updated archivist, researcher, strategist with improved instructions
 
 ### Observations
-- Current composite: 0.9525 (tests=1.0, lint=1.0, type_check=1.0, coverage=0.81, guards=1.0, config=1.0)
-- 357 tests, 81% coverage, lint + mypy clean
-- 17 experiments total (all kept, 0 reverts)
-- All FEEC categories: H1=FIX, H2=EXPLOIT (observability), H3=EXPLORE (new capability)
+- Current composite: 0.9575 (tests=1.0, lint=1.0, type_check=1.0, coverage=0.83, guards=1.0, config=1.0)
+- 430 tests, 83% coverage, lint + mypy clean
+- 19 experiments total (all kept, 0 reverts), 100% keep rate
+- Cross-project: 3 projects, 73 experiments, 97% overall keep rate
+- Observability: function coverage improved, 2 more modules instrumented
 
 ### Ideas for Next Cycle (from Research)
-1. **Queryable experiment archive** — expose full traces via filesystem (Meta-Harness paper, 0.1x eval budget)
-2. **Evaluator hardening** — variance-aware acceptance, multiple eval runs (awesome-autoresearch)
-3. **Fix Obsidian CLI nested path bug** — `name=` vs `path=` in `_obsidian_create`
-4. **Context packet architecture** — minimal curated context per agent (paperclip)
-5. **Token cost tracking** as eval dimension (OpenSpace)
+1. **Queryable experiment archive** — expose full traces via filesystem (Meta-Harness paper)
+2. **Evaluator hardening** — variance-aware acceptance, multiple eval runs
+3. **Context packet architecture** — minimal curated context per agent (paperclip)
+4. **Token cost tracking** as eval dimension
+5. **Coverage push** — target 85%+ (current 83%)
 
 ### Anti-patterns to Avoid
+- Don't reuse loop variable names across different types (caused p shadowing bug)
+- Don't add excessive logging to pure data models (models.py, templates.py)
 - Don't compress diagnostic data too early — preserve raw traces
-- Don't trust single eval runs — consider multi-run variance
-- Don't allow compound changes — one atomic change per experiment
 
 ### Session State
-- **Mode:** Improve (Cycle 4 — Complete)
+- **Mode:** Improve (Cycle 5 — Complete)
 - **Current phase:** Finalized
 - **Active experiments:** None
-- **Next action:** Cycle 5 — pick from ideas above
+- **Next action:** Cycle 6 — pick from ideas above

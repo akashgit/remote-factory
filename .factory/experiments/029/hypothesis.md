@@ -1,0 +1,1 @@
+Fix 5 mypy type errors in insights.py and study.py — variable shadowing and object type cast

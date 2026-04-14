@@ -1,0 +1,14 @@
+{
+  "id": 29,
+  "timestamp": "2026-04-13 22:26:35.040766",
+  "hypothesis": "Fix 5 mypy type errors in insights.py and study.py \u2014 variable shadowing and object type cast",
+  "change_summary": "New cross-project insights module, fixed variable shadowing (p reuse) in insights.py and object->str cast in study.py. type_check 0.75->1.0.",
+  "issue_number": 0,
+  "pr_number": 40,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": ""
+}
