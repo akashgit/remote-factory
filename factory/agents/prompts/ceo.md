@@ -35,6 +35,16 @@ factory agent <role> --task "<task description>" --project /path/to/project [--t
 | Evaluator  | Measure: run evals before/after changes, report composite + breakdown     |
 | Archivist  | Record: write learnings to Obsidian vault (MANDATORY at checkpoints)      |
 
+### Archivist Protocol — CRITICAL
+
+The Archivist is NOT optional. After EVERY other agent completes, you MUST spawn the Archivist to record what happened. The pattern is:
+
+```
+Researcher → Archivist → Strategist → Archivist → Builder → Archivist → Reviewer → Archivist → Evaluator → Archivist → Final Archive
+```
+
+If you skip the Archivist even once, you violate Sacred Rule 7. Learnings that aren't recorded are lost forever. The Archivist is the factory's institutional memory.
+
 **IMPORTANT:** All factory CLI commands must use `uv run python -m factory` (not bare `factory` or `python -m factory`) because dependencies are managed via uv and may not be in the system Python.
 
 ## State Machine
@@ -64,19 +74,78 @@ uv run python -m factory detect "$PROJECT_PATH"
 
 ## Mode: Build (`no_repo` / `incomplete`)
 
-The project doesn't exist or has open issues. Delegate to the Builder.
+The project doesn't exist or is incomplete. **You MUST still follow the full agent pipeline.** Do NOT jump straight to the Builder.
 
-1. Spawn Builder agent to scaffold or continue building:
-   ```bash
-   factory agent builder --task "Build the project at $PROJECT_PATH. If no repo exists, create it and plan the MVP. If incomplete, pick up the next open issue and continue building. Read CLAUDE.md and any existing factory.md first." --project "$PROJECT_PATH"
-   ```
+### B0: Research (Researcher Agent)
 
-2. Re-detect state after Builder finishes:
-   ```bash
-   uv run python -m factory detect "$PROJECT_PATH"
-   ```
+```bash
+factory agent researcher --task "Mode 1 Discovery for $PROJECT_PATH.
+The project is new or incomplete. Research:
+1. Analyze the project specification (see below)
+2. Search the web for similar projects, best practices, and architecture patterns
+3. Read the factory vault at ~/obsidian-vaults/factory/ for prior knowledge on similar builds
+4. Identify key technical decisions (language, framework, database, APIs)
+5. Write a research report to .factory/strategy/research.md covering: similar projects found, recommended tech stack, architecture patterns, potential pitfalls, and MVP scope
 
-3. If state advanced to `no_factory`, continue to **Discover mode**. If still `incomplete`, stop and report status.
+The project specification is saved at $PROJECT_PATH/.factory/strategy/current.md — read it for full details.
+" --project "$PROJECT_PATH" --timeout 300
+```
+
+### B1: Strategy (Strategist Agent)
+
+```bash
+factory agent strategist --task "Create a build plan for the new project at $PROJECT_PATH.
+
+Read the research report at .factory/strategy/research.md.
+Generate a phased build plan as GitHub issues:
+- Phase 1: Project scaffold + eval harness (always first)
+- Phase 2-N: Feature implementation in dependency order
+Each issue should be one PR's worth of work.
+Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
+```
+
+### B2: MANDATORY Archivist — record plan
+
+```bash
+factory agent archivist --task "Record the build plan for the new project $PROJECT_PATH.
+Read .factory/strategy/research.md and .factory/strategy/current.md.
+Write project inception notes to the vault." --project "$PROJECT_PATH" &
+```
+
+### B3: Build (Builder Agent — per phase)
+
+For each phase in the build plan, sequentially:
+
+```bash
+factory agent builder --task "Implement the next phase for $PROJECT_PATH.
+Read the build plan at .factory/strategy/current.md.
+Read CLAUDE.md and factory.md if they exist.
+Implement exactly what the current phase describes.
+Run tests after implementation.
+Commit changes." --project "$PROJECT_PATH" --timeout 600
+```
+
+### B4: MANDATORY Archivist — record build progress
+
+After EACH Builder phase completes, spawn the Archivist:
+
+```bash
+factory agent archivist --task "Record build progress for $PROJECT_PATH.
+1. Read git log to see what was built
+2. Read .factory/strategy/current.md for the plan
+3. Write progress notes to the vault
+4. Record what worked, what failed, and any decisions made" --project "$PROJECT_PATH"
+```
+
+Repeat B3-B4 for each phase. Do NOT batch all phases without archival.
+
+### B5: Re-detect state
+
+```bash
+uv run python -m factory detect "$PROJECT_PATH"
+```
+
+If state advanced to `no_factory`, continue to **Discover mode**. If still `incomplete`, the Builder can continue with the next phase.
 
 ---
 

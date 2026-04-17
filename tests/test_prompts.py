@@ -148,3 +148,33 @@ class TestCeoPrompt:
         assert "ceo:keep" in ceo_prompt
         assert "ceo:revert" in ceo_prompt
         assert "archivist_spawned" in ceo_prompt
+
+    def test_build_mode_has_full_pipeline(self, ceo_prompt: str) -> None:
+        """Build mode must use Researcher + Strategist + Archivist before Builder."""
+        # Find the Build mode section
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        # All agents must be present
+        assert "factory agent researcher" in build_section
+        assert "factory agent strategist" in build_section
+        assert "factory agent archivist" in build_section
+        assert "factory agent builder" in build_section
+
+        # Research step must come before Build step
+        assert build_section.index("factory agent researcher") < build_section.index("factory agent builder")
+        # Strategy step must come before Build step
+        assert build_section.index("factory agent strategist") < build_section.index("factory agent builder")
+
+    def test_build_mode_does_not_skip_to_builder(self, ceo_prompt: str) -> None:
+        """Build mode must NOT just say 'delegate to the Builder'."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        # Should have research and strategy steps
+        assert "Research" in build_section
+        assert "Strategy" in build_section
+        assert "factory agent researcher" in build_section
+        assert "factory agent strategist" in build_section
