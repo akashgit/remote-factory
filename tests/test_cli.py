@@ -4,13 +4,21 @@ import asyncio
 import json
 import os
 import signal
-import subprocess
 from datetime import datetime
-from unittest.mock import patch, call
+from unittest.mock import patch, AsyncMock
 
 from factory.cli import main, build_parser, _is_github_url
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
+
+
+# Async mock helper for invoke_agent — returns (stdout, return_code)
+def _mock_invoke_agent_ok():
+    return AsyncMock(return_value=("CEO completed successfully", 0))
+
+
+def _mock_invoke_agent_fail():
+    return AsyncMock(return_value=("Error: agent failed", 1))
 
 
 class TestParser:
@@ -173,29 +181,17 @@ class TestCmdHistory:
 
 
 class TestCmdRun:
-    def test_run_missing_claude_binary(self, tmp_path, capsys):
-        """cmd_run returns 1 when claude CLI is not found."""
-        with patch("factory.cli.subprocess.run", side_effect=FileNotFoundError):
-            result = main(["run", str(tmp_path)])
-        assert result == 1
-        assert "not found" in capsys.readouterr().err
-
-    def test_run_claude_nonzero_exit(self, tmp_path, capsys):
-        """cmd_run returns 1 when claude CLI exits non-zero."""
-        with patch(
-            "factory.cli.subprocess.run",
-            side_effect=subprocess.CalledProcessError(2, "claude"),
-        ):
-            result = main(["run", str(tmp_path)])
-        assert result == 1
-        assert "exited with code 2" in capsys.readouterr().err
-
     def test_run_success(self, tmp_path):
-        """cmd_run returns 0 when claude CLI succeeds."""
-        with patch("factory.cli.subprocess.run") as mock_run:
+        """cmd_run returns 0 when CEO agent succeeds."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
             result = main(["run", str(tmp_path)])
         assert result == 0
-        mock_run.assert_called_once()
+
+    def test_run_agent_failure(self, tmp_path):
+        """cmd_run returns 1 when CEO agent fails."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
+            result = main(["run", str(tmp_path)])
+        assert result == 1
 
 
 class TestCmdEval:
@@ -371,77 +367,71 @@ class TestRunModeFlag:
         args = parser.parse_args(["run", "/some/path", "--mode", "improve"])
         assert args.mode == "improve"
 
+    def test_mode_meta(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--mode", "meta"])
+        assert args.mode == "meta"
+
 
 class TestRunWithGitHubUrl:
     def test_run_clones_https_url(self, capsys):
-        """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes claude."""
+        """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes CEO."""
         url = "https://github.com/user/repo"
-        with patch("factory.cli.subprocess.run") as mock_run, \
+        with patch("factory.cli.subprocess.run") as mock_clone, \
+             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"):
             result = main(["run", url])
 
         assert result == 0
-        assert mock_run.call_count == 2
-        # First call: git clone
-        clone_call = mock_run.call_args_list[0]
-        assert clone_call == call(
+        # git clone should have been called
+        mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-abc"], check=True,
         )
-        # Second call: claude -p
-        claude_call = mock_run.call_args_list[1]
-        assert claude_call[0][0][0] == "claude"
-
         out = capsys.readouterr().out
         assert "Cloned https://github.com/user/repo to /tmp/factory-abc" in out
 
     def test_run_clones_ssh_url(self, capsys):
         """cmd_run clones a GitHub SSH URL into a temp dir."""
         url = "git@github.com:user/repo.git"
-        with patch("factory.cli.subprocess.run") as mock_run, \
+        with patch("factory.cli.subprocess.run") as mock_clone, \
+             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"):
             result = main(["run", url])
 
         assert result == 0
-        clone_call = mock_run.call_args_list[0]
-        assert clone_call == call(
+        mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-xyz"], check=True,
         )
         out = capsys.readouterr().out
         assert f"Cloned {url} to /tmp/factory-xyz" in out
 
     def test_run_local_path_no_clone(self, tmp_path):
-        """cmd_run with a local path does not clone."""
-        with patch("factory.cli.subprocess.run") as mock_run:
+        """cmd_run with a local path does not clone — just invokes CEO."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             result = main(["run", str(tmp_path)])
 
         assert result == 0
-        # Only one subprocess call (claude), no git clone
-        mock_run.assert_called_once()
-        args = mock_run.call_args[0][0]
-        assert args[0] == "claude"
+        mock_agent.assert_called_once()
 
-    def test_run_discover_mode_prompt(self, tmp_path):
-        """cmd_run with --mode=discover uses the Discover mode prompt."""
-        with patch("factory.cli.subprocess.run") as mock_run:
+    def test_run_discover_mode(self, tmp_path):
+        """cmd_run with --mode=discover passes discover task to CEO."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             result = main(["run", str(tmp_path), "--mode", "discover"])
 
         assert result == 0
-        claude_call = mock_run.call_args
-        prompt = claude_call[0][0][2]  # ["claude", "-p", prompt, ...]
-        assert "Discover mode" in prompt
-        assert "Do NOT run the Improve loop" in prompt
+        call_args = mock_agent.call_args
+        task = call_args[0][1]  # second positional arg is the task
+        assert "Discover mode" in task
 
-    def test_run_improve_mode_prompt(self, tmp_path):
-        """cmd_run with --mode=improve (default) uses the Improve mode prompt."""
-        with patch("factory.cli.subprocess.run") as mock_run:
-            result = main(["run", str(tmp_path), "--mode", "improve"])
+    def test_run_meta_mode(self, tmp_path):
+        """cmd_run with --mode=meta passes meta task to CEO."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["run", str(tmp_path), "--mode", "meta"])
 
         assert result == 0
-        claude_call = mock_run.call_args
-        prompt = claude_call[0][0][2]
-        assert "Follow the skill instructions below" in prompt
-        # The improve prompt should NOT start with the discover preamble
-        assert prompt.startswith("You are the Factory orchestrator. Follow the skill")
+        call_args = mock_agent.call_args
+        task = call_args[0][1]
+        assert "Meta mode" in task
 
 
 class TestMainErrorHandling:
@@ -488,22 +478,20 @@ class TestHeartbeatParserFlags:
 class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
-        with patch("factory.cli.subprocess.run") as mock_run:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             result = main(["run", str(tmp_path)])
         assert result == 0
-        mock_run.assert_called_once()
+        mock_agent.assert_called_once()
 
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
-        with patch("factory.cli.subprocess.run") as mock_run, \
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli.time.sleep") as mock_sleep:
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "10",
             ])
         assert result == 0
-        # 3 cycles = 3 subprocess calls (claude)
-        assert mock_run.call_count == 3
-        # sleep called between cycles: after cycle 1 and 2, not after cycle 3
+        assert mock_agent.call_count == 3
         assert mock_sleep.call_count == 2
         mock_sleep.assert_called_with(10)
 
@@ -515,7 +503,7 @@ class TestHeartbeatLoop:
 
     def test_loop_single_cycle(self, tmp_path, capsys):
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
-        with patch("factory.cli.subprocess.run"):
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "1",
             ])
@@ -527,10 +515,9 @@ class TestHeartbeatLoop:
     def test_loop_graceful_sigterm(self, tmp_path, capsys):
         """SIGTERM during sleep causes clean exit."""
         def _interrupt_during_sleep(interval: int) -> None:
-            # Simulate SIGTERM arriving during sleep
             os.kill(os.getpid(), signal.SIGTERM)
 
-        with patch("factory.cli.subprocess.run"), \
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
             result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
 
@@ -543,7 +530,7 @@ class TestHeartbeatLoop:
         def _interrupt_during_sleep(interval: int) -> None:
             os.kill(os.getpid(), signal.SIGINT)
 
-        with patch("factory.cli.subprocess.run"), \
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
             result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
 
@@ -553,7 +540,7 @@ class TestHeartbeatLoop:
 
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
-        with patch("factory.cli.subprocess.run"), \
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.time.sleep"):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "60",
@@ -561,3 +548,119 @@ class TestHeartbeatLoop:
         assert result == 0
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 completed. Sleeping for 60s..." in out
+
+
+# ── Factory v2: agent and ceo commands ────────────────────────
+
+
+class TestCmdAgentParser:
+    def test_agent_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "agent", "researcher", "--task", "Research the project", "--project", "/some/path",
+        ])
+        assert args.command == "agent"
+        assert args.role == "researcher"
+        assert args.task == "Research the project"
+        assert args.project == "/some/path"
+
+    def test_agent_default_timeout(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "agent", "builder", "--task", "Build it", "--project", "/path",
+        ])
+        assert args.timeout == 600.0
+
+    def test_agent_custom_timeout(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "agent", "evaluator", "--task", "Eval", "--project", "/path", "--timeout", "300",
+        ])
+        assert args.timeout == 300.0
+
+    def test_agent_all_roles_valid(self):
+        parser = build_parser()
+        for role in ["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "ceo"]:
+            args = parser.parse_args(["agent", role, "--task", "test", "--project", "/path"])
+            assert args.role == role
+
+
+class TestCmdAgent:
+    def test_agent_invokes_invoke_agent(self, tmp_path, capsys):
+        """cmd_agent delegates to invoke_agent with correct args."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main([
+                "agent", "researcher", "--task", "Research", "--project", str(tmp_path),
+            ])
+        assert result == 0
+        mock_agent.assert_called_once()
+        call_args = mock_agent.call_args
+        assert call_args[0][0] == "researcher"
+        assert call_args[0][1] == "Research"
+        out = capsys.readouterr().out
+        assert "CEO completed successfully" in out
+
+    def test_agent_returns_nonzero_on_failure(self, tmp_path):
+        """cmd_agent returns agent exit code on failure."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
+            result = main([
+                "agent", "builder", "--task", "Build", "--project", str(tmp_path),
+            ])
+        assert result == 1
+
+
+class TestCmdCeoParser:
+    def test_ceo_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.command == "ceo"
+        assert args.path == "/some/path"
+
+    def test_ceo_default_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.mode == "improve"
+
+    def test_ceo_meta_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "meta"])
+        assert args.mode == "meta"
+
+
+class TestCmdCeo:
+    def test_ceo_invokes_ceo_agent(self, tmp_path, capsys):
+        """cmd_ceo spawns CEO agent."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["ceo", str(tmp_path)])
+        assert result == 0
+        mock_agent.assert_called_once()
+        call_args = mock_agent.call_args
+        assert call_args[0][0] == "ceo"
+        assert str(tmp_path) in call_args[0][1]
+
+    def test_ceo_meta_mode_task(self, tmp_path):
+        """cmd_ceo with --mode=meta includes meta instructions in task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["ceo", str(tmp_path), "--mode", "meta"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "Meta mode" in task
+
+    def test_ceo_clones_github_url(self, capsys):
+        """cmd_ceo clones a GitHub URL then invokes CEO."""
+        url = "https://github.com/user/repo"
+        with patch("factory.cli.subprocess.run") as mock_clone, \
+             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"):
+            result = main(["ceo", url])
+        assert result == 0
+        mock_clone.assert_called_once_with(
+            ["git", "clone", url, "/tmp/factory-ceo"], check=True,
+        )
+
+    def test_ceo_timeout_is_1_hour(self, tmp_path):
+        """CEO agent gets 3600s timeout."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            main(["ceo", str(tmp_path)])
+        call_kwargs = mock_agent.call_args[1]
+        assert call_kwargs["timeout"] == 3600.0

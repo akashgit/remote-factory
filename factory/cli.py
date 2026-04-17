@@ -20,6 +20,29 @@ def _run(coro):  # noqa: ANN001, ANN202
     return asyncio.run(coro)
 
 
+# ── banner ────────────────────────────────────────────────────
+
+
+def _print_banner(mode: str = "improve") -> None:
+    """Print the Factory startup banner to stderr."""
+    if os.environ.get("NO_COLOR") or not sys.stderr.isatty():
+        print(f"Factory v2 — mode: {mode}", file=sys.stderr)
+        return
+
+    c = "\033[1;36m"  # bold cyan
+    d = "\033[2m"      # dim
+    r = "\033[0m"      # reset
+
+    banner = (
+        f"\n{c}  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻{r}\n"
+        f"{c}  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛{r}\n"
+        f"{c}  ╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹ {r}\n"
+        f"{d}  Multi-Agent Software Evolution{r}\n"
+        f"{d}  Mode: {mode}{r}\n"
+    )
+    print(banner, file=sys.stderr)
+
+
 # ── subcommand handlers ────────────────────────────────────────
 
 
@@ -402,6 +425,87 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_agent(args: argparse.Namespace) -> int:
+    """Invoke a specialist agent with the given task."""
+    from factory.agents.runner import invoke_agent
+
+    role = args.role
+    task = args.task
+    project_path = Path(args.project).resolve()
+    timeout = getattr(args, "timeout", 600.0)
+
+    result, code = _run(invoke_agent(
+        role,
+        task,
+        project_path,
+        timeout=timeout,
+        dangerously_skip_permissions=True,
+    ))
+    print(result)
+    return code
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    """Launch the Factory live dashboard server."""
+    from factory.dashboard.app import create_app
+
+    projects_dir = Path(args.projects_dir).expanduser().resolve()
+    port = args.port
+    host = args.host
+
+    _print_banner("dashboard")
+    print(f"  Dashboard: http://{host}:{port}", file=sys.stderr)
+    print(f"  Projects:  {projects_dir}\n", file=sys.stderr)
+
+    app = create_app(projects_dir)
+
+    import uvicorn
+
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+    return 0
+
+
+def cmd_ceo(args: argparse.Namespace) -> int:
+    """Launch the Factory CEO agent to orchestrate a project."""
+    from factory.agents.runner import invoke_agent
+
+    path = args.path
+
+    # If a GitHub URL is provided, clone into a temp directory
+    if _is_github_url(path):
+        tmp_dir = tempfile.mkdtemp(prefix="factory-")
+        subprocess.run(["git", "clone", path, tmp_dir], check=True)
+        print(f"Cloned {path} to {tmp_dir}")
+        project_path = Path(tmp_dir).resolve()
+    else:
+        project_path = Path(path).resolve()
+
+    mode = getattr(args, "mode", "improve")
+    _print_banner(mode)
+    task = f"Project: {project_path}\nMode: {mode}"
+
+    if mode == "discover":
+        task += (
+            "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+            "and generate the eval harness. Do NOT run the Improve loop."
+        )
+    elif mode == "meta":
+        task += (
+            "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
+            "run ACE for all agent roles, record playbook evolution, commit."
+        )
+
+    result, code = _run(invoke_agent(
+        "ceo",
+        task,
+        project_path,
+        timeout=3600.0,  # CEO gets a longer timeout (1 hour)
+        dangerously_skip_permissions=True,
+    ))
+    print(result)
+    return code
+
+
 def _is_github_url(path: str) -> bool:
     """Return True if path looks like a GitHub URL."""
     return path.startswith("https://github.com/") or path.startswith("git@github.com:")
@@ -577,50 +681,35 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 def _run_single_cycle(project_path: Path, mode: str) -> int:
-    """Execute a single factory run cycle. Returns 0 on success, 1 on error."""
-    skill_path = Path(__file__).resolve().parent.parent / "SKILL.md"
-    try:
-        skill_content = skill_path.read_text()
-    except FileNotFoundError:
-        print(f"Error: SKILL.md not found at {skill_path}", file=sys.stderr)
-        return 1
+    """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
+    from factory.agents.runner import invoke_agent
+
+    task = f"Project: {project_path}\nMode: {mode}"
 
     if mode == "discover":
-        prompt = (
-            "You are the Factory orchestrator. "
-            "Run Discover mode: introspect the project, auto-detect eval dimensions, "
-            "and generate the eval harness. Do NOT run the Improve loop.\n\n"
-            "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
-            "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
-            f"Project path: {project_path}\n\n"
-            f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
+        task += (
+            "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+            "and generate the eval harness. Do NOT run the Improve loop."
         )
-    else:
-        prompt = (
-            "You are the Factory orchestrator. "
-            "Follow the skill instructions below to run the factory loop on the project.\n\n"
-            "IMPORTANT: All factory CLI commands must use `uv run python -m factory` "
-            "(not bare `python -m factory`) because pydantic is not in the system Python.\n\n"
-            f"Project path: {project_path}\n\n"
-            f"--- SKILL.md ---\n{skill_content}\n--- END SKILL.md ---"
+    elif mode == "meta":
+        task += (
+            "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
+            "run ACE for all agent roles, record playbook evolution, commit."
         )
 
-    try:
-        subprocess.run(
-            ["claude", "-p", prompt, "--dangerously-skip-permissions"],
-            cwd=project_path,
-            check=True,
-        )
-    except FileNotFoundError:
-        print("Error: 'claude' CLI not found on PATH.", file=sys.stderr)
-        return 1
-    except subprocess.CalledProcessError as e:
-        print(f"Error: claude exited with code {e.returncode}", file=sys.stderr)
-        return 1
-    return 0
+    result, code = _run(invoke_agent(
+        "ceo",
+        task,
+        project_path,
+        timeout=3600.0,
+        dangerously_skip_permissions=True,
+    ))
+    print(result)
+    return code
 
 
 def cmd_run(args: argparse.Namespace) -> int:
+    """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
     path = args.path
 
     # If a GitHub URL is provided, clone into a temp directory
@@ -634,6 +723,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
+    _print_banner(mode)
 
     if not loop:
         return _run_single_cycle(project_path, mode)
@@ -658,8 +748,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             cycle += 1
             ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"[factory] Cycle {cycle} started at {ts}")
+            _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
             _run_single_cycle(project_path, mode)
+            _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             if shutdown_requested:
                 break
@@ -686,6 +778,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         f" Total runtime: {elapsed:.0f}s"
     )
     return 0
+
+
+def _emit_cli_event(project_path: Path, event_type: str, data: dict) -> None:
+    """Emit a factory event, swallowing errors."""
+    try:
+        from factory.events import emit_event
+
+        emit_event(project_path, event_type, data=data)
+    except Exception:
+        pass
 
 
 # ── parser construction ────────────────────────────────────────
@@ -795,14 +897,43 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
-    # run
-    p = sub.add_parser("run", help="Cron entry: invoke claude -p with factory skill")
+    # dashboard — live web dashboard
+    p = sub.add_parser("dashboard", help="Launch the live Factory dashboard")
+    p.add_argument(
+        "--projects-dir", default="~/cursor-projects",
+        help="Directory containing factory-managed projects (default: ~/cursor-projects)",
+    )
+    p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
+    p.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")
+
+    # agent — invoke a specialist agent directly
+    p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
+    p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
+                                     "evaluator", "archivist", "ceo"],
+                    help="Agent role to invoke")
+    p.add_argument("--task", required=True, help="Task description for the agent")
+    p.add_argument("--project", required=True, help="Path to the project")
+    p.add_argument("--timeout", type=float, default=600.0,
+                    help="Timeout in seconds (default: 600)")
+
+    # ceo — launch the Factory CEO agent directly
+    p = sub.add_parser("ceo", help="Launch the Factory CEO agent to orchestrate a project")
     p.add_argument("path", help="Path to the project or GitHub URL")
     p.add_argument(
         "--mode",
-        choices=["discover", "improve"],
+        choices=["discover", "improve", "meta"],
         default="improve",
-        help="Run mode: discover (auto-detect evals) or improve (default improvement loop)",
+        help="Run mode: discover, improve (default), or meta (self-improvement only)",
+    )
+
+    # run
+    p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
+    p.add_argument("path", help="Path to the project or GitHub URL")
+    p.add_argument(
+        "--mode",
+        choices=["discover", "improve", "meta"],
+        default="improve",
+        help="Run mode: discover, improve (default), or meta (self-improvement only)",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
@@ -823,7 +954,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["discover", "improve"],
+        choices=["discover", "improve", "meta"],
         default="improve",
         help="Run mode (default: improve)",
     )
@@ -870,6 +1001,9 @@ def main(argv: list[str] | None = None) -> int:
         "digest": cmd_digest,
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,
+        "dashboard": cmd_dashboard,
+        "agent": cmd_agent,
+        "ceo": cmd_ceo,
         "run": cmd_run,
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,

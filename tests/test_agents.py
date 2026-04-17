@@ -18,10 +18,15 @@ class TestResolvePrompt:
         assert len(prompt) > 100
 
     def test_all_default_prompts_exist(self):
-        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist"]
+        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist", "ceo"]
         for role in roles:
             prompt = resolve_prompt(role)
             assert len(prompt) > 50, f"Prompt for {role} is too short"
+
+    def test_ceo_prompt_loads(self):
+        prompt = resolve_prompt("ceo")
+        assert "Factory CEO Agent" in prompt
+        assert "factory agent" in prompt
 
     def test_project_override_takes_priority(self, tmp_path):
         project = tmp_path / "proj"
@@ -52,7 +57,7 @@ class TestResolvePrompt:
         assert _PROMPTS_DIR.is_dir()
 
     def test_each_prompt_has_header(self):
-        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist"]
+        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist", "ceo"]
         for role in roles:
             prompt = resolve_prompt(role)
             assert prompt.startswith("# "), f"Prompt for {role} should start with '# '"
