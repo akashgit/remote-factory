@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Factory Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --cyan: #39d2e0;
+    --font: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    gap: 24px;
+  }
+
+  .logo {
+    color: var(--cyan);
+    font-weight: bold;
+    font-size: 14px;
+    white-space: pre;
+    line-height: 1.2;
+  }
+
+  .header-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 2px;
+  }
+
+  .header-info .subtitle {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .header-info .status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); }
+  .dot.idle { background: var(--text-dim); }
+
+  main {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 0;
+    height: calc(100vh - 80px);
+  }
+
+  .panel {
+    border-right: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-header {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .panel-body {
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  /* Projects panel — spans both rows */
+  .projects-panel {
+    grid-row: 1 / 3;
+  }
+
+  /* Events panel — top right */
+  .events-panel {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  /* Experiments panel — bottom right */
+  .experiments-panel {
+    grid-column: 2;
+    grid-row: 2;
+    border-bottom: none;
+  }
+
+  /* Project cards */
+  .project-card {
+    padding: 12px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+  }
+
+  .project-card:hover {
+    background: var(--surface);
+    border-color: var(--border);
+  }
+
+  .project-card.selected {
+    background: var(--surface);
+    border-color: var(--accent);
+  }
+
+  .project-name {
+    font-weight: 600;
+    font-size: 14px;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .project-goal {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-bottom: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-stats {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+  }
+
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stat-label { color: var(--text-dim); }
+  .stat-value { font-weight: 600; }
+  .stat-value.score { color: var(--accent); }
+  .stat-value.keep { color: var(--green); }
+  .stat-value.revert { color: var(--red); }
+
+  /* Event stream */
+  .event-item {
+    padding: 6px 12px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .event-time {
+    color: var(--text-dim);
+    flex-shrink: 0;
+    font-size: 11px;
+    padding-top: 1px;
+  }
+
+  .event-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 600;
+    flex-shrink: 0;
+    text-transform: uppercase;
+  }
+
+  .event-badge.agent-started { background: #1f3a5f; color: var(--accent); }
+  .event-badge.agent-completed { background: #1a3a2a; color: var(--green); }
+  .event-badge.agent-failed { background: #3d1f1f; color: var(--red); }
+  .event-badge.agent-timeout { background: #3d2e1f; color: var(--yellow); }
+  .event-badge.experiment-begin { background: #2a2040; color: #b392f0; }
+  .event-badge.experiment-finalize { background: #2a2040; color: #b392f0; }
+  .event-badge.cycle-started { background: #1f3a3a; color: var(--cyan); }
+  .event-badge.cycle-completed { background: #1f3a3a; color: var(--cyan); }
+
+  .event-text {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .event-project {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* Experiments table */
+  .exp-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .exp-table th {
+    text-align: left;
+    padding: 6px 10px;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+  }
+
+  .exp-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .verdict-keep { color: var(--green); font-weight: 600; }
+  .verdict-revert { color: var(--red); font-weight: 600; }
+  .verdict-error { color: var(--yellow); font-weight: 600; }
+
+  .delta-positive { color: var(--green); }
+  .delta-negative { color: var(--red); }
+
+  .empty-state {
+    padding: 24px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  /* Responsive */
+  @media (max-width: 800px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto auto;
+    }
+    .projects-panel { grid-row: 1; max-height: 200px; }
+    .events-panel { grid-column: 1; grid-row: 2; }
+    .experiments-panel { grid-column: 1; grid-row: 3; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻
+┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛
+╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹</div>
+  <div class="header-info">
+    <div class="subtitle">Multi-Agent Software Evolution</div>
+    <div class="status">
+      <span class="dot" id="stream-dot"></span>
+      <span id="stream-status">Connecting...</span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="panel projects-panel">
+    <div class="panel-header">Projects</div>
+    <div class="panel-body" id="projects-list">
+      <div class="empty-state">Loading...</div>
+    </div>
+  </div>
+
+  <div class="panel events-panel">
+    <div class="panel-header">Live Events</div>
+    <div class="panel-body" id="events-list">
+      <div class="empty-state">Waiting for events...</div>
+    </div>
+  </div>
+
+  <div class="panel experiments-panel">
+    <div class="panel-header">Experiments <span id="exp-project-name"></span></div>
+    <div class="panel-body" id="experiments-list">
+      <div class="empty-state">Select a project to view experiments</div>
+    </div>
+  </div>
+</main>
+
+<script>
+let selectedProject = null;
+let eventCount = 0;
+
+// ── Projects ──
+async function loadProjects() {
+  try {
+    const res = await fetch('/api/projects');
+    const projects = await res.json();
+    renderProjects(projects);
+    // Auto-select first project
+    if (projects.length > 0 && !selectedProject) {
+      selectProject(projects[0].name);
+    }
+  } catch (e) {
+    document.getElementById('projects-list').innerHTML =
+      '<div class="empty-state">Failed to load projects</div>';
+  }
+}
+
+function renderProjects(projects) {
+  const el = document.getElementById('projects-list');
+  if (projects.length === 0) {
+    el.innerHTML = '<div class="empty-state">No factory projects found</div>';
+    return;
+  }
+
+  el.innerHTML = projects.map(p => `
+    <div class="project-card ${p.name === selectedProject ? 'selected' : ''}"
+         onclick="selectProject('${p.name}')">
+      <div class="project-name">
+        <span class="dot ${p.active ? 'live' : 'idle'}"></span>
+        ${esc(p.name)}
+      </div>
+      ${p.goal ? `<div class="project-goal">${esc(p.goal)}</div>` : ''}
+      <div class="project-stats">
+        ${p.latest_score != null ? `<div class="stat"><span class="stat-label">Score</span><span class="stat-value score">${p.latest_score.toFixed(3)}</span></div>` : ''}
+        <div class="stat"><span class="stat-label">Exp</span><span class="stat-value">${p.experiment_count}</span></div>
+        <div class="stat"><span class="stat-value keep">${p.keep_count}K</span></div>
+        <div class="stat"><span class="stat-value revert">${p.revert_count}R</span></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function selectProject(name) {
+  selectedProject = name;
+  loadProjects();  // Re-render to update selection
+  loadExperiments(name);
+}
+
+// ── Experiments ──
+async function loadExperiments(name) {
+  document.getElementById('exp-project-name').textContent = `— ${name}`;
+  try {
+    const res = await fetch(`/api/projects/${name}/history`);
+    const rows = await res.json();
+    renderExperiments(rows);
+  } catch (e) {
+    document.getElementById('experiments-list').innerHTML =
+      '<div class="empty-state">Failed to load experiments</div>';
+  }
+}
+
+function renderExperiments(rows) {
+  const el = document.getElementById('experiments-list');
+  if (rows.length === 0) {
+    el.innerHTML = '<div class="empty-state">No experiments recorded</div>';
+    return;
+  }
+
+  // Reverse to show newest first
+  const sorted = [...rows].reverse();
+
+  el.innerHTML = `<table class="exp-table">
+    <thead><tr>
+      <th>ID</th><th>Verdict</th><th>Delta</th><th>Score</th><th>Hypothesis</th>
+    </tr></thead>
+    <tbody>${sorted.map(r => {
+      const delta = r.delta ? parseFloat(r.delta) : null;
+      const deltaStr = delta != null ? (delta >= 0 ? '+' : '') + delta.toFixed(4) : '—';
+      const deltaClass = delta != null ? (delta >= 0 ? 'delta-positive' : 'delta-negative') : '';
+      const verdictClass = 'verdict-' + (r.verdict || 'error');
+      const score = r.score_after ? parseFloat(r.score_after).toFixed(3) : '—';
+      return `<tr>
+        <td>${r.id}</td>
+        <td class="${verdictClass}">${r.verdict}</td>
+        <td class="${deltaClass}">${deltaStr}</td>
+        <td>${score}</td>
+        <td>${esc((r.hypothesis || '').substring(0, 60))}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+// ── Events SSE ──
+function connectSSE() {
+  const evtSource = new EventSource('/api/events/stream');
+  const dot = document.getElementById('stream-dot');
+  const status = document.getElementById('stream-status');
+
+  evtSource.onopen = () => {
+    dot.className = 'dot live';
+    status.textContent = 'Connected';
+  };
+
+  evtSource.onmessage = (e) => {
+    try {
+      const event = JSON.parse(e.data);
+      addEvent(event);
+      // Refresh projects periodically (every 10 events)
+      eventCount++;
+      if (eventCount % 10 === 0) loadProjects();
+    } catch (err) {
+      console.error('Failed to parse event:', err);
+    }
+  };
+
+  evtSource.onerror = () => {
+    dot.className = 'dot idle';
+    status.textContent = 'Reconnecting...';
+  };
+}
+
+function addEvent(event) {
+  const el = document.getElementById('events-list');
+  // Remove empty state
+  const empty = el.querySelector('.empty-state');
+  if (empty) empty.remove();
+
+  const ts = new Date(event.timestamp);
+  const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
+  const badgeClass = (event.type || '').replace(/\./g, '-');
+
+  const desc = formatEventDesc(event);
+
+  const div = document.createElement('div');
+  div.className = 'event-item';
+  div.innerHTML = `
+    <span class="event-time">${timeStr}</span>
+    <span class="event-badge ${badgeClass}">${esc(event.type)}</span>
+    <span class="event-text">
+      <span class="event-project">${esc(event.project)}</span>
+      ${desc}
+    </span>
+  `;
+
+  el.insertBefore(div, el.firstChild);
+
+  // Cap at 200 events in DOM
+  while (el.children.length > 200) {
+    el.removeChild(el.lastChild);
+  }
+}
+
+function formatEventDesc(event) {
+  const d = event.data || {};
+  if (event.agent) {
+    if (event.type === 'agent.completed') {
+      return ` ${esc(event.agent)} finished (exit ${d.return_code ?? '?'})`;
+    }
+    return ` ${esc(event.agent)} — ${esc(d.task || '').substring(0, 60)}`;
+  }
+  if (d.hypothesis) return ` ${esc(d.hypothesis.substring(0, 60))}`;
+  if (d.verdict) return ` #${d.exp_id} ${d.verdict}`;
+  if (d.mode) return ` mode=${esc(d.mode)}`;
+  return '';
+}
+
+function esc(str) {
+  if (!str) return '';
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+// ── Init ──
+loadProjects();
+connectSSE();
+// Refresh projects every 30s
+setInterval(loadProjects, 30000);
+</script>
+</body>
+</html>

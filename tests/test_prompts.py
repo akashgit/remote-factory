@@ -88,3 +88,63 @@ class TestArchivistPrompt:
         # All nested paths should use path= not name=
         assert 'path="10-Projects' in archivist_prompt
         assert 'name="10-Projects' not in archivist_prompt
+
+
+# ── CEO ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def ceo_prompt() -> str:
+    return (PROMPTS_DIR / "ceo.md").read_text()
+
+
+class TestCeoPrompt:
+    def test_exists(self) -> None:
+        assert (PROMPTS_DIR / "ceo.md").exists()
+
+    def test_has_identity_section(self, ceo_prompt: str) -> None:
+        assert "## Identity" in ceo_prompt
+
+    def test_has_state_machine(self, ceo_prompt: str) -> None:
+        assert "## State Machine" in ceo_prompt
+
+    def test_has_all_modes(self, ceo_prompt: str) -> None:
+        assert "## Mode: Build" in ceo_prompt
+        assert "## Mode: Discover" in ceo_prompt
+        assert "## Mode: Review" in ceo_prompt
+        assert "## Mode: Improve" in ceo_prompt
+        assert "## Mode: Meta" in ceo_prompt
+
+    def test_has_sacred_rules(self, ceo_prompt: str) -> None:
+        assert "## Sacred Rules" in ceo_prompt
+
+    def test_has_mandatory_archival(self, ceo_prompt: str) -> None:
+        assert "## Mandatory Archival Checkpoints" in ceo_prompt
+        assert "MANDATORY" in ceo_prompt
+
+    def test_references_factory_agent_command(self, ceo_prompt: str) -> None:
+        assert "factory agent" in ceo_prompt
+
+    def test_has_self_learning_protocol(self, ceo_prompt: str) -> None:
+        assert "## CEO Self-Learning Protocol" in ceo_prompt
+
+    def test_has_keep_revert_framework(self, ceo_prompt: str) -> None:
+        assert "## Keep/Revert Decision Framework" in ceo_prompt
+
+    def test_has_error_recovery(self, ceo_prompt: str) -> None:
+        assert "## Error Recovery" in ceo_prompt
+
+    def test_has_context_preservation(self, ceo_prompt: str) -> None:
+        assert "## Context Preservation" in ceo_prompt
+
+    def test_lists_all_agent_roles(self, ceo_prompt: str) -> None:
+        for role in ["Researcher", "Strategist", "Builder", "Reviewer", "Evaluator", "Archivist"]:
+            assert role in ceo_prompt
+
+    def test_seventh_sacred_rule_archival(self, ceo_prompt: str) -> None:
+        assert "Do not skip archival checkpoints" in ceo_prompt
+
+    def test_ceo_notes_convention(self, ceo_prompt: str) -> None:
+        assert "ceo:keep" in ceo_prompt
+        assert "ceo:revert" in ceo_prompt
+        assert "archivist_spawned" in ceo_prompt
