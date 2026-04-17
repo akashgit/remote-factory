@@ -7,7 +7,7 @@ import signal
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
-from factory.cli import main, build_parser, _is_github_url
+from factory.cli import main, build_parser, _is_github_url, _match_vault_idea, _slugify, _resolve_input
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -388,7 +388,7 @@ class TestRunWithGitHubUrl:
             ["git", "clone", url, "/tmp/factory-abc"], check=True,
         )
         out = capsys.readouterr().out
-        assert "Cloned https://github.com/user/repo to /tmp/factory-abc" in out
+        assert "Cloned https://github.com/user/repo" in out
 
     def test_run_clones_ssh_url(self, capsys):
         """cmd_run clones a GitHub SSH URL into a temp dir."""
@@ -403,7 +403,7 @@ class TestRunWithGitHubUrl:
             ["git", "clone", url, "/tmp/factory-xyz"], check=True,
         )
         out = capsys.readouterr().out
-        assert f"Cloned {url} to /tmp/factory-xyz" in out
+        assert f"Cloned {url}" in out
 
     def test_run_local_path_no_clone(self, tmp_path):
         """cmd_run with a local path does not clone — just invokes CEO."""
@@ -664,3 +664,126 @@ class TestCmdCeo:
             main(["ceo", str(tmp_path)])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 3600.0
+
+
+class TestSlugify:
+    def test_basic_slug(self):
+        assert _slugify("Locals Know") == "locals-know"
+
+    def test_strips_special_chars(self):
+        assert _slugify("Betty Terminal — AI-Native") == "betty-terminal-ai-native"
+
+    def test_truncates_to_50(self):
+        long_name = "a" * 100
+        assert len(_slugify(long_name)) <= 50
+
+    def test_empty_string(self):
+        assert _slugify("") == "factory-project"
+
+    def test_special_only(self):
+        assert _slugify("!!!") == "factory-project"
+
+
+class TestMatchVaultIdea:
+    def test_exact_match(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Locals Know — Restaurant Discovery.md").write_text("# Locals Know")
+        (ideas_dir / "Ideas.md").write_text("# MOC")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("Locals Know")
+        assert match is not None
+        assert "Locals Know" in match.stem
+
+    def test_short_name_match(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Betty Terminal \u2014 AI-Native Terminal.md").write_text("# Betty")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("Betty Terminal")
+        assert match is not None
+
+    def test_substring_match(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Kalshi Bot \u2014 High-Probability Trader.md").write_text("# Kalshi")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("kalshi")
+        assert match is not None
+        assert "Kalshi" in match.stem
+
+    def test_no_match(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Some Idea.md").write_text("# Idea")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("nonexistent thing")
+        assert match is None
+
+    def test_skips_moc(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Ideas.md").write_text("# Ideas MOC")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("Ideas")
+        assert match is None
+
+    def test_multi_word_match(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Voice to Vault \u2014 Speak and Save.md").write_text("# V2V")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+            match = _match_vault_idea("voice vault")
+        assert match is not None
+
+
+class TestResolveInput:
+    def test_existing_dir(self, tmp_path):
+        project_path, context = _resolve_input(str(tmp_path))
+        assert project_path == tmp_path
+        assert context is None
+
+    def test_vault_idea(self, tmp_path):
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "My Project \u2014 Something Cool.md").write_text("# Build something cool")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]), \
+             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+             patch("factory.cli.subprocess.run"):
+            project_path, context = _resolve_input("My Project")
+
+        assert project_path.name == "my-project"
+        assert context is not None
+        assert "Build something cool" in context
+
+    def test_raw_prompt(self, tmp_path):
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [tmp_path / "nope"]), \
+             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+             patch("factory.cli.subprocess.run"):
+            project_path, context = _resolve_input("Build a todo app with FastAPI")
+
+        assert project_path.parent == tmp_path / "projects"
+        assert context == "Build a todo app with FastAPI"
+
+    def test_ceo_receives_context(self, tmp_path):
+        """When a vault idea is matched, its content reaches the CEO task."""
+        ideas_dir = tmp_path / "Ideas"
+        ideas_dir.mkdir()
+        (ideas_dir / "Test Idea \u2014 Details.md").write_text("# Test Idea\nBuild X that does Y")
+
+        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]), \
+             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+             patch("factory.cli.subprocess.run"), \
+             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            main(["ceo", "Test Idea"])
+
+        task_arg = mock_agent.call_args[0][1]  # second positional = task
+        assert "Build X that does Y" in task_arg
+        assert "Project Specification" in task_arg
