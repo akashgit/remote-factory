@@ -10,7 +10,12 @@ from factory.ace.models import Playbook, PlaybookItem
 from factory.ace.reflector import (
     _category_stats,
     _detect_repetition,
+    _parse_ceo_notes,
     _strategist_bullets,
+    _researcher_bullets,
+    _reviewer_bullets,
+    _archivist_bullets,
+    _ceo_bullets,
     reflect_on_experiments,
 )
 from factory.models import ExperimentRecord
@@ -25,6 +30,8 @@ def _make_record(
     verdict: str = "keep",
     delta: float | None = None,
     change_summary: str = "",
+    notes: str = "",
+    cost_usd: float | None = None,
 ) -> ExperimentRecord:
     return ExperimentRecord(
         id=id,
@@ -37,8 +44,8 @@ def _make_record(
         score_after=None,
         delta=delta,
         verdict=verdict,
-        cost_usd=None,
-        notes="",
+        cost_usd=cost_usd,
+        notes=notes,
     )
 
 
@@ -238,6 +245,232 @@ class TestReflectOnExperiments:
         result = reflect_on_experiments(tmp_path, project_path=None)
         assert len(result) > 0
         assert "strategist" in result
+
+    def test_generates_bullets_for_all_roles(self, tmp_path):
+        """With enough data, reflector generates bullets for multiple roles."""
+        proj = tmp_path / "test-project"
+        proj.mkdir()
+        rows = []
+        for i in range(10):
+            rows.append({
+                "id": str(i),
+                "hypothesis": "Add logging coverage" if i < 6 else "Fix bug in parser",
+                "verdict": "keep" if i % 2 == 0 else "revert",
+                "delta": "0.02" if i % 2 == 0 else "-0.01",
+                "timestamp": datetime.now().isoformat(),
+                "change_summary": "changes" * (10 if i < 5 else 50),
+                "notes": f"ceo:{'keep' if i % 2 == 0 else 'revert'} archivist_spawned={'true' if i < 7 else 'false'} builder_failed={'true' if i == 3 else 'false'}",
+            })
+        _write_tsv(proj / ".factory" / "results.tsv", rows)
+
+        result = reflect_on_experiments(tmp_path, project_path=None)
+        # Should have bullets for at least some roles
+        assert len(result) > 0
+
+
+# ── v2: Parse CEO Notes ──────────────────────────────────────────
+
+
+class TestParseCeoNotes:
+    def test_empty_notes(self):
+        assert _parse_ceo_notes("") == {}
+
+    def test_keep_decision(self):
+        parsed = _parse_ceo_notes("ceo:keep score_delta=+0.05 agents_spawned=R,S,B")
+        assert parsed["decision"] == "keep"
+        assert parsed["score_delta"] == "+0.05"
+        assert parsed["agents_spawned"] == "R,S,B"
+
+    def test_revert_decision(self):
+        parsed = _parse_ceo_notes("ceo:revert reason=score_regression score_delta=-0.03")
+        assert parsed["decision"] == "revert"
+        assert parsed["reason"] == "score_regression"
+
+    def test_error_with_builder_failure(self):
+        parsed = _parse_ceo_notes("ceo:error builder_failed=true eval_crashed=false")
+        assert parsed["decision"] == "error"
+        assert parsed["builder_failed"] == "true"
+        assert parsed["eval_crashed"] == "false"
+
+    def test_archivist_tracking(self):
+        parsed = _parse_ceo_notes("ceo:keep archivist_spawned=true score_delta=+0.01")
+        assert parsed["archivist_spawned"] == "true"
+
+    def test_non_ceo_notes_returns_no_decision(self):
+        parsed = _parse_ceo_notes("just some regular notes")
+        assert "decision" not in parsed
+
+
+# ── v2: Researcher Bullets ────────────────────────────────────────
+
+
+class TestResearcherBullets:
+    def test_research_backed_success(self):
+        """Research-backed experiments with higher keep rate → DO bullet."""
+        records = (
+            [_make_record(i, "Based on research paper findings, add caching", verdict="keep", delta=0.03) for i in range(5)]
+            + [_make_record(i + 5, "Random refactor attempt", verdict="revert", delta=-0.02) for i in range(5)]
+        )
+        outcomes = [("feature", "keep" if i < 5 else "revert", 0.03 if i < 5 else -0.02) for i in range(10)]
+        bullets = _researcher_bullets(outcomes, records)
+        do_bullets = [b for b in bullets if b.section == "DO"]
+        assert len(do_bullets) >= 1
+        assert any("research" in b.content.lower() for b in do_bullets)
+
+    def test_empty_data(self):
+        assert _researcher_bullets([], []) == []
+
+
+# ── v2: Reviewer Bullets ─────────────────────────────────────────
+
+
+class TestReviewerBullets:
+    def test_guard_violation_pattern(self):
+        """Repeated reviewer failures in a category → DO bullet."""
+        records = [
+            _make_record(i, "Refactor the auth module", verdict="revert",
+                         notes="ceo:revert reviewer_failed=true")
+            for i in range(3)
+        ]
+        outcomes = [("refactoring", "revert", -0.01)] * 3
+        bullets = _reviewer_bullets(outcomes, records)
+        assert len(bullets) >= 1
+        assert any("attention" in b.content.lower() for b in bullets)
+
+    def test_strict_reverts_with_positive_delta(self):
+        """Reverts despite positive delta → DON'T bullet about strictness."""
+        records = [
+            _make_record(i, f"Improve feature {i}", verdict="revert", delta=0.05)
+            for i in range(4)
+        ]
+        outcomes = [("feature", "revert", 0.05)] * 4
+        bullets = _reviewer_bullets(outcomes, records)
+        dont_bullets = [b for b in bullets if b.section == "DON'T"]
+        assert len(dont_bullets) >= 1
+
+    def test_empty_data(self):
+        assert _reviewer_bullets([], []) == []
+
+
+# ── v2: Archivist Bullets ────────────────────────────────────────
+
+
+class TestArchivistBullets:
+    def test_skipped_archival(self):
+        """Experiments with archivist_spawned=false → DON'T bullet."""
+        records = [
+            _make_record(i, "Test hyp", notes="ceo:keep archivist_spawned=false")
+            for i in range(3)
+        ]
+        outcomes = [("feature", "keep", 0.01)] * 3
+        bullets = _archivist_bullets(outcomes, records)
+        dont_bullets = [b for b in bullets if b.section == "DON'T"]
+        assert len(dont_bullets) >= 1
+        assert any("skipped" in b.content.lower() for b in dont_bullets)
+
+    def test_good_archival_compliance(self):
+        """All experiments archived → DO bullet."""
+        records = [
+            _make_record(i, "Test hyp", notes="ceo:keep archivist_spawned=true")
+            for i in range(6)
+        ]
+        outcomes = [("feature", "keep", 0.01)] * 6
+        bullets = _archivist_bullets(outcomes, records)
+        do_bullets = [b for b in bullets if b.section == "DO"]
+        assert len(do_bullets) >= 1
+        assert any("compliance" in b.content.lower() for b in do_bullets)
+
+    def test_empty_data(self):
+        assert _archivist_bullets([], []) == []
+
+
+# ── v2: CEO Bullets ──────────────────────────────────────────────
+
+
+class TestCeoBullets:
+    def test_low_keep_rate_warning(self):
+        """Low overall keep rate → DO bullet about hypothesis quality."""
+        records = [
+            _make_record(i, f"Attempt {i}", verdict="revert", delta=-0.01)
+            for i in range(8)
+        ] + [
+            _make_record(8, "One success", verdict="keep", delta=0.01),
+        ]
+        outcomes = [("feature", "revert", -0.01)] * 8 + [("feature", "keep", 0.01)]
+        bullets = _ceo_bullets(outcomes, records)
+        # No ceo: notes, so it should generate a bootstrapping bullet
+        assert len(bullets) >= 1
+        assert any("keep rate" in b.content.lower() for b in bullets)
+
+    def test_builder_failure_pattern(self):
+        """Repeated builder failures → DO bullet."""
+        records = [
+            _make_record(i, "Refactor module X", verdict="error",
+                         notes="ceo:error builder_failed=true")
+            for i in range(4)
+        ]
+        outcomes = [("refactoring", "error", None)] * 4
+        bullets = _ceo_bullets(outcomes, records)
+        assert len(bullets) >= 1
+        assert any("builder" in b.content.lower() for b in bullets)
+
+    def test_bad_keep_decisions(self):
+        """Keeps with negative delta → DON'T bullet."""
+        records = [
+            _make_record(i, "Add feature", verdict="keep", delta=-0.02,
+                         notes="ceo:keep score_delta=-0.02")
+            for i in range(4)
+        ]
+        outcomes = [("feature", "keep", -0.02)] * 4
+        bullets = _ceo_bullets(outcomes, records)
+        dont_bullets = [b for b in bullets if b.section == "DON'T"]
+        assert len(dont_bullets) >= 1
+        assert any("tighten" in b.content.lower() for b in dont_bullets)
+
+    def test_archival_compliance_violation(self):
+        """CEO skipping archival → DON'T bullet."""
+        records = [
+            _make_record(i, "Test hyp", notes="ceo:keep archivist_spawned=false")
+            for i in range(3)
+        ]
+        outcomes = [("feature", "keep", 0.01)] * 3
+        bullets = _ceo_bullets(outcomes, records)
+        dont_bullets = [b for b in bullets if b.section == "DON'T"]
+        assert len(dont_bullets) >= 1
+        assert any("archivist" in b.content.lower() or "archival" in b.content.lower()
+                    for b in dont_bullets)
+
+    def test_chronic_reverts_in_category(self):
+        """3+ reverts in same category → DON'T bullet."""
+        records = [
+            _make_record(i, "Refactor the pipeline again", verdict="revert", delta=-0.01,
+                         notes="ceo:revert reason=score_regression")
+            for i in range(4)
+        ]
+        outcomes = [("refactoring", "revert", -0.01)] * 4
+        bullets = _ceo_bullets(outcomes, records)
+        dont_bullets = [b for b in bullets if b.section == "DON'T"]
+        assert len(dont_bullets) >= 1
+        assert any("stop" in b.content.lower() for b in dont_bullets)
+
+    def test_empty_data(self):
+        assert _ceo_bullets([], []) == []
+
+    def test_cost_efficiency_analysis(self):
+        """Reverted experiments costing more → DO bullet about waste."""
+        records = [
+            _make_record(i, "Good change", verdict="keep", delta=0.05,
+                         notes="ceo:keep", cost_usd=0.50)
+            for i in range(4)
+        ] + [
+            _make_record(i + 4, "Wasted effort", verdict="revert", delta=-0.03,
+                         notes="ceo:revert", cost_usd=2.00)
+            for i in range(4)
+        ]
+        outcomes = [("feature", "keep", 0.05)] * 4 + [("feature", "revert", -0.03)] * 4
+        bullets = _ceo_bullets(outcomes, records)
+        do_bullets = [b for b in bullets if b.section == "DO"]
+        assert any("cost" in b.content.lower() or "spend" in b.content.lower() for b in do_bullets)
 
 
 # ── Curator ────────────────────────────────────────────────────

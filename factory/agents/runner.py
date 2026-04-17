@@ -12,7 +12,7 @@ from factory.ace.injector import inject_playbook, load_playbook
 
 logger = logging.getLogger(__name__)
 
-AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"]
+AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "ceo"]
 
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -81,6 +81,9 @@ async def invoke_agent(
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
+    # Emit agent started event
+    _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
+
     # Clean environment: remove VIRTUAL_ENV so the target project's own
     # venv is used (prevents mypy/pytest from checking wrong packages).
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
@@ -100,9 +103,11 @@ async def invoke_agent(
         proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
         logger.error("%s agent timed out after %ss", role, timeout)
+        _emit_safe(project_path, "agent.timeout", agent=role, data={"timeout": timeout})
         return f"Agent timed out after {timeout}s", 1
     except FileNotFoundError:
         logger.error("'claude' CLI not found on PATH")
+        _emit_safe(project_path, "agent.failed", agent=role, data={"error": "claude CLI not found"})
         return "Error: 'claude' CLI not found on PATH", 1
 
     stdout = stdout_bytes.decode()
@@ -110,8 +115,27 @@ async def invoke_agent(
 
     if proc.returncode != 0:
         logger.warning("%s agent exited with code %d: %s", role, proc.returncode, stderr[:200])
+        _emit_safe(
+            project_path, "agent.failed", agent=role,
+            data={"return_code": proc.returncode, "stderr": stderr[:200]},
+        )
+    else:
+        _emit_safe(
+            project_path, "agent.completed", agent=role,
+            data={"return_code": 0},
+        )
 
     return stdout, proc.returncode or 0
+
+
+def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
+    """Emit an event, swallowing errors so agent invocation is never blocked."""
+    try:
+        from factory.events import emit_event
+
+        emit_event(project_path, event_type, **kwargs)  # type: ignore[arg-type]
+    except Exception:
+        logger.debug("Failed to emit event %s", event_type, exc_info=True)
 
 
 async def invoke_agents_parallel(

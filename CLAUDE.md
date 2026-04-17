@@ -37,21 +37,23 @@ mypy factory/                    # Type check
 - Async/await by default — library functions in `store.py` and `eval/runner.py` are async, the CLI wraps them with `asyncio.run()`
 - Structured logging via `structlog` — use `log = structlog.get_logger()` at module level
 
-## Architecture
+## Architecture (v2 — CEO Agent)
 
-The factory is a **three-layer system** that evolves any software project through automated improvement cycles:
+The factory is a **three-layer system** with a dedicated CEO agent as the orchestrator:
 
 ### Layer 1: Python CLI (`factory/`)
 
 Pure tools that don't make decisions. Entry point is `factory/cli.py` → `factory.cli:main` (registered as `factory` script in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict.
 
-### Layer 2: Skill (`SKILL.md`)
+### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
 
-An orchestration protocol loaded into Claude Code's context via `/factory`. Defines the workflow state machine: detect project state → route to mode (Build/Discover/Review/Improve) → coordinate agents.
+A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
 
-### Layer 3: Agents (`factory/agents/`)
+### Layer 3: Specialist Agents (`factory/agents/`)
 
-Six specialist Claude Code subprocesses spawned by the orchestrator. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Agents are invoked as `claude -p` subprocesses with `--dangerously-skip-permissions`.
+Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `factory/agents/playbooks/<role>.md` are auto-injected.
+
+**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), CEO (orchestrate).
 
 ### Key data flow
 
@@ -90,9 +92,19 @@ export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
 ## Running the factory
 
 ```bash
-factory run /path/to/project                    # Single cycle
-factory run /path/to/project --loop --interval 1800  # Continuous
+factory ceo /path/to/project                    # Launch CEO agent (single cycle)
+factory ceo /path/to/project --mode meta        # Self-improvement only (ACE)
+factory run /path/to/project                    # Same as factory ceo
+factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
+factory agent researcher --task "..." --project /path  # Invoke a specialist directly
+factory dashboard --projects-dir ~/cursor-projects    # Live web dashboard on :8420
 ```
 
-`factory run` invokes `claude -p` with SKILL.md content, effectively launching an autonomous orchestration session. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs self-improvement only (ACE playbook evolution for all 7 agent roles).
+
+## Observability
+
+**Events**: All agent invocations and cycle transitions are logged to `.factory/events.jsonl` as append-only structured events. The agent runner (`factory/agents/runner.py`) emits `agent.started`, `agent.completed`, `agent.failed`, and `agent.timeout` events automatically. The heartbeat loop emits `cycle.started` and `cycle.completed`.
+
+**Dashboard**: `factory dashboard` starts a FastAPI server (default port 8420) that serves a live web UI with SSE-powered event streaming. It scans a projects directory for all `.factory/`-managed projects and shows real-time agent activity, experiment history, and project scores. Designed to run on an always-on machine .
