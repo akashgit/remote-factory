@@ -533,6 +533,7 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
         slug = _slugify(match.stem.split("\u2014")[0].strip())
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
+        _persist_spec(project_path, idea_content)
         print(f"Matched vault idea: {match.stem}")
         print(f"Project directory: {project_path}")
         return project_path, idea_content
@@ -541,6 +542,7 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     slug = _slugify(raw[:50])
     project_path = _PROJECTS_DIR / slug
     _ensure_repo(project_path)
+    _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
 
@@ -595,6 +597,19 @@ def _ensure_repo(project_path: Path) -> None:
     project_path.mkdir(parents=True, exist_ok=True)
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+
+
+def _persist_spec(project_path: Path, spec: str) -> None:
+    """Write the project spec to .factory/strategy/current.md so all agents can read it.
+
+    This ensures sub-agents spawned by the CEO have access to the original
+    idea/prompt, not just the CEO's task string.
+    """
+    strategy_dir = project_path / ".factory" / "strategy"
+    strategy_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = strategy_dir / "current.md"
+    if not spec_path.exists():
+        spec_path.write_text(f"## Project Specification\n\n{spec}\n")
 
 
 # ── tmux integration ──────────────────────────────────────────
