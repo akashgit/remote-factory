@@ -7,7 +7,7 @@ import signal
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
-from factory.cli import main, build_parser, _is_github_url, _match_vault_idea, _slugify, _resolve_input
+from factory.cli import main, build_parser, _is_github_url, _match_vault_idea, _slugify, _resolve_input, _persist_spec
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -741,6 +741,25 @@ class TestMatchVaultIdea:
         with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
             match = _match_vault_idea("voice vault")
         assert match is not None
+
+
+class TestPersistSpec:
+    def test_writes_spec_file(self, tmp_path):
+        _persist_spec(tmp_path, "Build a todo app")
+        spec = (tmp_path / ".factory" / "strategy" / "current.md").read_text()
+        assert "Build a todo app" in spec
+
+    def test_does_not_overwrite_existing(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("Existing strategy")
+
+        _persist_spec(tmp_path, "New spec")
+        assert "Existing strategy" in (strategy_dir / "current.md").read_text()
+
+    def test_creates_directories(self, tmp_path):
+        _persist_spec(tmp_path, "some spec")
+        assert (tmp_path / ".factory" / "strategy" / "current.md").exists()
 
 
 class TestResolveInput:
