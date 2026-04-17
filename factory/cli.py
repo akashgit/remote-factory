@@ -469,31 +469,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     """Launch the Factory CEO agent to orchestrate a project."""
     from factory.agents.runner import invoke_agent
 
-    path = args.path
-
-    # If a GitHub URL is provided, clone into a temp directory
-    if _is_github_url(path):
-        tmp_dir = tempfile.mkdtemp(prefix="factory-")
-        subprocess.run(["git", "clone", path, tmp_dir], check=True)
-        print(f"Cloned {path} to {tmp_dir}")
-        project_path = Path(tmp_dir).resolve()
-    else:
-        project_path = Path(path).resolve()
-
+    project_path, context = _resolve_input(args.path)
     mode = getattr(args, "mode", "improve")
     _print_banner(mode)
-    task = f"Project: {project_path}\nMode: {mode}"
 
-    if mode == "discover":
-        task += (
-            "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
-            "and generate the eval harness. Do NOT run the Improve loop."
-        )
-    elif mode == "meta":
-        task += (
-            "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
-            "run ACE for all agent roles, record playbook evolution, commit."
-        )
+    task = _build_ceo_task(project_path, mode, context)
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -509,6 +489,112 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 def _is_github_url(path: str) -> bool:
     """Return True if path looks like a GitHub URL."""
     return path.startswith("https://github.com/") or path.startswith("git@github.com:")
+
+
+# ── universal input resolver ─────────────────────────────────
+
+
+_PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "cursor-projects")))
+
+_VAULT_IDEAS_DIRS: list[Path] = [
+    # iCloud Obsidian vault (Akash's personal)
+    Path.home() / "Library" / "Mobile Documents" / "iCloud~md~obsidian" / "Documents" / "memories" / "Ideas",
+    # Generic Obsidian vault location
+    Path.home() / "obsidian-vaults" / "factory" / "Ideas",
+]
+
+
+def _resolve_input(raw: str) -> tuple[Path, str | None]:
+    """Resolve any user input to (project_path, optional_context).
+
+    Handles four input types in priority order:
+    1. Existing directory → use directly
+    2. GitHub URL → clone
+    3. Vault idea name → fuzzy match, create repo, return idea as context
+    4. Raw prompt → create repo, return prompt as context
+    """
+    # 1. Existing directory
+    expanded = Path(raw).expanduser()
+    if expanded.is_dir():
+        return expanded.resolve(), None
+
+    # 2. GitHub URL
+    if _is_github_url(raw):
+        tmp_dir = tempfile.mkdtemp(prefix="factory-")
+        subprocess.run(["git", "clone", raw, tmp_dir], check=True)
+        print(f"Cloned {raw} → {tmp_dir}")
+        return Path(tmp_dir).resolve(), None
+
+    # 3. Vault idea (fuzzy match)
+    match = _match_vault_idea(raw)
+    if match:
+        idea_content = match.read_text()
+        # Derive project name from idea title (before the em dash)
+        slug = _slugify(match.stem.split("\u2014")[0].strip())
+        project_path = _PROJECTS_DIR / slug
+        _ensure_repo(project_path)
+        print(f"Matched vault idea: {match.stem}")
+        print(f"Project directory: {project_path}")
+        return project_path, idea_content
+
+    # 4. Raw prompt
+    slug = _slugify(raw[:50])
+    project_path = _PROJECTS_DIR / slug
+    _ensure_repo(project_path)
+    print(f"New project from prompt: {project_path}")
+    return project_path, raw
+
+
+def _match_vault_idea(query: str) -> Path | None:
+    """Fuzzy-match a query against vault idea filenames."""
+    q = query.lower().strip()
+    candidates: list[tuple[int, Path]] = []
+
+    for ideas_dir in _VAULT_IDEAS_DIRS:
+        if not ideas_dir.is_dir():
+            continue
+        for f in ideas_dir.glob("*.md"):
+            if f.name == "Ideas.md":
+                continue
+            stem = f.stem.lower()
+            short = stem.split("\u2014")[0].strip()  # part before em dash
+
+            # Exact match on full stem or short name
+            if q == stem or q == short:
+                return f
+
+            # Substring match
+            if q in stem:
+                # Score: shorter match = better (more specific)
+                candidates.append((len(stem), f))
+
+            # Word-level match: all query words appear in stem
+            q_words = q.split()
+            if len(q_words) > 1 and all(w in stem for w in q_words):
+                candidates.append((len(stem), f))
+
+    if not candidates:
+        return None
+    # Best match = shortest stem (most specific)
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
+def _slugify(text: str) -> str:
+    """Convert text to a filesystem-safe slug."""
+    import re
+
+    text = text.lower().strip()
+    text = re.sub(r"[^\w\s-]", "", text)
+    text = re.sub(r"[\s_]+", "-", text)
+    return text[:50].rstrip("-") or "factory-project"
+
+
+def _ensure_repo(project_path: Path) -> None:
+    """Create directory + git init if needed."""
+    project_path.mkdir(parents=True, exist_ok=True)
+    if not (project_path / ".git").is_dir():
+        subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
 
 
 # ── tmux integration ──────────────────────────────────────────
@@ -680,11 +766,12 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
-def _run_single_cycle(project_path: Path, mode: str) -> int:
-    """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
-    from factory.agents.runner import invoke_agent
-
+def _build_ceo_task(project_path: Path, mode: str, context: str | None = None) -> str:
+    """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
+
+    if context:
+        task += f"\n\n## Project Specification\n\n{context}"
 
     if mode == "discover":
         task += (
@@ -696,6 +783,15 @@ def _run_single_cycle(project_path: Path, mode: str) -> int:
             "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
             "run ACE for all agent roles, record playbook evolution, commit."
         )
+
+    return task
+
+
+def _run_single_cycle(project_path: Path, mode: str, context: str | None = None) -> int:
+    """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
+    from factory.agents.runner import invoke_agent
+
+    task = _build_ceo_task(project_path, mode, context)
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -710,23 +806,13 @@ def _run_single_cycle(project_path: Path, mode: str) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
-    path = args.path
-
-    # If a GitHub URL is provided, clone into a temp directory
-    if _is_github_url(path):
-        tmp_dir = tempfile.mkdtemp(prefix="factory-")
-        subprocess.run(["git", "clone", path, tmp_dir], check=True)
-        print(f"Cloned {path} to {tmp_dir}")
-        project_path = Path(tmp_dir).resolve()
-    else:
-        project_path = Path(path).resolve()
-
+    project_path, context = _resolve_input(args.path)
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
     _print_banner(mode)
 
     if not loop:
-        return _run_single_cycle(project_path, mode)
+        return _run_single_cycle(project_path, mode, context)
 
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
@@ -750,7 +836,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(project_path, mode)
+            _run_single_cycle(project_path, mode, context)
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             if shutdown_requested:
@@ -918,7 +1004,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent to orchestrate a project")
-    p.add_argument("path", help="Path to the project or GitHub URL")
+    p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
     p.add_argument(
         "--mode",
         choices=["discover", "improve", "meta"],
@@ -928,7 +1014,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
-    p.add_argument("path", help="Path to the project or GitHub URL")
+    p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
     p.add_argument(
         "--mode",
         choices=["discover", "improve", "meta"],
