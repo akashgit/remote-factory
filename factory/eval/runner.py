@@ -168,4 +168,14 @@ async def run_eval(
     merged = _merge_all(hygiene_results, project_results, growth_results)
 
     # Step 5: Compute composite
-    return compute_composite(merged, guard_violations=[], threshold=threshold)
+    score = compute_composite(merged, guard_violations=[], threshold=threshold)
+
+    # Step 6: Save results to .factory/last_eval.json for dashboard consumption
+    last_eval_path = project_path / ".factory" / "last_eval.json"
+    if last_eval_path.parent.exists():
+        try:
+            last_eval_path.write_text(json.dumps(score.model_dump(), indent=2))
+        except OSError:
+            pass
+
+    return score
