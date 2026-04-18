@@ -10,7 +10,13 @@ from pathlib import Path
 import pytest
 from starlette.testclient import TestClient
 
-from factory.dashboard.app import create_app, _project_summary, _load_tsv
+from factory.dashboard.app import (
+    create_app,
+    _load_experiment_dimensions,
+    _load_latest_dimensions,
+    _project_summary,
+    _load_tsv,
+)
 
 
 @pytest.fixture()
@@ -42,6 +48,39 @@ def projects_dir(tmp_path: Path) -> Path:
     writer.writerow(["2", "2026-04-17T10:00:00", "Fix linting", "Ran ruff",
                      "", "", "0.600", "0.550", "-0.050", "revert", "0.30", ""])
     (factory_a / "results.tsv").write_text(tsv.getvalue())
+
+    # Experiment directories with eval_after.json
+    exp_001 = factory_a / "experiments" / "001"
+    exp_001.mkdir(parents=True)
+    (exp_001 / "eval_after.json").write_text(json.dumps({
+        "total": 0.6,
+        "results": [
+            {"name": "tests_pass", "score": 0.8, "weight": 0.2, "passed": True,
+             "details": "ok"},
+            {"name": "lint_clean", "score": 0.5, "weight": 0.1, "passed": False,
+             "details": "3 warnings"},
+            {"name": "feature_completeness", "score": 0.7, "weight": 0.3,
+             "passed": True, "details": "ok"},
+        ],
+        "guard_violations": [],
+        "passed": True,
+    }))
+
+    exp_002 = factory_a / "experiments" / "002"
+    exp_002.mkdir(parents=True)
+    (exp_002 / "eval_after.json").write_text(json.dumps({
+        "total": 0.55,
+        "results": [
+            {"name": "tests_pass", "score": 0.9, "weight": 0.2, "passed": True,
+             "details": "ok"},
+            {"name": "lint_clean", "score": 0.4, "weight": 0.1, "passed": False,
+             "details": "5 warnings"},
+            {"name": "feature_completeness", "score": 0.6, "weight": 0.3,
+             "passed": True, "details": "ok"},
+        ],
+        "guard_violations": [],
+        "passed": True,
+    }))
 
     # Project B: empty factory
     proj_b = tmp_path / "proj-b"
@@ -146,6 +185,82 @@ class TestProjectSummary:
         assert last is not None
         assert last["id"] == "2"
         assert last["verdict"] == "revert"
+
+
+class TestDimensionsAPI:
+    def test_dimensions_endpoint(self, client: TestClient):
+        resp = client.get("/api/projects/proj-a/dimensions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "dimensions" in data
+        dims = data["dimensions"]
+        assert len(dims) == 3
+        # Should return the latest experiment (002)
+        names = [d["name"] for d in dims]
+        assert "tests_pass" in names
+        assert "lint_clean" in names
+        assert "feature_completeness" in names
+        # Check latest values (from exp 002)
+        tp = next(d for d in dims if d["name"] == "tests_pass")
+        assert tp["score"] == 0.9
+        assert tp["weight"] == 0.2
+        assert tp["passed"] is True
+
+    def test_dimensions_empty_project(self, client: TestClient):
+        resp = client.get("/api/projects/proj-b/dimensions")
+        assert resp.status_code == 200
+        assert resp.json() == {"dimensions": []}
+
+    def test_history_includes_dimensions(self, client: TestClient):
+        resp = client.get("/api/projects/proj-a/history")
+        rows = resp.json()
+        assert len(rows) == 2
+        # Experiment 1 should have dimensions from eval_after.json
+        assert "dimensions" in rows[0]
+        assert len(rows[0]["dimensions"]) == 3
+        # Experiment 2 as well
+        assert len(rows[1]["dimensions"]) == 3
+
+
+class TestProjectScores:
+    def test_scores_in_project_summary(self, client: TestClient):
+        resp = client.get("/api/projects")
+        proj_a = next(p for p in resp.json() if p["name"] == "proj-a")
+        assert "scores" in proj_a
+        assert proj_a["scores"] == [0.6, 0.55]
+
+    def test_scores_empty_project(self, client: TestClient):
+        resp = client.get("/api/projects")
+        proj_b = next(p for p in resp.json() if p["name"] == "proj-b")
+        # scores field should not be present or be empty for empty project
+        assert proj_b.get("scores") is None or proj_b.get("scores") == []
+
+
+class TestDimensionHelpers:
+    def test_load_experiment_dimensions(self, projects_dir: Path):
+        dims = _load_experiment_dimensions(projects_dir / "proj-a", "1")
+        assert len(dims) == 3
+        assert dims[0]["name"] == "tests_pass"
+        assert dims[0]["score"] == 0.8
+
+    def test_load_experiment_dimensions_missing(self, projects_dir: Path):
+        dims = _load_experiment_dimensions(projects_dir / "proj-a", "99")
+        assert dims == []
+
+    def test_load_experiment_dimensions_empty_id(self, projects_dir: Path):
+        dims = _load_experiment_dimensions(projects_dir / "proj-a", "")
+        assert dims == []
+
+    def test_load_latest_dimensions(self, projects_dir: Path):
+        dims = _load_latest_dimensions(projects_dir / "proj-a")
+        assert len(dims) == 3
+        # Latest is 002
+        tp = next(d for d in dims if d["name"] == "tests_pass")
+        assert tp["score"] == 0.9
+
+    def test_load_latest_dimensions_empty(self, projects_dir: Path):
+        dims = _load_latest_dimensions(projects_dir / "proj-b")
+        assert dims == []
 
 
 class TestLoadTsv:
