@@ -96,7 +96,8 @@ export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
 
 ```bash
 factory ceo /path/to/project                    # Launch CEO agent (single cycle)
-factory ceo /path/to/project --mode meta        # Self-improvement only (ACE)
+factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
+factory ceo /path/to/project --focus "dashboard UI"  # Focus on a specific area
 factory run /path/to/project                    # Same as factory ceo
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
@@ -104,7 +105,7 @@ factory agent researcher --task "..." --project /path  # Invoke a specialist dir
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs self-improvement only (ACE playbook evolution for all 7 agent roles).
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area.
 
 ## Observability
 

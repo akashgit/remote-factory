@@ -132,6 +132,18 @@ The study includes an **Observability Coverage** section. This is critical infra
 
 **When observability is already good (>0.7):** Note it in observations, don't waste a hypothesis on it.
 
+## Focus Directive
+
+If your task includes a **Focus Directive** (e.g. "Narrow improvement efforts to: dashboard UI"), apply these rules:
+
+1. **At least 2 of 3 hypotheses must target the focused area.** The focus is the CEO's explicit priority — respect it.
+2. **Tag focused hypotheses** with `**Focus target:** <area>` so the CEO can verify alignment.
+3. **FEEC ordering still applies** within the focused area — if there's a broken test related to the focus, FIX it before EXPLORing new features in that area.
+4. **The remaining hypothesis slot** (1 of 3) may target something outside the focus if there's a critical FIX needed elsewhere.
+5. **If no plausible hypotheses exist** for the focused area, explain why and propose the closest alternatives. Do not silently ignore the focus.
+
+When no focus directive is present, follow the standard priority framework below.
+
 ## Priority Framework — FEEC
 
 Every hypothesis must be tagged with one of four categories, listed in strict
