@@ -1,0 +1,84 @@
+{
+  "total": 0.800552,
+  "results": [
+    {
+      "name": "tests",
+      "score": 1.0,
+      "weight": 0.15,
+      "passed": true,
+      "details": "remote-factory: 658 passed, 0 failed"
+    },
+    {
+      "name": "lint",
+      "score": 1.0,
+      "weight": 0.075,
+      "passed": true,
+      "details": "remote-factory: clean"
+    },
+    {
+      "name": "type_check",
+      "score": 0.9,
+      "weight": 0.05,
+      "passed": false,
+      "details": "remote-factory: 2 errors"
+    },
+    {
+      "name": "coverage",
+      "score": 0.84,
+      "weight": 0.125,
+      "passed": true,
+      "details": "Coverage: remote-factory: 84% (threshold: 80%)"
+    },
+    {
+      "name": "guard_patterns",
+      "score": 1.0,
+      "weight": 0.05,
+      "passed": true,
+      "details": "8/8 pattern tests passed"
+    },
+    {
+      "name": "config_parser",
+      "score": 1.0,
+      "weight": 0.05,
+      "passed": true,
+      "details": "OK: goal is non-empty; OK: scope has entries; OK: eval_command is non-empty; OK: eval_threshold is positive"
+    },
+    {
+      "name": "capability_surface",
+      "score": 0.6179,
+      "weight": 0.14,
+      "passed": true,
+      "details": "surface=173 (modules=28, public_fns=119, entry_points=26), target=280"
+    },
+    {
+      "name": "experiment_diversity",
+      "score": 0.5286,
+      "weight": 0.11,
+      "passed": true,
+      "details": "4 distinct categories in last 10 experiments; dominant=observability (30%); last 3: ['eval_improvement', 'eval_improvement', 'eval_improvement']"
+    },
+    {
+      "name": "observability",
+      "score": 0.803,
+      "weight": 0.1,
+      "passed": true,
+      "details": "observability_score=0.80, function_coverage=0.51, structured_logging=False"
+    },
+    {
+      "name": "research_grounding",
+      "score": 0.645,
+      "weight": 0.08,
+      "passed": true,
+      "details": "sources=22, utilization=0.70, research_report=yes, doc_ratio=0.00 (0/29)"
+    },
+    {
+      "name": "factory_effectiveness",
+      "score": 0.7,
+      "weight": 0.07,
+      "passed": true,
+      "details": "keep_rate=1.00 (8/8), delta_score=0.00, managed_projects=3"
+    }
+  ],
+  "guard_violations": [],
+  "passed": true
+}

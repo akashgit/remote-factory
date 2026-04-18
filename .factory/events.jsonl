@@ -55,3 +55,5 @@
 {"type": "eval.started", "timestamp": "2026-04-18T17:37:46.517124+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
 {"type": "eval.completed", "timestamp": "2026-04-18T17:38:33.561204+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.839933, "passed": true, "dimensions": 11}}
 {"type": "experiment.finalize", "timestamp": "2026-04-18T17:38:58.658098+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 36, "verdict": "keep", "hypothesis": "Add score history line chart with hygiene/growth breakdown and keep/revert markers"}}
+{"type": "eval.started", "timestamp": "2026-04-18T17:47:49.311860+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T17:48:37.633254+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.800552, "passed": true, "dimensions": 11}}
