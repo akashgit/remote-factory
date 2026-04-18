@@ -178,3 +178,75 @@ class TestCeoPrompt:
         assert "Strategy" in build_section
         assert "factory agent researcher" in build_section
         assert "factory agent strategist" in build_section
+
+    # ── CEO Review Gate tests ────────────────────────────────────
+
+    def test_has_review_gate_section(self, ceo_prompt: str) -> None:
+        assert "### CEO Review Gate" in ceo_prompt
+
+    def test_review_gate_defines_verdicts(self, ceo_prompt: str) -> None:
+        assert "PROCEED" in ceo_prompt
+        assert "REDIRECT" in ceo_prompt
+        assert "ABORT" in ceo_prompt
+
+    def test_review_gate_references_reviews_dir(self, ceo_prompt: str) -> None:
+        assert ".factory/reviews/" in ceo_prompt
+
+    def test_strategist_hard_gate_in_build_mode(self, ceo_prompt: str) -> None:
+        """Build mode must have a hard gate after Strategist before Builder."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert "HARD GATE" in build_section
+        assert "PLAN APPROVED" in build_section
+        # Hard gate must come after strategist and before builder
+        assert build_section.index("HARD GATE") < build_section.index("factory agent builder")
+        assert build_section.index("factory agent strategist") < build_section.index("HARD GATE")
+
+    def test_strategist_hard_gate_in_improve_mode(self, ceo_prompt: str) -> None:
+        """Improve mode must have a hard gate after Strategist."""
+        improve_start = ceo_prompt.index("## Mode: Improve")
+        improve_section = ceo_prompt[improve_start:]
+
+        assert "HARD GATE" in improve_section
+        assert "PLAN APPROVED" in improve_section
+
+    def test_build_mode_has_research_review(self, ceo_prompt: str) -> None:
+        """Build mode must have CEO review after Researcher."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert "ceo-verdict-researcher" in build_section
+
+    def test_build_mode_has_builder_review(self, ceo_prompt: str) -> None:
+        """Build mode must have CEO review after Builder."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert "ceo-verdict-builder" in build_section
+
+    def test_improve_mode_has_builder_pr_review(self, ceo_prompt: str) -> None:
+        """Improve mode must have CEO reading PR diff before Reviewer."""
+        improve_start = ceo_prompt.index("## Mode: Improve")
+        improve_section = ceo_prompt[improve_start:]
+
+        # CEO must read PR diff
+        assert "gh pr diff" in improve_section
+        assert "ceo-verdict-builder" in improve_section
+
+    def test_improve_mode_has_reviewer_review(self, ceo_prompt: str) -> None:
+        """CEO must validate the Reviewer's verdict, not blindly trust it."""
+        improve_start = ceo_prompt.index("## Mode: Improve")
+        improve_section = ceo_prompt[improve_start:]
+
+        assert "ceo-verdict-reviewer" in improve_section
+        assert "rubber-stamp" in improve_section.lower() or "rubber-stamped" in improve_section.lower()
+
+    def test_review_assessment_criteria_table(self, ceo_prompt: str) -> None:
+        """Review gate must define assessment criteria per role."""
+        # Should have a table with criteria for each role
+        for role in ["Researcher", "Strategist", "Builder", "Reviewer", "Evaluator"]:
+            assert role in ceo_prompt

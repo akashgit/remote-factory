@@ -628,42 +628,82 @@ class TestCmdCeoParser:
 
 
 class TestCmdCeo:
-    def test_ceo_invokes_ceo_agent(self, tmp_path, capsys):
-        """cmd_ceo spawns CEO agent."""
+    def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
+        """cmd_ceo --headless spawns CEO agent via invoke_agent."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path)])
+            result = main(["ceo", str(tmp_path), "--headless"])
         assert result == 0
         mock_agent.assert_called_once()
         call_args = mock_agent.call_args
         assert call_args[0][0] == "ceo"
         assert str(tmp_path) in call_args[0][1]
 
-    def test_ceo_meta_mode_task(self, tmp_path):
-        """cmd_ceo with --mode=meta includes meta instructions in task."""
+    def test_ceo_headless_meta_mode_task(self, tmp_path):
+        """cmd_ceo --headless with --mode=meta includes meta instructions."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "meta"])
+            result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "Meta mode" in task
 
-    def test_ceo_clones_github_url(self, capsys):
-        """cmd_ceo clones a GitHub URL then invokes CEO."""
+    def test_ceo_headless_clones_github_url(self, capsys):
+        """cmd_ceo --headless clones a GitHub URL then invokes CEO."""
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"):
-            result = main(["ceo", url])
+            result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-ceo"], check=True,
         )
 
-    def test_ceo_timeout_is_1_hour(self, tmp_path):
-        """CEO agent gets 3600s timeout."""
+    def test_ceo_headless_timeout_is_1_hour(self, tmp_path):
+        """CEO agent gets 3600s timeout in headless mode."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", str(tmp_path)])
+            main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 3600.0
+
+    def test_ceo_foreground_uses_execvp(self, tmp_path):
+        """cmd_ceo (default) launches claude interactively via os.execvp."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path)])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        assert cmd[0] == "claude"
+        assert "--append-system-prompt" in cmd
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_ceo_foreground_passes_task_as_prompt(self, tmp_path):
+        """Foreground mode passes the task as the initial user message."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path)])
+        cmd = mock_exec.call_args[0][1]
+        # Last arg (before flags) should be the task string
+        # The task contains the project path
+        assert any(str(tmp_path) in arg for arg in cmd)
+
+    def test_ceo_foreground_chdir_to_project(self, tmp_path):
+        """Foreground mode changes cwd to the project directory."""
+        with patch("factory.cli.os.execvp"), \
+             patch("factory.cli.os.chdir") as mock_chdir:
+            main(["ceo", str(tmp_path)])
+        mock_chdir.assert_called_once_with(tmp_path)
+
+    def test_ceo_parser_has_headless_flag(self):
+        """Parser accepts --headless flag."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--headless"])
+        assert args.headless is True
+
+    def test_ceo_parser_default_not_headless(self):
+        """Parser defaults to foreground (not headless)."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.headless is False
 
 
 class TestSlugify:
@@ -801,7 +841,7 @@ class TestResolveInput:
              patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli.subprocess.run"), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", "Test Idea"])
+            main(["ceo", "Test Idea", "--headless"])
 
         task_arg = mock_agent.call_args[0][1]  # second positional = task
         assert "Build X that does Y" in task_arg
