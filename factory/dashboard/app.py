@@ -74,6 +74,41 @@ def create_app(projects_dir: Path) -> FastAPI:
         events = load_events(path)
         return events[-limit:]
 
+    @app.get("/api/summary")
+    async def summary() -> dict[str, Any]:
+        log.info("dashboard_request", endpoint="/api/summary")
+        from factory.events import discover_factory_projects
+
+        total_projects = 0
+        active_projects = 0
+        total_experiments = 0
+        keep_count = 0
+        revert_count = 0
+        score_sum = 0.0
+        score_count = 0
+
+        for path in discover_factory_projects(projects_dir):
+            info = _project_summary(path)
+            total_projects += 1
+            if info.get("active"):
+                active_projects += 1
+            total_experiments += info.get("experiment_count", 0)
+            keep_count += info.get("keep_count", 0)
+            revert_count += info.get("revert_count", 0)
+            if info.get("latest_score") is not None:
+                score_sum += info["latest_score"]
+                score_count += 1
+
+        return {
+            "total_projects": total_projects,
+            "active_projects": active_projects,
+            "avg_score": score_sum / score_count if score_count > 0 else None,
+            "total_experiments": total_experiments,
+            "keep_count": keep_count,
+            "revert_count": revert_count,
+            "keep_rate": keep_count / total_experiments if total_experiments > 0 else 0,
+        }
+
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
         log.info("dashboard_request", endpoint="/api/events/stream")
