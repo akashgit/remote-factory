@@ -163,6 +163,69 @@ class TestDashboardAPI:
         assert events[0]["type"] == "event.7"
 
 
+class TestSummaryAPI:
+    def test_summary_aggregation(self, client: TestClient):
+        resp = client.get("/api/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_projects"] == 2
+        assert data["active_projects"] == 0  # No recent events
+        assert data["total_experiments"] == 2
+        assert data["keep_count"] == 1
+        assert data["revert_count"] == 1
+        # avg_score: only proj-a has a score (0.55), proj-b has none
+        assert data["avg_score"] == pytest.approx(0.55)
+        # keep_rate: 1 / 2 = 0.5
+        assert data["keep_rate"] == pytest.approx(0.5)
+
+    def test_summary_empty_dir(self, tmp_path: Path):
+        app = create_app(tmp_path)
+        empty_client = TestClient(app)
+        resp = empty_client.get("/api/summary")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total_projects"] == 0
+        assert data["active_projects"] == 0
+        assert data["avg_score"] is None
+        assert data["total_experiments"] == 0
+        assert data["keep_count"] == 0
+        assert data["revert_count"] == 0
+        assert data["keep_rate"] == 0
+
+    def test_summary_keep_rate_calculation(self, projects_dir: Path):
+        """Test keep rate with additional project data."""
+        # Add another project with experiments
+        proj_c = projects_dir / "proj-c"
+        factory_c = proj_c / ".factory"
+        factory_c.mkdir(parents=True)
+
+        tsv = io.StringIO()
+        writer = csv.writer(tsv, dialect="excel-tab")
+        writer.writerow(["id", "timestamp", "hypothesis", "change_summary",
+                         "issue_number", "pr_number", "score_before", "score_after",
+                         "delta", "verdict", "cost_usd", "notes"])
+        writer.writerow(["1", "2026-04-16T10:00:00", "h1", "s1",
+                         "", "", "0.5", "0.7", "0.2", "keep", "0.1", ""])
+        writer.writerow(["2", "2026-04-16T11:00:00", "h2", "s2",
+                         "", "", "0.7", "0.8", "0.1", "keep", "0.1", ""])
+        writer.writerow(["3", "2026-04-16T12:00:00", "h3", "s3",
+                         "", "", "0.8", "0.75", "-0.05", "revert", "0.1", ""])
+        (factory_c / "results.tsv").write_text(tsv.getvalue())
+
+        app = create_app(projects_dir)
+        c = TestClient(app)
+        resp = c.get("/api/summary")
+        data = resp.json()
+        # proj-a: 2 exp (1 keep, 1 revert), proj-b: 0 exp, proj-c: 3 exp (2 keep, 1 revert)
+        assert data["total_projects"] == 3
+        assert data["total_experiments"] == 5
+        assert data["keep_count"] == 3
+        assert data["revert_count"] == 2
+        assert data["keep_rate"] == pytest.approx(0.6)
+        # avg_score: proj-a=0.55, proj-c=0.75 => (0.55+0.75)/2 = 0.65
+        assert data["avg_score"] == pytest.approx(0.65)
+
+
 class TestProjectSummary:
     def test_basic_summary(self, projects_dir: Path):
         info = _project_summary(projects_dir / "proj-a")

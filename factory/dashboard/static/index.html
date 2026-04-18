@@ -78,7 +78,7 @@
   main {
     display: grid;
     grid-template-columns: 280px 1fr;
-    grid-template-rows: 1fr 1fr;
+    grid-template-rows: 80px 1fr 1fr;
     gap: 0;
     height: calc(100vh - 80px);
   }
@@ -108,21 +108,21 @@
     flex: 1;
   }
 
-  /* Projects panel — spans both rows */
+  /* Projects panel — spans both content rows (below KPI strip) */
   .projects-panel {
-    grid-row: 1 / 3;
+    grid-row: 2 / 4;
   }
 
   /* Events panel — top right */
   .events-panel {
     grid-column: 2;
-    grid-row: 1;
+    grid-row: 2;
   }
 
   /* Experiments panel — bottom right */
   .experiments-panel {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 3;
     border-bottom: none;
   }
 
@@ -296,6 +296,43 @@
   .score-clickable { cursor: pointer; }
   .score-clickable:hover { text-decoration: underline; }
 
+  /* KPI strip */
+  .kpi-strip {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 16px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .kpi-card {
+    flex: 1;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .kpi-value {
+    font-size: 24px;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+  .kpi-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .kpi-bar {
+    display: flex;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .kpi-bar-keep { background: var(--green); }
+  .kpi-bar-revert { background: var(--red); }
+
   /* Modal overlay */
   .modal-overlay {
     position: fixed; inset: 0; z-index: 1000;
@@ -334,11 +371,13 @@
   @media (max-width: 800px) {
     main {
       grid-template-columns: 1fr;
-      grid-template-rows: auto auto auto;
+      grid-template-rows: auto auto auto auto;
     }
-    .projects-panel { grid-row: 1; max-height: 200px; }
-    .events-panel { grid-column: 1; grid-row: 2; }
-    .experiments-panel { grid-column: 1; grid-row: 3; }
+    .kpi-strip { flex-wrap: wrap; }
+    .kpi-card { min-width: calc(50% - 12px); }
+    .projects-panel { grid-row: 2; max-height: 200px; }
+    .events-panel { grid-column: 1; grid-row: 3; }
+    .experiments-panel { grid-column: 1; grid-row: 4; }
   }
 </style>
 </head>
@@ -356,6 +395,8 @@
 </header>
 
 <main>
+  <div class="kpi-strip" id="kpi-strip"></div>
+
   <div class="panel projects-panel">
     <div class="panel-header">Projects</div>
     <div class="panel-body" id="projects-list">
@@ -494,8 +535,9 @@ function connectSSE() {
     try {
       const event = JSON.parse(e.data);
       addEvent(event);
-      // Refresh projects on every event
+      // Refresh projects and summary on every event
       loadProjects();
+      loadSummary();
       // Refresh experiments if the event is for the selected project
       if (selectedProject && event.project === selectedProject) {
         loadExperiments(selectedProject);
@@ -737,12 +779,60 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeModal();
 });
 
+// ── KPI Summary ──
+async function loadSummary() {
+  try {
+    const res = await fetch('/api/summary');
+    const data = await res.json();
+    renderKPIs(data);
+  } catch (e) {
+    console.error('Failed to load summary:', e);
+  }
+}
+
+function renderKPIs(data) {
+  const el = document.getElementById('kpi-strip');
+  const keepPct = data.total_experiments > 0
+    ? ((data.keep_count / data.total_experiments) * 100).toFixed(0)
+    : '0';
+  const keepBarW = data.total_experiments > 0
+    ? (data.keep_count / data.total_experiments * 100)
+    : 0;
+
+  el.innerHTML = `
+    <div class="kpi-card">
+      <div class="kpi-label">Projects</div>
+      <div class="kpi-value">${data.total_projects}
+        <span style="font-size:12px;color:var(--green)">${data.active_projects} active</span>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Avg Score</div>
+      <div class="kpi-value" style="color:${scoreColor(data.avg_score)}">${data.avg_score != null ? data.avg_score.toFixed(3) : '\u2014'}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Experiments</div>
+      <div class="kpi-value">${data.total_experiments}</div>
+      <div class="kpi-bar">
+        <div class="kpi-bar-keep" style="width:${keepBarW}%"></div>
+        <div class="kpi-bar-revert" style="width:${100 - keepBarW}%"></div>
+      </div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Keep Rate</div>
+      <div class="kpi-value" style="color:${scoreColor(data.keep_rate)}">${keepPct}%</div>
+    </div>
+  `;
+}
+
 // ── Init ──
 loadProjects();
+loadSummary();
 connectSSE();
 // Refresh projects every 10s
 setInterval(() => {
   loadProjects();
+  loadSummary();
   if (selectedProject) loadExperiments(selectedProject);
 }, 10000);
 </script>
