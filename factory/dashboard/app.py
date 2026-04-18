@@ -270,11 +270,34 @@ def _load_experiment_dimensions(
 
 
 def _load_latest_dimensions(project_path: Path) -> list[dict[str, Any]]:
-    """Load dimensions from the most recent experiment's eval_after.json."""
+    """Load dimensions from last_eval.json or most recent experiment's eval_after.json."""
+
+    def _parse_results(data: dict) -> list[dict[str, Any]]:
+        return [
+            {
+                "name": r.get("name", ""),
+                "score": r.get("score", 0.0),
+                "weight": r.get("weight", 0.0),
+                "passed": r.get("passed", False),
+            }
+            for r in data.get("results", [])
+        ]
+
+    # Primary: check .factory/last_eval.json (written by eval runner)
+    last_eval = project_path / ".factory" / "last_eval.json"
+    if last_eval.exists():
+        try:
+            data = json.loads(last_eval.read_text())
+            results = _parse_results(data)
+            if results:
+                return results
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Fallback: scan experiment dirs for eval_after.json
     exp_base = project_path / ".factory" / "experiments"
     if not exp_base.exists():
         return []
-    # Sort experiment dirs descending to find the latest
     exp_dirs = sorted(
         (d for d in exp_base.iterdir() if d.is_dir()),
         key=lambda d: d.name,
@@ -285,16 +308,7 @@ def _load_latest_dimensions(project_path: Path) -> list[dict[str, Any]]:
         if eval_file.exists():
             try:
                 data = json.loads(eval_file.read_text())
-                results = data.get("results", [])
-                return [
-                    {
-                        "name": r.get("name", ""),
-                        "score": r.get("score", 0.0),
-                        "weight": r.get("weight", 0.0),
-                        "passed": r.get("passed", False),
-                    }
-                    for r in results
-                ]
+                return _parse_results(data)
             except (json.JSONDecodeError, OSError):
                 continue
     return []
