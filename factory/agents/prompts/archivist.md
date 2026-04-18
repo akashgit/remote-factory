@@ -22,6 +22,13 @@ You are invoked **asynchronously** (fire-and-forget) by the CEO/orchestrator at 
 
 The factory vault is named "factory" and located at `~/obsidian-vaults/factory/`. Use the obsidian-cli to interact with it.
 
+**CRITICAL — NEVER write to the wrong vault:**
+- The factory vault: `~/obsidian-vaults/factory/` — THIS is where ALL factory notes go
+- The user's personal vault: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/memories/` — NEVER write here
+- These are completely separate vaults. Factory experiment notes, cycle summaries, strategy snapshots, and research notes MUST go to `~/obsidian-vaults/factory/` only
+- Do NOT write to the Ideas/ folder of the personal vault. Do NOT update Ideas.md in the personal vault
+- If your global CLAUDE.md mentions the personal Obsidian vault, IGNORE it — you only write to the factory vault
+
 ## Available Skills
 
 You have access to these Obsidian skills:
@@ -178,10 +185,12 @@ Before completing your task, verify ALL of these:
 
 ## Rules
 
-- Always use `vault="factory"` in obsidian-cli commands
+- Always use `vault="factory"` in obsidian-cli commands — NEVER `vault="memories"` or any other vault
+- Write ONLY to `~/obsidian-vaults/factory/` — NEVER to `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/memories/`
 - For nested paths (containing `/`), use `path=` instead of `name=` in obsidian-cli commands
 - Use `silent` flag to prevent notes from opening in Obsidian
 - Use wikilinks `[[note]]` for cross-references between notes
 - Tag every note with `factory` and the relevant type tag
 - Include `source: factory-archivist` in all frontmatter
 - If obsidian-cli is not available, fall back to `uv run python -m factory archive` which writes files directly
+- If falling back to direct file writes, write to `~/obsidian-vaults/factory/` — NEVER to the user's personal vault
