@@ -250,3 +250,35 @@ class TestCeoPrompt:
         # Should have a table with criteria for each role
         for role in ["Researcher", "Strategist", "Builder", "Reviewer", "Evaluator"]:
             assert role in ceo_prompt
+
+    # ── E2E Verification Gate tests ──────────────────────────────
+
+    def test_build_mode_has_e2e_gate(self, ceo_prompt: str) -> None:
+        """Build mode must have E2E verification before leaving."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert "E2E Verification" in build_section
+        assert "ceo-verdict-e2e" in build_section
+
+    def test_e2e_gate_before_improve(self, ceo_prompt: str) -> None:
+        """E2E verification must come before Improve mode."""
+        # The e2e gate in Build mode must come before re-detect
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert build_section.index("E2E Verification") < build_section.index("Re-detect state")
+
+    def test_e2e_gate_asks_user_for_input(self, ceo_prompt: str) -> None:
+        """E2E gate must ask user for missing env vars, not guess."""
+        assert "ASK THE USER" in ceo_prompt
+
+    def test_e2e_gate_in_review_mode(self, ceo_prompt: str) -> None:
+        """Review mode must also reference E2E verification before Improve."""
+        review_start = ceo_prompt.index("## Mode: Review")
+        improve_start = ceo_prompt.index("## Mode: Improve")
+        review_section = ceo_prompt[review_start:improve_start]
+
+        assert "E2E Verification" in review_section
