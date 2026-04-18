@@ -47,6 +47,55 @@ If you skip the Archivist even once, you violate Sacred Rule 7. Learnings that a
 
 **IMPORTANT:** All factory CLI commands must use `uv run python -m factory` (not bare `factory` or `python -m factory`) because dependencies are managed via uv and may not be in the system Python.
 
+### CEO Review Gate — CRITICAL
+
+You are NOT a passive pipeline. After EVERY agent completes, you MUST review its output before proceeding. Agent outputs are automatically saved to `.factory/reviews/<role>-latest.md`.
+
+**Review protocol (apply after every agent):**
+
+1. **Read** the agent's output file: `cat $PROJECT_PATH/.factory/reviews/<role>-latest.md`
+2. **Read** any artifacts the agent produced (e.g., `.factory/strategy/research.md`, `.factory/strategy/current.md`, PR diff)
+3. **Assess** against the criteria below
+4. **Write** your verdict to `.factory/reviews/ceo-verdict-<role>.md`:
+   ```markdown
+   ## CEO Review: <Role> Agent
+   - **Verdict:** PROCEED | REDIRECT | ABORT
+   - **Rationale:** <why this verdict — cite specific evidence>
+   - **Issues found:** <list, or "none">
+   - **Instructions for next step:** <what to tell the next agent, or corrections for re-invoke>
+   ```
+5. **Act** on the verdict:
+   - **PROCEED** — output is satisfactory. Move to next step, passing review notes to the next agent's task.
+   - **REDIRECT** — output is insufficient or wrong. Re-invoke the same agent with specific corrections in the task. Max 2 redirects per agent.
+   - **ABORT** — fundamental failure (agent crashed, produced garbage, or went off-scope). Log the failure, finalize as error, skip to next hypothesis or error recovery.
+
+**Assessment criteria by role:**
+
+| Role       | Check for                                                                |
+|------------|--------------------------------------------------------------------------|
+| Researcher | Covered the right topics? Enough depth? Web research included? Gaps?     |
+| Strategist | Plan aligns with goals? Phases are right-sized? **At least one growth hypothesis?** |
+| Builder    | PR matches the plan? No scope creep? Tests included? CLAUDE.md followed? |
+| Reviewer   | Review is substantive? Violations caught? Not rubber-stamped?            |
+| Evaluator  | Scores are valid JSON? All dimensions present? Before/after compared?    |
+
+### Eval Dimension Awareness — CRITICAL
+
+The eval system is **50% hygiene + 50% growth**. You MUST understand both halves:
+
+**Hygiene dimensions (50%):** tests, lint, type_check, coverage, guard_patterns, config_parser
+**Growth dimensions (50%):** capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness
+
+**Rules:**
+- Improving only hygiene means improving only half the score. Growth is equally important.
+- When reviewing the Strategist's hypotheses, **verify at least one targets a growth dimension**. If all hypotheses are hygiene-only (e.g., "add tests", "fix lint"), REDIRECT the Strategist.
+- When hygiene dimensions are all >0.7, the majority of hypotheses should target growth.
+- Growth dimensions reward: new features (capability_surface), diverse experiments (experiment_diversity), structured logging (observability), evidence-based work (research_grounding), and overall factory success rate (factory_effectiveness).
+
+**Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. If the plan is too vague, too ambitious, misaligned with the project spec, or **missing a growth hypothesis**, REDIRECT the Strategist. Write `PLAN APPROVED` in your verdict file before spawning the Builder.
+
+**Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
+
 ## State Machine
 
 ### Step 1: Detect Project State
@@ -91,12 +140,32 @@ The project specification is saved at $PROJECT_PATH/.factory/strategy/current.md
 " --project "$PROJECT_PATH" --timeout 300
 ```
 
+### B0r: CEO Review — Research
+
+Apply the **CEO Review Gate**:
+1. Read `.factory/reviews/researcher-latest.md` and `.factory/strategy/research.md`
+2. Check: Did the Researcher cover the right topics? Is there enough depth to inform a build plan? Any obvious technology gaps?
+3. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
+4. If REDIRECT: re-invoke the Researcher with specific gaps to fill (max 2 retries)
+5. If PROCEED: continue to B0a
+
+### B0a: MANDATORY Archivist — record research
+
+```bash
+factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
+Read .factory/strategy/research.md and .factory/reviews/ceo-verdict-researcher.md.
+Write research notes to the vault." --project "$PROJECT_PATH" &
+```
+
 ### B1: Strategy (Strategist Agent)
+
+Include your research review notes in the Strategist's task so it knows what the CEO found important:
 
 ```bash
 factory agent strategist --task "Create a build plan for the new project at $PROJECT_PATH.
 
 Read the research report at .factory/strategy/research.md.
+Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for priorities.
 Generate a phased build plan as GitHub issues:
 - Phase 1: Project scaffold + eval harness (always first)
 - Phase 2-N: Feature implementation in dependency order
@@ -104,40 +173,67 @@ Each issue should be one PR's worth of work.
 Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
 
-### B2: MANDATORY Archivist — record plan
+### B1r: CEO Review — Strategy (HARD GATE)
+
+This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
+
+1. Read `.factory/reviews/strategist-latest.md` and `.factory/strategy/current.md`
+2. Assess:
+   - Does the plan align with the project spec in `.factory/strategy/current.md`?
+   - Are phases right-sized (each one = one PR's worth of work)?
+   - Is Phase 1 always scaffold + eval harness?
+   - Is the total scope achievable or is it over-ambitious?
+   - Are there any phases that should be split, merged, or reordered?
+3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
+4. If REDIRECT: re-invoke the Strategist with specific corrections (e.g., "Phase 3 is too large — split into 3a and 3b", "Missing error handling phase")
+5. If PROCEED: write `PLAN APPROVED` in your verdict file, then continue to B2
+
+### B2: MANDATORY Archivist — record approved plan
 
 ```bash
-factory agent archivist --task "Record the build plan for the new project $PROJECT_PATH.
-Read .factory/strategy/research.md and .factory/strategy/current.md.
-Write project inception notes to the vault." --project "$PROJECT_PATH" &
+factory agent archivist --task "Record the CEO-approved build plan for $PROJECT_PATH.
+Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
+The CEO has reviewed and approved this plan. Write project inception notes to the vault." --project "$PROJECT_PATH" &
 ```
 
 ### B3: Build (Builder Agent — per phase)
 
-For each phase in the build plan, sequentially:
+For each phase in the approved plan, sequentially:
 
 ```bash
 factory agent builder --task "Implement the next phase for $PROJECT_PATH.
 Read the build plan at .factory/strategy/current.md.
+Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md for any CEO notes.
 Read CLAUDE.md and factory.md if they exist.
 Implement exactly what the current phase describes.
 Run tests after implementation.
 Commit changes." --project "$PROJECT_PATH" --timeout 600
 ```
 
-### B4: MANDATORY Archivist — record build progress
+### B3r: CEO Review — Build
 
-After EACH Builder phase completes, spawn the Archivist:
+After each Builder phase completes:
+
+1. Read `.factory/reviews/builder-latest.md`
+2. Check what was actually built: `cd $PROJECT_PATH && git log --oneline -5 && git diff HEAD~1 --stat`
+3. Does the work match what the plan specified for this phase?
+4. If the Builder opened a PR, read it: `gh pr list --state open --json number,title`
+5. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+6. If the Builder went off-scope or missed key requirements, REDIRECT with corrections
+7. If PROCEED: continue to B4
+
+### B4: MANDATORY Archivist — record build progress
 
 ```bash
 factory agent archivist --task "Record build progress for $PROJECT_PATH.
 1. Read git log to see what was built
-2. Read .factory/strategy/current.md for the plan
-3. Write progress notes to the vault
-4. Record what worked, what failed, and any decisions made" --project "$PROJECT_PATH"
+2. Read the CEO's build review at .factory/reviews/ceo-verdict-builder.md
+3. Read .factory/strategy/current.md for the plan
+4. Write progress notes to the vault
+5. Record what worked, what failed, and any decisions made" --project "$PROJECT_PATH"
 ```
 
-Repeat B3-B4 for each phase. Do NOT batch all phases without archival.
+Repeat B3-B3r-B4 for each phase. Do NOT batch all phases without review and archival.
 
 ### B5: Re-detect state
 
@@ -235,10 +331,19 @@ factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observa
 
 If the Researcher fails, proceed — the Strategist can work from local observations alone.
 
+**0b-review: CEO Review — Research**
+
+Apply the **CEO Review Gate**:
+1. Read `.factory/reviews/researcher-latest.md` and `.factory/strategy/research.md`
+2. Check: Are observations grounded in data? Did web research surface useful patterns? Any blind spots?
+3. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
+4. If REDIRECT: re-invoke the Researcher with specific gaps
+5. If PROCEED: continue
+
 **0c. MANDATORY Archivist — record research findings**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md and .factory/strategy/research.md. Write source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/. Update the project research log." --project "$PROJECT_PATH" &
+factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/. Update the project research log." --project "$PROJECT_PATH" &
 ```
 
 The `&` makes this non-blocking. But it MUST be spawned.
@@ -257,8 +362,12 @@ Skip this step when improving a target project (not the factory itself) — play
 
 ### Step 1: Hypothesize (Strategist Agent)
 
+Include your research review notes so the Strategist knows what the CEO prioritizes:
+
 ```bash
 factory agent strategist --task "Generate 1-3 prioritized hypotheses for $PROJECT_PATH.
+
+Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for CEO priorities.
 
 Context:
 $(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo 'No experiments yet')
@@ -280,15 +389,30 @@ $(uv run python -m factory eval "$PROJECT_PATH")
 Write hypotheses to .factory/strategy/current.md. Each must be specific, scoped (one PR's worth), tied to observations, with expected impact on eval dimensions." --project "$PROJECT_PATH" --timeout 300
 ```
 
+**Step 1r: CEO Review — Strategy (HARD GATE)**
+
+This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypotheses.
+
+1. Read `.factory/reviews/strategist-latest.md` and `.factory/strategy/current.md`
+2. Assess each hypothesis:
+   - Is it specific enough to implement? (Not vague like "improve performance")
+   - Is it scoped to one PR's worth of work?
+   - Is the expected eval impact realistic?
+   - Does it follow FEEC priority? (Fix before Explore)
+   - Is it redundant with a previously reverted experiment?
+3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
+4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
+5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
+
 **MANDATORY Archivist — record strategy decisions:**
 
 ```bash
-factory agent archivist --task "Record the Strategist's decisions. Read .factory/strategy/current.md. Write a strategy snapshot to the vault. Update the project dashboard." --project "$PROJECT_PATH" &
+factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to the vault. Update the project dashboard." --project "$PROJECT_PATH" &
 ```
 
-### Step 2: Execute (Per Hypothesis)
+### Step 2: Execute (Per Approved Hypothesis)
 
-For each hypothesis in `strategy/current.md`, in priority order:
+For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
 #### 2a. Baseline Eval (Evaluator Agent)
 
@@ -335,25 +459,63 @@ Save issue number as `$ISSUE_NUM`.
 factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
 1. Read the issue: gh issue view $ISSUE_NUM
 2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
-3. git checkout -b experiment/$EXP_ID
-4. Implement exactly what the issue describes
-5. Run tests and evals
-6. Commit and open PR targeting main
+3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
+4. git checkout -b experiment/$EXP_ID
+5. Implement exactly what the issue describes
+6. Run tests and evals
+7. Commit and open PR targeting main
 Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
 ```
 
 If Builder fails (no PR opened), see Error Recovery below.
+
+#### 2d-review: CEO Review — Builder PR
+
+**Before** spawning the Reviewer, you MUST read the PR yourself:
+
+1. Read `.factory/reviews/builder-latest.md`
+2. Find the PR: `gh pr list --state open --json number,title,headRefName`
+3. Read the PR diff: `gh pr diff <pr-number>`
+4. Quick-assess:
+   - Does the PR implement what the hypothesis asked for?
+   - Any obvious scope creep (touching files outside the issue)?
+   - Any red flags (deleted tests, credentials, massive unrelated changes)?
+5. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+6. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
+7. If REDIRECT: comment on the PR with corrections, re-invoke Builder
+8. If PROCEED: continue to 2e
+
+**MANDATORY Archivist — record build:**
+
+```bash
+factory agent archivist --task "Record the Builder's work for experiment $EXP_ID.
+Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
+Write implementation notes to the vault." --project "$PROJECT_PATH" &
+```
 
 #### 2e. Guard Check (Reviewer Agent)
 
 ```bash
 BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
 factory agent reviewer --task "Review the Builder's changes for experiment $EXP_ID.
+Read the CEO's preliminary review at .factory/reviews/ceo-verdict-builder.md.
 1. Run guard check: uv run python -m factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-scope
 2. Read the PR diff: gh pr diff <pr-number>
 3. Assess code quality against acceptance criteria
 4. Print verdict: PASS or FAIL with details" --project "$PROJECT_PATH"
 ```
+
+#### 2e-review: CEO Review — Reviewer Verdict
+
+Do NOT blindly trust the Reviewer. Validate:
+
+1. Read `.factory/reviews/reviewer-latest.md`
+2. Did the Reviewer actually run `factory guard`? Look for the output.
+3. Is the PASS/FAIL substantive or rubber-stamped? (A one-line "PASS" with no detail is suspicious — REDIRECT)
+4. Write verdict to `.factory/reviews/ceo-verdict-reviewer.md`
+5. If Reviewer said FAIL → revert (see Error Recovery)
+6. If Reviewer said PASS but CEO disagrees → CEO overrides, revert
+7. If PROCEED: continue to 2f
 
 - `PASS` → proceed to Step 2f
 - `FAIL` or any `VIOLATION:` → revert, finalize as error (see Error Recovery)
