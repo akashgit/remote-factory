@@ -23,6 +23,48 @@ def _run(coro):  # noqa: ANN001, ANN202
 # ── banner ────────────────────────────────────────────────────
 
 
+_DASHBOARD_PORT = 8420
+
+
+def _dashboard_is_running(port: int = _DASHBOARD_PORT) -> bool:
+    """Check if the dashboard is already listening on the given port."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _ensure_dashboard(project_path: Path, port: int = _DASHBOARD_PORT) -> None:
+    """Start the dashboard in the background if it's not already running.
+
+    Prints the dashboard URL to stderr either way.
+    """
+    url = f"http://localhost:{port}"
+
+    if _dashboard_is_running(port):
+        print(f"  Dashboard: {url} (running)", file=sys.stderr)
+        return
+
+    # Determine projects directory (parent of the project)
+    projects_dir = project_path.parent
+
+    # Start dashboard as a detached background process
+    cmd = [
+        sys.executable, "-m", "factory", "dashboard",
+        "--projects-dir", str(projects_dir),
+        "--port", str(port),
+        "--host", "0.0.0.0",
+    ]
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,  # detach from parent process
+    )
+    print(f"  Dashboard: {url} (started)", file=sys.stderr)
+
+
 def _print_banner(mode: str = "improve") -> None:
     """Print the Factory startup banner to stderr."""
     if os.environ.get("NO_COLOR") or not sys.stderr.isatty():
@@ -508,6 +550,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "improve")
     headless = getattr(args, "headless", False)
     _print_banner(mode)
+    _ensure_dashboard(project_path)
 
     task = _build_ceo_task(project_path, mode, context)
 
@@ -879,6 +922,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
     _print_banner(mode)
+    _ensure_dashboard(project_path)
 
     if not loop:
         return _run_single_cycle(project_path, mode, context)
