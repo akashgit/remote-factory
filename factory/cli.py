@@ -346,6 +346,55 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Export a complete project snapshot as JSON to stdout."""
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    factory_dir = project_path / ".factory"
+
+    if not factory_dir.is_dir():
+        print(f"Error: {factory_dir} does not exist. Run 'factory init' first.", file=sys.stderr)
+        return 1
+
+    store = ExperimentStore(project_path)
+
+    # Read config
+    try:
+        config = _run(store.read_config())
+        config_data = config.model_dump()
+    except FileNotFoundError:
+        config_data = None
+
+    # Read eval profile
+    eval_profile = _run(store.read_eval_profile())
+    eval_profile_data = eval_profile.model_dump() if eval_profile else None
+
+    # Read experiment history
+    records = _run(store.load_history())
+    experiments_data = [r.model_dump() for r in records]
+
+    # Read strategy
+    strategy = _run(store.read_strategy())
+
+    # Assemble snapshot
+    snapshot = {
+        "config": config_data,
+        "eval_profile": eval_profile_data,
+        "experiments": experiments_data,
+        "strategy": strategy,
+        "meta": {
+            "project_path": str(project_path),
+            "timestamp": datetime.now().isoformat(),
+            "factory_version": "0.1.0",
+        },
+    }
+
+    json.dump(snapshot, sys.stdout, indent=2, default=str)
+    print()  # trailing newline
+    return 0
+
+
 def cmd_ace(args: argparse.Namespace) -> int:
     """Run ACE self-improvement on agent playbooks."""
     from factory.ace.curator import curate_playbook
@@ -602,10 +651,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     project_path, context = _resolve_input(args.path)
     mode = getattr(args, "mode", "improve")
     headless = getattr(args, "headless", False)
+    focus = getattr(args, "focus", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    task = _build_ceo_task(project_path, mode, context)
+    task = _build_ceo_task(project_path, mode, context, focus=focus)
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -931,9 +981,17 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
-def _build_ceo_task(project_path: Path, mode: str, context: str | None = None) -> str:
+def _build_ceo_task(
+    project_path: Path,
+    mode: str,
+    context: str | None = None,
+    focus: str | None = None,
+) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
+
+    if focus:
+        task += f"\n\n## Focus Directive\n\nNarrow improvement efforts to: {focus}\n"
 
     if context:
         task += f"\n\n## Project Specification\n\n{context}"
@@ -953,11 +1011,16 @@ def _build_ceo_task(project_path: Path, mode: str, context: str | None = None) -
     return task
 
 
-def _run_single_cycle(project_path: Path, mode: str, context: str | None = None) -> int:
+def _run_single_cycle(
+    project_path: Path,
+    mode: str,
+    context: str | None = None,
+    focus: str | None = None,
+) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
 
-    task = _build_ceo_task(project_path, mode, context)
+    task = _build_ceo_task(project_path, mode, context, focus=focus)
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -975,11 +1038,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     project_path, context = _resolve_input(args.path)
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
+    focus = getattr(args, "focus", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
     if not loop:
-        return _run_single_cycle(project_path, mode, context)
+        return _run_single_cycle(project_path, mode, context, focus=focus)
 
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
@@ -1003,7 +1067,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(project_path, mode, context)
+            _run_single_cycle(project_path, mode, context, focus=focus)
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             if shutdown_requested:
@@ -1118,6 +1182,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
 
 
+    # export
+    p = sub.add_parser("export", help="Export complete project snapshot as JSON to stdout")
+    p.add_argument("path", help="Path to the project")
+
     # insights
     p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
     p.add_argument("path", help="Path to the project (insights.md written here)")
@@ -1182,6 +1250,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
     )
     p.add_argument(
+        "--focus", default=None,
+        help="Narrow improvement efforts to a specific area (e.g. 'dashboard UI', 'eval reliability')",
+    )
+    p.add_argument(
         "--headless", action="store_true", default=False,
         help="Run in pipe mode (non-interactive) instead of foreground",
     )
@@ -1194,6 +1266,10 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["discover", "improve", "meta"],
         default="improve",
         help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
+    )
+    p.add_argument(
+        "--focus", default=None,
+        help="Narrow improvement efforts to a specific area (e.g. 'dashboard UI', 'eval reliability')",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
@@ -1256,6 +1332,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "export": cmd_export,
         "insights": cmd_insights,
         "ace": cmd_ace,
         "digest": cmd_digest,
