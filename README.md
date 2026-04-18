@@ -16,12 +16,17 @@ Domain-agnostic multi-agent software evolution loop. Give it any project — a d
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
+uv tool install -e .          # puts `factory` on your PATH
+factory install               # registers CEO as a Claude Code agent
 
-# Run on anything
-factory run ~/my-project                              # existing project
-factory run https://github.com/user/repo              # GitHub repo
-factory run "Locals Know"                              # Obsidian vault idea
-factory run "Build a CLI tool that converts CSV to JSON"  # raw prompt
+# Run on anything (interactive — you can see and interact with the CEO)
+factory ceo ~/my-project                              # existing project
+factory ceo https://github.com/user/repo              # GitHub repo
+factory ceo "Locals Know"                             # Obsidian vault idea
+factory ceo "Build a CLI tool that converts CSV to JSON"  # raw prompt
+
+# Or from within any Claude Code session
+claude --agent factory-ceo                            # launches CEO interactively
 ```
 
 ## Installation
@@ -43,6 +48,9 @@ factory run "Build a CLI tool that converts CSV to JSON"  # raw prompt
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
+
+# Install the `factory` command globally (recommended)
+uv tool install -e .
 ```
 
 Verify the CLI:
@@ -50,6 +58,8 @@ Verify the CLI:
 ```bash
 factory --help
 ```
+
+If you skip `uv tool install`, prefix all commands with `uv run python -m factory` instead of `factory`.
 
 ### 3. Claude API Access (Vertex AI)
 
@@ -72,29 +82,37 @@ export ANTHROPIC_VERTEX_PROJECT_ID=<your-gcp-project-id>
 
 If using the Anthropic API directly instead of Vertex, set `ANTHROPIC_API_KEY` and omit the Vertex variables.
 
-### 4. Claude Code Skill
+### 4. Install the CEO Agent
 
-The factory ships with a Claude Code skill (`SKILL.md`) that lets you invoke the factory from within any Claude Code session. Skills are **auto-discovered** — no registration needed.
-
-To verify: open Claude Code from the repo root and type `/factory`.
+Register the Factory CEO as a Claude Code agent so you can launch it from anywhere:
 
 ```bash
-cd remote-factory
-claude
-# Inside the session, type: /factory
+factory install
 ```
 
-The `/factory` skill launches the CEO agent, which orchestrates the full workflow.
+This writes `~/.claude/agents/factory-ceo.md`. Now you can:
+
+```bash
+# From any terminal — launches interactive CEO session
+factory ceo ~/my-project
+
+# From within any Claude Code session
+claude --agent factory-ceo
+# Or just ask Claude: "use the factory-ceo agent"
+```
+
+Re-run `factory install` after updating the factory to pick up CEO prompt changes.
 
 ### 5. Claude Code Agents
 
-Agent definitions in `.claude/agents/` are auto-discovered by Claude Code:
+The factory uses two layers of agents:
 
-| File | Agent | Model | Tools |
-|------|-------|-------|-------|
-| `.claude/agents/researcher.md` | Deep research | Sonnet | WebSearch, WebFetch, Read, Grep, Glob, Bash |
+| Agent | How it runs | When |
+|-------|-------------|------|
+| **CEO** (`factory-ceo`) | Interactive foreground session (`--append-system-prompt`) | User launches via `factory ceo` or `claude --agent factory-ceo` |
+| **Specialists** (researcher, strategist, builder, reviewer, evaluator, archivist) | Non-interactive subprocesses (`claude -p`) | CEO spawns them via `factory agent <role>` |
 
-The remaining agents (strategist, builder, reviewer, evaluator, archivist, ceo) are spawned as `claude -p` subprocesses by the CEO using prompts from `factory/agents/prompts/`.
+Specialist prompts live in `factory/agents/prompts/`. Project-specific overrides go in `<project>/.factory/agents/<role>.md`.
 
 ### 6. MCP Servers
 
@@ -149,6 +167,7 @@ npm install -g @anthropic-ai/claude-code                  # Claude Code
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
+uv tool install -e .           # puts `factory` on your PATH
 
 # 3. Authenticate with Google Cloud
 gcloud auth login
@@ -161,10 +180,14 @@ echo 'export CLOUD_ML_REGION=your-region' >> ~/.zshrc
 echo 'export ANTHROPIC_VERTEX_PROJECT_ID=<your-gcp-project-id>' >> ~/.zshrc
 source ~/.zshrc
 
-# 5. Initialize vault (optional)
+# 5. Install CLI + CEO agent
+uv tool install -e .
+factory install                # registers CEO as Claude Code agent
+
+# 6. Initialize vault (optional)
 factory vault-init
 
-# 6. Verify
+# 7. Verify
 factory --help
 factory detect /path/to/any/project
 ```
@@ -202,11 +225,18 @@ factory run ~/my-project --mode meta        # meta — self-improvement only (AC
 
 ### CEO Agent
 
-The CEO is the dedicated orchestrator — a Claude agent spawned as a subprocess that owns the full workflow:
+The CEO is the dedicated orchestrator. By default it runs **interactively** — you see everything it does and can ask questions or redirect mid-run:
 
 ```bash
-factory ceo ~/my-project                    # single cycle
+factory ceo ~/my-project                    # interactive (default)
 factory ceo ~/my-project --mode meta        # self-improvement only
+factory ceo ~/my-project --headless         # non-interactive (for scripting)
+```
+
+From within Claude Code:
+
+```bash
+claude --agent factory-ceo                  # interactive CEO session
 ```
 
 ### Continuous Operation
@@ -251,6 +281,7 @@ factory agent evaluator --task "Run evals and report scores" --project ~/my-app
 ### Other Commands
 
 ```bash
+factory install                             # register CEO as Claude Code agent
 factory detect <path>                       # print project state
 factory discover <path>                     # introspect + generate eval profile
 factory init <path>                         # create .factory/ from factory.md
@@ -392,6 +423,9 @@ Generated by the factory — do not edit manually:
 │   ├── current.md
 │   ├── observations.md
 │   └── insights.md
+├── reviews/              # Agent output capture + CEO review verdicts
+│   ├── <role>-latest.md
+│   └── ceo-verdict-<role>.md
 └── agents/               # Per-project agent prompt overrides
 ```
 
@@ -442,7 +476,7 @@ remote-factory/
 │   │   └── notes.py            # Vault integration
 │   └── notify/
 │       └── telegram.py         # Telegram notifications
-└── tests/                      # 603 tests
+└── tests/                      # 629 tests
 ```
 
 ## Development
