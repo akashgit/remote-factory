@@ -282,3 +282,55 @@ class TestCeoPrompt:
         review_section = ceo_prompt[review_start:improve_start]
 
         assert "E2E Verification" in review_section
+
+    # ── Archivist Enforcement tests ─────────────────────────────
+
+    def test_archivist_checkpoint_file(self, ceo_prompt: str) -> None:
+        """CEO must write archivist checkpoints to a tracking file."""
+        assert "archivist-checkpoints.md" in ceo_prompt
+
+    def test_archivist_all_blocking(self, ceo_prompt: str) -> None:
+        """All archival checkpoints must be blocking (no async)."""
+        # The checkpoints table should say YES for all rows
+        assert "ALL archival is blocking" in ceo_prompt
+
+    def test_archivist_do_not_skip_labels(self, ceo_prompt: str) -> None:
+        """Every archivist call must have DO NOT SKIP label."""
+        assert ceo_prompt.count("DO NOT SKIP") >= 5  # research, strategy, build, experiment, build-improve
+
+    def test_archivist_in_build_mode(self, ceo_prompt: str) -> None:
+        """Build mode must have archivist after research, strategy, and build."""
+        build_start = ceo_prompt.index("## Mode: Build")
+        discover_start = ceo_prompt.index("## Mode: Discover")
+        build_section = ceo_prompt[build_start:discover_start]
+
+        assert "archivist after research" in build_section
+        assert "archivist after strategy" in build_section
+        assert "archivist after build" in build_section
+
+    def test_archivist_in_improve_mode(self, ceo_prompt: str) -> None:
+        """Improve mode must have archivist after research, strategy, build, and experiment."""
+        improve_start = ceo_prompt.index("## Mode: Improve")
+        meta_start = ceo_prompt.index("## Mode: Meta")
+        improve_section = ceo_prompt[improve_start:meta_start]
+
+        assert "archivist after research" in improve_section
+        assert "archivist after strategy" in improve_section
+        assert "archivist after build" in improve_section
+        assert "archivist after experiment" in improve_section
+
+    def test_final_archive_preflight_check(self, ceo_prompt: str) -> None:
+        """Final archive must verify all checkpoints before proceeding."""
+        assert "Pre-flight check" in ceo_prompt
+        assert "FINAL archivist" in ceo_prompt
+
+    def test_no_async_archivist(self, ceo_prompt: str) -> None:
+        """Archivist commands must NOT use & (async) — all blocking."""
+        # Find all archivist task lines and make sure none end with &
+        import re
+        # Match archivist commands that end with & before the closing ```
+        async_calls = re.findall(
+            r'factory agent archivist --task.*?" --project "\$PROJECT_PATH" &',
+            ceo_prompt,
+        )
+        assert len(async_calls) == 0, f"Found {len(async_calls)} async archivist calls — all must be blocking"
