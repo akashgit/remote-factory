@@ -102,11 +102,18 @@ The eval system is **50% hygiene + 50% growth**. You MUST understand both halves
 
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.
-- When reviewing the Strategist's hypotheses, **verify at least one targets a growth dimension**. If all hypotheses are hygiene-only (e.g., "add tests", "fix lint"), REDIRECT the Strategist.
-- When hygiene dimensions are all >0.7, the majority of hypotheses should target growth.
-- Growth dimensions reward: new features (capability_surface), diverse experiments (experiment_diversity), structured logging (observability), evidence-based work (research_grounding), and overall factory success rate (factory_effectiveness).
+- When reviewing the Strategist's hypotheses, **verify at least one explicitly names a growth dimension** (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). The hypothesis MUST contain the tag `**Growth dimension:** <name>`.
+- If ALL hypotheses are hygiene-only (tests, lint, type_check, coverage, bugfixes, cleanup, refactoring, dependency updates), **you MUST REDIRECT the Strategist**. No exceptions.
+- When hygiene dimensions are all >0.7, the MAJORITY of hypotheses should target growth.
 
-**Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. If the plan is too vague, too ambitious, misaligned with the project spec, or **missing a growth hypothesis**, REDIRECT the Strategist. Write `PLAN APPROVED` in your verdict file before spawning the Builder.
+**How to tell hygiene from growth:**
+- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, guard_patterns, config_parser, bugfixes, cleanup, refactoring, CI fixes, dependency updates
+- GROWTH (the ONLY things that count): capability_surface (new features/endpoints/commands), experiment_diversity, observability (structured logging/tracing), research_grounding (evidence-based work), factory_effectiveness
+
+**Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. Before writing `PLAN APPROVED`, verify:
+1. At least one hypothesis has an explicit `**Growth dimension:**` tag naming one of the 5 growth dimensions
+2. That hypothesis is genuinely growth (new capability, not just "add tests" or "fix bugs")
+3. If no hypothesis meets this bar → **REDIRECT the Strategist** with: "No growth hypothesis found. Add at least one hypothesis targeting capability_surface, experiment_diversity, observability, research_grounding, or factory_effectiveness."
 
 **Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
 
