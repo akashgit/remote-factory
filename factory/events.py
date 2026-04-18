@@ -81,8 +81,9 @@ def discover_factory_projects(projects_dir: Path, *, max_depth: int = 3) -> list
                 continue
             if (child / ".factory").is_dir():
                 results.append(child)
-            else:
-                _scan(child, depth + 1)
+            # Always recurse into children — a parent with .factory/
+            # may contain nested projects with their own .factory/
+            _scan(child, depth + 1)
 
     _scan(projects_dir, 1)
     return sorted(results)
