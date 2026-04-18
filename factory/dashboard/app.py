@@ -9,35 +9,43 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+
+log = structlog.get_logger()
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(projects_dir: Path) -> FastAPI:
     """Create the FastAPI dashboard app bound to a projects directory."""
+    log.info("dashboard_create_app", projects_dir=str(projects_dir))
     app = FastAPI(title="Factory Dashboard")
 
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> HTMLResponse:
+        log.info("dashboard_request", endpoint="/")
         return HTMLResponse((_STATIC_DIR / "index.html").read_text())
 
     @app.get("/api/projects")
     async def list_projects() -> list[dict[str, Any]]:
+        log.info("dashboard_request", endpoint="/api/projects")
         from factory.events import discover_factory_projects
 
         projects: list[dict[str, Any]] = []
         for path in discover_factory_projects(projects_dir):
             info = _project_summary(path)
             projects.append(info)
+        log.debug("dashboard_list_projects", project_count=len(projects))
         return projects
 
     @app.get("/api/projects/{name}/history")
     async def project_history(name: str) -> list[dict[str, Any]]:
+        log.info("dashboard_request", endpoint="/api/projects/{name}/history", project=name)
         path = projects_dir / name
         if not (path / ".factory" / "results.tsv").exists():
             return []
@@ -45,6 +53,7 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/projects/{name}/events")
     async def project_events(name: str, limit: int = 100) -> list[dict[str, Any]]:
+        log.info("dashboard_request", endpoint="/api/projects/{name}/events", project=name, limit=limit)
         from factory.events import load_events
 
         path = projects_dir / name
@@ -53,6 +62,7 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
+        log.info("dashboard_request", endpoint="/api/events/stream")
         return StreamingResponse(
             _sse_generator(projects_dir, request),
             media_type="text/event-stream",
@@ -70,11 +80,14 @@ async def _sse_generator(projects_dir: Path, request: Request):
     """Tail all events.jsonl files and yield new events as SSE."""
     from factory.events import discover_factory_projects
 
+    log.info("sse_client_connected", projects_dir=str(projects_dir))
+
     # Track file positions to only read new lines
     positions: dict[str, int] = {}
 
     while True:
         if await request.is_disconnected():
+            log.info("sse_client_disconnected", projects_dir=str(projects_dir))
             break
 
         for project in discover_factory_projects(projects_dir):
@@ -103,6 +116,7 @@ async def _sse_generator(projects_dir: Path, request: Request):
 
 def _project_summary(path: Path) -> dict[str, Any]:
     """Build a summary dict for a single project."""
+    log.debug("project_summary_start", project=path.name)
     info: dict[str, Any] = {
         "name": path.name,
         "path": str(path),
@@ -160,11 +174,20 @@ def _project_summary(path: Path) -> dict[str, Any]:
         except (json.JSONDecodeError, OSError, KeyError):
             pass
 
+    log.debug(
+        "project_summary_complete",
+        project=path.name,
+        experiment_count=info["experiment_count"],
+        active=info["active"],
+    )
     return info
 
 
 def _load_tsv(path: Path) -> list[dict[str, str]]:
     """Load a TSV file into a list of dicts."""
+    log.debug("load_tsv", path=str(path))
     with open(path, newline="") as f:
         reader = csv.DictReader(f, dialect="excel-tab")
-        return list(reader)
+        rows = list(reader)
+    log.debug("load_tsv_complete", path=str(path), row_count=len(rows))
+    return rows
