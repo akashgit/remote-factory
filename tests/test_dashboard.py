@@ -274,6 +274,16 @@ class TestDimensionsAPI:
         assert resp.status_code == 200
         assert resp.json() == {"dimensions": []}
 
+    def test_history_includes_score_fields(self, client: TestClient):
+        resp = client.get("/api/projects/proj-a/history")
+        rows = resp.json()
+        assert len(rows) == 2
+        # Both score_before and score_after should be present
+        assert rows[0]["score_before"] == "0.500"
+        assert rows[0]["score_after"] == "0.600"
+        assert rows[1]["score_before"] == "0.600"
+        assert rows[1]["score_after"] == "0.550"
+
     def test_history_includes_dimensions(self, client: TestClient):
         resp = client.get("/api/projects/proj-a/history")
         rows = resp.json()
