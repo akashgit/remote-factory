@@ -634,7 +634,7 @@ function renderModal(projectName, compositeScore, dims) {
   overlay.id = 'dimension-modal';
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 
-  const hygieneNames = ['tests_pass', 'lint_clean', 'type_check', 'coverage', 'build_ok', 'no_regressions'];
+  const hygieneNames = ['tests', 'lint', 'type_check', 'coverage', 'guard_patterns', 'config_parser'];
 
   overlay.innerHTML = `
     <div class="modal-content">
