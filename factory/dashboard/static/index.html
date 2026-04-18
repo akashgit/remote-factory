@@ -288,6 +288,48 @@
     font-size: 12px;
   }
 
+  /* Score color helpers */
+  .score-green { color: var(--green); }
+  .score-yellow { color: var(--yellow); }
+  .score-red { color: var(--red); }
+
+  .score-clickable { cursor: pointer; }
+  .score-clickable:hover { text-decoration: underline; }
+
+  /* Modal overlay */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .modal-content {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px; max-width: 500px; width: 90%;
+    position: relative;
+  }
+
+  .modal-close {
+    position: absolute; top: 12px; right: 16px;
+    background: none; border: none; color: var(--text-dim);
+    font-size: 20px; cursor: pointer; line-height: 1;
+  }
+
+  .modal-close:hover { color: var(--text); }
+
+  .modal-title {
+    font-size: 16px; font-weight: 700; margin-bottom: 4px;
+    color: var(--accent);
+  }
+
+  .modal-score {
+    font-size: 28px; font-weight: 800; margin-bottom: 16px;
+  }
+
+  .modal-chart-wrap {
+    width: 100%; max-width: 420px; margin: 0 auto;
+  }
+
   /* Responsive */
   @media (max-width: 800px) {
     main {
@@ -363,7 +405,13 @@ function renderProjects(projects) {
     return;
   }
 
-  el.innerHTML = projects.map(p => `
+  el.innerHTML = projects.map(p => {
+    const scores = p.scores || [];
+    const spark = sparkline(scores);
+    const scoreHtml = p.latest_score != null
+      ? `<div class="stat"><span class="stat-label">Score</span><span class="stat-value score-clickable ${scoreColorClass(p.latest_score)}" onclick="event.stopPropagation(); openDimensionModal('${p.name}', ${p.latest_score})">${p.latest_score.toFixed(3)}</span>${spark}</div>`
+      : '';
+    return `
     <div class="project-card ${p.name === selectedProject ? 'selected' : ''}"
          onclick="selectProject('${p.name}')">
       <div class="project-name">
@@ -372,13 +420,13 @@ function renderProjects(projects) {
       </div>
       ${p.goal ? `<div class="project-goal">${esc(p.goal)}</div>` : ''}
       <div class="project-stats">
-        ${p.latest_score != null ? `<div class="stat"><span class="stat-label">Score</span><span class="stat-value score">${p.latest_score.toFixed(3)}</span></div>` : ''}
+        ${scoreHtml}
         <div class="stat"><span class="stat-label">Exp</span><span class="stat-value">${p.experiment_count}</span></div>
         <div class="stat"><span class="stat-value keep">${p.keep_count}K</span></div>
         <div class="stat"><span class="stat-value revert">${p.revert_count}R</span></div>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 async function selectProject(name) {
@@ -536,6 +584,159 @@ function esc(str) {
   return d.innerHTML;
 }
 
+// ── Sparklines ──
+function sparkline(scores) {
+  if (scores.length < 2) return '';
+  const w = 60, h = 20;
+  const min = Math.min(...scores), max = Math.max(...scores);
+  const range = max - min || 1;
+  const points = scores.map((s, i) =>
+    `${(i / (scores.length - 1)) * w},${h - ((s - min) / range) * h}`
+  ).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="vertical-align:middle;margin-left:8px"><polyline points="${points}" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+}
+
+// ── Score color ──
+function scoreColorClass(score) {
+  if (score >= 0.8) return 'score-green';
+  if (score >= 0.6) return 'score-yellow';
+  return 'score-red';
+}
+
+function scoreColor(score) {
+  if (score >= 0.8) return 'var(--green)';
+  if (score >= 0.6) return 'var(--yellow)';
+  return 'var(--red)';
+}
+
+// ── Dimension radar modal ──
+let radarChartInstance = null;
+
+function openDimensionModal(projectName, compositeScore) {
+  // Remove existing modal if any
+  closeModal();
+
+  fetch(`/api/projects/${projectName}/dimensions`)
+    .then(res => res.json())
+    .then(data => {
+      const dims = data.dimensions || [];
+      if (dims.length === 0) {
+        return; // No data to show
+      }
+      renderModal(projectName, compositeScore, dims);
+    })
+    .catch(err => console.error('Failed to load dimensions:', err));
+}
+
+function renderModal(projectName, compositeScore, dims) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'dimension-modal';
+  overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+
+  const hygieneNames = ['tests_pass', 'lint_clean', 'type_check', 'coverage', 'build_ok', 'no_regressions'];
+
+  overlay.innerHTML = `
+    <div class="modal-content">
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+      <div class="modal-title">${esc(projectName)}</div>
+      <div class="modal-score" style="color: ${scoreColor(compositeScore)}">${compositeScore.toFixed(3)}</div>
+      <div class="modal-chart-wrap">
+        <canvas id="radar-chart"></canvas>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Build radar chart
+  const labels = dims.map(d => d.name);
+  const scores = dims.map(d => d.score);
+  const bgColors = dims.map(d =>
+    hygieneNames.includes(d.name) ? 'rgba(88,166,255,0.15)' : 'rgba(63,185,80,0.15)'
+  );
+  const borderColors = dims.map(d =>
+    hygieneNames.includes(d.name) ? 'rgba(88,166,255,0.8)' : 'rgba(63,185,80,0.8)'
+  );
+
+  const ctx = document.getElementById('radar-chart').getContext('2d');
+  radarChartInstance = new Chart(ctx, {
+    type: 'radar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: 'Hygiene',
+          data: dims.map(d => hygieneNames.includes(d.name) ? d.score : null),
+          backgroundColor: 'rgba(88,166,255,0.15)',
+          borderColor: 'rgba(88,166,255,0.8)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(88,166,255,1)',
+          pointRadius: 3,
+          spanGaps: false,
+        },
+        {
+          label: 'Growth',
+          data: dims.map(d => !hygieneNames.includes(d.name) ? d.score : null),
+          backgroundColor: 'rgba(63,185,80,0.15)',
+          borderColor: 'rgba(63,185,80,0.8)',
+          borderWidth: 2,
+          pointBackgroundColor: 'rgba(63,185,80,1)',
+          pointRadius: 3,
+          spanGaps: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      scales: {
+        r: {
+          min: 0,
+          max: 1,
+          ticks: {
+            stepSize: 0.2,
+            color: 'rgba(125,133,144,0.6)',
+            backdropColor: 'transparent',
+          },
+          grid: {
+            color: 'rgba(48,54,61,0.6)',
+          },
+          angleLines: {
+            color: 'rgba(48,54,61,0.6)',
+          },
+          pointLabels: {
+            color: '#e6edf3',
+            font: { size: 10, family: 'var(--font)' },
+          },
+        },
+      },
+      plugins: {
+        legend: {
+          labels: {
+            color: '#e6edf3',
+            font: { size: 11 },
+          },
+        },
+      },
+    },
+  });
+}
+
+function closeModal() {
+  const existing = document.getElementById('dimension-modal');
+  if (existing) {
+    if (radarChartInstance) {
+      radarChartInstance.destroy();
+      radarChartInstance = null;
+    }
+    existing.remove();
+  }
+}
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
 // ── Init ──
 loadProjects();
 connectSSE();
@@ -545,5 +746,6 @@ setInterval(() => {
   if (selectedProject) loadExperiments(selectedProject);
 }, 10000);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </body>
 </html>
