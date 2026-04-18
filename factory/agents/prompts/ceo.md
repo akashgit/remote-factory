@@ -235,7 +235,58 @@ factory agent archivist --task "Record build progress for $PROJECT_PATH.
 
 Repeat B3-B3r-B4 for each phase. Do NOT batch all phases without review and archival.
 
-### B5: Re-detect state
+### B5: E2E Verification Gate — CRITICAL
+
+**Do NOT proceed to Discover/Improve until the project actually runs end-to-end.**
+
+Unit tests passing means nothing if the project doesn't work as a whole. Before leaving Build mode:
+
+1. **Figure out how to run it.** Read the project's README, CLAUDE.md, package.json, pyproject.toml, Makefile, or Dockerfile. Identify the start command.
+
+2. **Try to run it.** Execute the start command and observe:
+   ```bash
+   # Examples — adapt to the project
+   cd "$PROJECT_PATH" && python main.py
+   cd "$PROJECT_PATH" && npm start
+   cd "$PROJECT_PATH" && docker compose up
+   cd "$PROJECT_PATH" && uvicorn app:app
+   ```
+
+3. **If it fails — fix it before moving on.** Common blockers:
+   - Missing environment variables → **ASK THE USER.** Print what's needed and wait for input. Do not guess API keys or credentials.
+   - Missing dependencies → install them, update requirements
+   - Configuration errors → fix the config
+   - Port conflicts → adjust ports
+   - Spawn the Builder to fix whatever is broken, then try again.
+
+4. **If it needs external services or user input** (API keys, database setup, test accounts), **STOP and ask the user.** You are running in the foreground — use this. Print exactly what you need:
+   ```
+   E2E VERIFICATION: The project needs the following before it can run:
+   - OPENAI_API_KEY (for LLM calls)
+   - A test email account for the inquiry flow
+   Please provide these, or tell me to skip e2e for now.
+   ```
+
+5. **Verify the core flow works.** Don't just check that the process starts — verify the primary use case:
+   - For a web app: hit the main endpoint, check the response
+   - For a CLI tool: run the main command with sample input
+   - For an API: call the key endpoints
+   - For an agent: run a test scenario end-to-end
+   - Use Playwright MCP for UI verification if it's a web app
+
+6. **Write the e2e result** to `.factory/reviews/ceo-verdict-e2e.md`:
+   ```markdown
+   ## E2E Verification
+   - **Status:** PASS | FAIL | BLOCKED (needs user input)
+   - **Start command:** <how to run it>
+   - **What was tested:** <description>
+   - **Issues found:** <list>
+   - **User input needed:** <what, if anything>
+   ```
+
+7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
+
+### B6: Re-detect state
 
 ```bash
 uv run python -m factory detect "$PROJECT_PATH"
@@ -304,6 +355,10 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    ```bash
    cd "$PROJECT_PATH" && git add factory.md eval/score.py .factory/ && git commit -m "factory: initialize factory config and baseline eval"
    ```
+
+### E2E Verification (if not already done)
+
+Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.**
 
 After Review mode, state is `has_factory`. Proceed to **Improve mode**.
 
