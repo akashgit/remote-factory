@@ -1,495 +1,363 @@
-# Research Report — remote-factory
-Date: 2026-04-18
+---
+date: 2026-04-18
+type: research
+project: remote-factory
+focus: dashboard-ui-ux
+source: factory-researcher
+tags:
+  - factory
+  - research
+  - dashboard
+  - ui-ux
+---
+
+# Research Report — Factory Dashboard UI/UX
 
 ## Project Summary
 
-The Remote Factory is a domain-agnostic multi-agent software evolution system built around a three-layer architecture: Python CLI tools (Layer 1), CEO orchestrator agent (Layer 2), and seven specialist agents (Layer 3). It auto-discovers evaluation dimensions for any project and continuously improves code through autonomous experiment loops with a 100% keep rate across 57 experiments in 3 projects (composite score: 0.802).
-
-**Current weak dimensions:**
-- config_parser: 0.0 (asyncio.run() bug in eval script)
-- research_grounding: 0.575 (low doc utilization)
-- capability_surface: 0.604 (169 surface vs 280 target)
-- observability: 0.783 (46% function coverage)
+The Factory Dashboard (`/Users/akash/cursor-projects/remote-factory/factory/dashboard/`) is a FastAPI-served single HTML file that monitors multi-agent software evolution experiments across projects. It displays project cards, a live SSE event stream, and an experiments table. Current state: ~550 lines of inline HTML/CSS/JS, functional dark-themed dev tool UI, but minimal visual richness — no charts, no score trends, no dimension breakdowns, basic project cards.
 
 ## External Research
 
-### Similar Projects & Systems
-
-#### Self-Evolving Agent Architectures
-
-**[Awesome-Self-Evolving-Agents Survey](https://github.com/XMUDeepLIT/Awesome-Self-Evolving-Agents)** provides a comprehensive taxonomy organizing self-evolution into three dimensions:
-
-1. **Model-Centric Evolution**: Inference-based (self-consistency, tree-of-thoughts, graph reasoning) and training-based (self-play fine-tuning, process reward guided tree search)
-2. **Environment-Centric Evolution**: Static knowledge, dynamic experience, modular architecture changes, topology modifications
-3. **Model-Environment Co-Evolution**: Simultaneous advancement of agent and surroundings
-
-**Key techniques the factory could adopt:**
-- **Experience management**: Compile offline experiences into actionable knowledge (currently we archive to Obsidian but don't reuse it for agent decisions)
-- **Skill-augmented evolution**: Systematically discover and refine capabilities (our ACE playbook system is a primitive version of this)
-- **Exploration-driven online improvement**: R-Zero/Absolute Zero frameworks that self-improve without labeled data (we rely on eval scores, not self-supervised discovery)
-
-**[EvoScientist](https://evoailabs.medium.com/self-evolving-agents-open-source-projects-redefining-ai-in-2026-be2c60513e97)** (Andrej Karpathy): Agents modify their own training code, run tests, evaluate results, commit changes only if performance improves. This is exactly what factory Meta mode does, but Karpathy's approach focuses on model training loops rather than software artifacts.
-
-#### Agent Orchestration Patterns
-
-**Framework comparison findings:**
-
-| Framework | Philosophy | Strengths | Failures |
-|-----------|-----------|-----------|----------|
-| **LangGraph** | Stateful graphs | Tight control, explicit state, easier tracing | Steep learning curve |
-| **CrewAI** | Role-based teams | Simple, fast prototyping | No checkpointing, coarse error handling, migrations to LangGraph for production |
-| **AutoGen** | Multi-agent conversations | Genuine collaboration, good for code gen | Unpredictable loops, expensive (20+ LLM calls for 4-agent 5-round debate), conversation context bloat |
-
-**Critical patterns from [DataCamp comparison](https://www.datacamp.com/tutorial/crewai-vs-langgraph-vs-autogen):**
-
-- **Observability is mandatory**: All frameworks fail silently without tracing. LangSmith, LlamaTrace, Arize recommended.
-- **State management beats conversation**: CrewAI's task-based mediation breaks down at scale; LangGraph's explicit state wins for production.
-- **Turn limits prevent loops**: AutoGen agents can debate endlessly; production systems need timeouts, turn caps, referee logic.
-- **Breaking changes are frequent**: CrewAI rewrote core API, AutoGen 0.4 is fundamentally different. Pin versions, expect instability.
-
-**What the factory does well:**
-- CEO uses explicit state machine (5 states) like LangGraph
-- Specialists are non-interactive subprocesses (no conversation loops)
-- Events.jsonl provides trace data
-
-**What the factory could improve:**
-- No turn limits or timeout enforcement for agent spawns
-- Agent failures are logged but not recovered gracefully
-- No explicit checkpointing within long-running cycles
-
-#### Evaluation Frameworks
-
-**[Anthropic's eval best practices](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents):**
-
-1. **Start with 20-50 real failures, not 100s of synthetic tasks** — early agents show large effect sizes
-2. **Define success unambiguously** — "two domain experts would independently reach the same pass/fail verdict"
-3. **Three grading tiers**: code-based (fast, cheap) → model-based (scalable) → human (gold standard)
-4. **pass@k vs pass^k**: pass@k = at least one success in k tries; pass^k = all k trials succeed (critical for customer-facing agents)
-5. **Avoid rigid grading**: Don't check specific tool call sequences; agents find valid alternatives
-6. **Two-sided testing**: Test both when behavior should AND shouldn't occur
-7. **Read transcripts regularly**: Understand why tasks fail to validate eval design
-
-**Critical pitfall we have:**
-- **Eval saturation**: Factory's 100% keep rate suggests evals may be too easy or not measuring the right things. Anthropic warns that near-100% pass rates make progress unmeasurable.
-
-**[IBM/LXT agent evaluation guide](https://www.lxt.ai/blog/ai-agent-evaluation/):**
-- Separate reasoning layer (planning/decision-making) from action layer (tool execution)
-- Track self-improvement rate: is the agent getting better over time autonomously?
-- Learning curve metrics: performance improvement with experience, generalization to new scenarios, recovery speed from mistakes
-
-**What the factory could add:**
-- Variance-aware acceptance: run evals multiple times, measure stability
-- Decomposed scoring: separate planning quality from execution success
-- Harder capability evals: current 100% keep rate suggests insufficient challenge
-
-#### Prompt Evolution & Meta-Learning
-
-**[Prompt Learning approach](https://arize.com/blog/claude-md-best-practices-learned-from-optimizing-claude-code-with-prompt-learning/)** (Arize AI):
-
-The feedback loop:
-1. Agent generates outputs on training examples
-2. LLM evaluator explains **why** outputs succeeded/failed (not just binary pass/fail)
-3. Meta-prompting LLM uses rich feedback to optimize system prompt
-4. Test on holdout data, repeat until plateau
-
-**Results on SWE Bench:**
-- General coding: +5.19% accuracy
-- Repository-specific: +10.87% accuracy
-
-**Key insight**: "Specializing prompts to specific codebases actually enhances practical developer workflows, even if it appears as 'overfitting' from benchmarking perspectives."
-
-**What the factory's ACE does well:**
-- Reflects on experiment outcomes across projects
-- Generates playbook bullets from patterns
-- Injects evolved playbooks at runtime
-
-**What ACE could improve:**
-- No LLM explanation of *why* experiments succeed/fail (just keep/revert)
-- No codebase-specific prompt specialization (all agents use same prompts across projects)
-- No A/B testing of playbook variants
-- No holdout validation of evolved playbooks
-
-**[Claude Agent Skills architecture](https://medium.com/aimonks/claude-agent-skills-a-first-principles-deep-dive-into-prompt-based-meta-tools-022de66fc721):**
-- Treats expertise as "reusable, versioned, composable instruction packages"
-- Progressive disclosure layers: metadata → SKILL.md → resource loading
-- On-demand capability loading (vs. monolithic system prompts that consume tokens always)
-
-**How this maps to the factory:**
-- Agent prompts (`factory/agents/prompts/*.md`) are like Skills
-- Per-project overrides (`.factory/agents/*.md`) enable specialization
-- Playbook injection is compositional
-
-**Missing from the factory:**
-- No versioning of agent prompts (git commit is the only version history)
-- No metadata layer for selective loading
-- No semantic packaging of capabilities
-
-### Best Practices for Autonomous Software Evolution
-
-#### Feature Growth vs Technical Debt Balance
-
-**[Technical Debt Ratio](https://ltsgroup.tech/blog/how-to-measure-technical-debt/) (TDR):**
-
-```
-TDR = (Remediation Cost ÷ Development Cost) × 100
-```
-
-Healthy range: 10-20% of development time on debt reduction, 80-90% on features.
-
-**[CTO Magazine finding](https://ctomagazine.com/tech-debt-vs-feature-velocity-balance/)**: "Technical debt and feature velocity aren't a tradeoff; they're a feedback loop. Teams that prioritize clean, maintainable systems sustain their speed over time."
-
-**What the factory does:**
-- 11 eval dimensions: 6 hygiene (tests, lint, type_check, coverage, guards, config) + 5 growth (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness)
-- 50/50 weighting between hygiene and growth in composite score
-- FEEC priority (Fix > Exploit > Explore > Combine)
-
-**What the factory should watch:**
-- 100% keep rate suggests hygiene experiments are too easy or growth experiments aren't ambitious enough
-- Current capability_surface score (0.604) indicates feature growth is lagging
-- Strategist needs harder growth challenges
-
-#### Measuring Agent Capabilities
-
-**[METR's task length metric](https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/)**: AI performance measured by task completion time has doubled every 7 months. Claude Opus 4.5 can complete tasks with 50% success that take humans ~5 hours.
-
-**[Anthropic's autonomy measurement](https://www.anthropic.com/research/measuring-agent-autonomy)**: Among longest-running Claude Code sessions, work time before stopping doubled in 3 months (25 min → 45 min).
-
-**Implications for the factory:**
-- **Capability surface** should track: number of tools/commands, API surface area, plugin/extension count
-- **Task complexity** should be measured by estimated human-hours to complete
-- **Autonomy duration** should track CEO cycle length before requiring human intervention
-
-#### Self-Improvement Metrics
-
-**[LXT self-improvement framework](https://www.lxt.ai/blog/ai-agent-evaluation/):**
-- Learning curve: does performance improve with experience?
-- Generalization: does agent apply learnings to new scenarios?
-- Recovery speed: how quickly does agent adapt after mistakes?
-
-**What the factory tracks:**
-- Experiment keep rate (100% — suspiciously high)
-- Cross-project pattern discovery (57 experiments → 3 playbook bullets)
-- Stuck detection (3+ consecutive same-category reverts)
-
-**What the factory doesn't track:**
-- Generalization: does a hypothesis kept in project A work when applied to project B?
-- Learning rate: is the CEO getting faster/better over cycles?
-- Playbook effectiveness: do evolved playbooks actually improve keep rate?
-
-## Specific Capability Gaps to Address
-
-### 1. config_parser eval bug (asyncio.run inside event loop)
-
-**Problem:** Line 332 of `eval/score.py` calls `asyncio.run(store.reparse_config())`, but the eval script runs inside the factory's async eval runner, which already has a running event loop.
-
-**Error:** `RuntimeError: asyncio.run() cannot be called from a running event loop`
-
-**Fix options** (from [Python docs](https://docs.python.org/3/library/asyncio-eventloop.html) and [community discussions](https://github.com/langchain-ai/langchain/issues/8494)):
-
-1. **Use `await` directly** (preferred):
-   ```python
-   # Change eval_config_parser() to async
-   async def eval_config_parser() -> dict:
-       ...
-       config = await store.reparse_config()
-       ...
-   
-   # Update main() to run async evals
-   async def main() -> None:
-       results = [await fn() if asyncio.iscoroutinefunction(fn) else fn() for fn in EVALS]
-       ...
-   ```
-
-2. **Get existing loop**:
-   ```python
-   loop = asyncio.get_event_loop()
-   config = loop.run_until_complete(store.reparse_config())
-   ```
-
-3. **Use nest_asyncio** (hacky, avoid):
-   ```python
-   import nest_asyncio
-   nest_asyncio.apply()
-   config = asyncio.run(store.reparse_config())
-   ```
-
-**Recommendation:** Option 1 (async/await) is cleanest. Make `eval_config_parser()` async, update `main()` to handle mixed sync/async evals. This aligns with the factory's "async by default" style (CLAUDE.md line 29).
-
-### 2. Research grounding (0.575) — low doc utilization
-
-**Current measurement:**
-- Counts markdown files in project
-- Parses `# Research` sections, counts references
-- Score = min(1.0, reference_count / (doc_count * 2))
-
-**Problem:** Factory has comprehensive docs (README.md, CLAUDE.md, factory.md, agent prompts, ACE playbooks) but agents don't consistently cite or build on them.
-
-**Improvements:**
-- **Document linking graph**: Track which docs reference each other (wikilink analysis)
-- **Citation enforcement**: Researcher agent should cite specific docs in observations.md
-- **Reuse metrics**: Count how often prior experiment learnings inform new hypotheses
-- **Obsidian vault utilization**: Measure how often agents read from `~/obsidian-vaults/factory/` during cycles
-
-### 3. Capability surface (0.604) — 169 vs 280 target
-
-**Current measurement:**
-- CLI commands: 21
-- Agent roles: 7
-- Public API functions: 141
-- **Total surface: 169** (target: 280 for score 1.0)
-
-**Gap analysis:**
-
-| Category | Current | Ideas for Expansion |
-|----------|---------|---------------------|
-| CLI commands | 21 | Add: `rollback`, `compare`, `replay`, `export`, `import`, `clone`, `fork` |
-| Agent roles | 7 | Split Researcher (web vs local), add Optimizer, Tester, Deployer |
-| API functions | 141 | Public APIs for: event streaming, playbook CRUD, experiment replay, cross-project queries |
-| Integrations | 2 (Obsidian, Telegram) | Add: Slack, Discord, GitHub Actions, webhooks, Prometheus/Grafana |
-| MCP tools | 0 (factory uses but doesn't provide) | Expose factory as MCP server: `get_project_score`, `run_experiment`, `list_projects` |
-| Output formats | 1 (JSON) | Add: YAML, TOML, CSV export, HTML reports, Markdown digests |
-
-**High-impact additions:**
-1. **Experiment replay**: `factory replay <path> --experiment 5` — reapply a past experiment to current state
-2. **Cross-project hypothesis transfer**: `factory clone-hypothesis wxo/001 --to erica-agent` — test if a winning hypothesis generalizes
-3. **MCP server mode**: Expose factory data/operations as MCP tools for other Claude sessions
-4. **Comparative eval**: `factory compare <path1> <path2>` — benchmark two projects side-by-side
-5. **Streaming API**: WebSocket/SSE endpoint for live experiment progress (beyond current dashboard)
-
-### 4. Observability (0.783) — 46% function coverage
-
-**Current measurement:**
-- Total functions: 173
-- Functions with logging: 79 (46%)
-- Log statement density: 191 total logs
-
-**Uninstrumented modules** (from observations.md):
-- `factory/models.py` (1 function, 0 logs)
-- `factory/dashboard/app.py` (9 functions, 0 logs)
-- `factory/obsidian/templates.py` (5 functions, 0 logs)
-- `factory/ace/models.py` (6 functions, 0 logs)
-
-**Targeted improvements:**
-1. **Agent spawn/completion tracing**: Log every `factory agent <role>` invocation with task, duration, success/failure
-2. **Eval run telemetry**: Structured logs for each dimension's execution time and score delta
-3. **State transition logging**: Log every project state change with reason (detected via `state.py`)
-4. **Hypothesis generation tracing**: Log Strategist's FEEC categorization and ranking logic
-5. **Cross-project insights**: Log pattern discovery in `insights.py` with confidence scores
-
-**Target:** 85%+ function coverage (140/173 functions instrumented) to match industry standards from [observability research](https://www.pwc.com/us/en/tech-effect/ai-analytics/ai-observability.html).
-
-## Ideas for New Features (Capability Surface Expansion)
-
-### High-Impact Features
-
-1. **Experiment Replay & Time Travel**
-   - `factory replay <path> --experiment N` — reapply past experiment to current state
-   - `factory timeline <path>` — visual DAG of experiment lineage
-   - `factory branch <path> --from 10` — create divergent experiment timeline from past point
-   - **Enables:** A/B testing of hypotheses, "what if" exploration, regression debugging
-
-2. **Cross-Project Knowledge Transfer**
-   - `factory clone-hypothesis wxo/001 --to erica-agent` — test if winning hypothesis generalizes
-   - `factory recommend <path>` — suggest hypotheses from similar projects' success patterns
-   - `factory meta-insights` — mine vault for universal patterns across all managed projects
-   - **Enables:** Faster improvement cycles, cross-pollination of ideas, meta-learning
-
-3. **Factory as MCP Server**
-   - Expose factory operations as MCP tools for other Claude Code sessions:
-     - `get_project_score(path)` → current composite score
-     - `run_experiment(path, hypothesis)` → spawn CEO cycle
-     - `list_projects()` → all factory-managed projects
-     - `get_experiment_history(path)` → full TSV data
-   - **Enables:** Claude sessions can query project health, trigger improvements, integrate factory into broader workflows
-
-4. **Comparative Evaluation**
-   - `factory compare <path1> <path2>` — side-by-side eval scores, hypothesis strategies
-   - `factory leaderboard --projects-dir ~/cursor-projects` — rank all projects by composite score
-   - `factory diff-strategy <path1> <path2>` — compare FEEC distributions, category preferences
-   - **Enables:** Competitive benchmarking, identification of underperforming projects, strategy analysis
-
-5. **Streaming Progress API**
-   - WebSocket/SSE endpoint for live experiment progress (beyond current dashboard polling)
-   - `factory follow <path>` — tail-f style live event stream in terminal
-   - **Enables:** Real-time monitoring of long-running cycles, better UX for interactive CEO mode
-
-6. **Hypothesis Templates & Cookbook**
-   - `factory templates list` — show pre-built hypothesis patterns
-   - `factory generate-hypothesis <path> --pattern "add-logging"` — scaffold from template
-   - Templates: "add-logging", "fix-type-errors", "increase-coverage", "add-api-endpoint", "refactor-module"
-   - **Enables:** Faster strategy generation, lower cognitive load for Strategist, consistency
-
-7. **Multi-Repo Orchestration**
-   - `factory orchestrate --projects ~/cursor-projects/*` — run CEO on all projects in parallel
-   - `factory sync-playbooks` — propagate ACE learnings across all managed projects
-   - `factory health-check --all` — scan for stuck projects, low scores, pending reviews
-   - **Enables:** Fleet management, consistent improvement across portfolio, early warning system
-
-### Medium-Impact Features
-
-8. **Experiment Cost Tracking**
-   - Add `cost_usd` field to `ExperimentRecord`
-   - Track token usage via Claude API metadata
-   - `factory cost-report <path>` — total spend, cost per kept experiment, ROI per score point
-   - **Enables:** Budget management, optimization of expensive cycles
-
-9. **Guardrail Visualization**
-   - `factory guards show <path>` — render scope globs, guards as interactive tree
-   - `factory guards test <path> <file>` — check if file matches modifiable scope
-   - **Enables:** Debugging guard violations, clearer understanding of allowed changes
-
-10. **Playbook A/B Testing**
-    - ACE generates variant playbooks, tests each on holdout experiments
-    - Tracks which playbook bullets correlate with kept experiments
-    - Auto-prunes low-confidence bullets after N cycles
-    - **Enables:** Scientific validation of ACE evolution, reduced playbook bloat
-
-11. **Natural Language Query Interface**
-    - `factory ask <path> "why was experiment 12 reverted?"` → LLM reads verdicts, explains
-    - `factory ask <path> "what should I work on next?"` → consults strategy, suggests focus areas
-    - **Enables:** Conversational access to factory data, lower barrier to insight
-
-12. **Integration: GitHub Actions**
-    - `.github/workflows/factory.yml` — auto-run factory on PR merge, comment eval results
-    - Fail CI if composite score drops below threshold
-    - **Enables:** Continuous improvement as part of standard dev workflow
-
-## Prior Knowledge (from Obsidian Vault)
-
-### Cross-Project Patterns
-
-From `~/obsidian-vaults/factory/00-Factory/Patterns.md` and insights.md:
-
-**High-confidence patterns (100% keep rate):**
-- `bugfix_reliable`: 12 bugfix experiments across 3 projects, all kept
-- `observability_reliable`: 6 observability experiments, all kept
-- `feature_reliable`: 16 feature experiments, all kept
-- `infrastructure_reliable`: 3 infrastructure experiments across 2 projects, all kept
-
-**Playbook bullets evolved by ACE:**
-- `[strat-00001]` (12 helpful, 0 harmful): "Prioritize bugfix hypotheses — 5/5 kept (100% success rate)"
-
-**Interpretation:**
-- Bugfixes are safe bets (always improve code)
-- Features have high success when well-scoped
-- Hygiene work (observability, testing) is always worthwhile
-- Infrastructure changes require careful planning but succeed when attempted
-
-**What's missing:**
-- No losing patterns identified (100% keep rate means we don't learn from failures)
-- No category-specific failure modes documented
-- No velocity metrics (how long do different experiment types take?)
-
-### Project Learnings
-
-From `~/obsidian-vaults/factory/10-Projects/`:
-
-**erica-agent** (real estate inquiry bot):
-- Build phase: scaffold → core → CLI → observability
-- 5/5 experiments kept, composite 1.0
-- Lesson: E2E testing before optimization is critical (user feedback: "don't optimize before verifying core works")
-
-**wxo** (control plane for AI agents):
-- 33 experiments, 100% keep rate
-- Strong feature growth (UI components, optimization modes)
-- Lesson: Playwright MCP for UI projects is mandatory (user feedback: "factory was making UI changes blind")
-
-**test-idea** (synthetic test):
-- Perfect score (1.0) achieved through methodical phases
-- Demonstrates factory can build from scratch
-
-**cp-agent** (Next.js control plane):
-- Weak test_coverage (0.43), otherwise healthy
-- Shows factory can manage modern web stacks
-
-### Anti-Patterns Identified
-
-From current.md and auto-memory:
-
-1. **Don't ask for permission during factory work** — be autonomous (user feedback: "we always run in fully skipping permission mode")
-2. **Prioritize features over hygiene** — factory historically biased toward hygiene, needs explicit feature push
-3. **E2E before optimize** — prove core loop works before running hygiene experiments (user feedback from erica-agent)
-4. **Visual testing for UI** — always use Playwright MCP to verify UI changes, never change blind
-5. **Always archive** — Archivist must run after every phase, no exceptions
-6. **11 eval dimensions are permanent** — 6 hygiene + 5 growth, applied to all projects, self-improvements must be permanent
+### Similar Projects & What They Teach
+
+#### Vercel Dashboard (2026 redesign)
+- **What it is:** Developer deployment platform dashboard, rolled out Feb 26, 2026
+- **Key principle:** "Speed over visual flourish" — developers are allergic to bad UX, reject aesthetic flourishes that slow them down
+- **What makes it polished:** Deep understanding of developer workflows, eliminates friction points, makes the UI disappear while providing clarity and power
+- **Pattern:** Complexity without obscurity — simplifies interface while maintaining access to advanced features
+- **Lesson for Factory:** Don't add decorative animations. Prioritize performance and instant legibility. The dashboard should feel like a terminal, not a marketing site.
+
+#### Linear, Notion, Stripe Patterns
+- **Sidebar navigation:** 240-280px persistent sidebar (collapsible to 64px icons). Scales cleanly from 5 to 50 features with nested groups.
+- **Information density:** Prioritize data over whitespace — dashboard users are power users who want information, not breathing room
+- **KPI cards:** Top 80-120px of content area = prime real estate. Display 4-6 most actionable KPIs with: primary number, trend indicator, sparkline
+- **Loading states:** Content-shaped placeholders with shimmer animation reduce perceived load time by 20-30% vs spinners
+- **Lesson for Factory:** Add a score trend sparkline to each project card. Consider a sidebar for projects list (currently left panel). Show 4-6 top-level KPIs above the events/experiments panels (total projects, active cycles, avg composite score, today's experiments).
+
+### Best Practices for Real-Time Event Streams
+
+#### SSE UI Patterns (from Railway, Vercel, GitHub Actions logs)
+- **Streaming defaults:** Railway `railway up` streams build logs by default, with `--json` flag for structured output
+- **Follow mode:** Vercel uses `--follow` flag for live streaming (continues for up to 5 minutes unless interrupted)
+- **JSON Lines format:** Vercel and Railway both support `--json` output to pipe to other tools
+- **Frontend optimization techniques:**
+  - Update state only on change (don't re-render on every event)
+  - Batch or throttle events (avoid 60 updates/sec)
+  - Use refs for high-frequency updates (bypass React state)
+  - Virtualized lists for 1000+ events (react-window pattern)
+  - Offload heavy calculations to Web Workers
+- **Common patterns:**
+  - Grouping events by deployment/cycle
+  - Collapsing/expanding event groups
+  - Filtering by event type, project, agent
+  - Highlighting errors/failures with visual prominence
+- **Lesson for Factory:** Add event filtering UI (dropdown or chips for event types). Consider grouping events by cycle or experiment ID. Add a "pause stream" toggle to freeze the view while inspecting. Current 200-event DOM cap is good — keep it.
+
+### Lightweight Charting for Vanilla JS
+
+#### Chart.js (Most Recommended)
+- **Bundle size:** 48KB full, tree-shakeable to 14KB for basic charts
+- **Vanilla JS:** Works without build tools via CDN: `<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>`
+- **Usage:** Canvas-based, requires `<canvas id="chart"></canvas>`, instantiate with `new Chart(ctx, config)`
+- **Supported charts:** Line, bar, radar, doughnut, pie, polarArea, bubble, scatter
+- **Lesson for Factory:** Perfect fit. Add via CDN. Use line charts for score trends, radar charts for dimension breakdowns, bar charts for experiment counts by verdict.
+
+#### Alternatives Considered
+- **Tremor:** Simplest but very basic, good for quick internal dashboards (Factory is internal, but we want richer viz)
+- **AnyChart:** Framework-agnostic, lightweight, but overkill for our needs
+- **Apache ECharts:** 400KB+, supports canvas+SVG, realtime for 100k+ datapoints — too heavy for Factory
+- **CanvasJS:** 10x faster than Flash/SVG, but Chart.js is more widely used and better documented
+- **Verdict:** Chart.js wins for balance of features, size, and vanilla JS support
+
+#### Sparklines for Inline Mini-Charts
+- **Sparklines.js:** Vanilla JS, zero dependencies, updated Feb 2026, canvas/VML rendering
+- **mitjafelicijan/sparklines:** Tiny SVG sparkline library, zero deps, data attributes API
+- **Pure CSS approaches:** Lightweight, but less flexible than SVG/canvas
+- **Integration pattern:** Inline in project cards, table cells, or KPI cards. Don't render 100+ per frame — use virtualization for long lists.
+- **Lesson for Factory:** Add sparklines to project cards showing last 10-20 composite scores as a trend line. Use Sparklines.js (canvas) or mitjafelicijan/sparklines (SVG). SVG is cleaner for static dashboards.
+
+### Score Visualization Patterns
+
+#### Composite Metrics & Breakdowns
+- **Scorecard pattern (Adobe Analytics, Power BI, Looker):**
+  - Single primary metric prominently displayed
+  - Drill-down breakdowns by dimensions
+  - Red-Orange-Yellow-Green status indicators in heatmaps
+  - Sparklines for trend-over-time
+- **Dashboard pattern (Stripe, Databox):**
+  - 4-6 KPI cards with: number, comparison (vs previous period), single visual
+  - Dimension breakdowns appear on hover or in expandable panels
+- **Visualization approaches:**
+  - **Radar charts** for multi-dimensional scores (good for 5-11 dimensions)
+  - **Bar charts** (horizontal) for dimension comparisons
+  - **Gauge charts** for single composite score with threshold zones
+  - **Sparklines** for trends (tiny line charts, no axes)
+- **Lesson for Factory:** Show composite score as large number on project card. On click, expand to show radar chart of all 11 dimensions (6 hygiene + 5 growth). Add sparkline of last 20 composite scores. Use color coding: green (≥0.8), yellow (0.6-0.8), red (<0.6).
+
+## Prior Knowledge (from Vault)
+
+### From `00-Factory/Dashboard.md`
+- Factory currently tracks 3 active projects (remote-factory, test-idea, cp-agent)
+- Dashboard is the central hub — should be the go-to place to see project health at a glance
+- ACE playbook evolution table shows cross-project insights (60 experiments, 3 roles evolved)
+
+### From `10-Projects/remote-factory/Dashboard.md`
+- Current composite score: 0.849 (up from 0.802 in Cycle 6)
+- Weakest dimension: research_grounding (0.575)
+- 100% keep rate across 23 experiments — indicates evals may be too easy (per Patterns.md anti-pattern)
+- Web dashboard runs on `http://localhost:8420`
+
+### From `10-Projects/remote-factory/Exp-033-dashboard-logging.md`
+- Experiment 33 added structlog to all 9 dashboard functions
+- Dashboard module handles SSE streaming, project scanning, TSV parsing
+- Observability improved from 0.783 to 0.805 (+0.022)
+
+### From `00-Factory/Patterns.md`
+- **eval_saturation:** 100% keep rates make progress unmeasurable — need harder evals, variance testing
+- **feedback_loop_not_tradeoff:** Tech debt and feature velocity aren't opposites; clean systems sustain speed
+- **cross_project_hypothesis_transfer:** Winning hypotheses should be tested on similar projects
+- **decomposed_eval_scoring:** Separate planning quality from execution success in agent evals
+
+### Key Insight
+The dashboard is already instrumented with structlog (Exp 33). The next evolution should focus on **visual richness** and **analytical depth** — showing trends, dimension breakdowns, and cross-project patterns. The 100% keep rate suggests we need better visibility into **why** experiments succeed, not just **that** they succeed.
 
 ## Recommended Focus Areas
 
-### 1. Fix config_parser eval (CRITICAL)
+### 1. Score Trends & Dimension Breakdowns (Highest Impact)
+**Why:** The composite score is the primary success metric, but it's currently just a number. Users can't see:
+- How the score evolved over time (upward trend? plateau? spikes?)
+- Which dimensions are weak vs strong
+- How hygiene vs growth dimensions balance out
 
-**Why:** Currently at 0.0 due to asyncio.run() bug. Blocking accurate composite score calculation.
+**What to add:**
+- **Sparkline on project cards:** Last 10-20 composite scores as a tiny line chart (use mitjafelicijan/sparklines SVG library)
+- **Expandable dimension view:** Click a project card → modal/panel with radar chart showing all 11 dimensions (use Chart.js radar chart)
+- **Score history chart:** Full-width line chart showing composite score over all experiments (Chart.js line chart with dual-axis for hygiene/growth)
 
-**How:** Convert `eval_config_parser()` to async, handle mixed sync/async evals in main(). 30-minute fix.
+**Implementation approach:**
+- Add Chart.js via CDN: `<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>`
+- Add sparklines.js via CDN: `<script src="https://cdn.jsdelivr.net/npm/sparklines/sparklines.js"></script>` or inline SVG generation
+- Fetch dimension data from API (extend `/api/projects/:name/history` to include per-experiment dimension scores)
+- Render radar chart in a modal overlay (CSS: `position: fixed; z-index: 1000; backdrop-filter: blur(4px)`)
 
-**Impact:** Immediate score correction, unblocks accurate measurement.
+**Priority:** HIGH — this directly addresses the "composite score visibility" gap
 
-### 2. Challenge the 100% keep rate (HIGH PRIORITY)
+### 2. Event Stream Filtering & Grouping (Medium Impact)
+**Why:** The event stream currently shows all events in chronological order, capped at 200. As projects scale, this becomes noisy. Users need to:
+- Filter events by type (agent.*, experiment.*, cycle.*, etc.)
+- Filter events by project
+- Group events by cycle or experiment ID
+- Pause the stream to inspect details
 
-**Why:** Anthropic warns that near-100% pass rates make progress unmeasurable. Factory may be selecting overly safe hypotheses or evals are too easy.
+**What to add:**
+- **Filter chips:** Row of clickable filter chips above event stream (e.g., "Agents", "Experiments", "Cycles", "Errors"). Click to toggle.
+- **Project filter:** Dropdown or search input to show events only for selected project
+- **Pause/Resume button:** Toggle to freeze the stream (stop adding new events to DOM)
+- **Event grouping:** Collapsible groups by cycle (e.g., "Cycle 6 — 3 experiments") with expand/collapse chevron
 
-**How:**
-- Add harder capability evals (new agent roles, complex integrations)
-- Run variance testing: execute same eval 3x, measure stability
-- Introduce "stretch hypotheses" category in FEEC (beyond Fix/Exploit/Explore/Combine)
-- Track A/B playbook experiments where some must fail by design
+**Implementation approach:**
+- Add filter state to JS: `let activeFilters = new Set(['agent.*', 'experiment.*'])`
+- Modify `addEvent()` to check filters before inserting into DOM
+- Add CSS for filter chips: `.filter-chip { padding: 4px 8px; border-radius: 12px; cursor: pointer; }`
+- Use local storage to persist filter preferences: `localStorage.setItem('eventFilters', JSON.stringify([...activeFilters]))`
 
-**Impact:** Healthier learning signal, more ambitious improvements, real failure data to mine for anti-patterns.
+**Priority:** MEDIUM — improves usability for multi-project setups, less critical for 1-3 projects
 
-### 3. Expand capability surface (MEDIUM PRIORITY)
+### 3. Top-Level KPI Summary (Medium Impact)
+**Why:** Users landing on the dashboard don't have a quick "health check" view. The dashboard should answer:
+- How many projects are being managed?
+- How many cycles ran today?
+- What's the average composite score across all projects?
+- How many experiments were kept vs reverted today?
 
-**Why:** Currently 169/280 (60.4%), limiting factory's utility and discoverability.
+**What to add:**
+- **KPI strip above main grid:** 4-6 cards showing:
+  1. Total projects (with "X active" badge)
+  2. Avg composite score (with color coding: green ≥0.8, yellow 0.6-0.8, red <0.6)
+  3. Experiments today (with keep/revert split)
+  4. ACE evolution status (e.g., "3 roles updated")
+- **Sparklines on KPI cards:** Tiny trend lines showing score evolution, experiment count trends
 
-**How:** Implement top 3 high-impact features:
-1. **Experiment replay** (`factory replay <path> --experiment N`) — 1-2 days
-2. **Factory as MCP server** (expose core operations to other Claude sessions) — 2-3 days
-3. **Cross-project hypothesis transfer** (`factory clone-hypothesis`) — 1 day
+**Implementation approach:**
+- Add new API endpoint: `/api/summary` returning `{ total_projects, active_projects, avg_score, experiments_today, keep_count_today, revert_count_today, ace_last_update }`
+- Add new grid row above main panels: `grid-template-rows: 100px 1fr 1fr`
+- Use CSS flexbox for KPI cards: `.kpi-strip { display: flex; gap: 12px; padding: 12px 24px; }`
+- Each KPI card: 200px wide, primary number (large font), label (small), sparkline (inline SVG)
 
-**Impact:** +30-40 surface points, new integration paths, meta-learning acceleration.
+**Priority:** MEDIUM — nice-to-have, provides at-a-glance health check
 
-### 4. Instrument uninstrumented modules (QUICK WIN)
+### 4. Expandable Experiment Details (Low Impact, High Polish)
+**Why:** The experiments table shows ID, verdict, delta, score, and truncated hypothesis (60 chars). Users can't see:
+- Full hypothesis text
+- Which files changed
+- Build/test/lint status before/after
+- Agent logs or error messages
 
-**Why:** Observability at 78.3% due to 46% function coverage. Four modules have zero logging.
+**What to add:**
+- **Expandable table rows:** Click a row → expand to show:
+  - Full hypothesis
+  - Files changed (with +/- line counts)
+  - Dimension deltas (table: dimension name, before, after, delta)
+  - Link to GitHub PR/issue (if available)
+  - Link to `.factory/experiments/NNN/` artifacts
 
-**How:** Add structured logging to:
-- `factory/dashboard/app.py` (9 functions) — endpoint hits, SSE connections, project scans
-- `factory/obsidian/templates.py` (5 functions) — template rendering, variable substitution
-- `factory/ace/models.py` (6 functions) — playbook CRUD operations
-- `factory/models.py` (1 function) — model validation failures
+**Implementation approach:**
+- Add hidden `<tr class="exp-details">` after each experiment row
+- Toggle visibility on click: `row.nextElementSibling.classList.toggle('hidden')`
+- Fetch full experiment data: `/api/projects/:name/experiments/:id` returning `{ hypothesis, files_changed, dimensions, pr_url, issue_url }`
+- Render nested table for dimension deltas
 
-**Impact:** Observability score → 0.85+, better debugging, richer event stream for dashboard.
+**Priority:** LOW — nice-to-have, but most users will check GitHub PRs or `.factory/` artifacts directly
 
-### 5. Codebase-specific prompt specialization (LONG-TERM)
+### 5. Performance & Interaction Polish (Low Impact, High Feel)
+**Why:** The dashboard is functional but feels basic. Small touches that make it feel polished:
+- Skeleton loading states (instead of "Loading...")
+- Smooth transitions on card hovers, filter toggles
+- Keyboard shortcuts (e.g., `/` to focus search, `p` to pause stream)
+- Dark mode toggle (currently dark-only)
+- Responsive layout improvements (mobile view is usable but cramped)
 
-**Why:** Arize AI showed +10.87% accuracy gain from repo-specific prompt tuning. Factory uses same agent prompts across all projects.
+**What to add:**
+- **Skeleton loaders:** Replace "Loading..." with pulsing content-shaped placeholders
+- **Hover states:** Subtle scale/shadow on project cards
+- **Keyboard shortcuts:** Add `keydown` listener for `/` (search), `p` (pause), `f` (focus filters)
+- **Dark/light mode toggle:** CSS custom properties already support this — add a toggle button in header
+- **Mobile polish:** Use `@container` queries (if targeting modern browsers) for responsive cards
 
-**How:**
-- Extend ACE to generate per-project playbook variants
-- Track which playbook bullets apply to which project types (Python vs Next.js vs mixed)
-- Auto-specialize agent overrides (`.factory/agents/*.md`) based on project language/framework
-- A/B test generic vs specialized prompts, measure keep rate delta
+**Implementation approach:**
+- Add skeleton CSS: `.skeleton { background: linear-gradient(90deg, var(--surface) 25%, var(--border) 50%, var(--surface) 75%); animation: shimmer 2s infinite; }`
+- Add keyboard listener: `document.addEventListener('keydown', e => { if (e.key === '/') focusSearch(); })`
+- Add light mode CSS: `:root.light { --bg: #ffffff; --surface: #f6f8fa; --text: #24292f; ... }`
+- Toggle with button: `document.documentElement.classList.toggle('light')`
 
-**Impact:** Higher quality hypotheses, faster convergence, better generalization vs specialization tradeoff.
+**Priority:** LOW — polish pass after core features are in
 
-## Sources
+## Technology Recommendations
 
-- [Cogent AI: Self-Evolving Software by 2026](https://cogentinfo.com/resources/ai-driven-self-evolving-software-the-rise-of-autonomous-codebases-by-2026)
-- [Self-Evolving Agents: Open-Source Projects Redefining AI (Medium)](https://evoailabs.medium.com/self-evolving-agents-open-source-projects-redefining-ai-in-2026-be2c60513e97)
-- [Awesome-Self-Evolving-Agents GitHub Survey](https://github.com/XMUDeepLIT/Awesome-Self-Evolving-Agents)
-- [CrewAI vs LangGraph vs AutoGen: Framework Comparison (DataCamp)](https://www.datacamp.com/tutorial/crewai-vs-langgraph-vs-autogen)
-- [Multi-Agent Frameworks for Enterprise AI (Adopt.ai)](https://www.adopt.ai/blog/multi-agent-frameworks)
-- [Agent Orchestration 2026 Guide (Iterathon)](https://iterathon.tech/blog/ai-agent-orchestration-frameworks-2026)
-- [Anthropic: Demystifying Evals for AI Agents](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
-- [AI Agent Evaluation Frameworks (Online Inference / Medium)](https://medium.com/online-inference/ai-agent-evaluation-frameworks-strategies-and-best-practices-9dc3cfdf9890)
-- [DeepEval: AI Agent Evaluation Guide](https://deepeval.com/guides/guides-ai-agent-evaluation)
-- [AWS: Evaluating AI Agents — Real-World Lessons from Amazon](https://aws.amazon.com/blogs/machine-learning/evaluating-ai-agents-real-world-lessons-from-building-agentic-systems-at-amazon/)
-- [LXT: AI Agent Evaluation Framework](https://www.lxt.ai/blog/ai-agent-evaluation/)
-- [Claude Agent Skills: First-Principles Deep Dive (Medium)](https://medium.com/aimonks/claude-agent-skills-a-first-principles-deep-dive-into-prompt-based-meta-tools-022de66fc721)
-- [Arize AI: Prompt Learning with Claude Code](https://arize.com/blog/claude-md-best-practices-learned-from-optimizing-claude-code-with-prompt-learning/)
-- [Anthropic: Measuring AI Agent Autonomy](https://www.anthropic.com/research/measuring-agent-autonomy)
-- [METR: Measuring AI Ability to Complete Long Tasks](https://metr.org/blog/2025-03-19-measuring-ai-ability-to-complete-long-tasks/)
-- [Technical Debt vs Feature Development: What to Prioritize (Metamindz)](https://www.metamindz.co.uk/post/technical-debt-vs-feature-development-what-to-prioritize)
-- [Tech Debt vs Feature Velocity: Finding Balance (CTO Magazine)](https://ctomagazine.com/tech-debt-vs-feature-velocity-balance/)
-- [How to Measure Technical Debt Metrics (LTS Group)](https://ltsgroup.tech/blog/how-to-measure-technical-debt/)
-- [Python asyncio Event Loop Documentation](https://docs.python.org/3/library/asyncio-eventloop.html)
-- [GitHub: Langchain asyncio.run() Issue](https://github.com/langchain-ai/langchain/issues/8494)
-- [PWC: AI Observability Best Practices](https://www.pwc.com/us/en/tech-effect/ai-analytics/ai-observability.html)
+### Charting
+- **Chart.js via CDN:** `https://cdn.jsdelivr.net/npm/chart.js` (48KB, tree-shakeable to 14KB)
+  - Use for: line charts (score trends), radar charts (dimension breakdowns), bar charts (experiment counts)
+  - Canvas-based, works in vanilla JS, no build tools needed
+- **Sparklines.js or mitjafelicijan/sparklines:** For inline mini-charts
+  - Use for: project card score trends, KPI card trends
+  - SVG approach (mitjafelicijan) is cleaner for static dashboards
+
+### CSS Patterns
+- **CSS Grid for layout:** Already using `grid-template-columns: 280px 1fr; grid-template-rows: 1fr 1fr`. Extend to 3 rows for KPI strip.
+- **CSS custom properties for theming:** Already using `:root { --bg, --surface, --border, ... }`. Add light mode variants.
+- **Shimmer animation for skeletons:** `@keyframes shimmer { 0% { background-position: -200px 0; } 100% { background-position: 200px 0; } }`
+- **Backdrop blur for modals:** `backdrop-filter: blur(4px)` for dimension breakdown modals
+
+### Data Fetching
+- **Extend existing API endpoints:**
+  - `/api/projects` → add `dimensions` field (array of `{ name, score }`)
+  - `/api/projects/:name/history` → add `dimensions` field per experiment
+  - `/api/summary` (new) → return top-level KPIs
+  - `/api/projects/:name/experiments/:id` (new) → return full experiment details
+- **SSE already working well:** No changes needed, just add client-side filtering
+
+### Keep It Simple
+- **No React, no build tools, no npm:** All recommendations fit in a single HTML file with CDN libraries
+- **Progressive enhancement:** Dashboard works without JS (shows "Enable JavaScript" message), works better with charts
+- **Inline everything:** CSS in `<style>`, JS in `<script>`, no external files beyond CDN libraries
+
+## Specific Patterns to Adopt
+
+### 1. Vercel-Style Information Density
+- Remove decorative whitespace. Pack more data per screen.
+- Example: Project cards currently have 12px padding, 4px margin. Tighten to 8px padding, 2px margin.
+
+### 2. Stripe-Style KPI Cards
+- Structure: `<div class="kpi-card"><div class="kpi-value">0.849</div><div class="kpi-label">Avg Score</div><svg class="kpi-sparkline">...</svg></div>`
+- 200-280px wide, primary number at 32px font, label at 11px font, sparkline at 40px height
+
+### 3. Railway-Style Event Filtering
+- Row of chips above event stream: "All", "Agents", "Experiments", "Cycles", "Errors"
+- Click to toggle. Active chips have `background: var(--accent); color: var(--bg)`
+
+### 4. Linear-Style Expandable Rows
+- Click experiment row → expand to show nested details panel
+- Nested panel has light background (`background: var(--surface)`) and inset border
+
+### 5. GitHub-Style Skeleton Loaders
+- Replace "Loading..." with content-shaped placeholders
+- Use shimmer animation: `background: linear-gradient(90deg, ...); animation: shimmer 2s infinite;`
+
+## What NOT to Do (Anti-Patterns)
+
+### 1. Don't Add Heavy Frameworks
+- **Anti-pattern:** "Let's rewrite this in React/Vue/Svelte for better state management"
+- **Why it's bad:** Kills the single-file simplicity, adds build step, increases complexity
+- **Instead:** Vanilla JS + CDN libraries is perfect for this use case
+
+### 2. Don't Overload with Animations
+- **Anti-pattern:** "Add slide-in animations, fade transitions, loading spinners with easing"
+- **Why it's bad:** Developers hate decorative animations. Vercel's key lesson: "Speed over visual flourish"
+- **Instead:** Subtle hover states, instant interactions, shimmer for loading states only
+
+### 3. Don't Make It Pretty Before Functional
+- **Anti-pattern:** "Let's redesign the color scheme, try new fonts, add gradients"
+- **Why it's bad:** Dashboard users want data, not aesthetics. Polish comes after functionality.
+- **Instead:** Focus on score trends, dimension breakdowns, event filtering first. Polish last.
+
+### 4. Don't Add Features Without Clear Use Cases
+- **Anti-pattern:** "What if users want to export to CSV? Or create custom views? Or collaborate?"
+- **Why it's bad:** Feature bloat. Factory dashboard has 1 user (Akash) and 3 projects. Solve real needs first.
+- **Instead:** Wait for pain points to emerge. Only add features that address actual friction.
+
+### 5. Don't Ignore Mobile/Responsive
+- **Anti-pattern:** "This is a dev tool, no one will use it on mobile"
+- **Why it's bad:** Even dev tools get checked on phones (e.g., "Did the cycle finish?" while away from desk)
+- **Instead:** Keep the existing responsive layout. Add `@container` queries for card-level responsiveness.
+
+### 6. Don't Break SSE Streaming Performance
+- **Anti-pattern:** "Let's re-render the entire event list on every SSE message"
+- **Why it's bad:** Causes jank, dropped frames, sluggish UI
+- **Instead:** Insert new events at the top, cap at 200, use `DocumentFragment` for batch inserts
+
+### 7. Don't Sacrifice Information Density for Whitespace
+- **Anti-pattern:** "Let's add more padding, breathing room, card shadows"
+- **Why it's bad:** Dashboard users are power users who want to see more data per screen
+- **Instead:** Tighten spacing, increase table row density, pack more info into cards
+
+## Summary: Prioritized Roadmap
+
+**Phase 1: Core Analytics (Highest ROI)**
+1. Add Chart.js via CDN
+2. Add sparklines to project cards (score trends)
+3. Add expandable dimension breakdown (radar chart modal)
+4. Add score history chart (full-width line chart)
+
+**Phase 2: Event Stream Improvements**
+1. Add event type filtering (chips UI)
+2. Add project filter dropdown
+3. Add pause/resume toggle
+4. Add event grouping by cycle
+
+**Phase 3: Top-Level KPIs**
+1. Add `/api/summary` endpoint
+2. Add KPI strip above main grid
+3. Add sparklines to KPI cards
+
+**Phase 4: Polish**
+1. Add skeleton loaders
+2. Add keyboard shortcuts
+3. Add dark/light mode toggle
+4. Mobile layout improvements
+
+**Out of Scope (For Now)**
+- Expandable experiment details (low ROI, users check GitHub/artifacts)
+- Custom dashboards / saved views (no use case yet)
+- Export to CSV (no use case yet)
+- Multi-user features (single user)
+
+## Next Steps for Builder
+
+1. **Start with sparklines:** Add mitjafelicijan/sparklines (SVG, zero deps) to project cards showing last 10 composite scores
+2. **Add Chart.js:** Include via CDN, create radar chart modal for dimension breakdowns
+3. **Extend API:** Add `dimensions` field to `/api/projects/:name/history` response (parse from `.factory/experiments/NNN/eval_after.json`)
+4. **Test with real data:** Verify charts render correctly with remote-factory's 23 experiments
+5. **Iterate:** Get feedback, refine, then move to event filtering
+
+**Estimated effort:** 2-3 experiments to get Phase 1 working, 1-2 experiments for Phase 2, 1 experiment for Phase 3.

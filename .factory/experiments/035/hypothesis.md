@@ -1,0 +1,1 @@
+Add KPI summary strip with aggregate metrics above the main dashboard grid

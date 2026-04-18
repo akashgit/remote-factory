@@ -1,0 +1,1 @@
+Add score history line chart with hygiene/growth breakdown and keep/revert markers

@@ -1,0 +1,1 @@
+Add sparklines to project cards + Chart.js radar modal for dimension breakdowns

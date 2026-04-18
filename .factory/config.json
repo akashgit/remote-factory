@@ -3,6 +3,7 @@
   "scope": [
     "factory/**/*.py",
     "factory/agents/prompts/*.md",
+    "factory/dashboard/static/*",
     "tests/**/*.py",
     "templates/**"
   ],

@@ -1,11 +1,15 @@
-## CEO Review: Strategist Agent
+## CEO Review: Strategist Agent (Cycle 7 — Dashboard UI/UX)
 - **Verdict:** PROCEED — PLAN APPROVED
-- **Rationale:** All three hypotheses are well-scoped, specific, and follow FEEC priority correctly. H2 targets capability_surface (growth) and H3 targets observability (growth). No all-hygiene problem. Execution order is correct.
-- **Issues found:**
-  - H1 references `eval/score.py` as the file to fix, but the actual broken code is in `factory/eval/hygiene.py:427-467` (the mandatory hygiene eval). The `eval/score.py` version runs as a subprocess with its own event loop and works fine — but its result gets filtered out by `_merge_all()` because the mandatory hygiene version (which is broken) has the same name. **The Builder MUST fix `factory/eval/hygiene.py`, not `eval/score.py`.** The hygiene.py `eval_config_parser()` calls `asyncio.run(store.reparse_config())` at line 439, which fails because `compute_hygiene_results()` is called from within the async `run_eval()` function.
-  - The fix approach is correct: make the function async-aware. But since `compute_hygiene_results()` is sync and called from async `run_eval()`, the cleanest fix is to avoid asyncio entirely — just read and parse factory.md directly without going through `ExperimentStore.reparse_config()` (which is async). Alternatively, use `asyncio.get_event_loop().run_until_complete()` or restructure.
+- **Rationale:** All 3 hypotheses target dashboard UI/UX per focus directive (3/3). All have explicit Growth dimension: capability_surface tags. No hygiene-only hypotheses. Each is scoped to 2 files (app.py + index.html), one PR's worth. Execution order is correct — H1 establishes Chart.js foundation that H3 depends on. H2 is independent.
+- **Issues found:** none
 - **Instructions for next step:**
-  - Approved hypotheses in priority order: H1, H2, H3
-  - For H1: Fix `factory/eval/hygiene.py` (NOT eval/score.py). The config_parser eval should parse factory.md without calling async functions.
-  - For H2: Add `cmd_export` to `factory/cli.py`, register in handlers + argparse
-  - For H3: Add structlog to `factory/dashboard/app.py`
+  - H1 (sparklines + radar): Builder should add Chart.js CDN, implement pure SVG sparklines (polyline in 60x20 viewBox), add dimensions API endpoint, implement radar chart modal. Use existing CSS custom properties for styling.
+  - H2 (KPI strip): Add /api/summary endpoint and 80px KPI strip row above main grid.
+  - H3 (score history): Add toggle between table/chart view in experiments panel, Chart.js line chart with hygiene/growth breakdown.
+
+**PLAN APPROVED**
+
+### Approved Hypotheses (Priority Order)
+1. H1: Sparklines + Chart.js radar modal (HIGH)
+2. H2: KPI summary strip (MEDIUM)
+3. H3: Score history line chart (MEDIUM)

@@ -1,0 +1,14 @@
+{
+  "id": 36,
+  "timestamp": "2026-04-18 13:38:58.657232",
+  "hypothesis": "Add score history line chart with hygiene/growth breakdown and keep/revert markers",
+  "change_summary": "Chart.js line chart with table/chart toggle, 3 datasets (composite, hygiene avg, growth avg), keep/revert point markers, tooltips with hypothesis/delta/verdict, 1 new test",
+  "issue_number": 53,
+  "pr_number": 54,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=-0.006 agents_spawned=R,S,B archivist_spawned=true frontend_only=true"
+}

@@ -1,0 +1,14 @@
+{
+  "id": 35,
+  "timestamp": "2026-04-18 13:34:18.683204",
+  "hypothesis": "Add KPI summary strip with aggregate metrics above the main dashboard grid",
+  "change_summary": "New /api/summary endpoint, 80px KPI strip with 4 cards (Projects, Avg Score, Experiments with keep/revert bar, Keep Rate), responsive layout, 3 new tests",
+  "issue_number": 51,
+  "pr_number": 52,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=-0.004 agents_spawned=R,S,B archivist_spawned=true capability_surface=0.614->0.618"
+}

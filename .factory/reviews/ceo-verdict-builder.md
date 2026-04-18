@@ -1,6 +1,7 @@
-## CEO Review: Builder Agent (H1 — Fix config_parser)
-- **Verdict:** PROCEED
-- **Rationale:** The Builder correctly fixed the config_parser eval by adding a sync `_parse_factory_md()` helper function in `factory/eval/hygiene.py`. The fix replaces the async `ExperimentStore.reparse_config()` call with direct file parsing, avoiding the `asyncio.run()` crash inside a running event loop. The diff against main is exactly 1 file (hygiene.py) — no scope creep. Tests pass (640), eval score improved from 0.802 to 0.850. config_parser dimension went from 0.0 to 1.0.
-- **Issues found:** None. Clean implementation that follows the CLAUDE.md async-by-default convention while avoiding async where it's not appropriate.
-- **PR:** #44
-- **Instructions for next step:** Proceed to Reviewer guard check, then Evaluator.
+## CEO Review: Builder Agent (Experiment #34 — H1 Sparklines + Radar)
+- **Verdict:** PROCEED (with minor fix needed)
+- **Rationale:** PR #50 implements the full hypothesis: sparklines on project cards, Chart.js radar chart modal, new dimensions API endpoint, score color coding. Only touches 3 in-scope files (app.py, index.html, test_dashboard.py). 10 new tests added. No scope creep.
+- **Issues found:**
+  - MINOR: Frontend hardcodes `hygieneNames = ['tests_pass', 'lint_clean', 'type_check', 'coverage', 'build_ok', 'no_regressions']` but actual dimension names from our eval system are `['tests', 'lint', 'type_check', 'coverage', 'guard_patterns', 'config_parser']`. This causes incorrect color coding in the radar chart (all dimensions appear as green/growth). Will fix before merge.
+- **PR:** #50
+- **Instructions for next step:** Run tests and eval. Fix the hygiene names array on the branch. If tests pass and eval doesn't regress, merge.

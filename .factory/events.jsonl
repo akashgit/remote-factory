@@ -42,3 +42,16 @@
 {"type": "study.started", "timestamp": "2026-04-18T17:07:44.745007+00:00", "project": "remote-factory", "agent": null, "data": {}}
 {"type": "study.completed", "timestamp": "2026-04-18T17:07:45.642319+00:00", "project": "remote-factory", "agent": null, "data": {"chars": 41544}}
 {"type": "eval.started", "timestamp": "2026-04-18T17:07:46.598969+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T17:08:33.946559+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.852025, "passed": true, "dimensions": 11}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T17:22:41.225595+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 34, "hypothesis": "Add sparklines to project cards + Chart.js radar modal for dimension breakdowns"}}
+{"type": "eval.started", "timestamp": "2026-04-18T17:28:13.117985+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T17:28:59.756268+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.8498290000000001, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T17:29:25.630651+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 34, "verdict": "keep", "hypothesis": "Add sparklines to project cards + Chart.js radar modal for dimension breakdowns"}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T17:29:48.765789+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 35, "hypothesis": "Add KPI summary strip with aggregate metrics above the main dashboard grid"}}
+{"type": "eval.started", "timestamp": "2026-04-18T17:33:02.775938+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T17:33:51.903892+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.846225, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T17:34:18.684323+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 35, "verdict": "keep", "hypothesis": "Add KPI summary strip with aggregate metrics above the main dashboard grid"}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T17:34:38.471274+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 36, "hypothesis": "Add score history line chart with hygiene/growth breakdown and keep/revert markers"}}
+{"type": "eval.started", "timestamp": "2026-04-18T17:37:46.517124+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T17:38:33.561204+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.839933, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T17:38:58.658098+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 36, "verdict": "keep", "hypothesis": "Add score history line chart with hygiene/growth breakdown and keep/revert markers"}}

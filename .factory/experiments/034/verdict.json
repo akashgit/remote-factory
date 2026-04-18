@@ -1,0 +1,14 @@
+{
+  "id": 34,
+  "timestamp": "2026-04-18 13:29:25.629783",
+  "hypothesis": "Add sparklines to project cards + Chart.js radar modal for dimension breakdowns",
+  "change_summary": "SVG sparklines on project cards, Chart.js radar chart modal for 11 eval dimensions, /api/projects/{name}/dimensions endpoint, score color coding, 10 new tests",
+  "issue_number": 49,
+  "pr_number": 50,
+  "score_before": 0.852,
+  "score_after": 0.850,
+  "delta": -0.002,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=-0.002 agents_spawned=R,S,B archivist_spawned=true capability_surface=0.611->0.614"
+}
