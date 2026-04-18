@@ -444,24 +444,20 @@ echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PR
 
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
 
-If the factory is improving itself (i.e., `$PROJECT_PATH` is the factory repo), run ACE:
-
-```bash
-uv run python -m factory ace "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
-```
-
-This analyzes experiment outcomes across all managed projects and evolves per-agent playbooks with empirically-backed DO/DON'T rules. Playbooks are auto-injected into agent prompts at spawn time.
-
-Skip this step when improving a target project (not the factory itself) — playbooks are already loaded.
+Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Use Meta mode when you want the factory to improve itself.
 
 ### Step 1: Hypothesize (Strategist Agent)
 
-Include your research review notes so the Strategist knows what the CEO prioritizes:
+Include your research review notes so the Strategist knows what the CEO prioritizes.
+
+**Focus Directive:** If your task includes a `## Focus Directive` section, you MUST relay it to the Strategist. Append the focus directive text to the Strategist's task so it can prioritize hypotheses targeting that area. If no focus directive is present, invoke the Strategist normally.
 
 ```bash
 factory agent strategist --task "Generate 1-3 prioritized hypotheses for $PROJECT_PATH.
 
 Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for CEO priorities.
+
+$FOCUS_DIRECTIVE
 
 Context:
 $(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo 'No experiments yet')
@@ -483,6 +479,9 @@ $(uv run python -m factory eval "$PROJECT_PATH")
 Write hypotheses to .factory/strategy/current.md. Each must be specific, scoped (one PR's worth), tied to observations, with expected impact on eval dimensions." --project "$PROJECT_PATH" --timeout 300
 ```
 
+Where `$FOCUS_DIRECTIVE` is either empty (no focus) or the focus text from your task, e.g.:
+`Focus Directive: Narrow improvement efforts to: dashboard UI`
+
 **Step 1r: CEO Review — Strategy (HARD GATE)**
 
 This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypotheses.
@@ -494,6 +493,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - Is the expected eval impact realistic?
    - Does it follow FEEC priority? (Fix before Explore)
    - Is it redundant with a previously reverted experiment?
+   - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2 of 3 hypotheses must align with the focus. REDIRECT if focus is ignored.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
@@ -735,25 +735,42 @@ cd "$PROJECT_PATH" && git add .factory/ && git commit -m "factory: log experimen
 
 ---
 
-## Mode: Meta (Self-Improvement Only)
+## Mode: Meta (Self-Improvement + Evolution)
 
-When invoked with `--mode meta`, skip the project improvement loop and focus on evolving agent playbooks.
+When invoked with `--mode meta`, run the **full Improve loop on the factory itself** (experiments, keep/revert decisions) **followed by** ACE playbook evolution. This is the complete self-improvement cycle: the factory improves its own code via experiments, then distills what it learned into evolved agent playbooks.
 
-### Step M1: Collect Cross-Project Data
+### Phase 1: Improve the Factory (Full Experiment Loop)
+
+Run the entire Improve mode pipeline above (Steps 0 through 5) with `$PROJECT_PATH` pointing at the factory repo. This means:
+- Researcher observes the factory codebase + cross-project data
+- Strategist generates hypotheses for improving the factory itself
+- Builder implements changes on experiment branches
+- Reviewer guards quality
+- Evaluator scores before/after
+- CEO (you) decides keep/revert
+- Archivist records at every checkpoint
+
+All the same rules apply: FEEC priority, growth dimension requirements, CEO review gates, mandatory archival. The factory is just another project — treat it the same way.
+
+### Phase 2: Evolve Agent Playbooks (ACE)
+
+After the Improve loop completes (all experiments finalized), run ACE to distill learnings into playbooks:
+
+#### M1: Collect Cross-Project Data
 
 ```bash
 uv run python -m factory insights "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
 ```
 
-### Step M2: Run ACE for All Roles
+#### M2: Run ACE for All Roles
 
 ```bash
 uv run python -m factory ace "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
 ```
 
-This generates and curates playbook bullets for all 7 agent roles (researcher, strategist, builder, reviewer, evaluator, archivist, ceo) based on experiment outcomes.
+This analyzes experiment outcomes across all managed projects (including the experiments just run in Phase 1) and evolves per-agent playbooks with empirically-backed DO/DON'T rules.
 
-### Step M3: Record Playbook Evolution
+#### M3: Record Playbook Evolution
 
 ```bash
 factory agent archivist --task "Record ACE playbook evolution.
@@ -763,7 +780,7 @@ factory agent archivist --task "Record ACE playbook evolution.
 4. Update the factory dashboard" --project "$PROJECT_PATH"
 ```
 
-### Step M4: Commit Updated Playbooks
+#### M4: Commit Updated Playbooks
 
 ```bash
 cd "$PROJECT_PATH" && git add factory/agents/playbooks/ && git commit -m "factory: ACE playbook evolution — $(date +%Y-%m-%d)"
