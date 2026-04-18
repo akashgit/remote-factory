@@ -171,7 +171,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
     _emit_cli_event(project_path, "eval.started", {"command": config.eval_command})
     score = _run(run_eval(config.eval_command, project_path, config.eval_threshold))
     _emit_cli_event(project_path, "eval.completed", {
-        "composite": score.composite,
+        "composite": score.total,
         "passed": score.passed,
         "dimensions": len(score.results),
     })
@@ -945,8 +945,9 @@ def _build_ceo_task(project_path: Path, mode: str, context: str | None = None) -
         )
     elif mode == "meta":
         task += (
-            "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
-            "run ACE for all agent roles, record playbook evolution, commit."
+            "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
+            "on this project (experiments, keep/revert decisions). Then run ACE playbook "
+            "evolution for all agent roles using cross-project experiment data."
         )
 
     return task
@@ -1178,7 +1179,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
-        help="Run mode: discover, improve (default), or meta (self-improvement only)",
+        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
     )
     p.add_argument(
         "--headless", action="store_true", default=False,
@@ -1192,7 +1193,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
-        help="Run mode: discover, improve (default), or meta (self-improvement only)",
+        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
