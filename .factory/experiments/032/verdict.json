@@ -1,0 +1,14 @@
+{
+  "id": 32,
+  "timestamp": "2026-04-18 12:40:01.996840",
+  "hypothesis": "Add factory export command \u2014 portable project snapshot as JSON",
+  "change_summary": "Added cmd_export to cli.py: dumps config, eval_profile, experiments, strategy as JSON to stdout. 4 new tests. capability_surface 169\u2192171.",
+  "issue_number": 45,
+  "pr_number": 46,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.045 agents_spawned=R,S,B archivist_spawned=true"
+}

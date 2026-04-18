@@ -1,0 +1,1 @@
+Add structured logging to dashboard module — instrument all 9 functions in app.py

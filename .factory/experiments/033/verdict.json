@@ -1,0 +1,14 @@
+{
+  "id": 33,
+  "timestamp": "2026-04-18 12:47:27.704663",
+  "hypothesis": "Add structured logging to dashboard module \u2014 instrument all 9 functions in app.py",
+  "change_summary": "Added structlog to all 9 functions in factory/dashboard/app.py. observability 0.783\u21920.805, function coverage 46%\u219251%.",
+  "issue_number": 47,
+  "pr_number": 48,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.047 agents_spawned=R,S,B archivist_spawned=true"
+}

@@ -1,0 +1,14 @@
+{
+  "id": 31,
+  "timestamp": "2026-04-18 12:32:37.552376",
+  "hypothesis": "Fix config_parser eval \u2014 convert to sync parsing to avoid asyncio.run() inside running event loop",
+  "change_summary": "Added sync _parse_factory_md() helper in hygiene.py, replacing async ExperimentStore.reparse_config() call. config_parser 0.0\u21921.0, composite 0.802\u21920.850",
+  "issue_number": 43,
+  "pr_number": 44,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.0475 agents_spawned=R,S,B archivist_spawned=true"
+}

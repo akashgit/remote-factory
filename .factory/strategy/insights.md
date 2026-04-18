@@ -1,75 +1,75 @@
-# Cross-Project Insights — 2026-04-13
+# Cross-Project Insights — 2026-04-18
 
-**3 projects**, **73 experiments**, **97% overall keep rate**
+**3 projects**, **57 experiments**, **100% overall keep rate**
 
 ## Projects
 
-- **cloud-gateway**: 6 experiments, 100% keep rate
-- **locals-know**: 50 experiments, 96% keep rate
-- **remote-factory**: 17 experiments, 100% keep rate
+- **client-inquiry-response-agent-for-erica**: 5 experiments, 100% keep rate
+- **remote-factory**: 19 experiments, 100% keep rate
+- **wxo**: 33 experiments, 100% keep rate
 
 ## Category Success Rates
 
 | Category | Total | Kept | Rate |
 |----------|-------|------|------|
-| bugfix | 7 | 7 | 100% |
-| observability | 11 | 11 | 100% |
-| coverage | 5 | 5 | 100% |
+| bugfix | 12 | 12 | 100% |
+| observability | 6 | 6 | 100% |
+| coverage | 2 | 2 | 100% |
+| testing | 8 | 8 | 100% |
 | refactoring | 1 | 1 | 100% |
-| performance | 1 | 0 | 0% |
-| eval_improvement | 8 | 7 | 88% |
+| performance | 1 | 1 | 100% |
+| eval_improvement | 2 | 2 | 100% |
 | agent_improvement | 3 | 3 | 100% |
-| prompt_engineering | 1 | 1 | 100% |
-| infrastructure | 2 | 2 | 100% |
-| feature | 34 | 34 | 100% |
+| prompt_engineering | 3 | 3 | 100% |
+| infrastructure | 3 | 3 | 100% |
+| feature | 16 | 16 | 100% |
 
 ## Winning Strategies (>80% keep, 3+ experiments)
 
 - **agent_improvement**: 100% keep rate (3 experiments)
-- **bugfix**: 100% keep rate (7 experiments)
-- **coverage**: 100% keep rate (5 experiments)
-- **eval_improvement**: 88% keep rate (8 experiments)
-- **feature**: 100% keep rate (34 experiments)
-- **observability**: 100% keep rate (11 experiments)
+- **bugfix**: 100% keep rate (12 experiments)
+- **feature**: 100% keep rate (16 experiments)
+- **infrastructure**: 100% keep rate (3 experiments)
+- **observability**: 100% keep rate (6 experiments)
+- **prompt_engineering**: 100% keep rate (3 experiments)
+- **testing**: 100% keep rate (8 experiments)
 
 ## Patterns
 
 ### bugfix_reliable
-_bugfix experiments have 100% keep rate across 3 projects (7 total)_
+_bugfix experiments have 100% keep rate across 3 projects (12 total)_
 Confidence: 1.0
 
-- cloud-gateway #Fix all ruff lint errors to bring lint s
-- cloud-gateway #Fix mypy type check errors in gateway.py
-- locals-know #Neighborhood-aware scoring: add favorite
-- locals-know #HTMX Performance Hardening: Add debounci
+- client-inquiry-response-agent-for-erica #Fix lint: remove unused build_pipeline i
+- client-inquiry-response-agent-for-erica #Fix mypy type errors: null guards, expli
 - remote-factory #Fix 3 mypy errors in profile.py and runn
-
-### coverage_reliable
-_coverage experiments have 100% keep rate across 3 projects (5 total)_
-Confidence: 1.0
-
-- cloud-gateway #Add tests for uncovered exception paths 
-- cloud-gateway #Boost test coverage for streaming and ki
-- locals-know #Increase test coverage from 88% to 93%+ 
-- locals-know #Add targeted tests for 4 untested scorin
-- remote-factory #Increase test coverage above 80%
+- remote-factory #Fix experiment state persistence and add
+- remote-factory #Fix cmd_run and SKILL.md to use uv run
 
 ### observability_reliable
-_observability experiments have 100% keep rate across 3 projects (11 total)_
+_observability experiments have 100% keep rate across 3 projects (6 total)_
 Confidence: 1.0
 
-- cloud-gateway #Add structured logging with request trac
-- cloud-gateway #Add structured logging with request trac
-- locals-know #Add logging to core business logic modul
-- locals-know #Add logging to remaining uninstrumented 
-- locals-know #Add logging to all remaining uninstrumen
+- client-inquiry-response-agent-for-erica #Add structlog + request ID tracing to un
+- client-inquiry-response-agent-for-erica #Add logging to all uncovered functions —
+- remote-factory #Add factory study command to read intera
+- remote-factory #Add structured logging to uninstrumented
+- remote-factory #Add structlog logging to insights.py and
 
 ### feature_reliable
-_feature experiments have 100% keep rate across 2 projects (34 total)_
+_feature experiments have 100% keep rate across 3 projects (16 total)_
+Confidence: 1.0
+
+- client-inquiry-response-agent-for-erica #Add Zillow/Redfin URL parsing to address
+- remote-factory #Wire up Obsidian integration with factor
+- remote-factory #Accept GitHub URL in factory run
+- remote-factory #Add web search to factory study — Resear
+- remote-factory #Dedicated factory Obsidian vault with pe
+
+### infrastructure_reliable
+_infrastructure experiments have 100% keep rate across 2 projects (3 total)_
 Confidence: 0.7
 
-- locals-know #Browse page filtering and sorting: add H
-- locals-know #Restaurant detail page -- similar restau
-- locals-know #Search upgrade -- aggregate to restauran
-- locals-know #Hours-aware Eat Now filtering: use store
-- locals-know #Source attribution on quotes: show subre
+- remote-factory #Add heartbeat loop to factory run — pers
+- wxo #Add user feedback ACE optimization mode 
+- wxo #Extract shared reflect-curate loop from 

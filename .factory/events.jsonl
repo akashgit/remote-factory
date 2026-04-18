@@ -1,0 +1,36 @@
+{"type": "detect", "timestamp": "2026-04-18T15:56:41.809052+00:00", "project": "remote-factory", "agent": null, "data": {"state": "has_factory"}}
+{"type": "insights.started", "timestamp": "2026-04-18T15:56:53.247721+00:00", "project": "remote-factory", "agent": null, "data": {"projects_dir": "/Users/akash/cursor-projects"}}
+{"type": "insights.completed", "timestamp": "2026-04-18T15:56:53.250801+00:00", "project": "remote-factory", "agent": null, "data": {"projects_analyzed": 3, "total_experiments": 57}}
+{"type": "ace.started", "timestamp": "2026-04-18T15:56:57.767332+00:00", "project": "remote-factory", "agent": null, "data": {"dry_run": false}}
+{"type": "ace.completed", "timestamp": "2026-04-18T15:56:57.775367+00:00", "project": "remote-factory", "agent": null, "data": {"roles_updated": ["strategist", "archivist", "ceo"], "candidates": 3, "dry_run": false}}
+{"type": "detect", "timestamp": "2026-04-18T16:04:06.696702+00:00", "project": "remote-factory", "agent": null, "data": {"state": "has_factory"}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:04:07.613666+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:05:31.687229+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:06:17.455345+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.802023, "passed": true, "dimensions": 11}}
+{"type": "study.started", "timestamp": "2026-04-18T16:06:49.636330+00:00", "project": "remote-factory", "agent": null, "data": {}}
+{"type": "study.completed", "timestamp": "2026-04-18T16:06:50.368081+00:00", "project": "remote-factory", "agent": null, "data": {"chars": 40312}}
+{"type": "study.started", "timestamp": "2026-04-18T16:07:11.486058+00:00", "project": "remote-factory", "agent": null, "data": {}}
+{"type": "study.completed", "timestamp": "2026-04-18T16:07:12.409395+00:00", "project": "remote-factory", "agent": null, "data": {"chars": 39559}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:24:58.974927+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:25:44.267704+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.802023, "passed": true, "dimensions": 11}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T16:25:48.492683+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 31, "hypothesis": "Fix config_parser eval \u2014 convert to sync parsing to avoid asyncio.run() inside running event loop"}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:27:31.380865+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:28:16.153912+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.849523, "passed": true, "dimensions": 11}}
+{"type": "guard.completed", "timestamp": "2026-04-18T16:29:29.335195+00:00", "project": "remote-factory", "agent": null, "data": {"violations": 1, "clean": false}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:29:41.355060+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:30:27.329004+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.849523, "passed": true, "dimensions": 11}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:30:31.677285+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:31:16.387278+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.845773, "passed": true, "dimensions": 11}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:31:20.760420+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:32:05.826631+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.849523, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T16:32:37.553229+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 31, "verdict": "keep", "hypothesis": "Fix config_parser eval \u2014 convert to sync parsing to avoid asyncio.run() inside running event loop"}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T16:34:39.850971+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 32, "hypothesis": "Add factory export command \u2014 portable project snapshot as JSON"}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:37:50.727091+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:38:39.251229+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.847125, "passed": true, "dimensions": 11}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:38:54.830883+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:39:42.827202+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.847125, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T16:40:01.997756+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 32, "verdict": "keep", "hypothesis": "Add factory export command \u2014 portable project snapshot as JSON"}}
+{"type": "experiment.begin", "timestamp": "2026-04-18T16:43:06.151448+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 33, "hypothesis": "Add structured logging to dashboard module \u2014 instrument all 9 functions in app.py"}}
+{"type": "eval.started", "timestamp": "2026-04-18T16:46:10.073491+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-18T16:46:57.193242+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.849225, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-18T16:47:27.705488+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 33, "verdict": "keep", "hypothesis": "Add structured logging to dashboard module \u2014 instrument all 9 functions in app.py"}}

@@ -1,0 +1,1 @@
+Fix config_parser eval — convert to sync parsing to avoid asyncio.run() inside running event loop

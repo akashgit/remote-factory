@@ -1,0 +1,11 @@
+## CEO Review: Strategist Agent
+- **Verdict:** PROCEED — PLAN APPROVED
+- **Rationale:** All three hypotheses are well-scoped, specific, and follow FEEC priority correctly. H2 targets capability_surface (growth) and H3 targets observability (growth). No all-hygiene problem. Execution order is correct.
+- **Issues found:**
+  - H1 references `eval/score.py` as the file to fix, but the actual broken code is in `factory/eval/hygiene.py:427-467` (the mandatory hygiene eval). The `eval/score.py` version runs as a subprocess with its own event loop and works fine — but its result gets filtered out by `_merge_all()` because the mandatory hygiene version (which is broken) has the same name. **The Builder MUST fix `factory/eval/hygiene.py`, not `eval/score.py`.** The hygiene.py `eval_config_parser()` calls `asyncio.run(store.reparse_config())` at line 439, which fails because `compute_hygiene_results()` is called from within the async `run_eval()` function.
+  - The fix approach is correct: make the function async-aware. But since `compute_hygiene_results()` is sync and called from async `run_eval()`, the cleanest fix is to avoid asyncio entirely — just read and parse factory.md directly without going through `ExperimentStore.reparse_config()` (which is async). Alternatively, use `asyncio.get_event_loop().run_until_complete()` or restructure.
+- **Instructions for next step:**
+  - Approved hypotheses in priority order: H1, H2, H3
+  - For H1: Fix `factory/eval/hygiene.py` (NOT eval/score.py). The config_parser eval should parse factory.md without calling async functions.
+  - For H2: Add `cmd_export` to `factory/cli.py`, register in handlers + argparse
+  - For H3: Add structlog to `factory/dashboard/app.py`
