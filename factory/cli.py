@@ -466,24 +466,47 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
 
 def cmd_ceo(args: argparse.Namespace) -> int:
-    """Launch the Factory CEO agent to orchestrate a project."""
-    from factory.agents.runner import invoke_agent
+    """Launch the Factory CEO agent to orchestrate a project.
+
+    Default: interactive foreground session (user can see and interact).
+    With --headless: pipe mode via claude -p (for scripting, cron, etc.).
+    """
+    from factory.agents.runner import resolve_prompt
 
     project_path, context = _resolve_input(args.path)
     mode = getattr(args, "mode", "improve")
+    headless = getattr(args, "headless", False)
     _print_banner(mode)
 
     task = _build_ceo_task(project_path, mode, context)
 
-    result, code = _run(invoke_agent(
-        "ceo",
-        task,
-        project_path,
-        timeout=3600.0,  # CEO gets a longer timeout (1 hour)
-        dangerously_skip_permissions=True,
-    ))
-    print(result)
-    return code
+    if headless:
+        # Non-interactive pipe mode (for scripting, cron, tmux)
+        from factory.agents.runner import invoke_agent
+
+        result, code = _run(invoke_agent(
+            "ceo",
+            task,
+            project_path,
+            timeout=3600.0,
+            dangerously_skip_permissions=True,
+        ))
+        print(result)
+        return code
+
+    # Interactive foreground mode: launch claude with CEO prompt as system context
+    prompt = resolve_prompt("ceo", project_path)
+
+    cmd = [
+        "claude",
+        "--append-system-prompt", prompt,
+        "--dangerously-skip-permissions",
+        task,  # initial user message
+    ]
+
+    # Replace this process with the interactive claude session
+    os.chdir(project_path)
+    os.execvp("claude", cmd)
 
 
 def _is_github_url(path: str) -> bool:
@@ -1018,13 +1041,17 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timeout in seconds (default: 600)")
 
     # ceo — launch the Factory CEO agent directly
-    p = sub.add_parser("ceo", help="Launch the Factory CEO agent to orchestrate a project")
+    p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
     p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
     p.add_argument(
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
         help="Run mode: discover, improve (default), or meta (self-improvement only)",
+    )
+    p.add_argument(
+        "--headless", action="store_true", default=False,
+        help="Run in pipe mode (non-interactive) instead of foreground",
     )
 
     # run

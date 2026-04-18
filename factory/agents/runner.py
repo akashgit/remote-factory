@@ -125,6 +125,9 @@ async def invoke_agent(
             data={"return_code": 0},
         )
 
+    # Save output to .factory/reviews/ so the CEO can review it
+    _save_review(project_path, role, stdout, proc.returncode or 0)
+
     return stdout, proc.returncode or 0
 
 
@@ -136,6 +139,26 @@ def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
         emit_event(project_path, event_type, **kwargs)  # type: ignore[arg-type]
     except Exception:
         logger.debug("Failed to emit event %s", event_type, exc_info=True)
+
+
+def _save_review(project_path: Path, role: str, output: str, return_code: int) -> None:
+    """Save agent output to .factory/reviews/<role>-latest.md for CEO review.
+
+    Creates the reviews directory if needed. Errors are swallowed so they
+    never block agent execution.
+    """
+    try:
+        reviews_dir = project_path / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        review_path = reviews_dir / f"{role}-latest.md"
+        from datetime import datetime, timezone
+
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        header = f"# {role.title()} Agent Output\n\n- **timestamp:** {ts}\n- **exit_code:** {return_code}\n\n---\n\n"
+        review_path.write_text(header + output)
+        logger.debug("Saved review output for %s to %s", role, review_path)
+    except Exception:
+        logger.debug("Failed to save review for %s", role, exc_info=True)
 
 
 async def invoke_agents_parallel(

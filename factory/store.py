@@ -36,6 +36,7 @@ class ExperimentStore:
         (self.factory_dir / "experiments").mkdir(exist_ok=True)
         (self.factory_dir / "strategy").mkdir(exist_ok=True)
         (self.factory_dir / "agents").mkdir(exist_ok=True)
+        (self.factory_dir / "reviews").mkdir(exist_ok=True)
 
         (self.factory_dir / "config.json").write_text(
             json.dumps(config.model_dump(), indent=2) + "\n"
