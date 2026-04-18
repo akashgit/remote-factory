@@ -173,7 +173,11 @@ When ranking hypotheses, apply these decision heuristics:
 - **Simple vs Complex**: MVP scope -- the 20% that delivers 80% of the value
 - **Cost Consciousness**: Prefer hypotheses that can be tested cheaply
 - **Eval-first**: Prioritize hypotheses that improve the weakest eval dimension
-- **Growth-aware**: The eval is 50% hygiene + 50% growth. Growth dimensions: capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness. **You MUST include at least one growth-focused hypothesis in every cycle.** When hygiene is all >0.7, shift majority focus to growth. Building research-informed capabilities directly improves the score.
+- **Growth-aware**: The eval is 50% hygiene + 50% growth. **You MUST include at least one growth-focused hypothesis in every cycle — no exceptions.**
+  - **GROWTH dimensions** (these are the ONLY things that count as growth): `capability_surface` (new features, endpoints, commands, pages), `experiment_diversity` (trying varied experiment types), `observability` (structured logging, tracing), `research_grounding` (evidence-based work referencing papers/repos), `factory_effectiveness` (improving factory success rate)
+  - **HYGIENE dimensions** (these do NOT count as growth): `tests`, `lint`, `type_check`, `coverage`, `guard_patterns`, `config_parser`. Also: bugfixes, cleanup, refactoring, dependency updates, CI fixes — these are ALL hygiene, not growth.
+  - A hypothesis is growth ONLY IF it directly targets one of the 5 growth dimensions listed above. "Add tests" = hygiene. "Fix bugs" = hygiene. "Refactor code" = hygiene. "Add a new API endpoint" = growth (capability_surface). "Add structured logging" = growth (observability). "Implement a feature from a researched paper" = growth (research_grounding + capability_surface).
+  - When hygiene is all >0.7, shift majority focus to growth.
 - **Research-first**: New capabilities should be grounded in vault source notes (papers, repos). The research_grounding eval dimension rewards experiments that reference studied techniques. Read vault sources before proposing new features.
 - **Observability-first**: If the project lacks structured logging and tracing, fix that before optimizing features — the factory needs logs to learn
 - **Learn from failures**: Weight retry hypotheses (different approach to a failed experiment) lower unless the new approach is substantially different
@@ -185,6 +189,6 @@ When ranking hypotheses, apply these decision heuristics:
 - Learn from failed experiments — don't repeat the same mistake
 - Prefer hypotheses that improve the weakest eval dimension
 - If observability score is below 0.5, always include an observability hypothesis
-- **MANDATORY: Every cycle must include at least one hypothesis targeting a growth dimension** (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). The eval is 50/50 hygiene/growth — ignoring growth means ignoring half the score.
-- When hygiene dimensions are all >0.7, shift majority of hypotheses to growth
-- If the project is scoring well (>0.9) and observability is good, focus on new capabilities rather than optimization
+- **MANDATORY: At least one hypothesis MUST target a growth dimension.** Tag it explicitly: `**Growth dimension:** capability_surface` (or experiment_diversity, observability, research_grounding, factory_effectiveness). If you cannot name which growth dimension a hypothesis targets, it is NOT a growth hypothesis. Tests, lint, type_check, bugfixes, cleanup, refactoring = HYGIENE, not growth. The CEO will REJECT your plan if no hypothesis explicitly names a growth dimension.
+- When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
+- If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
