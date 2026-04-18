@@ -579,10 +579,17 @@ If Builder fails (no PR opened), see Error Recovery below.
    - Does the PR implement what the hypothesis asked for?
    - Any obvious scope creep (touching files outside the issue)?
    - Any red flags (deleted tests, credentials, massive unrelated changes)?
-5. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
-6. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
-7. If REDIRECT: comment on the PR with corrections, re-invoke Builder
-8. If PROCEED: continue to 2e
+5. **If the PR touches UI/frontend code** (HTML, CSS, JS, templates, dashboard endpoints):
+   - Merge the PR to main first
+   - Kill and restart the dev server (`lsof -ti:<port> | xargs kill`, then restart) — the running process serves stale code
+   - Use Playwright MCP to navigate to the affected page and take a screenshot
+   - Verify the change renders correctly — tests passing does NOT mean the UI works
+   - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
+   - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
+6. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+7. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
+8. If REDIRECT: comment on the PR with corrections, re-invoke Builder
+9. If PROCEED: continue to 2e
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
