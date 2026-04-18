@@ -12,7 +12,6 @@ All functions take a project_path and return an EvalResult-compatible dict.
 If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 """
 
-import asyncio
 import os
 import re
 import subprocess
@@ -424,6 +423,63 @@ def eval_guard_patterns(project_path: Path) -> dict:
 # ── Dimension 6: config_parser (weight 0.10) ──────────────────────
 
 
+def _parse_factory_md(path: Path) -> dict[str, str | list[str] | float]:
+    """Synchronously parse factory.md into a dict of config fields.
+
+    Replicates the parsing logic from ExperimentStore.reparse_config()
+    without requiring asyncio, so it can be called safely from sync code
+    that may already be running inside an async event loop.
+    """
+    text = path.read_text()
+    parsed: dict[str, str | list[str] | float] = {}
+    current_section: str | None = None
+    list_buffer: list[str] = []
+    in_code_block = False
+
+    section_map: dict[str, str] = {
+        "command": "eval_command",
+        "threshold": "eval_threshold",
+        "modifiable": "scope",
+        "read_only": "read_only",
+    }
+
+    def _flush_list() -> None:
+        if current_section and list_buffer:
+            parsed[current_section] = list(list_buffer)
+            list_buffer.clear()
+
+    for line in text.splitlines():
+        stripped = line.strip()
+
+        if stripped.startswith("<!--") and stripped.endswith("-->"):
+            continue
+
+        if stripped.startswith("```"):
+            in_code_block = not in_code_block
+            continue
+
+        if in_code_block:
+            if stripped and current_section:
+                parsed[current_section] = stripped
+            continue
+
+        if stripped.startswith("#"):
+            _flush_list()
+            heading = stripped.lstrip("#").strip().lower().replace(" ", "_")
+            mapped = section_map.get(heading, heading)
+            current_section = mapped
+        elif stripped.startswith("- ") and current_section:
+            list_buffer.append(stripped[2:].strip())
+        elif stripped and current_section and not list_buffer:
+            if current_section == "eval_threshold":
+                parsed[current_section] = float(stripped)
+            else:
+                parsed[current_section] = stripped
+    _flush_list()
+
+    return parsed
+
+
 def eval_config_parser(project_path: Path) -> dict:
     """Test that factory.md can be parsed and essential fields extracted."""
     factory_md = project_path / "factory.md"
@@ -431,18 +487,18 @@ def eval_config_parser(project_path: Path) -> dict:
         return _neutral("config_parser", "no factory.md found")
 
     try:
-        from factory.store import ExperimentStore
+        parsed = _parse_factory_md(factory_md)
 
-        store = ExperimentStore(project_path)
-        # Ensure .factory/ exists for reparse_config to write to
-        store.factory_dir.mkdir(parents=True, exist_ok=True)
-        config = asyncio.run(store.reparse_config())
+        goal = parsed.get("goal", "")
+        scope = parsed.get("scope", [])
+        eval_command = parsed.get("eval_command", "")
+        eval_threshold = parsed.get("eval_threshold", 0.0)
 
         checks: list[tuple[str, bool]] = [
-            ("goal is non-empty", bool(config.goal and len(config.goal) > 0)),
-            ("scope has entries", len(config.scope) > 0),
-            ("eval_command is non-empty", bool(config.eval_command)),
-            ("eval_threshold is positive", config.eval_threshold > 0),
+            ("goal is non-empty", bool(goal and len(str(goal)) > 0)),
+            ("scope has entries", isinstance(scope, list) and len(scope) > 0),
+            ("eval_command is non-empty", bool(eval_command)),
+            ("eval_threshold is positive", float(eval_threshold) > 0),
         ]
 
         correct = sum(1 for _, ok in checks if ok)

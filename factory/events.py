@@ -63,12 +63,27 @@ def load_events(
     return events
 
 
-def discover_factory_projects(projects_dir: Path) -> list[Path]:
-    """Find all subdirectories with .factory/ directories."""
+def discover_factory_projects(projects_dir: Path, *, max_depth: int = 3) -> list[Path]:
+    """Find all subdirectories with .factory/ directories, up to max_depth levels."""
     if not projects_dir.exists():
         return []
-    return sorted(
-        child
-        for child in projects_dir.iterdir()
-        if child.is_dir() and (child / ".factory").is_dir()
-    )
+    results: list[Path] = []
+
+    def _scan(directory: Path, depth: int) -> None:
+        if depth > max_depth:
+            return
+        try:
+            children = sorted(directory.iterdir())
+        except PermissionError:
+            return
+        for child in children:
+            if not child.is_dir() or child.name.startswith("."):
+                continue
+            if (child / ".factory").is_dir():
+                results.append(child)
+            # Always recurse into children — a parent with .factory/
+            # may contain nested projects with their own .factory/
+            _scan(child, depth + 1)
+
+    _scan(projects_dir, 1)
+    return sorted(results)

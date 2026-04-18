@@ -35,15 +35,29 @@ factory agent <role> --task "<task description>" --project /path/to/project [--t
 | Evaluator  | Measure: run evals before/after changes, report composite + breakdown     |
 | Archivist  | Record: write learnings to Obsidian vault (MANDATORY at checkpoints)      |
 
-### Archivist Protocol — CRITICAL
+### Archivist Protocol — CRITICAL (HARD ENFORCEMENT)
 
-The Archivist is NOT optional. After EVERY other agent completes, you MUST spawn the Archivist to record what happened. The pattern is:
+The Archivist is NOT optional. After EVERY agent completes and after EVERY phase transition, you MUST spawn the Archivist. No exceptions. No "I'll do it later." No batching.
+
+**The mandatory pattern — every arrow is a real Archivist invocation:**
 
 ```
-Researcher → Archivist → Strategist → Archivist → Builder → Archivist → Reviewer → Archivist → Evaluator → Archivist → Final Archive
+Researcher → ARCHIVIST → Strategist → ARCHIVIST → Builder → ARCHIVIST → Reviewer → ARCHIVIST → Evaluator → ARCHIVIST → Final ARCHIVIST (blocking)
 ```
 
-If you skip the Archivist even once, you violate Sacred Rule 7. Learnings that aren't recorded are lost forever. The Archivist is the factory's institutional memory.
+**Enforcement mechanism — you MUST do this:**
+
+After spawning the Archivist, immediately write a checkpoint line to `.factory/reviews/archivist-checkpoints.md`:
+```markdown
+- [x] archivist after <phase> — <timestamp>
+```
+
+Before proceeding to ANY next step, verify the checkpoint file has an entry for the previous phase. If it doesn't, STOP and spawn the Archivist before continuing.
+
+**Before finalize — mandatory check:**
+Before calling `factory finalize`, read `.factory/reviews/archivist-checkpoints.md` and count the checkpoints. If any phase is missing an archivist entry, spawn the Archivist for that phase NOW.
+
+**Why this matters:** Learnings that aren't recorded are lost forever. The Archivist is the factory's institutional memory. Every experiment that gets archived feeds ACE self-improvement. Every skipped archival is a learning the factory will never have. Skipping the Archivist even once violates Sacred Rule 7.
 
 **IMPORTANT:** All factory CLI commands must use `uv run python -m factory` (not bare `factory` or `python -m factory`) because dependencies are managed via uv and may not be in the system Python.
 
@@ -88,11 +102,18 @@ The eval system is **50% hygiene + 50% growth**. You MUST understand both halves
 
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.
-- When reviewing the Strategist's hypotheses, **verify at least one targets a growth dimension**. If all hypotheses are hygiene-only (e.g., "add tests", "fix lint"), REDIRECT the Strategist.
-- When hygiene dimensions are all >0.7, the majority of hypotheses should target growth.
-- Growth dimensions reward: new features (capability_surface), diverse experiments (experiment_diversity), structured logging (observability), evidence-based work (research_grounding), and overall factory success rate (factory_effectiveness).
+- When reviewing the Strategist's hypotheses, **verify at least one explicitly names a growth dimension** (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). The hypothesis MUST contain the tag `**Growth dimension:** <name>`.
+- If ALL hypotheses are hygiene-only (tests, lint, type_check, coverage, bugfixes, cleanup, refactoring, dependency updates), **you MUST REDIRECT the Strategist**. No exceptions.
+- When hygiene dimensions are all >0.7, the MAJORITY of hypotheses should target growth.
 
-**Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. If the plan is too vague, too ambitious, misaligned with the project spec, or **missing a growth hypothesis**, REDIRECT the Strategist. Write `PLAN APPROVED` in your verdict file before spawning the Builder.
+**How to tell hygiene from growth:**
+- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, guard_patterns, config_parser, bugfixes, cleanup, refactoring, CI fixes, dependency updates
+- GROWTH (the ONLY things that count): capability_surface (new features/endpoints/commands), experiment_diversity, observability (structured logging/tracing), research_grounding (evidence-based work), factory_effectiveness
+
+**Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. Before writing `PLAN APPROVED`, verify:
+1. At least one hypothesis has an explicit `**Growth dimension:**` tag naming one of the 5 growth dimensions
+2. That hypothesis is genuinely growth (new capability, not just "add tests" or "fix bugs")
+3. If no hypothesis meets this bar → **REDIRECT the Strategist** with: "No growth hypothesis found. Add at least one hypothesis targeting capability_surface, experiment_diversity, observability, research_grounding, or factory_effectiveness."
 
 **Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
 
@@ -149,12 +170,17 @@ Apply the **CEO Review Gate**:
 4. If REDIRECT: re-invoke the Researcher with specific gaps to fill (max 2 retries)
 5. If PROCEED: continue to B0a
 
-### B0a: MANDATORY Archivist — record research
+### B0a: MANDATORY Archivist — record research (DO NOT SKIP)
 
 ```bash
 factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
 Read .factory/strategy/research.md and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to the vault." --project "$PROJECT_PATH" &
+Write research notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 ### B1: Strategy (Strategist Agent)
@@ -188,12 +214,17 @@ This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
 4. If REDIRECT: re-invoke the Strategist with specific corrections (e.g., "Phase 3 is too large — split into 3a and 3b", "Missing error handling phase")
 5. If PROCEED: write `PLAN APPROVED` in your verdict file, then continue to B2
 
-### B2: MANDATORY Archivist — record approved plan
+### B2: MANDATORY Archivist — record approved plan (DO NOT SKIP)
 
 ```bash
 factory agent archivist --task "Record the CEO-approved build plan for $PROJECT_PATH.
 Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
-The CEO has reviewed and approved this plan. Write project inception notes to the vault." --project "$PROJECT_PATH" &
+The CEO has reviewed and approved this plan. Write project inception notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 ### B3: Build (Builder Agent — per phase)
@@ -222,7 +253,7 @@ After each Builder phase completes:
 6. If the Builder went off-scope or missed key requirements, REDIRECT with corrections
 7. If PROCEED: continue to B4
 
-### B4: MANDATORY Archivist — record build progress
+### B4: MANDATORY Archivist — record build progress (DO NOT SKIP)
 
 ```bash
 factory agent archivist --task "Record build progress for $PROJECT_PATH.
@@ -231,6 +262,11 @@ factory agent archivist --task "Record build progress for $PROJECT_PATH.
 3. Read .factory/strategy/current.md for the plan
 4. Write progress notes to the vault
 5. Record what worked, what failed, and any decisions made" --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after build phase — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 Repeat B3-B3r-B4 for each phase. Do NOT batch all phases without review and archival.
@@ -395,13 +431,16 @@ Apply the **CEO Review Gate**:
 4. If REDIRECT: re-invoke the Researcher with specific gaps
 5. If PROCEED: continue
 
-**0c. MANDATORY Archivist — record research findings**
+**0c. MANDATORY Archivist — record research findings (DO NOT SKIP)**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/. Update the project research log." --project "$PROJECT_PATH" &
+factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/. Update the project research log." --project "$PROJECT_PATH"
 ```
 
-The `&` makes this non-blocking. But it MUST be spawned.
+Then write checkpoint:
+```bash
+echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
 
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
 
@@ -459,10 +498,15 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
 
-**MANDATORY Archivist — record strategy decisions:**
+**MANDATORY Archivist — record strategy decisions (DO NOT SKIP):**
 
 ```bash
-factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to the vault. Update the project dashboard." --project "$PROJECT_PATH" &
+factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to the vault. Update the project dashboard." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 ### Step 2: Execute (Per Approved Hypothesis)
@@ -540,12 +584,17 @@ If Builder fails (no PR opened), see Error Recovery below.
 7. If REDIRECT: comment on the PR with corrections, re-invoke Builder
 8. If PROCEED: continue to 2e
 
-**MANDATORY Archivist — record build:**
+**MANDATORY Archivist — record build (DO NOT SKIP):**
 
 ```bash
 factory agent archivist --task "Record the Builder's work for experiment $EXP_ID.
 Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
-Write implementation notes to the vault." --project "$PROJECT_PATH" &
+Write implementation notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 #### 2e. Guard Check (Reviewer Agent)
@@ -624,7 +673,7 @@ Always include structured metadata in `--notes`:
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
-#### 2h. MANDATORY Archivist — record experiment outcome
+#### 2h. MANDATORY Archivist — record experiment outcome (DO NOT SKIP)
 
 ```bash
 factory agent archivist --task "Record experiment $EXP_ID outcome (verdict: $VERDICT).
@@ -634,11 +683,26 @@ factory agent archivist --task "Record experiment $EXP_ID outcome (verdict: $VER
 4. Record any cross-project patterns observed" --project "$PROJECT_PATH"
 ```
 
-This Archivist spawn is **non-blocking** (append `&`) but **MUST happen**. Do not skip.
+Then write checkpoint:
+```bash
+echo "- [x] archivist after experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
 
-### Step 3: Final Archive (BLOCKING)
+This MUST happen before proceeding to the next hypothesis or to Step 3.
+
+### Step 3: Final Archive (BLOCKING — DO NOT SKIP)
 
 After all hypotheses are processed, spawn the Archivist one final time. This one is **blocking** — wait for it to complete.
+
+**Pre-flight check:** Before spawning the final Archivist, read `.factory/reviews/archivist-checkpoints.md` and verify every phase has an entry. If any are missing, spawn the Archivist for those phases first.
+
+```bash
+cat "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+# Verify: research ✓, strategy ✓, build ✓, experiment ✓
+# If any missing, spawn Archivist for that phase NOW before final archive
+```
+
+Then spawn the final archive:
 
 ```bash
 factory agent archivist --task "Final archive for this factory cycle on $PROJECT_PATH.
@@ -648,6 +712,11 @@ factory agent archivist --task "Final archive for this factory cycle on $PROJECT
 4. Write a cycle summary to the vault
 5. Update ~/obsidian-vaults/factory/MEMORY.md index
 6. If the factory is improving itself, record CEO decision patterns to ~/obsidian-vaults/factory/00-Factory/Agent-Performance/ceo-decisions.md" --project "$PROJECT_PATH" --timeout 300
+```
+
+Then write final checkpoint:
+```bash
+echo "- [x] FINAL archivist — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
 **Wait for this to complete before proceeding.** Do NOT commit until archival is confirmed.
@@ -730,16 +799,19 @@ When `factory ace` runs (either in Meta mode or Step 0d when self-improving), th
 
 ## Mandatory Archival Checkpoints
 
-These are NOT optional. Skipping archival is a violation equivalent to skipping evals.
+These are NOT optional. Skipping archival is a Sacred Rule 7 violation, equivalent to skipping evals.
 
-| Checkpoint      | When                            | Blocking? |
-|-----------------|---------------------------------|-----------|
-| Post-research   | After Step 0b completes         | No (async) |
-| Post-strategy   | After Step 1 completes          | No (async) |
-| Post-experiment | After each Step 2g decision     | No (async) |
-| Final archive   | Step 3, after all experiments   | **YES — wait** |
+| Checkpoint      | When                            | Blocking? | Checkpoint file entry |
+|-----------------|---------------------------------|-----------|-----------------------|
+| Post-research   | After Researcher completes      | **YES**   | `archivist after research` |
+| Post-strategy   | After Strategist completes      | **YES**   | `archivist after strategy` |
+| Post-build      | After each Builder phase        | **YES**   | `archivist after build` |
+| Post-experiment | After each keep/revert decision | **YES**   | `archivist after experiment N` |
+| Final archive   | After all experiments done      | **YES**   | `FINAL archivist` |
 
-If an async Archivist spawn fails, log the error but continue. The final blocking archive in Step 3 catches anything missed.
+**ALL archival is blocking.** Wait for the Archivist to complete before moving to the next step. After each Archivist invocation, write a checkpoint line to `.factory/reviews/archivist-checkpoints.md`. Before Step 3 (Final Archive), verify all checkpoints are present — if any are missing, spawn the Archivist for those phases before proceeding.
+
+**If the Archivist fails:** retry once. If it fails again, log the error but write the checkpoint as `archivist after <phase> — FAILED`. The final archive in Step 3 will attempt to catch anything missed.
 
 ---
 

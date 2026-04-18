@@ -23,6 +23,48 @@ def _run(coro):  # noqa: ANN001, ANN202
 # ── banner ────────────────────────────────────────────────────
 
 
+_DASHBOARD_PORT = 8420
+
+
+def _dashboard_is_running(port: int = _DASHBOARD_PORT) -> bool:
+    """Check if the dashboard is already listening on the given port."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.5)
+        return s.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _ensure_dashboard(project_path: Path, port: int = _DASHBOARD_PORT) -> None:
+    """Start the dashboard in the background if it's not already running.
+
+    Prints the dashboard URL to stderr either way.
+    """
+    url = f"http://localhost:{port}"
+
+    if _dashboard_is_running(port):
+        print(f"  Dashboard: {url} (running)", file=sys.stderr)
+        return
+
+    # Determine projects directory (parent of the project)
+    projects_dir = project_path.parent
+
+    # Start dashboard as a detached background process
+    cmd = [
+        sys.executable, "-m", "factory", "dashboard",
+        "--projects-dir", str(projects_dir),
+        "--port", str(port),
+        "--host", "0.0.0.0",
+    ]
+    subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,  # detach from parent process
+    )
+    print(f"  Dashboard: {url} (started)", file=sys.stderr)
+
+
 def _print_banner(mode: str = "improve") -> None:
     """Print the Factory startup banner to stderr."""
     if os.environ.get("NO_COLOR") or not sys.stderr.isatty():
@@ -56,7 +98,9 @@ def cmd_home(args: argparse.Namespace) -> int:
 def cmd_detect(args: argparse.Namespace) -> int:
     from factory.state import detect_state
 
-    state = detect_state(Path(args.path))
+    project_path = Path(args.path)
+    state = detect_state(project_path)
+    _emit_cli_event(project_path, "detect", {"state": state.value})
     print(state.value)
     return 0
 
@@ -68,6 +112,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
 
     project_path = Path(args.path)
+    _emit_cli_event(project_path, "discover.started", {"path": str(project_path)})
+
     profile = introspect_project(project_path)
     eval_profile = build_eval_profile(profile)
 
@@ -76,6 +122,13 @@ def cmd_discover(args: argparse.Namespace) -> int:
     store.factory_dir.mkdir(exist_ok=True)
     _run(store.save_eval_profile(eval_profile))
     write_eval_script(eval_profile, project_path)
+
+    dims = [d.name for d in eval_profile.dimensions]
+    _emit_cli_event(project_path, "discover.completed", {
+        "language": profile.language,
+        "framework": profile.framework,
+        "dimensions": dims,
+    })
 
     output = {
         "project": profile.model_dump(),
@@ -115,7 +168,13 @@ def cmd_eval(args: argparse.Namespace) -> int:
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
     config = _run(store.read_config())
+    _emit_cli_event(project_path, "eval.started", {"command": config.eval_command})
     score = _run(run_eval(config.eval_command, project_path, config.eval_threshold))
+    _emit_cli_event(project_path, "eval.completed", {
+        "composite": score.total,
+        "passed": score.passed,
+        "dimensions": len(score.results),
+    })
     print(json.dumps(score.model_dump(), indent=2, default=str))
     return 0 if score.passed else 1
 
@@ -134,6 +193,10 @@ def cmd_guard(args: argparse.Namespace) -> int:
         scope = config.scope
 
     violations = check_all(project_path, args.baseline, allowed_scope=scope)
+    _emit_cli_event(project_path, "guard.completed", {
+        "violations": len(violations),
+        "clean": len(violations) == 0,
+    })
     if violations:
         for v in violations:
             print(f"VIOLATION: {v}")
@@ -145,8 +208,13 @@ def cmd_guard(args: argparse.Namespace) -> int:
 def cmd_begin(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
 
-    store = ExperimentStore(Path(args.path))
+    project_path = Path(args.path)
+    store = ExperimentStore(project_path)
     exp_id = _run(store.begin(args.hypothesis))
+    _emit_cli_event(project_path, "experiment.begin", {
+        "exp_id": exp_id,
+        "hypothesis": args.hypothesis[:200],
+    })
     print(exp_id)
     return 0
 
@@ -155,7 +223,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
     from factory.models import ExperimentRecord
 
-    store = ExperimentStore(Path(args.path))
+    project_path = Path(args.path)
+    store = ExperimentStore(project_path)
     record = ExperimentRecord(
         id=args.id,
         timestamp=datetime.now(),
@@ -171,6 +240,11 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         notes=args.notes or "",
     )
     _run(store.finalize(args.id, record))
+    _emit_cli_event(project_path, "experiment.finalize", {
+        "exp_id": args.id,
+        "verdict": args.verdict,
+        "hypothesis": (args.hypothesis or "")[:200],
+    })
     print(f"Finalized experiment {args.id} — verdict={args.verdict}")
     return 0
 
@@ -212,6 +286,7 @@ def cmd_study(args: argparse.Namespace) -> int:
     from factory.study import study_project
 
     project_path = Path(args.path)
+    _emit_cli_event(project_path, "study.started", {})
     kwargs: dict[str, object] = {}
     projects_dir = getattr(args, "projects_dir", None)
     if projects_dir:
@@ -223,6 +298,7 @@ def cmd_study(args: argparse.Namespace) -> int:
     obs_path.parent.mkdir(parents=True, exist_ok=True)
     obs_path.write_text(summary)
 
+    _emit_cli_event(project_path, "study.completed", {"chars": len(summary)})
     print(summary)
     return 0
 
@@ -280,6 +356,8 @@ def cmd_ace(args: argparse.Namespace) -> int:
     projects_dir = Path(args.projects_dir).expanduser().resolve()
     dry_run = getattr(args, "dry_run", False)
 
+    _emit_cli_event(project_path, "ace.started", {"dry_run": dry_run})
+
     # Step 1: Reflect — analyze experiment data, generate candidate bullets
     candidates = reflect_on_experiments(projects_dir, project_path)
 
@@ -291,6 +369,7 @@ def cmd_ace(args: argparse.Namespace) -> int:
     playbooks_dir = Path(__file__).parent / "agents" / "playbooks"
     playbooks_dir.mkdir(parents=True, exist_ok=True)
 
+    roles_updated = []
     for role, items in candidates.items():
         # Load existing playbook if any
         playbook_path = playbooks_dir / f"{role}.md"
@@ -310,6 +389,13 @@ def cmd_ace(args: argparse.Namespace) -> int:
         else:
             playbook_path.write_text(updated.to_markdown())
             print(f"  {role}: {len(updated.items)} items → {playbook_path}")
+            roles_updated.append(role)
+
+    _emit_cli_event(project_path, "ace.completed", {
+        "roles_updated": roles_updated,
+        "candidates": len(candidates),
+        "dry_run": dry_run,
+    })
 
     if not dry_run:
         print(f"\nPlaybooks updated in {playbooks_dir}")
@@ -341,6 +427,7 @@ def cmd_insights(args: argparse.Namespace) -> int:
 
     project_path = Path(args.path).resolve()
     projects_dir = Path(args.projects_dir).expanduser().resolve()
+    _emit_cli_event(project_path, "insights.started", {"projects_dir": str(projects_dir)})
     project_paths = discover_projects(projects_dir)
 
     if not project_paths:
@@ -360,6 +447,10 @@ def cmd_insights(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(report)
 
+    _emit_cli_event(project_path, "insights.completed", {
+        "projects_analyzed": len(project_paths),
+        "total_experiments": sum(len(h) for h in histories.values()),
+    })
     print(report)
     print(f"\nWritten to {out_path}")
     return 0
@@ -413,6 +504,10 @@ def cmd_archive(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import _get_vault_path
 
     vault_path = _get_vault_path()
+    _emit_cli_event(project_path, "archive.completed", {
+        "experiments": len(records),
+        "vault": str(vault_path),
+    })
     print(f"Archived {len(records)} experiments to {vault_path}")
     return 0
 
@@ -508,6 +603,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "improve")
     headless = getattr(args, "headless", False)
     _print_banner(mode)
+    _ensure_dashboard(project_path)
 
     task = _build_ceo_task(project_path, mode, context)
 
@@ -849,8 +945,9 @@ def _build_ceo_task(project_path: Path, mode: str, context: str | None = None) -
         )
     elif mode == "meta":
         task += (
-            "\n\nRun Meta mode: self-improvement only. Collect cross-project data, "
-            "run ACE for all agent roles, record playbook evolution, commit."
+            "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
+            "on this project (experiments, keep/revert decisions). Then run ACE playbook "
+            "evolution for all agent roles using cross-project experiment data."
         )
 
     return task
@@ -879,6 +976,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
     _print_banner(mode)
+    _ensure_dashboard(project_path)
 
     if not loop:
         return _run_single_cycle(project_path, mode, context)
@@ -1081,7 +1179,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
-        help="Run mode: discover, improve (default), or meta (self-improvement only)",
+        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
     )
     p.add_argument(
         "--headless", action="store_true", default=False,
@@ -1095,7 +1193,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
-        help="Run mode: discover, improve (default), or meta (self-improvement only)",
+        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
