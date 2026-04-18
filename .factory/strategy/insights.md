@@ -1,19 +1,19 @@
 # Cross-Project Insights — 2026-04-18
 
-**3 projects**, **57 experiments**, **100% overall keep rate**
+**3 projects**, **60 experiments**, **100% overall keep rate**
 
 ## Projects
 
 - **client-inquiry-response-agent-for-erica**: 5 experiments, 100% keep rate
-- **remote-factory**: 19 experiments, 100% keep rate
+- **remote-factory**: 22 experiments, 100% keep rate
 - **wxo**: 33 experiments, 100% keep rate
 
 ## Category Success Rates
 
 | Category | Total | Kept | Rate |
 |----------|-------|------|------|
-| bugfix | 12 | 12 | 100% |
-| observability | 6 | 6 | 100% |
+| bugfix | 13 | 13 | 100% |
+| observability | 7 | 7 | 100% |
 | coverage | 2 | 2 | 100% |
 | testing | 8 | 8 | 100% |
 | refactoring | 1 | 1 | 100% |
@@ -22,22 +22,22 @@
 | agent_improvement | 3 | 3 | 100% |
 | prompt_engineering | 3 | 3 | 100% |
 | infrastructure | 3 | 3 | 100% |
-| feature | 16 | 16 | 100% |
+| feature | 17 | 17 | 100% |
 
 ## Winning Strategies (>80% keep, 3+ experiments)
 
 - **agent_improvement**: 100% keep rate (3 experiments)
-- **bugfix**: 100% keep rate (12 experiments)
-- **feature**: 100% keep rate (16 experiments)
+- **bugfix**: 100% keep rate (13 experiments)
+- **feature**: 100% keep rate (17 experiments)
 - **infrastructure**: 100% keep rate (3 experiments)
-- **observability**: 100% keep rate (6 experiments)
+- **observability**: 100% keep rate (7 experiments)
 - **prompt_engineering**: 100% keep rate (3 experiments)
 - **testing**: 100% keep rate (8 experiments)
 
 ## Patterns
 
 ### bugfix_reliable
-_bugfix experiments have 100% keep rate across 3 projects (12 total)_
+_bugfix experiments have 100% keep rate across 3 projects (13 total)_
 Confidence: 1.0
 
 - client-inquiry-response-agent-for-erica #Fix lint: remove unused build_pipeline i
@@ -47,7 +47,7 @@ Confidence: 1.0
 - remote-factory #Fix cmd_run and SKILL.md to use uv run
 
 ### observability_reliable
-_observability experiments have 100% keep rate across 3 projects (6 total)_
+_observability experiments have 100% keep rate across 3 projects (7 total)_
 Confidence: 1.0
 
 - client-inquiry-response-agent-for-erica #Add structlog + request ID tracing to un
@@ -57,7 +57,7 @@ Confidence: 1.0
 - remote-factory #Add structlog logging to insights.py and
 
 ### feature_reliable
-_feature experiments have 100% keep rate across 3 projects (16 total)_
+_feature experiments have 100% keep rate across 3 projects (17 total)_
 Confidence: 1.0
 
 - client-inquiry-response-agent-for-erica #Add Zillow/Redfin URL parsing to address
