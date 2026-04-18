@@ -433,9 +433,12 @@ function connectSSE() {
     try {
       const event = JSON.parse(e.data);
       addEvent(event);
-      // Refresh projects periodically (every 10 events)
-      eventCount++;
-      if (eventCount % 10 === 0) loadProjects();
+      // Refresh projects on every event
+      loadProjects();
+      // Refresh experiments if the event is for the selected project
+      if (selectedProject && event.project === selectedProject) {
+        loadExperiments(selectedProject);
+      }
     } catch (err) {
       console.error('Failed to parse event:', err);
     }
@@ -502,8 +505,11 @@ function esc(str) {
 // ── Init ──
 loadProjects();
 connectSSE();
-// Refresh projects every 30s
-setInterval(loadProjects, 30000);
+// Refresh projects every 10s
+setInterval(() => {
+  loadProjects();
+  if (selectedProject) loadExperiments(selectedProject);
+}, 10000);
 </script>
 </body>
 </html>
