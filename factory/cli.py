@@ -425,6 +425,37 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_install(args: argparse.Namespace) -> int:
+    """Install the Factory CEO as a Claude Code agent."""
+    from factory.agents.runner import resolve_prompt
+
+    agents_dir = Path.home() / ".claude" / "agents"
+    agents_dir.mkdir(parents=True, exist_ok=True)
+    agent_path = agents_dir / "factory-ceo.md"
+
+    ceo_prompt = resolve_prompt("ceo")
+
+    frontmatter = (
+        "---\n"
+        "name: factory-ceo\n"
+        "description: Factory CEO — autonomous multi-agent software evolution orchestrator. "
+        "Detects project state, spawns specialist agents (researcher, strategist, builder, "
+        "reviewer, evaluator, archivist), runs experiments, and makes keep/revert decisions.\n"
+        "model: opus\n"
+        "---\n\n"
+    )
+
+    agent_path.write_text(frontmatter + ceo_prompt)
+    print(f"Installed factory-ceo agent to {agent_path}")
+    print()
+    print("Usage:")
+    print("  claude --agent factory-ceo              # from any project directory")
+    print('  claude --agent factory-ceo "improve X"   # with initial prompt')
+    print()
+    print("Or from within Claude Code, ask: \"use the factory-ceo agent\"")
+    return 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
@@ -1021,6 +1052,9 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
+    # install — install Factory CEO as a Claude Code agent
+    sub.add_parser("install", help="Install Factory CEO as a Claude Code agent (~/.claude/agents/)")
+
     # dashboard — live web dashboard
     p = sub.add_parser("dashboard", help="Launch the live Factory dashboard")
     p.add_argument(
@@ -1129,6 +1163,7 @@ def main(argv: list[str] | None = None) -> int:
         "digest": cmd_digest,
         "archive": cmd_archive,
         "vault-init": cmd_vault_init,
+        "install": cmd_install,
         "dashboard": cmd_dashboard,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
