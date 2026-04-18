@@ -222,6 +222,19 @@
   .event-badge.experiment-finalize { background: #2a2040; color: #b392f0; }
   .event-badge.cycle-started { background: #1f3a3a; color: var(--cyan); }
   .event-badge.cycle-completed { background: #1f3a3a; color: var(--cyan); }
+  .event-badge.detect { background: #1f2d3a; color: #79c0ff; }
+  .event-badge.discover-started { background: #1f2d3a; color: #79c0ff; }
+  .event-badge.discover-completed { background: #1a3a2a; color: var(--green); }
+  .event-badge.eval-started { background: #2d2a1f; color: var(--yellow); }
+  .event-badge.eval-completed { background: #2d2a1f; color: var(--yellow); }
+  .event-badge.guard-completed { background: #1f3a2a; color: var(--green); }
+  .event-badge.study-started { background: #2a1f3a; color: #d2a8ff; }
+  .event-badge.study-completed { background: #2a1f3a; color: #d2a8ff; }
+  .event-badge.insights-started { background: #2a1f3a; color: #d2a8ff; }
+  .event-badge.insights-completed { background: #2a1f3a; color: #d2a8ff; }
+  .event-badge.ace-started { background: #3a1f2a; color: #ff7eb6; }
+  .event-badge.ace-completed { background: #3a1f2a; color: #ff7eb6; }
+  .event-badge.archive-completed { background: #1f3a3a; color: var(--cyan); }
 
   .event-text {
     flex: 1;
@@ -433,9 +446,12 @@ function connectSSE() {
     try {
       const event = JSON.parse(e.data);
       addEvent(event);
-      // Refresh projects periodically (every 10 events)
-      eventCount++;
-      if (eventCount % 10 === 0) loadProjects();
+      // Refresh projects on every event
+      loadProjects();
+      // Refresh experiments if the event is for the selected project
+      if (selectedProject && event.project === selectedProject) {
+        loadExperiments(selectedProject);
+      }
     } catch (err) {
       console.error('Failed to parse event:', err);
     }
@@ -480,12 +496,33 @@ function addEvent(event) {
 
 function formatEventDesc(event) {
   const d = event.data || {};
+  const t = event.type || '';
   if (event.agent) {
-    if (event.type === 'agent.completed') {
+    if (t === 'agent.completed') {
       return ` ${esc(event.agent)} finished (exit ${d.return_code ?? '?'})`;
     }
     return ` ${esc(event.agent)} — ${esc(d.task || '').substring(0, 60)}`;
   }
+  if (t === 'detect') return ` state → ${esc(d.state)}`;
+  if (t === 'discover.started') return ' introspecting project…';
+  if (t === 'discover.completed') {
+    return ` ${esc(d.language || '?')}/${esc(d.framework || '?')} — ${(d.dimensions || []).length} dimensions`;
+  }
+  if (t === 'eval.started') return ` running: ${esc((d.command || '').substring(0, 40))}`;
+  if (t === 'eval.completed') {
+    const s = d.composite != null ? d.composite.toFixed(3) : '?';
+    return ` score=${s} ${d.passed ? '✓' : '✗'} (${d.dimensions} dims)`;
+  }
+  if (t === 'guard.completed') return d.clean ? ' clean' : ` ${d.violations} violation(s)`;
+  if (t === 'experiment.begin') return ` #${d.exp_id} ${esc((d.hypothesis || '').substring(0, 60))}`;
+  if (t === 'experiment.finalize') return ` #${d.exp_id} → ${d.verdict}`;
+  if (t === 'study.started') return ' analyzing code…';
+  if (t === 'study.completed') return ` ${d.chars} chars written`;
+  if (t === 'insights.started') return ' cross-project analysis…';
+  if (t === 'insights.completed') return ` ${d.projects_analyzed} projects, ${d.total_experiments} experiments`;
+  if (t === 'ace.started') return d.dry_run ? ' (dry run)' : ' evolving playbooks…';
+  if (t === 'ace.completed') return ` ${(d.roles_updated || []).length} roles updated`;
+  if (t === 'archive.completed') return ` ${d.experiments} experiments → vault`;
   if (d.hypothesis) return ` ${esc(d.hypothesis.substring(0, 60))}`;
   if (d.verdict) return ` #${d.exp_id} ${d.verdict}`;
   if (d.mode) return ` mode=${esc(d.mode)}`;
@@ -502,8 +539,11 @@ function esc(str) {
 // ── Init ──
 loadProjects();
 connectSSE();
-// Refresh projects every 30s
-setInterval(loadProjects, 30000);
+// Refresh projects every 10s
+setInterval(() => {
+  loadProjects();
+  if (selectedProject) loadExperiments(selectedProject);
+}, 10000);
 </script>
 </body>
 </html>
