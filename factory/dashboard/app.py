@@ -49,7 +49,21 @@ def create_app(projects_dir: Path) -> FastAPI:
         path = projects_dir / name
         if not (path / ".factory" / "results.tsv").exists():
             return []
-        return _load_tsv(path / ".factory" / "results.tsv")
+        rows = _load_tsv(path / ".factory" / "results.tsv")
+        for row in rows:
+            row["dimensions"] = _load_experiment_dimensions(path, row.get("id", ""))
+        return rows
+
+    @app.get("/api/projects/{name}/dimensions")
+    async def project_dimensions(name: str) -> dict[str, Any]:
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/dimensions",
+            project=name,
+        )
+        path = projects_dir / name
+        dims = _load_latest_dimensions(path)
+        return {"dimensions": dims}
 
     @app.get("/api/projects/{name}/events")
     async def project_events(name: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -148,6 +162,7 @@ def _project_summary(path: Path) -> dict[str, Any]:
         info["revert_count"] = sum(1 for r in rows if r.get("verdict") == "revert")
 
         scores = [float(r["score_after"]) for r in rows if r.get("score_after")]
+        info["scores"] = scores
         if scores:
             info["latest_score"] = scores[-1]
 
@@ -191,3 +206,60 @@ def _load_tsv(path: Path) -> list[dict[str, str]]:
         rows = list(reader)
     log.debug("load_tsv_complete", path=str(path), row_count=len(rows))
     return rows
+
+
+def _load_experiment_dimensions(
+    project_path: Path, exp_id: str
+) -> list[dict[str, Any]]:
+    """Load dimension scores from an experiment's eval_after.json."""
+    if not exp_id:
+        return []
+    exp_dir = project_path / ".factory" / "experiments" / str(exp_id).zfill(3)
+    eval_file = exp_dir / "eval_after.json"
+    if not eval_file.exists():
+        return []
+    try:
+        data = json.loads(eval_file.read_text())
+        results = data.get("results", [])
+        return [
+            {
+                "name": r.get("name", ""),
+                "score": r.get("score", 0.0),
+                "weight": r.get("weight", 0.0),
+                "passed": r.get("passed", False),
+            }
+            for r in results
+        ]
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _load_latest_dimensions(project_path: Path) -> list[dict[str, Any]]:
+    """Load dimensions from the most recent experiment's eval_after.json."""
+    exp_base = project_path / ".factory" / "experiments"
+    if not exp_base.exists():
+        return []
+    # Sort experiment dirs descending to find the latest
+    exp_dirs = sorted(
+        (d for d in exp_base.iterdir() if d.is_dir()),
+        key=lambda d: d.name,
+        reverse=True,
+    )
+    for exp_dir in exp_dirs:
+        eval_file = exp_dir / "eval_after.json"
+        if eval_file.exists():
+            try:
+                data = json.loads(eval_file.read_text())
+                results = data.get("results", [])
+                return [
+                    {
+                        "name": r.get("name", ""),
+                        "score": r.get("score", 0.0),
+                        "weight": r.get("weight", 0.0),
+                        "passed": r.get("passed", False),
+                    }
+                    for r in results
+                ]
+            except (json.JSONDecodeError, OSError):
+                continue
+    return []
