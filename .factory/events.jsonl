@@ -38,3 +38,7 @@
 {"type": "insights.completed", "timestamp": "2026-04-18T16:59:52.370750+00:00", "project": "remote-factory", "agent": null, "data": {"projects_analyzed": 3, "total_experiments": 60}}
 {"type": "ace.started", "timestamp": "2026-04-18T17:00:02.856043+00:00", "project": "remote-factory", "agent": null, "data": {"dry_run": false}}
 {"type": "ace.completed", "timestamp": "2026-04-18T17:00:02.864160+00:00", "project": "remote-factory", "agent": null, "data": {"roles_updated": ["strategist", "archivist", "ceo"], "candidates": 3, "dry_run": false}}
+{"type": "detect", "timestamp": "2026-04-18T17:07:30.788957+00:00", "project": "remote-factory", "agent": null, "data": {"state": "has_factory"}}
+{"type": "study.started", "timestamp": "2026-04-18T17:07:44.745007+00:00", "project": "remote-factory", "agent": null, "data": {}}
+{"type": "study.completed", "timestamp": "2026-04-18T17:07:45.642319+00:00", "project": "remote-factory", "agent": null, "data": {"chars": 41544}}
+{"type": "eval.started", "timestamp": "2026-04-18T17:07:46.598969+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}

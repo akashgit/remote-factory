@@ -1,8 +1,8 @@
 # Interaction Study — remote-factory
 
-Analyzed 15 conversation log(s), 308 relevant messages.
+Analyzed 16 conversation log(s), 322 relevant messages.
 
-## User Messages (160)
+## User Messages (169)
 - You have Playwright MCP tools. Test the WXO optimization UI with the real IT Support Agent.
 
 ## Step 1: Set auth cookie
@@ -19,6 +19,7 @@ Then use browser_evaluate to run
 Mode: meta
 
 Run Meta mode: full self-improvement. First, run the complete Improve loop on this project (experiments, keep/revert decisions). Then r
+- is everything commited and pushed?
 - great! quick question, i am hoping that all this time, the archivist is being used to take extensive notes about the learnings from this project in the vault, right?
 - i think we need to fix this kind of bad behaviour in the factory, no? show me the factory workflow in general. I want to know if we need to create an agent for the factory as you seem to be selective 
 - so how do we fix this? something like when you load the factory skill you need to remember or your core memory, what is the fix?
@@ -93,6 +94,12 @@ zsh: command not found: factory
 - You have Playwright MCP tools. Your job is to test the WXO optimization UI with the real IT Support Agent.
 
 CRITICAL FIRST STEP: Before navigating, you must set an authentication cookie. Use the brows
+- Project: /Users/akash/cursor-projects/remote-factory
+Mode: improve
+
+## Focus Directive
+
+Narrow improvement efforts to: dashboard UI/UX
 - can you explain the errors and statements made here: ok, lets run the factory ceo on remote-factory itself
 
 ⏺ Bash(factory ceo /Users/akash/cursor-projects/remote-factory --mode meta)
@@ -100,6 +107,15 @@ CRITICAL FIRST STEP: Before navigating, you must set an authentication cookie. U
 - also can you fix all this before we launch again
 - btw this is just a questin, is the ceo agent or any of the other agents using my delegate persona stuff?
 - can you bring up the dashboard so we can see what is happening
+- where does the dashboard live? if its a repo i would like to run the factory on it, is it?
+- hmm, i think another thing we might need to build is to specify what we want the ceo to focus on improving in a target? is that already there?
+- ya can you plan this ?
+- now udpate the readme, commit and push
+- give me the command to test this on the dashboard in teh remote factory , i want us to imrpove it from UI/UX pov
+- make sure the new capabilites are already available
+- ╭─in …/remote-factory on  main [!1 ?68 ✓ ] via  v3.14.4
+╰─➜ factory ceo /Users/akash/cursor-projects/remote-factory --focus "dashboard UI/UX"
+zsh: command not found: factory
 - can you run factory ceo on Client Inquiry Response Agent for Erica — MA Real Estate.md
 - whats the status
 - but how do we know
@@ -215,7 +231,7 @@ What to add:
 ## Step 1: Navigate to the IT Support Agent test page
 Navigate to:
 
-## Errors and Issues (148)
+## Errors and Issues (153)
 - I can see the Optimize tab is selected and the dropdown shows "ACE Optimize" but not "User Feedback ACE". The dropdown failed to change. Let me check the remaining screenshots and then re-run with a b
 - The first `.cds--dropdown` matched the sort dropdown (hidden) from the Test cases tab. I need to target the visible one on the Optimize tab. Let me fix the selector.
 - Good progress — I can see the dropdown structure now. The `#technique-selector` div and `#downshift-0-toggle-button` combobox button are the key elements. It crashed on a minor `className` issue with 
@@ -240,6 +256,10 @@ Navigate to:
 - | Fix | Thumbs button contrast too low on dark theme | `eval-results.tsx` |
 - The eval is broken — `cli.py:174` references `score.composite` but the model field is `total`. This is a blocking bug that prevents the factory from running at all. Fixing it before starting the Impro
 - Eval works now. Baseline score: **0.802**. Let me commit this bugfix and then start the Improve loop.
+- ### Experiment 1 (H1): Fix config_parser eval
+- The PR includes changes to `ceo.md` which is scope creep — those are pre-existing uncommitted changes. Let me see the rest of the diff for the actual fix.
+- | 31 | Fix config_parser eval (async bug) | Fix | config_parser: 0.0→1.0 | +0.048 | #44 |
+- - **Strategist:** 2 playbook items (bugfix prioritization at 119 helpful signals, e2e before hygiene)
 - Good. Now I have a complete picture. Let me implement the changes. I'll start with the chat reset button and the prompt display fix.
 - The type error is pre-existing (in a test file, not my changes). Let me verify visually now.
 - First, let me run the existing tests to make sure nothing is broken, and then write edge case tests.
@@ -293,6 +313,7 @@ Navigate to:
 - Two fixes needed:
 - Let me apply the packaging fix.
 - All 640 tests pass. Here's what was fixed:
+- - New "Focus Directive" section before FEEC: 2-of-3 hypotheses must target focus, tagged with `**Focus target:**`, FEEC still applies within focus, remaining slot can go elsewhere for critical fixes
 - The strategist's 3 hypotheses are all about bumping the composite score (0.647 → ~0.985) via lint fixes, mypy fixes, and structured logging. Useful stuff, but no `.env.example` because the eval doesn'
 - 2. Fix 59 mypy errors (type_check 0.0→1.0)
 - The fix: the CEO should default to **foreground mode** (interactive `claude` without `-p`) so it runs in the same terminal, can show progress, and you can interject. The `-p` mode should be opt-in for
@@ -369,25 +390,37 @@ Navigate to:
 No similar projects found.
 
 ## Observability Coverage
-- **Score:** 78.3%
-- **Function coverage:** 79/173 functions have logging (46%)
-- **Total log statements:** 191
+- **Score:** 80.5%
+- **Function coverage:** 89/174 functions have logging (51%)
+- **Total log statements:** 206
 - **Structured logging:** Yes
 - **Framework:** structlog
 - **Request tracing:** Yes
 
 ### Uninstrumented Files
 - factory/models.py (1 functions, 0 log statements)
-- factory/dashboard/app.py (9 functions, 0 log statements)
 - factory/obsidian/templates.py (5 functions, 0 log statements)
 - factory/ace/models.py (6 functions, 0 log statements)
 
 ### Observability Recommendations
-- Improve logging coverage: only 79/173 functions (46%) have log statements
-- Add logging to uninstrumented files: factory/models.py (1 functions, 0 log statements), factory/dashboard/app.py (9 functions, 0 log statements), factory/obsidian/templates.py (5 functions, 0 log statements), factory/ace/models.py (6 functions, 0 log statements)
+- Add logging to uninstrumented files: factory/models.py (1 functions, 0 log statements), factory/obsidian/templates.py (5 functions, 0 log statements), factory/ace/models.py (6 functions, 0 log statements)
 
 ## Prior Knowledge (Obsidian)
 No prior notes found.
+
+## Cross-Project Insights
+
+Analyzed 3 projects (client-inquiry-response-agent-for-erica, remote-factory, wxo), 60 experiments, 100% overall keep rate.
+
+**Winning categories:** agent_improvement, bugfix, feature, infrastructure, observability, prompt_engineering, testing
+
+**Patterns:**
+- bugfix_reliable: bugfix experiments have 100% keep rate across 3 projects (13 total)
+- observability_reliable: observability experiments have 100% keep rate across 3 projects (7 total)
+- feature_reliable: feature experiments have 100% keep rate across 3 projects (17 total)
+- infrastructure_reliable: infrastructure experiments have 100% keep rate across 2 projects (3 total)
+
+Full report: /Users/akash/cursor-projects/remote-factory/.factory/strategy/insights.md
 
 ## Self-Improvement Context
 
