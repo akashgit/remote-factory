@@ -226,7 +226,7 @@ def eval_research_grounding(project_path: Path) -> dict:
         has_research = 1.0 if research_md.exists() else 0.0
 
         # Sub-score D: Experiment notes documented in vault
-        project_name = project_path.name
+        project_name = project_path.resolve().name
         project_vault = vault / "10-Projects" / project_name
         # Check Experiments/ subdirectory (canonical location)
         exp_dir = project_vault / "Experiments"
