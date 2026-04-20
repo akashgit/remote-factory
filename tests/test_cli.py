@@ -352,10 +352,10 @@ class TestGitHubUrlDetection:
 
 
 class TestRunModeFlag:
-    def test_mode_default_is_improve(self):
+    def test_mode_default_is_auto(self):
         parser = build_parser()
         args = parser.parse_args(["run", "/some/path"])
-        assert args.mode == "improve"
+        assert args.mode == "auto"
 
     def test_mode_discover(self):
         parser = build_parser()
@@ -619,7 +619,7 @@ class TestCmdCeoParser:
     def test_ceo_default_mode(self):
         parser = build_parser()
         args = parser.parse_args(["ceo", "/some/path"])
-        assert args.mode == "improve"
+        assert args.mode == "auto"
 
     def test_ceo_meta_mode(self):
         parser = build_parser()
