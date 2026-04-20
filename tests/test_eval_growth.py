@@ -290,6 +290,60 @@ class TestResearchGrounding:
             result = eval_research_grounding(tmp_path)
             assert result["score"] >= 0.2
 
+    def test_doc_ratio_with_experiments_subdirectory(self, tmp_path):
+        """doc_ratio counts notes in Experiments/ subdirectory."""
+        vault = tmp_path / "obsidian-vaults" / "factory"
+        exp_dir = vault / "10-Projects" / tmp_path.name / "Experiments"
+        exp_dir.mkdir(parents=True)
+        for i in range(4):
+            (exp_dir / f"{tmp_path.name}-{i:03d}.md").write_text("note")
+        # Create 4 factory experiments so ratio = 4/4 = 1.0
+        factory_exp = tmp_path / ".factory" / "experiments"
+        for i in range(4):
+            (factory_exp / f"{i:03d}").mkdir(parents=True)
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            result = eval_research_grounding(tmp_path)
+            assert "doc_ratio=" in result["details"]
+            assert "4/4" in result["details"]
+
+    def test_doc_ratio_with_flat_exp_files(self, tmp_path):
+        """doc_ratio falls back to flat Exp-*.md files at project level."""
+        vault = tmp_path / "obsidian-vaults" / "factory"
+        project_vault = vault / "10-Projects" / tmp_path.name
+        project_vault.mkdir(parents=True)
+        # Write flat Exp-*.md files (legacy layout)
+        for i in range(6):
+            (project_vault / f"Exp-{i:03d}.md").write_text("note")
+        # Create 6 factory experiments
+        factory_exp = tmp_path / ".factory" / "experiments"
+        for i in range(6):
+            (factory_exp / f"{i:03d}").mkdir(parents=True)
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            result = eval_research_grounding(tmp_path)
+            assert "doc_ratio=" in result["details"]
+            assert "6/6" in result["details"]
+
+    def test_doc_ratio_prefers_max_of_both_layouts(self, tmp_path):
+        """doc_ratio uses max(subdirectory count, flat count)."""
+        vault = tmp_path / "obsidian-vaults" / "factory"
+        project_vault = vault / "10-Projects" / tmp_path.name
+        # Subdirectory has 2 notes
+        exp_dir = project_vault / "Experiments"
+        exp_dir.mkdir(parents=True)
+        for i in range(2):
+            (exp_dir / f"{tmp_path.name}-{i:03d}.md").write_text("note")
+        # Flat files have 5 notes
+        for i in range(5):
+            (project_vault / f"Exp-{i:03d}.md").write_text("note")
+        # 5 factory experiments
+        factory_exp = tmp_path / ".factory" / "experiments"
+        for i in range(5):
+            (factory_exp / f"{i:03d}").mkdir(parents=True)
+        with patch("pathlib.Path.home", return_value=tmp_path):
+            result = eval_research_grounding(tmp_path)
+            # Should use max(2, 5) = 5
+            assert "5/5" in result["details"]
+
     def test_no_generic_tag_matching(self, tmp_path):
         vault = tmp_path / "obsidian-vaults" / "factory"
         sources = vault / "20-Knowledge" / "Sources"
