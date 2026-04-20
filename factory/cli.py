@@ -587,11 +587,11 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
         return 0
 
     # Show current checkpoint
-    state = load_checkpoint(project_path)
-    if state is None:
+    loaded = load_checkpoint(project_path)
+    if loaded is None:
         print("No checkpoint found.")
         return 0
-    print(format_checkpoint(state))
+    print(format_checkpoint(loaded))
     return 0
 
 
