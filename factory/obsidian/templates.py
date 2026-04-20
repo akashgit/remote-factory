@@ -59,6 +59,15 @@ def decision_tags(project_name: str) -> list[str]:
     return [FACTORY_TAG, DECISION_TAG, project_name]
 
 
+def experiment_note_path(project_name: str, experiment_id: int) -> str:
+    """Return the canonical vault path for an experiment note.
+
+    Experiment notes live in ``10-Projects/<project>/Experiments/`` so that
+    the eval ``doc_ratio`` sub-score finds them reliably.
+    """
+    return f"10-Projects/{project_name}/Experiments/{project_name}-{experiment_id:03d}"
+
+
 def wikilink(title: str) -> str:
     """Return an Obsidian wikilink."""
     return f"[[{title}]]"
