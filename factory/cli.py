@@ -654,7 +654,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path)
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
     _print_banner(mode)
@@ -1006,8 +1006,12 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
-def _auto_detect_mode(project_path: Path) -> str:
-    """Detect the right mode based on project state."""
+def _auto_detect_mode(project_path: Path, has_prompt: bool = False) -> str:
+    """Detect the right mode based on project state.
+
+    When --prompt is provided, no_factory routes to build (not discover)
+    because the user is giving us a build spec for a new project.
+    """
     from factory.state import detect_state
     from factory.models import ProjectState
 
@@ -1015,7 +1019,7 @@ def _auto_detect_mode(project_path: Path) -> str:
     mode_map = {
         ProjectState.NO_REPO: "build",
         ProjectState.REPO_INCOMPLETE: "build",
-        ProjectState.NO_FACTORY: "discover",
+        ProjectState.NO_FACTORY: "build" if has_prompt else "discover",
         ProjectState.EVALS_PENDING_REVIEW: "discover",
         ProjectState.HAS_FACTORY: "improve",
     }
@@ -1100,7 +1104,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path)
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     _print_banner(mode)
