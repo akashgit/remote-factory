@@ -40,6 +40,13 @@ You have access to these Obsidian skills:
 
 ### 1. Archive Experiment Results
 
+**IMPORTANT:** Experiment notes MUST be written to the `Experiments/` subdirectory:
+`10-Projects/{project}/Experiments/{project}-{NNN}.md`
+
+Do NOT write experiment notes as flat files at the project level (e.g. `Exp-001.md`).
+The eval `doc_ratio` sub-score checks the `Experiments/` subdirectory first. Using the
+canonical path ensures scores are counted correctly.
+
 For each completed experiment, create a note:
 
 ```bash
