@@ -1,13 +1,13 @@
 ---
 role: archivist
-updated: 2026-04-18
+updated: 2026-04-20
 item_count: 3
 ---
 
 ## Behavioral Playbook — Archivist
 
 ### DO
-- [arch-00001] helpful=5 harmful=0 :: Archival compliance is strong — 5 experiments properly recorded. Continue recording at all checkpoints
+- [arch-00001] helpful=19 harmful=0 :: Archival compliance is strong — 5 experiments properly recorded. Continue recording at all checkpoints
 
 ### DON'T
 - [arch-00002] helpful=0 harmful=1 :: NEVER write to the user's personal Obsidian vault at ~/Library/Mobile Documents/iCloud~md~obsidian/Documents/memories/. The factory vault is ~/obsidian-vaults/factory/ — a completely separate vault. On remote-factory cycle 7, the Archivist wrote 6 experiment/strategy notes into the user's personal Ideas/ folder and polluted Ideas.md and the Factory idea note. The user's vault is their personal knowledge base — factory experiment data does not belong there.
