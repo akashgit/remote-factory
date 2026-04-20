@@ -227,8 +227,13 @@ def eval_research_grounding(project_path: Path) -> dict:
 
         # Sub-score D: Experiment notes documented in vault
         project_name = project_path.name
-        exp_dir = vault / "10-Projects" / project_name / "Experiments"
-        exp_notes = len(list(exp_dir.glob("*.md"))) if exp_dir.exists() else 0
+        project_vault = vault / "10-Projects" / project_name
+        # Check Experiments/ subdirectory (canonical location)
+        exp_dir = project_vault / "Experiments"
+        exp_dir_count = len(list(exp_dir.glob("*.md"))) if exp_dir.exists() else 0
+        # Fallback: check flat Exp-*.md files at project level
+        flat_count = len(list(project_vault.glob("Exp-*.md"))) if project_vault.exists() else 0
+        exp_notes = max(exp_dir_count, flat_count)
         factory_exp_dir = project_path / ".factory" / "experiments"
         exp_total = len(list(factory_exp_dir.iterdir())) if factory_exp_dir.exists() else 0
         doc_ratio = min(1.0, exp_notes / max(exp_total, 1))
