@@ -613,6 +613,30 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_diff(args: argparse.Namespace) -> int:
+    """Compare two experiments side-by-side."""
+    from factory.analysis import compare_experiments, format_comparison
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    comparison = compare_experiments(store, args.id_a, args.id_b)
+    print(format_comparison(comparison))
+    return 0
+
+
+def cmd_explain(args: argparse.Namespace) -> int:
+    """Explain a single experiment with FEEC category and dimension breakdown."""
+    from factory.analysis import explain_experiment, format_explanation
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    explanation = explain_experiment(store, args.id)
+    print(format_explanation(explanation))
+    return 0
+
+
 def cmd_vault_init(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import init_vault
 
@@ -1301,6 +1325,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+    # diff
+    p = sub.add_parser("diff", help="Compare two experiments side-by-side")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("id_a", type=int, help="First experiment ID")
+    p.add_argument("id_b", type=int, help="Second experiment ID")
+
+    # explain
+    p = sub.add_parser("explain", help="Explain a single experiment with FEEC analysis")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("id", type=int, help="Experiment ID")
 
     # export
     p = sub.add_parser("export", help="Export complete project snapshot as JSON to stdout")
@@ -1480,6 +1514,8 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "diff": cmd_diff,
+        "explain": cmd_explain,
         "export": cmd_export,
         "insights": cmd_insights,
         "ace": cmd_ace,
