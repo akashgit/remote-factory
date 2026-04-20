@@ -561,6 +561,58 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_checkpoint(args: argparse.Namespace) -> int:
+    """Show or save a checkpoint for crash-resilient resume."""
+    from factory.checkpoint import (
+        CheckpointState,
+        format_checkpoint,
+        load_checkpoint,
+        save_checkpoint,
+    )
+
+    project_path = Path(args.path).resolve()
+
+    if args.save:
+        state = CheckpointState(
+            mode=args.mode or "improve",
+            active_experiment_id=args.experiment,
+            completed_agents=[a.strip() for a in args.completed.split(",")] if args.completed else [],
+            pending_agents=[a.strip() for a in args.pending.split(",")] if args.pending else [],
+            last_eval_scores=json.loads(args.scores) if args.scores else {},
+            current_hypothesis=args.hypothesis,
+            timestamp=datetime.now().isoformat(),
+        )
+        save_checkpoint(project_path, state)
+        print(f"Checkpoint saved to {project_path / '.factory' / 'checkpoint.json'}")
+        return 0
+
+    # Show current checkpoint
+    state = load_checkpoint(project_path)
+    if state is None:
+        print("No checkpoint found.")
+        return 0
+    print(format_checkpoint(state))
+    return 0
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    """Load checkpoint and display resume context for the CEO."""
+    from factory.checkpoint import format_checkpoint, load_checkpoint
+
+    project_path = Path(args.path).resolve()
+    state = load_checkpoint(project_path)
+    if state is None:
+        print("No checkpoint found. Nothing to resume.")
+        return 1
+
+    print("=== Resume Context ===")
+    print(format_checkpoint(state))
+    print()
+    print("The CEO should resume from this state, skipping completed agents")
+    print(f"and continuing with: {', '.join(state.pending_agents) or 'none'}")
+    return 0
+
+
 def cmd_vault_init(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import init_vault
 
@@ -1283,6 +1335,24 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("archive", help="Write experiment notes to Obsidian vault")
     p.add_argument("path", help="Path to the project")
 
+    # checkpoint
+    p = sub.add_parser("checkpoint", help="Show or save a CEO checkpoint for crash-resilient resume")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--save", action="store_true", default=False, help="Save a checkpoint")
+    p.add_argument("--mode", default=None, help="CEO mode (e.g. improve, build)")
+    p.add_argument("--experiment", type=int, default=None, help="Active experiment ID")
+    p.add_argument("--completed", default=None,
+                    help="Comma-separated list of completed agent roles")
+    p.add_argument("--pending", default=None,
+                    help="Comma-separated list of pending agent roles")
+    p.add_argument("--scores", default=None,
+                    help="JSON dict of eval scores (e.g. '{\"tests\": 0.9}')")
+    p.add_argument("--hypothesis", default=None, help="Current hypothesis text")
+
+    # resume
+    p = sub.add_parser("resume", help="Load checkpoint and display resume context")
+    p.add_argument("path", help="Path to the project")
+
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
@@ -1415,6 +1485,8 @@ def main(argv: list[str] | None = None) -> int:
         "ace": cmd_ace,
         "digest": cmd_digest,
         "archive": cmd_archive,
+        "checkpoint": cmd_checkpoint,
+        "resume": cmd_resume,
         "vault-init": cmd_vault_init,
         "install": cmd_install,
         "dashboard": cmd_dashboard,
