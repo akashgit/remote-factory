@@ -1,0 +1,1 @@
+Add factory checkpoint and factory resume commands for crash-resilient orchestration

@@ -1,0 +1,14 @@
+{
+  "id": 37,
+  "timestamp": "2026-04-20 14:24:36.797217",
+  "hypothesis": "Fix research_grounding doc_ratio by adding fallback check for flat Exp-*.md files and fixing Path resolution",
+  "change_summary": "Fixed growth.py to check both flat Exp-*.md and Experiments/ subdirectory layouts, fixed Path('.').name bug, added experiment_note_path() helper, updated archivist prompt",
+  "issue_number": 55,
+  "pr_number": 56,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.0042 agents_spawned=R,S,B,A archivist_spawned=true research_grounding=0.645->0.695 doc_ratio=0.00->0.20 ceo_found_path_bug=true"
+}

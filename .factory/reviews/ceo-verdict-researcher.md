@@ -1,10 +1,11 @@
-## CEO Review: Researcher Agent (Cycle 7 — Dashboard UI/UX Focus)
+## CEO Review: Researcher Agent (Meta Cycle — Self-Improvement)
 - **Verdict:** PROCEED
-- **Rationale:** Research is comprehensive and well-sourced. Covers dashboard UI patterns (Vercel, Linear, Stripe), charting tech (Chart.js via CDN, sparklines), SSE stream UX (Railway, Vercel logs), and score visualization. All recommendations stay within the single-file HTML constraint. The phased roadmap is realistic. 10+ external sources cited.
-- **Issues found:** none
-- **Instructions for next step:** The Strategist should focus on Phase 1 (Core Analytics) from the research — sparklines on project cards, Chart.js radar chart for dimension breakdowns, and score history chart. At least 2 of 3 hypotheses must target dashboard UI/UX per the Focus Directive. The API needs to be extended to expose per-dimension scores. Keep everything in the single HTML file with CDN libraries. Don't add frameworks.
-
-### CEO Priorities for Strategy
-1. **Sparklines + dimension radar chart** — highest visual impact, directly surfaces hidden data
-2. **KPI summary strip** — quick health-check for landing on the dashboard
-3. **Event filtering** — nice-to-have but lower priority than analytics
+- **Rationale:** Research is comprehensive and well-grounded. Covered all 4 requested topics with real sources (ACE framework, Meta hyperagents, Confident AI eval guide, Obsidian automation patterns). Prior vault knowledge was consulted and cross-project patterns surfaced. The insight about "evaluation saturation" (100% keep rate = evals too easy) is the most important finding.
+- **Issues found:** None significant. Research correctly identifies the core problem: strong hygiene but weak growth dimensions, and the factory is stuck in hygiene-only experiment loops.
+- **Instructions for next step:** The Strategist should focus on GROWTH hypotheses. Key priorities from research:
+  1. **Capability surface expansion** (score: 0.62) — add new CLI commands, public APIs, or entry points. The factory needs more surface area.
+  2. **Experiment diversity** (score: 0.53) — the last 3 experiments were all "eval_improvement". Need to break the category monotony.
+  3. **Research grounding** (score: 0.645) — doc_ratio is 0.00 (0 modules with docstrings out of 29). Module-level docstrings would improve this.
+  4. Hygiene is already strong — type_check (0.9, just 2 mypy errors) is the only minor gap.
+  
+  At least 2 of 3 hypotheses MUST target growth dimensions. The Strategist should NOT propose test/lint/coverage improvements — those are already near-perfect.

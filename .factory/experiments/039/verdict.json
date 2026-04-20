@@ -1,0 +1,14 @@
+{
+  "id": 39,
+  "timestamp": "2026-04-20 14:46:52.539134",
+  "hypothesis": "Add factory diff and factory explain commands for cross-experiment comparison and delta analysis",
+  "change_summary": "New factory/analysis.py with compare_experiments, explain_experiment, dimension_diff, format functions. Two new CLI commands: diff and explain. 27 new tests.",
+  "issue_number": 59,
+  "pr_number": 60,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.0118 agents_spawned=R,S,B,A archivist_spawned=true capability_surface=0.631->0.643 lint_clean=true tests=701"
+}

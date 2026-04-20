@@ -1,0 +1,14 @@
+{
+  "id": 38,
+  "timestamp": "2026-04-20 14:30:47.033088",
+  "hypothesis": "Add factory checkpoint and factory resume commands for crash-resilient orchestration",
+  "change_summary": "New factory/checkpoint.py module with CheckpointState model, save/load/clear/format functions. Two new CLI commands: checkpoint (show/save) and resume (load and display). 13 new tests.",
+  "issue_number": 57,
+  "pr_number": 58,
+  "score_before": null,
+  "score_after": null,
+  "delta": null,
+  "verdict": "keep",
+  "cost_usd": null,
+  "notes": "ceo:keep score_delta=+0.0198 agents_spawned=R,S,B,A archivist_spawned=true capability_surface=0.6214->0.631 experiment_diversity=0.5286->0.8286 ceo_fixed_lint=true"
+}

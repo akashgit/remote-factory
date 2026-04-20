@@ -1,7 +1,6 @@
-## CEO Review: Builder Agent (Experiment #34 — H1 Sparklines + Radar)
-- **Verdict:** PROCEED (with minor fix needed)
-- **Rationale:** PR #50 implements the full hypothesis: sparklines on project cards, Chart.js radar chart modal, new dimensions API endpoint, score color coding. Only touches 3 in-scope files (app.py, index.html, test_dashboard.py). 10 new tests added. No scope creep.
-- **Issues found:**
-  - MINOR: Frontend hardcodes `hygieneNames = ['tests_pass', 'lint_clean', 'type_check', 'coverage', 'build_ok', 'no_regressions']` but actual dimension names from our eval system are `['tests', 'lint', 'type_check', 'coverage', 'guard_patterns', 'config_parser']`. This causes incorrect color coding in the radar chart (all dimensions appear as green/growth). Will fix before merge.
-- **PR:** #50
-- **Instructions for next step:** Run tests and eval. Fix the hygiene names array on the branch. If tests pass and eval doesn't regress, merge.
+## CEO Review: Builder Agent (Experiment #37 — H2 research_grounding doc_ratio fix)
+- **Verdict:** PROCEED
+- **Rationale:** PR #56 implements exactly what was asked. The core fix in `growth.py` is minimal and correct: adds fallback check for flat `Exp-*.md` files alongside `Experiments/` subdirectory, uses `max(exp_dir_count, flat_count)`. Also adds `experiment_note_path()` helper in templates.py, updates archivist prompt for canonical path, and includes 3 well-structured tests (subdirectory-only, flat-only, max-of-both). No scope creep — only 4 files changed, all within declared scope.
+- **Issues found:** none
+- **PR:** #56
+- **Instructions for next step:** Run guard check and post-change eval. If no regressions, merge.

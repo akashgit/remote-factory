@@ -57,3 +57,29 @@
 {"type": "experiment.finalize", "timestamp": "2026-04-18T17:38:58.658098+00:00", "project": "remote-factory", "agent": null, "data": {"exp_id": 36, "verdict": "keep", "hypothesis": "Add score history line chart with hygiene/growth breakdown and keep/revert markers"}}
 {"type": "eval.started", "timestamp": "2026-04-18T17:47:49.311860+00:00", "project": "remote-factory", "agent": null, "data": {"command": "python eval/score.py"}}
 {"type": "eval.completed", "timestamp": "2026-04-18T17:48:37.633254+00:00", "project": "remote-factory", "agent": null, "data": {"composite": 0.800552, "passed": true, "dimensions": 11}}
+{"type": "detect", "timestamp": "2026-04-20T17:57:48.477166+00:00", "project": "", "agent": null, "data": {"state": "has_factory"}}
+{"type": "eval.started", "timestamp": "2026-04-20T17:57:48.941140+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T17:58:37.911122+00:00", "project": "", "agent": null, "data": {"composite": 0.800852, "passed": true, "dimensions": 11}}
+{"type": "study.started", "timestamp": "2026-04-20T17:58:50.857678+00:00", "project": "", "agent": null, "data": {}}
+{"type": "study.completed", "timestamp": "2026-04-20T17:58:51.687833+00:00", "project": "", "agent": null, "data": {"chars": 47067}}
+{"type": "study.started", "timestamp": "2026-04-20T17:59:10.490895+00:00", "project": "remote-factory", "agent": null, "data": {}}
+{"type": "study.completed", "timestamp": "2026-04-20T17:59:11.206619+00:00", "project": "remote-factory", "agent": null, "data": {"chars": 46250}}
+{"type": "experiment.begin", "timestamp": "2026-04-20T18:16:19.231399+00:00", "project": "", "agent": null, "data": {"exp_id": 37, "hypothesis": "Fix research_grounding doc_ratio by adding fallback check for flat Exp-*.md files alongside Experiments/ subdirectory"}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:18:13.641293+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:19:01.919164+00:00", "project": "", "agent": null, "data": {"composite": 0.801142, "passed": true, "dimensions": 11}}
+{"type": "guard.completed", "timestamp": "2026-04-20T18:20:31.837101+00:00", "project": "", "agent": null, "data": {"violations": 1, "clean": false}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:21:02.047922+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:21:50.347626+00:00", "project": "", "agent": null, "data": {"composite": 0.801142, "passed": true, "dimensions": 11}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:23:26.844525+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:24:15.393564+00:00", "project": "", "agent": null, "data": {"composite": 0.805142, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-20T18:24:36.798369+00:00", "project": "", "agent": null, "data": {"exp_id": 37, "verdict": "keep", "hypothesis": "Fix research_grounding doc_ratio by adding fallback check for flat Exp-*.md files and fixing Path resolution"}}
+{"type": "experiment.begin", "timestamp": "2026-04-20T18:24:57.035998+00:00", "project": "", "agent": null, "data": {"exp_id": 38, "hypothesis": "Add factory checkpoint and factory resume commands for crash-resilient orchestration"}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:28:04.057644+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:28:54.080344+00:00", "project": "", "agent": null, "data": {"composite": 0.8148580000000001, "passed": true, "dimensions": 11}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:29:26.406685+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:30:14.810891+00:00", "project": "", "agent": null, "data": {"composite": 0.8248580000000001, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-20T18:30:47.034088+00:00", "project": "", "agent": null, "data": {"exp_id": 38, "verdict": "keep", "hypothesis": "Add factory checkpoint and factory resume commands for crash-resilient orchestration"}}
+{"type": "experiment.begin", "timestamp": "2026-04-20T18:31:11.837201+00:00", "project": "", "agent": null, "data": {"exp_id": 39, "hypothesis": "Add factory diff and factory explain commands for cross-experiment comparison and delta analysis"}}
+{"type": "eval.started", "timestamp": "2026-04-20T18:45:40.255640+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
+{"type": "eval.completed", "timestamp": "2026-04-20T18:46:32.682368+00:00", "project": "", "agent": null, "data": {"composite": 0.836741, "passed": true, "dimensions": 11}}
+{"type": "experiment.finalize", "timestamp": "2026-04-20T18:46:52.540269+00:00", "project": "", "agent": null, "data": {"exp_id": 39, "verdict": "keep", "hypothesis": "Add factory diff and factory explain commands for cross-experiment comparison and delta analysis"}}

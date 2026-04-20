@@ -1,8 +1,8 @@
 # Interaction Study — remote-factory
 
-Analyzed 16 conversation log(s), 322 relevant messages.
+Analyzed 17 conversation log(s), 369 relevant messages.
 
-## User Messages (169)
+## User Messages (191)
 - You have Playwright MCP tools. Test the WXO optimization UI with the real IT Support Agent.
 
 ## Step 1: Set auth cookie
@@ -20,6 +20,10 @@ Mode: meta
 
 Run Meta mode: full self-improvement. First, run the complete Improve loop on this project (experiments, keep/revert decisions). Then r
 - is everything commited and pushed?
+- Project: /Users/akash/cursor-projects/remote-factory
+Mode: meta
+
+Run Meta mode: full self-improvement. First, run the complete Improve loop on this project (experiments, keep/revert decisions). Then r
 - great! quick question, i am hoping that all this time, the archivist is being used to take extensive notes about the learnings from this project in the vault, right?
 - i think we need to fix this kind of bad behaviour in the factory, no? show me the factory workflow in general. I want to know if we need to create an agent for the factory as you seem to be selective 
 - so how do we fix this? something like when you load the factory skill you need to remember or your core memory, what is the fix?
@@ -100,6 +104,35 @@ Mode: improve
 ## Focus Directive
 
 Narrow improvement efforts to: dashboard UI/UX
+- looks like some violation is happening, you didnt check the UI with playwright even though we are focuing on the dashboard. also, did you use the archivist?
+- update the playbook regarding the voilation
+- how to show the radar chart?
+- something really f-ed is happening, why am I seeing factory cycle experiment related notes in my ideas in the memory vault. those are coming from the factory and needs to be in teh factory's vault whi
+- something really f-ed is happening, why am I seeing factory cycle experiment related notes in my ideas in the memory vault. those are coming from the factory and needs to be in teh factory's vault whi
+- ok now give me the command for running the facotry on the wxo cp agent dir
+- come on give it with the whole uv stuff
+- so i have a basic repo setup at cursor project/ pluck-web and it has a phase 1 detail prompt file that tells what needs to be build, give me the command to run the factory on
+  this
+- this will pick up the phase 1 file and only focus on that?
+- just check the repo and tell me
+- we build a focus flag yesterday thoug?
+- ok but i will have these propmts for each of the phases as we build -- your current way is a hack we need to be able to pass a prompt to the factory no?
+- have you commited this?
+- also push it
+- hmm i started it but this led to the factory start in improve mode initially, fail to find the .factory folder and then go into the build mode -- i dont know what is happening right now but you should
+- i am worried it has already made the changes, let me stop it and then you reset the repo to the fist commit
+- this is what i see: I'll start by detecting the project state and reading the key files to understand what we're working with.
+
+⏺ Bash(uv run python -m factory detect "$(pwd)" 2>&1)
+  ⎿  2026-04-19 22
+- make sure we are reset to the first commit
+- looks like its doing the right thing now: Starting the Factory Build pipeline for Pluck Web. Let me detect the project state and read the key context files.
+
+  Read 2 files, listed 1 directory (ctrl+o
+- some more progress, this looks right, right? ⏺ Starting the Factory Build pipeline for Pluck Web. Let me detect the project state and read the key context files.
+
+  Read 2 files, listed 1 directory (c
+- give me command to run the factory on itself
 - can you explain the errors and statements made here: ok, lets run the factory ceo on remote-factory itself
 
 ⏺ Bash(factory ceo /Users/akash/cursor-projects/remote-factory --mode meta)
@@ -231,7 +264,7 @@ What to add:
 ## Step 1: Navigate to the IT Support Agent test page
 Navigate to:
 
-## Errors and Issues (153)
+## Errors and Issues (178)
 - I can see the Optimize tab is selected and the dropdown shows "ACE Optimize" but not "User Feedback ACE". The dropdown failed to change. Let me check the remaining screenshots and then re-run with a b
 - The first `.cds--dropdown` matched the sort dropdown (hidden) from the Test cases tab. I need to target the visible one on the Optimize tab. Let me fix the selector.
 - Good progress — I can see the dropdown structure now. The `#technique-selector` div and `#downshift-0-toggle-button` combobox button are the key elements. It crashed on a minor `className` issue with 
@@ -310,6 +343,31 @@ Navigate to:
 - The problem was that "growth" was too vague — the CEO thought bugfixes and cleanup counted. Now:
 - 2. **CEO hard gate** checks for that explicit tag before writing `PLAN APPROVED`. No tag → automatic REDIRECT with a specific message telling the Strategist what to fix.
 - 3. **Both prompts** now have a concrete list: tests/lint/bugfixes/cleanup/refactoring = HYGIENE. New features/endpoints/logging/research-backed work = GROWTH. No ambiguity.
+- I notice the scope in `factory.md` only covers `factory/**/*.py` — the dashboard HTML at `factory/dashboard/static/index.html` isn't included. I need to fix the scope before the Builder can touch the 
+- Now let me merge the PR branch, fix the hygiene names issue, run tests and eval.
+- Good, I'm on the experiment/34 branch. Let me fix the hygiene names in the HTML.
+- All 27 tests pass, lint clean. Let me commit the fix and run the full eval.
+- Let me fix the Playwright issue now — start the dashboard and visually verify what was built.
+- 2. **80 console errors** — that's a lot
+- Let me check the console errors and snapshot for details.
+- No modal visible. Let me check if there's an error or if the dimensions API is returning empty data.
+- Found the bug — `/api/projects/remote-factory/dimensions` returns empty `[]`, so the modal silently doesn't open (there's a `if (dims.length === 0) return;` guard). Let me check why.
+- This is a real bug I should have caught. Let me fix it by saving eval results during the finalize step, or better yet, by having the dimensions endpoint fall back to reading the latest eval output dir
+- Let me fix this by checking the events file as a fallback.
+- The eval runner doesn't save results to disk. Let me fix both issues:
+- I see the issue clearly. The eval runner returns the `CompositeScore` but never writes it to disk. The fix: save the eval result to `.factory/last_eval.json` at the end of `run_eval`, and have the das
+- All 658 tests pass, including all 31 dashboard tests. Now let me commit the bug fixes and record the feedback memories.
+- 1. **Playwright verification skipped** — all 3 UI experiments were merged without visual testing despite the focus being dashboard UI/UX. The subsequent Playwright check caught a real data-flow bug. M
+- 2. **Server not restarted** — 80+ 404 errors because the running dashboard served stale code after PR merges. New memory added.
+- | `ceo-00008` | Don't skip Playwright when Focus Directive targets UI/UX. Cycle 7 proved this — Playwright caught a real bug (empty radar chart) that tests missed. |
+- Fixed. Here's what happened and what I did:
+- 1. **Immediate bug**: `--prompt` defaults to `--mode improve`, which fails on a new project before falling back to build. Should auto-detect.
+- 2. **Bigger issue**: No way to give the CEO arbitrary instructions — "build phase 1", "now do phase 2", "fix this specific bug".
+- Let me fix both. The `--prompt` flag should become a general-purpose directive, and mode should auto-detect from project state.
+- Two tests expecting the old default. Let me fix them:
+- Let me fix the logic — when `--prompt` is provided, it should force `build` mode for projects that don't have a factory setup yet.
+- Fixed and pushed. Now reset pluck-web again and restart:
+- Great, it's in Build mode now and reading the right files. The `--prompt` fix worked — it detected `no_factory` and routed to `build` instead of `discover`. Let it run.
 - Two fixes needed:
 - Let me apply the packaging fix.
 - All 640 tests pass. Here's what was fixed:
@@ -390,9 +448,9 @@ Navigate to:
 No similar projects found.
 
 ## Observability Coverage
-- **Score:** 80.5%
-- **Function coverage:** 89/174 functions have logging (51%)
-- **Total log statements:** 206
+- **Score:** 80.6%
+- **Function coverage:** 93/181 functions have logging (51%)
+- **Total log statements:** 211
 - **Structured logging:** Yes
 - **Framework:** structlog
 - **Request tracing:** Yes
@@ -407,20 +465,6 @@ No similar projects found.
 
 ## Prior Knowledge (Obsidian)
 No prior notes found.
-
-## Cross-Project Insights
-
-Analyzed 3 projects (client-inquiry-response-agent-for-erica, remote-factory, wxo), 60 experiments, 100% overall keep rate.
-
-**Winning categories:** agent_improvement, bugfix, feature, infrastructure, observability, prompt_engineering, testing
-
-**Patterns:**
-- bugfix_reliable: bugfix experiments have 100% keep rate across 3 projects (13 total)
-- observability_reliable: observability experiments have 100% keep rate across 3 projects (7 total)
-- feature_reliable: feature experiments have 100% keep rate across 3 projects (17 total)
-- infrastructure_reliable: infrastructure experiments have 100% keep rate across 2 projects (3 total)
-
-Full report: /Users/akash/cursor-projects/remote-factory/.factory/strategy/insights.md
 
 ## Self-Improvement Context
 
