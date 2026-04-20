@@ -652,13 +652,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     prompt_file = getattr(args, "prompt", None)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    mode = getattr(args, "mode", "improve")
+    mode = getattr(args, "mode", "auto")
+    if mode == "auto":
+        mode = _auto_detect_mode(project_path)
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    task = _build_ceo_task(project_path, mode, context, focus=focus)
+    task = _build_ceo_task(project_path, mode, context, focus=focus, prompt_file=prompt_file)
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -1004,14 +1006,41 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
+def _auto_detect_mode(project_path: Path) -> str:
+    """Detect the right mode based on project state."""
+    from factory.state import detect_state
+    from factory.models import ProjectState
+
+    state = detect_state(project_path)
+    mode_map = {
+        ProjectState.NO_REPO: "build",
+        ProjectState.REPO_INCOMPLETE: "build",
+        ProjectState.NO_FACTORY: "discover",
+        ProjectState.EVALS_PENDING_REVIEW: "discover",
+        ProjectState.HAS_FACTORY: "improve",
+    }
+    mode = mode_map[state]
+    print(f"  State: {state.value} → mode: {mode}", file=sys.stderr)
+    return mode
+
+
 def _build_ceo_task(
     project_path: Path,
     mode: str,
     context: str | None = None,
     focus: str | None = None,
+    prompt_file: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
+
+    if prompt_file:
+        task += (
+            f"\n\n## Directive\n\n"
+            f"The user has provided a specific prompt file (`{prompt_file}`) as the build spec. "
+            f"This is your primary instruction — read it at `.factory/strategy/current.md` and "
+            f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
+        )
 
     if focus:
         task += f"\n\n## Focus Directive\n\nNarrow improvement efforts to: {focus}\n"
@@ -1019,7 +1048,13 @@ def _build_ceo_task(
     if context:
         task += f"\n\n## Project Specification\n\n{context}"
 
-    if mode == "discover":
+    if mode == "build":
+        task += (
+            "\n\nRun Build mode: the project is new or incomplete. Follow the Build mode "
+            "pipeline (B0-B6): Research → Strategy → Build phases → E2E verification. "
+            "Do NOT skip to Improve mode — the project needs to be built first."
+        )
+    elif mode == "discover":
         task += (
             "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
             "and generate the eval harness. Do NOT run the Improve loop."
@@ -1039,11 +1074,12 @@ def _run_single_cycle(
     mode: str,
     context: str | None = None,
     focus: str | None = None,
+    prompt_file: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
 
-    task = _build_ceo_task(project_path, mode, context, focus=focus)
+    task = _build_ceo_task(project_path, mode, context, focus=focus, prompt_file=prompt_file)
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -1062,14 +1098,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     prompt_file = getattr(args, "prompt", None)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    mode = getattr(args, "mode", "improve")
+    mode = getattr(args, "mode", "auto")
+    if mode == "auto":
+        mode = _auto_detect_mode(project_path)
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
     if not loop:
-        return _run_single_cycle(project_path, mode, context, focus=focus)
+        return _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file)
 
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
@@ -1093,7 +1131,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(project_path, mode, context, focus=focus)
+            _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file)
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             if shutdown_requested:
@@ -1276,9 +1314,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["discover", "improve", "meta"],
-        default="improve",
-        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
+        choices=["auto", "build", "discover", "improve", "meta"],
+        default="auto",
+        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
     )
     p.add_argument(
         "--focus", default=None,
@@ -1299,9 +1337,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["discover", "improve", "meta"],
-        default="improve",
-        help="Run mode: discover, improve (default), or meta (improve + ACE playbook evolution)",
+        choices=["auto", "build", "discover", "improve", "meta"],
+        default="auto",
+        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
     )
     p.add_argument(
         "--focus", default=None,
@@ -1326,9 +1364,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["discover", "improve", "meta"],
-        default="improve",
-        help="Run mode (default: improve)",
+        choices=["auto", "build", "discover", "improve", "meta"],
+        default="auto",
+        help="Run mode (default: auto)",
     )
     p.add_argument("--loop", action="store_true", default=False, help="Enable loop mode")
     p.add_argument("--interval", type=int, default=1800, help="Loop interval in seconds")
