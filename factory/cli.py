@@ -649,6 +649,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     from factory.agents.runner import resolve_prompt
 
     project_path, context = _resolve_input(args.path)
+    prompt_file = getattr(args, "prompt", None)
+    if prompt_file:
+        context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "improve")
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
@@ -797,6 +800,26 @@ def _ensure_repo(project_path: Path) -> None:
     project_path.mkdir(parents=True, exist_ok=True)
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+
+
+def _read_prompt_file(project_path: Path, prompt_file: str) -> str:
+    """Read a prompt file (absolute or relative to project) and persist it as the build spec.
+
+    Always overwrites current.md — the user is explicitly passing a new phase prompt.
+    """
+    prompt_path = Path(prompt_file)
+    if not prompt_path.is_absolute():
+        prompt_path = project_path / prompt_path
+    if not prompt_path.exists():
+        print(f"Error: prompt file not found: {prompt_path}", file=sys.stderr)
+        sys.exit(1)
+    content = prompt_path.read_text()
+    strategy_dir = project_path / ".factory" / "strategy"
+    strategy_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = strategy_dir / "current.md"
+    spec_path.write_text(f"## Project Specification\n\n{content}\n")
+    print(f"  Prompt: {prompt_path.name} → .factory/strategy/current.md", file=sys.stderr)
+    return content
 
 
 def _persist_spec(project_path: Path, spec: str) -> None:
@@ -1036,6 +1059,9 @@ def _run_single_cycle(
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
     project_path, context = _resolve_input(args.path)
+    prompt_file = getattr(args, "prompt", None)
+    if prompt_file:
+        context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "improve")
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
@@ -1244,6 +1270,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
     p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
     p.add_argument(
+        "--prompt", default=None,
+        help="Path to a prompt/spec file (absolute or relative to project). "
+             "Loaded as the build spec into .factory/strategy/current.md",
+    )
+    p.add_argument(
         "--mode",
         choices=["discover", "improve", "meta"],
         default="improve",
@@ -1261,6 +1292,11 @@ def build_parser() -> argparse.ArgumentParser:
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
+    p.add_argument(
+        "--prompt", default=None,
+        help="Path to a prompt/spec file (absolute or relative to project). "
+             "Loaded as the build spec into .factory/strategy/current.md",
+    )
     p.add_argument(
         "--mode",
         choices=["discover", "improve", "meta"],
