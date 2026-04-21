@@ -62,6 +62,8 @@ Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 3. **Eval** (`factory/eval/`): `runner.py` executes the eval command as a subprocess, expects JSON stdout `{"results": [...]}`. Growth dimensions (`growth.py`) are computed locally and merged at 50/50 with project hygiene dimensions. `scorer.py` computes the weighted composite
 4. **Strategy** (`factory/strategy.py`): FEEC priority heuristic (Fix > Exploit > Explore > Combine) classifies hypotheses by keyword matching, with stuck detection after 3+ consecutive same-category reverts
 5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts
+6. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
+7. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 
 ### Target project's `.factory/` layout
 
@@ -98,14 +100,20 @@ export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
 factory ceo /path/to/project                    # Launch CEO agent (single cycle)
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
 factory ceo /path/to/project --focus "dashboard UI"  # Focus on a specific area
+factory ceo --prompt "Build a weather CLI"      # Build from a raw prompt
 factory run /path/to/project                    # Same as factory ceo
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
 factory agent researcher --task "..." --project /path  # Invoke a specialist directly
 factory dashboard --projects-dir ~/cursor-projects    # Live web dashboard on :8420
+factory export /path/to/project                 # Dump full project snapshot as JSON
+factory checkpoint /path/to/project             # Save CEO state for crash recovery
+factory resume /path/to/project                 # Resume from saved checkpoint
+factory diff /path --exp1 N --exp2 M            # Compare two experiments
+factory explain /path --exp N                   # Explain experiment with FEEC analysis
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area. `--prompt` builds a new project from a raw text description.
 
 ## Observability
 

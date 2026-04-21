@@ -23,7 +23,8 @@ factory install               # registers CEO as a Claude Code agent
 factory ceo ~/my-project                              # existing project
 factory ceo https://github.com/user/repo              # GitHub repo
 factory ceo "Locals Know"                             # Obsidian vault idea
-factory ceo "Build a CLI tool that converts CSV to JSON"  # raw prompt
+factory ceo --prompt "Build a CLI that converts CSV to JSON"  # raw prompt
+factory ceo ~/my-project --focus "eval reliability"   # narrow focus
 
 # Or from within any Claude Code session
 claude --agent factory-ceo                            # launches CEO interactively
@@ -220,7 +221,8 @@ When matching a vault idea, the factory reads the full idea note, creates a repo
 ```bash
 factory run ~/my-project                    # improve (default) — full improvement loop
 factory run ~/my-project --mode discover    # discover — introspect + generate evals only
-factory run ~/my-project --mode meta        # meta — self-improvement only (ACE playbook evolution)
+factory run ~/my-project --mode meta        # meta — improve + ACE playbook evolution
+factory run ~/my-project --focus "auth"     # narrow improvement to a specific area
 ```
 
 ### CEO Agent
@@ -229,8 +231,10 @@ The CEO is the dedicated orchestrator. By default it runs **interactively** — 
 
 ```bash
 factory ceo ~/my-project                    # interactive (default)
-factory ceo ~/my-project --mode meta        # self-improvement only
+factory ceo ~/my-project --mode meta        # improve + ACE playbook evolution
+factory ceo ~/my-project --focus "dashboard" # narrow focus to specific area
 factory ceo ~/my-project --headless         # non-interactive (for scripting)
+factory ceo --prompt "Build a weather CLI"  # build from a prompt
 ```
 
 From within Claude Code:
@@ -281,22 +285,36 @@ factory agent evaluator --task "Run evals and report scores" --project ~/my-app
 ### Other Commands
 
 ```bash
+# Project management
 factory install                             # register CEO as Claude Code agent
 factory detect <path>                       # print project state
 factory discover <path>                     # introspect + generate eval profile
 factory init <path>                         # create .factory/ from factory.md
+factory status <path>                       # print project status summary
+factory export <path>                       # export full project snapshot as JSON
+
+# Evaluation & guards
 factory eval <path>                         # run evals, print composite score
 factory guard <path> --baseline <sha>       # check guard rules
+
+# Experiment lifecycle
 factory begin <path> --hypothesis "..."     # start experiment
 factory finalize <path> --id N --verdict keep  # finalize experiment
 factory history <path>                      # print experiment history
-factory status <path>                       # print project status summary
+factory diff <path> --exp1 N --exp2 M       # compare two experiments side-by-side
+factory explain <path> --exp N              # explain experiment with FEEC analysis
+
+# Analysis & knowledge
 factory study <path>                        # analyze code + write observations
 factory insights <path>                     # cross-project analysis
 factory ace <path>                          # run ACE self-improvement on playbooks
 factory digest                              # summarize recent activity
 factory archive <path>                      # write to Obsidian vault
 factory notify <path>                       # send Telegram digest
+
+# Crash resilience
+factory checkpoint <path>                   # save CEO checkpoint for resume
+factory resume <path>                       # load checkpoint and resume
 ```
 
 ## Architecture
@@ -353,9 +371,9 @@ The CEO detects project state and routes to the appropriate mode:
 
 Dual-axis composite score — hygiene (50%) + growth (50%):
 
-**Hygiene** (project-specific, auto-discovered): tests, lint, type checking, coverage.
+**Hygiene** (6 mandatory dimensions, 50%): tests, lint, type_check, coverage, guard_patterns, config_parser.
 
-**Growth** (universal): capability surface, experiment diversity, observability, research grounding, factory effectiveness.
+**Growth** (5 mandatory dimensions, 50%): capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness.
 
 ### FEEC Priority
 
@@ -451,10 +469,12 @@ remote-factory/
 │   ├── study.py                # Interaction log analysis
 │   ├── insights.py             # Cross-project pattern analysis
 │   ├── digest.py               # Activity summarization
+│   ├── checkpoint.py           # CEO checkpoint save/load for crash resilience
+│   ├── analysis.py             # Experiment comparison (diff, explain)
 │   ├── agents/
 │   │   ├── runner.py           # Agent subprocess spawner + event emission
 │   │   ├── prompts/            # Agent role prompts (7 roles)
-│   │   └── playbooks/          # ACE-evolved playbooks
+│   │   └── playbooks/          # ACE-evolved playbooks (auto-updated)
 │   ├── ace/
 │   │   ├── reflector.py        # Generate playbook candidates from experiments
 │   │   ├── curator.py          # Merge + prune playbook items
@@ -462,31 +482,33 @@ remote-factory/
 │   │   └── models.py           # Playbook data models
 │   ├── dashboard/
 │   │   ├── app.py              # FastAPI server + SSE
-│   │   └── static/index.html   # Live dashboard UI
+│   │   └── static/index.html   # Live dashboard UI (sparklines, radar, charts)
 │   ├── discovery/
 │   │   ├── introspect.py       # Project language/framework detection
 │   │   ├── profile.py          # Build eval profile
 │   │   └── generate.py         # Generate eval/score.py
 │   ├── eval/
-│   │   ├── runner.py           # Run evals, merge scores
-│   │   ├── growth.py           # Universal growth dimensions
+│   │   ├── runner.py           # Run evals, merge scores (50/50 hygiene/growth)
+│   │   ├── hygiene.py          # 6 mandatory hygiene dimensions
+│   │   ├── growth.py           # 5 universal growth dimensions
 │   │   ├── scorer.py           # Composite score computation
 │   │   └── guards.py           # Guard rule enforcement
 │   ├── obsidian/
-│   │   └── notes.py            # Vault integration
+│   │   ├── notes.py            # Vault integration
+│   │   └── templates.py        # Note templates for archivist
 │   └── notify/
 │       └── telegram.py         # Telegram notifications
-└── tests/                      # 629 tests
+└── tests/                      # 701 tests
 ```
 
 ## Development
 
 ```bash
 uv sync --all-groups         # Install all deps including dev
-uv run pytest -v             # Run tests (603 passing)
+uv run pytest -v             # Run tests (701 passing)
 uv run ruff check .          # Lint
 uv run mypy factory/         # Type check
-uv run pytest --cov          # Coverage
+uv run pytest --cov          # Coverage (~84%)
 ```
 
 ### Code Style
