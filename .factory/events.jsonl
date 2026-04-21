@@ -83,3 +83,7 @@
 {"type": "eval.started", "timestamp": "2026-04-20T18:45:40.255640+00:00", "project": "", "agent": null, "data": {"command": "python eval/score.py"}}
 {"type": "eval.completed", "timestamp": "2026-04-20T18:46:32.682368+00:00", "project": "", "agent": null, "data": {"composite": 0.836741, "passed": true, "dimensions": 11}}
 {"type": "experiment.finalize", "timestamp": "2026-04-20T18:46:52.540269+00:00", "project": "", "agent": null, "data": {"exp_id": 39, "verdict": "keep", "hypothesis": "Add factory diff and factory explain commands for cross-experiment comparison and delta analysis"}}
+{"type": "insights.started", "timestamp": "2026-04-20T18:50:56.664029+00:00", "project": "remote-factory", "agent": null, "data": {"projects_dir": "/Users/akash/cursor-projects"}}
+{"type": "insights.completed", "timestamp": "2026-04-20T18:50:56.667491+00:00", "project": "remote-factory", "agent": null, "data": {"projects_analyzed": 3, "total_experiments": 69}}
+{"type": "ace.started", "timestamp": "2026-04-20T18:51:01.032729+00:00", "project": "remote-factory", "agent": null, "data": {"dry_run": false}}
+{"type": "ace.completed", "timestamp": "2026-04-20T18:51:01.048895+00:00", "project": "remote-factory", "agent": null, "data": {"roles_updated": ["strategist", "archivist", "ceo"], "candidates": 3, "dry_run": false}}

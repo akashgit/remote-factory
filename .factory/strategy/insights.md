@@ -1,18 +1,18 @@
 # Cross-Project Insights — 2026-04-20
 
-**3 projects**, **66 experiments**, **100% overall keep rate**
+**3 projects**, **69 experiments**, **100% overall keep rate**
 
 ## Projects
 
 - **client-inquiry-response-agent-for-erica**: 5 experiments, 100% keep rate
-- **remote-factory**: 25 experiments, 100% keep rate, score: 0.850
+- **remote-factory**: 28 experiments, 100% keep rate, score: 0.850
 - **wxo**: 36 experiments, 100% keep rate
 
 ## Category Success Rates
 
 | Category | Total | Kept | Rate |
 |----------|-------|------|------|
-| bugfix | 13 | 13 | 100% |
+| bugfix | 15 | 15 | 100% |
 | observability | 8 | 8 | 100% |
 | coverage | 3 | 3 | 100% |
 | testing | 9 | 9 | 100% |
@@ -22,15 +22,15 @@
 | agent_improvement | 3 | 3 | 100% |
 | prompt_engineering | 3 | 3 | 100% |
 | infrastructure | 3 | 3 | 100% |
-| feature | 17 | 17 | 100% |
+| feature | 18 | 18 | 100% |
 
 ## Winning Strategies (>80% keep, 3+ experiments)
 
 - **agent_improvement**: 100% keep rate (3 experiments)
-- **bugfix**: 100% keep rate (13 experiments)
+- **bugfix**: 100% keep rate (15 experiments)
 - **coverage**: 100% keep rate (3 experiments)
 - **eval_improvement**: 100% keep rate (5 experiments)
-- **feature**: 100% keep rate (17 experiments)
+- **feature**: 100% keep rate (18 experiments)
 - **infrastructure**: 100% keep rate (3 experiments)
 - **observability**: 100% keep rate (8 experiments)
 - **prompt_engineering**: 100% keep rate (3 experiments)
@@ -39,7 +39,7 @@
 ## Patterns
 
 ### bugfix_reliable
-_bugfix experiments have 100% keep rate across 3 projects (13 total)_
+_bugfix experiments have 100% keep rate across 3 projects (15 total)_
 Confidence: 1.0
 
 - client-inquiry-response-agent-for-erica #Fix lint: remove unused build_pipeline i
@@ -59,7 +59,7 @@ Confidence: 1.0
 - remote-factory #Add structlog logging to insights.py and
 
 ### feature_reliable
-_feature experiments have 100% keep rate across 3 projects (17 total)_
+_feature experiments have 100% keep rate across 3 projects (18 total)_
 Confidence: 1.0
 
 - client-inquiry-response-agent-for-erica #Add Zillow/Redfin URL parsing to address
