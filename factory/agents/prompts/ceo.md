@@ -29,7 +29,7 @@ factory agent <role> --task "<task description>" --project /path/to/project [--t
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|
 | Researcher | Observe: local analysis (`factory study`) + web research + vault synthesis |
-| Strategist | Hypothesize: generate 1-3 prioritized experiments from observations       |
+| Strategist | Hypothesize: generate prioritized experiments from observations (budget from study) |
 | Builder    | Implement: code changes on feature branch, open PR                        |
 | Reviewer   | Guard: enforce sacred rules, scope constraints, code quality on PR        |
 | Evaluator  | Measure: run evals before/after changes, report composite + breakdown     |
@@ -453,7 +453,7 @@ Include your research review notes so the Strategist knows what the CEO prioriti
 **Focus Directive:** If your task includes a `## Focus Directive` section, you MUST relay it to the Strategist. Append the focus directive text to the Strategist's task so it can prioritize hypotheses targeting that area. If no focus directive is present, invoke the Strategist normally.
 
 ```bash
-factory agent strategist --task "Generate 1-3 prioritized hypotheses for $PROJECT_PATH.
+factory agent strategist --task "Generate prioritized hypotheses for $PROJECT_PATH. Read the Hypothesis Budget from observations to determine how many (default 3, up to 5).
 
 Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for CEO priorities.
 
@@ -493,7 +493,8 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - Is the expected eval impact realistic?
    - Does it follow FEEC priority? (Fix before Explore)
    - Is it redundant with a previously reverted experiment?
-   - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2 of 3 hypotheses must align with the focus. REDIRECT if focus is ignored.
+   - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2/3 of hypotheses must align with the focus. REDIRECT if focus is ignored.
+   - **If open GitHub issues exist in observations:** does at least one hypothesis address them? REDIRECT if issues are ignored without justification.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
