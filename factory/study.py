@@ -461,6 +461,49 @@ def _search_similar_projects(project_path: Path) -> list[dict]:
     ]
 
 
+def _fetch_open_issues(project_path: Path) -> list[dict]:
+    """Fetch open GitHub issues for the project's repo.
+
+    Returns a list of dicts with keys: number, title, labels, body (truncated).
+    Gracefully returns empty list if gh is unavailable, not a GitHub repo, or fetch fails.
+    """
+    try:
+        result = subprocess.run(
+            [
+                "gh", "issue", "list",
+                "--state", "open",
+                "--limit", "20",
+                "--json", "number,title,labels,body",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=project_path,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        logger.debug("gh CLI not available or issue list timed out")
+        return []
+
+    if result.returncode != 0:
+        logger.debug("gh issue list failed: %s", result.stderr)
+        return []
+
+    try:
+        issues = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+
+    return [
+        {
+            "number": i.get("number", 0),
+            "title": i.get("title", ""),
+            "labels": [lb.get("name", "") for lb in (i.get("labels") or [])],
+            "body": (i.get("body") or "")[:300],
+        }
+        for i in issues
+    ]
+
+
 def _read_obsidian_notes(project_name: str) -> list[str]:
     """Read Obsidian vault notes for this project.
 
@@ -663,6 +706,24 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     else:
         lines.append("No similar projects found.")
 
+    # Open GitHub issues
+    open_issues = _fetch_open_issues(project_path)
+    lines.extend(["", "## Open GitHub Issues"])
+    if open_issues:
+        lines.append(f"{len(open_issues)} open issue(s):")
+        lines.append("")
+        for issue in open_issues:
+            label_str = ""
+            if issue["labels"]:
+                label_str = f" [{', '.join(issue['labels'])}]"
+            lines.append(f"- **#{issue['number']}** {issue['title']}{label_str}")
+            if issue["body"]:
+                body_preview = issue["body"].replace("\n", " ").strip()
+                if body_preview:
+                    lines.append(f"  > {body_preview}")
+    else:
+        lines.append("No open issues found (or not a GitHub repo).")
+
     # Observability coverage analysis
     from factory.discovery.introspect import _detect_language
     language = _detect_language(project_path)
@@ -730,6 +791,36 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
             "",
             "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
         ])
+
+    # Hypothesis budget recommendation
+    base_budget = 3
+    issue_bonus = len(open_issues) // 3  # +1 per 3 open issues
+    budget = min(base_budget + issue_bonus, 5)
+    lines.extend([
+        "",
+        "## Hypothesis Budget",
+        "",
+        f"**Recommended hypotheses: {budget}**",
+        "",
+        "| Factor | Count | Effect |",
+        "|--------|-------|--------|",
+        f"| Base budget | — | {base_budget} hypotheses |",
+    ])
+    if open_issues:
+        lines.append(
+            f"| Open GitHub issues | {len(open_issues)} | +{issue_bonus} "
+            f"(+1 per 3 open issues) |"
+        )
+    lines.extend([
+        f"| **Total (capped at 5)** | | **{budget}** |",
+        "",
+    ])
+    if open_issues:
+        lines.append(
+            "The Strategist SHOULD address open GitHub issues as FIX hypotheses "
+            "in addition to improvement hypotheses. Issues represent known user-reported "
+            "problems and feature requests — they are high-signal input."
+        )
 
     return "\n".join(lines)
 
