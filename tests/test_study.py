@@ -9,6 +9,7 @@ from factory.study import (
     _detect_self_improvement,
     _extract_keywords,
     _extract_messages,
+    _fetch_open_issues,
     _find_log_files,
     _load_cross_project_insights,
     _path_to_slug,
@@ -234,6 +235,46 @@ class TestStudyProjectLocal:
         assert "42 stars" in result
         assert "A cool project" in result
 
+    def test_hypothesis_budget_base(self, tmp_path, monkeypatch):
+        """No open issues → base budget of 3."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        with (
+            patch("factory.study._search_similar_projects", return_value=[]),
+            patch("factory.study._fetch_open_issues", return_value=[]),
+        ):
+            result = study_project_local(tmp_path / "myapp")
+        assert "## Hypothesis Budget" in result
+        assert "**Recommended hypotheses: 3**" in result
+
+    def test_hypothesis_budget_with_issues(self, tmp_path, monkeypatch):
+        """9 open issues → budget 3 + 3 = 6, capped at 5."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        issues = [
+            {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
+            for i in range(9)
+        ]
+        with (
+            patch("factory.study._search_similar_projects", return_value=[]),
+            patch("factory.study._fetch_open_issues", return_value=issues),
+        ):
+            result = study_project_local(tmp_path / "myapp")
+        assert "**Recommended hypotheses: 5**" in result
+        assert "SHOULD address open GitHub issues" in result
+
+    def test_hypothesis_budget_small_issue_count(self, tmp_path, monkeypatch):
+        """2 open issues → no bonus (2 // 3 == 0), budget stays 3."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        issues = [
+            {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
+            for i in range(2)
+        ]
+        with (
+            patch("factory.study._search_similar_projects", return_value=[]),
+            patch("factory.study._fetch_open_issues", return_value=issues),
+        ):
+            result = study_project_local(tmp_path / "myapp")
+        assert "**Recommended hypotheses: 3**" in result
+
     def test_includes_obsidian_notes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
@@ -449,6 +490,76 @@ class TestSearchSimilarProjects:
         with patch("factory.study.subprocess.run", return_value=mock_result):
             results = _search_similar_projects(project)
         assert results == []
+
+
+class TestFetchOpenIssues:
+    def test_success(self, tmp_path):
+        gh_output = json.dumps([
+            {
+                "number": 42,
+                "title": "Fix login bug",
+                "labels": [{"name": "bug"}, {"name": "priority"}],
+                "body": "Login fails when password contains special chars.",
+            },
+            {
+                "number": 7,
+                "title": "Add dark mode",
+                "labels": [],
+                "body": None,
+            },
+        ])
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=gh_output, stderr=""
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            issues = _fetch_open_issues(tmp_path)
+
+        assert len(issues) == 2
+        assert issues[0]["number"] == 42
+        assert issues[0]["title"] == "Fix login bug"
+        assert issues[0]["labels"] == ["bug", "priority"]
+        assert "special chars" in issues[0]["body"]
+        assert issues[1]["body"] == ""
+
+    def test_gh_not_found(self, tmp_path):
+        with patch(
+            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
+        ):
+            assert _fetch_open_issues(tmp_path) == []
+
+    def test_gh_timeout(self, tmp_path):
+        with patch(
+            "factory.study.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=15),
+        ):
+            assert _fetch_open_issues(tmp_path) == []
+
+    def test_nonzero_exit(self, tmp_path):
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="not a git repo"
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            assert _fetch_open_issues(tmp_path) == []
+
+    def test_invalid_json(self, tmp_path):
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not json", stderr=""
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            assert _fetch_open_issues(tmp_path) == []
+
+    def test_body_truncated_to_300(self, tmp_path):
+        long_body = "x" * 500
+        gh_output = json.dumps([{
+            "number": 1, "title": "Long issue",
+            "labels": [], "body": long_body,
+        }])
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=gh_output, stderr=""
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            issues = _fetch_open_issues(tmp_path)
+        assert len(issues[0]["body"]) == 300
 
 
 class TestReadObsidianNotes:
