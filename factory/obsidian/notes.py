@@ -14,8 +14,6 @@ from factory.models import CompositeScore, ExperimentRecord
 
 log = structlog.get_logger()
 
-_DEFAULT_VAULT = Path.home() / "obsidian-vaults" / "factory"
-
 _PROJECTS_DIR = "10-Projects"
 _KNOWLEDGE_DIR = "20-Knowledge"
 _FACTORY_META_DIR = "00-Factory"
@@ -114,9 +112,23 @@ tags:
 """
 
 
-def _get_vault_path() -> Path:
-    """Get the Obsidian vault path from env var or default."""
-    return Path(os.environ.get("OBSIDIAN_VAULT_PATH", str(_DEFAULT_VAULT)))
+def vault_path() -> Path | None:
+    """Return the configured vault path, or ``None`` when unconfigured.
+
+    Reads from ``FACTORY_VAULT_PATH`` first (new canonical name), then falls
+    back to ``OBSIDIAN_VAULT_PATH`` for backwards-compatibility.  When neither
+    env var is set the vault is considered *unavailable* and callers should
+    skip vault operations gracefully.
+    """
+    raw = os.environ.get("FACTORY_VAULT_PATH") or os.environ.get("OBSIDIAN_VAULT_PATH")
+    if raw:
+        return Path(raw)
+    return None
+
+
+def _get_vault_path() -> Path | None:
+    """Get the Obsidian vault path. Returns ``None`` when unconfigured."""
+    return vault_path()
 
 
 def _ensure_dir(path: Path) -> None:
@@ -188,9 +200,15 @@ def obsidian_search_vault(
     return _obsidian_search(query, vault, limit)
 
 
-def init_vault(vault_path: Path | None = None) -> Path:
-    """Create the full factory vault structure. Returns the vault path."""
-    vault = vault_path if vault_path is not None else _get_vault_path()
+def init_vault(vault_override: Path | None = None) -> Path | None:
+    """Create the full factory vault structure. Returns the vault path.
+
+    Returns ``None`` when no vault is configured and no explicit path is given.
+    """
+    vault = vault_override if vault_override is not None else _get_vault_path()
+    if vault is None:
+        log.debug("init_vault_skipped", reason="no vault path configured")
+        return None
     log.info("init_vault", vault=str(vault))
 
     # .obsidian/
@@ -248,9 +266,16 @@ def init_vault(vault_path: Path | None = None) -> Path:
     return vault
 
 
-def _auto_init_vault() -> Path:
-    """Get vault path and auto-create structure if needed."""
+def _auto_init_vault() -> Path | None:
+    """Get vault path and auto-create structure if needed.
+
+    Returns ``None`` when no vault is configured, signalling that callers
+    should skip vault writes.
+    """
     vault = _get_vault_path()
+    if vault is None:
+        log.debug("auto_init_vault_skipped", reason="no vault path configured")
+        return None
     if not (vault / ".obsidian").exists():
         log.info("auto_init_vault_triggered", vault=str(vault))
         init_vault(vault)
@@ -262,10 +287,16 @@ def write_experiment_note(
     record: ExperimentRecord,
     score_before: CompositeScore | None = None,
     score_after: CompositeScore | None = None,
-) -> Path:
-    """Create an Obsidian note for a completed experiment."""
+) -> Path | None:
+    """Create an Obsidian note for a completed experiment.
+
+    Returns ``None`` when the vault is not configured.
+    """
     log.debug("write_experiment_note", project=project_name, exp_id=record.id, verdict=record.verdict)
     vault = _auto_init_vault()
+    if vault is None:
+        log.debug("write_experiment_note_skipped", reason="vault not configured")
+        return None
     experiments_dir = vault / _PROJECTS_DIR / project_name / "Experiments"
     _ensure_dir(experiments_dir)
 
@@ -347,8 +378,11 @@ def write_project_dashboard(
     current_score: float | None,
     records: list[ExperimentRecord],
     eval_dimensions: list[dict] | None = None,
-) -> Path:
-    """Create or update the project dashboard note."""
+) -> Path | None:
+    """Create or update the project dashboard note.
+
+    Returns ``None`` when the vault is not configured.
+    """
     log.debug(
         "write_project_dashboard",
         project=project_name,
@@ -356,6 +390,9 @@ def write_project_dashboard(
         record_count=len(records),
     )
     vault = _auto_init_vault()
+    if vault is None:
+        log.debug("write_project_dashboard_skipped", reason="vault not configured")
+        return None
     projects_dir = vault / _PROJECTS_DIR / project_name
     _ensure_dir(projects_dir)
 
@@ -420,10 +457,16 @@ def write_project_dashboard(
 def write_strategy_note(
     project_name: str,
     strategy_content: str,
-) -> Path:
-    """Write a strategy snapshot to Obsidian."""
+) -> Path | None:
+    """Write a strategy snapshot to Obsidian.
+
+    Returns ``None`` when the vault is not configured.
+    """
     log.debug("write_strategy_note", project=project_name)
     vault = _auto_init_vault()
+    if vault is None:
+        log.debug("write_strategy_note_skipped", reason="vault not configured")
+        return None
     strategies_dir = vault / _PROJECTS_DIR / project_name / "Strategies"
     _ensure_dir(strategies_dir)
 
@@ -457,13 +500,18 @@ def write_strategy_note(
     return note_path
 
 
-def update_memory_index(projects: list[dict] | None = None) -> Path:
+def update_memory_index(projects: list[dict] | None = None) -> Path | None:
     """Regenerate MEMORY.md at vault root with project listing.
 
     If *projects* is None, scans ``10-Projects/`` for subdirectories and
     reads each dashboard note for the latest score.
+
+    Returns ``None`` when the vault is not configured.
     """
     vault = _get_vault_path()
+    if vault is None:
+        log.debug("update_memory_index_skipped", reason="vault not configured")
+        return None
     log.debug("update_memory_index", vault=str(vault))
 
     if projects is None:
