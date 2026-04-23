@@ -67,6 +67,13 @@ main
 - min_fix: 0
 - max_total: 7
 
+## Smoke Test
+<!-- Optional e2e smoke test command. Failure = mandatory revert. -->
+
+```bash
+pytest tests/ -x -q --tb=short
+```
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 

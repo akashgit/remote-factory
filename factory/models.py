@@ -71,6 +71,7 @@ class FactoryConfig(BaseModel):
     constraints: list[str]
     hypothesis_budget: HypothesisBudget = HypothesisBudget()
     target_branch: str = "main"
+    smoke_test: str = ""
     project_eval: list[ProjectEvalDimension] = []
     eval_weights: EvalWeights = EvalWeights()
 

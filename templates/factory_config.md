@@ -75,6 +75,16 @@ main
 - project: 0.50
 -->
 
+## Smoke Test
+<!-- Optional shell command that must pass before any change is kept. -->
+<!-- If configured, this runs as part of `factory precheck` — failure = mandatory revert. -->
+<!-- Use for e2e verification: hit an endpoint, run a CLI command, check a process starts. -->
+<!-- Example:
+```bash
+curl -sf http://localhost:8000/health
+```
+-->
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 

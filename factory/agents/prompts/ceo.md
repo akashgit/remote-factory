@@ -664,35 +664,80 @@ State whether the hypothesis was validated." --project "$PROJECT_PATH"
 
 Save output as `score_after`.
 
-#### 2g. CEO Decision: Keep or Revert
+#### 2g. Hard Precheck Gate (NON-OVERRIDABLE)
 
-Compare `score_after` vs `score_before`:
+**Before making any keep/revert decision, run the precheck gate.** This is a hard gate — you CANNOT override a failed precheck. A failure means mandatory revert, no exceptions.
 
-**Keep** — if `score_after >= score_before` AND eval threshold met:
 ```bash
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+uv run python -m factory precheck "$PROJECT_PATH" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --hypothesis "<hypothesis text>" \
+    --baseline $BASELINE_SHA
+```
+
+The precheck runs 4 checks:
+1. **score_direction** — score must not regress AND must meet threshold
+2. **scope** — guard check must pass (no out-of-scope modifications)
+3. **anti_pattern** — hypothesis must not be >60% similar to a previously reverted experiment
+4. **smoke_test** — if configured in factory.md, the smoke test command must pass
+
+**Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
+
+**If precheck PASSES → Keep:**
+
+```bash
+# Post structured review on the PR
+uv run python -m factory review \
+    --verdict KEEP \
+    --reason "<one-sentence reason>" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --guards "scope:PASS,eval_immutable:PASS" \
+    --experiment-id $EXP_ID \
+    --hypothesis "<hypothesis>" \
+    --pr $PR_NUM
+
+# Merge and finalize
 gh pr merge <pr-number> --merge
 uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX agents_spawned=R,S,B,R,E"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E"
 ```
 
-**Revert** — if score regressed or threshold not met:
+**If precheck FAILS → Mandatory Revert:**
+
 ```bash
+# Post structured review explaining why
+uv run python -m factory review \
+    --verdict REVERT \
+    --reason "<which check failed and why>" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --experiment-id $EXP_ID \
+    --hypothesis "<hypothesis>" \
+    --pr $PR_NUM
+
+# Close PR and finalize
 gh pr close <pr-number>
 cd "$PROJECT_PATH" && git checkout main
 uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=<why> score_delta=-X.XXXX"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
 Always include structured metadata in `--notes`:
 - `ceo:keep` or `ceo:revert` — the decision
 - `score_delta=<value>` — the score change
+- `precheck=passed|failed` — precheck result
 - `agents_spawned=<roles>` — which agents were invoked
 - `reason=<text>` — why (for reverts)
 - `builder_failed=true` — if builder didn't produce a PR
