@@ -238,16 +238,24 @@ def eval_research_grounding(project_path: Path) -> dict:
         exp_total = len(list(factory_exp_dir.iterdir())) if factory_exp_dir.exists() else 0
         doc_ratio = min(1.0, exp_notes / max(exp_total, 1))
 
+        # Sub-score E: Citation ratio — fraction of recent experiments with citations
+        from factory.research_index import citation_coverage
+
+        citation_ratio = citation_coverage(project_path)
+
+        # Rebalance weights to include citation_ratio at 0.20
         score = (
-            0.25 * knowledge_score
-            + 0.35 * utilization
-            + 0.15 * has_research
-            + 0.25 * doc_ratio
+            0.20 * knowledge_score
+            + 0.28 * utilization
+            + 0.12 * has_research
+            + 0.20 * doc_ratio
+            + 0.20 * citation_ratio
         )
         details = (
             f"sources={source_count}, utilization={utilization:.2f}, "
             f"research_report={'yes' if has_research else 'no'}, "
-            f"doc_ratio={doc_ratio:.2f} ({exp_notes}/{max(exp_total, 1)})"
+            f"doc_ratio={doc_ratio:.2f} ({exp_notes}/{max(exp_total, 1)}), "
+            f"citation_ratio={citation_ratio:.2f}"
         )
 
         return {
