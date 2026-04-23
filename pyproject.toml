@@ -4,6 +4,21 @@ version = "0.1.0"
 description = "Domain-agnostic multi-agent software evolution loop"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2.0", "structlog>=24.0", "fastapi>=0.115", "uvicorn[standard]>=0.34"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Software Development :: Quality Assurance",
+    "Topic :: Software Development :: Testing",
+    "Intended Audience :: Developers",
+]
+
+[project.urls]
+Homepage = "https://github.com/akashgit/remote-factory"
+Repository = "https://github.com/akashgit/remote-factory"
+Issues = "https://github.com/akashgit/remote-factory/issues"
 
 [build-system]
 requires = ["hatchling"]
