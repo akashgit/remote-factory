@@ -1,0 +1,191 @@
+direction: down
+
+title: {
+  label: Three-Tier Eval System
+  near: top-center
+  shape: text
+  style: { font-size: 28; bold: true; font-color: "#1a1a2e" }
+}
+
+subtitle: {
+  label: "Hygiene + Growth + Project → Weighted Composite Score"
+  near: top-center
+  shape: text
+  style: { font-size: 14; italic: true; font-color: "#666" }
+}
+
+# ── Input ─────────────────────────────────────────
+
+project: {
+  label: "Target Project"
+  shape: rectangle
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 8 }
+}
+
+eval_cmd: {
+  label: "factory eval <path>"
+  shape: parallelogram
+  style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 4 }
+}
+
+# ── Tier 1: Hygiene (auto-discovered) ─────────────
+
+hygiene: {
+  label: "Tier 1: Hygiene Dimensions"
+  style: { fill: "#e3f2fd"; stroke: "#1565c0"; border-radius: 12; bold: true }
+
+  tests: {
+    label: "tests\npytest"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+  lint: {
+    label: "lint\nruff"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+  type_check: {
+    label: "type_check\nmypy"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+  coverage: {
+    label: "coverage\npytest --cov"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+  guard_patterns: {
+    label: "guard_patterns\nrule compliance"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+  config_parser: {
+    label: "config_parser\nfactory.md valid"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+}
+
+# ── Tier 2: Growth (computed locally) ─────────────
+
+growth: {
+  label: "Tier 2: Growth Dimensions"
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true }
+
+  capability: {
+    label: "capability_surface\nmodules, functions,\nentry points"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+  diversity: {
+    label: "experiment_diversity\ncategory distribution"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+  observability: {
+    label: "observability\nlogging, tracing"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+  research: {
+    label: "research_grounding\ncitations, evidence"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+  effectiveness: {
+    label: "factory_effectiveness\nkeep rate, score delta"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+}
+
+# ── Tier 3: Project (user-defined) ────────────────
+
+project_eval: {
+  label: "Tier 3: Project Eval (user-defined)"
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; bold: true }
+
+  dim1: {
+    label: "benchmark_accuracy\npython eval/benchmark.py"
+    shape: rectangle
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  }
+  dim2: {
+    label: "latency_p99\npython eval/latency.py"
+    shape: rectangle
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  }
+  dim3: {
+    label: "...\ncustom dimensions"
+    shape: rectangle
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6; italic: true }
+  }
+}
+
+# ── Weight Mixer ──────────────────────────────────
+
+mixer: {
+  label: "Weight Mixer"
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true }
+
+  default_weights: {
+    label: |md
+      **Default weights:**
+      No project eval → 50% / 50% / 0%
+      With project eval → 30% / 20% / 50%
+      Custom → from `## Eval Weights`
+    |
+    shape: rectangle
+    style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 8; font-size: 12 }
+  }
+
+  normalize: {
+    label: "Normalize each tier\nto its target weight"
+    shape: rectangle
+    style: { fill: "#ffe0b2"; stroke: "#ef6c00"; border-radius: 8 }
+  }
+
+  default_weights -> normalize
+}
+
+# ── Output ────────────────────────────────────────
+
+composite: {
+  label: "Composite Score\n0.0 – 1.0"
+  shape: diamond
+  style: { fill: "#fff9c4"; stroke: "#f9a825"; font-size: 16; bold: true }
+}
+
+threshold: {
+  label: "≥ Threshold?"
+  shape: hexagon
+  style: { fill: "#fff9c4"; stroke: "#f57f17" }
+}
+
+pass: {
+  label: "PASS ✅"
+  shape: rectangle
+  style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8; bold: true }
+}
+
+fail: {
+  label: "FAIL ❌"
+  shape: rectangle
+  style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 8; bold: true }
+}
+
+# ── Connections ───────────────────────────────────
+
+project -> eval_cmd
+eval_cmd -> hygiene: "eval/score.py"
+eval_cmd -> growth: "computed locally"
+eval_cmd -> project_eval: "user commands"
+
+hygiene -> mixer: "6 scores"
+growth -> mixer: "5 scores"
+project_eval -> mixer: "N scores"
+
+mixer -> composite: "weighted sum"
+composite -> threshold
+threshold -> pass: "yes"
+threshold -> fail: "no"

@@ -1,0 +1,135 @@
+direction: right
+
+title: {
+  label: Factory State Machine
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+subtitle: {
+  label: "factory detect → route to mode → execute"
+  near: top-center
+  shape: text
+  style: { font-size: 14; italic: true; font-color: "#666" }
+}
+
+# ── States ────────────────────────────────────────
+
+no_repo: {
+  label: "no_repo\n\nNo git repo at path"
+  shape: rectangle
+  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 13 }
+}
+
+incomplete: {
+  label: "incomplete\n\nRepo exists,\nopen plan/impl issues"
+  shape: rectangle
+  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 13 }
+}
+
+no_factory: {
+  label: "no_factory\n\nRepo exists,\nno .factory/ setup"
+  shape: rectangle
+  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 13 }
+}
+
+evals_pending: {
+  label: "evals_pending_review\n\nEval profile exists,\nnot reviewed"
+  shape: rectangle
+  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 13 }
+}
+
+has_factory: {
+  label: "has_factory\n\nFully initialized,\nevals reviewed"
+  shape: rectangle
+  style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8; font-size: 13 }
+}
+
+# ── Modes ─────────────────────────────────────────
+
+build: {
+  label: |md
+    **Build Mode**
+    1. Researcher → research
+    2. Strategist → phased plan
+    3. Builder → implement phases
+    4. E2E verification gate
+  |
+  shape: rectangle
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; font-size: 13 }
+}
+
+discover: {
+  label: |md
+    **Discover Mode**
+    1. Introspect project
+    2. Auto-detect eval dimensions
+    3. Generate eval/score.py
+  |
+  shape: rectangle
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 13 }
+}
+
+review: {
+  label: |md
+    **Review Mode**
+    1. Test all eval dimensions
+    2. Fix broken dimensions
+    3. Mark as human_reviewed
+    4. Init factory store
+    5. Run baseline eval
+  |
+  shape: rectangle
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 13 }
+}
+
+improve: {
+  label: |md
+    **Improve Mode**
+    *(the core evolution loop)*
+    1. Observe → Researcher
+    2. Hypothesize → Strategist
+    3. Execute → Builder per hypothesis
+    4. Guard → Reviewer
+    5. Measure → Evaluator
+    6. Decide → Precheck + CEO
+    7. Record → Archivist
+  |
+  shape: rectangle
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; font-size: 13 }
+}
+
+meta: {
+  label: |md
+    **Meta Mode**
+    1. Run full Improve loop
+       on the factory itself
+    2. ACE playbook evolution
+       for all 7 agent roles
+  |
+  shape: rectangle
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; font-size: 13 }
+}
+
+# ── State → Mode routing ─────────────────────────
+
+no_repo -> build: ""
+incomplete -> build: ""
+no_factory -> discover: "no --prompt"
+no_factory -> build: "--prompt provided"
+evals_pending -> review: ""
+has_factory -> improve: ""
+has_factory -> meta: "--mode meta"
+
+# ── Mode transitions ──────────────────────────────
+
+build -> no_factory: "project built"
+discover -> evals_pending: "eval profile created"
+review -> has_factory: "evals reviewed + init"
+improve -> has_factory: "cycle complete" {style.stroke-dash: 5}
+meta -> has_factory: "cycle + ACE complete" {style.stroke-dash: 5}

@@ -1,0 +1,184 @@
+direction: down
+
+title: {
+  label: Experiment Lifecycle
+  near: top-center
+  shape: text
+  style: { font-size: 28; bold: true; font-color: "#1a1a2e" }
+}
+
+subtitle: {
+  label: "One hypothesis → one experiment → keep or revert"
+  near: top-center
+  shape: text
+  style: { font-size: 14; italic: true; font-color: "#666" }
+}
+
+# ── Phase 1: Observe & Plan ──────────────────────
+
+observe: {
+  label: "Phase 1: Observe & Plan"
+  style: { fill: "#f0f4ff"; stroke: "#5c6bc0"; border-radius: 12; bold: true }
+
+  study: {
+    label: "factory study\n→ observations.md"
+    shape: rectangle
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 8 }
+  }
+
+  researcher: {
+    label: "Researcher Agent\nweb research + vault"
+    shape: rectangle
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 8 }
+  }
+
+  ceo_review_r: {
+    label: "CEO Review"
+    shape: hexagon
+    style: { fill: "#fff8e1"; stroke: "#ffa000" }
+  }
+
+  archivist_1: {
+    label: "Archivist"
+    shape: rectangle
+    style: { fill: "#e0f2f1"; stroke: "#00897b"; border-radius: 8 }
+  }
+
+  strategist: {
+    label: "Strategist Agent\ngenerate hypotheses\n(FEEC priority)"
+    shape: rectangle
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 8 }
+  }
+
+  ceo_review_s: {
+    label: "CEO Review\n(HARD GATE)"
+    shape: hexagon
+    style: { fill: "#ffcdd2"; stroke: "#e53935" }
+  }
+
+  archivist_2: {
+    label: "Archivist"
+    shape: rectangle
+    style: { fill: "#e0f2f1"; stroke: "#00897b"; border-radius: 8 }
+  }
+
+  study -> researcher -> ceo_review_r -> archivist_1 -> strategist -> ceo_review_s -> archivist_2
+}
+
+# ── Phase 2: Execute (per hypothesis) ────────────
+
+execute: {
+  label: "Phase 2: Execute (per hypothesis)"
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true }
+
+  baseline: {
+    label: "Evaluator\nbaseline score"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  begin: {
+    label: "factory begin\n→ experiment ID"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  issue: {
+    label: "Create GitHub Issue"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  builder: {
+    label: "Builder Agent\nimplement on branch\nopen PR"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  ceo_review_b: {
+    label: "CEO Review\nread PR diff"
+    shape: hexagon
+    style: { fill: "#fff8e1"; stroke: "#ffa000" }
+  }
+
+  archivist_3: {
+    label: "Archivist"
+    shape: rectangle
+    style: { fill: "#e0f2f1"; stroke: "#00897b"; border-radius: 8 }
+  }
+
+  reviewer: {
+    label: "Reviewer Agent\nguard check + code review"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  post_eval: {
+    label: "Evaluator\npost-change score"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+
+  baseline -> begin -> issue -> builder -> ceo_review_b -> archivist_3 -> reviewer -> post_eval
+}
+
+# ── Phase 3: Decision Gate ───────────────────────
+
+decision: {
+  label: "Phase 3: Decision"
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true }
+
+  precheck: {
+    label: "factory precheck\n(HARD GATE - non-overridable)"
+    shape: hexagon
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 14; bold: true }
+  }
+
+  checks: {
+    label: |md
+      **4 Checks:**
+      1. Score direction (no regression)
+      2. Scope (guard compliance)
+      3. Anti-pattern (not similar to reverted)
+      4. Smoke test (e2e verification)
+    |
+    shape: rectangle
+    style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 8; font-size: 12 }
+  }
+
+  keep: {
+    label: "KEEP\n✅ merge PR\nfactory review --approve\nfactory finalize --verdict keep"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8 }
+  }
+
+  revert: {
+    label: "REVERT\n❌ close PR\nfactory review --request-changes\nfactory finalize --verdict revert"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 8 }
+  }
+
+  archivist_4: {
+    label: "Archivist\n(record outcome)"
+    shape: rectangle
+    style: { fill: "#e0f2f1"; stroke: "#00897b"; border-radius: 8 }
+  }
+
+  precheck -> checks
+  precheck -> keep: "all pass" {
+    style: { stroke: "#2e7d32"; stroke-width: 2 }
+  }
+  precheck -> revert: "any fail" {
+    style: { stroke: "#c62828"; stroke-width: 2 }
+  }
+  keep -> archivist_4
+  revert -> archivist_4
+}
+
+# ── Flow connections ─────────────────────────────
+
+observe -> execute: "approved hypotheses"
+execute -> decision: "scores collected"
+decision -> execute: "next hypothesis" {
+  style: { stroke-dash: 5; stroke: "#888" }
+}
