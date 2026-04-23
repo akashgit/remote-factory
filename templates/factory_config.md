@@ -45,6 +45,36 @@ python eval/score.py
 
 0.8
 
+## Target Branch
+<!-- Branch that experiment PRs target. Default: main -->
+<!-- Set to a different branch (e.g. factory/dev) to stage factory changes before merging to main -->
+
+main
+
+## Project Eval
+<!-- User-defined project-specific eval dimensions (benchmarks, accuracy, latency, etc.) -->
+<!-- Each dimension starts with '- name:' followed by indented key: value lines -->
+<!-- Output format: JSON with {"score": 0.0-1.0} or exit code (0=pass, non-zero=fail) -->
+<!-- Example:
+- name: benchmark_accuracy
+  command: python eval/benchmark.py
+  parse: json
+  weight: 0.5
+  timeout: 300
+  description: Run benchmark suite and report accuracy
+-->
+
+## Eval Weights
+<!-- Weight distribution across eval tiers (must sum to 1.0) -->
+<!-- Only needed when Project Eval dimensions are defined -->
+<!-- Default without project eval: hygiene 0.50, growth 0.50 -->
+<!-- Default with project eval: hygiene 0.30, growth 0.20, project 0.50 -->
+<!-- Example:
+- hygiene: 0.25
+- growth: 0.25
+- project: 0.50
+-->
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 

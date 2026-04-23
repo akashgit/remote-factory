@@ -35,6 +35,29 @@ class HypothesisBudget(BaseModel):
     max_total: int = 7
 
 
+class ProjectEvalDimension(BaseModel):
+    """A user-defined project-specific eval dimension (e.g. benchmark accuracy, latency)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    command: str
+    parse: Literal["json", "exit_code"] = "json"
+    weight: float = 1.0
+    timeout: float = 300.0
+    description: str = ""
+
+
+class EvalWeights(BaseModel):
+    """Weight distribution across eval tiers: hygiene, growth, project."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    hygiene: float = 0.50
+    growth: float = 0.50
+    project: float = 0.0
+
+
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -47,6 +70,9 @@ class FactoryConfig(BaseModel):
     eval_threshold: float
     constraints: list[str]
     hypothesis_budget: HypothesisBudget = HypothesisBudget()
+    target_branch: str = "main"
+    project_eval: list[ProjectEvalDimension] = []
+    eval_weights: EvalWeights = EvalWeights()
 
 
 # ── eval ──────────────────────────────────────────────────────────
@@ -104,6 +130,16 @@ class EvalProfile(BaseModel):
     human_reviewed: bool = False
 
 
+class DiscoveredEval(BaseModel):
+    """An eval/benchmark script discovered during introspection."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    command: str
+    source: str = "discovered"
+
+
 class ProjectProfile(BaseModel):
     """Project metadata discovered during introspection."""
 
@@ -121,6 +157,7 @@ class ProjectProfile(BaseModel):
     lint_command: str | None = None
     type_check_command: str | None = None
     package_manager: str | None = None
+    discovered_evals: list[DiscoveredEval] = []
 
 
 # ── experiments ───────────────────────────────────────────────────

@@ -95,10 +95,30 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 
 ### Eval Dimension Awareness — CRITICAL
 
-The eval system is **50% hygiene + 50% growth**. You MUST understand both halves:
+The eval system has up to **three tiers** of dimensions:
 
-**Hygiene dimensions (50%):** tests, lint, type_check, coverage, guard_patterns, config_parser
-**Growth dimensions (50%):** capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness
+**Hygiene dimensions:** tests, lint, type_check, coverage, guard_patterns, config_parser
+**Growth dimensions:** capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness
+**Project eval dimensions (optional):** user-defined in factory.md `## Project Eval` — e.g. benchmark accuracy, latency, win rate
+
+**Weight distribution:**
+- No project eval: 50% hygiene + 50% growth (default)
+- With project eval: configurable via `## Eval Weights` in factory.md (default: 30% hygiene + 20% growth + 50% project)
+- Project eval dimensions are the most important when present — they measure whether the software actually does its job well
+
+**When project eval dimensions exist:**
+- The Strategist MUST generate hypotheses that improve project eval scores, not just hygiene
+- "Add tests" won't move the needle if project eval is 50% of the composite
+- The Builder should run project evals after implementation to verify improvement
+
+### Target Branch
+
+The factory config (`factory.md`) may specify a `## Target Branch` (default: `main`). If the CEO task includes a `## Branch Override`, use that instead. The target branch controls:
+- Where experiment branches are created from
+- Where PRs target (`gh pr create --base <target_branch>`)
+- Where to checkout after reverting (`git checkout <target_branch>`)
+
+Read the target branch from `.factory/config.json` field `target_branch`. If absent, default to `main`.
 
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.

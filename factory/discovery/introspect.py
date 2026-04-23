@@ -7,7 +7,7 @@ from pathlib import Path
 
 import structlog
 
-from factory.models import ProjectProfile
+from factory.models import DiscoveredEval, ProjectProfile
 
 log = structlog.get_logger()
 
@@ -200,6 +200,49 @@ def _has_ci(project_path: Path) -> bool:
     return any(p.exists() for p in ci_paths)
 
 
+def _detect_project_evals(project_path: Path) -> list[dict[str, str]]:
+    """Discover existing evaluation/benchmark scripts in the project."""
+    evals: list[dict[str, str]] = []
+
+    for dir_name in ("eval", "benchmark", "benchmarks", "evaluation"):
+        eval_dir = project_path / dir_name
+        if not eval_dir.is_dir():
+            continue
+        for script in eval_dir.glob("*.py"):
+            if script.name in ("score.py", "__init__.py"):
+                continue
+            evals.append({
+                "name": script.stem,
+                "command": f"python {dir_name}/{script.name}",
+                "source": "discovered",
+            })
+
+    for name in ("evaluate.py", "benchmark.py", "bench.py"):
+        if (project_path / name).exists():
+            evals.append({
+                "name": Path(name).stem,
+                "command": f"python {name}",
+                "source": "discovered",
+            })
+
+    makefile = project_path / "Makefile"
+    if makefile.exists():
+        try:
+            text = makefile.read_text()
+            for target in ("eval", "benchmark", "bench", "evaluate"):
+                if f"\n{target}:" in text or text.startswith(f"{target}:"):
+                    evals.append({
+                        "name": target,
+                        "command": f"make {target}",
+                        "source": "discovered",
+                    })
+        except OSError:
+            pass
+
+    log.debug("detect_project_evals", count=len(evals))
+    return evals
+
+
 def introspect_project(project_path: Path) -> ProjectProfile:
     """Analyze a project directory and return its profile."""
     log.info("introspect_project_start", project=str(project_path))
@@ -231,6 +274,9 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         else:
             package_manager = "npm"
 
+    raw_evals = _detect_project_evals(project_path)
+    discovered_evals = [DiscoveredEval(**e) for e in raw_evals]
+
     profile = ProjectProfile(
         name=project_path.name,
         language=language,
@@ -244,6 +290,7 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         lint_command=lint_cmd,
         type_check_command=type_check_cmd,
         package_manager=package_manager,
+        discovered_evals=discovered_evals,
     )
     log.info(
         "introspect_project_complete",

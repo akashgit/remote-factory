@@ -135,6 +135,21 @@ def cmd_discover(args: argparse.Namespace) -> int:
         "eval_profile": eval_profile.model_dump(),
     }
     print(json.dumps(output, indent=2))
+
+    if profile.discovered_evals:
+        print("\nDiscovered project eval scripts:", file=sys.stderr)
+        for e in profile.discovered_evals:
+            print(f"  - {e.name}: {e.command}", file=sys.stderr)
+        print(
+            "\nTo use these as project-specific eval dimensions, add them to "
+            "factory.md under ## Project Eval:",
+            file=sys.stderr,
+        )
+        for e in profile.discovered_evals:
+            print(f"  - name: {e.name}", file=sys.stderr)
+            print(f"    command: {e.command}", file=sys.stderr)
+            print("    parse: json", file=sys.stderr)
+
     return 0
 
 
@@ -168,8 +183,14 @@ def cmd_eval(args: argparse.Namespace) -> int:
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
     config = _run(store.read_config())
+    skip_project_eval = getattr(args, "skip_project_eval", False)
     _emit_cli_event(project_path, "eval.started", {"command": config.eval_command})
-    score = _run(run_eval(config.eval_command, project_path, config.eval_threshold))
+    score = _run(run_eval(
+        config.eval_command, project_path, config.eval_threshold,
+        project_eval=config.project_eval or None,
+        eval_weights=config.eval_weights,
+        skip_project_eval=skip_project_eval,
+    ))
     _emit_cli_event(project_path, "eval.completed", {
         "composite": score.total,
         "passed": score.passed,
@@ -881,12 +902,13 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     min_growth = getattr(args, "min_growth", None)
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
+    branch = getattr(args, "branch", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
-        min_growth=min_growth, min_fix=min_fix, max_total=max_total,
+        min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
     )
 
     if headless:
@@ -1268,6 +1290,7 @@ def _build_ceo_task(
     min_growth: int | None = None,
     min_fix: int | None = None,
     max_total: int | None = None,
+    branch: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1282,6 +1305,14 @@ def _build_ceo_task(
 
     if focus:
         task += f"\n\n## Focus Directive\n\nNarrow improvement efforts to: {focus}\n"
+
+    if branch:
+        task += (
+            f"\n\n## Branch Override\n\n"
+            f"Target branch for all PRs and merges: `{branch}`\n"
+            f"The Builder should create experiment branches from `{branch}` and "
+            f"target PRs against `{branch}`. After revert, checkout `{branch}` instead of main.\n"
+        )
 
     if any(v is not None for v in (min_growth, min_fix, max_total)):
         budget_lines = ["\n\n## Budget Override\n"]
@@ -1330,13 +1361,14 @@ def _run_single_cycle(
     min_growth: int | None = None,
     min_fix: int | None = None,
     max_total: int | None = None,
+    branch: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
 
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
-        min_growth=min_growth, min_fix=min_fix, max_total=max_total,
+        min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
     )
 
     result, code = _run(invoke_agent(
@@ -1364,10 +1396,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     min_growth = getattr(args, "min_growth", None)
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
+    branch = getattr(args, "branch", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    budget_kwargs = dict(min_growth=min_growth, min_fix=min_fix, max_total=max_total)
+    budget_kwargs = dict(min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch)
 
     if not loop:
         return _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
@@ -1463,6 +1496,8 @@ def build_parser() -> argparse.ArgumentParser:
     # eval
     p = sub.add_parser("eval", help="Run project evals, print JSON CompositeScore")
     p.add_argument("path", help="Path to the project")
+    p.add_argument("--skip-project-eval", action="store_true", default=False,
+                    help="Skip user-defined project eval dimensions (run only hygiene + growth)")
 
     # guard
     p = sub.add_parser("guard", help="Check guard rules, print violations or 'clean'")
@@ -1636,6 +1671,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Minimum fix hypothesis slots (default: 0, scales with open issues)")
     p.add_argument("--max-total", type=int, default=None,
                     help="Maximum total hypotheses per cycle (default: 7)")
+    p.add_argument("--branch", default=None,
+                    help="Target branch for PRs (default: from factory.md, fallback: main)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -1673,6 +1710,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Minimum fix hypothesis slots (default: 0, scales with open issues)")
     p.add_argument("--max-total", type=int, default=None,
                     help="Maximum total hypotheses per cycle (default: 7)")
+    p.add_argument("--branch", default=None,
+                    help="Target branch for PRs (default: from factory.md, fallback: main)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")

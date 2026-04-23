@@ -10,7 +10,15 @@ from typing import Literal
 
 import structlog
 
-from factory.models import CompositeScore, EvalProfile, ExperimentRecord, FactoryConfig
+from factory.models import (
+    CompositeScore,
+    EvalProfile,
+    EvalWeights,
+    ExperimentRecord,
+    FactoryConfig,
+    HypothesisBudget,
+    ProjectEvalDimension,
+)
 
 log = structlog.get_logger()
 
@@ -20,6 +28,57 @@ TSV_COLUMNS = [
     "pr_number", "score_before", "score_after", "delta", "verdict",
     "cost_usd", "notes", "research_citations",
 ]
+
+
+def _parse_kv_list(
+    items: str | list[str] | float,
+    value_type: type = str,
+) -> dict[str, object]:
+    """Parse a list of 'key: value' strings into a dict, casting values to value_type."""
+    if not isinstance(items, list):
+        return {}
+    result: dict[str, object] = {}
+    for item in items:
+        s = str(item)
+        if ":" in s:
+            key, val = s.split(":", 1)
+            key = key.strip()
+            try:
+                result[key] = value_type(val.strip())  # type: ignore[call-arg]
+            except (ValueError, TypeError):
+                pass
+    return result
+
+
+def _parse_project_eval(items: str | list[str] | float) -> list[ProjectEvalDimension]:
+    """Parse project eval dimension entries from factory.md.
+
+    Each list item starts with 'name: X' and may have continuation lines
+    with key: value pairs (command, parse, weight, timeout, description).
+    """
+    if not isinstance(items, list):
+        return []
+    dims: list[ProjectEvalDimension] = []
+    for item in items:
+        lines = str(item).split("\n")
+        fields: dict[str, str] = {}
+        for line in lines:
+            if ":" in line:
+                key, val = line.split(":", 1)
+                fields[key.strip()] = val.strip()
+        name = fields.get("name", "")
+        command = fields.get("command", "")
+        if not name or not command:
+            continue
+        dims.append(ProjectEvalDimension(
+            name=name,
+            command=command,
+            parse=fields.get("parse", "json"),  # type: ignore[arg-type]
+            weight=float(fields.get("weight", "1.0")),
+            timeout=float(fields.get("timeout", "300")),
+            description=fields.get("description", ""),
+        ))
+    return dims
 
 
 class ExperimentStore:
@@ -103,6 +162,9 @@ class ExperimentStore:
                     current_section = mapped
             elif stripped.startswith("- ") and current_section:
                 list_buffer.append(stripped[2:].strip())
+            elif stripped and current_section and list_buffer and line.startswith("  "):
+                # Continuation line (indented, follows a list item)
+                list_buffer[-1] += "\n" + stripped
             elif stripped and current_section and not list_buffer:
                 if current_section == "eval_threshold":
                     parsed[current_section] = float(stripped)
@@ -110,19 +172,9 @@ class ExperimentStore:
                     parsed[current_section] = stripped
         _flush_list()
 
-        from factory.models import HypothesisBudget
-
-        budget_items = parsed.get("hypothesis_budget", [])
-        budget_kwargs: dict[str, int] = {}
-        if isinstance(budget_items, list):
-            for item in budget_items:
-                if ":" in str(item):
-                    key, val = str(item).split(":", 1)
-                    key = key.strip()
-                    try:
-                        budget_kwargs[key] = int(val.strip())
-                    except ValueError:
-                        pass
+        budget_kwargs: dict[str, object] = _parse_kv_list(parsed.get("hypothesis_budget", []), int)
+        weights_kwargs: dict[str, object] = _parse_kv_list(parsed.get("eval_weights", []), float)
+        project_eval_dims = _parse_project_eval(parsed.get("project_eval", []))
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -131,7 +183,10 @@ class ExperimentStore:
             eval_command=str(parsed.get("eval_command", "")),
             eval_threshold=float(parsed.get("eval_threshold", 0.0)),  # type: ignore[arg-type]
             constraints=list(parsed.get("constraints", [])),  # type: ignore[arg-type]
-            hypothesis_budget=HypothesisBudget(**budget_kwargs) if budget_kwargs else HypothesisBudget(),
+            hypothesis_budget=HypothesisBudget(**budget_kwargs) if budget_kwargs else HypothesisBudget(),  # type: ignore[arg-type]
+            target_branch=str(parsed.get("target_branch", "main")),
+            project_eval=project_eval_dims,
+            eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
         )
 
         (self.factory_dir / "config.json").write_text(
