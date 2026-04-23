@@ -3,7 +3,13 @@ name = "remote-factory"
 version = "0.1.0"
 description = "Domain-agnostic multi-agent software evolution loop"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.0", "structlog>=24.0", "fastapi>=0.115", "uvicorn[standard]>=0.34"]
+dependencies = [
+    "pydantic>=2.0",
+    "structlog>=24.0",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "mcp>=1.27.0",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3.11",
