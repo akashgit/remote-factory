@@ -48,6 +48,17 @@ python eval/score.py
 
 0.8
 
+## Target Branch
+
+main
+
+## Project Eval
+<!-- No project-specific eval dimensions for the factory itself -->
+<!-- The factory uses the standard hygiene + growth eval framework -->
+
+## Eval Weights
+<!-- Using defaults: 50/50 hygiene/growth (no project eval) -->
+
 ## Hypothesis Budget
 <!-- Controls how many hypotheses the Strategist generates per cycle. -->
 <!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->

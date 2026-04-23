@@ -235,6 +235,8 @@ factory ceo ~/my-project --mode meta        # improve + ACE playbook evolution
 factory ceo ~/my-project --focus "dashboard" # narrow focus to specific area
 factory ceo ~/my-project --headless         # non-interactive (for scripting)
 factory ceo --prompt "Build a weather CLI"  # build from a prompt
+factory ceo ~/my-project --branch dev       # target a non-main branch
+factory ceo ~/my-project --min-growth 3     # override hypothesis budget
 ```
 
 From within Claude Code:
@@ -295,6 +297,7 @@ factory export <path>                       # export full project snapshot as JS
 
 # Evaluation & guards
 factory eval <path>                         # run evals, print composite score
+factory eval <path> --skip-project-eval     # skip user-defined project eval dimensions
 factory guard <path> --baseline <sha>       # check guard rules
 
 # Experiment lifecycle
@@ -369,11 +372,18 @@ The CEO detects project state and routes to the appropriate mode:
 
 ### Eval System
 
-Dual-axis composite score — hygiene (50%) + growth (50%):
+Three-tier composite score with configurable weights:
 
-**Hygiene** (6 mandatory dimensions, 50%): tests, lint, type_check, coverage, guard_patterns, config_parser.
+**Hygiene** (6 mandatory dimensions): tests, lint, type_check, coverage, guard_patterns, config_parser — auto-detected from project tooling.
 
-**Growth** (5 mandatory dimensions, 50%): capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness.
+**Growth** (5 mandatory dimensions): capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness — computed by the factory.
+
+**Project Eval** (user-defined, optional): benchmark accuracy, latency, win rate, or any project-specific metric — defined in `factory.md`.
+
+Weight distribution:
+- Without project eval: 50% hygiene + 50% growth (default)
+- With project eval: configurable (default 30% hygiene + 20% growth + 50% project)
+- Fully customizable via `## Eval Weights` in `factory.md`
 
 ### FEEC Priority
 
@@ -418,6 +428,102 @@ pytest --tb=short -q
 
 ### Threshold
 0.8
+
+## Target Branch
+main
+
+## Hypothesis Budget
+- min_growth: 2
+- min_fix: 0
+- max_total: 7
+
+## Project Eval
+- name: benchmark_accuracy
+  command: python eval/benchmark.py
+  parse: json
+  weight: 0.6
+  timeout: 300
+  description: Run benchmark and report accuracy
+- name: response_latency
+  command: python eval/latency_test.py
+  parse: exit_code
+  weight: 0.4
+
+## Eval Weights
+- hygiene: 0.25
+- growth: 0.25
+- project: 0.50
+```
+
+### Configurable Sections
+
+| Section | Purpose | Default |
+|---------|---------|---------|
+| `## Goal` | What the project should achieve | Required |
+| `## Scope / Modifiable` | Glob patterns the factory may edit | Required |
+| `## Guards` | Inviolable rules checked before every merge | Required |
+| `## Eval / Command` | Shell command for project-specific eval (JSON output) | Required |
+| `## Eval / Threshold` | Minimum composite score to keep a change | `0.8` |
+| `## Target Branch` | Branch for PRs and merges (not `main` to stage changes) | `main` |
+| `## Hypothesis Budget` | Controls fix/growth/flex hypothesis slots per cycle | `min_growth: 2, min_fix: 0, max_total: 7` |
+| `## Project Eval` | User-defined eval dimensions (benchmarks, accuracy, latency) | Empty (standard hygiene+growth only) |
+| `## Eval Weights` | Weight split across hygiene/growth/project tiers | `0.50 / 0.50 / 0.0` (auto `0.30 / 0.20 / 0.50` when project eval is present) |
+| `## Constraints` | Soft rules that guide behavior but don't block merges | Optional |
+
+### Target Branch
+
+By default, the factory creates experiment branches from `main` and merges PRs back to `main`. Set `## Target Branch` to a different branch (e.g. `factory/dev`) to stage all factory work on a separate branch. You can then review accumulated changes and merge to `main` when ready.
+
+Override per-run with the `--branch` CLI flag:
+
+```bash
+factory ceo ~/my-project --branch factory/dev
+factory run ~/my-project --branch staging
+```
+
+### Project Eval
+
+For ML/AI projects, agents, or anything with domain-specific benchmarks, define custom eval dimensions that measure what actually matters:
+
+```markdown
+## Project Eval
+- name: leaderboard_accuracy
+  command: python eval/benchmark.py
+  parse: json
+  weight: 0.6
+  timeout: 300
+- name: inference_latency
+  command: python eval/latency.py
+  parse: exit_code
+  weight: 0.4
+```
+
+Each dimension command must either:
+- **json**: Output `{"score": 0.0-1.0}` to stdout (optionally `{"score": 0.85, "details": "..."}`)
+- **exit_code**: Exit 0 for pass (score 1.0), non-zero for fail (score 0.0)
+
+When project eval dimensions are present, they carry 50% of the composite score by default. Configure the split with `## Eval Weights`. The factory Strategist will prioritize hypotheses that improve project eval scores.
+
+During `factory discover`, the factory auto-detects existing eval/benchmark scripts and suggests adding them to `factory.md`.
+
+Skip project eval for quick checks:
+
+```bash
+factory eval ~/my-project --skip-project-eval
+```
+
+### Hypothesis Budget
+
+Controls how many hypotheses the Strategist generates per cycle, with reserved slots:
+
+- **Fix slots**: Reserved for bugfixes (scales with open GitHub issues)
+- **Growth slots**: Reserved for growth dimensions (guaranteed, never cannibalized)
+- **Flex slots**: Strategist's choice
+
+Override per-run:
+
+```bash
+factory ceo ~/my-project --min-growth 3 --min-fix 2 --max-total 10
 ```
 
 ### `.factory/` Directory
@@ -488,7 +594,7 @@ remote-factory/
 │   │   ├── profile.py          # Build eval profile
 │   │   └── generate.py         # Generate eval/score.py
 │   ├── eval/
-│   │   ├── runner.py           # Run evals, merge scores (50/50 hygiene/growth)
+│   │   ├── runner.py           # Run evals, three-tier merge (hygiene/growth/project)
 │   │   ├── hygiene.py          # 6 mandatory hygiene dimensions
 │   │   ├── growth.py           # 5 universal growth dimensions
 │   │   ├── scorer.py           # Composite score computation
@@ -498,14 +604,14 @@ remote-factory/
 │   │   └── templates.py        # Note templates for archivist
 │   └── notify/
 │       └── telegram.py         # Telegram notifications
-└── tests/                      # 701 tests
+└── tests/                      # 828 tests
 ```
 
 ## Development
 
 ```bash
 uv sync --all-groups         # Install all deps including dev
-uv run pytest -v             # Run tests (701 passing)
+uv run pytest -v             # Run tests (828 passing)
 uv run ruff check .          # Lint
 uv run mypy factory/         # Type check
 uv run pytest --cov          # Coverage (~84%)
