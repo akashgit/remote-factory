@@ -225,21 +225,42 @@ class ExperimentStore:
             return []
 
         records: list[ExperimentRecord] = []
+        valid_verdicts = {"keep", "revert", "error"}
         with open(tsv_path, newline="") as f:
             reader = csv.DictReader(f, dialect="excel-tab")
             for row in reader:
+                def _safe_int(val: str) -> int | None:
+                    if not val or val in ("-", "n/a"):
+                        return None
+                    try:
+                        return int(val)
+                    except ValueError:
+                        return None
+
+                def _safe_float(val: str) -> float | None:
+                    if not val or val in ("-", "n/a"):
+                        return None
+                    try:
+                        return float(val)
+                    except ValueError:
+                        return None
+
+                verdict_raw = row["verdict"].lower().strip()
+                if verdict_raw not in valid_verdicts:
+                    verdict_raw = "error"
+
                 records.append(ExperimentRecord(
                     id=int(row["id"]),
                     timestamp=datetime.fromisoformat(row["timestamp"]),
                     hypothesis=row["hypothesis"],
                     change_summary=row["change_summary"],
-                    issue_number=int(row["issue_number"]) if row["issue_number"] else None,
-                    pr_number=int(row["pr_number"]) if row["pr_number"] else None,
-                    score_before=float(row["score_before"]) if row["score_before"] else None,
-                    score_after=float(row["score_after"]) if row["score_after"] else None,
-                    delta=float(row["delta"]) if row["delta"] else None,
-                    verdict=row["verdict"],  # type: ignore[arg-type]
-                    cost_usd=float(row["cost_usd"]) if row["cost_usd"] else None,
+                    issue_number=_safe_int(row["issue_number"]),
+                    pr_number=_safe_int(row["pr_number"]),
+                    score_before=_safe_float(row["score_before"]),
+                    score_after=_safe_float(row["score_after"]),
+                    delta=_safe_float(row["delta"]),
+                    verdict=verdict_raw,  # type: ignore[arg-type]
+                    cost_usd=_safe_float(row["cost_usd"]),
                     notes=row["notes"],
                 ))
         log.debug("load_history_complete", record_count=len(records))
