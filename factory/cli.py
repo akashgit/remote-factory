@@ -399,13 +399,25 @@ def cmd_ace(args: argparse.Namespace) -> int:
     """Run ACE self-improvement on agent playbooks."""
     from factory.ace.curator import curate_playbook
     from factory.ace.models import Playbook
-    from factory.ace.reflector import reflect_on_experiments
+    from factory.ace.reflector import reflect_on_experiments, update_counters_from_experiments
+    from factory.insights import discover_projects, load_all_histories
 
     project_path = Path(args.path).resolve()
     projects_dir = Path(args.projects_dir).expanduser().resolve()
     dry_run = getattr(args, "dry_run", False)
 
     _emit_cli_event(project_path, "ace.started", {"dry_run": dry_run})
+
+    # Step 0: Update counters on existing playbooks from experiment verdicts
+    playbooks_dir = Path(__file__).parent / "agents" / "playbooks"
+    if playbooks_dir.is_dir() and not dry_run:
+        project_paths = discover_projects(projects_dir)
+        if project_path not in project_paths:
+            project_paths.append(project_path)
+        histories = load_all_histories(project_paths)
+        all_records = [r for records in histories.values() for r in records]
+        if all_records:
+            update_counters_from_experiments(playbooks_dir, all_records)
 
     # Step 1: Reflect — analyze experiment data, generate candidate bullets
     candidates = reflect_on_experiments(projects_dir, project_path)
@@ -449,6 +461,54 @@ def cmd_ace(args: argparse.Namespace) -> int:
     if not dry_run:
         print(f"\nPlaybooks updated in {playbooks_dir}")
 
+    return 0
+
+
+def cmd_ace_stats(args: argparse.Namespace) -> int:
+    """Print a table of all playbook items with their helpful/harmful/net counters."""
+    from factory.ace.models import Playbook
+
+    playbooks_dir = Path(__file__).parent / "agents" / "playbooks"
+    if not playbooks_dir.is_dir():
+        print("No playbooks directory found.")
+        return 1
+
+    all_items: list[tuple[str, str, int, int, int, str]] = []
+    for playbook_path in sorted(playbooks_dir.glob("*.md")):
+        role = playbook_path.stem
+        playbook = Playbook.from_markdown(playbook_path.read_text())
+        for item in playbook.items:
+            all_items.append((
+                role,
+                item.id,
+                item.helpful,
+                item.harmful,
+                item.net_score,
+                item.content[:60],
+            ))
+
+    if not all_items:
+        print("No playbook items found.")
+        return 0
+
+    # Print table header
+    header = f"{'Role':<12} {'ID':<14} {'helpful':>7} {'harmful':>7} {'net':>5}  Text"
+    print(header)
+    print("-" * len(header))
+
+    total_helpful = 0
+    total_harmful = 0
+    for role, item_id, helpful, harmful, net, text in all_items:
+        print(f"{role:<12} {item_id:<14} {helpful:>7} {harmful:>7} {net:>5}  {text}")
+        total_helpful += helpful
+        total_harmful += harmful
+
+    print("-" * len(header))
+    print(
+        f"Total: {len(all_items)} bullets, "
+        f"helpful={total_helpful}, harmful={total_harmful}, "
+        f"net={total_helpful - total_harmful}"
+    )
     return 0
 
 
@@ -1367,6 +1427,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print candidates without writing playbooks",
     )
 
+    # ace-stats
+    sub.add_parser("ace-stats", help="Print playbook item counters for all roles")
+
     # digest
     p = sub.add_parser("digest", help="Summarize recent factory activity across projects")
     p.add_argument("--date", default=None, help="Show activity for a specific date (YYYY-MM-DD)")
@@ -1526,6 +1589,7 @@ def main(argv: list[str] | None = None) -> int:
         "export": cmd_export,
         "insights": cmd_insights,
         "ace": cmd_ace,
+        "ace-stats": cmd_ace_stats,
         "digest": cmd_digest,
         "archive": cmd_archive,
         "checkpoint": cmd_checkpoint,
