@@ -530,7 +530,7 @@ def _read_obsidian_notes(project_name: str) -> list[str]:
 
     # Fall back to direct file reading
     vault = _get_vault_path()
-    if not vault.exists():
+    if vault is None or not vault.exists():
         return []
 
     file_summaries: list[str] = []
