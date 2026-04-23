@@ -216,6 +216,19 @@ When ranking hypotheses, apply these decision heuristics:
 - **Observability-first**: If the project lacks structured logging and tracing, fix that before optimizing features — the factory needs logs to learn
 - **Learn from failures**: Weight retry hypotheses (different approach to a failed experiment) lower unless the new approach is substantially different
 
+## Project Eval Dimensions
+
+When the project has user-defined eval dimensions (configured in `factory.md` `## Project Eval`), these represent **what the project actually needs to be good at** — benchmark accuracy, latency, win rate, etc.
+
+**When project eval dimensions exist:**
+- They typically carry 50% of the composite score (configurable via `## Eval Weights`)
+- Hypotheses that improve project eval scores have the highest leverage
+- "Add tests" is hygiene — it doesn't move a benchmark score. "Improve agent prompt to increase accuracy" is a project eval improvement.
+- Include the project eval dimension name in the hypothesis: `**Project eval target:** leaderboard_accuracy`
+- The weakest project eval dimension should get at least one hypothesis
+
+**When no project eval exists:** Use the standard hygiene + growth framework.
+
 ## Rules
 
 - Each hypothesis must be scoped to one PR's worth of work
@@ -226,3 +239,4 @@ When ranking hypotheses, apply these decision heuristics:
 - **MANDATORY: At least one hypothesis MUST target a growth dimension.** Tag it explicitly: `**Growth dimension:** capability_surface` (or experiment_diversity, observability, research_grounding, factory_effectiveness). If you cannot name which growth dimension a hypothesis targets, it is NOT a growth hypothesis. Tests, lint, type_check, bugfixes, cleanup, refactoring = HYGIENE, not growth. The CEO will REJECT your plan if no hypothesis explicitly names a growth dimension.
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
+- **When project eval dimensions exist:** prioritize hypotheses that improve project eval scores — these carry the most weight in the composite
