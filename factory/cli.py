@@ -676,6 +676,39 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_research(args: argparse.Namespace) -> int:
+    """Print citation index table and coverage summary."""
+    from factory.research_index import build_citation_index, citation_coverage
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    records = _run(store.load_history())
+
+    if not records:
+        print("No experiments recorded.")
+        return 0
+
+    index = build_citation_index(project_path)
+    coverage = citation_coverage(project_path)
+
+    # Print table
+    header = f"{'ID':>4}  {'Hypothesis':<52}  Citations"
+    print(header)
+    print("-" * len(header))
+    for r in records:
+        hyp = r.hypothesis[:50]
+        cites = index.get(r.id, [])
+        cite_str = ", ".join(cites) if cites else "-"
+        print(f"{r.id:>4}  {hyp:<52}  {cite_str}")
+
+    # Summary
+    cited_count = sum(1 for r in records if r.research_citations)
+    print()
+    print(f"{len(records)} experiments, {cited_count} cited, coverage {coverage:.0%}")
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare two experiments side-by-side."""
     from factory.analysis import compare_experiments, format_comparison
@@ -1433,6 +1466,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+    # research
+    p = sub.add_parser("research", help="Print research citation index for experiments")
+    p.add_argument("path", help="Path to the project")
+
     # diff
     p = sub.add_parser("diff", help="Compare two experiments side-by-side")
     p.add_argument("path", help="Path to the project")
@@ -1628,6 +1665,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "research": cmd_research,
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,

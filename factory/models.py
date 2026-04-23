@@ -143,6 +143,7 @@ class ExperimentRecord(BaseModel):
     verdict: Literal["keep", "revert", "error"]
     cost_usd: float | None
     notes: str
+    research_citations: list[str] = []
 
 
 # ── cross-project insights ───────────────────────────────────────
