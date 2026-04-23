@@ -731,7 +731,7 @@ class TestMatchVaultIdea:
         (ideas_dir / "Locals Know — Restaurant Discovery.md").write_text("# Locals Know")
         (ideas_dir / "Ideas.md").write_text("# MOC")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("Locals Know")
         assert match is not None
         assert "Locals Know" in match.stem
@@ -741,7 +741,7 @@ class TestMatchVaultIdea:
         ideas_dir.mkdir()
         (ideas_dir / "Betty Terminal \u2014 AI-Native Terminal.md").write_text("# Betty")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("Betty Terminal")
         assert match is not None
 
@@ -750,7 +750,7 @@ class TestMatchVaultIdea:
         ideas_dir.mkdir()
         (ideas_dir / "Kalshi Bot \u2014 High-Probability Trader.md").write_text("# Kalshi")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("kalshi")
         assert match is not None
         assert "Kalshi" in match.stem
@@ -760,7 +760,7 @@ class TestMatchVaultIdea:
         ideas_dir.mkdir()
         (ideas_dir / "Some Idea.md").write_text("# Idea")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("nonexistent thing")
         assert match is None
 
@@ -769,7 +769,7 @@ class TestMatchVaultIdea:
         ideas_dir.mkdir()
         (ideas_dir / "Ideas.md").write_text("# Ideas MOC")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("Ideas")
         assert match is None
 
@@ -778,7 +778,7 @@ class TestMatchVaultIdea:
         ideas_dir.mkdir()
         (ideas_dir / "Voice to Vault \u2014 Speak and Save.md").write_text("# V2V")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]):
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
             match = _match_vault_idea("voice vault")
         assert match is not None
 
@@ -813,7 +813,7 @@ class TestResolveInput:
         ideas_dir.mkdir()
         (ideas_dir / "My Project \u2014 Something Cool.md").write_text("# Build something cool")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]), \
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]), \
              patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli.subprocess.run"):
             project_path, context = _resolve_input("My Project")
@@ -823,7 +823,7 @@ class TestResolveInput:
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [tmp_path / "nope"]), \
+        with patch("factory.cli._get_ideas_dirs", return_value=[tmp_path / "nope"]), \
              patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli.subprocess.run"):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
@@ -837,7 +837,7 @@ class TestResolveInput:
         ideas_dir.mkdir()
         (ideas_dir / "Test Idea \u2014 Details.md").write_text("# Test Idea\nBuild X that does Y")
 
-        with patch("factory.cli._VAULT_IDEAS_DIRS", [ideas_dir]), \
+        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]), \
              patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli.subprocess.run"), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
