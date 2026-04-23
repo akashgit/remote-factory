@@ -18,7 +18,7 @@ log = structlog.get_logger()
 TSV_COLUMNS = [
     "id", "timestamp", "hypothesis", "change_summary", "issue_number",
     "pr_number", "score_before", "score_after", "delta", "verdict",
-    "cost_usd", "notes",
+    "cost_usd", "notes", "research_citations",
 ]
 
 
@@ -215,6 +215,7 @@ class ExperimentStore:
                 record.verdict,
                 record.cost_usd if record.cost_usd is not None else "",
                 record.notes,
+                "|".join(record.research_citations) if record.research_citations else "",
             ])
 
     async def load_history(self) -> list[ExperimentRecord]:
@@ -249,6 +250,14 @@ class ExperimentStore:
                 if verdict_raw not in valid_verdicts:
                     verdict_raw = "error"
 
+                # Parse research_citations (backward compat: column may be absent)
+                citations_raw = row.get("research_citations", "")
+                citations = (
+                    [c.strip() for c in citations_raw.split("|") if c.strip()]
+                    if citations_raw
+                    else []
+                )
+
                 records.append(ExperimentRecord(
                     id=int(row["id"]),
                     timestamp=datetime.fromisoformat(row["timestamp"]),
@@ -262,6 +271,7 @@ class ExperimentStore:
                     verdict=verdict_raw,  # type: ignore[arg-type]
                     cost_usd=_safe_float(row["cost_usd"]),
                     notes=row["notes"],
+                    research_citations=citations,
                 ))
         log.debug("load_history_complete", record_count=len(records))
         return records
