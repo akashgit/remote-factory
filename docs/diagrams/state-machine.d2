@@ -1,53 +1,66 @@
-direction: right
+direction: down
 
 title: {
   label: Factory State Machine
   near: top-center
   shape: text
-  style: {
-    font-size: 28
-    bold: true
-    font-color: "#1a1a2e"
-  }
+  style: { font-size: 32; bold: true; font-color: "#1a1a2e" }
 }
 
 subtitle: {
-  label: "factory detect → route to mode → execute"
+  label: "factory detect → route to state → execute mode"
   near: top-center
   shape: text
-  style: { font-size: 14; italic: true; font-color: "#666" }
+  style: { font-size: 16; italic: true; font-color: "#666" }
+}
+
+detect: {
+  label: "factory detect <path>"
+  shape: parallelogram
+  style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 6; font-size: 18; bold: true }
+  width: 300
 }
 
 # ── States ────────────────────────────────────────
 
 no_repo: {
-  label: "no_repo\n\nNo git repo at path"
+  label: "no_repo\nNo git repo"
   shape: rectangle
-  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 13 }
+  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 16 }
+  width: 180
+  height: 70
 }
 
 incomplete: {
-  label: "incomplete\n\nRepo exists,\nopen plan/impl issues"
+  label: "incomplete\nOpen plan/impl issues"
   shape: rectangle
-  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 13 }
+  style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 8; font-size: 16 }
+  width: 220
+  height: 70
 }
 
 no_factory: {
-  label: "no_factory\n\nRepo exists,\nno .factory/ setup"
+  label: "no_factory\nNo .factory/ setup"
   shape: rectangle
-  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 13 }
+  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 16 }
+  width: 200
+  height: 70
 }
 
 evals_pending: {
-  label: "evals_pending_review\n\nEval profile exists,\nnot reviewed"
+  label: "evals_pending_review\nNot yet reviewed"
   shape: rectangle
-  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 13 }
+  style: { fill: "#fff9c4"; stroke: "#f9a825"; border-radius: 8; font-size: 16 }
+  width: 240
+  height: 70
 }
 
 has_factory: {
-  label: "has_factory\n\nFully initialized,\nevals reviewed"
+  label: "has_factory\nFully initialized"
   shape: rectangle
-  style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8; font-size: 13 }
+  style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8; font-size: 16 }
+  width: 200
+  height: 70
 }
 
 # ── Modes ─────────────────────────────────────────
@@ -61,75 +74,109 @@ build: {
     4. E2E verification gate
   |
   shape: rectangle
-  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; font-size: 13 }
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; font-size: 15 }
+  width: 280
 }
 
 discover: {
   label: |md
     **Discover Mode**
     1. Introspect project
-    2. Auto-detect eval dimensions
+    2. Auto-detect eval dims
     3. Generate eval/score.py
   |
   shape: rectangle
-  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 13 }
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 15 }
+  width: 260
 }
 
 review: {
   label: |md
     **Review Mode**
-    1. Test all eval dimensions
-    2. Fix broken dimensions
-    3. Mark as human_reviewed
+    1. Test eval dimensions
+    2. Fix broken ones
+    3. Mark human_reviewed
     4. Init factory store
-    5. Run baseline eval
+    5. Baseline eval
   |
   shape: rectangle
-  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 13 }
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; font-size: 15 }
+  width: 260
 }
 
 improve: {
   label: |md
-    **Improve Mode**
-    *(the core evolution loop)*
+    **Improve Mode** *(core loop)*
     1. Observe → Researcher
     2. Hypothesize → Strategist
-    3. Execute → Builder per hypothesis
+    3. Execute → Builder
     4. Guard → Reviewer
     5. Measure → Evaluator
     6. Decide → Precheck + CEO
     7. Record → Archivist
   |
   shape: rectangle
-  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; font-size: 13 }
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; font-size: 15 }
+  width: 300
 }
 
 meta: {
   label: |md
     **Meta Mode**
-    1. Run full Improve loop
-       on the factory itself
-    2. ACE playbook evolution
-       for all 7 agent roles
+    1. Full Improve loop on factory itself
+    2. ACE playbook evolution for all roles
   |
   shape: rectangle
-  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; font-size: 13 }
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; font-size: 15 }
+  width: 300
 }
 
-# ── State → Mode routing ─────────────────────────
+# ── detect → states ──────────────────────────────
 
-no_repo -> build: ""
-incomplete -> build: ""
-no_factory -> discover: "no --prompt"
-no_factory -> build: "--prompt provided"
-evals_pending -> review: ""
-has_factory -> improve: ""
-has_factory -> meta: "--mode meta"
+detect -> no_repo
+detect -> incomplete
+detect -> no_factory
+detect -> evals_pending
+detect -> has_factory
 
-# ── Mode transitions ──────────────────────────────
+# ── states → modes ───────────────────────────────
 
-build -> no_factory: "project built"
-discover -> evals_pending: "eval profile created"
-review -> has_factory: "evals reviewed + init"
-improve -> has_factory: "cycle complete" {style.stroke-dash: 5}
-meta -> has_factory: "cycle + ACE complete" {style.stroke-dash: 5}
+no_repo -> build {
+  style: { stroke: "#1976d2"; stroke-width: 2 }
+}
+incomplete -> build {
+  style: { stroke: "#1976d2"; stroke-width: 2 }
+}
+no_factory -> discover: "no --prompt" {
+  style: { stroke: "#7b1fa2"; stroke-width: 2; font-size: 13 }
+}
+no_factory -> build: "--prompt" {
+  style: { stroke: "#1976d2"; stroke-width: 2; font-size: 13 }
+}
+evals_pending -> review {
+  style: { stroke: "#7b1fa2"; stroke-width: 2 }
+}
+has_factory -> improve {
+  style: { stroke: "#2e7d32"; stroke-width: 2 }
+}
+has_factory -> meta: "--mode meta" {
+  style: { stroke: "#ef6c00"; stroke-width: 2; font-size: 13 }
+}
+
+# ── transitions back (dashed) ────────────────────
+
+build -> no_factory: "project built" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+discover -> evals_pending: "profile created" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+review -> has_factory: "reviewed + init" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+improve -> has_factory: "cycle done" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+meta -> has_factory: "ACE done" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
