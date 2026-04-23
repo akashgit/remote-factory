@@ -7,17 +7,24 @@ extraction (no LLM needed) — the data speaks for itself.
 Factory v2: generates bullets for all 7 agent roles (researcher, strategist,
 builder, reviewer, evaluator, archivist, ceo) by parsing structured CEO notes
 from the experiment record notes field.
+
+Counter wiring: after generating candidates, the Reflector also loads the
+current playbook for each role and increments helpful/harmful counters on
+existing bullets based on fuzzy-matching experiment hypothesis text against
+bullet content. Kept experiments increment `helpful`, reverted experiments
+increment `harmful`.
 """
 
 from __future__ import annotations
 
 import re
 from collections import Counter
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import structlog
 
-from factory.ace.models import PlaybookItem
+from factory.ace.models import Playbook, PlaybookItem
 from factory.insights import (
     classify_hypothesis,
     discover_projects,
@@ -530,6 +537,154 @@ def _ceo_bullets(
             counter += 1
 
     return bullets
+
+
+# ── Counter wiring helpers ─────────────────────────────────────────
+
+
+# Minimum similarity ratio to consider a bullet matching a hypothesis
+_MATCH_THRESHOLD = 0.35
+
+
+def _extract_key_terms(text: str) -> list[str]:
+    """Extract meaningful terms from text for fuzzy matching."""
+    stop_words = {
+        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "could",
+        "should", "may", "might", "shall", "can", "to", "of", "in", "for",
+        "on", "with", "at", "by", "from", "as", "into", "through", "during",
+        "before", "after", "above", "below", "between", "and", "but", "or",
+        "not", "no", "nor", "so", "yet", "both", "either", "neither", "each",
+        "every", "all", "any", "few", "more", "most", "other", "some", "such",
+        "than", "too", "very", "just", "also", "that", "this", "these", "those",
+        "it", "its", "they", "them", "their", "we", "us", "our", "you", "your",
+        "he", "she", "his", "her", "i", "me", "my",
+    }
+    words = re.findall(r"[a-z]+", text.lower())
+    return [w for w in words if len(w) >= 3 and w not in stop_words]
+
+
+def _hypothesis_matches_bullet(hypothesis: str, bullet_content: str) -> bool:
+    """Check if key terms from hypothesis appear in bullet content (fuzzy).
+
+    Uses two strategies:
+    1. Key term overlap: if enough key terms from the hypothesis appear in the bullet
+    2. SequenceMatcher similarity on the full text
+    """
+    hyp_terms = _extract_key_terms(hypothesis)
+    bullet_terms = set(_extract_key_terms(bullet_content))
+
+    if not hyp_terms:
+        return False
+
+    # Strategy 1: term overlap
+    overlap = sum(1 for t in hyp_terms if t in bullet_terms)
+    overlap_ratio = overlap / len(hyp_terms) if hyp_terms else 0.0
+    if overlap_ratio >= 0.4:
+        return True
+
+    # Strategy 2: sequence similarity
+    ratio = SequenceMatcher(None, hypothesis.lower(), bullet_content.lower()).ratio()
+    return ratio >= _MATCH_THRESHOLD
+
+
+def update_playbook_counters(
+    playbook: Playbook,
+    records: list[ExperimentRecord],
+) -> Playbook:
+    """Increment helpful/harmful counters on playbook bullets based on experiment outcomes.
+
+    For each experiment record:
+    - If verdict=keep, increment `helpful` on matching bullets
+    - If verdict=revert, increment `harmful` on matching bullets
+
+    Matching is fuzzy — checks if key terms from the hypothesis appear in bullet text.
+
+    Args:
+        playbook: The current playbook to update counters on.
+        records: Experiment records to process.
+
+    Returns:
+        Updated Playbook with incremented counters.
+    """
+    if not playbook.items or not records:
+        return playbook
+
+    # Work with mutable copies
+    updated_items = [
+        PlaybookItem(
+            id=item.id,
+            content=item.content,
+            helpful=item.helpful,
+            harmful=item.harmful,
+            section=item.section,
+        )
+        for item in playbook.items
+    ]
+
+    for record in records:
+        if record.verdict not in ("keep", "revert"):
+            continue
+
+        for i, item in enumerate(updated_items):
+            if _hypothesis_matches_bullet(record.hypothesis, item.content):
+                if record.verdict == "keep":
+                    updated_items[i] = PlaybookItem(
+                        id=item.id,
+                        content=item.content,
+                        helpful=item.helpful + 1,
+                        harmful=item.harmful,
+                        section=item.section,
+                    )
+                elif record.verdict == "revert":
+                    updated_items[i] = PlaybookItem(
+                        id=item.id,
+                        content=item.content,
+                        helpful=item.helpful,
+                        harmful=item.harmful + 1,
+                        section=item.section,
+                    )
+                log.debug(
+                    "counter_increment",
+                    bullet_id=item.id,
+                    verdict=record.verdict,
+                    experiment_id=record.id,
+                )
+
+    return Playbook(role=playbook.role, updated=playbook.updated, items=updated_items)
+
+
+def update_counters_from_experiments(
+    playbooks_dir: Path,
+    records: list[ExperimentRecord],
+) -> dict[str, Playbook]:
+    """Load all playbooks, update counters from experiment records, persist to disk.
+
+    Args:
+        playbooks_dir: Directory containing playbook .md files.
+        records: Experiment records to process.
+
+    Returns:
+        Dict mapping role name to updated Playbook.
+    """
+    updated_playbooks: dict[str, Playbook] = {}
+
+    for playbook_path in sorted(playbooks_dir.glob("*.md")):
+        role = playbook_path.stem
+        playbook = Playbook.from_markdown(playbook_path.read_text())
+        updated = update_playbook_counters(playbook, records)
+
+        # Only persist if counters actually changed
+        if any(
+            u.helpful != o.helpful or u.harmful != o.harmful
+            for u, o in zip(updated.items, playbook.items)
+        ):
+            playbook_path.write_text(updated.to_markdown())
+            log.info("counters_persisted", role=role, items=len(updated.items))
+
+        updated_playbooks[role] = updated
+
+    return updated_playbooks
 
 
 def reflect_on_experiments(
