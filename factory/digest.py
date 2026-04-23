@@ -103,6 +103,9 @@ def scan_vault(
         Dict mapping project name to project info with filtered experiments.
     """
     vault = vault_path if vault_path is not None else _get_vault_path()
+    if vault is None:
+        log.debug("scan_vault_skipped", reason="no vault path configured")
+        return {}
     projects_dir = vault / _PROJECTS_DIR
     log.debug("scan_vault_start", vault=str(vault), days=days, target_date=str(target_date))
     if not projects_dir.exists():
