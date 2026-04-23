@@ -1,0 +1,218 @@
+direction: down
+
+title: {
+  label: Factory Architecture
+  near: top-center
+  shape: text
+  style: {
+    font-size: 28
+    bold: true
+    font-color: "#1a1a2e"
+  }
+}
+
+subtitle: {
+  label: Three-layer system with CEO orchestrator
+  near: top-center
+  shape: text
+  style: {
+    font-size: 14
+    italic: true
+    font-color: "#666"
+  }
+}
+
+# ── Layer 1: User Interface ──────────────────────────
+
+user: {
+  label: User
+  shape: person
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#2196f3"
+    font-color: "#1565c0"
+  }
+}
+
+cli: {
+  label: "Layer 1: CLI Tools"
+  style: {
+    fill: "#f0f4ff"
+    stroke: "#5c6bc0"
+    border-radius: 12
+    font-color: "#283593"
+    bold: true
+  }
+
+  factory_ceo: {
+    label: "factory ceo <path>"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_run: {
+    label: "factory run <path>"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_eval: {
+    label: "factory eval"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_precheck: {
+    label: "factory precheck"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_review: {
+    label: "factory review"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_study: {
+    label: "factory study"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_guard: {
+    label: "factory guard"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+  factory_discover: {
+    label: "factory discover"
+    shape: parallelogram
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+}
+
+# ── Layer 2: CEO Agent ─────────────────────────────
+
+ceo: {
+  label: "Layer 2: CEO Agent"
+  style: {
+    fill: "#fff3e0"
+    stroke: "#ef6c00"
+    border-radius: 12
+    font-color: "#e65100"
+    bold: true
+  }
+
+  brain: {
+    label: |md
+      **CEO Orchestrator**
+      - Detects project state
+      - Routes to mode (Build/Discover/Review/Improve)
+      - Spawns specialist agents
+      - Makes keep/revert decisions
+      - Runs precheck hard gate
+      - Posts PR reviews
+      - Ensures mandatory archival
+    |
+    shape: rectangle
+    style: {
+      fill: "#fff8e1"
+      stroke: "#ff8f00"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+
+  review_gate: {
+    label: "CEO Review Gate"
+    shape: hexagon
+    style: { fill: "#ffecb3"; stroke: "#ffa000"; font-size: 13 }
+  }
+
+  precheck: {
+    label: "Hard Precheck Gate\n(non-overridable)"
+    shape: hexagon
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; font-size: 13 }
+  }
+
+  brain -> review_gate: "after every agent"
+  brain -> precheck: "before keep/revert"
+}
+
+# ── Layer 3: Specialist Agents ─────────────────────
+
+agents: {
+  label: "Layer 3: Specialist Agents"
+  style: {
+    fill: "#e8f5e9"
+    stroke: "#2e7d32"
+    border-radius: 12
+    font-color: "#1b5e20"
+    bold: true
+  }
+
+  researcher: {
+    label: "🔍 Researcher\nObserve"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  strategist: {
+    label: "🧠 Strategist\nHypothesize"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  builder: {
+    label: "🔨 Builder\nImplement"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  reviewer: {
+    label: "🛡️ Reviewer\nGuard"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  evaluator: {
+    label: "📊 Evaluator\nMeasure"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  archivist: {
+    label: "📝 Archivist\nRecord"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+}
+
+# ── Data Stores ──────────────────────────────────
+
+stores: {
+  label: "Persistent Storage"
+  style: {
+    fill: "#fce4ec"
+    stroke: "#c62828"
+    border-radius: 12
+    font-color: "#b71c1c"
+    bold: true
+  }
+
+  factory_dir: {
+    label: ".factory/\nconfig, results.tsv,\nexperiments/, strategy/"
+    shape: cylinder
+    style: { fill: "#ffcdd2"; stroke: "#e53935" }
+  }
+
+  vault: {
+    label: "Obsidian Vault\n~/obsidian-vaults/factory/"
+    shape: cylinder
+    style: { fill: "#ffcdd2"; stroke: "#e53935" }
+  }
+
+  github: {
+    label: "GitHub\nIssues, PRs, Reviews"
+    shape: cylinder
+    style: { fill: "#ffcdd2"; stroke: "#e53935" }
+  }
+}
+
+# ── Connections ──────────────────────────────────
+
+user -> cli: "commands"
+cli -> ceo: "spawns CEO"
+ceo -> agents: "delegates work"
+agents -> stores: "read/write"
+ceo -> stores: "lifecycle mgmt"

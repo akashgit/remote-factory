@@ -1,0 +1,220 @@
+direction: right
+
+title: {
+  label: Data Flow & Storage
+  near: top-center
+  shape: text
+  style: { font-size: 28; bold: true; font-color: "#1a1a2e" }
+}
+
+subtitle: {
+  label: "How data moves through the factory system"
+  near: top-center
+  shape: text
+  style: { font-size: 14; italic: true; font-color: "#666" }
+}
+
+# ── Input Sources ─────────────────────────────────
+
+inputs: {
+  label: "Input"
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; bold: true }
+
+  path: {
+    label: "Project Path"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+
+  github_url: {
+    label: "GitHub URL"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+
+  vault_idea: {
+    label: "Vault Idea"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+
+  raw_prompt: {
+    label: "Raw Prompt"
+    shape: rectangle
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  }
+}
+
+# ── Configuration ─────────────────────────────────
+
+config: {
+  label: "Configuration"
+  style: { fill: "#f0f4ff"; stroke: "#5c6bc0"; border-radius: 12; bold: true }
+
+  factory_md: {
+    label: |md
+      **factory.md**
+      goal, scope, guards,
+      eval command, threshold,
+      smoke test, target branch,
+      project eval, eval weights,
+      hypothesis budget
+    |
+    shape: document
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 6; font-size: 12 }
+  }
+
+  config_json: {
+    label: ".factory/config.json\n(parsed)"
+    shape: cylinder
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+
+  eval_profile: {
+    label: ".factory/eval_profile.json\n(discovered dimensions)"
+    shape: cylinder
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+  }
+
+  factory_md -> config_json: "factory init --reparse"
+}
+
+# ── Strategy Layer ────────────────────────────────
+
+strategy: {
+  label: "Strategy"
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true }
+
+  observations: {
+    label: "observations.md\nlocal analysis +\ncross-project insights"
+    shape: document
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+
+  research: {
+    label: "research.md\nweb research +\nvault synthesis"
+    shape: document
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+
+  current: {
+    label: "current.md\nhypotheses +\npriorities"
+    shape: document
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  }
+
+  observations -> current
+  research -> current
+}
+
+# ── Experiment Artifacts ──────────────────────────
+
+experiments: {
+  label: "Experiment Artifacts"
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true }
+
+  results_tsv: {
+    label: "results.tsv\nappend-only history"
+    shape: cylinder
+    style: { fill: "#ffe0b2"; stroke: "#ef6c00" }
+  }
+
+  per_exp: {
+    label: |md
+      **experiments/NNN/**
+      - hypothesis.md
+      - eval_before.json
+      - eval_after.json
+      - changes.diff
+      - verdict.json
+    |
+    shape: page
+    style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 6; font-size: 12 }
+  }
+
+  reviews: {
+    label: |md
+      **reviews/**
+      - &lt;role&gt;-latest.md
+      - ceo-verdict-&lt;role&gt;.md
+      - archivist-checkpoints.md
+    |
+    shape: page
+    style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 6; font-size: 12 }
+  }
+
+  events: {
+    label: "events.jsonl\nagent activity log"
+    shape: cylinder
+    style: { fill: "#ffe0b2"; stroke: "#ef6c00" }
+  }
+}
+
+# ── External Systems ──────────────────────────────
+
+external: {
+  label: "External Systems"
+  style: { fill: "#fce4ec"; stroke: "#c62828"; border-radius: 12; bold: true }
+
+  github: {
+    label: "GitHub\n- Issues (hypotheses)\n- PRs (implementations)\n- Reviews (verdicts)"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+  }
+
+  vault: {
+    label: "Obsidian Vault\n- Project dashboards\n- Experiment notes\n- Strategy snapshots\n- CEO decision patterns"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+  }
+
+  telegram: {
+    label: "Telegram\nDigest notifications"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+  }
+
+  dashboard: {
+    label: "Live Dashboard\n:8420\nSSE event stream"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+  }
+}
+
+# ── ACE Self-Improvement ─────────────────────────
+
+ace: {
+  label: "ACE Self-Improvement"
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; bold: true }
+
+  playbooks: {
+    label: "agents/playbooks/*.md\nDO/DON'T rules\nwith helpful/harmful\ncounters"
+    shape: document
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  }
+
+  reflect: {
+    label: "Reflect\nanalyze experiments"
+    shape: rectangle
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  }
+
+  curate: {
+    label: "Curate\nmerge + prune"
+    shape: rectangle
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  }
+
+  reflect -> curate -> playbooks
+}
+
+# ── Flow connections ──────────────────────────────
+
+inputs -> config: "resolve input"
+config -> strategy: "goals & constraints"
+strategy -> experiments: "hypotheses drive experiments"
+experiments -> external: "issues, PRs, reviews"
+experiments -> ace: "experiment outcomes"
+ace -> strategy: "evolved playbooks\nimprove agents"
+experiments -> external.vault: "archivist writes"
+experiments -> external.dashboard: "events stream"
