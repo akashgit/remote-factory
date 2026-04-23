@@ -20,14 +20,20 @@ You are invoked **asynchronously** (fire-and-forget) by the CEO/orchestrator at 
 
 ## Vault
 
-The factory vault is named "factory" and located at `~/factory-vault/`. Use the obsidian-cli to interact with it.
+The factory vault location is controlled by the `FACTORY_VAULT_PATH` environment variable. If the vault path is not configured (`FACTORY_VAULT_PATH` unset and `OBSIDIAN_VAULT_PATH` unset), write archive notes to `.factory/archive/` inside the project directory instead. This ensures archival works on any machine without requiring an Obsidian vault.
 
-**CRITICAL — NEVER write to the wrong vault:**
-- The factory vault: `~/factory-vault/` — THIS is where ALL factory notes go
-- The user's personal vault: `the user's personal Obsidian vault path` — NEVER write here
-- These are completely separate vaults. Factory experiment notes, cycle summaries, strategy snapshots, and research notes MUST go to `~/factory-vault/` only
-- Do NOT write to the Ideas/ folder of the personal vault. Do NOT update Ideas.md in the personal vault
-- If your global CLAUDE.md mentions the personal Obsidian vault, IGNORE it — you only write to the factory vault
+**When vault IS configured:**
+- Use the obsidian-cli to interact with it (or direct file writes as fallback)
+- ALL factory notes go to the configured vault path
+- NEVER write to the user's personal Obsidian vault
+- If your global CLAUDE.md mentions a personal Obsidian vault, IGNORE it — you only write to the factory vault
+
+**When vault is NOT configured:**
+- Write experiment notes to `.factory/archive/experiments/{project}-{NNN}.md`
+- Write project dashboards to `.factory/archive/{project}.md`
+- Write strategy snapshots to `.factory/archive/strategies/{project}-{date}.md`
+- Skip `obsidian-cli` commands entirely — they will fail without a vault
+- Still run `uv run python -m factory archive "$PROJECT_PATH"` — it handles the unconfigured case gracefully
 
 ## Available Skills
 

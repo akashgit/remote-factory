@@ -550,14 +550,17 @@ def cmd_archive(args: argparse.Namespace) -> int:
     # Update MEMORY.md index
     update_memory_index()
 
-    from factory.obsidian.notes import _get_vault_path
+    from factory.obsidian.notes import vault_path as get_vault_path
 
-    vault_path = _get_vault_path()
+    vp = get_vault_path()
     _emit_cli_event(project_path, "archive.completed", {
         "experiments": len(records),
-        "vault": str(vault_path),
+        "vault": str(vp) if vp else "none",
     })
-    print(f"Archived {len(records)} experiments to {vault_path}")
+    if vp:
+        print(f"Archived {len(records)} experiments to {vp}")
+    else:
+        print(f"Archived {len(records)} experiments (vault not configured, skipped vault writes)")
     return 0
 
 
@@ -777,12 +780,16 @@ def _is_github_url(path: str) -> bool:
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
 
-_VAULT_IDEAS_DIRS: list[Path] = [
-    # Personal Obsidian vault (optional)
-    Path.home() / "Library" / "Mobile Documents" / "personal-vault" / "Ideas",
-    # Generic Obsidian vault location
-    Path.home() / "obsidian-vaults" / "factory" / "Ideas",
-]
+def _get_ideas_dirs() -> list[Path]:
+    """Return idea directories from the ``FACTORY_IDEAS_DIRS`` env var.
+
+    The env var is a colon-separated list of directory paths.  When unset,
+    returns an empty list so that vault lookup is skipped gracefully.
+    """
+    raw = os.environ.get("FACTORY_IDEAS_DIRS", "")
+    if not raw.strip():
+        return []
+    return [Path(p.strip()).expanduser() for p in raw.split(":") if p.strip()]
 
 
 def _resolve_input(raw: str) -> tuple[Path, str | None]:
@@ -833,7 +840,7 @@ def _match_vault_idea(query: str) -> Path | None:
     q = query.lower().strip()
     candidates: list[tuple[int, Path]] = []
 
-    for ideas_dir in _VAULT_IDEAS_DIRS:
+    for ideas_dir in _get_ideas_dirs():
         if not ideas_dir.is_dir():
             continue
         for f in ideas_dir.glob("*.md"):
