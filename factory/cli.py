@@ -645,6 +645,99 @@ def cmd_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_precheck(args: argparse.Namespace) -> int:
+    """Run hard precheck gate before keep/revert decision."""
+    from factory.precheck import run_precheck
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    config = _run(store.read_config())
+
+    # Load history as dicts for anti-pattern matching
+    records = _run(store.load_history())
+    history = [
+        {
+            "id": r.id,
+            "hypothesis": r.hypothesis,
+            "verdict": r.verdict,
+            "delta": r.delta,
+        }
+        for r in records
+    ]
+
+    result = run_precheck(
+        score_before=args.score_before,
+        score_after=args.score_after,
+        threshold=config.eval_threshold,
+        hypothesis=args.hypothesis or "",
+        history=history,
+        project_path=project_path,
+        baseline_sha=args.baseline,
+        allowed_scope=config.scope if args.baseline else None,
+        smoke_test_command=config.smoke_test,
+        similarity_threshold=args.similarity_threshold,
+    )
+
+    # Output as JSON for machine consumption
+    output = {
+        "passed": result.passed,
+        "checks": [
+            {"name": c.name, "passed": c.passed, "detail": c.detail}
+            for c in result.checks
+        ],
+        "blocking_failures": result.blocking_failures,
+    }
+    print(json.dumps(output, indent=2))
+
+    _emit_cli_event(project_path, "precheck.completed", {
+        "passed": result.passed,
+        "failures": result.blocking_failures,
+    })
+
+    return 0 if result.passed else 1
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """Format and optionally post a review on a GitHub PR."""
+    from factory.review import ReviewPayload, format_review, post_review
+
+    guard_results: dict[str, str] = {}
+    if args.guards:
+        for pair in args.guards.split(","):
+            if ":" in pair:
+                k, v = pair.split(":", 1)
+                guard_results[k.strip()] = v.strip()
+
+    payload = ReviewPayload(
+        verdict=args.verdict.upper(),
+        reason=args.reason or "",
+        score_before=args.score_before,
+        score_after=args.score_after,
+        threshold=args.threshold,
+        guard_results=guard_results,
+        precheck_summary=args.precheck_summary or "",
+        code_notes=[n.strip() for n in args.code_notes.split("|")] if args.code_notes else [],
+        experiment_id=args.experiment_id,
+        hypothesis=args.hypothesis or "",
+    )
+
+    review_body = format_review(payload)
+
+    if args.pr and not args.dry_run:
+        success = post_review(args.pr, review_body, payload.verdict, repo=args.repo)
+        if success:
+            print(f"Review posted on PR #{args.pr}")
+        else:
+            print(f"Failed to post review on PR #{args.pr}", file=sys.stderr)
+            print(review_body)
+            return 1
+    else:
+        print(review_body)
+
+    return 0
+
+
 def cmd_checkpoint(args: argparse.Namespace) -> int:
     """Show or save a checkpoint for crash-resilient resume."""
     from factory.checkpoint import (
@@ -1594,6 +1687,36 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("archive", help="Write experiment notes to Obsidian vault")
     p.add_argument("path", help="Path to the project")
 
+    # precheck
+    p = sub.add_parser("precheck", help="Run hard precheck gate before keep/revert decision")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
+    p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
+    p.add_argument("--hypothesis", default=None, help="Current experiment hypothesis")
+    p.add_argument("--baseline", default=None, help="Baseline commit SHA for scope check")
+    p.add_argument("--similarity-threshold", type=float, default=0.6,
+                    help="Similarity threshold for anti-pattern detection (default: 0.6)")
+
+    # review
+    p = sub.add_parser("review", help="Format and post a structured review on a GitHub PR")
+    p.add_argument("--verdict", required=True, choices=["keep", "revert", "KEEP", "REVERT"],
+                    help="Review verdict")
+    p.add_argument("--reason", default=None, help="One-sentence reason for the verdict")
+    p.add_argument("--score-before", type=float, default=None, help="Score before change")
+    p.add_argument("--score-after", type=float, default=None, help="Score after change")
+    p.add_argument("--threshold", type=float, default=0.8, help="Eval threshold")
+    p.add_argument("--guards", default=None,
+                    help="Guard results as 'check:PASS,check:FAIL' pairs")
+    p.add_argument("--precheck-summary", default=None, help="Precheck gate output summary")
+    p.add_argument("--code-notes", default=None,
+                    help="Code review notes separated by | (pipe)")
+    p.add_argument("--experiment-id", type=int, default=None, help="Experiment ID")
+    p.add_argument("--hypothesis", default=None, help="Experiment hypothesis text")
+    p.add_argument("--pr", type=int, default=None, help="PR number to post review on")
+    p.add_argument("--repo", default=None, help="GitHub repo (owner/name) for the PR")
+    p.add_argument("--dry-run", action="store_true", default=False,
+                    help="Print review without posting")
+
     # checkpoint
     p = sub.add_parser("checkpoint", help="Show or save a CEO checkpoint for crash-resilient resume")
     p.add_argument("path", help="Path to the project")
@@ -1770,6 +1893,8 @@ def main(argv: list[str] | None = None) -> int:
         "ace-stats": cmd_ace_stats,
         "digest": cmd_digest,
         "archive": cmd_archive,
+        "precheck": cmd_precheck,
+        "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
         "vault-init": cmd_vault_init,

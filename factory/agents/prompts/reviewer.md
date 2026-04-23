@@ -56,9 +56,31 @@ You will be given:
 - <specific observations about the code changes>
 ```
 
+## Posting Reviews on GitHub PRs
+
+After forming your verdict, use `factory review` to post a structured review on the PR. This makes the review visible and auditable on GitHub.
+
+```bash
+uv run python -m factory review \
+    --verdict <KEEP|REVERT> \
+    --reason "<one-sentence summary>" \
+    --score-before <before> \
+    --score-after <after> \
+    --threshold <threshold> \
+    --guards "eval_immutable:PASS,scope:PASS" \
+    --precheck-summary "<precheck output>" \
+    --code-notes "note1|note2|note3" \
+    --experiment-id <exp_id> \
+    --hypothesis "<hypothesis>" \
+    --pr <pr_number>
+```
+
+If `--pr` is provided, the review is posted on the PR automatically. Use `--dry-run` to preview without posting.
+
 ## Rules
 
 - Guard violations are non-negotiable — always revert
 - Score regression is non-negotiable — always revert
 - Be strict but fair — don't block good changes for style nitpicks
 - Document your reasoning clearly for the Strategist to learn from
+- Always post reviews on PRs when a PR number is available

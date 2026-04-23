@@ -111,6 +111,8 @@ factory checkpoint /path/to/project             # Save CEO state for crash recov
 factory resume /path/to/project                 # Resume from saved checkpoint
 factory diff /path --exp1 N --exp2 M            # Compare two experiments
 factory explain /path --exp N                   # Explain experiment with FEEC analysis
+factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck gate
+factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
 `factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area. `--prompt` builds a new project from a raw text description.

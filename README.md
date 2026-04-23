@@ -299,6 +299,11 @@ factory export <path>                       # export full project snapshot as JS
 factory eval <path>                         # run evals, print composite score
 factory eval <path> --skip-project-eval     # skip user-defined project eval dimensions
 factory guard <path> --baseline <sha>       # check guard rules
+factory precheck <path> --score-before 0.7 --score-after 0.85  # hard precheck gate
+
+# Reviews
+factory review --verdict KEEP --pr 42 --score-before 0.7 --score-after 0.85  # post on PR
+factory review --verdict REVERT --reason "score regressed" --dry-run          # preview only
 
 # Experiment lifecycle
 factory begin <path> --hypothesis "..."     # start experiment
@@ -468,6 +473,7 @@ main
 | `## Hypothesis Budget` | Controls fix/growth/flex hypothesis slots per cycle | `min_growth: 2, min_fix: 0, max_total: 7` |
 | `## Project Eval` | User-defined eval dimensions (benchmarks, accuracy, latency) | Empty (standard hygiene+growth only) |
 | `## Eval Weights` | Weight split across hygiene/growth/project tiers | `0.50 / 0.50 / 0.0` (auto `0.30 / 0.20 / 0.50` when project eval is present) |
+| `## Smoke Test` | E2E command that must pass before any change is kept | Empty (skipped) |
 | `## Constraints` | Soft rules that guide behavior but don't block merges | Optional |
 
 ### Target Branch
@@ -510,6 +516,49 @@ Skip project eval for quick checks:
 
 ```bash
 factory eval ~/my-project --skip-project-eval
+```
+
+### Smoke Test
+
+An optional e2e verification command that runs as part of `factory precheck`. If configured, it must pass before any change can be kept — failure means mandatory revert regardless of eval score.
+
+```markdown
+## Smoke Test
+```bash
+curl -sf http://localhost:8000/health
+```
+```
+
+Good smoke tests are fast (under 30s), test the core user flow, and catch integration issues that unit tests miss.
+
+### Precheck Gate
+
+The `factory precheck` command runs 4 non-overridable checks before any keep/revert decision:
+
+1. **Score direction** — score must not regress and must meet threshold
+2. **Scope** — guard check must pass (no out-of-scope modifications)
+3. **Anti-pattern** — hypothesis must not be >60% similar to a previously reverted experiment
+4. **Smoke test** — if configured, the smoke test command must pass
+
+The CEO cannot override a failed precheck. This is a hard gate.
+
+```bash
+factory precheck ~/my-project \
+    --score-before 0.7 \
+    --score-after 0.85 \
+    --hypothesis "add structured logging" \
+    --baseline abc123
+```
+
+### PR Reviews
+
+Every experiment gets a structured review posted on its GitHub PR via `factory review`. Reviews include score comparison tables, guard check results, precheck output, and code notes. KEEP verdicts use `--approve`, REVERT verdicts use `--request-changes`.
+
+```bash
+factory review --verdict KEEP --pr 42 \
+    --score-before 0.7 --score-after 0.85 --threshold 0.8 \
+    --guards "scope:PASS,eval_immutable:PASS" \
+    --experiment-id 5 --hypothesis "add logging"
 ```
 
 ### Hypothesis Budget
@@ -604,7 +653,7 @@ remote-factory/
 │   │   └── templates.py        # Note templates for archivist
 │   └── notify/
 │       └── telegram.py         # Telegram notifications
-└── tests/                      # 828 tests
+└── tests/                      # 880 tests
 ```
 
 ## Development

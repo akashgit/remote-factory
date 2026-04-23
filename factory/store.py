@@ -176,6 +176,9 @@ class ExperimentStore:
         weights_kwargs: dict[str, object] = _parse_kv_list(parsed.get("eval_weights", []), float)
         project_eval_dims = _parse_project_eval(parsed.get("project_eval", []))
 
+        smoke_test_raw = parsed.get("smoke_test", "")
+        smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
+
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
             scope=list(parsed.get("scope", [])),  # type: ignore[arg-type]
@@ -185,6 +188,7 @@ class ExperimentStore:
             constraints=list(parsed.get("constraints", [])),  # type: ignore[arg-type]
             hypothesis_budget=HypothesisBudget(**budget_kwargs) if budget_kwargs else HypothesisBudget(),  # type: ignore[arg-type]
             target_branch=str(parsed.get("target_branch", "main")),
+            smoke_test=smoke_test,
             project_eval=project_eval_dims,
             eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
         )

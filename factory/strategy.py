@@ -124,3 +124,53 @@ def detect_stuck(
             consecutive=len(tail),
         )
     return stuck
+
+
+# ── hypothesis similarity ────────────────────────────────────────
+
+
+def _tokenize(text: str) -> set[str]:
+    """Extract lowercase word tokens (3+ chars) from text."""
+    return {w for w in text.lower().split() if len(w) >= 3}
+
+
+def hypothesis_similarity(a: str, b: str) -> float:
+    """Jaccard similarity between two hypothesis texts. Returns 0.0–1.0."""
+    tokens_a = _tokenize(a)
+    tokens_b = _tokenize(b)
+    if not tokens_a or not tokens_b:
+        return 0.0
+    intersection = tokens_a & tokens_b
+    union = tokens_a | tokens_b
+    score = len(intersection) / len(union)
+    log.debug("hypothesis_similarity", score=score, a=a[:60], b=b[:60])
+    return score
+
+
+def find_anti_patterns(
+    hypothesis: str,
+    history: list[dict],
+    similarity_threshold: float = 0.6,
+) -> list[dict]:
+    """Find reverted experiments whose hypothesis is similar to the proposed one.
+
+    Returns a list of history entries that were reverted and have similarity
+    above the threshold.  Each returned dict gets a ``"similarity"`` key added.
+    """
+    matches: list[dict] = []
+    for entry in history:
+        if entry.get("verdict") != "revert":
+            continue
+        past_hyp = entry.get("hypothesis", "")
+        sim = hypothesis_similarity(hypothesis, past_hyp)
+        if sim >= similarity_threshold:
+            match = dict(entry)
+            match["similarity"] = sim
+            matches.append(match)
+    if matches:
+        log.warning(
+            "anti_patterns_found",
+            count=len(matches),
+            hypothesis=hypothesis[:80],
+        )
+    return matches
