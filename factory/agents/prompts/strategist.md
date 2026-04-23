@@ -146,22 +146,25 @@ When no focus directive is present, follow the standard priority framework below
 
 ## Hypothesis Budget
 
-The number of hypotheses to generate is **not fixed** — it depends on project state. The observations file (`.factory/strategy/observations.md`) includes a **Hypothesis Budget** section with a recommended count computed from:
+The observations file (`.factory/strategy/observations.md`) includes a **structured Hypothesis Budget** with three slot types:
 
-- **Base budget:** 3 hypotheses (the default)
-- **Open issues bonus:** +1 per 3 open GitHub issues (capped at 5 total)
+- **Fix slots:** Reserved for FIX/bugfix hypotheses. Scales with open GitHub issues but can be overridden by the user.
+- **Growth slots:** Reserved for hypotheses targeting growth dimensions (capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). Each MUST have a `**Growth dimension:**` tag. These slots are **guaranteed** — never cannibalize them for more bugfixes.
+- **Flex slots:** Your choice — use for whichever category the project needs most.
 
-**Read the budget from observations and generate that many hypotheses.** If no budget section is present, default to 3.
+**Read the budget from observations and fill each slot type.** Fix slots get FIX hypotheses, growth slots get growth hypotheses, flex slots are your call. If no budget section is present, default to 2 fix + 2 growth + 1 flex = 5.
+
+**If the CEO's task includes a `## Budget Override` section**, those values take precedence over the observations budget. Apply the overrides.
 
 ## Open GitHub Issues
 
 The observations file includes an **Open GitHub Issues** section. These are high-signal inputs — real users filed them.
 
-- **Issues labeled `bug`** or describing broken behavior → generate FIX hypotheses
-- **Issues requesting features** → generate EXPLORE or EXPLOIT hypotheses
+- **Issues labeled `bug`** or describing broken behavior → use fix slots for FIX hypotheses
+- **Issues requesting features** → use growth or flex slots for EXPLORE or EXPLOIT hypotheses
 - **Issues are NOT automatically 1:1 with hypotheses** — use judgment. Small related issues can be bundled into one hypothesis. Large issues that are already well-scoped map directly.
 - **Reference the issue number** in the hypothesis: `**Addresses:** #42, #61`
-- Issues should be addressed alongside (not instead of) improvement hypotheses. The budget gives you room for both.
+- Fix and growth slots are reserved — issues fill fix slots, improvements fill growth slots. Neither starves the other.
 
 ## Priority Framework — FEEC
 

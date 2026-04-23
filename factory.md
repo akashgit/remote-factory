@@ -48,6 +48,14 @@ python eval/score.py
 
 0.8
 
+## Hypothesis Budget
+<!-- Controls how many hypotheses the Strategist generates per cycle. -->
+<!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->
+
+- min_growth: 2
+- min_fix: 0
+- max_total: 7
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 

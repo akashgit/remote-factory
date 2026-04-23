@@ -792,34 +792,58 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
             "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
         ])
 
-    # Hypothesis budget recommendation
-    base_budget = 3
-    issue_bonus = len(open_issues) // 3  # +1 per 3 open issues
-    budget = min(base_budget + issue_bonus, 5)
+    # Hypothesis budget recommendation — structured
+    from factory.models import HypothesisBudget
+
+    config_budget = HypothesisBudget()
+    config_path = project_path / ".factory" / "config.json"
+    if config_path.exists():
+        import json as _json
+        try:
+            cfg = _json.loads(config_path.read_text())
+            if "hypothesis_budget" in cfg:
+                config_budget = HypothesisBudget(**cfg["hypothesis_budget"])
+        except Exception:
+            pass
+
+    issue_fix_slots = len(open_issues) // 3
+    fix_slots = max(config_budget.min_fix, issue_fix_slots)
+    growth_slots = config_budget.min_growth
+    reserved = fix_slots + growth_slots
+    flex_slots = max(0, min(2, config_budget.max_total - reserved))
+    total = min(reserved + flex_slots, config_budget.max_total)
+
     lines.extend([
         "",
         "## Hypothesis Budget",
         "",
-        f"**Recommended hypotheses: {budget}**",
+        f"**Recommended hypotheses: {total}**",
         "",
-        "| Factor | Count | Effect |",
-        "|--------|-------|--------|",
-        f"| Base budget | — | {base_budget} hypotheses |",
+        "| Slot type | Count | Source |",
+        "|-----------|-------|--------|",
+        f"| **Fix slots** | {fix_slots} | {len(open_issues)} open issues (1 per 3, min {config_budget.min_fix}) |",
+        f"| **Growth slots** | {growth_slots} | Guaranteed minimum (configurable via factory.md) |",
+        f"| **Flex slots** | {flex_slots} | Strategist's choice (fix or growth) |",
+        f"| **Total** | **{total}** | max {config_budget.max_total} (configurable) |",
+        "",
+        "### Slot Rules",
+        "",
+        f"- **Fix slots ({fix_slots}):** Reserved for FIX/bugfix hypotheses addressing open issues or broken behavior",
+        f"- **Growth slots ({growth_slots}):** Reserved for hypotheses targeting growth dimensions "
+        "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
+        "Each MUST have a `**Growth dimension:**` tag",
+        f"- **Flex slots ({flex_slots}):** Strategist chooses the category based on project needs",
+        "",
+        "Fix and growth slots are **reserved** — do not cannibalize growth slots for more bugfixes or vice versa.",
+        "",
+        "*Budget is configurable: set `min_growth`, `min_fix`, `max_total` in factory.md under `## Hypothesis Budget`, "
+        "or pass `--min-growth`, `--min-fix`, `--max-total` on the CLI.*",
     ])
     if open_issues:
+        lines.append("")
         lines.append(
-            f"| Open GitHub issues | {len(open_issues)} | +{issue_bonus} "
-            f"(+1 per 3 open issues) |"
-        )
-    lines.extend([
-        f"| **Total (capped at 5)** | | **{budget}** |",
-        "",
-    ])
-    if open_issues:
-        lines.append(
-            "The Strategist SHOULD address open GitHub issues as FIX hypotheses "
-            "in addition to improvement hypotheses. Issues represent known user-reported "
-            "problems and feature requests — they are high-signal input."
+            "The Strategist SHOULD address open GitHub issues as FIX hypotheses. "
+            "Issues represent known user-reported problems and feature requests — they are high-signal input."
         )
 
     return "\n".join(lines)
