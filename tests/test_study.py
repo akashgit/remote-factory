@@ -236,7 +236,7 @@ class TestStudyProjectLocal:
         assert "A cool project" in result
 
     def test_hypothesis_budget_base(self, tmp_path, monkeypatch):
-        """No open issues → base budget of 3."""
+        """No open issues → fix=0, growth=2, flex=2 → total=4."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
@@ -244,10 +244,11 @@ class TestStudyProjectLocal:
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "## Hypothesis Budget" in result
-        assert "**Recommended hypotheses: 3**" in result
+        assert "**Fix slots** | 0" in result
+        assert "**Growth slots** | 2" in result
 
     def test_hypothesis_budget_with_issues(self, tmp_path, monkeypatch):
-        """9 open issues → budget 3 + 3 = 6, capped at 5."""
+        """9 open issues → fix=3, growth=2, flex=2 → total=7."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         issues = [
             {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
@@ -258,11 +259,12 @@ class TestStudyProjectLocal:
             patch("factory.study._fetch_open_issues", return_value=issues),
         ):
             result = study_project_local(tmp_path / "myapp")
-        assert "**Recommended hypotheses: 5**" in result
+        assert "**Fix slots** | 3" in result
+        assert "**Recommended hypotheses: 7**" in result
         assert "SHOULD address open GitHub issues" in result
 
     def test_hypothesis_budget_small_issue_count(self, tmp_path, monkeypatch):
-        """2 open issues → no bonus (2 // 3 == 0), budget stays 3."""
+        """2 open issues → fix=0 (2//3=0), growth=2, flex=2 → total=4."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         issues = [
             {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
@@ -273,7 +275,8 @@ class TestStudyProjectLocal:
             patch("factory.study._fetch_open_issues", return_value=issues),
         ):
             result = study_project_local(tmp_path / "myapp")
-        assert "**Recommended hypotheses: 3**" in result
+        assert "**Fix slots** | 0" in result
+        assert "**Recommended hypotheses: 4**" in result
 
     def test_includes_obsidian_notes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)

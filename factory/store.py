@@ -110,6 +110,20 @@ class ExperimentStore:
                     parsed[current_section] = stripped
         _flush_list()
 
+        from factory.models import HypothesisBudget
+
+        budget_items = parsed.get("hypothesis_budget", [])
+        budget_kwargs: dict[str, int] = {}
+        if isinstance(budget_items, list):
+            for item in budget_items:
+                if ":" in str(item):
+                    key, val = str(item).split(":", 1)
+                    key = key.strip()
+                    try:
+                        budget_kwargs[key] = int(val.strip())
+                    except ValueError:
+                        pass
+
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
             scope=list(parsed.get("scope", [])),  # type: ignore[arg-type]
@@ -117,6 +131,7 @@ class ExperimentStore:
             eval_command=str(parsed.get("eval_command", "")),
             eval_threshold=float(parsed.get("eval_threshold", 0.0)),  # type: ignore[arg-type]
             constraints=list(parsed.get("constraints", [])),  # type: ignore[arg-type]
+            hypothesis_budget=HypothesisBudget(**budget_kwargs) if budget_kwargs else HypothesisBudget(),
         )
 
         (self.factory_dir / "config.json").write_text(

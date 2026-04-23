@@ -878,10 +878,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
+    min_growth = getattr(args, "min_growth", None)
+    min_fix = getattr(args, "min_fix", None)
+    max_total = getattr(args, "max_total", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    task = _build_ceo_task(project_path, mode, context, focus=focus, prompt_file=prompt_file)
+    task = _build_ceo_task(
+        project_path, mode, context, focus=focus, prompt_file=prompt_file,
+        min_growth=min_growth, min_fix=min_fix, max_total=max_total,
+    )
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -1259,6 +1265,9 @@ def _build_ceo_task(
     context: str | None = None,
     focus: str | None = None,
     prompt_file: str | None = None,
+    min_growth: int | None = None,
+    min_fix: int | None = None,
+    max_total: int | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1273,6 +1282,20 @@ def _build_ceo_task(
 
     if focus:
         task += f"\n\n## Focus Directive\n\nNarrow improvement efforts to: {focus}\n"
+
+    if any(v is not None for v in (min_growth, min_fix, max_total)):
+        budget_lines = ["\n\n## Budget Override\n"]
+        budget_lines.append("The user has overridden the hypothesis budget for this run:")
+        if min_growth is not None:
+            budget_lines.append(f"- **min_growth:** {min_growth} (guaranteed growth slots)")
+        if min_fix is not None:
+            budget_lines.append(f"- **min_fix:** {min_fix} (guaranteed fix slots)")
+        if max_total is not None:
+            budget_lines.append(f"- **max_total:** {max_total} (maximum hypotheses)")
+        budget_lines.append("")
+        budget_lines.append("Pass these overrides to the Strategist. They take precedence over "
+                           "factory.md defaults and study-computed values.")
+        task += "\n".join(budget_lines)
 
     if context:
         task += f"\n\n## Project Specification\n\n{context}"
@@ -1304,11 +1327,17 @@ def _run_single_cycle(
     context: str | None = None,
     focus: str | None = None,
     prompt_file: str | None = None,
+    min_growth: int | None = None,
+    min_fix: int | None = None,
+    max_total: int | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
 
-    task = _build_ceo_task(project_path, mode, context, focus=focus, prompt_file=prompt_file)
+    task = _build_ceo_task(
+        project_path, mode, context, focus=focus, prompt_file=prompt_file,
+        min_growth=min_growth, min_fix=min_fix, max_total=max_total,
+    )
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -1332,11 +1361,16 @@ def cmd_run(args: argparse.Namespace) -> int:
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
+    min_growth = getattr(args, "min_growth", None)
+    min_fix = getattr(args, "min_fix", None)
+    max_total = getattr(args, "max_total", None)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
+    budget_kwargs = dict(min_growth=min_growth, min_fix=min_fix, max_total=max_total)
+
     if not loop:
-        return _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file)
+        return _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
 
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
@@ -1360,7 +1394,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file)
+            _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             if shutdown_requested:
@@ -1596,6 +1630,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--headless", action="store_true", default=False,
         help="Run in pipe mode (non-interactive) instead of foreground",
     )
+    p.add_argument("--min-growth", type=int, default=None,
+                    help="Minimum guaranteed growth hypothesis slots (default: 2)")
+    p.add_argument("--min-fix", type=int, default=None,
+                    help="Minimum fix hypothesis slots (default: 0, scales with open issues)")
+    p.add_argument("--max-total", type=int, default=None,
+                    help="Maximum total hypotheses per cycle (default: 7)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -1627,6 +1667,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--max-cycles", type=int, default=None,
         help="Maximum number of cycles (default: unlimited)",
     )
+    p.add_argument("--min-growth", type=int, default=None,
+                    help="Minimum guaranteed growth hypothesis slots (default: 2)")
+    p.add_argument("--min-fix", type=int, default=None,
+                    help="Minimum fix hypothesis slots (default: 0, scales with open issues)")
+    p.add_argument("--max-total", type=int, default=None,
+                    help="Maximum total hypotheses per cycle (default: 7)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
