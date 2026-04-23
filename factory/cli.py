@@ -833,6 +833,14 @@ def cmd_agent(args: argparse.Namespace) -> int:
     return code
 
 
+def cmd_serve_mcp(args: argparse.Namespace) -> int:
+    """Start the Factory MCP stdio server."""
+    from factory.mcp_server import main as mcp_main
+
+    mcp_main()
+    return 0
+
+
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """Launch the Factory live dashboard server."""
     from factory.dashboard.app import create_app
@@ -1544,6 +1552,9 @@ def build_parser() -> argparse.ArgumentParser:
     # install — install Factory CEO as a Claude Code agent
     sub.add_parser("install", help="Install Factory CEO as a Claude Code agent (~/.claude/agents/)")
 
+    # serve-mcp — MCP stdio server
+    sub.add_parser("serve-mcp", help="Start the Factory MCP stdio server")
+
     # dashboard — live web dashboard
     p = sub.add_parser("dashboard", help="Launch the live Factory dashboard")
     p.add_argument(
@@ -1679,6 +1690,7 @@ def main(argv: list[str] | None = None) -> int:
         "vault-init": cmd_vault_init,
         "self-update": cmd_self_update,
         "install": cmd_install,
+        "serve-mcp": cmd_serve_mcp,
         "dashboard": cmd_dashboard,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
