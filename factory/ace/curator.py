@@ -98,13 +98,19 @@ def curate_playbook(
         if not merged:
             items.append(candidate)
 
-    # Phase 1: Remove net-negative items (with enough data to be confident)
+    # Phase 1: Remove net-negative items
+    # Two criteria:
+    #   a) harmful exceeds helpful by 3+ (strong signal of bad advice)
+    #   b) Legacy: harmful > helpful with enough observations
     before_count = len(items)
     items = [
         item for item in items
         if not (
-            item.harmful > item.helpful
-            and (item.helpful + item.harmful) >= _MIN_OBSERVATIONS
+            (item.harmful - item.helpful >= 3)
+            or (
+                item.harmful > item.helpful
+                and (item.helpful + item.harmful) >= _MIN_OBSERVATIONS
+            )
         )
     ]
     removed = before_count - len(items)
