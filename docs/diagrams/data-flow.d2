@@ -1,55 +1,55 @@
-direction: right
+direction: down
 
 title: {
   label: Data Flow & Storage
   near: top-center
   shape: text
-  style: { font-size: 28; bold: true; font-color: "#1a1a2e" }
+  style: { font-size: 32; bold: true; font-color: "#1a1a2e" }
 }
 
 subtitle: {
   label: "How data moves through the factory system"
   near: top-center
   shape: text
-  style: { font-size: 14; italic: true; font-color: "#666" }
+  style: { font-size: 16; italic: true; font-color: "#666" }
 }
 
 # ── Input Sources ─────────────────────────────────
 
 inputs: {
-  label: "Input"
-  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; bold: true }
+  label: "Input Sources"
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; bold: true; font-size: 16 }
 
   path: {
     label: "Project Path"
     shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6; font-size: 14 }
   }
 
   github_url: {
     label: "GitHub URL"
     shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6; font-size: 14 }
   }
 
   vault_idea: {
     label: "Vault Idea"
     shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6; font-size: 14 }
   }
 
   raw_prompt: {
     label: "Raw Prompt"
     shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6; font-size: 14 }
   }
 }
 
 # ── Configuration ─────────────────────────────────
 
 config: {
-  label: "Configuration"
-  style: { fill: "#f0f4ff"; stroke: "#5c6bc0"; border-radius: 12; bold: true }
+  label: "Configuration Layer"
+  style: { fill: "#f0f4ff"; stroke: "#5c6bc0"; border-radius: 12; bold: true; font-size: 16 }
 
   factory_md: {
     label: |md
@@ -61,46 +61,52 @@ config: {
       hypothesis budget
     |
     shape: document
-    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 6; font-size: 12 }
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 6; font-size: 13 }
+    width: 240
   }
 
   config_json: {
-    label: ".factory/config.json\n(parsed)"
+    label: ".factory/config.json\n(parsed config)"
     shape: cylinder
-    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; font-size: 13 }
   }
 
   eval_profile: {
     label: ".factory/eval_profile.json\n(discovered dimensions)"
     shape: cylinder
-    style: { fill: "#e8eaf6"; stroke: "#5c6bc0" }
+    style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; font-size: 13 }
   }
 
-  factory_md -> config_json: "factory init --reparse"
+  factory_md -> config_json: "factory init --reparse" {
+    style: { font-size: 12 }
+  }
 }
 
 # ── Strategy Layer ────────────────────────────────
 
 strategy: {
-  label: "Strategy"
-  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true }
+  label: "Strategy Layer"
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true; font-size: 16 }
 
   observations: {
     label: "observations.md\nlocal analysis +\ncross-project insights"
     shape: document
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6; font-size: 13 }
+    width: 220
   }
 
   research: {
     label: "research.md\nweb research +\nvault synthesis"
     shape: document
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6; font-size: 13 }
+    width: 200
   }
 
   current: {
     label: "current.md\nhypotheses +\npriorities"
     shape: document
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6; font-size: 13 }
+    width: 180
   }
 
   observations -> current
@@ -111,12 +117,12 @@ strategy: {
 
 experiments: {
   label: "Experiment Artifacts"
-  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true }
+  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true; font-size: 16 }
 
   results_tsv: {
     label: "results.tsv\nappend-only history"
     shape: cylinder
-    style: { fill: "#ffe0b2"; stroke: "#ef6c00" }
+    style: { fill: "#ffe0b2"; stroke: "#ef6c00"; font-size: 13 }
   }
 
   per_exp: {
@@ -130,23 +136,25 @@ experiments: {
     |
     shape: page
     style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 6; font-size: 12 }
+    width: 200
   }
 
   reviews: {
     label: |md
       **reviews/**
-      - &lt;role&gt;-latest.md
-      - ceo-verdict-&lt;role&gt;.md
+      - role-latest.md
+      - ceo-verdict-role.md
       - archivist-checkpoints.md
     |
     shape: page
     style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 6; font-size: 12 }
+    width: 220
   }
 
   events: {
     label: "events.jsonl\nagent activity log"
     shape: cylinder
-    style: { fill: "#ffe0b2"; stroke: "#ef6c00" }
+    style: { fill: "#ffe0b2"; stroke: "#ef6c00"; font-size: 13 }
   }
 }
 
@@ -154,30 +162,32 @@ experiments: {
 
 external: {
   label: "External Systems"
-  style: { fill: "#fce4ec"; stroke: "#c62828"; border-radius: 12; bold: true }
+  style: { fill: "#fce4ec"; stroke: "#c62828"; border-radius: 12; bold: true; font-size: 16 }
 
   github: {
-    label: "GitHub\n- Issues (hypotheses)\n- PRs (implementations)\n- Reviews (verdicts)"
+    label: "GitHub\nIssues, PRs, Reviews"
     shape: rectangle
-    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6; font-size: 13 }
+    width: 200
   }
 
   vault: {
-    label: "Obsidian Vault\n- Project dashboards\n- Experiment notes\n- Strategy snapshots\n- CEO decision patterns"
+    label: "Obsidian Vault\nProject dashboards,\nExperiment notes,\nCEO decision patterns"
     shape: rectangle
-    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6; font-size: 13 }
+    width: 220
   }
 
   telegram: {
     label: "Telegram\nDigest notifications"
     shape: rectangle
-    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6; font-size: 13 }
   }
 
   dashboard: {
-    label: "Live Dashboard\n:8420\nSSE event stream"
+    label: "Live Dashboard\n:8420 SSE stream"
     shape: rectangle
-    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6 }
+    style: { fill: "#ffcdd2"; stroke: "#e53935"; border-radius: 6; font-size: 13 }
   }
 }
 
@@ -185,24 +195,25 @@ external: {
 
 ace: {
   label: "ACE Self-Improvement"
-  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; bold: true }
+  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; bold: true; font-size: 16 }
 
   playbooks: {
-    label: "agents/playbooks/*.md\nDO/DON'T rules\nwith helpful/harmful\ncounters"
+    label: "agents/playbooks/*.md\nDO/DON'T rules with\nhelpful/harmful counters"
     shape: document
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6; font-size: 13 }
+    width: 240
   }
 
   reflect: {
     label: "Reflect\nanalyze experiments"
     shape: rectangle
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6; font-size: 13 }
   }
 
   curate: {
     label: "Curate\nmerge + prune"
     shape: rectangle
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6; font-size: 13 }
   }
 
   reflect -> curate -> playbooks
@@ -210,11 +221,21 @@ ace: {
 
 # ── Flow connections ──────────────────────────────
 
-inputs -> config: "resolve input"
-config -> strategy: "goals & constraints"
-strategy -> experiments: "hypotheses drive experiments"
-experiments -> external: "issues, PRs, reviews"
-experiments -> ace: "experiment outcomes"
-ace -> strategy: "evolved playbooks\nimprove agents"
-experiments -> external.vault: "archivist writes"
-experiments -> external.dashboard: "events stream"
+inputs -> config: "resolve input" {
+  style: { font-size: 13 }
+}
+config -> strategy: "goals & constraints" {
+  style: { font-size: 13 }
+}
+strategy -> experiments: "hypotheses drive experiments" {
+  style: { font-size: 13 }
+}
+experiments -> external: "issues, PRs, vault writes, notifications" {
+  style: { font-size: 13 }
+}
+experiments -> ace: "experiment outcomes feed learning" {
+  style: { font-size: 13 }
+}
+ace -> strategy: "evolved playbooks improve agents" {
+  style: { font-size: 13; stroke-dash: 5 }
+}
