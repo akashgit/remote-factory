@@ -708,6 +708,47 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_self_update(args: argparse.Namespace) -> int:
+    """Self-update the factory CLI via uv tool upgrade."""
+    from importlib.metadata import version as pkg_version
+
+    try:
+        version_before = pkg_version("remote-factory")
+    except Exception:
+        version_before = "unknown"
+
+    print(f"Current version: {version_before}")
+    print("Upgrading remote-factory...")
+
+    result = subprocess.run(
+        ["uv", "tool", "upgrade", "remote-factory"],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.stdout:
+        print(result.stdout.rstrip())
+    if result.stderr:
+        print(result.stderr.rstrip(), file=sys.stderr)
+
+    if result.returncode != 0:
+        print("Upgrade failed.", file=sys.stderr)
+        return 1
+
+    # Re-check version (may not reflect in this process, but show what uv reported)
+    try:
+        version_after = pkg_version("remote-factory")
+    except Exception:
+        version_after = "unknown"
+
+    print(f"Version after upgrade: {version_after}")
+    if version_before == version_after:
+        print("Already up to date.")
+    else:
+        print(f"Updated: {version_before} -> {version_after}")
+    return 0
+
+
 def cmd_install(args: argparse.Namespace) -> int:
     """Install the Factory CEO as a Claude Code agent."""
     from factory.agents.runner import resolve_prompt
@@ -1460,6 +1501,9 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
+    # self-update
+    sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
+
     # install — install Factory CEO as a Claude Code agent
     sub.add_parser("install", help="Install Factory CEO as a Claude Code agent (~/.claude/agents/)")
 
@@ -1595,6 +1639,7 @@ def main(argv: list[str] | None = None) -> int:
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
         "vault-init": cmd_vault_init,
+        "self-update": cmd_self_update,
         "install": cmd_install,
         "dashboard": cmd_dashboard,
         "agent": cmd_agent,
