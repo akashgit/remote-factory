@@ -269,8 +269,14 @@ class TestResearchGrounding:
         _valid_result(result)
         assert result["name"] == "research_grounding"
 
-    def test_rewards_vault_sources(self):
-        result = eval_research_grounding(PROJECT_ROOT)
+    def test_rewards_vault_sources(self, tmp_path):
+        vault = tmp_path / "obsidian-vaults" / "factory"
+        sources = vault / "20-Knowledge" / "Sources"
+        sources.mkdir(parents=True)
+        for i in range(5):
+            (sources / f"research-topic-{i}.md").write_text("Content")
+        with patch("factory.obsidian.notes.vault_path", return_value=vault):
+            result = eval_research_grounding(tmp_path)
         assert result["score"] > 0.0
         assert "sources=" in result["details"]
 
