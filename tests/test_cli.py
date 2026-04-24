@@ -407,7 +407,8 @@ class TestRunWithGitHubUrl:
 
     def test_run_local_path_no_clone(self, tmp_path):
         """cmd_run with a local path does not clone — just invokes CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
 
         assert result == 0
@@ -415,7 +416,8 @@ class TestRunWithGitHubUrl:
 
     def test_run_discover_mode(self, tmp_path):
         """cmd_run with --mode=discover passes discover task to CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--mode", "discover"])
 
         assert result == 0
@@ -425,7 +427,8 @@ class TestRunWithGitHubUrl:
 
     def test_run_meta_mode(self, tmp_path):
         """cmd_run with --mode=meta passes meta task to CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--mode", "meta"])
 
         assert result == 0
@@ -478,7 +481,8 @@ class TestHeartbeatParserFlags:
 class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
         assert result == 0
         mock_agent.assert_called_once()
@@ -486,6 +490,7 @@ class TestHeartbeatLoop:
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.cli.time.sleep") as mock_sleep:
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "10",
@@ -503,7 +508,8 @@ class TestHeartbeatLoop:
 
     def test_loop_single_cycle(self, tmp_path, capsys):
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "1",
             ])
@@ -518,6 +524,7 @@ class TestHeartbeatLoop:
             os.kill(os.getpid(), signal.SIGTERM)
 
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
             result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
 
@@ -531,6 +538,7 @@ class TestHeartbeatLoop:
             os.kill(os.getpid(), signal.SIGINT)
 
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
             result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
 
@@ -541,6 +549,7 @@ class TestHeartbeatLoop:
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.cli.time.sleep"):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "60",
@@ -630,7 +639,8 @@ class TestCmdCeoParser:
 class TestCmdCeo:
     def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
         """cmd_ceo --headless spawns CEO agent via invoke_agent."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--headless"])
         assert result == 0
         mock_agent.assert_called_once()
@@ -640,7 +650,8 @@ class TestCmdCeo:
 
     def test_ceo_headless_meta_mode_task(self, tmp_path):
         """cmd_ceo --headless with --mode=meta includes meta instructions."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
@@ -651,6 +662,7 @@ class TestCmdCeo:
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"):
             result = main(["ceo", url, "--headless"])
         assert result == 0
@@ -660,7 +672,8 @@ class TestCmdCeo:
 
     def test_ceo_headless_timeout_is_1_hour(self, tmp_path):
         """CEO agent gets 3600s timeout in headless mode."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 3600.0
@@ -840,6 +853,7 @@ class TestResolveInput:
         with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]), \
              patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli.subprocess.run"), \
+             patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             main(["ceo", "Test Idea", "--headless"])
 
