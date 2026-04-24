@@ -199,7 +199,7 @@ Before completing your task, verify ALL of these:
 ## Rules
 
 - Always use `vault="factory"` in obsidian-cli commands — NEVER any other vault name
-- Write ONLY to the factory vault (`$FACTORY_VAULT_PATH`, default `~/factory-vault/`) — NEVER to any other directory or vault
+- Write ONLY to the factory vault (`$FACTORY_VAULT_PATH`) — NEVER to any other directory or vault
 - For nested paths (containing `/`), use `path=` instead of `name=` in obsidian-cli commands
 - Use `silent` flag to prevent notes from opening in Obsidian
 - Use wikilinks `[[note]]` for cross-references between notes
