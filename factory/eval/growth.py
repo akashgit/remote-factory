@@ -190,7 +190,9 @@ def eval_observability(project_path: Path) -> dict:
 def eval_research_grounding(project_path: Path) -> dict:
     """Measure whether improvements are informed by research (vault sources, papers, repos)."""
     try:
-        vault = Path.home() / "obsidian-vaults" / "factory"
+        from factory.obsidian.notes import vault_path as _get_vault
+
+        vault = _get_vault() or Path.home() / "obsidian-vaults" / "factory"
 
         # Sub-score A: Research knowledge exists (source notes in vault)
         sources_dir = vault / "20-Knowledge" / "Sources"

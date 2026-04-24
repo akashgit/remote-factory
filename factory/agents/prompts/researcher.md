@@ -42,7 +42,7 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md`:
 - Prior knowledge from vault
 - Recommended focus areas (actionable insights for the Strategist)
 
-Optionally write new source notes to `~/factory-vault/20-Knowledge/Sources/`.
+Optionally write new source notes to `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` (skip if `$FACTORY_VAULT_PATH` is not set).
 
 ### Rules (Research)
 - Always run local study first — it's fast baseline context
@@ -80,10 +80,11 @@ Activate Mode 3 when ANY of these are true:
    - "automated code quality improvement"
 
 4. **Read vault knowledge FIRST**: Before doing any web searches, read existing source notes:
-   - `~/factory-vault/20-Knowledge/Sources/` — prior research covering:
+   - `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` — prior research covering:
      - Self-evolution: Meta-Harness, karpathy/autoresearch, OpenSpace, uditgoenka/autoresearch, awesome-autoresearch, paperclip
      - Building phase: superpowers (TDD enforcement, task atomization), gsd-2 (hierarchical decomposition, state recovery, context scoping)
-   - `~/factory-vault/00-Factory/Patterns.md` — cross-project patterns already discovered
+   - `$FACTORY_VAULT_PATH/00-Factory/Patterns.md` — cross-project patterns already discovered
+   - Skip vault reads if `$FACTORY_VAULT_PATH` is not set
    - Only WebSearch for topics NOT already covered by vault sources
 
 5. **Structure findings by design space dimension**:
