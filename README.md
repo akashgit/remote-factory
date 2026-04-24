@@ -1,13 +1,13 @@
-# The Factory: A Harness for Agentic Evolution
+# The Factory: A Self-Evolving Harness for Agentic Software Development
 
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/branch/main/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 
-A personal harness that takes any project — a repo, a vault idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. It generalizes the pattern of *detect → delegate → evaluate → archive* across any codebase.
+**The Factory gets better the more you use it.** It takes any project — a repo, an idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. Every experiment outcome feeds back into the agents themselves, so they learn what works for *your* codebase and get sharper over time.
 
-It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory.
+It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory. Failed experiments aren't wasted: they teach the agents what to avoid next time.
 
 ## How It Works
 
@@ -59,6 +59,8 @@ factory ceo --prompt "Build a CLI that converts CSV to JSON"
 ```
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). The Factory spawns Claude Code as subprocesses — it doesn't call the Claude API directly. See the [full setup guide](docs/setup.md).
+
+**Highly recommended:** Install and configure [Obsidian](https://obsidian.md/) with a factory vault (`factory vault-init`). The vault gives the Factory persistent memory across projects — experiment history, cross-project insights, and research notes all live there. Without it, the Factory still works but loses its long-term learning capability. See [Obsidian setup](docs/setup.md#optional-obsidian-vault).
 
 ## What Can It Do?
 
