@@ -5,72 +5,53 @@
 | Tool | Version | Install |
 |------|---------|---------|
 | Python | 3.11+ | System or [pyenv](https://github.com/pyenv/pyenv) |
-| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Latest | `npm install -g @anthropic-ai/claude-code` |
 | Node.js | 18+ | Required for Claude Code and MCP servers |
+| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (for dev install) |
 | tmux | Any | `brew install tmux` (optional, for long-running sessions) |
 
+**Claude Code must be installed and authenticated.** The Factory spawns `claude` as subprocesses — it does not call the Claude API directly. However you've authenticated Claude Code (API key, Vertex AI, etc.) is how the Factory will access Claude.
+
 ## Installation
+
+### Option A: From release (recommended)
+
+```bash
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0
+```
+
+### Option B: From source (for development)
 
 ```bash
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
-
-# Install the `factory` command globally
 uv tool install -e .
-
-# Register the CEO as a Claude Code agent
-factory install
 ```
 
-Verify:
-
-```bash
-factory --help
-```
-
-If you skip `uv tool install`, prefix all commands with `uv run python -m factory` instead of `factory`.
-
-### One-liner install
+### Option C: One-liner
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install.sh | bash
 ```
 
-## Claude API Access
-
-The factory needs access to Claude. Two options:
-
-### Option A: Anthropic API (simplest)
+### Verify
 
 ```bash
-export ANTHROPIC_API_KEY=<your-key>
+factory --help
 ```
 
-### Option B: Google Vertex AI
-
-```bash
-# Authenticate
-gcloud auth login
-gcloud auth application-default login
-gcloud config set project <your-gcp-project-id>
-
-# Add to ~/.zshrc or ~/.bashrc
-export CLAUDE_CODE_USE_VERTEX=1
-export CLOUD_ML_REGION=your-region
-export ANTHROPIC_VERTEX_PROJECT_ID=<your-gcp-project-id>
-```
+If you installed from source without `uv tool install`, prefix all commands with `uv run python -m factory` instead of `factory`.
 
 ## CEO Agent Registration
 
-The Factory CEO runs as a Claude Code agent. Register it once:
+Register the Factory CEO as a Claude Code agent so you can launch it from anywhere:
 
 ```bash
 factory install
 ```
 
-This writes `~/.claude/agents/factory-ceo.md`. Now you can launch the CEO from anywhere:
+This writes `~/.claude/agents/factory-ceo.md`. Now you can:
 
 ```bash
 # From any terminal
@@ -128,18 +109,14 @@ export TELEGRAM_CHAT_ID=<chat-id>
 
 ```bash
 # 1. Install tooling
-curl -LsSf https://astral.sh/uv/install.sh | sh
-npm install -g @anthropic-ai/claude-code
+npm install -g @anthropic-ai/claude-code     # Claude Code
+curl -LsSf https://astral.sh/uv/install.sh | sh  # uv (optional, for dev install)
 
-# 2. Clone and install
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory
-uv sync
-uv tool install -e .
+# 2. Authenticate Claude Code (if not already done)
+claude  # follow the prompts
 
-# 3. Set API key (pick one)
-export ANTHROPIC_API_KEY=<your-key>
-# OR set up Vertex AI (see above)
+# 3. Install the factory
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0
 
 # 4. Register CEO agent
 factory install
