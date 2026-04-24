@@ -1016,7 +1016,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             dangerously_skip_permissions=True,
         ))
         print(result)
-        return code
+        if code != 0:
+            return code
+        return _chain_modes(
+            project_path, focus=focus,
+            min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+        )
 
     # Interactive foreground mode: launch claude with CEO prompt as system context
     prompt = resolve_prompt("ceo", project_path)
@@ -1445,6 +1450,43 @@ def _build_ceo_task(
     return task
 
 
+def _chain_modes(
+    project_path: Path,
+    focus: str | None = None,
+    min_growth: int | None = None,
+    min_fix: int | None = None,
+    max_total: int | None = None,
+    branch: str | None = None,
+    max_chains: int = 3,
+) -> int:
+    """After a cycle completes, re-detect state and chain into the next mode.
+
+    This ensures --prompt builds flow through Build → Discover → Review
+    automatically, reaching has_factory without manual re-invocation.
+    Returns 0 when has_factory is reached or all chains exhausted.
+    """
+    from factory.models import ProjectState
+    from factory.state import detect_state
+
+    for i in range(max_chains):
+        state = detect_state(project_path)
+        if state == ProjectState.HAS_FACTORY:
+            return 0
+        next_mode = _auto_detect_mode(project_path)
+        print(
+            f"[factory] Chaining: state={state.value} → mode={next_mode} "
+            f"(chain {i + 1}/{max_chains})",
+            file=sys.stderr,
+        )
+        code = _run_single_cycle(
+            project_path, next_mode, focus=focus,
+            min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+        )
+        if code != 0:
+            return code
+    return 0
+
+
 def _run_single_cycle(
     project_path: Path,
     mode: str,
@@ -1496,7 +1538,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     budget_kwargs = dict(min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch)
 
     if not loop:
-        return _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
+        code = _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
+        if code != 0:
+            return code
+        return _chain_modes(
+            project_path, focus=focus,
+            min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+        )
 
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
@@ -1521,7 +1569,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
             _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
+            _chain_modes(
+                project_path, focus=focus,
+                min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+            )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
+
+            # Re-detect mode for next cycle (state may have advanced)
+            mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
 
             if shutdown_requested:
                 break
