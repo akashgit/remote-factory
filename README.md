@@ -1,8 +1,8 @@
-# The Factory
+# The Factory: A Harness for Agentic Evolution
 
-**Autonomous multi-agent software evolution.** Point it at any codebase — or just describe what you want to build — and a team of AI agents will continuously discover, improve, and evolve it.
+A personal harness that takes any project — a repo, a vault idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. It generalizes the pattern of *detect → delegate → evaluate → archive* across any codebase.
 
-The Factory wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a structured experiment loop: a CEO agent orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — measured before and after, kept or reverted based on eval scores, and archived for institutional memory.
+It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory.
 
 ```
   ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻
@@ -36,11 +36,12 @@ Each cycle produces a measurable, auditable experiment. The factory learns from 
 ## Quick Start
 
 ```bash
-# Install
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory
-uv sync
-uv tool install -e .
+# Install (pick one)
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0    # from release
+# OR
+git clone https://github.com/akashgit/remote-factory.git && cd remote-factory && uv sync && uv tool install -e .
+
+# Register the CEO as a Claude Code agent
 factory install
 
 # Run on any project (interactive — you see everything, can redirect mid-run)
@@ -50,7 +51,7 @@ factory ceo ~/my-project
 factory ceo --prompt "Build a CLI that converts CSV to JSON"
 ```
 
-**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), [Claude Code](https://docs.anthropic.com/en/docs/claude-code), and a Claude API key (Anthropic API or Google Vertex AI). See the [full setup guide](docs/setup.md).
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). The Factory spawns Claude Code as subprocesses — it doesn't call the Claude API directly. See the [full setup guide](docs/setup.md).
 
 ## What Can It Do?
 
@@ -107,11 +108,11 @@ Default weight split is 50/50 hygiene/growth. When you define project-specific e
 
 ## Project Configuration
 
-Each managed project uses a `factory.md` file at its root:
+Each managed project uses a `factory.md` file at its root. This tells the Factory what to improve, what to protect, and how to measure progress. The CEO auto-generates a starter version during discovery — you then refine it.
 
 ```markdown
 ## Goal
-One sentence describing what the project should achieve.
+Build a fast, reliable REST API for user management.
 
 ## Scope
 ### Modifiable
@@ -121,6 +122,7 @@ One sentence describing what the project should achieve.
 ## Guards
 - Do not delete existing tests
 - Do not modify files outside scope
+- Do not remove error handling
 
 ## Eval
 ### Command
@@ -130,7 +132,16 @@ pytest --tb=short -q
 0.8
 ```
 
-The CEO auto-generates this during discovery. See [Configuration Reference](docs/configuration.md) for all options including custom eval dimensions, smoke tests, hypothesis budgets, and target branches.
+**What each section does:**
+
+| Section | Purpose |
+|---------|---------|
+| **Goal** | One sentence that guides what hypotheses the Strategist generates |
+| **Scope** | Glob patterns for files the Factory may edit — anything outside triggers a guard violation |
+| **Guards** | Inviolable rules — violations force a revert regardless of eval score |
+| **Eval** | How to run the project's tests; threshold is the minimum score to keep a change |
+
+For advanced use cases you can also configure: custom eval dimensions (benchmark accuracy, latency), smoke tests (e2e health checks), hypothesis budgets (how many changes per cycle), target branches (stage work away from main), and eval weight distribution. See the [Configuration Reference](docs/configuration.md).
 
 ## CLI Reference
 

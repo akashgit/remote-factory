@@ -177,13 +177,11 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 
 ## Environment Variables
 
+The Factory spawns Claude Code as subprocesses — it does not call the Claude API directly. Configure Claude Code authentication however you normally would (API key, Vertex AI, etc.).
+
 | Variable | Purpose | Required |
 |----------|---------|----------|
-| `ANTHROPIC_API_KEY` | Anthropic API key | One of API key or Vertex |
-| `CLAUDE_CODE_USE_VERTEX` | Use Vertex AI for Claude | |
-| `CLOUD_ML_REGION` | Vertex AI region | With Vertex |
-| `ANTHROPIC_VERTEX_PROJECT_ID` | GCP project ID | With Vertex |
 | `FACTORY_VAULT_PATH` | Custom Obsidian vault path | Optional |
 | `FACTORY_PROJECTS_DIR` | Override default projects directory | Optional |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token | Optional |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID | Optional |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for notifications | Optional |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications | Optional |
