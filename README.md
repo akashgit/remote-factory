@@ -3,7 +3,6 @@
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![codecov](https://codecov.io/gh/akashgit/remote-factory/branch/main/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 
 **The Factory gets better the more you use it.** It takes any project — a repo, an idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. Every experiment outcome feeds back into the agents themselves, so they learn what works for *your* codebase and get sharper over time.
 
@@ -11,11 +10,24 @@ It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CE
 
 ## How It Works
 
-<p align="center">
-  <img src="docs/diagrams/experiment-lifecycle.svg" alt="Experiment lifecycle — Observe, Execute, Decide" width="800">
-</p>
+```mermaid
+graph LR
+    A["🔍 Researcher<br><i>observe</i>"] --> B["🎯 Strategist<br><i>hypothesize</i>"]
+    B --> C["🔨 Builder<br><i>implement</i>"]
+    C --> D["📊 Evaluator<br><i>measure</i>"]
+    D --> E{"CEO<br><i>decide</i>"}
+    E -- "score ↑" --> F["✅ KEEP"]
+    E -- "score ↓" --> G["↩️ REVERT"]
+    F --> H["📝 Archivist<br><i>record</i>"]
+    G --> H
+    H -.-> A
 
-Each cycle produces a measurable, auditable experiment. The factory learns from its own decisions — successful patterns get reinforced, failed ones get suppressed.
+    style E fill:#5c6bc0,color:#fff,stroke:#3949ab
+    style F fill:#43a047,color:#fff,stroke:#2e7d32
+    style G fill:#e53935,color:#fff,stroke:#c62828
+```
+
+Each cycle produces a measurable, auditable experiment. The Researcher observes the project, the Strategist generates ranked hypotheses using [FEEC priority](docs/architecture.md) (Fix > Exploit > Explore > Combine), the Builder implements one on an experiment branch, the Evaluator scores before/after, and the CEO decides keep or revert. The Archivist records every outcome for cross-project learning.
 
 ## Self-Evolving Agents
 
@@ -23,12 +35,15 @@ The factory doesn't just improve your project — it improves *itself*. Every ke
 
 This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes:
 
-```
-Experiment outcomes       Reflect         Curate          Inject
-(kept or reverted)   ──────────▶    ──────────▶    ──────────▶   Agent prompts
-across all projects    Generate       Merge &        Auto-append
-                       candidate      prune          at runtime
-                       bullets        playbooks
+```mermaid
+graph LR
+    A["Experiment Outcomes<br><i>kept or reverted</i>"] -->|Reflect| B["Generate<br>candidate bullets"]
+    B -->|Curate| C["Merge & prune<br>playbooks"]
+    C -->|Inject| D["Agent Prompts<br><i>auto-appended</i>"]
+    D -.->|"next cycle"| A
+
+    style A fill:#fff3e0,stroke:#ff8f00
+    style D fill:#e8eaf6,stroke:#5c6bc0
 ```
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned. The playbooks are human-readable markdown you can inspect and override.
@@ -77,15 +92,27 @@ factory ceo --prompt "Build a CLI that converts CSV to JSON"
 
 Three layers, strict separation of concerns:
 
-<p align="center">
-  <img src="docs/diagrams/architecture.svg" alt="Three-layer architecture — CLI, CEO, Specialists" width="800">
-</p>
+```mermaid
+graph TB
+    subgraph agents ["Specialist Agents"]
+        R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
+        RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
+    end
+    subgraph ceo ["CEO Agent"]
+        C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
+    end
+    subgraph cli ["Python CLI"]
+        T["eval · guard · store · discover · events · strategy"]
+    end
+
+    agents --> ceo --> cli
+
+    style agents fill:#e8eaf6,stroke:#5c6bc0
+    style ceo fill:#fff3e0,stroke:#ff8f00
+    style cli fill:#e8f5e9,stroke:#43a047
+```
 
 The CEO detects your project's state and chooses the right mode automatically:
-
-<p align="center">
-  <img src="docs/diagrams/state-machine.svg" alt="CEO state machine — 5 states with automatic mode routing" width="800">
-</p>
 
 | State | What the CEO does |
 |-------|------------------|
@@ -99,15 +126,31 @@ See [Architecture](docs/architecture.md) for the full technical deep-dive, inclu
 
 Every change is measured by a three-tier composite score:
 
-<p align="center">
-  <img src="docs/diagrams/eval-system.svg" alt="Three-tier eval system — Hygiene, Growth, Project" width="800">
-</p>
+```mermaid
+graph LR
+    subgraph hygiene ["Hygiene · 6 dims"]
+        H1["tests · lint · types<br>coverage · guards · config"]
+    end
+    subgraph growth ["Growth · 5 dims"]
+        G1["capability · diversity<br>observability · research<br>effectiveness"]
+    end
+    subgraph project ["Project · N dims"]
+        P1["your custom metrics<br>benchmarks · latency<br>accuracy · win rate"]
+    end
 
-| Tier | What it measures | Examples |
-|------|-----------------|---------|
-| **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage |
-| **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
-| **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
+    hygiene --> M["⚖️ Weighted<br>Composite"]
+    growth --> M
+    project --> M
+    M --> S{"score ≥<br>threshold?"}
+    S -- "yes" --> K["✅ Keep"]
+    S -- "no" --> R["↩️ Revert"]
+
+    style hygiene fill:#e8eaf6,stroke:#5c6bc0
+    style growth fill:#fff3e0,stroke:#ff8f00
+    style project fill:#e8f5e9,stroke:#43a047
+    style K fill:#43a047,color:#fff
+    style R fill:#e53935,color:#fff
+```
 
 Default weight split is 50/50 hygiene/growth. When you define project-specific evals, it shifts to 30/20/50. Fully configurable via `factory.md`. See [Eval System](docs/eval.md).
 
