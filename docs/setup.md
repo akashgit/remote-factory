@@ -90,7 +90,7 @@ The factory can archive experiment history and cross-project knowledge to an Obs
 factory vault-init
 ```
 
-This creates `~/obsidian-vaults/factory/` with the expected directory structure. Configure a custom path:
+This creates a vault directory with the expected structure. Configure a custom path:
 
 ```bash
 export FACTORY_VAULT_PATH=~/my-factory-vault

@@ -1033,7 +1033,7 @@ If prior details are lost:
 The factory uses an Obsidian vault as its institutional memory:
 
 ```
-$FACTORY_VAULT_PATH/          # Default: ~/obsidian-vaults/factory/
+$FACTORY_VAULT_PATH/
 ├── 00-Factory/              # Cross-project knowledge
 │   ├── Dashboard.md         # Factory-wide status
 │   ├── Patterns.md          # Recurring patterns
