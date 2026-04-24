@@ -87,12 +87,7 @@ All domain models live in `factory/models.py` as strict Pydantic v2 models. Key 
 
 ## Environment
 
-Requires Google Vertex AI for Claude access:
-```bash
-export CLAUDE_CODE_USE_VERTEX=1
-export CLOUD_ML_REGION=us-east5
-export ANTHROPIC_VERTEX_PROJECT_ID=<project-id>
-```
+Requires Claude Code installed and authenticated. The factory spawns `claude` subprocesses — it does not call the API directly. Any Claude Code authentication method works (API key, Vertex AI, etc.).
 
 ## Running the factory
 

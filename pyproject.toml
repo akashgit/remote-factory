@@ -1,7 +1,7 @@
 [project]
 name = "remote-factory"
 version = "0.1.0"
-description = "Domain-agnostic multi-agent software evolution loop"
+description = "A harness for agentic software evolution — detect, delegate, evaluate, archive"
 requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.0",
