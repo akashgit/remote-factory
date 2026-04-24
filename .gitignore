@@ -24,3 +24,4 @@ dist/
 # Dev artifacts
 .playwright-mcp/
 screenshots/
+docs/factory-slides/
