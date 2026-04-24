@@ -183,5 +183,3 @@ The Factory spawns Claude Code as subprocesses — it does not call the Claude A
 |----------|---------|----------|
 | `FACTORY_VAULT_PATH` | Custom Obsidian vault path | Optional |
 | `FACTORY_PROJECTS_DIR` | Override default projects directory | Optional |
-| `TELEGRAM_BOT_TOKEN` | Telegram bot token for notifications | Optional |
-| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications | Optional |

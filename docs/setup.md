@@ -98,13 +98,6 @@ export FACTORY_VAULT_PATH=~/my-factory-vault
 
 If unset and the default path doesn't exist, vault features are skipped gracefully.
 
-## Optional: Telegram Notifications
-
-```bash
-export TELEGRAM_BOT_TOKEN=<token>
-export TELEGRAM_CHAT_ID=<chat-id>
-```
-
 ## Full Setup From Scratch
 
 ```bash

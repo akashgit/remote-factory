@@ -186,7 +186,6 @@ See `factory --help` for the complete list.
 
 - **Event log**: All agent invocations logged to `.factory/events.jsonl` as structured events
 - **Live dashboard**: `factory dashboard` — FastAPI server with SSE-powered real-time UI showing agent activity, experiment history, and scores across all projects
-- **Telegram notifications**: Optional push notifications for cycle completions
 
 ## Documentation
 
