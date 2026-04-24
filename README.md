@@ -1,4 +1,4 @@
-# Remote Factory
+# The Factory
 
 Domain-agnostic multi-agent software evolution loop. Give it any project — a directory, a GitHub URL, an idea from your Obsidian vault, or just a prompt — and it will discover what to measure, then continuously improve it with autonomous agents.
 
