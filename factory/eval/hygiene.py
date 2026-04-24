@@ -498,7 +498,7 @@ def eval_config_parser(project_path: Path) -> dict:
             ("goal is non-empty", bool(goal and len(str(goal)) > 0)),
             ("scope has entries", isinstance(scope, list) and len(scope) > 0),
             ("eval_command is non-empty", bool(eval_command)),
-            ("eval_threshold is positive", float(eval_threshold) > 0),
+            ("eval_threshold is positive", float(str(eval_threshold)) > 0),
         ]
 
         correct = sum(1 for _, ok in checks if ok)

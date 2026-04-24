@@ -233,7 +233,7 @@ def _project_summary(path: Path) -> dict[str, Any]:
     return info
 
 
-def _load_tsv(path: Path) -> list[dict[str, str]]:
+def _load_tsv(path: Path) -> list[dict[str, Any]]:
     """Load a TSV file into a list of dicts."""
     log.debug("load_tsv", path=str(path))
     with open(path, newline="") as f:
