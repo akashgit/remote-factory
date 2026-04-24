@@ -31,7 +31,30 @@ You → factory ceo ~/my-project
    Score regressed? → REVERT and learn
 ```
 
-Each cycle produces a measurable, auditable experiment. The factory learns from its own decisions via [ACE playbook evolution](docs/ace.md) — successful patterns get reinforced, failed ones get suppressed.
+Each cycle produces a measurable, auditable experiment. The factory learns from its own decisions — successful patterns get reinforced, failed ones get suppressed.
+
+## Self-Evolving Agents
+
+The factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
+
+This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes:
+
+```
+Experiment outcomes       Reflect         Curate          Inject
+(kept or reverted)   ──────────▶    ──────────▶    ──────────▶   Agent prompts
+across all projects    Generate       Merge &        Auto-append
+                       candidate      prune          at runtime
+                       bullets        playbooks
+```
+
+Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned. The playbooks are human-readable markdown you can inspect and override.
+
+```bash
+# Run a full improvement cycle, then evolve all agent playbooks
+factory ceo ~/my-project --mode meta
+```
+
+Meta mode is the factory's recursive self-improvement: improve the project, then improve the agents that improved the project. Over time, agents get sharper at the specific kinds of changes that work for *your* codebase. See [ACE Self-Improvement](docs/ace.md) for details.
 
 ## Quick Start
 
