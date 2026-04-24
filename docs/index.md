@@ -5,11 +5,11 @@ hide:
 
 # The Factory
 
-**A harness for agentic software evolution — detect, delegate, evaluate, archive.**
+**A self-evolving harness for agentic software development — it gets better the more you use it.**
 
-The Factory takes any project — a repo, a vault idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. It generalizes the pattern of *detect → delegate → evaluate → archive* across any codebase.
+The Factory takes any project — a repo, an idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. Every experiment outcome feeds back into the agents themselves, so they learn what works for *your* codebase and get sharper over time.
 
-It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory.
+It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory. Failed experiments aren't wasted: they teach the agents what to avoid next time.
 
 ## How It Works
 
