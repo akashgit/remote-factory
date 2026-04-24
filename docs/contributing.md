@@ -67,6 +67,7 @@ We welcome contributions at all levels. Here are some ideas to get started:
 | Idea | Description |
 |------|-------------|
 | **GSD mode** | A "Get Shit Done" workflow that skips or streamlines the Researcher phase — go straight from observations to Builder for speed-focused iterations |
+| **Notifications (Telegram, Slack, etc.)** | Real-time push notifications on keep/revert decisions, cycle completions, and score regressions. A basic `TelegramNotifier` skeleton exists in `factory/notify/telegram.py` but isn't wired into the CEO loop — needs proper integration and multi-provider support |
 | **Parallel experiments** | Run multiple hypotheses concurrently on separate branches, evaluate in parallel |
 | **GitHub Actions integration** | Run the factory as a GitHub Action on push/PR events |
 | **Custom agent roles** | Allow users to define new specialist agents beyond the 7 built-in roles |

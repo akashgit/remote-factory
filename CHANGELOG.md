@@ -41,7 +41,6 @@ Initial public release.
 ### Integrations
 
 - **Obsidian vault** — optional archival of experiment history and cross-project knowledge
-- **Telegram notifications** — push notifications for cycle completions
 - **MCP servers** — Playwright for UI testing, extensible per-project
 - **Claude Code agent registration** — `factory install` for seamless integration
 
