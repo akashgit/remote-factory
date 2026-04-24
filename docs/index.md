@@ -13,10 +13,22 @@ It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CE
 
 ## How It Works
 
-<figure markdown="span">
-  ![Experiment lifecycle](diagrams/experiment-lifecycle.svg){ width="800" }
-  <figcaption>Each cycle: observe the project, execute a hypothesis, measure the result, decide keep or revert.</figcaption>
-</figure>
+```mermaid
+graph LR
+    A["🔍 Researcher<br><i>observe</i>"] --> B["🎯 Strategist<br><i>hypothesize</i>"]
+    B --> C["🔨 Builder<br><i>implement</i>"]
+    C --> D["📊 Evaluator<br><i>measure</i>"]
+    D --> E{"CEO<br><i>decide</i>"}
+    E -- "score ↑" --> F["✅ KEEP"]
+    E -- "score ↓" --> G["↩️ REVERT"]
+    F --> H["📝 Archivist<br><i>record</i>"]
+    G --> H
+    H -.-> A
+
+    style E fill:#5c6bc0,color:#fff,stroke:#3949ab
+    style F fill:#43a047,color:#fff,stroke:#2e7d32
+    style G fill:#e53935,color:#fff,stroke:#c62828
+```
 
 ## Quick Start
 
@@ -36,18 +48,23 @@ factory ceo --prompt "Build a CLI that converts CSV to JSON"
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
 
+**Highly recommended:** Install [Obsidian](https://obsidian.md/) and run `factory vault-init`. The vault gives the Factory persistent memory — experiment history, cross-project insights, and research notes. Without it, the Factory still works but loses its long-term learning capability.
+
 ## Self-Evolving Agents
 
 The factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
 
 This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
 
-```
-Experiment outcomes       Reflect         Curate          Inject
-(kept or reverted)   ──────────▶    ──────────▶    ──────────▶   Agent prompts
-across all projects    Generate       Merge &        Auto-append
-                       candidate      prune          at runtime
-                       bullets        playbooks
+```mermaid
+graph LR
+    A["Experiment Outcomes<br><i>kept or reverted</i>"] -->|Reflect| B["Generate<br>candidate bullets"]
+    B -->|Curate| C["Merge & prune<br>playbooks"]
+    C -->|Inject| D["Agent Prompts<br><i>auto-appended</i>"]
+    D -.->|"next cycle"| A
+
+    style A fill:#fff3e0,stroke:#ff8f00
+    style D fill:#e8eaf6,stroke:#5c6bc0
 ```
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
@@ -61,17 +78,53 @@ See [ACE Self-Improvement](ace.md) for details.
 
 ## Architecture
 
-<figure markdown="span">
-  ![Architecture](diagrams/architecture.svg){ width="800" }
-  <figcaption>Three layers: Python CLI (pure tools), CEO Agent (orchestrator), Specialist Agents (workers).</figcaption>
-</figure>
+```mermaid
+graph TB
+    subgraph agents ["Specialist Agents"]
+        R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
+        RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
+    end
+    subgraph ceo ["CEO Agent"]
+        C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
+    end
+    subgraph cli ["Python CLI"]
+        T["eval · guard · store · discover · events · strategy"]
+    end
+
+    agents --> ceo --> cli
+
+    style agents fill:#e8eaf6,stroke:#5c6bc0
+    style ceo fill:#fff3e0,stroke:#ff8f00
+    style cli fill:#e8f5e9,stroke:#43a047
+```
 
 ## The Eval System
 
-<figure markdown="span">
-  ![Eval system](diagrams/eval-system.svg){ width="800" }
-  <figcaption>Three-tier composite scoring: Hygiene (code quality), Growth (capability evolution), Project (domain metrics).</figcaption>
-</figure>
+```mermaid
+graph LR
+    subgraph hygiene ["Hygiene · 6 dims"]
+        H1["tests · lint · types<br>coverage · guards · config"]
+    end
+    subgraph growth ["Growth · 5 dims"]
+        G1["capability · diversity<br>observability · research<br>effectiveness"]
+    end
+    subgraph project ["Project · N dims"]
+        P1["your custom metrics<br>benchmarks · latency<br>accuracy · win rate"]
+    end
+
+    hygiene --> M["⚖️ Weighted<br>Composite"]
+    growth --> M
+    project --> M
+    M --> S{"score ≥<br>threshold?"}
+    S -- "yes" --> K["✅ Keep"]
+    S -- "no" --> R["↩️ Revert"]
+
+    style hygiene fill:#e8eaf6,stroke:#5c6bc0
+    style growth fill:#fff3e0,stroke:#ff8f00
+    style project fill:#e8f5e9,stroke:#43a047
+    style K fill:#43a047,color:#fff
+    style R fill:#e53935,color:#fff
+```
 
 | Tier | What it measures | Examples |
 |------|-----------------|---------|
