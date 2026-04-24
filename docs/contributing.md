@@ -50,7 +50,14 @@ uv run mypy factory/              # Type check
 
 ## Contribution Ideas
 
-We welcome contributions at all levels. Here are some ideas to get started:
+We welcome contributions at all levels. Here are some ideas to get started.
+
+**Use the factory to build your contribution.** Write your idea as a `factory.md` goal, point the factory at the repo, and let it do the implementation work. Every idea below can be expressed as a one-line goal — the factory will hypothesize, build, test, and iterate:
+
+```bash
+# Fork the repo, then:
+factory ceo ~/remote-factory --focus "shell completions for the factory CLI"
+```
 
 ### Good First Issues
 
