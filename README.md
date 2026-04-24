@@ -1,35 +1,19 @@
 # The Factory: A Harness for Agentic Evolution
 
+[![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![codecov](https://codecov.io/gh/akashgit/remote-factory/branch/main/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
+
 A personal harness that takes any project — a repo, a vault idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. It generalizes the pattern of *detect → delegate → evaluate → archive* across any codebase.
 
 It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory.
 
-```
-  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻
-  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛
-  ╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹
-```
-
 ## How It Works
 
-```
-You → factory ceo ~/my-project
-         │
-         ▼
-   ┌─────────────┐     ┌────────────┐     ┌─────────┐
-   │  Researcher  │────▶│ Strategist │────▶│ Builder │
-   │  observe     │     │ hypothesize│     │implement│
-   └─────────────┘     └────────────┘     └─────────┘
-                                                │
-   ┌─────────────┐     ┌────────────┐           │
-   │  Archivist   │◀────│ Evaluator  │◀──────────┘
-   │  record      │     │  measure   │
-   └─────────────┘     └────────────┘
-         │
-         ▼
-   Score improved? → KEEP and merge
-   Score regressed? → REVERT and learn
-```
+<p align="center">
+  <img src="docs/diagrams/experiment-lifecycle.svg" alt="Experiment lifecycle — Observe, Execute, Decide" width="800">
+</p>
 
 Each cycle produces a measurable, auditable experiment. The factory learns from its own decisions — successful patterns get reinforced, failed ones get suppressed.
 
@@ -91,23 +75,15 @@ factory ceo --prompt "Build a CLI that converts CSV to JSON"
 
 Three layers, strict separation of concerns:
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Specialist Agents (claude -p subprocesses)              │
-│  Researcher · Strategist · Builder · Reviewer            │
-│  Evaluator · Archivist                                   │
-├──────────────────────────────────────────────────────────┤
-│  CEO Agent (interactive orchestrator)                    │
-│  Detects state → routes mode → spawns specialists        │
-│  Makes keep/revert decisions · Ensures archival          │
-├──────────────────────────────────────────────────────────┤
-│  Python CLI (factory/)                                   │
-│  Pure tools: eval, guard, store, discover, events        │
-│  No decisions — just data and measurement                │
-└──────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/diagrams/architecture.svg" alt="Three-layer architecture — CLI, CEO, Specialists" width="800">
+</p>
 
 The CEO detects your project's state and chooses the right mode automatically:
+
+<p align="center">
+  <img src="docs/diagrams/state-machine.svg" alt="CEO state machine — 5 states with automatic mode routing" width="800">
+</p>
 
 | State | What the CEO does |
 |-------|------------------|
@@ -120,6 +96,10 @@ See [Architecture](docs/architecture.md) for the full technical deep-dive, inclu
 ## The Eval System
 
 Every change is measured by a three-tier composite score:
+
+<p align="center">
+  <img src="docs/diagrams/eval-system.svg" alt="Three-tier eval system — Hygiene, Growth, Project" width="800">
+</p>
 
 | Tier | What it measures | Examples |
 |------|-----------------|---------|
