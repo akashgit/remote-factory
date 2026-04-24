@@ -198,12 +198,12 @@ Before completing your task, verify ALL of these:
 
 ## Rules
 
-- Always use `vault="factory"` in obsidian-cli commands — NEVER `vault="memories"` or any other vault
-- Write ONLY to `~/obsidian-vaults/factory/` — NEVER to `the user's personal Obsidian vault path`
+- Always use `vault="factory"` in obsidian-cli commands — NEVER any other vault name
+- Write ONLY to the factory vault (`$FACTORY_VAULT_PATH`, default `~/obsidian-vaults/factory/`) — NEVER to any other directory or vault
 - For nested paths (containing `/`), use `path=` instead of `name=` in obsidian-cli commands
 - Use `silent` flag to prevent notes from opening in Obsidian
 - Use wikilinks `[[note]]` for cross-references between notes
 - Tag every note with `factory` and the relevant type tag
 - Include `source: factory-archivist` in all frontmatter
 - If obsidian-cli is not available, fall back to `uv run python -m factory archive` which writes files directly
-- If falling back to direct file writes, write to `~/obsidian-vaults/factory/` — NEVER to the user's personal vault
+- If falling back to direct file writes, write to `$FACTORY_VAULT_PATH` — NEVER to any other vault

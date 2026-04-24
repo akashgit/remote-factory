@@ -121,4 +121,4 @@ factory review --verdict KEEP --pr 42           # Post structured review on GitH
 
 **Events**: All agent invocations and cycle transitions are logged to `.factory/events.jsonl` as append-only structured events. The agent runner (`factory/agents/runner.py`) emits `agent.started`, `agent.completed`, `agent.failed`, and `agent.timeout` events automatically. The heartbeat loop emits `cycle.started` and `cycle.completed`.
 
-**Dashboard**: `factory dashboard` starts a FastAPI server (default port 8420) that serves a live web UI with SSE-powered event streaming. It scans a projects directory for all `.factory/`-managed projects and shows real-time agent activity, experiment history, and project scores. Designed to run on an always-on machine .
+**Dashboard**: `factory dashboard` starts a FastAPI server (default port 8420) that serves a live web UI with SSE-powered event streaming. It scans a projects directory for all `.factory/`-managed projects and shows real-time agent activity, experiment history, and project scores. Designed to run on an always-on machine.

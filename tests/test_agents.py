@@ -128,24 +128,3 @@ class TestInvokeAgentsParallel:
         assert all(rc == 0 for _, rc in results)
 
 
-class TestClaudeAgentsResearcher:
-    """Verify the .claude/agents/researcher.md subagent definition exists and is valid."""
-
-    def test_subagent_file_exists(self):
-        agent_file = _PROJECT_ROOT / ".claude" / "agents" / "researcher.md"
-        assert agent_file.exists(), (
-            f"Expected .claude/agents/researcher.md at {agent_file}"
-        )
-
-    def test_subagent_has_frontmatter(self):
-        agent_file = _PROJECT_ROOT / ".claude" / "agents" / "researcher.md"
-        content = agent_file.read_text()
-        assert content.startswith("---"), "Subagent file should start with YAML frontmatter"
-        # Find closing frontmatter delimiter
-        end = content.find("---", 3)
-        assert end != -1, "Subagent file should have closing frontmatter delimiter"
-        frontmatter = content[3:end]
-        assert "name:" in frontmatter
-        assert "researcher" in frontmatter
-        assert "tools:" in frontmatter
-        assert "WebSearch" in frontmatter

@@ -136,7 +136,7 @@ To add MCP servers to a target project, create a `.mcp.json` in its root. The fa
 
 ### 7. Optional: Obsidian Vault
 
-The factory archives experiment history and cross-project knowledge to an Obsidian vault:
+The factory can archive experiment history and cross-project knowledge to an Obsidian vault:
 
 ```bash
 factory vault-init
@@ -145,8 +145,10 @@ factory vault-init
 This creates `~/obsidian-vaults/factory/` with the expected directory structure. Configure a custom path:
 
 ```bash
-export OBSIDIAN_VAULT_PATH=~/my-vault
+export FACTORY_VAULT_PATH=~/my-factory-vault
 ```
+
+If unset and the default path doesn't exist, vault features are skipped gracefully.
 
 ### 8. Optional: Telegram Notifications
 
