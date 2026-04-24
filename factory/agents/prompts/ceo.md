@@ -173,7 +173,7 @@ factory agent researcher --task "Mode 1 Discovery for $PROJECT_PATH.
 The project is new or incomplete. Research:
 1. Analyze the project specification (see below)
 2. Search the web for similar projects, best practices, and architecture patterns
-3. Read the factory vault at ~/obsidian-vaults/factory/ for prior knowledge on similar builds
+3. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on similar builds
 4. Identify key technical decisions (language, framework, database, APIs)
 5. Write a research report to .factory/strategy/research.md covering: similar projects found, recommended tech stack, architecture patterns, potential pitfalls, and MVP scope
 
@@ -437,7 +437,7 @@ Writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. Includ
 **0b. Deep Research (Researcher Agent)**
 
 ```bash
-factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Read the factory vault at ~/obsidian-vaults/factory/ for prior knowledge. Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
+factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge (skip if unset). Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
 ```
 
 If the Researcher fails, proceed — the Strategist can work from local observations alone.
@@ -454,7 +454,7 @@ Apply the **CEO Review Gate**:
 **0c. MANDATORY Archivist — record research findings (DO NOT SKIP)**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to ~/obsidian-vaults/factory/20-Knowledge/Sources/. Update the project research log." --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to $FACTORY_VAULT_PATH/20-Knowledge/Sources/ (skip if unset). Update the project research log." --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -783,8 +783,8 @@ factory agent archivist --task "Final archive for this factory cycle on $PROJECT
 2. Ensure all experiments from this cycle have vault notes
 3. Update the project dashboard with all results
 4. Write a cycle summary to the vault
-5. Update ~/obsidian-vaults/factory/MEMORY.md index
-6. If the factory is improving itself, record CEO decision patterns to ~/obsidian-vaults/factory/00-Factory/Agent-Performance/ceo-decisions.md" --project "$PROJECT_PATH" --timeout 300
+5. Update $FACTORY_VAULT_PATH/MEMORY.md index
+6. If the factory is improving itself, record CEO decision patterns to $FACTORY_VAULT_PATH/00-Factory/Agent-Performance/ceo-decisions.md" --project "$PROJECT_PATH" --timeout 300
 ```
 
 Then write final checkpoint:
@@ -848,7 +848,7 @@ This analyzes experiment outcomes across all managed projects (including the exp
 ```bash
 factory agent archivist --task "Record ACE playbook evolution.
 1. Read all playbooks in factory/agents/playbooks/
-2. Write a playbook evolution note to ~/obsidian-vaults/factory/00-Factory/Agent-Performance/
+2. Write a playbook evolution note to $FACTORY_VAULT_PATH/00-Factory/Agent-Performance/
 3. Record which bullets were added, removed, or had counters updated
 4. Update the factory dashboard" --project "$PROJECT_PATH"
 ```
@@ -869,7 +869,7 @@ You learn from your own decisions. Every keep/revert decision and every agent fa
 
 1. **Decision metadata in --notes**: Every `factory finalize` call includes structured CEO notes (see Step 2g). These are parsed by the ACE reflector to generate CEO playbook bullets.
 
-2. **Archivist vault entries**: The Archivist writes CEO decision patterns to `~/obsidian-vaults/factory/00-Factory/Agent-Performance/ceo-decisions.md`. This captures qualitative reasoning that structured notes can't.
+2. **Archivist vault entries**: The Archivist writes CEO decision patterns to `$FACTORY_VAULT_PATH/00-Factory/Agent-Performance/ceo-decisions.md`. This captures qualitative reasoning that structured notes can't.
 
 3. **Playbook evolution**: The ACE reflector analyzes CEO notes across all projects to generate bullets like:
    - DO: "Trust Evaluator scores — 90% of keep decisions with positive deltas held up"
@@ -1033,7 +1033,7 @@ If prior details are lost:
 The factory uses an Obsidian vault as its institutional memory:
 
 ```
-~/obsidian-vaults/factory/
+$FACTORY_VAULT_PATH/          # Default: ~/obsidian-vaults/factory/
 ├── 00-Factory/              # Cross-project knowledge
 │   ├── Dashboard.md         # Factory-wide status
 │   ├── Patterns.md          # Recurring patterns

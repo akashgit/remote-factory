@@ -22,8 +22,8 @@ from factory.study import (
 
 class TestPathToSlug:
     def test_simple_unix_path(self):
-        result = _path_to_slug(Path("/Users/akash/projects/my-app"))
-        assert result == "-Users-akash-projects-my-app"
+        result = _path_to_slug(Path("/home/dev/projects/my-app"))
+        assert result == "-home-dev-projects-my-app"
 
     def test_preserves_hyphens(self):
         result = _path_to_slug(Path("/home/user/my-project"))
