@@ -1,12 +1,26 @@
-# The Factory: A Self-Evolving Harness for Agentic Software Development
+# The Factory: From Idea to Evolving Software
 
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**The Factory gets better the more you use it.** It takes any project — a repo, an idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. Every experiment outcome feeds back into the agents themselves, so they learn what works for *your* codebase and get sharper over time.
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You can hand it a one-line prompt, a detailed spec, an idea note from your Obsidian vault, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
-It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory. Failed experiments aren't wasted: they teach the agents what to avoid next time.
+```bash
+# Got an idea? Describe it.
+factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
+
+# Have ideas in your Obsidian vault? Just name one.
+factory ceo "weather dashboard"  # fuzzy-matches your vault notes, reads the full spec, builds it
+
+# Already have a repo? Point the factory at it.
+factory ceo ~/my-project
+
+# Leave it running. Come back to a better codebase.
+factory run ~/my-project --loop
+```
+
+Under the hood, a CEO agent orchestrates six specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
 
 ## How It Works
 
@@ -58,35 +72,42 @@ Meta mode is the factory's recursive self-improvement: improve the project, then
 ## Quick Start
 
 ```bash
-# Install (pick one)
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1    # from release
-# OR
-git clone https://github.com/akashgit/remote-factory.git && cd remote-factory && uv sync && uv tool install -e .
+# Install
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
 
 # Register the CEO as a Claude Code agent
 factory install
 
-# Run on any project (interactive — you see everything, can redirect mid-run)
-factory ceo ~/my-project
+# Set up the Obsidian vault (highly recommended — gives the factory persistent memory)
+export FACTORY_VAULT_PATH=~/obsidian-vaults/factory
+factory vault-init
 
-# Or build something new from a prompt
-factory ceo --prompt "Build a CLI that converts CSV to JSON"
+# Build something
+factory ceo --prompt "Build a REST API for bookmark management with tags and search"
 ```
 
-**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). The Factory spawns Claude Code as subprocesses — it doesn't call the Claude API directly. See the [full setup guide](docs/setup.md).
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). See the [full setup guide](docs/setup.md).
 
-**Highly recommended:** Install and configure [Obsidian](https://obsidian.md/) with a factory vault (`factory vault-init`). The vault gives the Factory persistent memory across projects — experiment history, cross-project insights, and research notes all live there. Without it, the Factory still works but loses its long-term learning capability. See [Obsidian setup](docs/setup.md#optional-obsidian-vault).
+**Why Obsidian?** The vault is the factory's long-term memory. Experiment history, cross-project insights, research notes, and agent learnings all live there. If you use Claude to brainstorm ideas and save them as vault notes, the factory can build directly from those notes — just reference them by name. Without a vault, the factory still works but starts fresh every time. See [Obsidian setup](docs/setup.md#optional-obsidian-vault).
 
 ## What Can It Do?
 
+**Build from nothing** — give it an idea, it does the rest:
+
 | Input | What happens |
 |-------|-------------|
-| `factory ceo ~/my-project` | Discovers eval dimensions, then runs improvement cycles |
-| `factory ceo https://github.com/user/repo` | Clones the repo, then improves it |
-| `factory ceo --prompt "Build a weather CLI"` | Scaffolds a new project from scratch |
-| `factory ceo ~/my-project --focus "auth"` | Narrows improvements to a specific area |
-| `factory ceo ~/my-project --mode meta` | Improves the factory's own agent playbooks |
-| `factory run ~/my-project --loop` | Continuous heartbeat — runs every 30 min |
+| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
+| `factory ceo "my idea name"` | Fuzzy-matches an idea note in your Obsidian vault, reads the full spec, and builds it end-to-end |
+| `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
+
+**Improve what exists** — point it at any codebase:
+
+| Input | What happens |
+|-------|-------------|
+| `factory ceo ~/my-project` | Discovers eval dimensions, then runs measured improvement cycles |
+| `factory ceo ~/my-project --focus "auth"` | Narrows all hypotheses to a specific area |
+| `factory run ~/my-project --loop` | Continuous background improvement — runs every 30 min |
+| `factory ceo ~/my-project --mode meta` | Improves the factory's own agent playbooks (recursive self-improvement) |
 
 ## Architecture
 
