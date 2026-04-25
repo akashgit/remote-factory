@@ -995,7 +995,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
     min_growth = getattr(args, "min_growth", None)
@@ -1079,6 +1079,17 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     expanded = Path(raw).expanduser()
     if expanded.is_dir():
         return expanded.resolve(), None
+
+    # 1b. Existing file (e.g. path to a vault idea .md file)
+    if expanded.is_file():
+        idea_content = expanded.read_text()
+        slug = _slugify(expanded.stem.split("—")[0].strip())
+        project_path = _PROJECTS_DIR / slug
+        _ensure_repo(project_path)
+        _persist_spec(project_path, idea_content)
+        print(f"Idea file: {expanded.name}")
+        print(f"Project directory: {project_path}")
+        return project_path, idea_content
 
     # 2. GitHub URL
     if _is_github_url(raw):
@@ -1531,7 +1542,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     min_growth = getattr(args, "min_growth", None)
@@ -1582,7 +1593,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             # Re-detect mode for next cycle (state may have advanced)
-            mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+            mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
 
             if shutdown_requested:
                 break
