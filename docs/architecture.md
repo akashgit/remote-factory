@@ -151,3 +151,9 @@ Generated at runtime — not checked into version control:
 - [Experiment Lifecycle](diagrams/experiment-lifecycle.svg)
 - [Eval System](diagrams/eval-system.svg)
 - [State Machine](diagrams/state-machine.svg)
+
+## Related Docs
+
+- [Self-Improvement Loop](self-improvement.md) — How the CEO tracks agents, cross-project learning, and autonomous playbook evolution
+- [ACE Playbook Evolution](ace.md) — The Reflect → Curate → Inject playbook evolution mechanics
+- [Eval System](eval.md) — Three-tier scoring, guards, and precheck gates
