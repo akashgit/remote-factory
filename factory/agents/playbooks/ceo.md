@@ -1,7 +1,7 @@
 ---
 role: ceo
 updated: 2026-04-25
-item_count: 13
+item_count: 14
 ---
 
 ## Behavioral Playbook — Ceo
