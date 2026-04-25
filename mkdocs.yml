@@ -64,6 +64,7 @@ nav:
   - Concepts:
       - Architecture: architecture.md
       - Eval System: eval.md
-      - ACE Self-Improvement: ace.md
+      - Self-Improvement Loop: self-improvement.md
+      - ACE Playbook Evolution: ace.md
   - Contributing: contributing.md
   - Changelog: changelog.md

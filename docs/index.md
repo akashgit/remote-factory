@@ -101,7 +101,7 @@ Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence cou
 factory ceo ~/my-project --mode meta
 ```
 
-See [ACE Self-Improvement](ace.md) for details.
+See [Self-Improvement Loop](self-improvement.md) for the full picture — how the CEO tracks agents, how cross-project learning works, and how the CEO improves itself. See [ACE Playbook Evolution](ace.md) for the playbook mechanics.
 
 ## Architecture
 

@@ -66,7 +66,7 @@ factory ace ~/my-project
 factory ceo ~/my-project --mode meta
 ```
 
-Meta mode runs the full improvement loop, then reflects on the outcomes to evolve all 7 agent playbooks.
+Meta mode runs the full improvement loop, then reflects on the outcomes to evolve all 7 agent playbooks. See [Self-Improvement Loop](self-improvement.md) for the full picture — including cross-project learning, CEO self-evaluation, and how the pieces fit together.
 
 ## What Gets Evolved
 
