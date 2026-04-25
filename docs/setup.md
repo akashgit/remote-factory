@@ -17,7 +17,7 @@
 ### Option A: From release (recommended)
 
 ```bash
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
 ```
 
 ### Option B: From source (for development)
@@ -109,7 +109,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh  # uv (optional, for dev install
 claude  # follow the prompts
 
 # 3. Install the factory
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
 
 # 4. Register CEO agent
 factory install

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.1 (2026-04-24)
+
+### Fixes
+
+- **Vault path**: Removed all hardcoded `~/factory-vault/` references — vault path is now resolved exclusively via `$FACTORY_VAULT_PATH` env var
+- **Mypy**: Fixed type errors in `factory/eval/hygiene.py` and `factory/dashboard/app.py`
+- **CI-safe tests**: `test_rewards_vault_sources` and related growth tests no longer depend on local filesystem state
+
+### Docs & CI
+
+- **GitHub Actions CI** — pytest (3.11/3.12/3.13 matrix), ruff, mypy; runs on PRs only
+- **MkDocs Material** — hosted docs at [akashgit.github.io/remote-factory](https://akashgit.github.io/remote-factory/), auto-deployed on push
+- **Mermaid diagrams** — README uses native GitHub-rendered Mermaid instead of external SVGs
+- **Self-evolving messaging** — README title and intro emphasize the factory's learning loop
+- **Obsidian recommendation** — docs highlight vault setup for persistent cross-project learning
+
 ## v0.1.0 (2026-04-24)
 
 Initial public release.

@@ -34,7 +34,7 @@ graph LR
 
 ```bash
 # Install
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
 
 # Register the CEO as a Claude Code agent
 factory install
