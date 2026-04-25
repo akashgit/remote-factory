@@ -192,7 +192,15 @@ def eval_research_grounding(project_path: Path) -> dict:
     try:
         from factory.obsidian.notes import vault_path as _get_vault
 
-        vault = _get_vault() or Path.home() / "obsidian-vaults" / "factory"
+        vault = _get_vault()
+        if vault is None:
+            return {
+                "name": "research_grounding",
+                "score": 0.0,
+                "weight": 0.16,
+                "passed": True,
+                "details": "vault not configured — set $FACTORY_VAULT_PATH",
+            }
 
         # Sub-score A: Research knowledge exists (source notes in vault)
         sources_dir = vault / "20-Knowledge" / "Sources"
