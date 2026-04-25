@@ -24,7 +24,7 @@ factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 
 This will:
 
-1. Create a project directory at `~/cursor-projects/build-a-cli-that-converts-csv-to-json-with-s/`
+1. Create a project directory at `~/cursor-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
 2. Initialize a git repo
 3. Save your prompt as the build spec (`.factory/strategy/current.md`)
 4. Launch the CEO agent in interactive mode
@@ -105,9 +105,9 @@ factory run ~/my-project --loop --max-cycles 5     # stop after 5 cycles
 For long-running sessions, use tmux:
 
 ```bash
-factory tmux ~/my-project --loop         # launches in a detached tmux session
-factory tmux-ls                          # list active factory sessions
-factory tmux-stop ~/my-project           # stop a session
+factory tmux ~/my-project --loop              # launches in a detached tmux session
+factory tmux-ls                               # list active factory sessions
+factory tmux-stop --path ~/my-project         # stop a session
 ```
 
 ## Focusing on a Specific Area
