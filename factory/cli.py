@@ -337,13 +337,14 @@ def cmd_deferred_remove(args: argparse.Namespace) -> int:
 
 
 def cmd_deferred_list(args: argparse.Namespace) -> int:
-    from factory.study import _parse_deferred_items
+    from factory.study import _parse_deferred_items, _persist_deferred_items
 
     project_path = Path(args.path)
     items = _parse_deferred_items(project_path)
     if not items:
         print("No deferred items.")
         return 0
+    _persist_deferred_items(project_path, items)
     for item in items:
         print(f"- {item}")
     return 0
