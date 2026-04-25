@@ -987,6 +987,27 @@ class TestExtractDeferredBullets:
         content = "## Deferred\nSome paragraph text.\n- Actual item\n\nMore text.\n"
         assert _extract_deferred_bullets(content) == ["Actual item"]
 
+    def test_bold_text_heading(self):
+        content = (
+            "**Total estimated phases:** 5\n\n"
+            "**What is deferred (post-MVP):**\n"
+            "- Docker-Wyze-Bridge\n- RSS feed\n- Deployment\n\n"
+        )
+        assert _extract_deferred_bullets(content) == [
+            "Docker-Wyze-Bridge", "RSS feed", "Deployment",
+        ]
+
+    def test_bold_heading_stops_at_next_bold_heading(self):
+        content = (
+            "**Deferred:**\n- Item one\n- Item two\n"
+            "**Other section:**\n- Not deferred\n"
+        )
+        assert _extract_deferred_bullets(content) == ["Item one", "Item two"]
+
+    def test_bold_heading_stops_at_markdown_heading(self):
+        content = "**Backlog:**\n- Backlog item\n## Next Phase\n- Phase item\n"
+        assert _extract_deferred_bullets(content) == ["Backlog item"]
+
 
 class TestParseDeferredItems:
     def test_returns_empty_when_no_factory_dir(self, tmp_path):
