@@ -67,6 +67,7 @@ async def invoke_agent(
     *,
     timeout: float = 600.0,
     dangerously_skip_permissions: bool = True,
+    model: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -78,6 +79,8 @@ async def invoke_agent(
     cmd = ["claude", "-p", full_prompt]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
+    if model:
+        cmd.extend(["--model", model])
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
@@ -167,6 +170,7 @@ async def invoke_agents_parallel(
     *,
     timeout: float = 600.0,
     dangerously_skip_permissions: bool = True,
+    model: str | None = None,
 ) -> list[tuple[str, int]]:
     """Invoke multiple agents concurrently. Returns list of (output, return_code)."""
     coros = [
@@ -176,6 +180,7 @@ async def invoke_agents_parallel(
             project_path,
             timeout=timeout,
             dangerously_skip_permissions=dangerously_skip_permissions,
+            model=model,
         )
         for role, task in tasks
     ]
