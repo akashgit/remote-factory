@@ -73,6 +73,11 @@ Meta mode is the factory's recursive self-improvement: improve the project, then
 
 ## Quick Start
 
+> **Active development** — The Factory is evolving rapidly. Always pull the latest before starting a session:
+> ```bash
+> cd remote-factory && git pull && uv sync
+> ```
+
 ```bash
 # Install from source (recommended — the factory evolves fast)
 git clone https://github.com/akashgit/remote-factory.git
