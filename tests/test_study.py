@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from factory.study import (
     _detect_self_improvement,
     _extract_keywords,
@@ -322,6 +324,7 @@ class TestStudyProjectLocal:
 
     def test_includes_obsidian_notes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
 
         project_path = tmp_path / "myapp"
@@ -642,6 +645,10 @@ class TestFetchOpenIssues:
 
 
 class TestReadObsidianNotes:
+    @pytest.fixture(autouse=True)
+    def _clear_factory_vault(self, monkeypatch):
+        monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
+
     def test_reads_notes(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
