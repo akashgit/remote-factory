@@ -33,7 +33,9 @@ At runtime, when an agent is spawned, evolved playbooks are automatically append
 
 ## Playbook Format
 
-Playbooks live in `factory/agents/playbooks/<role>.md`:
+Factory ships clean default playbooks in `factory/agents/playbooks/<role>.md`. When ACE evolves playbooks from your experiment data, it writes to `~/.factory/playbooks/<role>.md` (user-local). The injector checks user-local first, then falls back to factory defaults. Your evolved playbooks are never committed to the factory repo — they're personal to your experiment history.
+
+Example format:
 
 ```markdown
 ---

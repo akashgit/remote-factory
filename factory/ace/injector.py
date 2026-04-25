@@ -1,19 +1,17 @@
 """Injector — load and inject playbooks into agent prompts.
 
-Playbooks are stored at factory/agents/playbooks/<role>.md and are
-auto-appended to agent prompts at invocation time.
+Playbooks are resolved with a two-tier lookup:
+  1. User-local evolved: ~/.factory/playbooks/<role>.md
+  2. Factory defaults:   factory/agents/playbooks/<role>.md
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import structlog
 
-log = structlog.get_logger()
+from factory.ace.paths import resolve_playbook_path
 
-# Directory containing evolved playbooks (shipped with the factory)
-_PLAYBOOKS_DIR = Path(__file__).parent.parent / "agents" / "playbooks"
+log = structlog.get_logger()
 
 
 def load_playbook(role: str) -> str | None:
@@ -21,8 +19,8 @@ def load_playbook(role: str) -> str | None:
 
     Returns the playbook content as a string, or None if no playbook exists.
     """
-    path = _PLAYBOOKS_DIR / f"{role}.md"
-    if not path.exists():
+    path = resolve_playbook_path(role)
+    if path is None:
         return None
     content = path.read_text().strip()
     if not content:
