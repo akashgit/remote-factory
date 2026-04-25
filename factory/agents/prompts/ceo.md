@@ -514,7 +514,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - Does it follow FEEC priority? (Fix before Explore)
    - Is it redundant with a previously reverted experiment?
    - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2/3 of hypotheses must align with the focus. REDIRECT if focus is ignored.
-   - **If open GitHub issues exist in observations:** does at least one hypothesis address them? REDIRECT if issues are ignored without justification.
+   - **If YOUR open GitHub issues exist in observations:** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
