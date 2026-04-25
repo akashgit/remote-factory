@@ -58,4 +58,4 @@ uv run python -m factory tmux /path/to/project --loop
 | Evaluator  | `factory/agents/prompts/evaluator.md`   | Score before/after, interpret        |
 | Archivist  | `factory/agents/prompts/archivist.md`   | Record learnings to Obsidian vault   |
 
-All prompts support two-tier override: project-specific (`.factory/agents/<role>.md`) takes precedence over factory default. Evolved playbooks from `factory/agents/playbooks/<role>.md` are auto-injected.
+All prompts support two-tier override: project-specific (`.factory/agents/<role>.md`) takes precedence over factory default. Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
