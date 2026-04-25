@@ -290,11 +290,15 @@ def _analyze_observability(project_path: Path, language: str = "python") -> dict
     }
 
 
-_DEFERRED_HEADING_RE = re.compile(
-    r"^#{1,4}\s+.*(deferred|post[-\s]mvp|future\s+work|backlog).*$",
+_DEFERRED_KEYWORDS_RE = re.compile(
+    r"(deferred|post[-\s]mvp|future\s+work|backlog)",
     re.IGNORECASE,
 )
-_ANY_HEADING_RE = re.compile(r"^#{1,4}\s+")
+_DEFERRED_HEADING_RE = re.compile(
+    r"^(?:#{1,4}\s+|\*\*).*(deferred|post[-\s]mvp|future\s+work|backlog).*$",
+    re.IGNORECASE,
+)
+_ANY_HEADING_RE = re.compile(r"^(?:#{1,4}\s+|\*\*[A-Z])")
 _BULLET_PREFIX_RE = re.compile(r"^[-*•]\s+")
 
 

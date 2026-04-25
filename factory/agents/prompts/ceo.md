@@ -216,6 +216,16 @@ Generate a phased build plan as GitHub issues:
 - Phase 1: Project scaffold + eval harness (always first)
 - Phase 2-N: Feature implementation in dependency order
 Each issue should be one PR's worth of work.
+
+At the end of the plan, add a section for items not included in MVP:
+
+## Deferred
+
+- <item 1>
+- <item 2>
+
+This section MUST use a markdown heading (## Deferred) — not bold text or other formatting. Items listed here will be automatically prioritized when the project enters Improve mode.
+
 Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
 
@@ -230,9 +240,16 @@ This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
    - Is Phase 1 always scaffold + eval harness?
    - Is the total scope achievable or is it over-ambitious?
    - Are there any phases that should be split, merged, or reordered?
+   - **Does the plan have a `## Deferred` section?** If items were excluded from MVP scope, they MUST be listed under a `## Deferred` heading (not bold text, not inline mentions). REDIRECT if deferred items exist but aren't in a proper `## Deferred` section.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with specific corrections (e.g., "Phase 3 is too large — split into 3a and 3b", "Missing error handling phase")
-5. If PROCEED: write `PLAN APPROVED` in your verdict file, then continue to B2
+5. If PROCEED: write `PLAN APPROVED` in your verdict file, then persist deferred items:
+
+```bash
+uv run python -m factory deferred-list "$PROJECT_PATH"
+```
+
+If deferred items were parsed, they are now in `.factory/strategy/deferred.md` and will survive future strategy rewrites. Continue to B2.
 
 ### B2: MANDATORY Archivist — record approved plan (DO NOT SKIP)
 
