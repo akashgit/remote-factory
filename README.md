@@ -59,7 +59,7 @@ Meta mode is the factory's recursive self-improvement: improve the project, then
 
 ```bash
 # Install (pick one)
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.0    # from release
+pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1    # from release
 # OR
 git clone https://github.com/akashgit/remote-factory.git && cd remote-factory && uv sync && uv tool install -e .
 
