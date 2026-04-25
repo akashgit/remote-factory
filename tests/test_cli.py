@@ -7,7 +7,9 @@ import signal
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
-from factory.cli import main, build_parser, _is_github_url, _match_vault_idea, _slugify, _resolve_input, _persist_spec
+import pytest
+
+from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -323,7 +325,8 @@ class TestCmdVaultInit:
         assert args.command == "vault-init"
 
     def test_vault_init_calls_init_vault(self, tmp_path, capsys, monkeypatch):
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "vault"))
+        monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
         result = main(["vault-init"])
         assert result == 0
         out = capsys.readouterr().out
@@ -737,63 +740,6 @@ class TestSlugify:
         assert _slugify("!!!") == "factory-project"
 
 
-class TestMatchVaultIdea:
-    def test_exact_match(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Locals Know — Restaurant Discovery.md").write_text("# Locals Know")
-        (ideas_dir / "Ideas.md").write_text("# MOC")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("Locals Know")
-        assert match is not None
-        assert "Locals Know" in match.stem
-
-    def test_short_name_match(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Betty Terminal \u2014 AI-Native Terminal.md").write_text("# Betty")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("Betty Terminal")
-        assert match is not None
-
-    def test_substring_match(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Kalshi Bot \u2014 High-Probability Trader.md").write_text("# Kalshi")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("kalshi")
-        assert match is not None
-        assert "Kalshi" in match.stem
-
-    def test_no_match(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Some Idea.md").write_text("# Idea")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("nonexistent thing")
-        assert match is None
-
-    def test_skips_moc(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Ideas.md").write_text("# Ideas MOC")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("Ideas")
-        assert match is None
-
-    def test_multi_word_match(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Voice to Vault \u2014 Speak and Save.md").write_text("# V2V")
-
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]):
-            match = _match_vault_idea("voice vault")
-        assert match is not None
 
 
 class TestPersistSpec:
@@ -821,41 +767,54 @@ class TestResolveInput:
         assert project_path == tmp_path
         assert context is None
 
-    def test_vault_idea(self, tmp_path):
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "My Project \u2014 Something Cool.md").write_text("# Build something cool")
+    def test_idea_file(self, tmp_path):
+        idea_file = tmp_path / "My Project \u2014 Something Cool.md"
+        idea_file.write_text("# Build something cool")
 
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]), \
-             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"):
-            project_path, context = _resolve_input("My Project")
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
+        assert (project_path / ".git").is_dir()
         assert context is not None
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli._get_ideas_dirs", return_value=[tmp_path / "nope"]), \
-             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
+        assert (project_path / ".git").is_dir()
         assert context == "Build a todo app with FastAPI"
 
-    def test_ceo_receives_context(self, tmp_path):
-        """When a vault idea is matched, its content reaches the CEO task."""
-        ideas_dir = tmp_path / "Ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Test Idea \u2014 Details.md").write_text("# Test Idea\nBuild X that does Y")
+    def test_non_md_file(self, tmp_path):
+        py_file = tmp_path / "script.py"
+        py_file.write_text("print('hello')")
 
-        with patch("factory.cli._get_ideas_dirs", return_value=[ideas_dir]), \
-             patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"), \
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input(str(py_file))
+
+        assert project_path.name == "script"
+        assert (project_path / ".git").is_dir()
+        assert context == "print('hello')"
+
+    def test_binary_file_raises(self, tmp_path):
+        bin_file = tmp_path / "data.bin"
+        bin_file.write_bytes(b"\x00\x01\x02\xff")
+
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+             pytest.raises(UnicodeDecodeError):
+            _resolve_input(str(bin_file))
+
+    def test_ceo_receives_context(self, tmp_path):
+        """When an idea file is given, its content reaches the CEO task."""
+        idea_file = tmp_path / "Test Idea \u2014 Details.md"
+        idea_file.write_text("# Test Idea\nBuild X that does Y")
+
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
              patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", "Test Idea", "--headless"])
+            main(["ceo", str(idea_file), "--headless"])
 
         task_arg = mock_agent.call_args[0][1]  # second positional = task
         assert "Build X that does Y" in task_arg

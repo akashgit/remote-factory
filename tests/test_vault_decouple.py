@@ -1,4 +1,4 @@
-"""Tests for vault decoupling — FACTORY_VAULT_PATH / FACTORY_IDEAS_DIRS env vars."""
+"""Tests for vault decoupling — FACTORY_VAULT_PATH env var."""
 
 from __future__ import annotations
 
@@ -45,7 +45,6 @@ def _clean_vault_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Remove all vault-related env vars so each test starts clean."""
     monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
     monkeypatch.delenv("OBSIDIAN_VAULT_PATH", raising=False)
-    monkeypatch.delenv("FACTORY_IDEAS_DIRS", raising=False)
     # Disable obsidian-cli so write functions fall back to direct file I/O
     monkeypatch.setattr(
         "factory.obsidian.notes._obsidian_create",
@@ -176,62 +175,12 @@ class TestVaultConfigured:
         assert path.exists()
 
 
-# ── _resolve_input / _get_ideas_dirs ─────────────────────────────
 
-
-class TestIdeasDirs:
-    def test_empty_when_unset(self) -> None:
-        from factory.cli import _get_ideas_dirs
-
-        assert _get_ideas_dirs() == []
-
-    def test_single_path(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    ) -> None:
-        from factory.cli import _get_ideas_dirs
-
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", str(tmp_path / "ideas"))
-        result = _get_ideas_dirs()
-        assert len(result) == 1
-        assert result[0] == tmp_path / "ideas"
-
-    def test_multiple_paths(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    ) -> None:
-        from factory.cli import _get_ideas_dirs
-
-        p1 = tmp_path / "ideas1"
-        p2 = tmp_path / "ideas2"
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", f"{p1}:{p2}")
-        result = _get_ideas_dirs()
-        assert len(result) == 2
-        assert result[0] == p1
-        assert result[1] == p2
-
-    def test_ignores_empty_segments(
-        self, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from factory.cli import _get_ideas_dirs
-
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", ":/foo::")
-        result = _get_ideas_dirs()
-        assert len(result) == 1
-        assert result[0] == Path("/foo")
-
-    def test_expands_tilde(
-        self, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from factory.cli import _get_ideas_dirs
-
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", "~/my-ideas")
-        result = _get_ideas_dirs()
-        assert len(result) == 1
-        assert "~" not in str(result[0])
-        assert str(result[0]).startswith("/")
+# ── _resolve_input ─────────────────────────────────────────────
 
 
 class TestResolveInputWithoutVault:
-    """_resolve_input works when FACTORY_IDEAS_DIRS is unset (no vault)."""
+    """_resolve_input works for directory and prompt inputs."""
 
     def test_existing_dir_works(self, tmp_path: Path) -> None:
         from factory.cli import _resolve_input
@@ -254,37 +203,17 @@ class TestResolveInputWithoutVault:
         assert path.exists()
         assert ctx == "build a weather dashboard"
 
-
-class TestMatchVaultIdea:
-    def test_returns_none_with_no_ideas_dirs(self) -> None:
-        from factory.cli import _match_vault_idea
-
-        assert _match_vault_idea("some idea") is None
-
-    def test_matches_idea_file(
+    def test_idea_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        from factory.cli import _match_vault_idea
+        import factory.cli as cli_mod
+        from factory.cli import _resolve_input
 
-        ideas_dir = tmp_path / "ideas"
-        ideas_dir.mkdir()
-        idea = ideas_dir / "Weather Dashboard — live forecast.md"
-        idea.write_text("# Weather Dashboard\nShow forecasts.")
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", str(ideas_dir))
+        monkeypatch.setattr(cli_mod, "_PROJECTS_DIR", tmp_path / "projects")
+        idea_file = tmp_path / "Weather Dashboard \u2014 live forecast.md"
+        idea_file.write_text("# Weather Dashboard\nShow forecasts.")
 
-        result = _match_vault_idea("weather dashboard")
-        assert result is not None
-        assert result == idea
-
-    def test_skips_ideas_md(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    ) -> None:
-        from factory.cli import _match_vault_idea
-
-        ideas_dir = tmp_path / "ideas"
-        ideas_dir.mkdir()
-        (ideas_dir / "Ideas.md").write_text("# Ideas MOC")
-        monkeypatch.setenv("FACTORY_IDEAS_DIRS", str(ideas_dir))
-
-        result = _match_vault_idea("ideas")
-        assert result is None
+        path, ctx = _resolve_input(str(idea_file))
+        assert path.parent == tmp_path / "projects"
+        assert ctx is not None
+        assert "Weather Dashboard" in ctx

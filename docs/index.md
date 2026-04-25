@@ -7,14 +7,14 @@ hide:
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
 
-You can hand it a one-line prompt, a detailed spec, an idea note from your Obsidian vault, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+You can hand it a one-line prompt, a detailed spec, a path to an idea file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
 # Got an idea? Describe it.
 factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
 
-# Have ideas in your Obsidian vault? Just name one.
-factory ceo "weather dashboard"  # fuzzy-matches your vault notes, reads the full spec, builds it
+# Have an idea written up in a file? Pass the path.
+factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
 
 # Already have a repo? Point the factory at it.
 factory ceo ~/my-project
@@ -48,7 +48,7 @@ A CEO agent orchestrates six specialists — each running as an independent [Cla
 | Input | What happens |
 |-------|-------------|
 | `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
-| `factory ceo "my idea name"` | Fuzzy-matches an idea note in your Obsidian vault, reads the full spec, and builds it end-to-end |
+| `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
 | `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
 
 **Improve what exists** — point it at any codebase:
