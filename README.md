@@ -73,7 +73,7 @@ Meta mode is the factory's recursive self-improvement: improve the project, then
 
 ```bash
 # Install
-pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
+pip install git+https://github.com/akashgit/remote-factory.git
 
 # Register the CEO as a Claude Code agent
 factory install
