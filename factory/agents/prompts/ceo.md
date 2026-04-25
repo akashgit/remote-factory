@@ -714,6 +714,10 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
     --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E"
+
+# If this experiment addressed a deferred item, remove it from deferred.md
+# Check the hypothesis for a **Deferred item:** tag — if present, remove that
+# line from .factory/strategy/deferred.md so it's not re-prioritized next cycle.
 ```
 
 **If precheck FAILS → Mandatory Revert:**
