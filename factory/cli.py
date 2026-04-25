@@ -998,6 +998,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
+    discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
@@ -1008,6 +1009,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+        discover_only=discover_only,
     )
 
     if headless:
@@ -1027,6 +1029,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return _chain_modes(
             project_path, focus=focus,
             min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+            already_improved=mode in ("improve", "meta") or discover_only,
         )
 
     # Interactive foreground mode: launch claude with CEO prompt as system context
@@ -1346,6 +1349,7 @@ def _build_ceo_task(
     min_fix: int | None = None,
     max_total: int | None = None,
     branch: str | None = None,
+    discover_only: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1393,10 +1397,19 @@ def _build_ceo_task(
             "Do NOT skip to Improve mode — the project needs to be built first."
         )
     elif mode == "discover":
-        task += (
-            "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
-            "and generate the eval harness. Do NOT run the Improve loop."
-        )
+        if discover_only:
+            task += (
+                "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+                "and generate the eval harness. Then complete Review mode to initialize the "
+                "factory. Do NOT run the Improve loop."
+            )
+        else:
+            task += (
+                "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+                "and generate the eval harness. Then complete Review mode: verify the eval "
+                "harness works, mark as reviewed, and initialize the factory. "
+                "After initialization, proceed to Improve mode for one experiment cycle."
+            )
     elif mode == "meta":
         task += (
             "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
@@ -1414,22 +1427,26 @@ def _chain_modes(
     min_fix: int | None = None,
     max_total: int | None = None,
     branch: str | None = None,
+    already_improved: bool = False,
     max_chains: int = 3,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
-    This ensures --prompt builds flow through Build → Discover → Review
-    automatically, reaching has_factory without manual re-invocation.
-    Returns 0 when has_factory is reached or all chains exhausted.
+    This ensures builds and discoveries flow through the full pipeline
+    automatically — Build → Discover → Review → Improve — without manual
+    re-invocation. Returns 0 when one Improve cycle completes (or all
+    chains are exhausted).
     """
     from factory.models import ProjectState
     from factory.state import detect_state
 
     for i in range(max_chains):
         state = detect_state(project_path)
-        if state == ProjectState.HAS_FACTORY:
+        if state == ProjectState.HAS_FACTORY and already_improved:
             return 0
         next_mode = _auto_detect_mode(project_path)
+        if next_mode == "improve":
+            already_improved = True
         print(
             f"[factory] Chaining: state={state.value} → mode={next_mode} "
             f"(chain {i + 1}/{max_chains})",
@@ -1454,6 +1471,7 @@ def _run_single_cycle(
     min_fix: int | None = None,
     max_total: int | None = None,
     branch: str | None = None,
+    discover_only: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -1461,6 +1479,7 @@ def _run_single_cycle(
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+        discover_only=discover_only,
     )
 
     result, code = _run(invoke_agent(
@@ -1485,6 +1504,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
+    discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
@@ -1493,13 +1513,17 @@ def cmd_run(args: argparse.Namespace) -> int:
     _ensure_dashboard(project_path)
 
     budget_kwargs = dict(min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch)
+    skip_improve = mode in ("improve", "meta") or discover_only
 
     if not loop:
-        code = _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
+        code = _run_single_cycle(
+            project_path, mode, context, focus=focus, prompt_file=prompt_file,
+            discover_only=discover_only, **budget_kwargs,
+        )
         if code != 0:
             return code
         return _chain_modes(
-            project_path, focus=focus,
+            project_path, focus=focus, already_improved=skip_improve,
             min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
         )
 
@@ -1525,9 +1549,12 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[factory] Cycle {cycle} started at {ts}")
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
-            _run_single_cycle(project_path, mode, context, focus=focus, prompt_file=prompt_file, **budget_kwargs)
+            _run_single_cycle(
+                project_path, mode, context, focus=focus, prompt_file=prompt_file,
+                discover_only=discover_only, **budget_kwargs,
+            )
             _chain_modes(
-                project_path, focus=focus,
+                project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
@@ -1800,6 +1827,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--headless", action="store_true", default=False,
         help="Run in pipe mode (non-interactive) instead of foreground",
     )
+    p.add_argument(
+        "--discover-only", action="store_true", default=False,
+        help="Only run discovery and review — do not chain into improve",
+    )
     p.add_argument("--min-growth", type=int, default=None,
                     help="Minimum guaranteed growth hypothesis slots (default: 2)")
     p.add_argument("--min-fix", type=int, default=None,
@@ -1826,6 +1857,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--focus", default=None,
         help="Narrow improvement efforts to a specific area (e.g. 'dashboard UI', 'eval reliability')",
+    )
+    p.add_argument(
+        "--discover-only", action="store_true", default=False,
+        help="Only run discovery and review — do not chain into improve",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
