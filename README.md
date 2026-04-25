@@ -72,8 +72,9 @@ Meta mode is the factory's recursive self-improvement: improve the project, then
 ## Quick Start
 
 ```bash
-# Install
-pip install git+https://github.com/akashgit/remote-factory.git
+# Install from source (recommended — the factory evolves fast)
+git clone https://github.com/akashgit/remote-factory.git
+cd remote-factory && uv sync && uv tool install -e .
 
 # Register the CEO as a Claude Code agent
 factory install

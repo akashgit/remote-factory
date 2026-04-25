@@ -14,19 +14,21 @@
 
 ## Installation
 
-### Option A: From release (recommended)
+### Option A: From source (recommended)
 
-```bash
-pip install git+https://github.com/akashgit/remote-factory.git
-```
-
-### Option B: From source (for development)
+The factory evolves fast — installing from source lets you `git pull` to stay current.
 
 ```bash
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
 uv tool install -e .
+```
+
+### Option B: From pip
+
+```bash
+pip install git+https://github.com/akashgit/remote-factory.git
 ```
 
 ### Option C: One-liner
@@ -109,7 +111,8 @@ curl -LsSf https://astral.sh/uv/install.sh | sh  # uv (optional, for dev install
 claude  # follow the prompts
 
 # 3. Install the factory
-pip install git+https://github.com/akashgit/remote-factory.git
+git clone https://github.com/akashgit/remote-factory.git
+cd remote-factory && uv sync && uv tool install -e .
 
 # 4. Register CEO agent
 factory install
