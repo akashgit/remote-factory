@@ -106,6 +106,8 @@ factory checkpoint /path/to/project             # Save CEO state for crash recov
 factory resume /path/to/project                 # Resume from saved checkpoint
 factory diff /path --exp1 N --exp2 M            # Compare two experiments
 factory explain /path --exp N                   # Explain experiment with FEEC analysis
+factory deferred-list /path                     # List pending deferred items
+factory deferred-remove /path "item text"       # Remove a completed deferred item
 factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck gate
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
