@@ -55,7 +55,7 @@ Clone and improve an existing repo:
 factory ceo https://github.com/user/repo
 ```
 
-The Factory clones the repo to a temp directory, discovers what it does, sets up evaluation dimensions, and starts improving it.
+The Factory clones the repo to a temporary directory, discovers what it does, sets up evaluation dimensions, and starts improving it. If you plan to keep the results, clone the repo yourself first and use the local directory path instead — temp directories don't survive reboots.
 
 ### From an existing directory
 
@@ -94,7 +94,7 @@ Headless mode is useful for scripting and automation.
 
 ## Continuous Improvement
 
-Run the Factory in a loop so it keeps improving your project unattended:
+`factory run` is equivalent to `factory ceo` but designed for unattended operation — run it in a loop so the Factory keeps improving your project:
 
 ```bash
 factory run ~/my-project --loop                    # every 30 min (default)
