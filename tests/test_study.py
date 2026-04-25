@@ -11,6 +11,7 @@ from factory.study import (
     _extract_messages,
     _fetch_open_issues,
     _find_log_files,
+    _get_github_user,
     _load_cross_project_insights,
     _path_to_slug,
     _read_obsidian_notes,
@@ -241,38 +242,79 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=[]),
+            patch("factory.study._get_github_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "## Hypothesis Budget" in result
         assert "**Fix slots** | 0" in result
         assert "**Growth slots** | 2" in result
 
-    def test_hypothesis_budget_with_issues(self, tmp_path, monkeypatch):
-        """9 open issues → fix=3, growth=2, flex=2 → total=7."""
+    def test_hypothesis_budget_with_own_issues(self, tmp_path, monkeypatch):
+        """9 own issues → fix=3, growth=2, flex=2 → total=7."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         issues = [
-            {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
+            {"number": i, "title": f"Issue {i}", "labels": [], "body": "", "author": "owner"}
             for i in range(9)
         ]
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=issues),
+            patch("factory.study._get_github_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "**Fix slots** | 3" in result
         assert "**Recommended hypotheses: 7**" in result
-        assert "SHOULD address open GitHub issues" in result
+        assert "Your Issues (9)" in result
 
-    def test_hypothesis_budget_small_issue_count(self, tmp_path, monkeypatch):
-        """2 open issues → fix=0 (2//3=0), growth=2, flex=2 → total=4."""
+    def test_community_issues_do_not_drive_fix_slots(self, tmp_path, monkeypatch):
+        """9 community issues → fix=0 (none are yours), growth=2, flex=2 → total=4."""
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         issues = [
-            {"number": i, "title": f"Issue {i}", "labels": [], "body": ""}
+            {"number": i, "title": f"Issue {i}", "labels": [], "body": "", "author": "external"}
+            for i in range(9)
+        ]
+        with (
+            patch("factory.study._search_similar_projects", return_value=[]),
+            patch("factory.study._fetch_open_issues", return_value=issues),
+            patch("factory.study._get_github_user", return_value="owner"),
+        ):
+            result = study_project_local(tmp_path / "myapp")
+        assert "**Fix slots** | 0" in result
+        assert "Community Issues (9)" in result
+        assert "do NOT auto-fix" in result
+
+    def test_mixed_issues_split_correctly(self, tmp_path, monkeypatch):
+        """3 own + 6 community → fix=1, own section + community section."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        own = [
+            {"number": i, "title": f"Own {i}", "labels": [], "body": "", "author": "owner"}
+            for i in range(3)
+        ]
+        community = [
+            {"number": i + 10, "title": f"Ext {i}", "labels": [], "body": "", "author": "someone"}
+            for i in range(6)
+        ]
+        with (
+            patch("factory.study._search_similar_projects", return_value=[]),
+            patch("factory.study._fetch_open_issues", return_value=own + community),
+            patch("factory.study._get_github_user", return_value="owner"),
+        ):
+            result = study_project_local(tmp_path / "myapp")
+        assert "Your Issues (3)" in result
+        assert "Community Issues (6)" in result
+        assert "**Fix slots** | 1" in result
+
+    def test_hypothesis_budget_small_issue_count(self, tmp_path, monkeypatch):
+        """2 own issues → fix=0 (2//3=0), growth=2, flex=2 → total=4."""
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        issues = [
+            {"number": i, "title": f"Issue {i}", "labels": [], "body": "", "author": "owner"}
             for i in range(2)
         ]
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=issues),
+            patch("factory.study._get_github_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "**Fix slots** | 0" in result
@@ -495,6 +537,35 @@ class TestSearchSimilarProjects:
         assert results == []
 
 
+class TestGetGithubUser:
+    def test_returns_login(self):
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="akashgit\n", stderr=""
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            assert _get_github_user() == "akashgit"
+
+    def test_returns_none_on_failure(self):
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="not logged in"
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            assert _get_github_user() is None
+
+    def test_returns_none_on_missing_gh(self):
+        with patch(
+            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
+        ):
+            assert _get_github_user() is None
+
+    def test_returns_none_on_empty_output(self):
+        mock_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="", stderr=""
+        )
+        with patch("factory.study.subprocess.run", return_value=mock_result):
+            assert _get_github_user() is None
+
+
 class TestFetchOpenIssues:
     def test_success(self, tmp_path):
         gh_output = json.dumps([
@@ -503,12 +574,14 @@ class TestFetchOpenIssues:
                 "title": "Fix login bug",
                 "labels": [{"name": "bug"}, {"name": "priority"}],
                 "body": "Login fails when password contains special chars.",
+                "author": {"login": "owner"},
             },
             {
                 "number": 7,
                 "title": "Add dark mode",
                 "labels": [],
                 "body": None,
+                "author": {"login": "contributor"},
             },
         ])
         mock_result = subprocess.CompletedProcess(
@@ -522,7 +595,9 @@ class TestFetchOpenIssues:
         assert issues[0]["title"] == "Fix login bug"
         assert issues[0]["labels"] == ["bug", "priority"]
         assert "special chars" in issues[0]["body"]
+        assert issues[0]["author"] == "owner"
         assert issues[1]["body"] == ""
+        assert issues[1]["author"] == "contributor"
 
     def test_gh_not_found(self, tmp_path):
         with patch(
@@ -556,6 +631,7 @@ class TestFetchOpenIssues:
         gh_output = json.dumps([{
             "number": 1, "title": "Long issue",
             "labels": [], "body": long_body,
+            "author": {"login": "someone"},
         }])
         mock_result = subprocess.CompletedProcess(
             args=[], returncode=0, stdout=gh_output, stderr=""
