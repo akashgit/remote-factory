@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -1064,7 +1065,11 @@ def _is_github_url(path: str) -> bool:
 
 def _resolve_model(args: argparse.Namespace) -> str | None:
     """Resolve model: CLI flag > FACTORY_MODEL env var > None."""
-    return getattr(args, "model", None) or os.environ.get("FACTORY_MODEL") or None
+    flag = (getattr(args, "model", None) or "").strip()
+    if flag:
+        return flag
+    env = (os.environ.get("FACTORY_MODEL") or "").strip()
+    return env or None
 
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "cursor-projects")))
@@ -1226,7 +1231,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     if args.max_cycles is not None:
         run_args += f" --max-cycles {args.max_cycles}"
     if model:
-        run_args += f" --model {model}"
+        run_args += f" --model {shlex.quote(model)}"
 
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
@@ -1577,6 +1582,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+                model=model,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
