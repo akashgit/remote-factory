@@ -1234,3 +1234,26 @@ class TestCmdDeferredList:
         result = main(["deferred-list", str(tmp_path)])
         assert result == 0
         assert "No deferred items" in capsys.readouterr().out
+
+    def test_b5a_items_survive_current_md_rewrite(self, tmp_path):
+        """B5a scenario: Builder adds deferred items to current.md, deferred-list
+        persists them, then Strategist rewrites current.md — items survive."""
+        from factory.cli import main
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Build Plan\n- Phase 1: scaffold\n## Deferred\n"
+            "- Camera integration\n- Docker-Wyze-Bridge setup\n"
+        )
+        main(["deferred-list", str(tmp_path)])
+        deferred_path = strategy_dir / "deferred.md"
+        assert deferred_path.exists()
+        assert "Camera integration" in deferred_path.read_text()
+
+        (strategy_dir / "current.md").write_text(
+            "## Hypotheses\n- H1: Add test coverage\n- H2: Refactor auth\n"
+        )
+        items = _parse_deferred_items(tmp_path)
+        assert "Camera integration" in items
+        assert "Docker-Wyze-Bridge setup" in items
