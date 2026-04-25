@@ -1,14 +1,8 @@
-/* Diagrams render correctly in dark mode.
- *
- * D2-generated SVGs bake in light fills and dark navy text. In Material's
- * slate scheme the page filter (brightness/contrast) muddies the colored
- * shape backgrounds and washes out the text inside them. Wrap the SVGs in a
- * white surface and disable any inherited image filter so the diagrams
- * display with their intended contrast on dark pages.
+/* D2-generated SVGs now embed their own dark mode styles via
+ * @media (prefers-color-scheme: dark) inside the SVG <style> block.
+ * In Material's slate scheme we only need to disable the inherited
+ * brightness/contrast filter so the SVG's own media query takes effect.
  */
 [data-md-color-scheme="slate"] .md-typeset img[src$=".svg"] {
-  background-color: #ffffff;
-  border-radius: 6px;
-  padding: 0.75rem;
   filter: none;
 }

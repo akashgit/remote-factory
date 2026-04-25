@@ -107,7 +107,85 @@
 		.d2-4092130711 .color-AA4{color:#EDF0FD;}
 		.d2-4092130711 .color-AA5{color:#F7F8FE;}
 		.d2-4092130711 .color-AB4{color:#EDF0FD;}
-		.d2-4092130711 .color-AB5{color:#F7F8FE;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.sketch-overlay-B1{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-B2{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-B3{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B6{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AA2{fill:url(#streaks-dark-d2-4092130711);mix-blend-mode:overlay}.sketch-overlay-AA4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AA5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AB4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AB5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N1{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-N2{fill:url(#streaks-dark-d2-4092130711);mix-blend-mode:overlay}.sketch-overlay-N3{fill:url(#streaks-normal-d2-4092130711);mix-blend-mode:color-burn}.sketch-overlay-N4{fill:url(#streaks-normal-d2-4092130711);mix-blend-mode:color-burn}.sketch-overlay-N5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N6{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N7{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.light-code{display: block}.dark-code{display: none}]]></style><style type="text/css">.d2-4092130711 .md em,
+		.d2-4092130711 .color-AB5{color:#F7F8FE;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.sketch-overlay-B1{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-B2{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-B3{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-B6{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AA2{fill:url(#streaks-dark-d2-4092130711);mix-blend-mode:overlay}.sketch-overlay-AA4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AA5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AB4{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-AB5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N1{fill:url(#streaks-darker-d2-4092130711);mix-blend-mode:lighten}.sketch-overlay-N2{fill:url(#streaks-dark-d2-4092130711);mix-blend-mode:overlay}.sketch-overlay-N3{fill:url(#streaks-normal-d2-4092130711);mix-blend-mode:color-burn}.sketch-overlay-N4{fill:url(#streaks-normal-d2-4092130711);mix-blend-mode:color-burn}.sketch-overlay-N5{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N6{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}.sketch-overlay-N7{fill:url(#streaks-bright-d2-4092130711);mix-blend-mode:darken}
+@media (prefers-color-scheme: dark) {
+		.d2-4092130711 .fill-N1{fill:#e0e0e0;}
+		.d2-4092130711 .fill-N2{fill:#b0b0c0;}
+		.d2-4092130711 .fill-N3{fill:#8a8a9a;}
+		.d2-4092130711 .fill-N4{fill:#555566;}
+		.d2-4092130711 .fill-N5{fill:#444455;}
+		.d2-4092130711 .fill-N6{fill:#333344;}
+		.d2-4092130711 .fill-N7{fill:#1e1e2e;}
+		.d2-4092130711 .fill-B1{fill:#6d8fff;}
+		.d2-4092130711 .fill-B2{fill:#6d8fff;}
+		.d2-4092130711 .fill-B3{fill:#2a2a4a;}
+		.d2-4092130711 .fill-B4{fill:#2a2a4a;}
+		.d2-4092130711 .fill-B5{fill:#252545;}
+		.d2-4092130711 .fill-B6{fill:#202040;}
+		.d2-4092130711 .fill-AA2{fill:#7b9bff;}
+		.d2-4092130711 .fill-AA4{fill:#252545;}
+		.d2-4092130711 .fill-AA5{fill:#202040;}
+		.d2-4092130711 .fill-AB4{fill:#252545;}
+		.d2-4092130711 .fill-AB5{fill:#202040;}
+		.d2-4092130711 .stroke-N1{stroke:#e0e0e0;}
+		.d2-4092130711 .stroke-N2{stroke:#b0b0c0;}
+		.d2-4092130711 .stroke-N3{stroke:#8a8a9a;}
+		.d2-4092130711 .stroke-N4{stroke:#555566;}
+		.d2-4092130711 .stroke-N5{stroke:#444455;}
+		.d2-4092130711 .stroke-N6{stroke:#333344;}
+		.d2-4092130711 .stroke-N7{stroke:#1e1e2e;}
+		.d2-4092130711 .stroke-B1{stroke:#6d8fff;}
+		.d2-4092130711 .stroke-B2{stroke:#6d8fff;}
+		.d2-4092130711 .stroke-B3{stroke:#2a2a4a;}
+		.d2-4092130711 .stroke-B4{stroke:#2a2a4a;}
+		.d2-4092130711 .stroke-B5{stroke:#252545;}
+		.d2-4092130711 .stroke-B6{stroke:#202040;}
+		.d2-4092130711 .stroke-AA2{stroke:#7b9bff;}
+		.d2-4092130711 .stroke-AA4{stroke:#252545;}
+		.d2-4092130711 .stroke-AA5{stroke:#202040;}
+		.d2-4092130711 .stroke-AB4{stroke:#252545;}
+		.d2-4092130711 .stroke-AB5{stroke:#202040;}
+		.d2-4092130711 .background-color-N1{background-color:#e0e0e0;}
+		.d2-4092130711 .background-color-N2{background-color:#b0b0c0;}
+		.d2-4092130711 .background-color-N3{background-color:#8a8a9a;}
+		.d2-4092130711 .background-color-N4{background-color:#555566;}
+		.d2-4092130711 .background-color-N5{background-color:#444455;}
+		.d2-4092130711 .background-color-N6{background-color:#333344;}
+		.d2-4092130711 .background-color-N7{background-color:#1e1e2e;}
+		.d2-4092130711 .background-color-B1{background-color:#6d8fff;}
+		.d2-4092130711 .background-color-B2{background-color:#6d8fff;}
+		.d2-4092130711 .background-color-B3{background-color:#2a2a4a;}
+		.d2-4092130711 .background-color-B4{background-color:#2a2a4a;}
+		.d2-4092130711 .background-color-B5{background-color:#252545;}
+		.d2-4092130711 .background-color-B6{background-color:#202040;}
+		.d2-4092130711 .background-color-AA2{background-color:#7b9bff;}
+		.d2-4092130711 .background-color-AA4{background-color:#252545;}
+		.d2-4092130711 .background-color-AA5{background-color:#202040;}
+		.d2-4092130711 .background-color-AB4{background-color:#252545;}
+		.d2-4092130711 .background-color-AB5{background-color:#202040;}
+		.d2-4092130711 .color-N1{color:#e0e0e0;}
+		.d2-4092130711 .color-N2{color:#b0b0c0;}
+		.d2-4092130711 .color-N3{color:#8a8a9a;}
+		.d2-4092130711 .color-N4{color:#555566;}
+		.d2-4092130711 .color-N5{color:#444455;}
+		.d2-4092130711 .color-N6{color:#333344;}
+		.d2-4092130711 .color-N7{color:#1e1e2e;}
+		.d2-4092130711 .color-B1{color:#6d8fff;}
+		.d2-4092130711 .color-B2{color:#6d8fff;}
+		.d2-4092130711 .color-B3{color:#2a2a4a;}
+		.d2-4092130711 .color-B4{color:#2a2a4a;}
+		.d2-4092130711 .color-B5{color:#252545;}
+		.d2-4092130711 .color-B6{color:#202040;}
+		.d2-4092130711 .color-AA2{color:#7b9bff;}
+		.d2-4092130711 .color-AA4{color:#252545;}
+		.d2-4092130711 .color-AA5{color:#202040;}
+		.d2-4092130711 .color-AB4{color:#252545;}
+		.d2-4092130711 .color-AB5{color:#202040;}
+		.appendix text.text{fill:#e0e0e0;}
+		.md{--color-fg-default:#e0e0e0;--color-fg-muted:#b0b0c0;--color-fg-subtle:#8a8a9a;--color-canvas-default:#1e1e2e;--color-canvas-subtle:#333344;--color-border-default:#6d8fff;--color-border-muted:#6d8fff;--color-neutral-muted:#333344;--color-accent-fg:#6d8fff;--color-accent-emphasis:#6d8fff;--color-attention-subtle:#b0b0c0;--color-danger-fg:#ff6b6b;}
+		.light-code{display: none}
+		.dark-code{display: block}
+}.light-code{display: block}.dark-code{display: none}]]></style><style type="text/css">.d2-4092130711 .md em,
 .d2-4092130711 .md dfn {
   font-family: "d2-4092130711-font-italic";
 }
