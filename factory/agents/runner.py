@@ -90,6 +90,8 @@ async def invoke_agent(
     # Clean environment: remove VIRTUAL_ENV so the target project's own
     # venv is used (prevents mypy/pytest from checking wrong packages).
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    if model:
+        env["FACTORY_MODEL"] = model
 
     try:
         proc = await asyncio.create_subprocess_exec(

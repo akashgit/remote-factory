@@ -233,4 +233,22 @@ class TestResolveModel:
         args = argparse.Namespace(model="")
         assert _resolve_model(args) == "claude-opus-4-6"
 
+    def test_whitespace_only_flag_falls_through_to_env(self, monkeypatch):
+        """Whitespace-only flag falls through to env var."""
+        import argparse
+        from factory.cli import _resolve_model
+
+        monkeypatch.setenv("FACTORY_MODEL", "claude-opus-4-6")
+        args = argparse.Namespace(model="   ")
+        assert _resolve_model(args) == "claude-opus-4-6"
+
+    def test_missing_model_attr_returns_none(self, monkeypatch):
+        """No model attribute on args returns None."""
+        import argparse
+        from factory.cli import _resolve_model
+
+        monkeypatch.delenv("FACTORY_MODEL", raising=False)
+        args = argparse.Namespace()
+        assert _resolve_model(args) is None
+
 
