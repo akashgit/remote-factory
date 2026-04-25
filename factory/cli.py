@@ -853,9 +853,9 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
     vault_result = init_vault()
     if vault_result is None:
         default = Path.home() / "obsidian-vaults" / "factory"
-        print(f"No vault path configured. Set FACTORY_VAULT_PATH or run:")
+        print("No vault path configured. Set FACTORY_VAULT_PATH or run:")
         print(f"  export FACTORY_VAULT_PATH={default}")
-        print(f"  factory vault-init")
+        print("  factory vault-init")
         return 1
     print(f"Factory vault initialized at {vault_result}")
     return 0
@@ -995,7 +995,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     headless = getattr(args, "headless", False)
     focus = getattr(args, "focus", None)
     min_growth = getattr(args, "min_growth", None)
@@ -1054,51 +1054,37 @@ def _is_github_url(path: str) -> bool:
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "cursor-projects")))
 
-def _get_ideas_dirs() -> list[Path]:
-    """Return idea directories from the ``FACTORY_IDEAS_DIRS`` env var.
-
-    The env var is a colon-separated list of directory paths.  When unset,
-    returns an empty list so that vault lookup is skipped gracefully.
-    """
-    raw = os.environ.get("FACTORY_IDEAS_DIRS", "")
-    if not raw.strip():
-        return []
-    return [Path(p.strip()).expanduser() for p in raw.split(":") if p.strip()]
-
-
 def _resolve_input(raw: str) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
 
     Handles four input types in priority order:
     1. Existing directory → use directly
-    2. GitHub URL → clone
-    3. Vault idea name → fuzzy match, create repo, return idea as context
-    4. Raw prompt → create repo, return prompt as context
+    2. Existing file → read as spec, create repo
+    3. GitHub URL → clone
+    4. Raw prompt → create repo, use prompt as spec
     """
     # 1. Existing directory
     expanded = Path(raw).expanduser()
     if expanded.is_dir():
         return expanded.resolve(), None
 
-    # 2. GitHub URL
+    # 2. Existing file (e.g. path to an idea/spec .md file)
+    if expanded.is_file():
+        idea_content = expanded.read_text()
+        slug = _slugify(expanded.stem.split("\u2014")[0].strip())
+        project_path = _PROJECTS_DIR / slug
+        _ensure_repo(project_path)
+        _persist_spec(project_path, idea_content)
+        print(f"Idea file: {expanded.name}")
+        print(f"Project directory: {project_path}")
+        return project_path, idea_content
+
+    # 3. GitHub URL
     if _is_github_url(raw):
         tmp_dir = tempfile.mkdtemp(prefix="factory-")
         subprocess.run(["git", "clone", raw, tmp_dir], check=True)
         print(f"Cloned {raw} → {tmp_dir}")
         return Path(tmp_dir).resolve(), None
-
-    # 3. Vault idea (fuzzy match)
-    match = _match_vault_idea(raw)
-    if match:
-        idea_content = match.read_text()
-        # Derive project name from idea title (before the em dash)
-        slug = _slugify(match.stem.split("\u2014")[0].strip())
-        project_path = _PROJECTS_DIR / slug
-        _ensure_repo(project_path)
-        _persist_spec(project_path, idea_content)
-        print(f"Matched vault idea: {match.stem}")
-        print(f"Project directory: {project_path}")
-        return project_path, idea_content
 
     # 4. Raw prompt
     slug = _slugify(raw[:50])
@@ -1107,41 +1093,6 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
-
-
-def _match_vault_idea(query: str) -> Path | None:
-    """Fuzzy-match a query against vault idea filenames."""
-    q = query.lower().strip()
-    candidates: list[tuple[int, Path]] = []
-
-    for ideas_dir in _get_ideas_dirs():
-        if not ideas_dir.is_dir():
-            continue
-        for f in ideas_dir.glob("*.md"):
-            if f.name == "Ideas.md":
-                continue
-            stem = f.stem.lower()
-            short = stem.split("\u2014")[0].strip()  # part before em dash
-
-            # Exact match on full stem or short name
-            if q == stem or q == short:
-                return f
-
-            # Substring match
-            if q in stem:
-                # Score: shorter match = better (more specific)
-                candidates.append((len(stem), f))
-
-            # Word-level match: all query words appear in stem
-            q_words = q.split()
-            if len(q_words) > 1 and all(w in stem for w in q_words):
-                candidates.append((len(stem), f))
-
-    if not candidates:
-        return None
-    # Best match = shortest stem (most specific)
-    candidates.sort(key=lambda x: x[0])
-    return candidates[0][1]
 
 
 def _slugify(text: str) -> str:
@@ -1366,8 +1317,8 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 def _auto_detect_mode(project_path: Path, has_prompt: bool = False) -> str:
     """Detect the right mode based on project state.
 
-    When --prompt is provided, no_factory routes to build (not discover)
-    because the user is giving us a build spec for a new project.
+    When a build spec is available (--prompt, idea file, or raw prompt),
+    no_factory routes to build (not discover).
     """
     from factory.state import detect_state
     from factory.models import ProjectState
@@ -1531,7 +1482,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     min_growth = getattr(args, "min_growth", None)
@@ -1582,7 +1533,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
             # Re-detect mode for next cycle (state may have advanced)
-            mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file))
+            mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
 
             if shutdown_requested:
                 break
@@ -1829,7 +1780,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
-    p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
+    p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
     p.add_argument(
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
@@ -1860,7 +1811,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
-    p.add_argument("path", help="Project path, GitHub URL, vault idea name, or prompt")
+    p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
     p.add_argument(
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
