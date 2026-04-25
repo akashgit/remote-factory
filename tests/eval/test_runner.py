@@ -1,5 +1,7 @@
 """Tests for factory.eval.runner — mandatory dimensions + project eval execution."""
 
+import sys
+
 from factory.eval.runner import run_eval
 
 
@@ -33,7 +35,7 @@ class TestRunEval:
             '{"name": "api_health", "score": 1.0, "weight": 0.5, "passed": True, "details": "up"}'
             ']}, sys.stdout)\n'
         )
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.0)
+        result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0)
         names = {r.name for r in result.results}
         # 11 mandatory + 2 project additions
         assert "ui_renders" in names
@@ -49,7 +51,7 @@ class TestRunEval:
             '{"name": "tests", "score": 0.0, "weight": 1.0, "passed": false, "details": "fake override"}'
             ']}, sys.stdout)\n'
         )
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.0)
+        result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0)
         # The "tests" dimension should come from hygiene, not the project override
         test_results = [r for r in result.results if r.name == "tests"]
         assert len(test_results) == 1
@@ -74,7 +76,7 @@ class TestRunEval:
         """Project eval timeout doesn't prevent mandatory dimensions."""
         script = tmp_path / "hang.py"
         script.write_text("import time\ntime.sleep(60)\n")
-        result = await run_eval(f"python {script}", tmp_path, threshold=0.0, timeout=1.0)
+        result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0, timeout=1.0)
         # Mandatory dimensions still computed
         names = {r.name for r in result.results}
         assert len(names) >= 11
