@@ -359,6 +359,16 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
 
 7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
 
+### B5a: Persist Deferred Items
+
+Before leaving Build mode, extract all deferred items from the build plan so the Strategist can address them in Improve mode. The Builder may have deferred additional items during implementation that weren't in the original plan.
+
+```bash
+uv run python -m factory deferred-list "$PROJECT_PATH"
+```
+
+This reads the `## Deferred` section from `.factory/strategy/current.md`, merges with any existing `.factory/strategy/deferred.md`, and writes the combined list back. If no deferred items exist, this is a no-op.
+
 ### B6: Re-detect state
 
 ```bash
