@@ -21,6 +21,7 @@ from factory.study import (
     _persist_deferred_items,
     _read_obsidian_notes,
     _search_similar_projects,
+    remove_deferred_item,
     study_project,
     study_project_local,
 )
@@ -1110,3 +1111,105 @@ class TestStudyDeferredIntegration:
             result = study_project_local(project_path)
         assert "Deferred Items" not in result
         assert "Deferred slots" not in result
+
+
+class TestRemoveDeferredItem:
+    def test_removes_exact_match(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text(
+            "- Camera feed\n- OAuth login\n- Genre expansion\n"
+        )
+        assert remove_deferred_item(tmp_path, "OAuth login") is True
+        content = (strategy_dir / "deferred.md").read_text()
+        assert "OAuth login" not in content
+        assert "Camera feed" in content
+        assert "Genre expansion" in content
+
+    def test_returns_false_when_not_found(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n")
+        assert remove_deferred_item(tmp_path, "Nonexistent item") is False
+
+    def test_returns_false_when_no_file(self, tmp_path):
+        assert remove_deferred_item(tmp_path, "Anything") is False
+
+    def test_deletes_file_when_last_item_removed(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Only item\n")
+        assert remove_deferred_item(tmp_path, "Only item") is True
+        assert not (strategy_dir / "deferred.md").exists()
+
+    def test_no_partial_match(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed integration\n")
+        assert remove_deferred_item(tmp_path, "Camera feed") is False
+        assert (strategy_dir / "deferred.md").exists()
+
+    def test_handles_different_bullet_styles(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("* Camera feed\n")
+        assert remove_deferred_item(tmp_path, "Camera feed") is True
+        assert not (strategy_dir / "deferred.md").exists()
+
+
+class TestCmdDeferredRemove:
+    def test_cli_subcommand_exists(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["deferred-remove", "/some/path", "some item"])
+        assert args.command == "deferred-remove"
+        assert args.path == "/some/path"
+        assert args.item == "some item"
+
+    def test_removes_item_via_cli(self, tmp_path):
+        from factory.cli import main
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n- OAuth\n")
+        result = main(["deferred-remove", str(tmp_path), "Camera feed"])
+        assert result == 0
+        assert "Camera feed" not in (strategy_dir / "deferred.md").read_text()
+
+    def test_returns_error_when_not_found(self, tmp_path):
+        from factory.cli import main
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n")
+        result = main(["deferred-remove", str(tmp_path), "Nonexistent"])
+        assert result == 1
+
+
+class TestCmdDeferredList:
+    def test_cli_subcommand_exists(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["deferred-list", "/some/path"])
+        assert args.command == "deferred-list"
+
+    def test_lists_items(self, tmp_path, capsys):
+        from factory.cli import main
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n- OAuth login\n")
+        result = main(["deferred-list", str(tmp_path)])
+        assert result == 0
+        output = capsys.readouterr().out
+        assert "Camera feed" in output
+        assert "OAuth login" in output
+
+    def test_empty_list(self, tmp_path, capsys):
+        from factory.cli import main
+
+        result = main(["deferred-list", str(tmp_path)])
+        assert result == 0
+        assert "No deferred items" in capsys.readouterr().out
