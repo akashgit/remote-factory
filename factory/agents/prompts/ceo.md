@@ -479,6 +479,8 @@ Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for
 
 $FOCUS_DIRECTIVE
 
+$DEFERRED_DIRECTIVE
+
 Context:
 $(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo 'No experiments yet')
 
@@ -502,6 +504,10 @@ Write hypotheses to .factory/strategy/current.md. Each must be specific, scoped 
 Where `$FOCUS_DIRECTIVE` is either empty (no focus) or the focus text from your task, e.g.:
 `Focus Directive: Narrow improvement efforts to: dashboard UI`
 
+Where `$DEFERRED_DIRECTIVE` is constructed by the CEO before invoking the Strategist: check if `.factory/strategy/observations.md` contains a "Deferred Items from Build Mode" section. If it does, set `$DEFERRED_DIRECTIVE` to:
+`Deferred Items: The observations include deferred items from Build mode. You MUST address at least one with a hypothesis tagged **Deferred item:**. Deferred items take priority over Exploit and Explore.`
+If no deferred items exist, leave `$DEFERRED_DIRECTIVE` empty.
+
 **Step 1r: CEO Review — Strategy (HARD GATE)**
 
 This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypotheses.
@@ -515,6 +521,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - Is it redundant with a previously reverted experiment?
    - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2/3 of hypotheses must align with the focus. REDIRECT if focus is ignored.
    - **If YOUR open GitHub issues exist in observations:** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
+   - **If deferred items exist in observations:** does at least one hypothesis have a `**Deferred item:**` tag addressing a deferred/post-MVP item? REDIRECT if deferred items exist and none are addressed. Deferred items are acknowledged product gaps — they take priority over general Exploit and Explore.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
@@ -1064,5 +1071,7 @@ When the Strategist generates hypotheses, they should follow the FEEC priority h
 2. **Exploit** — improve weak eval dimensions that are close to thresholds
 3. **Explore** — add new features, try new approaches
 4. **Combine** — merge successful patterns from different experiments
+
+**Deferred item priority:** When `.factory/strategy/current.md` contains deferred/post-MVP items (features explicitly deferred during Build mode), the Strategist MUST include at least one hypothesis addressing a deferred item. Deferred items represent acknowledged product gaps — they take priority over Exploit and Explore. The effective ordering becomes Fix → Deferred → Exploit → Explore → Combine. If no deferred items exist, standard FEEC applies.
 
 Stuck detection: if 3+ consecutive experiments in the same category are reverted, the Strategist MUST pivot to a different category.
