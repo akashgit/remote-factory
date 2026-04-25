@@ -5,11 +5,20 @@ hide:
 
 # The Factory
 
-**A self-evolving harness for agentic software development — it gets better the more you use it.**
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
 
-The Factory takes any project — a repo, an idea, a raw prompt — and runs a structured multi-agent loop that measures and improves it. Every experiment outcome feeds back into the agents themselves, so they learn what works for *your* codebase and get sharper over time.
+You can hand it a one-line prompt, a detailed spec, an idea note from your Obsidian vault, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
-It wraps [Claude Code](https://docs.anthropic.com/en/docs/claude-code) with a CEO agent that orchestrates six specialists (Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist), each running as an independent subprocess. Every change is a hypothesis — scored before and after, kept only if it improves the score, and archived as institutional memory. Failed experiments aren't wasted: they teach the agents what to avoid next time.
+```bash
+# Got an idea? Describe it.
+factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
+
+# Have ideas in your Obsidian vault? Just name one.
+factory ceo "weather dashboard"  # fuzzy-matches your vault notes, reads the full spec, builds it
+
+# Already have a repo? Point the factory at it.
+factory ceo ~/my-project
+```
 
 ## How It Works
 
@@ -30,6 +39,26 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
+A CEO agent orchestrates six specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning.
+
+## What Can It Do?
+
+**Build from nothing** — give it an idea, it does the rest:
+
+| Input | What happens |
+|-------|-------------|
+| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
+| `factory ceo "my idea name"` | Fuzzy-matches an idea note in your Obsidian vault, reads the full spec, and builds it end-to-end |
+| `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
+
+**Improve what exists** — point it at any codebase:
+
+| Input | What happens |
+|-------|-------------|
+| `factory ceo ~/my-project` | Discovers eval dimensions, then runs measured improvement cycles |
+| `factory ceo ~/my-project --focus "auth"` | Narrows all hypotheses to a specific area |
+| `factory run ~/my-project --loop` | Continuous background improvement — runs every 30 min |
+
 ## Quick Start
 
 ```bash
@@ -39,16 +68,14 @@ pip install git+https://github.com/akashgit/remote-factory.git@v0.1.1
 # Register the CEO as a Claude Code agent
 factory install
 
-# Run on any project
-factory ceo ~/my-project
-
-# Or build something new from a prompt
-factory ceo --prompt "Build a CLI that converts CSV to JSON"
+# Set up the Obsidian vault (highly recommended)
+export FACTORY_VAULT_PATH=~/obsidian-vaults/factory
+factory vault-init
 ```
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
 
-**Highly recommended:** Install [Obsidian](https://obsidian.md/) and run `factory vault-init`. The vault gives the Factory persistent memory — experiment history, cross-project insights, and research notes. Without it, the Factory still works but loses its long-term learning capability.
+**Why Obsidian?** The vault is the factory's long-term memory. If you use Claude to brainstorm ideas and save them as vault notes, the factory can build directly from those notes — just reference them by name. Without a vault, the factory still works but starts fresh every time.
 
 ## Self-Evolving Agents
 
@@ -131,17 +158,6 @@ graph LR
 | **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage |
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
-
-## What Can It Do?
-
-| Input | What happens |
-|-------|-------------|
-| `factory ceo ~/my-project` | Discovers eval dimensions, then runs improvement cycles |
-| `factory ceo https://github.com/user/repo` | Clones the repo, then improves it |
-| `factory ceo --prompt "Build a weather CLI"` | Scaffolds a new project from scratch |
-| `factory ceo ~/my-project --focus "auth"` | Narrows improvements to a specific area |
-| `factory ceo ~/my-project --mode meta` | Improves the factory's own agent playbooks |
-| `factory run ~/my-project --loop` | Continuous heartbeat — runs every 30 min |
 
 ## License
 
