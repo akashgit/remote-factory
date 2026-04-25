@@ -9,13 +9,16 @@ import pytest
 
 from factory.study import (
     _detect_self_improvement,
+    _extract_deferred_bullets,
     _extract_keywords,
     _extract_messages,
     _fetch_open_issues,
     _find_log_files,
     _get_github_user,
     _load_cross_project_insights,
+    _parse_deferred_items,
     _path_to_slug,
+    _persist_deferred_items,
     _read_obsidian_notes,
     _search_similar_projects,
     study_project,
@@ -920,3 +923,190 @@ class TestCmdStudyProjectsDir:
         parser = build_parser()
         args = parser.parse_args(["study", "/some/path"])
         assert args.projects_dir is None
+
+
+class TestExtractDeferredBullets:
+    def test_extracts_from_deferred_heading(self):
+        content = "## Deferred\n- Camera integration\n- Genre expansion\n"
+        assert _extract_deferred_bullets(content) == [
+            "Camera integration",
+            "Genre expansion",
+        ]
+
+    def test_extracts_from_post_mvp_heading(self):
+        content = "### Post-MVP Items\n- OAuth login\n- Admin dashboard\n"
+        assert _extract_deferred_bullets(content) == ["OAuth login", "Admin dashboard"]
+
+    def test_extracts_from_future_work_heading(self):
+        content = "## Future Work\n* Internationalization\n"
+        assert _extract_deferred_bullets(content) == ["Internationalization"]
+
+    def test_extracts_from_backlog_heading(self):
+        content = "### Backlog\n- Rate limiting\n"
+        assert _extract_deferred_bullets(content) == ["Rate limiting"]
+
+    def test_stops_at_next_heading(self):
+        content = (
+            "## Deferred\n- Item one\n- Item two\n"
+            "## Next Section\n- Not deferred\n"
+        )
+        assert _extract_deferred_bullets(content) == ["Item one", "Item two"]
+
+    def test_handles_multiple_deferred_sections(self):
+        content = (
+            "## Deferred\n- First\n"
+            "## Other\n- Skip\n"
+            "### Backlog\n- Second\n"
+        )
+        assert _extract_deferred_bullets(content) == ["First", "Second"]
+
+    def test_skips_empty_bullets(self):
+        content = "## Deferred\n- \n- Real item\n-  \n"
+        assert _extract_deferred_bullets(content) == ["Real item"]
+
+    def test_returns_empty_for_no_deferred_section(self):
+        content = "## Hypotheses\n- H1: Add tests\n## FEEC\n- Fix stuff\n"
+        assert _extract_deferred_bullets(content) == []
+
+    def test_handles_bullet_prefix(self):
+        content = "## Deferred\n• Unicode bullet item\n"
+        assert _extract_deferred_bullets(content) == ["Unicode bullet item"]
+
+    def test_case_insensitive_heading(self):
+        content = "## POST-MVP\n- Something\n## DEFERRED items\n- Another\n"
+        assert _extract_deferred_bullets(content) == ["Something", "Another"]
+
+    def test_preserves_bold_in_items(self):
+        content = "## Deferred\n- **Docker-Wyze-Bridge** camera integration\n"
+        assert _extract_deferred_bullets(content) == [
+            "**Docker-Wyze-Bridge** camera integration"
+        ]
+
+    def test_ignores_non_bullet_lines(self):
+        content = "## Deferred\nSome paragraph text.\n- Actual item\n\nMore text.\n"
+        assert _extract_deferred_bullets(content) == ["Actual item"]
+
+
+class TestParseDeferredItems:
+    def test_returns_empty_when_no_factory_dir(self, tmp_path):
+        assert _parse_deferred_items(tmp_path) == []
+
+    def test_reads_from_current_md(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Hypotheses\n- H1\n## Deferred\n- Camera feed\n- Genre expansion\n"
+        )
+        assert _parse_deferred_items(tmp_path) == ["Camera feed", "Genre expansion"]
+
+    def test_reads_from_deferred_md(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- OAuth login\n- Rate limiting\n")
+        assert _parse_deferred_items(tmp_path) == ["OAuth login", "Rate limiting"]
+
+    def test_merges_both_files_without_duplicates(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n- OAuth login\n")
+        (strategy_dir / "current.md").write_text(
+            "## Deferred\n- Camera feed\n- Genre expansion\n"
+        )
+        result = _parse_deferred_items(tmp_path)
+        assert result == ["Camera feed", "OAuth login", "Genre expansion"]
+
+    def test_deferred_md_takes_precedence_in_order(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Persistent item\n")
+        (strategy_dir / "current.md").write_text("## Deferred\n- New item\n")
+        result = _parse_deferred_items(tmp_path)
+        assert result[0] == "Persistent item"
+
+    def test_survives_current_md_rewrite(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Camera feed\n- OAuth login\n")
+        (strategy_dir / "current.md").write_text(
+            "## Hypotheses\n- H1: Add tests\n- H2: Improve logging\n"
+        )
+        result = _parse_deferred_items(tmp_path)
+        assert result == ["Camera feed", "OAuth login"]
+
+
+class TestPersistDeferredItems:
+    def test_writes_deferred_file(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        _persist_deferred_items(tmp_path, ["Camera feed", "OAuth login"])
+        content = (strategy_dir / "deferred.md").read_text()
+        assert "- Camera feed\n" in content
+        assert "- OAuth login\n" in content
+
+    def test_creates_strategy_dir_if_missing(self, tmp_path):
+        _persist_deferred_items(tmp_path, ["Some item"])
+        assert (tmp_path / ".factory" / "strategy" / "deferred.md").exists()
+
+    def test_no_op_for_empty_list(self, tmp_path):
+        _persist_deferred_items(tmp_path, [])
+        assert not (tmp_path / ".factory" / "strategy" / "deferred.md").exists()
+
+    def test_overwrites_existing_file(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- Old item\n")
+        _persist_deferred_items(tmp_path, ["New item"])
+        content = (strategy_dir / "deferred.md").read_text()
+        assert "Old item" not in content
+        assert "- New item\n" in content
+
+
+class TestStudyDeferredIntegration:
+    def test_observations_include_deferred_items(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Hypotheses\n- H1\n## Deferred\n- Camera integration\n"
+        )
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path)
+        assert "## Deferred Items from Build Mode" in result
+        assert "Camera integration" in result
+
+    def test_deferred_items_persisted_to_deferred_md(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("## Deferred\n- Camera feed\n")
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            study_project_local(project_path)
+        deferred_path = strategy_dir / "deferred.md"
+        assert deferred_path.exists()
+        assert "Camera feed" in deferred_path.read_text()
+
+    def test_deferred_slots_in_budget(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Deferred\n- Item 1\n- Item 2\n- Item 3\n"
+        )
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path)
+        assert "**Deferred slots** | 2" in result
+
+    def test_no_deferred_section_when_no_items(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path)
+        assert "Deferred Items" not in result
+        assert "Deferred slots" not in result
