@@ -132,7 +132,7 @@ Each rule has `helpful` and `harmful` counters. Rules that correlate with revert
 At invocation time, `factory/agents/runner.py` does a two-step prompt assembly:
 
 1. Load the base prompt (`factory/agents/prompts/<role>.md` or project override)
-2. Load the evolved playbook (`factory/agents/playbooks/<role>.md`) and append it as a `## Behavioral Playbook` section
+2. Load the evolved playbook (`~/.factory/playbooks/<role>.md`, falling back to `factory/agents/playbooks/<role>.md`) and append it as a `## Behavioral Playbook` section
 
 The agent sees its evolved rules as part of its instructions. No explicit "follow these rules" preamble needed — they're integrated into the prompt.
 

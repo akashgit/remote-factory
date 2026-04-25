@@ -885,17 +885,13 @@ This analyzes experiment outcomes across all managed projects (including the exp
 
 ```bash
 factory agent archivist --task "Record ACE playbook evolution.
-1. Read all playbooks in factory/agents/playbooks/
+1. Read all playbooks in ~/.factory/playbooks/
 2. Write a playbook evolution note to $FACTORY_VAULT_PATH/00-Factory/Agent-Performance/
 3. Record which bullets were added, removed, or had counters updated
 4. Update the factory dashboard" --project "$PROJECT_PATH"
 ```
 
-#### M4: Commit Updated Playbooks
-
-```bash
-cd "$PROJECT_PATH" && git add factory/agents/playbooks/ && git commit -m "factory: ACE playbook evolution — $(date +%Y-%m-%d)"
-```
+Note: Evolved playbooks are stored in `~/.factory/playbooks/` (user-local), NOT in the factory source tree. They are never committed to the factory repo — they are personal to each user's experiment history.
 
 ---
 
@@ -920,7 +916,7 @@ When `factory ace` runs (either in Meta mode or Step 0d when self-improving), th
 2. Computes CEO decision accuracy (were keeps actually beneficial? were reverts wise?)
 3. Analyzes agent failure patterns (which agents fail most? what tasks cause failures?)
 4. Generates CEO playbook bullets
-5. The curator merges them into `factory/agents/playbooks/ceo.md`
+5. The curator merges them into `~/.factory/playbooks/ceo.md` (user-local)
 6. Next time you're spawned, your playbook is auto-injected into your prompt
 
 ---

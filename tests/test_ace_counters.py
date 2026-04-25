@@ -323,37 +323,44 @@ class TestCounterPersistence:
 
 
 class TestCmdAceStats:
-    def test_output_format(self, capsys):
+    def test_output_format(self, capsys, tmp_path, monkeypatch):
         """ace-stats should print a formatted table with header and summary."""
         import argparse
+
+        from factory.ace.models import Playbook, PlaybookItem
+
+        # Set up user-local playbooks with known content
+        user_dir = tmp_path / "playbooks"
+        user_dir.mkdir()
+        monkeypatch.setenv("FACTORY_PLAYBOOKS_DIR", str(user_dir))
+        playbook = Playbook(role="ceo", items=[
+            PlaybookItem(id="ceo-00001", content="Test rule", helpful=5, harmful=1, section="DO"),
+        ])
+        (user_dir / "ceo.md").write_text(playbook.to_markdown())
 
         args = argparse.Namespace()
         result = cmd_ace_stats(args)
         assert result == 0
 
         captured = capsys.readouterr()
-        # Should have a header
         assert "Role" in captured.out
         assert "ID" in captured.out
         assert "helpful" in captured.out
         assert "harmful" in captured.out
         assert "net" in captured.out
-        # Should have a summary line
         assert "Total:" in captured.out
         assert "bullets" in captured.out
 
-    def test_no_playbooks_dir(self, capsys, monkeypatch, tmp_path):
-        """ace-stats should handle missing playbooks directory."""
+    def test_empty_user_dir_falls_back_to_defaults(self, capsys, tmp_path, monkeypatch):
+        """ace-stats should fall back to factory defaults when no user playbooks exist."""
         import argparse
 
-        import factory.cli
-
-        # Monkeypatch __file__ to point to a temp dir so playbooks_dir doesn't exist
-        monkeypatch.setattr(factory.cli, "__file__", str(tmp_path / "cli.py"))
+        monkeypatch.setenv("FACTORY_PLAYBOOKS_DIR", str(tmp_path / "empty"))
+        (tmp_path / "empty").mkdir()
 
         args = argparse.Namespace()
         result = cmd_ace_stats(args)
-        assert result == 1
+        assert result == 0
 
         captured = capsys.readouterr()
-        assert "No playbooks directory" in captured.out
+        assert "Total:" in captured.out
