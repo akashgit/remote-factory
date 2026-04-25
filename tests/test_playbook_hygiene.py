@@ -16,17 +16,17 @@ REPO_ROOT = Path(__file__).parent.parent
 PLAYBOOKS_DIR = REPO_ROOT / "factory" / "agents" / "playbooks"
 
 FORBIDDEN_PLAYBOOK_PATTERNS = [
-    "example-project",
-    "example-agent",
-    "example-project-2",
-    "example-digest",
-    "ExampleCo",
-    "example-data",
+    "eric" + "a-agent",
+    "cp-" + "agent",
+    "backyard" + "-chronicle",
+    "group-chat" + "-digest",
+    "Pin" + "ergy",
+    "mls" + "pin",
     "h3d.",
     "h3h.",
     "h3z.",
-    "example-cloud",
-    "us-region",
+    "itpc" + "-gcp",
+    "us-ea" + "st5",
     "remote-factory cycle",
     "Enter Your Agent ID",
     "cycle 35",
@@ -43,8 +43,8 @@ ABSOLUTE_HOME_RE = re.compile(r"/(Users|home)/[a-zA-Z0-9._-]+/")
 
 # Literal substrings that should never appear in shipped source.
 FORBIDDEN_SOURCE_PATTERNS = [
-    "factory-projects",
-    "factory-vault",
+    "cursor" + "-projects",
+    "obsidian-vaults" + "/factory",
 ]
 
 SOURCE_EXTENSIONS = {"*.py", "*.md"}

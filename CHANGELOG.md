@@ -4,7 +4,7 @@
 
 ### Fixes
 
-- **Vault path**: Removed all hardcoded `~/factory-vault/` references — vault path is now resolved exclusively via `$FACTORY_VAULT_PATH` env var
+- **Vault path**: Removed all hardcoded vault path references — vault path is now resolved exclusively via `$FACTORY_VAULT_PATH` env var
 - **Mypy**: Fixed type errors in `factory/eval/hygiene.py` and `factory/dashboard/app.py`
 - **CI-safe tests**: `test_rewards_vault_sources` and related growth tests no longer depend on local filesystem state
 
