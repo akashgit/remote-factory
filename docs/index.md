@@ -91,8 +91,8 @@ graph LR
     C -->|Inject| D["Agent Prompts<br><i>auto-appended</i>"]
     D -.->|"next cycle"| A
 
-    style A fill:#fff3e0,stroke:#ff8f00
-    style D fill:#e8eaf6,stroke:#5c6bc0
+    style A fill:#ff8f00,color:#fff,stroke:#ff8f00
+    style D fill:#5c6bc0,color:#fff,stroke:#5c6bc0
 ```
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
@@ -121,9 +121,9 @@ graph TB
 
     agents --> ceo --> cli
 
-    style agents fill:#e8eaf6,stroke:#5c6bc0
-    style ceo fill:#fff3e0,stroke:#ff8f00
-    style cli fill:#e8f5e9,stroke:#43a047
+    style agents fill:#5c6bc0,color:#fff,stroke:#3949ab
+    style ceo fill:#ff8f00,color:#fff,stroke:#ff8f00
+    style cli fill:#43a047,color:#fff,stroke:#2e7d32
 ```
 
 ## The Eval System
@@ -147,9 +147,9 @@ graph LR
     S -- "yes" --> K["✅ Keep"]
     S -- "no" --> R["↩️ Revert"]
 
-    style hygiene fill:#e8eaf6,stroke:#5c6bc0
-    style growth fill:#fff3e0,stroke:#ff8f00
-    style project fill:#e8f5e9,stroke:#43a047
+    style hygiene fill:#5c6bc0,color:#fff,stroke:#3949ab
+    style growth fill:#ff8f00,color:#fff,stroke:#ff8f00
+    style project fill:#43a047,color:#fff,stroke:#2e7d32
     style K fill:#43a047,color:#fff
     style R fill:#e53935,color:#fff
 ```
