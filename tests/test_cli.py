@@ -7,6 +7,8 @@ import signal
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
+import pytest
+
 from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
@@ -769,21 +771,40 @@ class TestResolveInput:
         idea_file = tmp_path / "My Project \u2014 Something Cool.md"
         idea_file.write_text("# Build something cool")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
+        assert (project_path / ".git").is_dir()
         assert context is not None
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
+        assert (project_path / ".git").is_dir()
         assert context == "Build a todo app with FastAPI"
+
+    def test_non_md_file(self, tmp_path):
+        py_file = tmp_path / "script.py"
+        py_file.write_text("print('hello')")
+
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input(str(py_file))
+
+        assert project_path.name == "script"
+        assert (project_path / ".git").is_dir()
+        assert context == "print('hello')"
+
+    def test_binary_file_raises(self, tmp_path):
+        bin_file = tmp_path / "data.bin"
+        bin_file.write_bytes(b"\x00\x01\x02\xff")
+
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+             pytest.raises(UnicodeDecodeError):
+            _resolve_input(str(bin_file))
 
     def test_ceo_receives_context(self, tmp_path):
         """When an idea file is given, its content reaches the CEO task."""
@@ -791,7 +812,6 @@ class TestResolveInput:
         idea_file.write_text("# Test Idea\nBuild X that does Y")
 
         with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
-             patch("factory.cli.subprocess.run"), \
              patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             main(["ceo", str(idea_file), "--headless"])

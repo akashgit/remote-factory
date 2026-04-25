@@ -1071,7 +1071,7 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     # 2. Existing file (e.g. path to an idea/spec .md file)
     if expanded.is_file():
         idea_content = expanded.read_text()
-        slug = _slugify(expanded.stem.split("—")[0].strip())
+        slug = _slugify(expanded.stem.split("\u2014")[0].strip())
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
@@ -1093,7 +1093,6 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
-
 
 
 def _slugify(text: str) -> str:
