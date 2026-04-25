@@ -20,6 +20,7 @@ from factory.obsidian.notes import (
 @pytest.fixture(autouse=True)
 def set_vault_path(obsidian_vault, monkeypatch):
     """Set OBSIDIAN_VAULT_PATH to temp dir and disable obsidian-cli for all tests."""
+    monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
     monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(obsidian_vault))
     # Disable obsidian-cli so write functions always fall back to direct file I/O.
     # Individual tests in TestObsidianCli override this as needed.
