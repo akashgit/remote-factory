@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -967,6 +968,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     task = args.task
     project_path = Path(args.project).resolve()
     timeout = getattr(args, "timeout", 600.0)
+    model = _resolve_model(args)
 
     result, code = _run(invoke_agent(
         role,
@@ -974,6 +976,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         project_path,
         timeout=timeout,
         dangerously_skip_permissions=True,
+        model=model,
     ))
     print(result)
     return code
@@ -1029,6 +1032,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
     branch = getattr(args, "branch", None)
+    model = _resolve_model(args)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
@@ -1048,6 +1052,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             project_path,
             timeout=3600.0,
             dangerously_skip_permissions=True,
+            model=model,
         ))
         print(result)
         if code != 0:
@@ -1056,6 +1061,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             project_path, focus=focus,
             min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
             already_improved=mode in ("improve", "meta") or discover_only,
+            model=model,
         )
 
     # Interactive foreground mode: launch claude with CEO prompt as system context
@@ -1067,6 +1073,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         "--dangerously-skip-permissions",
         task,  # initial user message
     ]
+    if model:
+        cmd.extend(["--model", model])
+        os.environ["FACTORY_MODEL"] = model
 
     # Replace this process with the interactive claude session
     os.chdir(project_path)
@@ -1079,6 +1088,15 @@ def _is_github_url(path: str) -> bool:
 
 
 # ── universal input resolver ─────────────────────────────────
+
+
+def _resolve_model(args: argparse.Namespace) -> str | None:
+    """Resolve model: CLI flag > FACTORY_MODEL env var > None."""
+    flag = (getattr(args, "model", None) or "").strip()
+    if flag:
+        return flag
+    env = (os.environ.get("FACTORY_MODEL") or "").strip()
+    return env or None
 
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
@@ -1229,6 +1247,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
     ]
 
+    model = _resolve_model(args)
     run_args = f"uv run python -m factory run {project_path}"
     if args.mode:
         run_args += f" --mode {args.mode}"
@@ -1238,6 +1257,8 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         run_args += f" --interval {args.interval}"
     if args.max_cycles is not None:
         run_args += f" --max-cycles {args.max_cycles}"
+    if model:
+        run_args += f" --model {shlex.quote(model)}"
 
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
@@ -1455,6 +1476,7 @@ def _chain_modes(
     branch: str | None = None,
     already_improved: bool = False,
     max_chains: int = 3,
+    model: str | None = None,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -1481,6 +1503,7 @@ def _chain_modes(
         code = _run_single_cycle(
             project_path, next_mode, focus=focus,
             min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+            model=model,
         )
         if code != 0:
             return code
@@ -1498,6 +1521,7 @@ def _run_single_cycle(
     max_total: int | None = None,
     branch: str | None = None,
     discover_only: bool = False,
+    model: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -1514,6 +1538,7 @@ def _run_single_cycle(
         project_path,
         timeout=3600.0,
         dangerously_skip_permissions=True,
+        model=model,
     ))
     print(result)
     return code
@@ -1535,6 +1560,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     min_fix = getattr(args, "min_fix", None)
     max_total = getattr(args, "max_total", None)
     branch = getattr(args, "branch", None)
+    model = _resolve_model(args)
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
@@ -1544,13 +1570,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not loop:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
-            discover_only=discover_only, **budget_kwargs,
+            discover_only=discover_only, model=model, **budget_kwargs,
         )
         if code != 0:
             return code
         return _chain_modes(
             project_path, focus=focus, already_improved=skip_improve,
             min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+            model=model,
         )
 
     # Heartbeat loop mode
@@ -1577,11 +1604,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
-                discover_only=discover_only, **budget_kwargs,
+                discover_only=discover_only, model=model, **budget_kwargs,
             )
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
+                model=model,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -1839,6 +1867,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project", required=True, help="Path to the project")
     p.add_argument("--timeout", type=float, default=600.0,
                     help="Timeout in seconds (default: 600)")
+    p.add_argument("--model", default=None,
+                    help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -1874,6 +1904,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Maximum total hypotheses per cycle (default: 7)")
     p.add_argument("--branch", default=None,
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
+    p.add_argument("--model", default=None,
+                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -1917,6 +1949,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Maximum total hypotheses per cycle (default: 7)")
     p.add_argument("--branch", default=None,
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
+    p.add_argument("--model", default=None,
+                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -1933,6 +1967,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-cycles", type=int, default=None, help="Max cycles for loop mode")
     p.add_argument("--attach", action="store_true", default=False,
                     help="Attach to session after creating")
+    p.add_argument("--model", default=None,
+                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
 
     # tmux-ls — list factory tmux sessions
     sub.add_parser("tmux-ls", help="List running factory tmux sessions")
