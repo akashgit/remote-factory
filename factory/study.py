@@ -290,45 +290,86 @@ def _analyze_observability(project_path: Path, language: str = "python") -> dict
     }
 
 
-def _parse_deferred_items(project_path: Path) -> list[str]:
-    """Extract deferred/post-MVP items from the strategy file.
+_DEFERRED_HEADING_RE = re.compile(
+    r"^#{1,4}\s+.*(deferred|post[-\s]mvp|future\s+work|backlog).*$",
+    re.IGNORECASE,
+)
+_ANY_HEADING_RE = re.compile(r"^#{1,4}\s+")
+_BULLET_PREFIX_RE = re.compile(r"^[-*•]\s+")
 
-    Looks for sections headed 'deferred', 'post-mvp', 'future work', or
-    'backlog' (case-insensitive) in .factory/strategy/current.md and returns
-    the bullet items found under them.
-    """
-    strategy_path = project_path / ".factory" / "strategy" / "current.md"
-    if not strategy_path.exists():
-        return []
 
-    try:
-        content = strategy_path.read_text()
-    except OSError:
-        return []
-
+def _extract_deferred_bullets(content: str) -> list[str]:
+    """Extract bullet items under deferred/post-MVP headings from markdown."""
     items: list[str] = []
     in_deferred_section = False
-    deferred_heading = re.compile(
-        r"^#{1,4}\s+.*(deferred|post[-\s]mvp|future\s+work|backlog).*$",
-        re.IGNORECASE,
-    )
-    any_heading = re.compile(r"^#{1,4}\s+")
 
     for line in content.splitlines():
-        if deferred_heading.match(line):
+        if _DEFERRED_HEADING_RE.match(line):
             in_deferred_section = True
             continue
         if in_deferred_section:
-            if any_heading.match(line):
+            if _ANY_HEADING_RE.match(line):
                 in_deferred_section = False
                 continue
             stripped = line.strip()
-            if stripped.startswith(("- ", "* ", "• ")):
-                item_text = stripped.lstrip("-*• ").strip()
+            m = _BULLET_PREFIX_RE.match(stripped)
+            if m:
+                item_text = stripped[m.end():].strip()
                 if item_text:
                     items.append(item_text)
 
     return items
+
+
+def _parse_deferred_items(project_path: Path) -> list[str]:
+    """Extract deferred/post-MVP items, merging current.md and deferred.md.
+
+    Reads from both `.factory/strategy/current.md` (where Build mode writes
+    deferred sections) and `.factory/strategy/deferred.md` (the persistent
+    file that survives Strategist rewrites). Returns deduplicated items.
+    """
+    items: list[str] = []
+    seen: set[str] = set()
+
+    for filename in ("deferred.md", "current.md"):
+        path = project_path / ".factory" / "strategy" / filename
+        if not path.exists():
+            continue
+        try:
+            content = path.read_text()
+        except OSError:
+            continue
+
+        if filename == "deferred.md":
+            for line in content.splitlines():
+                stripped = line.strip()
+                m = _BULLET_PREFIX_RE.match(stripped)
+                if m:
+                    item_text = stripped[m.end():].strip()
+                    if item_text and item_text not in seen:
+                        items.append(item_text)
+                        seen.add(item_text)
+        else:
+            for item_text in _extract_deferred_bullets(content):
+                if item_text not in seen:
+                    items.append(item_text)
+                    seen.add(item_text)
+
+    return items
+
+
+def _persist_deferred_items(project_path: Path, items: list[str]) -> None:
+    """Write deferred items to .factory/strategy/deferred.md.
+
+    This file is the persistent canonical source — it survives Strategist
+    rewrites of current.md. Items are removed when their experiment is kept.
+    """
+    if not items:
+        return
+    deferred_path = project_path / ".factory" / "strategy" / "deferred.md"
+    deferred_path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [f"- {item}" for item in items]
+    deferred_path.write_text("\n".join(lines) + "\n")
 
 
 def _path_to_slug(project_path: Path) -> str:
@@ -816,6 +857,7 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     # Deferred items from Build mode
     deferred_items = _parse_deferred_items(project_path)
     if deferred_items:
+        _persist_deferred_items(project_path, deferred_items)
         lines.extend([
             "",
             "## Deferred Items from Build Mode",
