@@ -401,8 +401,9 @@ class TestFactoryEffectiveness:
         result = eval_factory_effectiveness(tmp_path)
         assert result["score"] < 0.3
 
-    def test_multi_project_detection(self, tmp_path):
+    def test_multi_project_detection(self, tmp_path, monkeypatch):
         projects = tmp_path / "factory-projects"
+        monkeypatch.setenv("FACTORY_PROJECTS_DIR", str(projects))
         for name in ["proj-a", "proj-b", "proj-c"]:
             (projects / name / ".factory").mkdir(parents=True)
             _write_tsv(projects / name / ".factory" / "results.tsv", [
@@ -413,6 +414,5 @@ class TestFactoryEffectiveness:
             for i in range(8)
         ]
         _write_tsv(tmp_path / ".factory" / "results.tsv", main_tsv_rows)
-        with patch("pathlib.Path.home", return_value=tmp_path):
-            result = eval_factory_effectiveness(tmp_path)
-            assert "managed_projects=3" in result["details"]
+        result = eval_factory_effectiveness(tmp_path)
+        assert "managed_projects=3" in result["details"]

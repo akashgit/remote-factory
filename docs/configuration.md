@@ -179,7 +179,9 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 
 The Factory spawns Claude Code as subprocesses — it does not call the Claude API directly. Configure Claude Code authentication however you normally would (API key, Vertex AI, etc.).
 
-| Variable | Purpose | Required |
-|----------|---------|----------|
-| `FACTORY_VAULT_PATH` | Custom Obsidian vault path | Optional |
-| `FACTORY_PROJECTS_DIR` | Override default projects directory | Optional |
+| Variable | Purpose | Default | Required |
+|----------|---------|---------|----------|
+| `FACTORY_VAULT_PATH` | Obsidian vault for persistent cross-project memory | *(none — vault features disabled)* | Optional |
+| `FACTORY_PROJECTS_DIR` | Parent directory for prompt-created projects | `~/factory-projects` | Optional |
+| `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` | Optional |
+| `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* | Optional |

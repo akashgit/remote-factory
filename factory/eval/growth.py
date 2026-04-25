@@ -9,6 +9,7 @@ All functions take a project_path and return an EvalResult-compatible dict.
 
 import ast
 import csv
+import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -331,7 +332,7 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
             delta_score = 0.5
 
         # Sub-score C: Multi-project management
-        projects_dir = Path.home() / "factory-projects"
+        projects_dir = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
         managed = 0
         if projects_dir.exists():
             for child in projects_dir.iterdir():

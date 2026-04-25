@@ -1,19 +1,21 @@
-"""Guard test: shipped playbooks must stay clean of user-specific data.
+"""Guard tests: shipped code must stay clean of user-specific data.
 
-If this test fails, it means someone (or ACE) wrote personal project
-data into the factory default playbooks. Evolved playbooks belong in
+If a test fails, it means someone (or ACE) wrote personal project
+data into the source tree. Evolved playbooks belong in
 ~/.factory/playbooks/, not in the source tree.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
-PLAYBOOKS_DIR = Path(__file__).parent.parent / "factory" / "agents" / "playbooks"
+REPO_ROOT = Path(__file__).parent.parent
+PLAYBOOKS_DIR = REPO_ROOT / "factory" / "agents" / "playbooks"
 
-FORBIDDEN_PATTERNS = [
+FORBIDDEN_PLAYBOOK_PATTERNS = [
     "example-project",
     "example-agent",
     "example-project-2",
@@ -34,6 +36,45 @@ FORBIDDEN_PATTERNS = [
     "96/96",
 ]
 
+# Regex patterns that catch ANY user's absolute home paths, not just one developer's.
+# /Users/<name>/ is macOS, /home/<name>/ is Linux. Both indicate a leaked local path.
+# We allow "~/" and env-var-based paths ($HOME, $FACTORY_*) since those are portable.
+ABSOLUTE_HOME_RE = re.compile(r"/(Users|home)/[a-zA-Z0-9._-]+/")
+
+# Literal substrings that should never appear in shipped source.
+FORBIDDEN_SOURCE_PATTERNS = [
+    "factory-projects",
+    "factory-vault",
+]
+
+SOURCE_EXTENSIONS = {"*.py", "*.md"}
+
+SOURCE_DIRS = [
+    REPO_ROOT / "factory",
+    REPO_ROOT / "docs",
+]
+
+# Files allowed to contain patterns (test file, changelog history, illustrative examples).
+ALLOWLIST_ABSOLUTE = {
+    Path("tests/test_playbook_hygiene.py"),
+    Path("factory/study.py"),  # docstring example: "e.g. /home/dev/projects/my-app"
+}
+ALLOWLIST_SUBSTRINGS = {
+    Path("tests/test_playbook_hygiene.py"),
+    Path("CHANGELOG.md"),  # historical entries documenting past fixes
+}
+
+
+def _collect_source_files() -> list[Path]:
+    files: list[Path] = []
+    for src_dir in SOURCE_DIRS:
+        for ext in SOURCE_EXTENSIONS:
+            files.extend(src_dir.rglob(ext))
+    # Also check top-level shipped files
+    for ext in SOURCE_EXTENSIONS:
+        files.extend(REPO_ROOT.glob(ext))
+    return sorted(set(files))
+
 
 @pytest.fixture
 def playbook_files():
@@ -48,7 +89,7 @@ class TestPlaybookHygiene:
         """Shipped playbooks must not contain user-specific project references."""
         for path in playbook_files:
             content = path.read_text()
-            for pattern in FORBIDDEN_PATTERNS:
+            for pattern in FORBIDDEN_PLAYBOOK_PATTERNS:
                 assert pattern not in content, (
                     f"{path.name} contains personal data: '{pattern}'. "
                     f"Evolved playbooks belong in ~/.factory/playbooks/, "
@@ -92,3 +133,52 @@ class TestPlaybookHygiene:
         expected = {"archivist", "builder", "ceo", "evaluator", "reviewer", "strategist"}
         actual = {p.stem for p in PLAYBOOKS_DIR.glob("*.md")}
         assert expected == actual
+
+
+class TestNoHardcodedPaths:
+    """Source tree must not contain hardcoded user-specific paths.
+
+    This catches ANY developer's paths — /Users/<anyone>/ or /home/<anyone>/ —
+    plus known bad substrings. If your code needs a user-local path, use an
+    env var (FACTORY_PROJECTS_DIR, FACTORY_VAULT_PATH, etc.) or ~/relative.
+    """
+
+    def test_no_absolute_home_paths(self):
+        """No absolute /Users/<name>/ or /home/<name>/ paths in shipped code."""
+        violations: list[str] = []
+        for path in _collect_source_files():
+            rel = path.relative_to(REPO_ROOT)
+            if rel in ALLOWLIST_ABSOLUTE:
+                continue
+            try:
+                content = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            for i, line in enumerate(content.splitlines(), 1):
+                if ABSOLUTE_HOME_RE.search(line):
+                    violations.append(f"{rel}:{i}: {line.strip()[:100]}")
+        assert not violations, (
+            "Absolute home-directory paths found in source tree.\n"
+            "Use env vars or ~/ instead:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+        )
+
+    def test_no_forbidden_substrings(self):
+        """Known bad substrings must not appear in shipped source."""
+        violations: list[str] = []
+        for path in _collect_source_files():
+            rel = path.relative_to(REPO_ROOT)
+            if rel in ALLOWLIST_SUBSTRINGS:
+                continue
+            try:
+                content = path.read_text()
+            except UnicodeDecodeError:
+                continue
+            for pattern in FORBIDDEN_SOURCE_PATTERNS:
+                if pattern in content:
+                    violations.append(f"{rel}: contains '{pattern}'")
+        assert not violations, (
+            "Hardcoded user-specific paths found in source tree.\n"
+            "Use env vars (FACTORY_PROJECTS_DIR, FACTORY_VAULT_PATH) instead:\n"
+            + "\n".join(f"  - {v}" for v in violations)
+        )

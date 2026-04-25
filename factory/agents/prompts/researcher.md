@@ -66,7 +66,7 @@ Activate Mode 3 when ANY of these are true:
 
 1. **Run cross-project insights first**:
    ```bash
-   uv run python -m factory insights "$PROJECT_PATH" --projects-dir ~/factory-projects
+   uv run python -m factory insights "$PROJECT_PATH" --projects-dir "${FACTORY_PROJECTS_DIR:-~/factory-projects}"
    ```
    This generates `.factory/strategy/insights.md` with category success rates and patterns across all managed projects.
 

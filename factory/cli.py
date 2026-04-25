@@ -894,9 +894,8 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
 
     vault_result = init_vault()
     if vault_result is None:
-        default = Path.home() / "obsidian-vaults" / "factory"
         print("No vault path configured. Set FACTORY_VAULT_PATH or run:")
-        print(f"  export FACTORY_VAULT_PATH={default}")
+        print("  export FACTORY_VAULT_PATH=~/factory-vault")
         print("  factory vault-init")
         return 1
     print(f"Factory vault initialized at {vault_result}")
