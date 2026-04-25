@@ -324,6 +324,31 @@ def cmd_study(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_deferred_remove(args: argparse.Namespace) -> int:
+    from factory.study import remove_deferred_item
+
+    project_path = Path(args.path)
+    item_text = args.item
+    if remove_deferred_item(project_path, item_text):
+        print(f"Removed deferred item: {item_text}")
+        return 0
+    print(f"Deferred item not found: {item_text}", file=sys.stderr)
+    return 1
+
+
+def cmd_deferred_list(args: argparse.Namespace) -> int:
+    from factory.study import _parse_deferred_items
+
+    project_path = Path(args.path)
+    items = _parse_deferred_items(project_path)
+    if not items:
+        print("No deferred items.")
+        return 0
+    for item in items:
+        print(f"- {item}")
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     from factory.state import detect_state
     from factory.store import ExperimentStore
@@ -1671,6 +1696,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory containing factory-managed projects for cross-project insights",
     )
 
+    # deferred-remove
+    p = sub.add_parser("deferred-remove", help="Remove a completed deferred item")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("item", help="Exact text of the deferred item to remove")
+
+    # deferred-list
+    p = sub.add_parser("deferred-list", help="List pending deferred items")
+    p.add_argument("path", help="Path to the project")
+
     # status
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
@@ -1930,6 +1964,8 @@ def main(argv: list[str] | None = None) -> int:
         "history": cmd_history,
         "notify": cmd_notify,
         "study": cmd_study,
+        "deferred-remove": cmd_deferred_remove,
+        "deferred-list": cmd_deferred_list,
         "status": cmd_status,
         "research": cmd_research,
         "diff": cmd_diff,
