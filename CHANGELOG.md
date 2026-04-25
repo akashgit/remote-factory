@@ -25,7 +25,7 @@ Initial public release.
 - **CEO Agent** — dedicated orchestrator with 5-state machine (no_repo, incomplete, no_factory, evals_pending_review, has_factory), automatic mode routing, and mandatory archival
 - **7 Specialist Agents** — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, each running as independent Claude Code subprocesses
 - **Experiment Loop** — every change is a hypothesis: measured before/after, kept or reverted based on composite eval score
-- **Universal Input** — accepts directories, GitHub URLs, Obsidian vault ideas, or raw text prompts
+- **Universal Input** — accepts directories, GitHub URLs, idea file paths, or raw text prompts
 
 ### Eval System
 
