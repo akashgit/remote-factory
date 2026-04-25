@@ -367,7 +367,7 @@ class TestDashboardCLI:
         args = parser.parse_args(["dashboard"])
         assert args.port == 8420
         assert args.host == "0.0.0.0"
-        assert args.projects_dir == "~/cursor-projects"
+        assert args.projects_dir == "~/factory-projects"
 
     def test_dashboard_parser_custom(self):
         from factory.cli import build_parser

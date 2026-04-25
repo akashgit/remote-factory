@@ -24,7 +24,7 @@ factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 
 This will:
 
-1. Create a project directory at `~/cursor-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
+1. Create a project directory at `~/factory-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
 2. Initialize a git repo
 3. Save your prompt as the build spec (`.factory/strategy/current.md`)
 4. Launch the CEO agent in interactive mode

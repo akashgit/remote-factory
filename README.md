@@ -82,7 +82,7 @@ cd remote-factory && uv sync && uv tool install -e .
 factory install
 
 # Set up the Obsidian vault (highly recommended — gives the factory persistent memory)
-export FACTORY_VAULT_PATH=~/obsidian-vaults/factory
+export FACTORY_VAULT_PATH=~/factory-vault
 factory vault-init
 
 # Build something

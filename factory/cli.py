@@ -894,9 +894,8 @@ def cmd_vault_init(args: argparse.Namespace) -> int:
 
     vault_result = init_vault()
     if vault_result is None:
-        default = Path.home() / "obsidian-vaults" / "factory"
         print("No vault path configured. Set FACTORY_VAULT_PATH or run:")
-        print(f"  export FACTORY_VAULT_PATH={default}")
+        print("  export FACTORY_VAULT_PATH=~/factory-vault")
         print("  factory vault-init")
         return 1
     print(f"Factory vault initialized at {vault_result}")
@@ -1114,7 +1113,7 @@ def _resolve_model(args: argparse.Namespace) -> str | None:
     return env or None
 
 
-_PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "cursor-projects")))
+_PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
 
 def _resolve_input(raw: str) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
@@ -1776,16 +1775,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
     p.add_argument("path", help="Path to the project (insights.md written here)")
     p.add_argument(
-        "--projects-dir", default="~/cursor-projects",
-        help="Directory containing factory-managed projects (default: ~/cursor-projects)",
+        "--projects-dir", default="~/factory-projects",
+        help="Directory containing factory-managed projects (default: ~/factory-projects)",
     )
 
     # ace
     p = sub.add_parser("ace", help="Run ACE self-improvement on agent playbooks")
     p.add_argument("path", help="Path to the project")
     p.add_argument(
-        "--projects-dir", default="~/cursor-projects",
-        help="Directory containing factory-managed projects (default: ~/cursor-projects)",
+        "--projects-dir", default="~/factory-projects",
+        help="Directory containing factory-managed projects (default: ~/factory-projects)",
     )
     p.add_argument(
         "--dry-run", action="store_true", default=False,
@@ -1867,8 +1866,8 @@ def build_parser() -> argparse.ArgumentParser:
     # dashboard — live web dashboard
     p = sub.add_parser("dashboard", help="Launch the live Factory dashboard")
     p.add_argument(
-        "--projects-dir", default="~/cursor-projects",
-        help="Directory containing factory-managed projects (default: ~/cursor-projects)",
+        "--projects-dir", default="~/factory-projects",
+        help="Directory containing factory-managed projects (default: ~/factory-projects)",
     )
     p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
     p.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")

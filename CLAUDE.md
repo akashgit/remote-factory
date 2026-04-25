@@ -100,7 +100,7 @@ factory run /path/to/project                    # Same as factory ceo
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
 factory agent researcher --task "..." --project /path  # Invoke a specialist directly
-factory dashboard --projects-dir ~/cursor-projects    # Live web dashboard on :8420
+factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 factory export /path/to/project                 # Dump full project snapshot as JSON
 factory checkpoint /path/to/project             # Save CEO state for crash recovery
 factory resume /path/to/project                 # Resume from saved checkpoint
