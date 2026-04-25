@@ -20,7 +20,9 @@ factory ceo ~/my-project
 factory run ~/my-project --loop
 ```
 
-Under the hood, a CEO agent orchestrates six specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
+The CEO runs as a foreground Claude Code session — you can talk to it at any time, just like you would with Claude Code. Ask it what it's doing, steer it if something looks off, provide missing credentials, or redirect its focus mid-cycle. It's autonomous by default, collaborative when you want it to be.
+
+Under the hood, the CEO orchestrates six specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
 
 ## How It Works
 
@@ -272,7 +274,7 @@ See `factory --help` for the complete list.
 
 ```bash
 uv sync --all-groups              # Install all deps including dev
-uv run pytest -v                  # 878 tests
+uv run pytest -v                  # 924 tests
 uv run ruff check .               # Lint
 uv run mypy factory/              # Type check
 ```
