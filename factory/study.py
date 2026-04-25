@@ -461,10 +461,26 @@ def _search_similar_projects(project_path: Path) -> list[dict]:
     ]
 
 
+def _get_github_user() -> str | None:
+    """Return the authenticated GitHub username, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            ["gh", "api", "user", "--jq", ".login"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def _fetch_open_issues(project_path: Path) -> list[dict]:
     """Fetch open GitHub issues for the project's repo.
 
-    Returns a list of dicts with keys: number, title, labels, body (truncated).
+    Returns a list of dicts with keys: number, title, labels, body (truncated), author.
     Gracefully returns empty list if gh is unavailable, not a GitHub repo, or fetch fails.
     """
     try:
@@ -473,7 +489,7 @@ def _fetch_open_issues(project_path: Path) -> list[dict]:
                 "gh", "issue", "list",
                 "--state", "open",
                 "--limit", "20",
-                "--json", "number,title,labels,body",
+                "--json", "number,title,labels,body,author",
             ],
             capture_output=True,
             text=True,
@@ -499,6 +515,7 @@ def _fetch_open_issues(project_path: Path) -> list[dict]:
             "title": i.get("title", ""),
             "labels": [lb.get("name", "") for lb in (i.get("labels") or [])],
             "body": (i.get("body") or "")[:300],
+            "author": (i.get("author") or {}).get("login", ""),
         }
         for i in issues
     ]
@@ -706,23 +723,54 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     else:
         lines.append("No similar projects found.")
 
-    # Open GitHub issues
+    # Open GitHub issues — split by ownership
     open_issues = _fetch_open_issues(project_path)
-    lines.extend(["", "## Open GitHub Issues"])
-    if open_issues:
-        lines.append(f"{len(open_issues)} open issue(s):")
-        lines.append("")
-        for issue in open_issues:
+    gh_user = _get_github_user()
+
+    own_issues = [i for i in open_issues if gh_user and i["author"] == gh_user]
+    community_issues = [i for i in open_issues if not gh_user or i["author"] != gh_user]
+
+    def _format_issue_list(issues: list[dict]) -> list[str]:
+        out: list[str] = []
+        for issue in issues:
             label_str = ""
             if issue["labels"]:
                 label_str = f" [{', '.join(issue['labels'])}]"
-            lines.append(f"- **#{issue['number']}** {issue['title']}{label_str}")
+            author_str = f" (by @{issue['author']})" if issue["author"] else ""
+            out.append(
+                f"- **#{issue['number']}** {issue['title']}{label_str}{author_str}"
+            )
             if issue["body"]:
                 body_preview = issue["body"].replace("\n", " ").strip()
                 if body_preview:
-                    lines.append(f"  > {body_preview}")
-    else:
+                    out.append(f"  > {body_preview}")
+        return out
+
+    lines.extend(["", "## Open GitHub Issues"])
+    if not open_issues:
         lines.append("No open issues found (or not a GitHub repo).")
+    else:
+        if own_issues:
+            lines.extend([
+                "",
+                f"### Your Issues ({len(own_issues)}) — actionable, may generate fix hypotheses",
+                "",
+            ])
+            lines.extend(_format_issue_list(own_issues))
+
+        if community_issues:
+            lines.extend([
+                "",
+                f"### Community Issues ({len(community_issues)}) — reference only, do NOT auto-fix",
+                "",
+                "These were filed by external contributors. Do not generate hypotheses for them "
+                "unless explicitly targeted via --focus. If valuable, suggest the author creates a PR.",
+                "",
+            ])
+            lines.extend(_format_issue_list(community_issues))
+
+        if not own_issues and not community_issues:
+            lines.append("No open issues found (or not a GitHub repo).")
 
     # Observability coverage analysis
     from factory.discovery.introspect import _detect_language
@@ -806,7 +854,8 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         except Exception:
             pass
 
-    issue_fix_slots = len(open_issues) // 3
+    # Only the user's own issues drive fix slot allocation
+    issue_fix_slots = len(own_issues) // 3
     fix_slots = max(config_budget.min_fix, issue_fix_slots)
     growth_slots = config_budget.min_growth
     reserved = fix_slots + growth_slots
@@ -821,7 +870,7 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         "",
         "| Slot type | Count | Source |",
         "|-----------|-------|--------|",
-        f"| **Fix slots** | {fix_slots} | {len(open_issues)} open issues (1 per 3, min {config_budget.min_fix}) |",
+        f"| **Fix slots** | {fix_slots} | {len(own_issues)} of your issues (1 per 3, min {config_budget.min_fix}) |",
         f"| **Growth slots** | {growth_slots} | Guaranteed minimum (configurable via factory.md) |",
         f"| **Flex slots** | {flex_slots} | Strategist's choice (fix or growth) |",
         f"| **Total** | **{total}** | max {config_budget.max_total} (configurable) |",
@@ -839,11 +888,11 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         "*Budget is configurable: set `min_growth`, `min_fix`, `max_total` in factory.md under `## Hypothesis Budget`, "
         "or pass `--min-growth`, `--min-fix`, `--max-total` on the CLI.*",
     ])
-    if open_issues:
+    if own_issues:
         lines.append("")
         lines.append(
-            "The Strategist SHOULD address open GitHub issues as FIX hypotheses. "
-            "Issues represent known user-reported problems and feature requests — they are high-signal input."
+            "The Strategist SHOULD address your open GitHub issues as FIX hypotheses. "
+            "Community issues (filed by others) must NOT be auto-fixed — suggest the author creates a PR instead."
         )
 
     return "\n".join(lines)
