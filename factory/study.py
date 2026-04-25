@@ -372,6 +372,41 @@ def _persist_deferred_items(project_path: Path, items: list[str]) -> None:
     deferred_path.write_text("\n".join(lines) + "\n")
 
 
+def remove_deferred_item(project_path: Path, item_text: str) -> bool:
+    """Remove a completed deferred item from deferred.md by exact match.
+
+    Returns True if the item was found and removed, False otherwise.
+    """
+    deferred_path = project_path / ".factory" / "strategy" / "deferred.md"
+    if not deferred_path.exists():
+        return False
+
+    try:
+        content = deferred_path.read_text()
+    except OSError:
+        return False
+
+    remaining: list[str] = []
+    found = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        m = _BULLET_PREFIX_RE.match(stripped)
+        if m and stripped[m.end():].strip() == item_text:
+            found = True
+            continue
+        if stripped:
+            remaining.append(line)
+
+    if not found:
+        return False
+
+    if remaining:
+        deferred_path.write_text("\n".join(remaining) + "\n")
+    else:
+        deferred_path.unlink()
+    return True
+
+
 def _path_to_slug(project_path: Path) -> str:
     """Convert a project path to Claude's directory slug format.
 
