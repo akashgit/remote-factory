@@ -1049,6 +1049,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     ]
     if model:
         cmd.extend(["--model", model])
+        os.environ["FACTORY_MODEL"] = model
 
     # Replace this process with the interactive claude session
     os.chdir(project_path)
