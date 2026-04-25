@@ -290,6 +290,47 @@ def _analyze_observability(project_path: Path, language: str = "python") -> dict
     }
 
 
+def _parse_deferred_items(project_path: Path) -> list[str]:
+    """Extract deferred/post-MVP items from the strategy file.
+
+    Looks for sections headed 'deferred', 'post-mvp', 'future work', or
+    'backlog' (case-insensitive) in .factory/strategy/current.md and returns
+    the bullet items found under them.
+    """
+    strategy_path = project_path / ".factory" / "strategy" / "current.md"
+    if not strategy_path.exists():
+        return []
+
+    try:
+        content = strategy_path.read_text()
+    except OSError:
+        return []
+
+    items: list[str] = []
+    in_deferred_section = False
+    deferred_heading = re.compile(
+        r"^#{1,4}\s+.*(deferred|post[-\s]mvp|future\s+work|backlog).*$",
+        re.IGNORECASE,
+    )
+    any_heading = re.compile(r"^#{1,4}\s+")
+
+    for line in content.splitlines():
+        if deferred_heading.match(line):
+            in_deferred_section = True
+            continue
+        if in_deferred_section:
+            if any_heading.match(line):
+                in_deferred_section = False
+                continue
+            stripped = line.strip()
+            if stripped.startswith(("- ", "* ", "• ")):
+                item_text = stripped.lstrip("-*• ").strip()
+                if item_text:
+                    items.append(item_text)
+
+    return items
+
+
 def _path_to_slug(project_path: Path) -> str:
     """Convert a project path to Claude's directory slug format.
 
@@ -772,6 +813,25 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         if not own_issues and not community_issues:
             lines.append("No open issues found (or not a GitHub repo).")
 
+    # Deferred items from Build mode
+    deferred_items = _parse_deferred_items(project_path)
+    if deferred_items:
+        lines.extend([
+            "",
+            "## Deferred Items from Build Mode",
+            "",
+            "These items were explicitly deferred during Build mode. They represent "
+            "acknowledged product gaps — prioritize them over general Explore hypotheses.",
+            "",
+        ])
+        for item in deferred_items:
+            lines.append(f"- {item}")
+        lines.extend([
+            "",
+            "**The Strategist MUST address at least one deferred item per cycle** "
+            "when deferred items exist. Tag with: `**Deferred item:** <item>`",
+        ])
+
     # Observability coverage analysis
     from factory.discovery.introspect import _detect_language
     language = _detect_language(project_path)
@@ -858,9 +918,23 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     issue_fix_slots = len(own_issues) // 3
     fix_slots = max(config_budget.min_fix, issue_fix_slots)
     growth_slots = config_budget.min_growth
-    reserved = fix_slots + growth_slots
+    deferred_slots = min(len(deferred_items), 2) if deferred_items else 0
+    reserved = fix_slots + growth_slots + deferred_slots
     flex_slots = max(0, min(2, config_budget.max_total - reserved))
     total = min(reserved + flex_slots, config_budget.max_total)
+
+    budget_rows = [
+        f"| **Fix slots** | {fix_slots} | {len(own_issues)} of your issues (1 per 3, min {config_budget.min_fix}) |",
+        f"| **Growth slots** | {growth_slots} | Guaranteed minimum (configurable via factory.md) |",
+    ]
+    if deferred_slots:
+        budget_rows.append(
+            f"| **Deferred slots** | {deferred_slots} | {len(deferred_items)} deferred items from Build mode |"
+        )
+    budget_rows.extend([
+        f"| **Flex slots** | {flex_slots} | Strategist's choice (fix, growth, or deferred) |",
+        f"| **Total** | **{total}** | max {config_budget.max_total} (configurable) |",
+    ])
 
     lines.extend([
         "",
@@ -870,10 +944,9 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         "",
         "| Slot type | Count | Source |",
         "|-----------|-------|--------|",
-        f"| **Fix slots** | {fix_slots} | {len(own_issues)} of your issues (1 per 3, min {config_budget.min_fix}) |",
-        f"| **Growth slots** | {growth_slots} | Guaranteed minimum (configurable via factory.md) |",
-        f"| **Flex slots** | {flex_slots} | Strategist's choice (fix or growth) |",
-        f"| **Total** | **{total}** | max {config_budget.max_total} (configurable) |",
+    ])
+    lines.extend(budget_rows)
+    lines.extend([
         "",
         "### Slot Rules",
         "",
@@ -881,9 +954,16 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
         f"- **Growth slots ({growth_slots}):** Reserved for hypotheses targeting growth dimensions "
         "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
         "Each MUST have a `**Growth dimension:**` tag",
+    ])
+    if deferred_slots:
+        lines.append(
+            f"- **Deferred slots ({deferred_slots}):** Reserved for hypotheses addressing deferred/post-MVP items "
+            "from Build mode. Each MUST have a `**Deferred item:**` tag. Priority: above Exploit and Explore."
+        )
+    lines.extend([
         f"- **Flex slots ({flex_slots}):** Strategist chooses the category based on project needs",
         "",
-        "Fix and growth slots are **reserved** — do not cannibalize growth slots for more bugfixes or vice versa.",
+        "Fix, growth, and deferred slots are **reserved** — do not cannibalize one type for another.",
         "",
         "*Budget is configurable: set `min_growth`, `min_fix`, `max_total` in factory.md under `## Hypothesis Budget`, "
         "or pass `--min-growth`, `--min-fix`, `--max-total` on the CLI.*",
