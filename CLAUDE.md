@@ -96,7 +96,7 @@ factory ceo /path/to/project                    # Launch CEO agent (single cycle
 factory ceo "distributed eval runner" --mode interactive  # Brainstorm + research → build from idea
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
 factory ceo /path/to/project --focus "dashboard UI"  # Targeted mode: build exactly one item
-factory ceo --prompt "Build a weather CLI"      # Build from a raw prompt
+factory ceo "Build a weather CLI"               # Build from a raw prompt
 factory run /path/to/project                    # Same as factory ceo
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
@@ -114,7 +114,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop` and `--prompt`. `--prompt` builds a new project from a raw text description. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless`, `--prompt`, and `--focus`.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop` and `--prompt`. `--prompt` loads a spec file as the build plan (e.g. `--prompt spec.md`). To build from a raw string, pass it as the positional argument (e.g. `factory ceo "Build a weather CLI"`). `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless`, `--prompt`, and `--focus`.
 
 ## Observability
 
