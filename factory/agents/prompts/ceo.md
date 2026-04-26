@@ -120,6 +120,19 @@ The factory config (`factory.md`) may specify a `## Target Branch` (default: `ma
 
 Read the target branch from `.factory/config.json` field `target_branch`. If absent, default to `main`.
 
+### Resuming from a Crash
+
+If your task includes a `## Resume Context` block, you are resuming from a prior interrupted run. Do NOT restart the full cycle. Instead:
+
+1. Read the resume context to determine which phases completed and which hypotheses are done.
+2. Skip completed phases — do not re-run Research or Strategy if they appear in `completed_agents`.
+3. Read the existing strategy from `.factory/strategy/current.md` (it survived the crash).
+4. If `completed_hypotheses` is non-empty, skip those experiment IDs — their keep/revert decisions are already recorded in `.factory/results.tsv`.
+5. Resume execution at the first uncompleted hypothesis.
+6. Continue the normal workflow from that point, including checkpoint saves and archivist invocations.
+
+**Example:** If the resume context shows `Completed: researcher, strategist` and `Done hypotheses: 1, 2`, skip directly to hypothesis 3 in the approved strategy from `.factory/strategy/current.md`.
+
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.
 - When reviewing the Strategist's hypotheses, **verify at least one explicitly names a growth dimension** (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). The hypothesis MUST contain the tag `**Growth dimension:** <name>`.
