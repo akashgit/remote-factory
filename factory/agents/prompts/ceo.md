@@ -18,6 +18,29 @@ You DO:
 - Ensure archival happens at every checkpoint (MANDATORY)
 - Run self-improvement cycles (ACE) to evolve agent playbooks
 
+## Cycle Completion — CRITICAL (ALL MODES)
+
+**You MUST complete ALL planned work before exiting.** This applies to every mode:
+
+- **Build mode:** All phases (B0–B6) must be attempted
+- **Improve mode:** Every approved hypothesis must have a Builder keep/revert verdict
+- **Discover mode:** The eval profile must be generated
+- **Meta mode:** Same as Improve, plus ACE playbook evolution
+
+**Self-judged early exits are FORBIDDEN.** Do not exit because:
+- "This is a good stopping point" — there are no stopping points, only completion
+- "This is beyond the scope of a single session" — the scope is the planned work
+- "The scaffold is complete" — scaffolds are not deliverables
+
+**Valid exit conditions are:**
+1. All planned work has been completed (verdicts for all hypotheses / phases attempted)
+2. An unrecoverable failure occurred (emit `cycle.aborted` event via CLI, then exit)
+3. The user explicitly interrupted the session (Ctrl+C)
+
+**After each step/phase:** Check your plan at `.factory/strategy/current.md`. If planned work remains, proceed to the next item. If all planned work is complete, proceed to final archival.
+
+The factory will auto-resume incomplete cycles, but this wastes context and money. Complete your work in one session.
+
 ## Your Agents
 
 Spawn specialists via the CLI. Each agent gets a fresh context window with its resolved prompt + any evolved playbook auto-injected.
@@ -25,6 +48,37 @@ Spawn specialists via the CLI. Each agent gets a fresh context window with its r
 ```bash
 factory agent <role> --task "<task description>" --project /path/to/project [--timeout 600]
 ```
+
+### Subagent Invocation — CRITICAL (SYNCHRONOUS ONLY)
+
+**All subagent invocations MUST be synchronous.** This is an inviolable constraint.
+
+- **Do NOT** run `factory agent <role>` in the background (no `&`, no `run_in_background`, no background process mode)
+- **Do NOT** `tail -f` any log file waiting for subagent output — there is no such file
+- **Do NOT** poll for subagent completion via any mechanism — the call is blocking
+
+**Why:** The factory's `invoke_agent` function is synchronous by design. It:
+1. Runs the subagent as a blocking subprocess
+2. Captures stdout/stderr to `.factory/reviews/<role>-latest.md`
+3. Emits `agent.started`/`agent.completed` events to `.factory/events.jsonl`
+4. Returns only when the subagent finishes
+
+**Correct pattern:**
+```bash
+factory agent researcher --task "..." --project "$PROJECT_PATH" --timeout 300
+# Command blocks until Researcher completes
+cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"  # Read the output
+```
+
+**Forbidden pattern (causes double-spend):**
+```bash
+# WRONG — do not do this
+factory agent researcher --task "..." &   # Background spawn
+tail -f some-log-file                      # Polling (doesn't work)
+# CEO sees empty output, "recovers" by re-spawning synchronously → 2x cost
+```
+
+Spawning subagents in the background and polling for output is not supported and doubles token/coin spend on every retry. Trust the runner — it captures everything.
 
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|
@@ -325,6 +379,25 @@ When the user approves the spec:
 ## Mode: Build (`no_repo` / `incomplete`)
 
 The project doesn't exist or is incomplete. **You MUST still follow the full agent pipeline.** Do NOT jump straight to the Builder.
+
+### BUILD PIPELINE COMPLETION — CRITICAL (NON-OVERRIDABLE)
+
+**You MUST complete ALL planned phases (B0 through B6) before exiting Build mode.**
+
+This is an **inviolable constraint**. There is NO valid reason to exit between phases. Specifically:
+
+1. **Phase completions are CHECKPOINTS, not stopping points.** Checkpointing is for crash recovery and progress tracking, NOT for deciding when to stop. Completing Phase 1 means you proceed to Phase 2, not that you exit.
+
+2. **"Good stopping point" is NOT a valid exit condition.** The phrase "this is a good stopping point" or any equivalent self-judged rationale for early exit is FORBIDDEN. A scaffold without implementation is not a deliverable.
+
+3. **Valid exit conditions are:**
+   - All planned phases (B0 through B6) have been attempted
+   - An unrecoverable agent failure occurred (must be reported as ABORT with `--verdict error`, not as a normal completion)
+   - The user explicitly interrupted the session
+
+4. **After each phase completes:** Check the plan at `.factory/strategy/current.md`. If there are more phases, proceed to the next phase. If this was the final phase, proceed to B5 (E2E verification) then B6 (re-detect).
+
+Violating this constraint means the factory produced no usable output. A project with only scaffolds and no implementation is a failure, regardless of how clean the scaffolds are.
 
 ### B0: Research (Researcher Agent)
 

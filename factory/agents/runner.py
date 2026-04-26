@@ -4,15 +4,43 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from pathlib import Path
 from typing import Literal
 
 from factory.ace.injector import inject_playbook, load_playbook
+from factory.runners import get_runner
 
 logger = logging.getLogger(__name__)
 
 AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "distiller", "ceo"]
+
+# Consecutive failure tracking
+_consecutive_failures: int = 0
+_FAILURE_ABORT_THRESHOLD: int = 2
+
+
+class ConsecutiveAgentFailureError(Exception):
+    """Raised when too many consecutive agent spawns fail.
+
+    This prevents the CEO from falling back to doing work itself when subagent
+    infrastructure is broken. Instead, the cycle should abort with a clear error.
+    """
+
+    def __init__(self, failure_count: int, last_agent: str) -> None:
+        self.failure_count = failure_count
+        self.last_agent = last_agent
+        super().__init__(
+            f"Aborting after {failure_count} consecutive agent spawn failures. "
+            f"Last failed agent: {last_agent}. "
+            "Check .factory/events.jsonl for details. "
+            "This usually means BOBSHELL_API_KEY is not being propagated to subprocesses."
+        )
+
+
+def reset_failure_counter() -> None:
+    """Reset the consecutive failure counter. Call at start of a cycle."""
+    global _consecutive_failures
+    _consecutive_failures = 0
 
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -68,72 +96,88 @@ async def invoke_agent(
     timeout: float = 600.0,
     dangerously_skip_permissions: bool = True,
     model: str | None = None,
+    runner_name: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
-    Returns (stdout, return_code).
-    """
-    prompt = resolve_prompt(role, project_path)
-    full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
+    Args:
+        role: The agent role to invoke.
+        task: The task description.
+        project_path: Path to the project.
+        timeout: Maximum execution time in seconds.
+        dangerously_skip_permissions: If True, skip permission prompts.
+        model: Optional model override.
+        runner_name: CLI backend to use ("claude" or "bob"). Defaults to FACTORY_RUNNER env var.
 
-    cmd = ["claude", "-p", full_prompt]
-    if dangerously_skip_permissions:
-        cmd.append("--dangerously-skip-permissions")
-    if model:
-        cmd.extend(["--model", model])
+    Returns (stdout, return_code).
+
+    Raises:
+        ConsecutiveAgentFailureError: If too many consecutive agent spawns fail.
+    """
+    global _consecutive_failures
+
+    prompt = resolve_prompt(role, project_path)
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
-    # Emit agent started event
     _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
 
-    # Clean environment: remove VIRTUAL_ENV so the target project's own
-    # venv is used (prevents mypy/pytest from checking wrong packages).
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    if model:
-        env["FACTORY_MODEL"] = model
+    runner = get_runner(runner_name)
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        stdout, return_code = await runner.headless(
+            prompt=prompt,
+            task=task,
             cwd=project_path,
-            env=env,
+            timeout=timeout,
+            model=model,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+            role=role,
         )
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(), timeout=timeout
-        )
-    except asyncio.TimeoutError:
-        proc.kill()  # type: ignore[union-attr]
-        await proc.wait()  # type: ignore[union-attr]
-        logger.error("%s agent timed out after %ss", role, timeout)
-        _emit_safe(project_path, "agent.timeout", agent=role, data={"timeout": timeout})
-        return f"Agent timed out after {timeout}s", 1
-    except FileNotFoundError:
-        logger.error("'claude' CLI not found on PATH")
-        _emit_safe(project_path, "agent.failed", agent=role, data={"error": "claude CLI not found"})
-        return "Error: 'claude' CLI not found on PATH", 1
+    except Exception as e:
+        logger.error("%s agent failed: %s", role, e)
+        _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
+        _consecutive_failures += 1
+        _check_failure_threshold(project_path, role)
+        return f"Error: {e}", 1
 
-    stdout = stdout_bytes.decode()
-    stderr = stderr_bytes.decode()
-
-    if proc.returncode != 0:
-        logger.warning("%s agent exited with code %d: %s", role, proc.returncode, stderr[:200])
+    if return_code != 0:
+        logger.warning("%s agent exited with code %d", role, return_code)
         _emit_safe(
             project_path, "agent.failed", agent=role,
-            data={"return_code": proc.returncode, "stderr": stderr[:200]},
+            data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
         )
+        _consecutive_failures += 1
+        _check_failure_threshold(project_path, role)
     else:
         _emit_safe(
             project_path, "agent.completed", agent=role,
             data={"return_code": 0},
         )
+        # Reset counter on success
+        _consecutive_failures = 0
 
-    # Save output to .factory/reviews/ so the CEO can review it
-    _save_review(project_path, role, stdout, proc.returncode or 0)
+    _save_review(project_path, role, stdout, return_code)
 
-    return stdout, proc.returncode or 0
+    return stdout, return_code
+
+
+def _check_failure_threshold(project_path: Path, last_agent: str) -> None:
+    """Check if consecutive failures have exceeded the threshold and abort if so."""
+    global _consecutive_failures
+
+    if _consecutive_failures >= _FAILURE_ABORT_THRESHOLD:
+        # Emit cycle.aborted event before raising
+        _emit_safe(
+            project_path,
+            "cycle.aborted",
+            data={
+                "reason": "consecutive_agent_failures",
+                "failure_count": _consecutive_failures,
+                "last_agent": last_agent,
+            },
+        )
+        raise ConsecutiveAgentFailureError(_consecutive_failures, last_agent)
 
 
 def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
