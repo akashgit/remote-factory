@@ -11,7 +11,7 @@ You can hand it a one-line prompt, a detailed spec, a path to an idea file, or a
 
 ```bash
 # Got an idea? Describe it.
-factory ceo "Build a CLI that converts CSV to JSON with streaming support"
+factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
 
 # Have an idea written up in a file? Pass the path.
 factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
@@ -47,7 +47,7 @@ A CEO agent orchestrates six specialists — each running as an independent [Cla
 
 | Input | What happens |
 |-------|-------------|
-| `factory ceo "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
+| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
 | `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
 | `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
 
