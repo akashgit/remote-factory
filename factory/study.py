@@ -833,7 +833,9 @@ def _load_cross_project_insights(
     return "\n".join(summary_lines)
 
 
-def study_project_local(project_path: Path, **kwargs: object) -> str:
+def study_project_local(
+    project_path: Path, *, focus: str | None = None, **kwargs: object
+) -> str:
     """Read interaction logs and produce an observations summary (local only)."""
     log_files = _find_log_files(project_path)
 
@@ -935,8 +937,6 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     backlog_items = _parse_backlog_items(project_path)
     if backlog_items:
         _persist_backlog_items(project_path, backlog_items)
-
-    focus: str | None = kwargs.get("focus")  # type: ignore[assignment]
 
     lines.extend([
         "",
@@ -1090,6 +1090,8 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     return "\n".join(lines)
 
 
-def study_project(project_path: Path, **kwargs: object) -> str:
+def study_project(
+    project_path: Path, *, focus: str | None = None, **kwargs: object
+) -> str:
     """Study a project — local analysis. Deep research available via researcher subagent."""
-    return study_project_local(project_path, **kwargs)
+    return study_project_local(project_path, focus=focus, **kwargs)

@@ -1425,30 +1425,9 @@ class TestStudyTargetedMode:
 
 
 class TestBuildCeoTaskFocus:
-    def test_focus_adds_to_backlog(self, tmp_path):
-        from factory.cli import _build_ceo_task
-
-        strategy_dir = tmp_path / ".factory" / "strategy"
-        strategy_dir.mkdir(parents=True)
-        _build_ceo_task(tmp_path, "improve", focus="Add caching")
-        backlog_path = strategy_dir / "backlog.md"
-        assert backlog_path.exists()
-        assert "Add caching" in backlog_path.read_text()
-
-    def test_focus_no_duplicate_backlog(self, tmp_path):
-        from factory.cli import _build_ceo_task
-
-        strategy_dir = tmp_path / ".factory" / "strategy"
-        strategy_dir.mkdir(parents=True)
-        (strategy_dir / "backlog.md").write_text("- Add caching\n")
-        _build_ceo_task(tmp_path, "improve", focus="Add caching")
-        content = (strategy_dir / "backlog.md").read_text()
-        assert content.count("Add caching") == 1
-
     def test_focus_task_contains_targeted_mode(self, tmp_path):
         from factory.cli import _build_ceo_task
 
-        (tmp_path / ".factory" / "strategy").mkdir(parents=True)
         task = _build_ceo_task(tmp_path, "improve", focus="Add caching")
         assert "Targeted Mode" in task
         assert "exactly ONE hypothesis" in task
@@ -1459,6 +1438,57 @@ class TestBuildCeoTaskFocus:
 
         task = _build_ceo_task(tmp_path, "improve")
         assert "Targeted Mode" not in task
+
+    def test_build_ceo_task_does_not_write_backlog(self, tmp_path):
+        from factory.cli import _build_ceo_task
+
+        _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        backlog_path = tmp_path / ".factory" / "strategy" / "backlog.md"
+        assert not backlog_path.exists()
+
+
+class TestFocusMutualExclusion:
+    def test_focus_and_loop_rejected(self):
+        from factory.cli import main
+
+        result = main(["run", "/tmp/fake", "--focus", "fix bug", "--loop"])
+        assert result == 1
+
+    def test_focus_and_prompt_rejected_ceo(self, tmp_path):
+        from factory.cli import main
+
+        prompt_path = tmp_path / "spec.md"
+        prompt_path.write_text("Build a thing")
+        result = main(["ceo", str(tmp_path), "--focus", "fix bug",
+                       "--prompt", str(prompt_path), "--mode", "improve"])
+        assert result == 1
+
+    def test_focus_and_prompt_rejected_run(self, tmp_path):
+        from factory.cli import main
+
+        prompt_path = tmp_path / "spec.md"
+        prompt_path.write_text("Build a thing")
+        result = main(["run", str(tmp_path), "--focus", "fix bug",
+                       "--prompt", str(prompt_path), "--mode", "improve"])
+        assert result == 1
+
+    def test_focus_rejected_in_build_mode(self):
+        from factory.cli import main
+
+        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "build"])
+        assert result == 1
+
+    def test_focus_rejected_in_discover_mode(self):
+        from factory.cli import main
+
+        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "discover"])
+        assert result == 1
+
+    def test_focus_rejected_in_meta_mode(self):
+        from factory.cli import main
+
+        result = main(["ceo", "/tmp/fake", "--focus", "fix bug", "--mode", "meta"])
+        assert result == 1
 
 
 class TestStudyParserFocus:

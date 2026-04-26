@@ -314,9 +314,7 @@ def cmd_study(args: argparse.Namespace) -> int:
     if projects_dir:
         kwargs["projects_dir"] = str(Path(projects_dir).expanduser().resolve())
     focus = getattr(args, "focus", None)
-    if focus:
-        kwargs["focus"] = focus
-    summary = study_project(project_path, **kwargs)
+    summary = study_project(project_path, focus=focus, **kwargs)
 
     # Write to .factory/strategy/observations.md
     obs_path = project_path / ".factory" / "strategy" / "observations.md"
@@ -1072,8 +1070,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+
+    if focus and prompt_file:
+        print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
+              "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
+        return 1
+    if focus and mode != "improve":
+        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+              "The project must already be built before targeting specific items.", file=sys.stderr)
+        return 1
+
     _print_banner(mode)
     _ensure_dashboard(project_path)
+
+    if focus:
+        from factory.study import add_backlog_item
+        add_backlog_item(project_path, focus)
 
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
@@ -1455,8 +1467,6 @@ def _build_ceo_task(
         )
 
     if focus:
-        from factory.study import add_backlog_item
-        add_backlog_item(project_path, focus)
         task += (
             f"\n\n## Focus Directive (Targeted Mode)\n\n"
             f"Target: {focus}\n\n"
@@ -1578,6 +1588,10 @@ def _run_single_cycle(
     from factory.agents.runner import invoke_agent
     from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
 
+    if focus:
+        from factory.study import add_backlog_item
+        add_backlog_item(project_path, focus)
+
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
@@ -1620,6 +1634,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+
+    if focus and loop:
+        print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
+              "Targeted mode builds exactly one item and exits.", file=sys.stderr)
+        return 1
+    if focus and prompt_file:
+        print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
+              "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
+        return 1
+    if focus and mode != "improve":
+        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+              "The project must already be built before targeting specific items.", file=sys.stderr)
+        return 1
+
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
