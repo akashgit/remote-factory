@@ -114,6 +114,47 @@ class TestCmdCeoInteractive:
         err = capsys.readouterr().err.lower()
         assert "provide" in err or "error" in err
 
+    def test_interactive_mode_warning(self, capsys):
+        """--interactive with --mode=improve warns and overrides to build."""
+        with patch("factory.cli.os.execvp"), \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "--interactive", "an idea", "--mode", "improve"])
+        err = capsys.readouterr().err.lower()
+        assert "ignoring" in err
+
+    def test_interactive_foreground_uses_execvp(self, tmp_path):
+        """--interactive mode launches via os.execvp (foreground)."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--interactive", "my idea"])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        assert cmd[0] == "claude"
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_interactive_task_has_phase_0_block(self, tmp_path):
+        """--interactive injects Phase 0 block into the CEO task."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--interactive", "distributed eval runner"])
+        cmd = mock_exec.call_args[0][1]
+        # Task is the positional arg after --dangerously-skip-permissions
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "distributed eval runner" in task
+
+    def test_interactive_no_duplicate_context(self, tmp_path):
+        """--interactive does not inject the idea as both Phase 0 and Project Specification."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--interactive", "build a cool CLI tool"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Interactive Ideation Mode" in task
+        assert "## Project Specification" not in task
+
 
 class TestCmdDetect:
     def test_detect_no_repo(self, tmp_path, capsys):

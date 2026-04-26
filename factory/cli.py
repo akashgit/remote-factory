@@ -1088,10 +1088,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     resolve_target = raw_path or interactive_idea
     assert resolve_target is not None  # validated above
     project_path, context = _resolve_input(resolve_target)
+    if interactive_idea:
+        context = None  # idea is embedded in the Phase 0 block, not as Project Specification
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
     if interactive_idea:
+        if mode not in ("auto", "build"):
+            print(f"Warning: --interactive always uses build mode, ignoring --mode '{mode}'",
+                  file=sys.stderr)
         mode = "build"
     elif mode == "auto":
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
