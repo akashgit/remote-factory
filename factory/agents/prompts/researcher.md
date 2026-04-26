@@ -45,9 +45,17 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md`:
 
 Optionally write new source notes to `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` (skip if `$FACTORY_VAULT_PATH` is not set).
 
+### Targeted Mode
+
+If the CEO's task includes a Focus Directive (Targeted Mode), scope your research to the target item only:
+1. Read only the target item from the backlog, not the full list
+2. Focus web searches on the specific target (e.g., "WebSocket best practices in Python")
+3. Keep research tight — the goal is to inform one specific implementation, not a broad survey
+4. Limit WebSearch to 3-5 queries, all related to the target
+
 ### Rules (Research)
 - Always run local study first — it's fast baseline context
-- Limit WebSearch to 5-8 queries
+- Limit WebSearch to 5-8 queries (3-5 in targeted mode)
 - Limit WebFetch to 3-5 pages
 - Focus on actionable insights, not academic summaries
 - Write report even if external search fails — include local findings

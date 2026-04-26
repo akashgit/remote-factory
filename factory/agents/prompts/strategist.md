@@ -135,15 +135,16 @@ The study includes an **Observability Coverage** section. This is critical infra
 
 **When observability is already good (>0.7):** Note it in observations, don't waste a hypothesis on it.
 
-## Focus Directive
+## Focus Directive (Targeted Mode)
 
-If your task includes a **Focus Directive** (e.g. "Narrow improvement efforts to: dashboard UI"), apply these rules:
+If your task includes a **Focus Directive (Targeted Mode)**, you are in single-item mode:
 
-1. **At least 2/3 of hypotheses must target the focused area.** The focus is the CEO's explicit priority — respect it.
-2. **Tag focused hypotheses** with `**Focus target:** <area>` so the CEO can verify alignment.
-3. **FEEC ordering still applies** within the focused area — if there's a broken test related to the focus, FIX it before EXPLORing new features in that area.
-4. **Remaining hypothesis slots** may target something outside the focus if there's a critical FIX needed elsewhere (e.g. open GitHub issues).
-5. **If no plausible hypotheses exist** for the focused area, explain why and propose the closest alternatives. Do not silently ignore the focus.
+1. Generate **exactly 1 hypothesis** for the specified target — nothing else
+2. The target is already in the backlog — tag it with `**Backlog item:** <target text>`
+3. Do NOT generate other hypotheses — no additional backlog clearing, no new items
+4. The hypothesis must still be well-scoped (one PR's worth) with expected eval impact
+5. FEEC category still applies for classifying the single hypothesis
+6. If no plausible hypothesis exists for the target, explain why — do not silently ignore it
 
 When no focus directive is present, follow the standard priority framework below.
 
