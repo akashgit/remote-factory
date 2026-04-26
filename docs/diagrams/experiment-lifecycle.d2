@@ -208,6 +208,23 @@ precheck -> revert: "any fail" {
 keep -> arch4
 revert -> arch4
 
-arch4 -> baseline: "next hypothesis" {
+arch4 -> baseline: "next hypothesis (standard mode)" {
   style: { stroke-dash: 5; stroke: "#888"; font-size: 14 }
+}
+
+# ── Targeted Mode (--focus) ─────────────────────
+
+targeted_note: {
+  label: |md
+    **Targeted Mode** (`--focus`)
+    Single hypothesis — after decision,
+    skip to final archival (no loop back)
+  |
+  shape: rectangle
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 8; font-size: 13; italic: true }
+  width: 300
+}
+
+arch4 -> targeted_note: "--focus: exit" {
+  style: { stroke: "#1976d2"; stroke-dash: 5; font-size: 13 }
 }

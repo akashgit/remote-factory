@@ -114,7 +114,7 @@ factory ceo --prompt "Build a REST API for bookmark management with tags and sea
 | Input | What happens |
 |-------|-------------|
 | `factory ceo ~/my-project` | Discovers eval dimensions, then runs measured improvement cycles |
-| `factory ceo ~/my-project --focus "auth"` | Narrows all hypotheses to a specific area |
+| `factory ceo ~/my-project --focus "auth"` | Targeted mode: builds exactly one backlog item and exits |
 | `factory run ~/my-project --loop` | Continuous background improvement — runs every 30 min |
 | `factory ceo ~/my-project --mode meta` | Improves the factory's own agent playbooks (recursive self-improvement) |
 

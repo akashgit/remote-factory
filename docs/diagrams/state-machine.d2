@@ -107,6 +107,8 @@ improve: {
     5. Measure → Evaluator
     6. Decide → Precheck + CEO
     7. Record → Archivist
+
+    *--focus: single hypothesis, early exit*
   |
   shape: rectangle
   style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; font-size: 15 }
@@ -151,6 +153,9 @@ evals_pending -> review {
 }
 has_factory -> improve {
   style: { stroke: "#2e7d32"; stroke-width: 2 }
+}
+has_factory -> improve: "--focus (targeted)" {
+  style: { stroke: "#1976d2"; stroke-width: 2; font-size: 13; stroke-dash: 3 }
 }
 has_factory -> meta: "--mode meta" {
   style: { stroke: "#ef6c00"; stroke-width: 2; font-size: 13 }
