@@ -9,10 +9,10 @@
 
 ```bash
 # Got an idea? Describe it.
-factory ceo "Build a CLI that converts CSV to JSON with streaming support"
+factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
 
 # Have an idea written up in a file? Pass the path.
-factory ceo ~/ideas/weather-dashboard.md
+factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
 
 # Already have a repo? Point the factory at it.
 factory ceo ~/my-project
@@ -92,7 +92,7 @@ export FACTORY_VAULT_PATH=~/factory-vault
 factory vault-init
 
 # Build something
-factory ceo "Build a REST API for bookmark management with tags and search"
+factory ceo --prompt "Build a REST API for bookmark management with tags and search"
 ```
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). See the [full setup guide](docs/setup.md).
@@ -105,7 +105,7 @@ factory ceo "Build a REST API for bookmark management with tags and search"
 
 | Input | What happens |
 |-------|-------------|
-| `factory ceo "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
+| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
 | `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
 | `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
 
