@@ -250,3 +250,45 @@ def test_cli_resume_with_checkpoint(checkpoint_project: Path, sample_state: Chec
     assert "improve" in output
     assert "builder" in output
     assert "reviewer" in output
+
+
+def test_cli_checkpoint_clear(checkpoint_project: Path, sample_state: CheckpointState) -> None:
+    """factory checkpoint --clear removes the checkpoint file."""
+    from factory.cli import main
+
+    save_checkpoint(checkpoint_project, sample_state)
+    assert (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+    code = main(["checkpoint", str(checkpoint_project), "--clear"])
+    assert code == 0
+    assert not (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+
+def test_cli_checkpoint_clear_no_file(checkpoint_project: Path) -> None:
+    """factory checkpoint --clear succeeds even when no checkpoint exists."""
+    from factory.cli import main
+
+    code = main(["checkpoint", str(checkpoint_project), "--clear"])
+    assert code == 0
+
+
+def test_cli_checkpoint_save_with_completed_hypotheses(
+    checkpoint_project: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """factory checkpoint --save --completed-hypotheses persists experiment IDs."""
+    from factory.cli import main
+
+    code = main([
+        "checkpoint", str(checkpoint_project),
+        "--save",
+        "--mode", "improve",
+        "--completed", "researcher,strategist",
+        "--pending", "builder",
+        "--hypothesis", "Add caching",
+        "--completed-hypotheses", "1,2,3",
+    ])
+    assert code == 0
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is not None
+    assert loaded.completed_hypotheses == [1, 2, 3]

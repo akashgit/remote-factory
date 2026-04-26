@@ -784,6 +784,7 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
     """Show or save a checkpoint for crash-resilient resume."""
     from factory.checkpoint import (
         CheckpointState,
+        clear_checkpoint,
         format_checkpoint,
         load_checkpoint,
         save_checkpoint,
@@ -791,7 +792,15 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
 
     project_path = Path(args.path).resolve()
 
+    if args.clear:
+        clear_checkpoint(project_path)
+        print("Checkpoint cleared.")
+        return 0
+
     if args.save:
+        completed_hyps: list[int] = []
+        if args.completed_hypotheses:
+            completed_hyps = [int(x.strip()) for x in args.completed_hypotheses.split(",") if x.strip()]
         state = CheckpointState(
             mode=args.mode or "improve",
             active_experiment_id=args.experiment,
@@ -799,6 +808,7 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
             pending_agents=[a.strip() for a in args.pending.split(",")] if args.pending else [],
             last_eval_scores=json.loads(args.scores) if args.scores else {},
             current_hypothesis=args.hypothesis,
+            completed_hypotheses=completed_hyps,
             timestamp=datetime.now().isoformat(),
         )
         save_checkpoint(project_path, state)
@@ -1846,6 +1856,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--scores", default=None,
                     help="JSON dict of eval scores (e.g. '{\"tests\": 0.9}')")
     p.add_argument("--hypothesis", default=None, help="Current hypothesis text")
+    p.add_argument("--completed-hypotheses", default=None,
+                    help="Comma-separated list of completed experiment IDs (e.g. '1,2,3')")
+    p.add_argument("--clear", action="store_true", default=False,
+                    help="Clear the checkpoint file")
 
     # resume
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")
