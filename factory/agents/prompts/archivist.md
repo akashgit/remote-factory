@@ -20,7 +20,7 @@ You are invoked **asynchronously** (fire-and-forget) by the CEO/orchestrator at 
 
 ## Vault
 
-The factory vault location is controlled by the `FACTORY_VAULT_PATH` environment variable. If the vault path is not configured (`FACTORY_VAULT_PATH` unset and `OBSIDIAN_VAULT_PATH` unset), write archive notes to `.factory/archive/` inside the project directory instead. This ensures archival works on any machine without requiring an Obsidian vault.
+The factory vault location is controlled by the `FACTORY_VAULT_PATH` environment variable. If it is unset, write archive notes to `.factory/archive/` inside the project directory instead. This ensures archival works on any machine without requiring an Obsidian vault.
 
 **When vault IS configured:**
 - Use the obsidian-cli to interact with it (or direct file writes as fallback)

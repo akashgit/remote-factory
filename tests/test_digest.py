@@ -267,8 +267,7 @@ class TestFormatDigest:
 
 class TestCmdDigest:
     def test_digest_default(self, populated_vault: Path, monkeypatch, capsys):
-        monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(populated_vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(populated_vault))
         result = main(["digest"])
         assert result == 0
         out = capsys.readouterr().out
@@ -276,8 +275,7 @@ class TestCmdDigest:
         assert "project-a" in out
 
     def test_digest_specific_date(self, populated_vault: Path, monkeypatch, capsys):
-        monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(populated_vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(populated_vault))
         today = date.today().isoformat()
         result = main(["digest", "--date", today])
         assert result == 0
@@ -286,8 +284,7 @@ class TestCmdDigest:
         assert "Add auth module" in out
 
     def test_digest_no_vault(self, tmp_path: Path, monkeypatch, capsys):
-        monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "nonexistent"))
         result = main(["digest"])
         assert result == 0
         out = capsys.readouterr().out
