@@ -12,7 +12,7 @@ from factory.ace.injector import inject_playbook, load_playbook
 
 logger = logging.getLogger(__name__)
 
-AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "ceo"]
+AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "distiller", "ceo"]
 
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"

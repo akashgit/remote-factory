@@ -24,6 +24,11 @@ def archivist_prompt() -> str:
     return (PROMPTS_DIR / "archivist.md").read_text()
 
 
+@pytest.fixture
+def distiller_prompt() -> str:
+    return (PROMPTS_DIR / "distiller.md").read_text()
+
+
 # ── Strategist ────────────────────────────────────────────────────
 
 
@@ -334,3 +339,77 @@ class TestCeoPrompt:
             ceo_prompt,
         )
         assert len(async_calls) == 0, f"Found {len(async_calls)} async archivist calls — all must be blocking"
+
+    # ── Phase 0: Ideation tests ────────────────────────────────
+
+    def test_has_phase_0_ideation(self, ceo_prompt: str) -> None:
+        assert "## Phase 0: Ideation" in ceo_prompt
+
+    def test_phase_0_before_build_mode(self, ceo_prompt: str) -> None:
+        """Phase 0 must appear before Build mode in the prompt."""
+        phase0_idx = ceo_prompt.index("## Phase 0: Ideation")
+        build_idx = ceo_prompt.index("## Mode: Build")
+        assert phase0_idx < build_idx
+
+    def test_phase_0_spawns_researcher(self, ceo_prompt: str) -> None:
+        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+        build_start = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_start:build_start]
+        assert "factory agent researcher" in phase0_section
+
+    def test_phase_0_spawns_distiller(self, ceo_prompt: str) -> None:
+        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+        build_start = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_start:build_start]
+        assert "factory agent distiller" in phase0_section
+
+    def test_phase_0_has_iteration_limit(self, ceo_prompt: str) -> None:
+        assert "Maximum 5 iterations" in ceo_prompt
+
+    def test_phase_0_persists_spec(self, ceo_prompt: str) -> None:
+        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+        build_start = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_start:build_start]
+        assert "current.md" in phase0_section
+
+    def test_phase_0_transitions_to_build(self, ceo_prompt: str) -> None:
+        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+        build_start = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_start:build_start]
+        assert "Build mode" in phase0_section
+
+    def test_phase_0_spawns_archivist(self, ceo_prompt: str) -> None:
+        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+        build_start = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_start:build_start]
+        assert "factory agent archivist" in phase0_section
+
+
+# ── Distiller ────────────────────────────────────────────────────
+
+
+class TestDistillerPrompt:
+    def test_exists(self) -> None:
+        assert (PROMPTS_DIR / "distiller.md").exists()
+
+    def test_has_output_format(self, distiller_prompt: str) -> None:
+        assert "## Vision" in distiller_prompt
+        assert "## Core Features" in distiller_prompt
+        assert "## Architecture" in distiller_prompt
+
+    def test_has_refinement_mode(self, distiller_prompt: str) -> None:
+        assert "## Refinement Mode" in distiller_prompt
+        assert "Prior Draft" in distiller_prompt
+        assert "User Feedback" in distiller_prompt
+
+    def test_has_rules(self, distiller_prompt: str) -> None:
+        assert "## Rules" in distiller_prompt
+
+    def test_has_non_goals(self, distiller_prompt: str) -> None:
+        assert "Non-Goals" in distiller_prompt
+
+    def test_has_open_questions(self, distiller_prompt: str) -> None:
+        assert "Open Questions" in distiller_prompt
+
+    def test_references_research_file(self, distiller_prompt: str) -> None:
+        assert "research.md" in distiller_prompt

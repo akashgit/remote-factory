@@ -173,6 +173,152 @@ uv run python -m factory detect "$PROJECT_PATH"
 - `evals_pending_review` → **Review mode**
 - `has_factory` → **Improve mode**
 
+**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
+
+---
+
+## Phase 0: Ideation (Interactive Mode)
+
+This phase activates when your task includes a `## Interactive Ideation Mode (Phase 0)` section. You are running in foreground interactive mode — the user can see your output and respond.
+
+### Purpose
+
+Transform a vague idea into a research-grounded, buildable project specification (idea.md) through iterative refinement with the user.
+
+### I0: Research the Space (Researcher Agent)
+
+Tell the user you're researching the space, then spawn the Researcher:
+
+```bash
+factory agent researcher --task "Mode 2 research for a new project idea.
+
+The user wants to build: <RAW_IDEA>
+
+Research:
+1. Search the web for similar projects, existing solutions, and prior art
+2. Identify the best technology stack for this type of project
+3. Find architecture patterns and best practices
+4. Identify potential pitfalls and common mistakes
+5. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on similar builds (skip if unset)
+
+Write a thorough research report to .factory/strategy/research.md covering:
+- Similar projects found (with links)
+- Recommended tech stack with rationale
+- Architecture patterns that fit
+- Potential pitfalls to avoid
+- MVP scope recommendation
+" --project "$PROJECT_PATH" --timeout 300
+```
+
+### I0r: CEO Review — Research
+
+Apply the standard CEO Review Gate:
+1. Read `.factory/reviews/researcher-latest.md` and `.factory/strategy/research.md`
+2. Is the research relevant to the user's idea? Does it cover the technology landscape adequately?
+3. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
+4. If REDIRECT: re-invoke the Researcher with specific gaps
+5. If PROCEED: continue to I1
+
+### I1: Distill (Distiller Agent)
+
+Spawn the Distiller to synthesize the research into a structured spec:
+
+```bash
+factory agent distiller --task "Distill a project specification from research and a raw idea.
+
+Raw idea: <RAW_IDEA>
+
+Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
+
+Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
+```
+
+### I1r: CEO Review — Draft Spec
+
+Read `.factory/reviews/distiller-latest.md` and assess the draft:
+- Does it capture the user's intent?
+- Are the technology choices well-justified by research?
+- Is the scope achievable?
+- Are features specific enough for a Builder agent?
+
+Write your review to `.factory/reviews/ceo-verdict-distiller.md`.
+
+### I2: Present to User
+
+**This is where you interact with the user.** Present the Distiller's output clearly. Highlight the key choices the Distiller made and any open questions. Then ask the user for their feedback:
+
+- They can approve (e.g. "looks good", "let's build", "approved")
+- They can give specific feedback (e.g. "add WebSocket support", "use Go instead", "drop the admin dashboard for v1")
+- They can ask you to research a specific sub-topic before revising
+
+**One topic at a time.** If the spec has open questions, surface the most important one first. Do not dump all questions at once.
+
+### I3: Iterate on Feedback
+
+If the user provides feedback (anything other than approval):
+
+**Optional: Targeted follow-up research.** If the user's feedback introduces a new domain or technology not covered by the initial research, spawn the Researcher again with a narrow scope:
+
+```bash
+factory agent researcher --task "Targeted follow-up research for project ideation.
+
+The user wants to modify the project spec. Their feedback: <USER_FEEDBACK>
+
+Research specifically:
+- <targeted topic from feedback>
+
+Append findings to .factory/strategy/research.md (do not overwrite the existing report)." --project "$PROJECT_PATH" --timeout 180
+```
+
+**Re-spawn the Distiller with feedback:**
+
+```bash
+factory agent distiller --task "Refine the project specification based on user feedback.
+
+Raw idea: <RAW_IDEA>
+
+## Prior Draft
+
+<paste the previous draft>
+
+## User Feedback
+
+<paste the user's feedback>
+
+## Follow-Up Research
+
+<paste any new research findings, or 'None — original research still applies'>
+
+Read the full research report at .factory/strategy/research.md for context.
+
+Produce a complete updated specification." --project "$PROJECT_PATH" --timeout 300
+```
+
+Read the Distiller's output and return to **I2** (present the updated draft to the user).
+
+### I4: Finalize and Transition
+
+When the user approves the spec:
+
+1. **Persist the spec**: Write the final idea.md content to `.factory/strategy/current.md` (prepend `## Project Specification\n\n` before the content)
+2. **Spawn Archivist** to record the ideation process:
+   ```bash
+   factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
+   Read .factory/strategy/current.md (the approved spec).
+   Read .factory/strategy/research.md (the research).
+   Write project inception notes to the vault." --project "$PROJECT_PATH"
+   ```
+3. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
+
+**Important:** Do not skip Build mode's Research and Strategy steps just because Phase 0 did research. Phase 0 research is broad and exploratory (what should we build?). Build mode research is implementation-focused (how do we build it?).
+
+### Ideation Rules
+
+- **Maximum 5 iterations.** If the user has not approved after 5 rounds of feedback, summarize the current state and ask them to either approve the latest draft or provide a final definitive direction.
+- **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document.
+- **Research is optional on refinement.** Only re-spawn the Researcher if the user's feedback introduces genuinely new territory. Minor scope adjustments (add/remove features, change priorities) do not need new research.
+- **Be concise when presenting.** After the first full presentation, highlight what changed rather than re-presenting the entire spec. But always show the full spec so the user can read it in context.
+
 ---
 
 ## Mode: Build (`no_repo` / `incomplete`)

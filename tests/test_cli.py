@@ -69,6 +69,51 @@ class TestParser:
     def test_no_command_returns_1(self):
         assert main([]) == 1
 
+    def test_ceo_interactive_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "--interactive", "distributed eval runner"])
+        assert args.interactive == "distributed eval runner"
+        assert args.path is None
+
+    def test_ceo_interactive_with_path(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--interactive", "my idea"])
+        assert args.interactive == "my idea"
+        assert args.path == "/some/path"
+
+    def test_ceo_path_optional(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "--interactive", "some idea"])
+        assert args.path is None
+
+    def test_ceo_agent_distiller_choice(self):
+        parser = build_parser()
+        args = parser.parse_args(["agent", "distiller", "--task", "test", "--project", "/p"])
+        assert args.role == "distiller"
+
+
+class TestCmdCeoInteractive:
+    def test_interactive_headless_incompatible(self, capsys):
+        result = main(["ceo", "--interactive", "an idea", "--headless"])
+        assert result == 1
+        assert "incompatible" in capsys.readouterr().err.lower()
+
+    def test_interactive_prompt_incompatible(self, capsys):
+        result = main(["ceo", "--interactive", "an idea", "--prompt", "file.md"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_interactive_focus_incompatible(self, capsys):
+        result = main(["ceo", "--interactive", "an idea", "--focus", "UI"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_no_path_no_interactive_fails(self, capsys):
+        result = main(["ceo"])
+        assert result == 1
+        err = capsys.readouterr().err.lower()
+        assert "provide" in err or "error" in err
+
 
 class TestCmdDetect:
     def test_detect_no_repo(self, tmp_path, capsys):

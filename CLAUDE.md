@@ -53,7 +53,7 @@ A dedicated Claude Code agent that owns the full factory workflow. Spawned via `
 
 Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
-**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), CEO (orchestrate).
+**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Distiller (refine ideas), CEO (orchestrate).
 
 ### Key data flow
 
@@ -93,6 +93,7 @@ Requires Claude Code installed and authenticated. The factory spawns `claude` su
 
 ```bash
 factory ceo /path/to/project                    # Launch CEO agent (single cycle)
+factory ceo --interactive "distributed eval runner"  # Brainstorm + research → build from idea
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
 factory ceo /path/to/project --focus "dashboard UI"  # Targeted mode: build exactly one item
 factory ceo --prompt "Build a weather CLI"      # Build from a raw prompt
@@ -113,7 +114,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop` and `--prompt`. `--prompt` builds a new project from a raw text description.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop` and `--prompt`. `--prompt` builds a new project from a raw text description. `--interactive "idea"` enters ideation mode: the CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless`, `--prompt`, and `--focus`.
 
 ## Observability
 
