@@ -1356,3 +1356,122 @@ class TestCmdBacklogAdd:
         (strategy_dir / "backlog.md").write_text("- Existing\n")
         result = main(["backlog-add", str(tmp_path), "Existing"])
         assert result == 1
+
+
+# ── Targeted Mode (--focus) ──────────────────────────────────────────
+
+
+class TestStudyTargetedMode:
+    def test_focus_filters_backlog_to_target_only(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text(
+            "- Add caching\n- Fix login bug\n- Dashboard redesign\n"
+        )
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path, focus="Add caching")
+        assert "TARGETED MODE" in result
+        assert "Add caching" in result
+        # Other backlog items should NOT appear in the backlog section
+        backlog_section = result[result.index("## Backlog"):]
+        budget_start = backlog_section.index("## Hypothesis Budget")
+        backlog_only = backlog_section[:budget_start]
+        assert "Fix login bug" not in backlog_only
+        assert "Dashboard redesign" not in backlog_only
+
+    def test_focus_overrides_budget_to_single_item(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- Add caching\n- Fix login bug\n")
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path, focus="Add caching")
+        assert "**Backlog items: 1**" in result
+        assert "**New items: at most 0**" in result
+        assert "**Growth minimum: 0**" in result
+
+    def test_focus_without_backlog_match_still_shows_target(
+        self, tmp_path, monkeypatch
+    ):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- Unrelated item\n")
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path, focus="Add WebSocket support")
+        assert "TARGETED MODE" in result
+        assert "Add WebSocket support" in result
+
+    def test_no_focus_shows_all_backlog_items(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        project_path = tmp_path / "myapp"
+        project_path.mkdir()
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- Item A\n- Item B\n")
+        with patch("factory.study._search_similar_projects", return_value=[]):
+            result = study_project_local(project_path)
+        assert "TARGETED MODE" not in result
+        assert "Item A" in result
+        assert "Item B" in result
+        assert "**Backlog items: 2**" in result
+
+
+class TestBuildCeoTaskFocus:
+    def test_focus_adds_to_backlog(self, tmp_path):
+        from factory.cli import _build_ceo_task
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        backlog_path = strategy_dir / "backlog.md"
+        assert backlog_path.exists()
+        assert "Add caching" in backlog_path.read_text()
+
+    def test_focus_no_duplicate_backlog(self, tmp_path):
+        from factory.cli import _build_ceo_task
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- Add caching\n")
+        _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        content = (strategy_dir / "backlog.md").read_text()
+        assert content.count("Add caching") == 1
+
+    def test_focus_task_contains_targeted_mode(self, tmp_path):
+        from factory.cli import _build_ceo_task
+
+        (tmp_path / ".factory" / "strategy").mkdir(parents=True)
+        task = _build_ceo_task(tmp_path, "improve", focus="Add caching")
+        assert "Targeted Mode" in task
+        assert "exactly ONE hypothesis" in task
+        assert "Add caching" in task
+
+    def test_no_focus_no_targeted_mode(self, tmp_path):
+        from factory.cli import _build_ceo_task
+
+        task = _build_ceo_task(tmp_path, "improve")
+        assert "Targeted Mode" not in task
+
+
+class TestStudyParserFocus:
+    def test_study_parser_accepts_focus(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["study", "/tmp/test", "--focus", "Add caching"])
+        assert args.focus == "Add caching"
+
+    def test_study_parser_focus_default_none(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["study", "/tmp/test"])
+        assert args.focus is None

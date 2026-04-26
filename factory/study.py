@@ -935,12 +935,21 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
     backlog_items = _parse_backlog_items(project_path)
     if backlog_items:
         _persist_backlog_items(project_path, backlog_items)
+
+    focus: str | None = kwargs.get("focus")  # type: ignore[assignment]
+
     lines.extend([
         "",
         "## Backlog",
         "",
     ])
-    if backlog_items:
+    if focus:
+        lines.append(
+            f"**TARGETED MODE** — building exactly one item: {focus}",
+        )
+        lines.append("")
+        lines.append(f"- {focus}")
+    elif backlog_items:
         lines.append(
             f"**{len(backlog_items)} items** in the backlog. "
             "Clear as many as possible this cycle.",
@@ -1019,45 +1028,64 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
             "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
         ])
 
-    # Hypothesis budget — backlog-first
-    from factory.models import HypothesisBudget
-
-    config_budget = HypothesisBudget()
-    config_path = project_path / ".factory" / "config.json"
-    if config_path.exists():
-        import json as _json
-        try:
-            cfg = _json.loads(config_path.read_text())
-            if "hypothesis_budget" in cfg:
-                config_budget = HypothesisBudget(**cfg["hypothesis_budget"])
-        except Exception:
-            pass
-
-    backlog_count = len(backlog_items)
-
+    # Hypothesis budget — backlog-first (overridden in targeted mode)
     lines.extend([
         "",
         "## Hypothesis Budget",
         "",
-        f"**Backlog items: {backlog_count}** (clear as many as possible this cycle)",
-        f"**New items: at most {config_budget.max_new}** (researcher/strategist may add new ideas)",
-        f"**Growth minimum: {config_budget.min_growth}** (at least {config_budget.min_growth} hypotheses must target growth dimensions)",
-        "",
-        "### Rules",
-        "",
-        "- Read the backlog first. Pick items to implement this cycle — no cap on clearing.",
-        f"- You may add at most {config_budget.max_new} NEW items that aren't already in the backlog.",
-        f"- At least {config_budget.min_growth} hypotheses must target growth dimensions "
-        "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
-        "Each MUST have a `**Growth dimension:**` tag.",
-        "- FEEC ordering applies for prioritizing within the backlog (FIX > EXPLOIT > EXPLORE > COMBINE).",
-        "- Your open GitHub issues and critical bugs should be addressed as FIX hypotheses.",
-        "- Community issues (filed by others) must NOT be auto-fixed — suggest the author creates a PR instead.",
-        "- Write any new items not implemented this cycle to a `## New Backlog Items` section in current.md.",
-        "",
-        "*Budget is configurable: set `min_growth`, `max_new` in factory.md under `## Hypothesis Budget`, "
-        "or pass `--min-growth`, `--max-new` on the CLI.*",
     ])
+
+    if focus:
+        lines.extend([
+            "**TARGETED MODE — single-item budget**",
+            "",
+            "**Backlog items: 1** (the focus target only)",
+            "**New items: at most 0** (do not add new items)",
+            "**Growth minimum: 0** (growth constraints suspended for targeted mode)",
+            "",
+            "### Rules",
+            "",
+            "- Generate exactly ONE hypothesis for the focus target.",
+            "- Do NOT clear other backlog items this cycle.",
+            "- Do NOT add new items.",
+            "- FEEC category still applies for classifying the single hypothesis.",
+        ])
+    else:
+        from factory.models import HypothesisBudget
+
+        config_budget = HypothesisBudget()
+        config_path = project_path / ".factory" / "config.json"
+        if config_path.exists():
+            import json as _json
+            try:
+                cfg = _json.loads(config_path.read_text())
+                if "hypothesis_budget" in cfg:
+                    config_budget = HypothesisBudget(**cfg["hypothesis_budget"])
+            except Exception:
+                pass
+
+        backlog_count = len(backlog_items)
+
+        lines.extend([
+            f"**Backlog items: {backlog_count}** (clear as many as possible this cycle)",
+            f"**New items: at most {config_budget.max_new}** (researcher/strategist may add new ideas)",
+            f"**Growth minimum: {config_budget.min_growth}** (at least {config_budget.min_growth} hypotheses must target growth dimensions)",
+            "",
+            "### Rules",
+            "",
+            "- Read the backlog first. Pick items to implement this cycle — no cap on clearing.",
+            f"- You may add at most {config_budget.max_new} NEW items that aren't already in the backlog.",
+            f"- At least {config_budget.min_growth} hypotheses must target growth dimensions "
+            "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
+            "Each MUST have a `**Growth dimension:**` tag.",
+            "- FEEC ordering applies for prioritizing within the backlog (FIX > EXPLOIT > EXPLORE > COMBINE).",
+            "- Your open GitHub issues and critical bugs should be addressed as FIX hypotheses.",
+            "- Community issues (filed by others) must NOT be auto-fixed — suggest the author creates a PR instead.",
+            "- Write any new items not implemented this cycle to a `## New Backlog Items` section in current.md.",
+            "",
+            "*Budget is configurable: set `min_growth`, `max_new` in factory.md under `## Hypothesis Budget`, "
+            "or pass `--min-growth`, `--max-new` on the CLI.*",
+        ])
 
     return "\n".join(lines)
 

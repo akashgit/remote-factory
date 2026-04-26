@@ -476,8 +476,10 @@ The core evolution loop. You orchestrate 6 agents through a systematic experimen
 **0a. Local Study + Cross-Project Insights**
 
 ```bash
-uv run python -m factory study "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
+uv run python -m factory study "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")" $FOCUS_FLAG
 ```
+
+Where `$FOCUS_FLAG` is either empty (no focus) or `--focus "<target>"` from the Focus Directive in your task. In targeted mode, this filters observations to show only the target backlog item and overrides the hypothesis budget to single-item mode.
 
 Writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. Includes cross-project insights and observability coverage analysis.
 
@@ -523,7 +525,7 @@ Skip this step in Improve mode — ACE playbook evolution is handled by Meta mod
 
 Include your research review notes so the Strategist knows what the CEO prioritizes.
 
-**Focus Directive:** If your task includes a `## Focus Directive` section, you MUST relay it to the Strategist. Append the focus directive text to the Strategist's task so it can prioritize hypotheses targeting that area. If no focus directive is present, invoke the Strategist normally.
+**Focus Directive (Targeted Mode):** If your task includes a `## Focus Directive (Targeted Mode)` section, you MUST relay it to the Strategist. Append the full focus directive to the Strategist's task — the Strategist will generate exactly one hypothesis for the target. If no focus directive is present, invoke the Strategist normally.
 
 ```bash
 factory agent strategist --task "Generate prioritized hypotheses for $PROJECT_PATH.
@@ -554,8 +556,8 @@ $(uv run python -m factory eval "$PROJECT_PATH")
 Write hypotheses to .factory/strategy/current.md. Each must be specific, scoped (one PR's worth), tied to observations, with expected impact on eval dimensions. Tag backlog items with **Backlog item:** and new items with **New:**." --project "$PROJECT_PATH" --timeout 300
 ```
 
-Where `$FOCUS_DIRECTIVE` is either empty (no focus) or the focus text from your task, e.g.:
-`Focus Directive: Narrow improvement efforts to: dashboard UI`
+Where `$FOCUS_DIRECTIVE` is either empty (no focus) or the full focus directive from your task, e.g.:
+`Focus Directive (Targeted Mode): Target: add WebSocket support. Single-item mode...`
 
 **Step 1r: CEO Review — Strategy (HARD GATE)**
 
@@ -568,8 +570,8 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - Is the expected eval impact realistic?
    - Does it follow FEEC priority? (Fix before Explore)
    - Is it redundant with a previously reverted experiment?
-   - **If a Focus Directive was set:** does the hypothesis target the focused area? At least 2/3 of hypotheses must align with the focus. REDIRECT if focus is ignored.
-   - **If YOUR open GitHub issues exist in observations:** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
+   - **If a Focus Directive (Targeted Mode) was set:** verify exactly 1 hypothesis exists and it matches the target. REDIRECT if the Strategist generated extra hypotheses or missed the target.
+   - **If YOUR open GitHub issues exist in observations (non-targeted mode only):** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
    - **Backlog convergence:** If the backlog has N items, the strategist should be clearing a significant portion of them, not just 1-2 while adding more new items. Count hypotheses tagged `**Backlog item:**` vs `**New:**`. If new items outnumber backlog items being cleared, REDIRECT — the backlog must shrink, not grow.
    - **New item cap:** At most 2 new items per cycle (or the configured `max_new`). If the strategist added more, REDIRECT.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
@@ -594,6 +596,8 @@ factory checkpoint "$PROJECT_PATH" --save --mode improve \
 ```
 
 ### Step 2: Execute (Per Approved Hypothesis)
+
+**Targeted Mode early exit:** If a Focus Directive (Targeted Mode) was set, you have exactly one hypothesis. After its experiment completes (keep or revert), skip directly to Step 3 (Final Archive). Do not process additional hypotheses. Do not add new backlog items (skip Step 2i).
 
 For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
@@ -841,6 +845,8 @@ Where `$COMPLETED_EXP_IDS` is a comma-separated list of all experiment IDs proce
 This MUST happen before proceeding to the next hypothesis or to Step 3.
 
 ### Step 2i: Persist New Backlog Items
+
+**Skip this step in targeted mode.** No new backlog items should be added during a focused single-item cycle.
 
 After all experiments are processed, check if the Strategist added new items during this cycle. Read `.factory/strategy/current.md` for a `## New Backlog Items` section. For each new item listed, persist it:
 

@@ -313,6 +313,9 @@ def cmd_study(args: argparse.Namespace) -> int:
     projects_dir = getattr(args, "projects_dir", None)
     if projects_dir:
         kwargs["projects_dir"] = str(Path(projects_dir).expanduser().resolve())
+    focus = getattr(args, "focus", None)
+    if focus:
+        kwargs["focus"] = focus
     summary = study_project(project_path, **kwargs)
 
     # Write to .factory/strategy/observations.md
@@ -1452,7 +1455,17 @@ def _build_ceo_task(
         )
 
     if focus:
-        task += f"\n\n## Focus Directive\n\nNarrow improvement efforts to: {focus}\n"
+        from factory.study import add_backlog_item
+        add_backlog_item(project_path, focus)
+        task += (
+            f"\n\n## Focus Directive (Targeted Mode)\n\n"
+            f"Target: {focus}\n\n"
+            f"Single-item mode. This target has been added to the backlog. "
+            f"The Strategist must generate exactly ONE hypothesis for this item. "
+            f"No other hypotheses this cycle — no additional backlog clearing, no new items.\n"
+            f"After this single experiment completes (keep or revert), skip to final archival. "
+            f"Do not loop back for more hypotheses.\n"
+        )
 
     if branch:
         task += (
@@ -1769,6 +1782,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--projects-dir", default=None,
         help="Directory containing factory-managed projects for cross-project insights",
+    )
+    p.add_argument(
+        "--focus", default=None,
+        help="Targeted mode: filter observations to a single backlog item",
     )
 
     # backlog-remove (alias: deferred-remove)
