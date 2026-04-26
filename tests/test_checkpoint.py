@@ -34,6 +34,7 @@ def sample_state() -> CheckpointState:
         pending_agents=["builder", "reviewer", "evaluator"],
         last_eval_scores={"tests": 0.95, "lint": 1.0},
         current_hypothesis="Add checkpoint serialization",
+        completed_hypotheses=[35, 36, 37],
         timestamp="2026-04-20T12:00:00",
     )
 
@@ -69,6 +70,35 @@ def test_checkpoint_state_nullable_fields() -> None:
     )
     assert state.active_experiment_id is None
     assert state.current_hypothesis is None
+
+
+def test_checkpoint_state_completed_hypotheses() -> None:
+    """CheckpointState includes completed_hypotheses field."""
+    state = CheckpointState(
+        mode="improve",
+        active_experiment_id=3,
+        completed_agents=["researcher", "strategist"],
+        pending_agents=["builder"],
+        last_eval_scores={"tests": 0.9},
+        current_hypothesis="Add caching",
+        completed_hypotheses=[1, 2],
+        timestamp="2026-04-26T12:00:00",
+    )
+    assert state.completed_hypotheses == [1, 2]
+
+
+def test_checkpoint_state_completed_hypotheses_default() -> None:
+    """completed_hypotheses defaults to empty list for backwards compat."""
+    state = CheckpointState(
+        mode="improve",
+        active_experiment_id=None,
+        completed_agents=[],
+        pending_agents=[],
+        last_eval_scores={},
+        current_hypothesis=None,
+        timestamp="2026-04-26T12:00:00",
+    )
+    assert state.completed_hypotheses == []
 
 
 # ── save / load / clear ──────────────────────────────────────────
@@ -150,6 +180,12 @@ def test_format_empty_scores() -> None:
     output = format_checkpoint(state)
     assert "Eval scores" not in output
     assert "discover" in output
+
+
+def test_format_completed_hypotheses(sample_state: CheckpointState) -> None:
+    """format_checkpoint shows completed hypotheses."""
+    output = format_checkpoint(sample_state)
+    assert "Done hypotheses: 35, 36, 37" in output
 
 
 # ── CLI integration ──────────────────────────────────────────────

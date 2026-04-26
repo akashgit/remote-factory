@@ -24,6 +24,7 @@ class CheckpointState(BaseModel):
     pending_agents: list[str]
     last_eval_scores: dict[str, float]
     current_hypothesis: str | None
+    completed_hypotheses: list[int] = []
     timestamp: str
 
 
@@ -67,6 +68,8 @@ def format_checkpoint(state: CheckpointState) -> str:
         f"Completed:     {', '.join(state.completed_agents) or 'none'}",
         f"Pending:       {', '.join(state.pending_agents) or 'none'}",
     ]
+    if state.completed_hypotheses:
+        lines.append(f"Done hypotheses: {', '.join(str(h) for h in state.completed_hypotheses)}")
     if state.last_eval_scores:
         scores = ", ".join(f"{k}={v:.3f}" for k, v in state.last_eval_scores.items())
         lines.append(f"Eval scores:   {scores}")
