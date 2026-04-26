@@ -5,20 +5,20 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a one-line idea, a spec file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
-# Build — describe an idea, the factory does the rest
-factory ceo "Build a CLI that converts CSV to JSON with streaming support"
+# Build — have a fleshed-out idea? Pass the file.
+factory ceo ~/ideas/weather-dashboard.md
+
+# Interactive — just starting to think about it? Brainstorm first.
+factory ceo "distributed eval runner" --mode interactive
 
 # Improve — point it at any codebase
 factory ceo ~/my-project
 
 # Focus — build exactly one thing
 factory ceo ~/my-project --focus "add WebSocket support"
-
-# Interactive — brainstorm and refine before building
-factory ceo "distributed eval runner" --mode interactive
 ```
 
 The CEO runs as a foreground Claude Code session — you can talk to it at any time, just like you would with Claude Code. Ask it what it's doing, steer it if something looks off, provide missing credentials, or redirect its focus mid-cycle. It's autonomous by default, collaborative when you want it to be.
