@@ -10,9 +10,9 @@ Make sure you've completed the [Setup](setup.md) steps:
 - Claude Code installed and authenticated
 - The Factory installed (`factory --help` should work)
 
-## Creating a Project
+## Build — Start from an Idea
 
-The Factory accepts four types of input. Pick whichever matches where you are.
+The Factory accepts several types of input. Pick whichever matches where you are.
 
 ### From a prompt
 
@@ -27,7 +27,7 @@ This will:
 1. Create a project directory at `~/factory-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
 2. Initialize a git repo
 3. Save your prompt as the build spec (`.factory/strategy/current.md`)
-4. Launch the CEO agent in interactive mode
+4. Launch the CEO agent in build mode
 
 The directory name is derived from your prompt (lowercased, slugified, truncated to 50 chars). Set `FACTORY_PROJECTS_DIR` to change the parent directory:
 
@@ -57,7 +57,17 @@ factory ceo https://github.com/user/repo
 
 The Factory clones the repo to a temporary directory, discovers what it does, sets up evaluation dimensions, and starts improving it. If you plan to keep the results, clone the repo yourself first and use the local directory path instead — temp directories don't survive reboots.
 
-### From an existing directory
+### Interactive ideation
+
+If you have a rough idea but want to brainstorm before building:
+
+```bash
+factory ceo "distributed eval runner" --mode interactive
+```
+
+The CEO researches the space via the Researcher, then iteratively refines the idea with you through the Distiller agent. Once you approve the final spec, it proceeds to build.
+
+## Improve — Make an Existing Codebase Better
 
 Point the Factory at a local codebase:
 
@@ -67,32 +77,17 @@ factory ceo ~/my-project
 
 If the project already has a `.factory/` directory, the Factory resumes where it left off. If not, it runs discovery first — detecting the language, framework, and test setup — then starts improvement cycles.
 
-## What Happens Next
+### What happens in a cycle
 
-Once the CEO agent launches, it follows a cycle:
+1. **Observe** — the Researcher analyzes the project and searches for best practices
+2. **Hypothesize** — the Strategist generates ranked hypotheses from the backlog
+3. **Build** — the Builder implements one hypothesis on an experiment branch
+4. **Guard** — the Reviewer checks for guard violations
+5. **Measure** — the Evaluator scores before and after
+6. **Decide** — the CEO keeps (score went up) or reverts (score went down)
+7. **Record** — the Archivist records the outcome for future learning
 
-1. **Detect** project state (new, discovered, initialized, etc.)
-2. **Research** best practices and patterns
-3. **Strategize** — generate ranked hypotheses for improvement
-4. **Build** — implement one hypothesis on an experiment branch
-5. **Evaluate** — score before and after
-6. **Decide** — keep (score went up) or revert (score went down)
-7. **Archive** — record the outcome for future learning
-
-For a brand-new project from a prompt, the first cycle scaffolds the project, sets up tests and eval, and then starts iterating.
-
-## Interactive vs Headless
-
-By default, `factory ceo` launches an interactive Claude Code session — you can see what the agents are doing and intervene if needed:
-
-```bash
-factory ceo ~/my-project              # interactive (default)
-factory ceo ~/my-project --headless   # pipe mode, no interaction
-```
-
-Headless mode is useful for scripting and automation.
-
-## Continuous Improvement
+### Continuous improvement
 
 `factory run` is equivalent to `factory ceo` but designed for unattended operation — run it in a loop so the Factory keeps improving your project:
 
@@ -110,18 +105,33 @@ factory tmux-ls                               # list active factory sessions
 factory tmux-stop --path ~/my-project         # stop a session
 ```
 
-## Targeted Mode (`--focus`)
+### Interactive vs headless
 
-Build exactly one thing. The `--focus` flag pins a single item from the backlog, generates one hypothesis, runs one experiment, and exits:
+By default, `factory ceo` launches an interactive Claude Code session — you can see what the agents are doing and intervene if needed:
 
 ```bash
-factory ceo ~/my-project --focus "authentication"
-factory ceo ~/my-project --focus "add WebSocket support"
+factory ceo ~/my-project              # interactive (default)
+factory ceo ~/my-project --headless   # pipe mode, no interaction
 ```
 
-If the item isn't already in the backlog, it gets added automatically. The entire pipeline (Researcher, Strategist, Builder) is scoped to that single target — no other hypotheses are generated, no other backlog items are touched. After the experiment completes (keep or revert), the cycle ends.
+## Focus — Build Exactly One Thing
 
-`--focus` is mutually exclusive with `--loop` and `--prompt`, and requires improve mode (the project must already be built).
+When you know exactly what you want built, `--focus` pins a single item from the backlog, generates one hypothesis, runs one experiment, and exits:
+
+```bash
+factory ceo ~/my-project --focus "add authentication middleware"
+factory ceo ~/my-project --focus "fix the CSV export bug"
+factory ceo ~/my-project --focus "add structured logging"
+```
+
+If the item isn't already in the backlog, it gets added automatically. The entire pipeline is scoped to that single target:
+
+- The **Researcher** focuses its web research on the target item
+- The **Strategist** generates exactly one hypothesis — no other backlog items are touched
+- The **Builder** implements it on an experiment branch
+- After the keep/revert decision, the cycle ends — no looping back for more hypotheses
+
+`--focus` requires the project to already be built (improve mode). It's mutually exclusive with `--loop`.
 
 ## Writing a `factory.md`
 

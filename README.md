@@ -5,25 +5,22 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You can hand it a one-line prompt, a detailed spec, a path to an idea file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a one-line idea, a spec file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
-# Got an idea? Describe it.
-factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
+# Build — describe an idea, the factory does the rest
+factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 
-# Have an idea written up in a file? Pass the path.
-factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
-
-# Already have a repo? Point the factory at it.
+# Improve — point it at any codebase
 factory ceo ~/my-project
 
-# Leave it running. Come back to a better codebase.
-factory run ~/my-project --loop
+# Focus — build exactly one thing
+factory ceo ~/my-project --focus "add WebSocket support"
 ```
 
 The CEO runs as a foreground Claude Code session — you can talk to it at any time, just like you would with Claude Code. Ask it what it's doing, steer it if something looks off, provide missing credentials, or redirect its focus mid-cycle. It's autonomous by default, collaborative when you want it to be.
 
-Under the hood, the CEO orchestrates six specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
+Under the hood, the CEO orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
 
 ## How It Works
 
@@ -45,6 +42,59 @@ graph LR
 ```
 
 Each cycle produces a measurable, auditable experiment. The Researcher observes the project, the Strategist generates ranked hypotheses using [FEEC priority](docs/architecture.md) (Fix > Exploit > Explore > Combine), the Builder implements one on an experiment branch, the Evaluator scores before/after, and the CEO decides keep or revert. The Archivist records every outcome for cross-project learning.
+
+## Three Workflows
+
+### Build — start from an idea
+
+Give the Factory an idea and it builds a complete project from scratch: scaffolding, tests, eval, and iterative improvement.
+
+```bash
+# One-line idea
+factory ceo "Build a REST API for bookmark management with tags and search"
+
+# Detailed spec in a file
+factory ceo ~/ideas/weather-dashboard.md
+
+# Clone and improve a GitHub repo
+factory ceo https://github.com/user/repo
+
+# Brainstorm first, then build (interactive ideation)
+factory ceo "distributed eval runner" --mode interactive
+```
+
+The input is flexible — a raw string becomes the build spec, a `.md` file is read as a detailed spec, a GitHub URL is cloned and discovered. In all cases, the Factory auto-detects the right starting point.
+
+### Improve — make an existing codebase better
+
+Point the Factory at any codebase and it runs measured improvement cycles. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.
+
+```bash
+# Single improvement cycle
+factory ceo ~/my-project
+
+# Continuous background improvement
+factory run ~/my-project --loop
+
+# In a detached tmux session
+factory tmux ~/my-project --loop
+```
+
+The Factory maintains a [backlog](docs/architecture.md) of work items. Each cycle, the Strategist picks items from the backlog, generates hypotheses, and the Builder implements them. Over time, the project gets better — and the agents learn what kinds of changes work for your codebase.
+
+### Focus — build exactly one thing
+
+When you know exactly what you want built, `--focus` pins a single backlog item and scopes the entire pipeline to it: one item, one hypothesis, one experiment, done.
+
+```bash
+factory ceo ~/my-project --focus "add authentication middleware"
+factory ceo ~/my-project --focus "fix the CSV export bug"
+factory ceo ~/my-project --focus "add structured logging"
+```
+
+If the item isn't already in the backlog, it gets added automatically. The Researcher scopes its research to the target, the Strategist generates exactly one hypothesis, the Builder implements it, and the cycle ends after the keep/revert decision. No other backlog items are touched.
+
+`--focus` requires the project to already be built (improve mode). It's mutually exclusive with `--loop`.
 
 ## Self-Evolving Agents
 
@@ -92,31 +142,12 @@ export FACTORY_VAULT_PATH=~/factory-vault
 factory vault-init
 
 # Build something
-factory ceo --prompt "Build a REST API for bookmark management with tags and search"
+factory ceo "Build a REST API for bookmark management with tags and search"
 ```
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). See the [full setup guide](docs/setup.md).
 
 **Why Obsidian?** The vault is the factory's long-term memory. Experiment history, cross-project insights, research notes, and agent learnings all live there. Without a vault, the factory still works but starts fresh every time. See [Obsidian setup](docs/setup.md#optional-obsidian-vault).
-
-## What Can It Do?
-
-**Build from nothing** — give it an idea, it does the rest:
-
-| Input | What happens |
-|-------|-------------|
-| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
-| `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
-| `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
-
-**Improve what exists** — point it at any codebase:
-
-| Input | What happens |
-|-------|-------------|
-| `factory ceo ~/my-project` | Discovers eval dimensions, then runs measured improvement cycles |
-| `factory ceo ~/my-project --focus "auth"` | Targeted mode: builds exactly one backlog item and exits |
-| `factory run ~/my-project --loop` | Continuous background improvement — runs every 30 min |
-| `factory ceo ~/my-project --mode meta` | Improves the factory's own agent playbooks (recursive self-improvement) |
 
 ## Architecture
 
@@ -225,7 +256,7 @@ For advanced use cases you can also configure: custom eval dimensions (benchmark
 
 ```bash
 # Core workflow
-factory ceo <path|url|prompt>     # Launch the CEO agent
+factory ceo <path|url|idea>       # Launch the CEO agent
 factory run <path> --loop         # Continuous heartbeat mode
 factory tmux <path> --loop        # In detached tmux session
 

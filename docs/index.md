@@ -7,17 +7,17 @@ hide:
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
 
-You can hand it a one-line prompt, a detailed spec, a path to an idea file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and then runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+You give it a one-line idea, a spec file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
-# Got an idea? Describe it.
-factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
+# Build — describe an idea, the factory does the rest
+factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 
-# Have an idea written up in a file? Pass the path.
-factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
-
-# Already have a repo? Point the factory at it.
+# Improve — point it at any codebase
 factory ceo ~/my-project
+
+# Focus — build exactly one thing
+factory ceo ~/my-project --focus "add WebSocket support"
 ```
 
 ## How It Works
@@ -39,25 +39,36 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates six specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning.
+A CEO agent orchestrates seven specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning.
 
-## What Can It Do?
+## Three Workflows
 
-**Build from nothing** — give it an idea, it does the rest:
+### Build — start from an idea
 
-| Input | What happens |
-|-------|-------------|
-| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
-| `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
-| `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
+```bash
+factory ceo "Build a REST API for bookmark management"
+factory ceo ~/ideas/weather-dashboard.md
+factory ceo https://github.com/user/repo
+```
 
-**Improve what exists** — point it at any codebase:
+Give the Factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
 
-| Input | What happens |
-|-------|-------------|
-| `factory ceo ~/my-project` | Discovers eval dimensions, then runs measured improvement cycles |
-| `factory ceo ~/my-project --focus "auth"` | Targeted mode: builds exactly one backlog item and exits |
-| `factory run ~/my-project --loop` | Continuous background improvement — runs every 30 min |
+### Improve — make an existing codebase better
+
+```bash
+factory ceo ~/my-project
+factory run ~/my-project --loop
+```
+
+Point it at any codebase. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.
+
+### Focus — build exactly one thing
+
+```bash
+factory ceo ~/my-project --focus "add authentication middleware"
+```
+
+When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits. The entire pipeline is scoped to that single target.
 
 ## Quick Start
 
