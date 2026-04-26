@@ -614,7 +614,7 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 1. Read the issue: gh issue view $ISSUE_NUM
 2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
-4. git checkout -b experiment/$EXP_ID
+4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION (e.g. experiment/3-add-retry-logic)
 5. Implement exactly what the issue describes
 6. Run tests and evals
 7. Commit and open PR targeting main
