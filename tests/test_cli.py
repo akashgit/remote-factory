@@ -69,21 +69,15 @@ class TestParser:
     def test_no_command_returns_1(self):
         assert main([]) == 1
 
-    def test_ceo_interactive_flag(self):
+    def test_ceo_mode_interactive(self):
         parser = build_parser()
-        args = parser.parse_args(["ceo", "--interactive", "distributed eval runner"])
-        assert args.interactive == "distributed eval runner"
-        assert args.path is None
-
-    def test_ceo_interactive_with_path(self):
-        parser = build_parser()
-        args = parser.parse_args(["ceo", "/some/path", "--interactive", "my idea"])
-        assert args.interactive == "my idea"
-        assert args.path == "/some/path"
+        args = parser.parse_args(["ceo", "distributed eval runner", "--mode", "interactive"])
+        assert args.mode == "interactive"
+        assert args.path == "distributed eval runner"
 
     def test_ceo_path_optional(self):
         parser = build_parser()
-        args = parser.parse_args(["ceo", "--interactive", "some idea"])
+        args = parser.parse_args(["ceo", "--mode", "interactive"])
         assert args.path is None
 
     def test_ceo_agent_distiller_choice(self):
@@ -94,66 +88,76 @@ class TestParser:
 
 class TestCmdCeoInteractive:
     def test_interactive_headless_incompatible(self, capsys):
-        result = main(["ceo", "--interactive", "an idea", "--headless"])
+        result = main(["ceo", "an idea", "--mode", "interactive", "--headless"])
         assert result == 1
         assert "incompatible" in capsys.readouterr().err.lower()
 
     def test_interactive_prompt_incompatible(self, capsys):
-        result = main(["ceo", "--interactive", "an idea", "--prompt", "file.md"])
+        result = main(["ceo", "an idea", "--mode", "interactive", "--prompt", "file.md"])
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
     def test_interactive_focus_incompatible(self, capsys):
-        result = main(["ceo", "--interactive", "an idea", "--focus", "UI"])
+        result = main(["ceo", "an idea", "--mode", "interactive", "--focus", "UI"])
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
-    def test_no_path_no_interactive_fails(self, capsys):
+    def test_no_path_fails(self, capsys):
         result = main(["ceo"])
         assert result == 1
         err = capsys.readouterr().err.lower()
         assert "provide" in err or "error" in err
 
-    def test_interactive_mode_warning(self, capsys):
-        """--interactive with --mode=improve warns and overrides to build."""
-        with patch("factory.cli.os.execvp"), \
-             patch("factory.cli.os.chdir"):
-            main(["ceo", "--interactive", "an idea", "--mode", "improve"])
-        err = capsys.readouterr().err.lower()
-        assert "ignoring" in err
-
     def test_interactive_foreground_uses_execvp(self, tmp_path):
-        """--interactive mode launches via os.execvp (foreground)."""
+        """--mode interactive launches via os.execvp (foreground)."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
-            main(["ceo", str(tmp_path), "--interactive", "my idea"])
+            main(["ceo", str(tmp_path), "--mode", "interactive"])
         mock_exec.assert_called_once()
         cmd = mock_exec.call_args[0][1]
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
     def test_interactive_task_has_phase_0_block(self, tmp_path):
-        """--interactive injects Phase 0 block into the CEO task."""
+        """--mode interactive injects Phase 0 block into the CEO task."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
-            main(["ceo", str(tmp_path), "--interactive", "distributed eval runner"])
+            main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_exec.call_args[0][1]
-        # Task is the positional arg after --dangerously-skip-permissions
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Ideation Mode (Phase 0)" in task
-        assert "distributed eval runner" in task
 
     def test_interactive_no_duplicate_context(self, tmp_path):
-        """--interactive does not inject the idea as both Phase 0 and Project Specification."""
+        """--mode interactive does not inject the idea as both Phase 0 and Project Specification."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
-            main(["ceo", str(tmp_path), "--interactive", "build a cool CLI tool"])
+            main(["ceo", "build a cool CLI tool", "--mode", "interactive"])
         cmd = mock_exec.call_args[0][1]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Ideation Mode" in task
         assert "## Project Specification" not in task
+
+    def test_interactive_task_contains_idea_text(self, tmp_path):
+        """--mode interactive with raw idea text includes it in the Phase 0 block."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "distributed eval runner", "--mode", "interactive"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "distributed eval runner" in task
+
+    def test_interactive_task_mode_is_build(self, tmp_path):
+        """--mode interactive sets Mode: build in the CEO task (not Mode: interactive)."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "interactive"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Mode: build" in task
 
 
 class TestCmdDetect:

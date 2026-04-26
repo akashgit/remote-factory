@@ -1053,52 +1053,45 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     Default: interactive foreground session (user can see and interact).
     With --headless: pipe mode via claude -p (for scripting, cron, etc.).
-    With --interactive: brainstorm an idea via research + Distiller before building.
+    With --mode interactive: brainstorm an idea via research + Distiller before building.
     """
     from factory.agents.runner import resolve_prompt
 
-    interactive_idea = getattr(args, "interactive", None)
     raw_path = getattr(args, "path", None)
-
-    if not raw_path and not interactive_idea:
-        print("Error: provide a project path/prompt, or use --interactive 'idea'",
-              file=sys.stderr)
-        return 1
-
+    mode = getattr(args, "mode", "auto")
     headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
 
-    if interactive_idea:
+    if not raw_path:
+        print("Error: provide a project path, GitHub URL, idea file, or prompt",
+              file=sys.stderr)
+        return 1
+
+    if mode == "interactive":
         if headless:
-            print("Error: --interactive requires foreground mode "
+            print("Error: --mode interactive requires foreground mode "
                   "(incompatible with --headless)", file=sys.stderr)
             return 1
         if prompt_file:
-            print("Error: --interactive and --prompt are mutually exclusive. "
-                  "--interactive generates the spec; --prompt provides one.",
+            print("Error: --mode interactive and --prompt are mutually exclusive. "
+                  "Interactive mode generates the spec; --prompt provides one.",
                   file=sys.stderr)
             return 1
         if focus:
-            print("Error: --interactive and --focus are mutually exclusive. "
-                  "--interactive is for new ideas; --focus targets existing "
+            print("Error: --mode interactive and --focus are mutually exclusive. "
+                  "Interactive mode is for new ideas; --focus targets existing "
                   "backlog items.", file=sys.stderr)
             return 1
 
-    resolve_target = raw_path or interactive_idea
-    assert resolve_target is not None  # validated above
-    project_path, context = _resolve_input(resolve_target)
-    if interactive_idea:
+    project_path, context = _resolve_input(raw_path)
+    interactive_idea: str | None = None
+    if mode == "interactive":
+        interactive_idea = context or "(ask the user to describe their idea)"
         context = None  # idea is embedded in the Phase 0 block, not as Project Specification
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    mode = getattr(args, "mode", "auto")
-    if interactive_idea:
-        if mode not in ("auto", "build"):
-            print(f"Warning: --interactive always uses build mode, ignoring --mode '{mode}'",
-                  file=sys.stderr)
-        mode = "build"
-    elif mode == "auto":
+    if mode == "auto":
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
     discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
@@ -1115,15 +1108,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    _print_banner("ideation" if interactive_idea else mode)
+    _print_banner("ideation" if mode == "interactive" else mode)
     _ensure_dashboard(project_path)
 
     if focus:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    ceo_mode = "build" if mode == "interactive" else mode
     task = _build_ceo_task(
-        project_path, mode, context, focus=focus, prompt_file=prompt_file,
+        project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only,
         interactive_idea=interactive_idea,
@@ -2023,13 +2017,8 @@ def build_parser() -> argparse.ArgumentParser:
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
     p.add_argument("path", nargs="?", default=None,
-                    help="Project path, GitHub URL, idea file path, or prompt")
-    p.add_argument(
-        "--interactive", default=None, metavar="IDEA",
-        help="Enter interactive ideation mode: research the space, brainstorm with "
-             "the Distiller agent, refine the idea with user feedback, then build. "
-             "Takes a raw idea string (e.g. --interactive 'distributed eval runner')",
-    )
+                    help="Project path, GitHub URL, idea file path, or prompt. "
+                         "In interactive mode, pass a raw idea string")
     p.add_argument(
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
@@ -2037,9 +2026,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "build", "discover", "improve", "meta", "interactive"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
+        help="Run mode: auto (default, detects from project state), build, discover, "
+             "improve, meta, or interactive (research + brainstorm → spec → build)",
     )
     p.add_argument(
         "--focus", default=None,
