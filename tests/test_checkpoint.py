@@ -272,6 +272,39 @@ def test_cli_checkpoint_clear_no_file(checkpoint_project: Path) -> None:
     assert code == 0
 
 
+def test_resume_context_injected_into_ceo_task(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """_run_single_cycle appends Resume Context when a checkpoint exists."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))) as mock_agent:
+        from factory.cli import _run_single_cycle
+        _run_single_cycle(checkpoint_project, "improve")
+
+    task_arg = mock_agent.call_args[0][1]
+    assert "## Resume Context" in task_arg
+    assert "researcher" in task_arg
+    assert "strategist" in task_arg
+
+
+def test_checkpoint_cleared_after_successful_cycle(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """_run_single_cycle clears checkpoint after successful run."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))):
+        from factory.cli import _run_single_cycle
+        _run_single_cycle(checkpoint_project, "improve")
+
+    assert not (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+
 def test_cli_checkpoint_save_with_completed_hypotheses(
     checkpoint_project: Path, capsys: pytest.CaptureFixture[str],
 ) -> None:

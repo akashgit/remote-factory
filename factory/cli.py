@@ -1091,6 +1091,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     # Interactive foreground mode: launch claude with CEO prompt as system context
     prompt = resolve_prompt("ceo", project_path)
 
+    from factory.checkpoint import format_checkpoint, load_checkpoint
+    checkpoint = load_checkpoint(project_path)
+    if checkpoint:
+        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
+
     cmd = [
         "claude",
         "--append-system-prompt", prompt,
@@ -1549,12 +1554,17 @@ def _run_single_cycle(
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
+    from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
 
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, min_fix=min_fix, max_total=max_total, branch=branch,
         discover_only=discover_only,
     )
+
+    checkpoint = load_checkpoint(project_path)
+    if checkpoint:
+        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -1564,6 +1574,10 @@ def _run_single_cycle(
         dangerously_skip_permissions=True,
         model=model,
     ))
+
+    if code == 0:
+        clear_checkpoint(project_path)
+
     print(result)
     return code
 
