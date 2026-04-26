@@ -1066,6 +1066,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         discover_only=discover_only,
     )
 
+    from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
+    checkpoint = load_checkpoint(project_path)
+    if checkpoint:
+        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
+
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         from factory.agents.runner import invoke_agent
@@ -1079,6 +1084,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model,
         ))
         print(result)
+        if code == 0:
+            clear_checkpoint(project_path)
         if code != 0:
             return code
         return _chain_modes(
@@ -1090,11 +1097,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     # Interactive foreground mode: launch claude with CEO prompt as system context
     prompt = resolve_prompt("ceo", project_path)
-
-    from factory.checkpoint import format_checkpoint, load_checkpoint
-    checkpoint = load_checkpoint(project_path)
-    if checkpoint:
-        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
 
     cmd = [
         "claude",
@@ -1860,7 +1862,10 @@ def build_parser() -> argparse.ArgumentParser:
     # checkpoint
     p = sub.add_parser("checkpoint", help="Show or save a CEO checkpoint for crash-resilient resume")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--save", action="store_true", default=False, help="Save a checkpoint")
+    ckpt_action = p.add_mutually_exclusive_group()
+    ckpt_action.add_argument("--save", action="store_true", default=False, help="Save a checkpoint")
+    ckpt_action.add_argument("--clear", action="store_true", default=False,
+                              help="Clear the checkpoint file")
     p.add_argument("--mode", default=None, help="CEO mode (e.g. improve, build)")
     p.add_argument("--experiment", type=int, default=None, help="Active experiment ID")
     p.add_argument("--completed", default=None,
@@ -1872,8 +1877,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hypothesis", default=None, help="Current hypothesis text")
     p.add_argument("--completed-hypotheses", default=None,
                     help="Comma-separated list of completed experiment IDs (e.g. '1,2,3')")
-    p.add_argument("--clear", action="store_true", default=False,
-                    help="Clear the checkpoint file")
 
     # resume
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")

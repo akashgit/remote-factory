@@ -38,13 +38,17 @@ def save_checkpoint(project_path: Path, state: CheckpointState) -> None:
 
 
 def load_checkpoint(project_path: Path) -> CheckpointState | None:
-    """Load checkpoint from .factory/checkpoint.json, or None if absent."""
+    """Load checkpoint from .factory/checkpoint.json, or None if absent/corrupt."""
     checkpoint_path = project_path / ".factory" / _CHECKPOINT_FILE
     if not checkpoint_path.exists():
         log.debug("checkpoint.not_found", path=str(checkpoint_path))
         return None
-    data = json.loads(checkpoint_path.read_text())
-    state = CheckpointState.model_validate(data)
+    try:
+        data = json.loads(checkpoint_path.read_text())
+        state = CheckpointState.model_validate(data)
+    except (json.JSONDecodeError, Exception) as exc:
+        log.warning("checkpoint.corrupt", path=str(checkpoint_path), error=str(exc))
+        return None
     log.info("checkpoint.loaded", path=str(checkpoint_path))
     return state
 
