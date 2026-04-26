@@ -1053,18 +1053,46 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     Default: interactive foreground session (user can see and interact).
     With --headless: pipe mode via claude -p (for scripting, cron, etc.).
+    With --mode interactive: brainstorm an idea via research + Distiller before building.
     """
     from factory.agents.runner import resolve_prompt
 
-    project_path, context = _resolve_input(args.path)
+    raw_path = getattr(args, "path", None)
+    mode = getattr(args, "mode", "auto")
+    headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
+    focus = getattr(args, "focus", None)
+
+    if not raw_path:
+        print("Error: provide a project path, GitHub URL, idea file, or prompt",
+              file=sys.stderr)
+        return 1
+
+    if mode == "interactive":
+        if headless:
+            print("Error: --mode interactive requires foreground mode "
+                  "(incompatible with --headless)", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --mode interactive and --prompt are mutually exclusive. "
+                  "Interactive mode generates the spec; --prompt provides one.",
+                  file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --mode interactive and --focus are mutually exclusive. "
+                  "Interactive mode is for new ideas; --focus targets existing "
+                  "backlog items.", file=sys.stderr)
+            return 1
+
+    project_path, context = _resolve_input(raw_path)
+    interactive_idea: str | None = None
+    if mode == "interactive":
+        interactive_idea = context or "(ask the user to describe their idea)"
+        context = None  # idea is embedded in the Phase 0 block, not as Project Specification
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    mode = getattr(args, "mode", "auto")
     if mode == "auto":
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
-    headless = getattr(args, "headless", False)
-    focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
@@ -1080,17 +1108,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    _print_banner(mode)
+    _print_banner("ideation" if mode == "interactive" else mode)
     _ensure_dashboard(project_path)
 
     if focus:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    ceo_mode = "build" if mode == "interactive" else mode
     task = _build_ceo_task(
-        project_path, mode, context, focus=focus, prompt_file=prompt_file,
+        project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only,
+        interactive_idea=interactive_idea,
     )
 
     from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
@@ -1454,9 +1484,22 @@ def _build_ceo_task(
     max_new: int | None = None,
     branch: str | None = None,
     discover_only: bool = False,
+    interactive_idea: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
+
+    if interactive_idea:
+        task += (
+            f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
+            f"**Raw idea from user:** {interactive_idea}\n\n"
+            f"You are in interactive ideation mode. Before building anything, "
+            f"you must refine this idea into a complete spec through research "
+            f"and iterative user feedback. Follow the Phase 0: Ideation protocol "
+            f"in your system prompt.\n\n"
+            f"After the user approves the final spec, persist it to "
+            f".factory/strategy/current.md and proceed to Build mode.\n"
+        )
 
     if prompt_file:
         task += (
@@ -1962,7 +2005,7 @@ def build_parser() -> argparse.ArgumentParser:
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "ceo"],
+                                     "evaluator", "archivist", "distiller", "ceo"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
@@ -1973,7 +2016,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
-    p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
+    p.add_argument("path", nargs="?", default=None,
+                    help="Project path, GitHub URL, idea file path, or prompt. "
+                         "In interactive mode, pass a raw idea string")
     p.add_argument(
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
@@ -1981,9 +2026,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "build", "discover", "improve", "meta", "interactive"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
+        help="Run mode: auto (default, detects from project state), build, discover, "
+             "improve, meta, or interactive (research + brainstorm → spec → build)",
     )
     p.add_argument(
         "--focus", default=None,
