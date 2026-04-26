@@ -32,9 +32,9 @@ graph TB
     ACE -.->|"evolved playbooks"| R
     XP -.->|"category success rates"| S
 
-    style cycle fill:#e8eaf6,stroke:#5c6bc0
-    style archive fill:#fff3e0,stroke:#ff8f00
-    style learn fill:#e8f5e9,stroke:#43a047
+    style cycle fill:#e8eaf6,stroke:#5c6bc0,color:#1a237e
+    style archive fill:#fff3e0,stroke:#ff8f00,color:#e65100
+    style learn fill:#e8f5e9,stroke:#43a047,color:#1b5e20
 ```
 
 Every experiment produces structured data: hypothesis category, verdict (keep/revert), score delta, and CEO decision metadata. This data feeds two learning systems — ACE (playbook evolution) and cross-project insights (category success rates) — which shape the next cycle's behavior.

@@ -34,9 +34,14 @@ graph LR
     G --> H
     H -.-> A
 
+    style A fill:#455a64,color:#fff
+    style B fill:#455a64,color:#fff
+    style C fill:#455a64,color:#fff
+    style D fill:#455a64,color:#fff
     style E fill:#5c6bc0,color:#fff,stroke:#3949ab
     style F fill:#43a047,color:#fff,stroke:#2e7d32
     style G fill:#e53935,color:#fff,stroke:#c62828
+    style H fill:#455a64,color:#fff
 ```
 
 A CEO agent orchestrates six specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning.
@@ -91,8 +96,10 @@ graph LR
     C -->|Inject| D["Agent Prompts<br><i>auto-appended</i>"]
     D -.->|"next cycle"| A
 
-    style A fill:#fff3e0,stroke:#ff8f00
-    style D fill:#e8eaf6,stroke:#5c6bc0
+    style A fill:#fff3e0,stroke:#ff8f00,color:#e65100
+    style B fill:#455a64,color:#fff
+    style C fill:#455a64,color:#fff
+    style D fill:#e8eaf6,stroke:#5c6bc0,color:#1a237e
 ```
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
@@ -121,9 +128,9 @@ graph TB
 
     agents --> ceo --> cli
 
-    style agents fill:#e8eaf6,stroke:#5c6bc0
-    style ceo fill:#fff3e0,stroke:#ff8f00
-    style cli fill:#e8f5e9,stroke:#43a047
+    style agents fill:#e8eaf6,stroke:#5c6bc0,color:#1a237e
+    style ceo fill:#fff3e0,stroke:#ff8f00,color:#e65100
+    style cli fill:#e8f5e9,stroke:#43a047,color:#1b5e20
 ```
 
 ## The Eval System
@@ -147,9 +154,11 @@ graph LR
     S -- "yes" --> K["✅ Keep"]
     S -- "no" --> R["↩️ Revert"]
 
-    style hygiene fill:#e8eaf6,stroke:#5c6bc0
-    style growth fill:#fff3e0,stroke:#ff8f00
-    style project fill:#e8f5e9,stroke:#43a047
+    style hygiene fill:#e8eaf6,stroke:#5c6bc0,color:#1a237e
+    style growth fill:#fff3e0,stroke:#ff8f00,color:#e65100
+    style project fill:#e8f5e9,stroke:#43a047,color:#1b5e20
+    style M fill:#455a64,color:#fff
+    style S fill:#455a64,color:#fff
     style K fill:#43a047,color:#fff
     style R fill:#e53935,color:#fff
 ```

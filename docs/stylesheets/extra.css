@@ -1,14 +1,13 @@
-/* Dark mode fixes for diagrams.
+/* Dark mode fix for D2-generated SVGs.
  *
- * Two kinds of diagrams need adaptation:
- * 1. D2-generated SVGs (docs/diagrams/*.svg) — these now embed their own
- *    @media (prefers-color-scheme: dark) CSS, so we just disable the
- *    inherited brightness/contrast filter.
- * 2. Mermaid diagrams — Material auto-themes Mermaid in dark mode, but
- *    our inline `style` directives use light pastel fills that become
- *    invisible on dark backgrounds. We override them here using
- *    !important so the originals show in light mode and adapted colors
- *    show in dark mode.
+ * D2 SVGs (docs/diagrams/*.svg) embed their own @media
+ * (prefers-color-scheme: dark) CSS. Disable the inherited
+ * brightness/contrast filter so the embedded dark-mode CSS works.
+ *
+ * Mermaid diagrams are NOT handled here — Material renders them
+ * inside a closed shadow DOM, so external CSS cannot reach their
+ * elements. Text colors are set via inline style directives in
+ * the Mermaid source (color: in each style line).
  */
 
 /* D2 SVGs: disable inherited filter so embedded dark-mode CSS works */
@@ -16,20 +15,12 @@
   filter: none;
 }
 
-/* Mermaid: override light pastel subgraph/node fills in dark mode.
- * Mermaid renders inline styles on <rect> elements, so we need
- * !important to override them. We target the .mermaid container
- * scoped under slate.
- */
-[data-md-color-scheme="slate"] .mermaid rect[style*="#e8eaf6"],
-[data-md-color-scheme="slate"] .mermaid rect[style*="#E8EAF6"] {
-  fill: #303f9f !important;
-}
-[data-md-color-scheme="slate"] .mermaid rect[style*="#fff3e0"],
-[data-md-color-scheme="slate"] .mermaid rect[style*="#FFF3E0"] {
-  fill: #e65100 !important;
-}
-[data-md-color-scheme="slate"] .mermaid rect[style*="#e8f5e9"],
-[data-md-color-scheme="slate"] .mermaid rect[style*="#E8F5E9"] {
-  fill: #2e7d32 !important;
+/* Mermaid: override label text color in dark mode.
+ * CSS custom properties cross the closed shadow DOM boundary.
+ * This makes subgraph titles and node labels dark — readable on
+ * the light pastel fills set by inline style directives. Nodes
+ * on dark backgrounds need explicit fill + color:#fff in Mermaid
+ * source to remain visible against this dark text default. */
+[data-md-color-scheme="slate"] {
+  --md-mermaid-label-fg-color: #37474f;
 }
