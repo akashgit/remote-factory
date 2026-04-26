@@ -115,6 +115,20 @@ improve: {
   width: 300
 }
 
+interactive: {
+  label: |md
+    **Interactive Mode** *(ideation)*
+    1. Research the space → Researcher
+    2. Synthesize spec → Distiller
+    3. Present draft → user feedback
+    4. Iterate until approved
+    5. Transition → Build mode
+  |
+  shape: rectangle
+  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 12; font-size: 15 }
+  width: 300
+}
+
 meta: {
   label: |md
     **Meta Mode**
@@ -160,6 +174,9 @@ has_factory -> improve: "--focus (targeted)" {
 has_factory -> meta: "--mode meta" {
   style: { stroke: "#ef6c00"; stroke-width: 2; font-size: 13 }
 }
+no_repo -> interactive: "--mode interactive" {
+  style: { stroke: "#1976d2"; stroke-width: 2; font-size: 13 }
+}
 
 # ── transitions back (dashed) ────────────────────
 
@@ -173,6 +190,9 @@ review -> has_factory: "reviewed + init" {
   style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
 }
 improve -> has_factory: "cycle done" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+interactive -> build: "spec approved" {
   style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
 }
 meta -> has_factory: "ACE done" {

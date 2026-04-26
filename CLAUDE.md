@@ -47,7 +47,7 @@ Pure tools that don't make decisions. Entry point is `factory/cli.py` → `facto
 
 ### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
 
-A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
+A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Interactive/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 

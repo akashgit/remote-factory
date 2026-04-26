@@ -169,6 +169,7 @@ graph TB
     subgraph agents ["Specialist Agents"]
         R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
         RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
+        DI["Distiller"]
     end
     subgraph ceo ["CEO Agent"]
         C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]

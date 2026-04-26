@@ -42,7 +42,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates seven specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning.
+A CEO agent orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback.
 
 ## Workflows
 
@@ -133,6 +133,7 @@ graph TB
     subgraph agents ["Specialist Agents"]
         R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
         RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
+        DI["Distiller"]
     end
     subgraph ceo ["CEO Agent"]
         C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
