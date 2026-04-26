@@ -87,8 +87,8 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 
 | Role       | Check for                                                                |
 |------------|--------------------------------------------------------------------------|
-| Researcher | Covered the right topics? Enough depth? Web research included? Gaps?     |
-| Strategist | Plan aligns with goals? Phases are right-sized? **At least one growth hypothesis?** |
+| Researcher | Covered the right topics? Enough depth? Web research included? Gaps? **No calendar-time estimates** (e.g., "8-10 weeks") — REDIRECT if present. |
+| Strategist | Plan aligns with goals? Phases are right-sized? **At least one growth hypothesis?** **No calendar-time estimates** — REDIRECT if present. |
 | Builder    | PR matches the plan? No scope creep? Tests included? CLAUDE.md followed? |
 | Reviewer   | Review is substantive? Violations caught? Not rubber-stamped?            |
 | Evaluator  | Scores are valid JSON? All dimensions present? Before/after compared?    |

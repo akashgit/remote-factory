@@ -251,6 +251,7 @@ When the project has user-defined eval dimensions (configured in `factory.md` `#
 
 ## Rules
 
+- Never include or propagate calendar-time estimates (e.g., "8-10 weeks", "MVP in 3 months"). The factory uses AI agents — human-timeline estimates are meaningless. Scope hypotheses by complexity (files touched, dependency depth), not duration. If research input contains time estimates, strip them.
 - Each hypothesis must be scoped to one PR's worth of work
 - Never propose changes that violate the project's guards
 - Learn from failed experiments — don't repeat the same mistake

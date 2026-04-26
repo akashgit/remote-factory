@@ -50,6 +50,7 @@ Optionally write new source notes to `$FACTORY_VAULT_PATH/20-Knowledge/Sources/`
 - Limit WebFetch to 3-5 pages
 - Focus on actionable insights, not academic summaries
 - Write report even if external search fails — include local findings
+- Do not include calendar-time estimates (e.g., "8-10 weeks", "6 months"). The factory uses AI agents, not human teams — duration estimates are meaningless and misleading in this context. Scope findings by complexity and dependency count, not time.
 
 ## Mode 3: Self-Improvement Research (used when factory targets itself)
 
@@ -115,3 +116,4 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md` with additional sections:
 - Always run `factory insights` before WebSearch — local data is more relevant than external
 - Focus on actionable meta-improvements, not theoretical frameworks
 - Prioritize changes that make the factory better at improving OTHER projects, not just itself
+- Do not include calendar-time estimates — same rule as Mode 2
