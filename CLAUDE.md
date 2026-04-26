@@ -95,7 +95,7 @@ Requires Claude Code installed and authenticated. The factory spawns `claude` su
 factory ceo /path/to/project                    # Launch CEO agent (single cycle)
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
 factory ceo /path/to/project --focus "dashboard UI"  # Focus on a specific area
-factory ceo "Build a weather CLI"               # Build from a raw prompt
+factory ceo --prompt "Build a weather CLI"      # Build from a raw prompt
 factory run /path/to/project                    # Same as factory ceo
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
@@ -106,13 +106,14 @@ factory checkpoint /path/to/project             # Save CEO state for crash recov
 factory resume /path/to/project                 # Resume from saved checkpoint
 factory diff /path --exp1 N --exp2 M            # Compare two experiments
 factory explain /path --exp N                   # Explain experiment with FEEC analysis
-factory deferred-list /path                     # List pending deferred items
-factory deferred-remove /path "item text"       # Remove a completed deferred item
+factory backlog-list /path                      # List pending backlog items
+factory backlog-remove /path "item text"        # Remove a completed backlog item
+factory backlog-add /path "item text"           # Add a new item to the backlog
 factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck gate
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area. `--prompt` loads a spec file as the build context for an existing project. To build from a raw text description, pass the prompt as the positional `path` argument.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` narrows improvement efforts to a specific area (e.g. `--focus "eval reliability"`), ensuring at least 2 of 3 hypotheses target that area. `--prompt` builds a new project from a raw text description.
 
 ## Observability
 

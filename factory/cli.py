@@ -338,9 +338,10 @@ def cmd_backlog_remove(args: argparse.Namespace) -> int:
 
 
 def cmd_backlog_list(args: argparse.Namespace) -> int:
-    from factory.study import _parse_backlog_items, _persist_backlog_items
+    from factory.study import _migrate_legacy_backlog, _parse_backlog_items, _persist_backlog_items
 
     project_path = Path(args.path)
+    _migrate_legacy_backlog(project_path)
     items = _parse_backlog_items(project_path)
     if not items:
         print("No backlog items.")
