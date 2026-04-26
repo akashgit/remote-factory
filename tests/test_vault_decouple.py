@@ -67,23 +67,12 @@ class TestVaultPath:
         assert result is not None
         assert result == tmp_path / "my-vault"
 
-    def test_returns_path_from_obsidian_vault_path(
+    def test_ignores_obsidian_vault_path(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        """Backwards-compat: OBSIDIAN_VAULT_PATH is still honoured."""
+        """OBSIDIAN_VAULT_PATH is no longer honoured — prevents personal vault writes."""
         monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "legacy"))
-        result = vault_path()
-        assert result is not None
-        assert result == tmp_path / "legacy"
-
-    def test_factory_vault_path_takes_precedence(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
-    ) -> None:
-        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "new"))
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "old"))
-        result = vault_path()
-        assert result is not None
-        assert result == tmp_path / "new"
+        assert vault_path() is None
 
 
 # ── graceful skip when vault unavailable ─────────────────────────

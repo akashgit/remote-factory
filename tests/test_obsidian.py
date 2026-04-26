@@ -21,7 +21,7 @@ from factory.obsidian.notes import (
 def set_vault_path(obsidian_vault, monkeypatch):
     """Set OBSIDIAN_VAULT_PATH to temp dir and disable obsidian-cli for all tests."""
     monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-    monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(obsidian_vault))
+    monkeypatch.setenv("FACTORY_VAULT_PATH", str(obsidian_vault))
     # Disable obsidian-cli so write functions always fall back to direct file I/O.
     # Individual tests in TestObsidianCli override this as needed.
     monkeypatch.setattr(
@@ -222,7 +222,7 @@ class TestAutoInit:
     def test_auto_creates_vault_on_write(self, tmp_path, monkeypatch):
         """Writing a note to nonexistent vault creates the vault structure."""
         vault = tmp_path / "new-vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
         assert not vault.exists()
 
         record = ExperimentRecord(

@@ -115,12 +115,11 @@ tags:
 def vault_path() -> Path | None:
     """Return the configured vault path, or ``None`` when unconfigured.
 
-    Reads from ``FACTORY_VAULT_PATH`` first (new canonical name), then falls
-    back to ``OBSIDIAN_VAULT_PATH`` for backwards-compatibility.  When neither
-    env var is set the vault is considered *unavailable* and callers should
-    skip vault operations gracefully.
+    Reads from ``FACTORY_VAULT_PATH`` only.  When the env var is unset the
+    vault is considered *unavailable* and callers should skip vault operations
+    gracefully (writes fall back to ``.factory/archive/``).
     """
-    raw = os.environ.get("FACTORY_VAULT_PATH") or os.environ.get("OBSIDIAN_VAULT_PATH")
+    raw = os.environ.get("FACTORY_VAULT_PATH")
     if raw:
         return Path(raw)
     return None

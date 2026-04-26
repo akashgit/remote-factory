@@ -329,7 +329,7 @@ class TestStudyProjectLocal:
     def test_includes_obsidian_notes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "vault"))
 
         project_path = tmp_path / "myapp"
         project_path.mkdir()
@@ -655,7 +655,7 @@ class TestReadObsidianNotes:
 
     def test_reads_notes(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         experiments_dir = vault / "10-Projects" / "myapp" / "Experiments"
         experiments_dir.mkdir(parents=True)
@@ -669,7 +669,7 @@ class TestReadObsidianNotes:
 
     def test_multiple_subdirs(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         for subdir in ["Experiments", "Strategies"]:
@@ -686,19 +686,19 @@ class TestReadObsidianNotes:
     def test_empty_vault(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
         vault.mkdir()
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         summaries = _read_obsidian_notes("myapp")
         assert summaries == []
 
     def test_no_vault(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "nonexistent"))
         summaries = _read_obsidian_notes("myapp")
         assert summaries == []
 
     def test_skips_frontmatter(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         project_dir.mkdir(parents=True)
@@ -713,7 +713,7 @@ class TestReadObsidianNotes:
 
     def test_truncates_to_200_chars(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         project_dir.mkdir(parents=True)
@@ -725,7 +725,7 @@ class TestReadObsidianNotes:
 
     def test_cross_project_knowledge(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         concepts_dir = vault / "20-Knowledge" / "Concepts"
         concepts_dir.mkdir(parents=True)
