@@ -47,7 +47,7 @@ Pure tools that don't make decisions. Entry point is `factory/cli.py` → `facto
 
 ### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
 
-A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
+A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Interactive/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 
@@ -92,29 +92,44 @@ Requires Claude Code installed and authenticated. The factory spawns `claude` su
 ## Running the factory
 
 ```bash
-factory ceo /path/to/project                    # Launch CEO agent (single cycle)
-factory ceo "distributed eval runner" --mode interactive  # Brainstorm + research → build from idea
-factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
-factory ceo /path/to/project --focus "dashboard UI"  # Targeted mode: build exactly one item
-factory ceo --prompt "Build a weather CLI"      # Build from a raw prompt
-factory run /path/to/project                    # Same as factory ceo
+# Build — from idea, spec file, or GitHub URL
+factory ceo "Build a weather CLI"               # Raw idea as positional arg
+factory ceo ~/ideas/spec.md                     # Spec file → new project
+factory ceo https://github.com/user/repo        # Clone and improve
+factory ceo "distributed eval runner" --mode interactive  # Brainstorm → build
+
+# Improve — point at existing codebase
+factory ceo /path/to/project                    # Single improvement cycle
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
+
+# Focus — build exactly one thing
+factory ceo /path/to/project --focus "dashboard UI"  # One item, one hypothesis, done
+
+# Meta — improve the factory's own agents
+factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
+
+# Agents & analysis
 factory agent researcher --task "..." --project /path  # Invoke a specialist directly
+factory study /path                             # Analyze code + write observations
+factory diff /path --exp1 N --exp2 M            # Compare two experiments
+factory explain /path --exp N                   # Explain experiment with FEEC analysis
+
+# Backlog
+factory backlog-list /path                      # List pending backlog items
+factory backlog-add /path "item text"           # Add a new item to the backlog
+factory backlog-remove /path "item text"        # Remove a completed backlog item
+
+# Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 factory export /path/to/project                 # Dump full project snapshot as JSON
 factory checkpoint /path/to/project             # Save CEO state for crash recovery
 factory resume /path/to/project                 # Resume from saved checkpoint
-factory diff /path --exp1 N --exp2 M            # Compare two experiments
-factory explain /path --exp N                   # Explain experiment with FEEC analysis
-factory backlog-list /path                      # List pending backlog items
-factory backlog-remove /path "item text"        # Remove a completed backlog item
-factory backlog-add /path "item text"           # Add a new item to the backlog
 factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck gate
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all 7 agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop` and `--prompt`. `--prompt` builds a new project from a raw text description. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless`, `--prompt`, and `--focus`.
+`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`.
 
 ## Observability
 

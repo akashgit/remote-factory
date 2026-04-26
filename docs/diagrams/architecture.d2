@@ -91,7 +91,7 @@ ceo: {
     label: |md
       **CEO Orchestrator**
       - Detects project state
-      - Routes to mode (Build/Discover/Review/Improve)
+      - Routes to mode (Build/Discover/Review/Improve/Interactive)
       - Spawns specialist agents
       - Makes keep/revert decisions
       - Runs precheck hard gate
@@ -165,6 +165,11 @@ agents: {
     shape: rectangle
     style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
   }
+  distiller: {
+    label: "💡 Distiller\nRefine Ideas"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
 }
 
 # ── Data Stores ──────────────────────────────────
@@ -186,7 +191,7 @@ stores: {
   }
 
   vault: {
-    label: "Obsidian Vault\n$FACTORY_VAULT_PATH"
+    label: "Obsidian Vault\nFACTORY_VAULT_PATH"
     shape: cylinder
     style: { fill: "#ffcdd2"; stroke: "#e53935" }
   }

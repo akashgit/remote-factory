@@ -24,7 +24,7 @@ Prompt: `factory/agents/prompts/ceo.md`
 
 ### Layer 3: Specialist Agents
 
-Six specialist Claude Code subprocesses, each with a narrow responsibility:
+Seven specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
@@ -34,6 +34,7 @@ Six specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Reviewer** | Guard rules + structured code review | `factory agent reviewer --task "..."` |
 | **Evaluator** | Run evals, compare before/after scores | `factory agent evaluator --task "..."` |
 | **Archivist** | Write learnings to vault, update dashboards | `factory agent archivist --task "..."` |
+| **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
@@ -53,6 +54,14 @@ The CEO detects project state and routes to the appropriate mode:
 | `evals_pending_review` | Evals generated, not reviewed | **Review** — human approval gate |
 | `has_factory` | Everything initialized | **Improve** — run experiment loop |
 
+**Additional modes** (selected explicitly, not auto-detected):
+
+| Flag | Mode | What it does |
+|------|------|-------------|
+| `--focus "item"` | **Targeted** | Pins one backlog item, one hypothesis, one experiment, then exits |
+| `--mode interactive` | **Interactive** | Research → Distiller spec → user feedback loop → build |
+| `--mode meta` | **Meta** | Full Improve loop on the factory itself, then ACE playbook evolution |
+
 State detection logic lives in `factory/state.py`.
 
 ![State Machine](diagrams/state-machine.svg)
@@ -67,7 +76,18 @@ factory/discovery/profile.py      → Build EvalProfile with dimensions and weig
 factory/discovery/generate.py     → Generate eval/score.py script
 ```
 
-### Experiment Loop
+### Ideation Pipeline (Interactive Mode)
+
+```
+1. Researcher surveys   → .factory/strategy/research.md (domain landscape)
+2. Distiller synthesizes → idea.md spec (features, architecture, non-goals)
+3. CEO presents draft    → user reviews, gives feedback
+4. Iterate (2-3)         → Distiller revises, optional follow-up research
+5. User approves         → spec persisted to .factory/strategy/current.md
+6. Transition            → proceed to Build mode
+```
+
+### Experiment Loop (Improve Mode)
 
 ```
 1. Researcher observes  → .factory/strategy/observations.md
