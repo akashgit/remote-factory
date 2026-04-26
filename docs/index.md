@@ -7,20 +7,20 @@ hide:
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
 
-You give it a one-line idea, a spec file, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
-# Build — describe an idea, the factory does the rest
-factory ceo "Build a CLI that converts CSV to JSON with streaming support"
+# Build — have a fleshed-out idea? Pass the file.
+factory ceo ~/ideas/weather-dashboard.md
+
+# Interactive — just starting to think about it? Brainstorm first.
+factory ceo "distributed eval runner" --mode interactive
 
 # Improve — point it at any codebase
 factory ceo ~/my-project
 
 # Focus — build exactly one thing
 factory ceo ~/my-project --focus "add WebSocket support"
-
-# Interactive — brainstorm and refine before building
-factory ceo "distributed eval runner" --mode interactive
 ```
 
 ## How It Works
