@@ -1,10 +1,109 @@
 """Tests for factory/ceo_completion.py — CEO completion guard."""
 
 import json
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
+
+
+class TestCycleState:
+    """Tests for cycle state persistence (read, write, delete, staleness)."""
+
+    def test_write_and_read_cycle_state(self, tmp_path: Path) -> None:
+        """Cycle state can be written and read back."""
+        from factory.ceo_completion import (
+            create_cycle_state,
+            read_cycle_state,
+            write_cycle_state,
+        )
+
+        state = create_cycle_state("build", "Build a CLI tool")
+        write_cycle_state(tmp_path, state)
+
+        loaded = read_cycle_state(tmp_path)
+        assert loaded is not None
+        assert loaded.cycle_id == state.cycle_id
+        assert loaded.mode == "build"
+        assert loaded.initial_prompt == "Build a CLI tool"
+        assert loaded.respawns == 0
+
+    def test_read_cycle_state_nonexistent(self, tmp_path: Path) -> None:
+        """read_cycle_state returns None if cycle.json doesn't exist."""
+        from factory.ceo_completion import read_cycle_state
+
+        assert read_cycle_state(tmp_path) is None
+
+    def test_delete_cycle_state(self, tmp_path: Path) -> None:
+        """delete_cycle_state removes the file and returns True."""
+        from factory.ceo_completion import (
+            create_cycle_state,
+            delete_cycle_state,
+            read_cycle_state,
+            write_cycle_state,
+        )
+
+        state = create_cycle_state("improve")
+        write_cycle_state(tmp_path, state)
+        assert read_cycle_state(tmp_path) is not None
+
+        deleted = delete_cycle_state(tmp_path)
+        assert deleted is True
+        assert read_cycle_state(tmp_path) is None
+
+    def test_delete_cycle_state_nonexistent(self, tmp_path: Path) -> None:
+        """delete_cycle_state returns False if file doesn't exist."""
+        from factory.ceo_completion import delete_cycle_state
+
+        assert delete_cycle_state(tmp_path) is False
+
+    def test_stale_cycle_state_ignored(self, tmp_path: Path) -> None:
+        """Cycle state older than 24 hours is treated as stale and ignored."""
+        from factory.ceo_completion import (
+            CYCLE_STALENESS_HOURS,
+            read_cycle_state,
+            _cycle_state_path,
+        )
+
+        # Write a cycle state with old timestamp
+        state_path = _cycle_state_path(tmp_path)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=CYCLE_STALENESS_HOURS + 1)
+        state_data = {
+            "cycle_id": "old123",
+            "started_at": old_time.isoformat(),
+            "mode": "build",
+            "initial_prompt": "",
+            "respawns": 5,
+        }
+        state_path.write_text(json.dumps(state_data))
+
+        # Should return None due to staleness
+        loaded = read_cycle_state(tmp_path)
+        assert loaded is None
+
+    def test_malformed_cycle_state_ignored(self, tmp_path: Path) -> None:
+        """Malformed cycle.json returns None instead of crashing."""
+        from factory.ceo_completion import read_cycle_state, _cycle_state_path
+
+        state_path = _cycle_state_path(tmp_path)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text("NOT VALID JSON {{{")
+
+        assert read_cycle_state(tmp_path) is None
+
+    def test_cycle_state_truncates_long_prompt(self, tmp_path: Path) -> None:
+        """Initial prompt is truncated to avoid bloat."""
+        from factory.ceo_completion import create_cycle_state, write_cycle_state, read_cycle_state
+
+        long_prompt = "x" * 5000
+        state = create_cycle_state("build", long_prompt)
+        write_cycle_state(tmp_path, state)
+
+        loaded = read_cycle_state(tmp_path)
+        assert loaded is not None
+        assert len(loaded.initial_prompt) <= 1000
 
 
 class TestDetectIncomplete:
@@ -121,6 +220,26 @@ class TestBuildContinuationTask:
         task = _build_continuation_task(gap)
         assert "Resume Build pipeline" in task
         assert "Phase4" in task
+
+    def test_continuation_includes_mode_directive(self) -> None:
+        """Continuation task includes explicit mode directive to prevent flip."""
+        from factory.ceo_completion import _build_continuation_task, IncompleteGap, create_cycle_state
+
+        gap = IncompleteGap(
+            mode="build",
+            planned=6,
+            completed=3,
+            next_item="Phase4",
+            reason="build.incomplete",
+        )
+        cycle_state = create_cycle_state("build", "Build a CLI")
+
+        task = _build_continuation_task(gap, cycle_state)
+        assert "## CRITICAL: Mode Override" in task
+        assert "CONTINUATION" in task
+        assert "BUILD" in task
+        assert "Do NOT re-detect mode" in task
+        assert cycle_state.cycle_id in task
 
 
 class TestRunCeoWithCompletionGuard:
@@ -333,3 +452,273 @@ class TestRunCeoWithCompletionGuard:
 
         # Only one call — no respawn even though incomplete
         assert mock_invoke.call_count == 1
+
+    async def test_creates_cycle_state_on_fresh_cycle(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fresh cycle creates cycle.json with the correct mode."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, read_cycle_state
+
+        # Setup complete (so no respawns)
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n")
+        exp_dir = tmp_path / ".factory" / "experiments" / "001"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+
+        mock_invoke = AsyncMock(return_value=("Done", 0))
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            # Invoke in build mode
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Build task",
+                mode="build",
+                runner_name="claude",
+            )
+
+        # Cycle state should be deleted after completion
+        assert read_cycle_state(tmp_path) is None
+
+    async def test_deletes_cycle_state_on_completion(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cycle state is deleted when cycle completes successfully."""
+        from factory.ceo_completion import (
+            run_ceo_with_completion_guard,
+            read_cycle_state,
+            _cycle_state_path,
+        )
+
+        # Setup complete
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n")
+        exp_dir = tmp_path / ".factory" / "experiments" / "001"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+
+        async def mock_invoke(role, task, path, **kwargs):
+            # Verify cycle state exists during invocation
+            assert read_cycle_state(path) is not None
+            return "Done", 0
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Improve task",
+                mode="improve",
+                runner_name="claude",
+            )
+
+        # After completion, cycle state should be gone
+        assert not _cycle_state_path(tmp_path).exists()
+
+    async def test_mode_preserved_across_respawns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Mode from initial cycle is preserved across all respawns."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, read_cycle_state
+
+        # Setup: 2 hypotheses
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n\n#### H2: B\n")
+        (tmp_path / ".factory" / "experiments").mkdir(parents=True)
+
+        call_count = 0
+        observed_modes = []
+
+        async def mock_invoke(role, task, path, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            # Record mode from cycle state
+            state = read_cycle_state(path)
+            if state:
+                observed_modes.append(state.mode)
+
+            # First call: create 1 verdict
+            if call_count == 1:
+                exp_dir = path / ".factory" / "experiments" / "001"
+                exp_dir.mkdir(parents=True, exist_ok=True)
+                (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+                return "First run", 0
+
+            # Second call: create 2nd verdict (complete)
+            exp_dir = path / ".factory" / "experiments" / "002"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+            return "Second run", 0
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Build task",
+                mode="build",  # Start in build mode
+                runner_name="claude",
+            )
+
+        assert call_count == 2
+        # Both invocations should see the same mode
+        assert all(m == "build" for m in observed_modes)
+
+    async def test_respawn_increments_counter(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Each respawn increments the respawn counter in cycle state."""
+        from factory.ceo_completion import run_ceo_with_completion_guard, read_cycle_state
+
+        # Setup: 3 hypotheses
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n\n#### H2: B\n\n#### H3: C\n")
+        (tmp_path / ".factory" / "experiments").mkdir(parents=True)
+
+        call_count = 0
+        observed_respawns = []
+
+        async def mock_invoke(role, task, path, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            state = read_cycle_state(path)
+            if state:
+                observed_respawns.append(state.respawns)
+
+            # Each call creates one verdict
+            exp_dir = path / ".factory" / "experiments" / f"00{call_count}"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+            return f"Run {call_count}", 0
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Improve task",
+                mode="improve",
+                runner_name="claude",
+            )
+
+        assert call_count == 3
+        # Respawn counter: 0, 1, 2
+        assert observed_respawns == [0, 1, 2]
+
+    async def test_respawn_event_includes_cycle_id(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Respawn events include the cycle_id for correlation."""
+        from factory.ceo_completion import run_ceo_with_completion_guard
+
+        # Setup: 2 hypotheses
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text("#### H1: A\n\n#### H2: B\n")
+        (tmp_path / ".factory" / "experiments").mkdir(parents=True)
+
+        call_count = 0
+
+        async def mock_invoke(role, task, path, **kwargs):
+            nonlocal call_count
+            call_count += 1
+
+            if call_count == 1:
+                exp_dir = path / ".factory" / "experiments" / "001"
+                exp_dir.mkdir(parents=True, exist_ok=True)
+                (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+                return "First", 0
+
+            exp_dir = path / ".factory" / "experiments" / "002"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+            return "Second", 0
+
+        with patch("factory.agents.runner.invoke_agent", mock_invoke):
+            await run_ceo_with_completion_guard(
+                tmp_path,
+                "Task",
+                mode="improve",
+                runner_name="claude",
+            )
+
+        # Check respawn event has cycle_id
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        events = [json.loads(line) for line in events_file.read_text().splitlines()]
+        respawn_events = [e for e in events if e["type"] == "ceo.respawn"]
+        assert len(respawn_events) == 1
+        assert "cycle_id" in respawn_events[0]["data"]
+        assert "mode" in respawn_events[0]["data"]
+        assert respawn_events[0]["data"]["mode"] == "improve"
+
+
+class TestAutoDetectModeWithCycle:
+    """Tests for _auto_detect_mode respecting in-flight cycles."""
+
+    def test_returns_cycle_mode_when_inflight(self, tmp_path: Path) -> None:
+        """_auto_detect_mode returns cycle mode when cycle.json exists."""
+        from factory.cli import _auto_detect_mode
+        from factory.ceo_completion import create_cycle_state, write_cycle_state
+
+        # Create a git repo so state detection doesn't return NO_REPO
+        (tmp_path / ".git").mkdir()
+
+        # Write in-flight cycle state for build mode
+        state = create_cycle_state("build", "Initial task")
+        write_cycle_state(tmp_path, state)
+
+        # Even though project has no factory, should return build (from cycle)
+        mode = _auto_detect_mode(tmp_path, has_prompt=False)
+        assert mode == "build"
+
+    def test_ignores_cycle_when_force_fresh(self, tmp_path: Path) -> None:
+        """_auto_detect_mode ignores cycle.json when force_fresh=True."""
+        from factory.cli import _auto_detect_mode
+        from factory.ceo_completion import create_cycle_state, write_cycle_state
+
+        # Create a git repo
+        (tmp_path / ".git").mkdir()
+
+        # Write in-flight cycle state for build mode
+        state = create_cycle_state("build", "Initial task")
+        write_cycle_state(tmp_path, state)
+
+        # With force_fresh, should detect from state (no_factory → discover)
+        mode = _auto_detect_mode(tmp_path, has_prompt=False, force_fresh=True)
+        assert mode == "discover"
+
+    def test_detects_normally_when_no_cycle(self, tmp_path: Path) -> None:
+        """_auto_detect_mode detects from project state when no cycle.json."""
+        from factory.cli import _auto_detect_mode
+
+        # Create a git repo
+        (tmp_path / ".git").mkdir()
+
+        # No cycle state exists
+        mode = _auto_detect_mode(tmp_path, has_prompt=False)
+        assert mode == "discover"  # no_factory state
+
+    def test_detects_normally_when_cycle_stale(self, tmp_path: Path) -> None:
+        """_auto_detect_mode ignores stale cycle.json."""
+        from factory.cli import _auto_detect_mode
+        from factory.ceo_completion import CYCLE_STALENESS_HOURS, _cycle_state_path
+
+        # Create a git repo
+        (tmp_path / ".git").mkdir()
+
+        # Write stale cycle state
+        state_path = _cycle_state_path(tmp_path)
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        old_time = datetime.now(timezone.utc) - timedelta(hours=CYCLE_STALENESS_HOURS + 1)
+        state_data = {
+            "cycle_id": "old123",
+            "started_at": old_time.isoformat(),
+            "mode": "build",
+            "initial_prompt": "",
+            "respawns": 0,
+        }
+        state_path.write_text(json.dumps(state_data))
+
+        # Should ignore stale cycle and detect from state
+        mode = _auto_detect_mode(tmp_path, has_prompt=False)
+        assert mode == "discover"  # no_factory state

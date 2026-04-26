@@ -7,19 +7,103 @@ to "wrap up" early.
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import uuid
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
 
 from factory.events import emit_event, load_events
+from factory.models import CycleState
 
 log = structlog.get_logger()
 
+# Staleness threshold for cycle.json (24 hours)
+CYCLE_STALENESS_HOURS = 24
+
 # Hard cap on re-spawns per cycle (env-overridable)
 DEFAULT_MAX_RESPAWNS = 5
+
+
+# ── cycle state persistence ──────────────────────────────────────
+
+
+def _cycle_state_path(project_path: Path) -> Path:
+    """Return the path to .factory/state/cycle.json."""
+    return project_path / ".factory" / "state" / "cycle.json"
+
+
+def read_cycle_state(project_path: Path) -> CycleState | None:
+    """Read in-flight cycle state if it exists and is non-stale.
+
+    Returns None if:
+    - cycle.json doesn't exist
+    - cycle.json is malformed
+    - cycle.json is stale (older than CYCLE_STALENESS_HOURS)
+    """
+    path = _cycle_state_path(project_path)
+    if not path.exists():
+        return None
+
+    try:
+        data = json.loads(path.read_text())
+
+        # Parse datetime from ISO string (model_dump(mode="json") serializes as ISO)
+        if "started_at" in data and isinstance(data["started_at"], str):
+            data["started_at"] = datetime.fromisoformat(data["started_at"].replace("Z", "+00:00"))
+
+        state = CycleState.model_validate(data)
+
+        # Check staleness
+        now = datetime.now(timezone.utc)
+        started = state.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        age_hours = (now - started).total_seconds() / 3600
+
+        if age_hours > CYCLE_STALENESS_HOURS:
+            log.info("cycle_state_stale", age_hours=age_hours, cycle_id=state.cycle_id)
+            return None
+
+        return state
+    except (json.JSONDecodeError, ValueError) as e:
+        log.warning("cycle_state_parse_error", error=str(e))
+        return None
+
+
+def write_cycle_state(project_path: Path, state: CycleState) -> None:
+    """Write cycle state to .factory/state/cycle.json."""
+    path = _cycle_state_path(project_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Use model_dump with mode="json" for proper datetime serialization
+    data = state.model_dump(mode="json")
+    path.write_text(json.dumps(data, indent=2))
+    log.info("cycle_state_written", cycle_id=state.cycle_id, mode=state.mode, respawns=state.respawns)
+
+
+def delete_cycle_state(project_path: Path) -> bool:
+    """Delete cycle.json on cycle completion. Returns True if deleted."""
+    path = _cycle_state_path(project_path)
+    if path.exists():
+        path.unlink()
+        log.info("cycle_state_deleted", path=str(path))
+        return True
+    return False
+
+
+def create_cycle_state(mode: str, initial_prompt: str = "") -> CycleState:
+    """Create a new CycleState for a fresh cycle."""
+    return CycleState(
+        cycle_id=str(uuid.uuid4())[:8],
+        started_at=datetime.now(timezone.utc),
+        mode=mode,  # type: ignore[arg-type]
+        initial_prompt=initial_prompt[:1000],  # Truncate to avoid bloat
+        respawns=0,
+    )
 
 
 @dataclass
@@ -148,10 +232,27 @@ def _detect_incomplete(project_path: Path, mode: str) -> IncompleteGap | None:
     return None
 
 
-def _build_continuation_task(gap: IncompleteGap) -> str:
-    """Build the continuation task string for re-spawning the CEO."""
+def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None = None) -> str:
+    """Build the continuation task string for re-spawning the CEO.
+
+    Includes explicit mode directive to prevent mode flipping on respawn.
+    """
+    # Mode directive header — prevents mode flip on respawn
+    mode_directive = (
+        f"## CRITICAL: Mode Override\n\n"
+        f"This is a CONTINUATION of an in-flight {gap.mode.upper()} cycle. "
+        f"Do NOT re-detect mode. Do NOT switch to a different mode. "
+        f"The cycle mode is **{gap.mode}** — execute {gap.mode.upper()} mode only.\n\n"
+    )
+
+    if cycle_state:
+        mode_directive += (
+            f"Cycle ID: {cycle_state.cycle_id}\n"
+            f"Respawn count: {cycle_state.respawns}\n\n"
+        )
+
     if gap.mode in ("improve", "meta"):
-        return (
+        body = (
             f"Resume execution from hypothesis {gap.next_item}. "
             f"Strategy is already approved at .factory/strategy/current.md — "
             f"do not re-plan, do not re-run Researcher or Strategist. "
@@ -159,18 +260,21 @@ def _build_continuation_task(gap: IncompleteGap) -> str:
             f"Progress so far: {gap.completed}/{gap.planned} hypotheses have verdicts."
         )
     elif gap.mode == "build":
-        return (
+        body = (
             f"Resume Build pipeline from {gap.next_item}. "
             f"Plan is already approved at .factory/strategy/current.md. "
             f"Progress so far: {gap.completed}/{gap.planned} phases complete. "
             f"Continue with the next phase immediately."
         )
     elif gap.mode == "discover":
-        return (
+        body = (
             "Resume Discovery. The eval profile has not been generated yet. "
             "Complete the Discover mode workflow to produce .factory/eval_profile.json."
         )
-    return f"Resume from {gap.next_item}."
+    else:
+        body = f"Resume from {gap.next_item}."
+
+    return mode_directive + body
 
 
 def _budget_allows_respawn(runner_name: str | None, project_path: Path) -> bool:
@@ -230,6 +334,9 @@ async def run_ceo_with_completion_guard(
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
+    Mode is persisted in .factory/state/cycle.json to prevent mode flipping across
+    respawns. The cycle state is created on first spawn and deleted on completion.
+
     Args:
         project_path: Path to the project.
         initial_task: Initial task string for the CEO.
@@ -255,12 +362,29 @@ async def run_ceo_with_completion_guard(
     if max_respawns is None:
         max_respawns = int(os.environ.get("FACTORY_CEO_MAX_RESPAWNS", DEFAULT_MAX_RESPAWNS))
 
+    # Check for existing in-flight cycle (respawn scenario)
+    cycle_state = read_cycle_state(project_path)
+    if cycle_state:
+        # Continuing an existing cycle — use its mode, not the passed-in one
+        log.info(
+            "cycle_state_found",
+            cycle_id=cycle_state.cycle_id,
+            original_mode=cycle_state.mode,
+            passed_mode=mode,
+        )
+        mode = cycle_state.mode
+    else:
+        # Fresh cycle — create new state
+        cycle_state = create_cycle_state(mode, initial_task)
+        write_cycle_state(project_path, cycle_state)
+        log.info("cycle_state_created", cycle_id=cycle_state.cycle_id, mode=mode)
+
     task = initial_task
     final_output = ""
     gap: IncompleteGap | None = None
 
     for attempt in range(max_respawns + 1):
-        log.info("ceo_spawn", attempt=attempt, task_preview=task[:100])
+        log.info("ceo_spawn", attempt=attempt, task_preview=task[:100], mode=mode)
 
         result, code = await invoke_agent(
             "ceo", task, project_path,
@@ -268,20 +392,23 @@ async def run_ceo_with_completion_guard(
         )
         final_output = result
 
-        # User interrupt — respect it
+        # User interrupt — respect it (but don't delete cycle state for later resume)
         if code in (130, 143) or code > 128:
             log.info("ceo_user_interrupt", code=code)
             return result, code
 
-        # Explicit ABORT — respect it
+        # Explicit ABORT — respect it and clean up cycle state
         if _has_aborted(project_path):
             log.info("ceo_aborted", reason="cycle.aborted event found")
+            delete_cycle_state(project_path)
             return result, code
 
         # Check for incomplete work
         gap = _detect_incomplete(project_path, mode)
         if gap is None:
             log.info("ceo_complete", attempt=attempt)
+            # Cycle complete — delete cycle state so next invocation starts fresh
+            delete_cycle_state(project_path)
             return result, code
 
         # Check budget before re-spawning
@@ -290,13 +417,19 @@ async def run_ceo_with_completion_guard(
             _write_cycle_incomplete(project_path, gap, "budget_exceeded")
             return result, 1
 
-        # Emit respawn event
+        # Update cycle state with incremented respawn count
+        cycle_state.respawns += 1
+        write_cycle_state(project_path, cycle_state)
+
+        # Emit respawn event with cycle_id
         emit_event(
             project_path,
             "ceo.respawn",
             agent="ceo",
             data={
                 "attempt": attempt + 1,
+                "cycle_id": cycle_state.cycle_id,
+                "mode": mode,
                 "reason": gap.reason,
                 "planned": gap.planned,
                 "completed": gap.completed,
@@ -304,11 +437,11 @@ async def run_ceo_with_completion_guard(
             },
         )
 
-        # Build continuation task
-        task = _build_continuation_task(gap)
-        log.info("ceo_respawn", attempt=attempt + 1, next_item=gap.next_item)
+        # Build continuation task with explicit mode directive
+        task = _build_continuation_task(gap, cycle_state)
+        log.info("ceo_respawn", attempt=attempt + 1, next_item=gap.next_item, mode=mode)
 
-    # Cap hit
+    # Cap hit — don't delete cycle state to allow manual resume
     if gap:
         log.warning("ceo_respawn_cap_hit", attempts=max_respawns + 1, gap=gap)
         _write_cycle_incomplete(project_path, gap, "respawn_cap_hit")

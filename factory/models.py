@@ -285,6 +285,24 @@ class SessionSummary(BaseModel):
     total_cost_usd: float | None
 
 
+# ── cycle state ──────────────────────────────────────────────────
+
+
+class CycleState(BaseModel):
+    """In-flight cycle state persisted at .factory/state/cycle.json.
+
+    Ensures mode is preserved across CEO respawns within a single cycle.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    cycle_id: str
+    started_at: datetime
+    mode: Literal["build", "discover", "improve", "meta"]
+    initial_prompt: str = ""
+    respawns: int = 0
+
+
 # ── protocols ─────────────────────────────────────────────────────
 
 

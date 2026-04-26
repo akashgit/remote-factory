@@ -1132,8 +1132,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
@@ -1494,14 +1495,34 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
-def _auto_detect_mode(project_path: Path, has_prompt: bool = False) -> str:
+def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
     """Detect the right mode based on project state.
+
+    Checks for an in-flight cycle first — if one exists, returns its mode
+    regardless of current project state (prevents mode flip on respawn).
+
+    Args:
+        project_path: Path to the project.
+        has_prompt: True if a build spec is available.
+        force_fresh: If True, ignores in-flight cycle and detects from scratch.
 
     When a build spec is available (--prompt, idea file, or raw prompt),
     no_factory routes to build (not discover).
     """
-    from factory.state import detect_state
+    from factory.ceo_completion import read_cycle_state
     from factory.models import ProjectState
+    from factory.state import detect_state
+
+    # Layer 2: Check for in-flight cycle (unless forced fresh)
+    if not force_fresh:
+        cycle_state = read_cycle_state(project_path)
+        if cycle_state:
+            print(
+                f"  In-flight cycle: {cycle_state.cycle_id} → mode: {cycle_state.mode} "
+                f"(respawns: {cycle_state.respawns})",
+                file=sys.stderr,
+            )
+            return cycle_state.mode
 
     state = detect_state(project_path)
     mode_map = {
@@ -1710,8 +1731,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
-    if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
@@ -2080,10 +2102,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta", "interactive"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, "
-             "improve, meta, or interactive (research + brainstorm → spec → build)",
+        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
+             "build, discover, improve, meta, or interactive (research + brainstorm → spec → build)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2118,9 +2140,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
+        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
+             "build, discover, improve, or meta",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2159,9 +2182,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
         default="auto",
-        help="Run mode (default: auto)",
+        help="Run mode (default: auto, respects in-flight cycle)",
     )
     p.add_argument("--loop", action="store_true", default=False, help="Enable loop mode")
     p.add_argument("--interval", type=int, default=1800, help="Loop interval in seconds")
