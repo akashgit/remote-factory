@@ -34,6 +34,7 @@ def sample_state() -> CheckpointState:
         pending_agents=["builder", "reviewer", "evaluator"],
         last_eval_scores={"tests": 0.95, "lint": 1.0},
         current_hypothesis="Add checkpoint serialization",
+        completed_hypotheses=[35, 36, 37],
         timestamp="2026-04-20T12:00:00",
     )
 
@@ -69,6 +70,35 @@ def test_checkpoint_state_nullable_fields() -> None:
     )
     assert state.active_experiment_id is None
     assert state.current_hypothesis is None
+
+
+def test_checkpoint_state_completed_hypotheses() -> None:
+    """CheckpointState includes completed_hypotheses field."""
+    state = CheckpointState(
+        mode="improve",
+        active_experiment_id=3,
+        completed_agents=["researcher", "strategist"],
+        pending_agents=["builder"],
+        last_eval_scores={"tests": 0.9},
+        current_hypothesis="Add caching",
+        completed_hypotheses=[1, 2],
+        timestamp="2026-04-26T12:00:00",
+    )
+    assert state.completed_hypotheses == [1, 2]
+
+
+def test_checkpoint_state_completed_hypotheses_default() -> None:
+    """completed_hypotheses defaults to empty list for backwards compat."""
+    state = CheckpointState(
+        mode="improve",
+        active_experiment_id=None,
+        completed_agents=[],
+        pending_agents=[],
+        last_eval_scores={},
+        current_hypothesis=None,
+        timestamp="2026-04-26T12:00:00",
+    )
+    assert state.completed_hypotheses == []
 
 
 # ── save / load / clear ──────────────────────────────────────────
@@ -152,6 +182,12 @@ def test_format_empty_scores() -> None:
     assert "discover" in output
 
 
+def test_format_completed_hypotheses(sample_state: CheckpointState) -> None:
+    """format_checkpoint shows completed hypotheses."""
+    output = format_checkpoint(sample_state)
+    assert "Done hypotheses: 35, 36, 37" in output
+
+
 # ── CLI integration ──────────────────────────────────────────────
 
 
@@ -214,3 +250,167 @@ def test_cli_resume_with_checkpoint(checkpoint_project: Path, sample_state: Chec
     assert "improve" in output
     assert "builder" in output
     assert "reviewer" in output
+
+
+def test_cli_checkpoint_clear(checkpoint_project: Path, sample_state: CheckpointState) -> None:
+    """factory checkpoint --clear removes the checkpoint file."""
+    from factory.cli import main
+
+    save_checkpoint(checkpoint_project, sample_state)
+    assert (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+    code = main(["checkpoint", str(checkpoint_project), "--clear"])
+    assert code == 0
+    assert not (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+
+def test_cli_checkpoint_clear_no_file(checkpoint_project: Path) -> None:
+    """factory checkpoint --clear succeeds even when no checkpoint exists."""
+    from factory.cli import main
+
+    code = main(["checkpoint", str(checkpoint_project), "--clear"])
+    assert code == 0
+
+
+def test_resume_context_injected_into_ceo_task(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """_run_single_cycle appends Resume Context when a checkpoint exists."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))) as mock_agent:
+        from factory.cli import _run_single_cycle
+        _run_single_cycle(checkpoint_project, "improve")
+
+    task_arg = mock_agent.call_args[0][1]
+    assert "## Resume Context" in task_arg
+    assert "researcher" in task_arg
+    assert "strategist" in task_arg
+
+
+def test_checkpoint_cleared_after_successful_cycle(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """_run_single_cycle clears checkpoint after successful run."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))):
+        from factory.cli import _run_single_cycle
+        _run_single_cycle(checkpoint_project, "improve")
+
+    assert not (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+
+def test_cli_checkpoint_save_with_completed_hypotheses(
+    checkpoint_project: Path, capsys: pytest.CaptureFixture[str],
+) -> None:
+    """factory checkpoint --save --completed-hypotheses persists experiment IDs."""
+    from factory.cli import main
+
+    code = main([
+        "checkpoint", str(checkpoint_project),
+        "--save",
+        "--mode", "improve",
+        "--completed", "researcher,strategist",
+        "--pending", "builder",
+        "--hypothesis", "Add caching",
+        "--completed-hypotheses", "1,2,3",
+    ])
+    assert code == 0
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is not None
+    assert loaded.completed_hypotheses == [1, 2, 3]
+
+
+def test_checkpoint_preserved_on_failed_cycle(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """_run_single_cycle preserves checkpoint when CEO agent fails."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("error", 1))):
+        from factory.cli import _run_single_cycle
+        _run_single_cycle(checkpoint_project, "improve")
+
+    assert (checkpoint_project / ".factory" / "checkpoint.json").exists()
+
+
+def test_load_checkpoint_corrupt_json(checkpoint_project: Path) -> None:
+    """load_checkpoint returns None for corrupted JSON files."""
+    checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
+    checkpoint_path.write_text("{truncated")
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is None
+
+
+def test_load_checkpoint_invalid_schema(checkpoint_project: Path) -> None:
+    """load_checkpoint returns None for valid JSON with invalid schema."""
+    import json
+    checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
+    checkpoint_path.write_text(json.dumps({"wrong_field": "bad"}))
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is None
+
+
+def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
+    """load_checkpoint handles old checkpoints without completed_hypotheses."""
+    import json
+    checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
+    old_data = {
+        "mode": "improve",
+        "active_experiment_id": None,
+        "completed_agents": ["researcher"],
+        "pending_agents": ["strategist"],
+        "last_eval_scores": {},
+        "current_hypothesis": None,
+        "timestamp": "2026-04-26T00:00:00",
+    }
+    checkpoint_path.write_text(json.dumps(old_data))
+
+    loaded = load_checkpoint(checkpoint_project)
+    assert loaded is not None
+    assert loaded.completed_hypotheses == []
+    assert loaded.completed_agents == ["researcher"]
+
+
+def test_headless_ceo_injects_resume_context(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """cmd_ceo --headless injects resume context when checkpoint exists."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))) as mock_agent, \
+         patch("factory.cli._chain_modes", return_value=0):
+        from factory.cli import main
+        main(["ceo", str(checkpoint_project), "--headless"])
+
+    task_arg = mock_agent.call_args[0][1]
+    assert "## Resume Context" in task_arg
+    assert "researcher" in task_arg
+
+
+def test_headless_ceo_clears_checkpoint_on_success(
+    checkpoint_project: Path, sample_state: CheckpointState,
+) -> None:
+    """cmd_ceo --headless clears checkpoint after successful run."""
+    from unittest.mock import AsyncMock, patch
+
+    save_checkpoint(checkpoint_project, sample_state)
+
+    with patch("factory.agents.runner.invoke_agent", AsyncMock(return_value=("ok", 0))), \
+         patch("factory.cli._chain_modes", return_value=0):
+        from factory.cli import main
+        main(["ceo", str(checkpoint_project), "--headless"])
+
+    assert not (checkpoint_project / ".factory" / "checkpoint.json").exists()

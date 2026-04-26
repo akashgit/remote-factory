@@ -120,6 +120,19 @@ The factory config (`factory.md`) may specify a `## Target Branch` (default: `ma
 
 Read the target branch from `.factory/config.json` field `target_branch`. If absent, default to `main`.
 
+### Resuming from a Crash
+
+If your task includes a `## Resume Context` block, you are resuming from a prior interrupted run. Do NOT restart the full cycle. Instead:
+
+1. Read the resume context to determine which phases completed and which hypotheses are done.
+2. Skip completed phases — do not re-run Research or Strategy if they appear in `completed_agents`.
+3. Read the existing strategy from `.factory/strategy/current.md` (it survived the crash).
+4. If `completed_hypotheses` is non-empty, skip those experiment IDs — their keep/revert decisions are already recorded in `.factory/results.tsv`.
+5. Resume execution at the first uncompleted hypothesis.
+6. Continue the normal workflow from that point, including checkpoint saves and archivist invocations.
+
+**Example:** If the resume context shows `Completed: researcher, strategist` and `Done hypotheses: 1, 2`, skip directly to hypothesis 3 in the approved strategy from `.factory/strategy/current.md`.
+
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.
 - When reviewing the Strategist's hypotheses, **verify at least one explicitly names a growth dimension** (capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness). The hypothesis MUST contain the tag `**Growth dimension:** <name>`.
@@ -489,6 +502,12 @@ Then write checkpoint:
 echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode improve \
+  --completed "researcher" --pending "strategist,builder,evaluator,archivist"
+```
+
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
 
 Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Use Meta mode when you want the factory to improve itself.
@@ -562,6 +581,12 @@ factory agent archivist --task "Record the Strategist's decisions and CEO approv
 Then write checkpoint:
 ```bash
 echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode improve \
+  --completed "researcher,strategist" --pending "builder,evaluator,archivist"
 ```
 
 ### Step 2: Execute (Per Approved Hypothesis)
@@ -799,6 +824,16 @@ Then write checkpoint:
 echo "- [x] archivist after experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode improve \
+  --completed "researcher,strategist" --pending "builder,evaluator,archivist" \
+  --experiment $EXP_ID --hypothesis "$HYPOTHESIS_TEXT" \
+  --completed-hypotheses "$COMPLETED_EXP_IDS"
+```
+
+Where `$COMPLETED_EXP_IDS` is a comma-separated list of all experiment IDs processed so far in this cycle (e.g., `"1,2,3"`).
+
 This MUST happen before proceeding to the next hypothesis or to Step 3.
 
 ### Step 3: Final Archive (BLOCKING — DO NOT SKIP)
@@ -828,6 +863,11 @@ factory agent archivist --task "Final archive for this factory cycle on $PROJECT
 Then write final checkpoint:
 ```bash
 echo "- [x] FINAL archivist — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Clear crash-recovery checkpoint (cycle complete):
+```bash
+factory checkpoint "$PROJECT_PATH" --clear
 ```
 
 **Wait for this to complete before proceeding.** Do NOT commit until archival is confirmed.
