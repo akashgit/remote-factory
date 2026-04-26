@@ -356,13 +356,15 @@ def _parse_backlog_items(project_path: Path) -> list[str]:
                     items.append(item_text)
                     seen.add(item_text)
 
-    # Migrate: if legacy deferred.md exists but backlog.md doesn't, rename
+    return items
+
+
+def _migrate_legacy_backlog(project_path: Path) -> None:
+    """Rename legacy deferred.md → backlog.md if needed."""
     legacy = project_path / ".factory" / "strategy" / "deferred.md"
     backlog = project_path / ".factory" / "strategy" / "backlog.md"
     if legacy.exists() and not backlog.exists():
         legacy.rename(backlog)
-
-    return items
 
 
 def _persist_backlog_items(project_path: Path, items: list[str]) -> None:
@@ -382,9 +384,10 @@ def _persist_backlog_items(project_path: Path, items: list[str]) -> None:
 def remove_backlog_item(project_path: Path, item_text: str) -> bool:
     """Remove a completed backlog item from backlog.md by exact match.
 
-    Returns True if the item was found and removed, False otherwise.
-    Also checks legacy deferred.md for backward compatibility.
+    Returns True if the item was found and removed from at least one file.
+    Checks both backlog.md and legacy deferred.md to avoid ghost entries.
     """
+    removed_any = False
     for filename in ("backlog.md", "deferred.md"):
         path = project_path / ".factory" / "strategy" / filename
         if not path.exists():
@@ -413,9 +416,9 @@ def remove_backlog_item(project_path: Path, item_text: str) -> bool:
             path.write_text("\n".join(remaining) + "\n")
         else:
             path.unlink()
-        return True
+        removed_any = True
 
-    return False
+    return removed_any
 
 
 def add_backlog_item(project_path: Path, item_text: str) -> bool:
@@ -423,10 +426,12 @@ def add_backlog_item(project_path: Path, item_text: str) -> bool:
     backlog_path = project_path / ".factory" / "strategy" / "backlog.md"
     backlog_path.parent.mkdir(parents=True, exist_ok=True)
 
+    content = ""
     existing: set[str] = set()
     if backlog_path.exists():
         try:
-            for line in backlog_path.read_text().splitlines():
+            content = backlog_path.read_text()
+            for line in content.splitlines():
                 stripped = line.strip()
                 m = _BULLET_PREFIX_RE.match(stripped)
                 if m:
@@ -437,8 +442,9 @@ def add_backlog_item(project_path: Path, item_text: str) -> bool:
     if item_text in existing:
         return False
 
-    with open(backlog_path, "a") as f:
-        f.write(f"- {item_text}\n")
+    new_content = content.rstrip("\n") + "\n" if content.strip() else ""
+    new_content += f"- {item_text}\n"
+    backlog_path.write_text(new_content)
     return True
 
 
@@ -925,6 +931,7 @@ def study_project_local(project_path: Path, **kwargs: object) -> str:
             lines.append("No open issues found (or not a GitHub repo).")
 
     # Backlog — unified queue of features/items to build
+    _migrate_legacy_backlog(project_path)
     backlog_items = _parse_backlog_items(project_path)
     if backlog_items:
         _persist_backlog_items(project_path, backlog_items)

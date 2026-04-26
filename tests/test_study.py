@@ -16,6 +16,7 @@ from factory.study import (
     _find_log_files,
     _get_github_user,
     _load_cross_project_insights,
+    _migrate_legacy_backlog,
     _parse_backlog_items,
     _path_to_slug,
     _persist_backlog_items,
@@ -329,7 +330,7 @@ class TestStudyProjectLocal:
     def test_includes_obsidian_notes(self, tmp_path, monkeypatch):
         monkeypatch.setattr(Path, "home", lambda: tmp_path)
         monkeypatch.delenv("FACTORY_VAULT_PATH", raising=False)
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "vault"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "vault"))
 
         project_path = tmp_path / "myapp"
         project_path.mkdir()
@@ -655,7 +656,7 @@ class TestReadObsidianNotes:
 
     def test_reads_notes(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         experiments_dir = vault / "10-Projects" / "myapp" / "Experiments"
         experiments_dir.mkdir(parents=True)
@@ -669,7 +670,7 @@ class TestReadObsidianNotes:
 
     def test_multiple_subdirs(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         for subdir in ["Experiments", "Strategies"]:
@@ -686,19 +687,19 @@ class TestReadObsidianNotes:
     def test_empty_vault(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
         vault.mkdir()
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         summaries = _read_obsidian_notes("myapp")
         assert summaries == []
 
     def test_no_vault(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(tmp_path / "nonexistent"))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(tmp_path / "nonexistent"))
         summaries = _read_obsidian_notes("myapp")
         assert summaries == []
 
     def test_skips_frontmatter(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         project_dir.mkdir(parents=True)
@@ -713,7 +714,7 @@ class TestReadObsidianNotes:
 
     def test_truncates_to_200_chars(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         project_dir = vault / "10-Projects" / "myapp"
         project_dir.mkdir(parents=True)
@@ -725,7 +726,7 @@ class TestReadObsidianNotes:
 
     def test_cross_project_knowledge(self, tmp_path, monkeypatch):
         vault = tmp_path / "vault"
-        monkeypatch.setenv("OBSIDIAN_VAULT_PATH", str(vault))
+        monkeypatch.setenv("FACTORY_VAULT_PATH", str(vault))
 
         concepts_dir = vault / "20-Knowledge" / "Concepts"
         concepts_dir.mkdir(parents=True)
@@ -1033,8 +1034,23 @@ class TestParseBacklogItems:
         (strategy_dir / "deferred.md").write_text("- OAuth login\n- Rate limiting\n")
         result = _parse_backlog_items(tmp_path)
         assert result == ["OAuth login", "Rate limiting"]
-        # Legacy file should be migrated to backlog.md
+
+    def test_migrate_legacy_renames_deferred_to_backlog(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "deferred.md").write_text("- OAuth login\n")
+        _migrate_legacy_backlog(tmp_path)
         assert (strategy_dir / "backlog.md").exists()
+        assert not (strategy_dir / "deferred.md").exists()
+
+    def test_migrate_legacy_noop_when_backlog_exists(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- Existing\n")
+        (strategy_dir / "deferred.md").write_text("- Legacy\n")
+        _migrate_legacy_backlog(tmp_path)
+        assert "Existing" in (strategy_dir / "backlog.md").read_text()
+        assert (strategy_dir / "deferred.md").exists()
 
     def test_merges_all_sources_without_duplicates(self, tmp_path):
         strategy_dir = tmp_path / ".factory" / "strategy"
@@ -1193,6 +1209,17 @@ class TestRemoveBacklogItem:
         (strategy_dir / "backlog.md").write_text("* Camera feed\n")
         assert remove_backlog_item(tmp_path, "Camera feed") is True
         assert not (strategy_dir / "backlog.md").exists()
+
+    def test_removes_from_both_files(self, tmp_path):
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "backlog.md").write_text("- OAuth login\n- Other\n")
+        (strategy_dir / "deferred.md").write_text("- OAuth login\n- Legacy\n")
+        assert remove_backlog_item(tmp_path, "OAuth login") is True
+        assert "OAuth login" not in (strategy_dir / "backlog.md").read_text()
+        assert "OAuth login" not in (strategy_dir / "deferred.md").read_text()
+        assert "Other" in (strategy_dir / "backlog.md").read_text()
+        assert "Legacy" in (strategy_dir / "deferred.md").read_text()
 
 
 class TestAddBacklogItem:
