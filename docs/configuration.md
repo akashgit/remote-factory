@@ -77,20 +77,18 @@ Override per-run: `factory ceo ~/my-project --branch staging`
 
 ### `## Hypothesis Budget`
 
-Controls how many hypotheses the Strategist generates per cycle:
+Controls hypothesis generation constraints per cycle. The Strategist clears as many backlog items as possible and adds at most `max_new` new items:
 
 ```markdown
 ## Hypothesis Budget
 - min_growth: 2
-- min_fix: 0
-- max_total: 7
+- max_new: 2
 ```
 
-- **min_fix**: Reserved for bugfixes (scales with open GitHub issues)
-- **min_growth**: Reserved for growth dimensions (guaranteed, never cannibalized)
-- **max_total**: Upper bound on total hypotheses
+- **min_growth**: Minimum hypotheses targeting growth dimensions (guaranteed, never cannibalized)
+- **max_new**: Maximum new items the Strategist may add to the backlog per cycle
 
-Override per-run: `factory ceo ~/my-project --min-growth 3 --max-total 10`
+Override per-run: `factory ceo ~/my-project --min-growth 3 --max-new 1`
 
 ### `## Project Eval`
 

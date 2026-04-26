@@ -137,6 +137,7 @@ Generated at runtime — not checked into version control:
 ├── strategy/
 │   ├── current.md        # Active hypotheses
 │   ├── observations.md   # Researcher findings
+│   ├── backlog.md        # Unified backlog (features, deferred items, issues)
 │   └── insights.md       # Cross-project patterns
 ├── reviews/
 │   ├── <role>-latest.md

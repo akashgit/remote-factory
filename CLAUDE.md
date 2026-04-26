@@ -74,7 +74,7 @@ Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ├── results.tsv           # Append-only experiment history
 ├── experiments/
 │   └── 001/              # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
-├── strategy/             # observations.md, current.md, insights.md, research.md
+├── strategy/             # observations.md, current.md, backlog.md, insights.md, research.md
 ├── reviews/              # Agent output capture + CEO review verdicts
 │   ├── <role>-latest.md  # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md  # CEO's review verdict (PROCEED/REDIRECT/ABORT)

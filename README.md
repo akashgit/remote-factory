@@ -1,7 +1,6 @@
 # The Factory: From Idea to Evolving Software
 
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -9,7 +8,7 @@
 
 ```bash
 # Got an idea? Describe it.
-factory ceo "Build a CLI that converts CSV to JSON with streaming support"
+factory ceo --prompt "Build a CLI that converts CSV to JSON with streaming support"
 
 # Have an idea written up in a file? Pass the path.
 factory ceo ~/ideas/weather-dashboard.md  # reads the file as the build spec
@@ -92,7 +91,7 @@ export FACTORY_VAULT_PATH=~/factory-vault
 factory vault-init
 
 # Build something
-factory ceo "Build a REST API for bookmark management with tags and search"
+factory ceo --prompt "Build a REST API for bookmark management with tags and search"
 ```
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). See the [full setup guide](docs/setup.md).
@@ -105,7 +104,7 @@ factory ceo "Build a REST API for bookmark management with tags and search"
 
 | Input | What happens |
 |-------|-------------|
-| `factory ceo "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
+| `factory ceo --prompt "Build a weather CLI"` | Researches best practices, scaffolds the project, sets up tests and eval, then improves it |
 | `factory ceo ~/ideas/my-idea.md` | Reads the file as the build spec and builds the project end-to-end |
 | `factory ceo https://github.com/user/repo` | Clones the repo, discovers what it does, sets up evaluation, then starts improving |
 
@@ -249,6 +248,11 @@ factory study <path>              # Analyze code + write observations
 factory insights <path>           # Cross-project patterns
 factory ace <path>                # ACE playbook evolution
 
+# Backlog
+factory backlog-list <path>       # List pending backlog items
+factory backlog-add <path> "..."  # Add a new item to the backlog
+factory backlog-remove <path> "..." # Remove a completed backlog item
+
 # Operations
 factory dashboard                 # Live web dashboard on :8420
 factory detect <path>             # Print project state
@@ -280,7 +284,7 @@ See `factory --help` for the complete list.
 
 ```bash
 uv sync --all-groups              # Install all deps including dev
-uv run pytest -v                  # Full suite
+uv run pytest -v                  # 954 tests
 uv run ruff check .               # Lint
 uv run mypy factory/              # Type check
 ```
