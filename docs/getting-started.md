@@ -110,16 +110,18 @@ factory tmux-ls                               # list active factory sessions
 factory tmux-stop --path ~/my-project         # stop a session
 ```
 
-## Focusing on a Specific Area
+## Targeted Mode (`--focus`)
 
-Narrow the Factory's efforts to a particular part of your codebase:
+Build exactly one thing. The `--focus` flag pins a single item from the backlog, generates one hypothesis, runs one experiment, and exits:
 
 ```bash
 factory ceo ~/my-project --focus "authentication"
-factory ceo ~/my-project --focus "dashboard UI"
+factory ceo ~/my-project --focus "add WebSocket support"
 ```
 
-At least 2 of the 3 generated hypotheses will target the focused area.
+If the item isn't already in the backlog, it gets added automatically. The entire pipeline (Researcher, Strategist, Builder) is scoped to that single target — no other hypotheses are generated, no other backlog items are touched. After the experiment completes (keep or revert), the cycle ends.
+
+`--focus` is mutually exclusive with `--loop` and `--prompt`, and requires improve mode (the project must already be built).
 
 ## Writing a `factory.md`
 

@@ -81,6 +81,13 @@ strategy: {
   label: "Strategy Layer"
   style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true; font-size: 16 }
 
+  backlog: {
+    label: "backlog.md\nwork queue\n(single source of truth)"
+    shape: document
+    style: { fill: "#a5d6a7"; stroke: "#2e7d32"; border-radius: 6; font-size: 13 }
+    width: 220
+  }
+
   observations: {
     label: "observations.md\nlocal analysis +\ncross-project insights"
     shape: document
@@ -102,6 +109,7 @@ strategy: {
     width: 180
   }
 
+  backlog -> observations: "items feed study"
   observations -> current
   research -> current
 }
