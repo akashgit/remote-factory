@@ -53,6 +53,18 @@ class TestCheckGitClean:
         assert result is not None
         assert "dirty" in result.lower()
 
+    def test_ignores_lock_files(self, git_project):
+        (git_project / "uv.lock").write_text("modified\n")
+        result = check_git_clean(git_project)
+        assert result is None
+
+    def test_dirty_with_lock_and_code(self, git_project):
+        (git_project / "uv.lock").write_text("modified\n")
+        (git_project / "src" / "main.py").write_text("changed\n")
+        result = check_git_clean(git_project)
+        assert result is not None
+        assert "dirty" in result.lower()
+
 
 class TestCheckEvalImmutable:
     def test_unchanged_eval(self, git_project):

@@ -33,14 +33,26 @@ def check_eval_immutable(project_path: Path, tree_before: str) -> str | None:
     return None
 
 
+_AUTO_GENERATED_FILES = {"uv.lock", "package-lock.json", "yarn.lock", "poetry.lock", "Cargo.lock"}
+
+
 def check_git_clean(project_path: Path) -> str | None:
     """Guard: working tree must be clean (no uncommitted changes).
 
+    Ignores auto-generated lock files that tools like ``uv run`` may
+    touch as a side effect of running commands.
     Returns a violation string if dirty, None otherwise.
     """
     status = _run_git(["status", "--porcelain"], project_path)
-    if status:
-        return f"Working tree is dirty: {status}"
+    if not status:
+        return None
+    significant = [
+        line for line in status.splitlines()
+        if not line.startswith("??")
+        and line.lstrip(" MADRCU?!").split("/")[-1] not in _AUTO_GENERATED_FILES
+    ]
+    if significant:
+        return f"Working tree is dirty: {' '.join(significant)}"
     return None
 
 
@@ -115,6 +127,9 @@ def check_scope(project_path: Path, baseline_sha: str, allowed_scope: list[str])
     out_of_scope: list[str] = []
 
     for changed_file in changed_files:
+        basename = changed_file.split("/")[-1]
+        if basename in _AUTO_GENERATED_FILES:
+            continue
         matched = any(_glob_match(changed_file, pattern) for pattern in allowed_scope)
         if not matched:
             out_of_scope.append(changed_file)
