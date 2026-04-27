@@ -200,6 +200,57 @@ async def test_mode_from_events(summary_project: Path) -> None:
     assert summary.mode == "improve"
 
 
+async def test_session_scoping(summary_project: Path) -> None:
+    """Only experiments after the latest cycle.started event are included."""
+    # The fixture has cycle.started at 09:00 and experiments at 10:00-13:00.
+    # Add a second cycle.started at 11:30 — only experiments 3 and 4 should appear.
+    events_path = summary_project / ".factory" / "events.jsonl"
+    with open(events_path, "a") as f:
+        f.write(json.dumps({
+            "type": "cycle.started",
+            "timestamp": "2026-04-26T11:30:00+00:00",
+            "project": "summary-project",
+            "agent": None,
+            "data": {"cycle": 2, "mode": "improve"},
+        }) + "\n")
+
+    summary = await generate_summary(summary_project)
+    all_ids = (
+        [r.id for r in summary.experiments_kept]
+        + [r.id for r in summary.experiments_reverted]
+        + [r.id for r in summary.experiments_errored]
+    )
+    assert 1 not in all_ids
+    assert 2 not in all_ids
+    assert 3 in all_ids
+    assert 4 in all_ids
+
+
+async def test_zero_cost_not_dropped(tmp_path: Path) -> None:
+    """Zero total cost is reported as 0.0, not None."""
+    import csv
+    import io
+
+    from factory.store import TSV_COLUMNS
+
+    project = tmp_path / "zero-cost"
+    project.mkdir()
+    factory = project / ".factory"
+    factory.mkdir()
+    (factory / "experiments").mkdir()
+    (factory / "strategy").mkdir()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, dialect="excel-tab")
+    writer.writerow(TSV_COLUMNS)
+    writer.writerow([1, "2026-04-26T10:00:00+00:00", "Free fix", "Fixed",
+                     "", "", "0.7", "0.8", "0.1", "keep", "0.0", "", ""])
+    (factory / "results.tsv").write_text(buf.getvalue())
+
+    summary = await generate_summary(project)
+    assert summary.total_cost_usd == 0.0
+
+
 # ── format_summary tests ────────────────────────────────────
 
 

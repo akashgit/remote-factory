@@ -8,6 +8,7 @@ from pathlib import Path
 
 import structlog
 
+from factory.events import load_events
 from factory.models import CompositeScore, SessionSummary
 from factory.store import ExperimentStore
 from factory.strategy import categorize_hypothesis
@@ -18,9 +19,20 @@ _MARGINAL_DELTA_THRESHOLD = 0.01
 
 
 async def generate_summary(project_path: Path) -> SessionSummary:
-    """Build a SessionSummary from the project's .factory/ state."""
+    """Build a SessionSummary from the project's .factory/ state.
+
+    Scopes to the current session by filtering experiments to those recorded
+    after the most recent ``cycle.started`` event.  Falls back to all
+    experiments when no cycle event exists (e.g. manual invocation).
+    """
     store = ExperimentStore(project_path)
-    records = await store.load_history()
+    all_records = await store.load_history()
+    cycle_start = _latest_cycle_start(project_path)
+    records = (
+        [r for r in all_records if r.timestamp >= cycle_start]
+        if cycle_start
+        else all_records
+    )
 
     kept = [r for r in records if r.verdict == "keep"]
     reverted = [r for r in records if r.verdict == "revert"]
@@ -46,7 +58,8 @@ async def generate_summary(project_path: Path) -> SessionSummary:
         score_start = records[0].score_before
         score_end = records[-1].score_after
 
-    total_cost = sum(r.cost_usd for r in records if r.cost_usd is not None) or None
+    costs = [r.cost_usd for r in records if r.cost_usd is not None]
+    total_cost = sum(costs) if costs else None
 
     mode = _detect_mode(project_path)
 
@@ -158,7 +171,7 @@ def _read_backlog(project_path: Path) -> list[str]:
     try:
         from factory.study import _parse_backlog_items
         return _parse_backlog_items(project_path)
-    except (ImportError, Exception):
+    except (ImportError, OSError):
         log.debug("summary.backlog_read_failed")
         return []
 
@@ -182,9 +195,21 @@ def _collect_guard_violations(
             for v in score.guard_violations:
                 if v not in violations:
                     violations.append(v)
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, OSError, ValueError, KeyError):
             continue
     return violations
+
+
+def _latest_cycle_start(project_path: Path) -> datetime | None:
+    """Return the timestamp of the most recent ``cycle.started`` event, or None."""
+    events = load_events(project_path)
+    for ev in reversed(events):
+        if ev.get("type") == "cycle.started":
+            try:
+                return datetime.fromisoformat(ev["timestamp"])
+            except (ValueError, KeyError):
+                return None
+    return None
 
 
 def _detect_mode(project_path: Path) -> str:
@@ -194,17 +219,12 @@ def _detect_mode(project_path: Path) -> str:
         try:
             data = json.loads(ckpt_path.read_text())
             return data.get("mode", "unknown")
-        except (json.JSONDecodeError, Exception):
+        except (json.JSONDecodeError, OSError):
             pass
-    events_path = project_path / ".factory" / "events.jsonl"
-    if events_path.exists():
-        try:
-            for line in reversed(events_path.read_text().splitlines()):
-                ev = json.loads(line)
-                if ev.get("type") == "cycle.started" and "mode" in ev.get("data", {}):
-                    return ev["data"]["mode"]
-        except (json.JSONDecodeError, Exception):
-            pass
+    events = load_events(project_path)
+    for ev in reversed(events):
+        if ev.get("type") == "cycle.started" and "mode" in ev.get("data", {}):
+            return ev["data"]["mode"]
     return "unknown"
 
 
