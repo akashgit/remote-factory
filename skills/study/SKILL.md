@@ -11,7 +11,7 @@ Analyze the current codebase and generate an observation report.
 ## Prerequisites
 
 ```bash
-command -v factory >/dev/null 2>&1 || uv tool install remote-factory
+command -v factory >/dev/null 2>&1 || uv tool install "${CLAUDE_PLUGIN_ROOT}"
 ```
 
 ## Execution

@@ -13,10 +13,10 @@ The user wants to build: **$ARGUMENTS**
 
 ## Prerequisites
 
-The `factory` CLI must be installed. Check and install if needed:
+The `factory` CLI must be installed. Check and install from the plugin's bundled source:
 
 ```bash
-command -v factory >/dev/null 2>&1 || uv tool install remote-factory
+command -v factory >/dev/null 2>&1 || uv tool install "${CLAUDE_PLUGIN_ROOT}"
 ```
 
 ## Execution
@@ -44,9 +44,9 @@ If `factory` cannot be installed (e.g. no `uv` available), tell the user:
 ```
 To use /factory:implement, install the Factory CLI:
 
-  uv tool install remote-factory
-  # or
-  pip install remote-factory
+  uv tool install /path/to/remote-factory
+  # or from git
+  uv tool install git+https://github.com/akashgit/remote-factory
 
 Then re-run this command.
 ```
