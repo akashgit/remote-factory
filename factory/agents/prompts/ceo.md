@@ -491,7 +491,7 @@ echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PR
 
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
 
-Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Use Meta mode when you want the factory to improve itself.
+Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Running ACE after every improve cycle adds noise: playbooks churn on small sample sizes and the factory wastes time re-evolving rules that haven't accumulated meaningful evidence. Meta mode should be run on a separate cadence — see **Meta Mode Cadence** below.
 
 ### Step 1: Hypothesize (Strategist Agent)
 
@@ -892,6 +892,29 @@ factory agent archivist --task "Record ACE playbook evolution.
 ```
 
 Note: Evolved playbooks are stored in `~/.factory/playbooks/` (user-local), NOT in the factory source tree. They are never committed to the factory repo — they are personal to each user's experiment history.
+
+### Meta Mode Cadence
+
+Meta mode is powerful but has diminishing returns if run too frequently or too early. Follow these rules:
+
+**When to run meta mode:**
+- On a **regular cadence**: weekly for most projects, nightly if the factory runs 5+ experiments per day
+- When playbooks feel stale — agents keep making the same mistakes that get reverted
+- When you start managing a new type of project that existing playbooks may not cover
+- When the user explicitly asks for self-improvement
+
+**When NOT to run meta mode:**
+- Right after initial build — there is no experiment data yet for ACE to learn from
+- After every improve cycle — this churns playbooks on tiny samples and wastes time
+- When fewer than 5 experiments exist across all managed projects — not enough signal
+- Mid-session as a "bonus step" — meta mode is a full cycle, not an addon
+
+**If a user asks about meta mode, advise:**
+1. "Have you run at least 5-10 experiments across your projects?" If no, it is premature.
+2. "Are you seeing the same failure patterns repeating?" If yes, meta mode can help.
+3. "How often are you running it?" If more than weekly, suggest reducing frequency.
+
+**Do NOT auto-trigger meta mode.** Only run it when the user explicitly invokes `--mode meta` or when a scheduled cadence fires. Never append a meta cycle to the end of a normal improve run on your own initiative.
 
 ---
 

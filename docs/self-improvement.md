@@ -260,6 +260,44 @@ factory ceo ~/remote-factory --mode meta
 factory ace ~/remote-factory
 ```
 
+### When to Run Meta Mode
+
+Meta mode is the factory's most powerful self-improvement mechanism, but it has diminishing returns if run too frequently or too early. ACE needs a critical mass of experiment data to generate meaningful playbook updates. Running it too early produces noisy rules from small samples; running it too often churns playbooks without enough new evidence between runs.
+
+**Recommended cadence:**
+
+| Usage level | Cadence | Rationale |
+|-------------|---------|-----------|
+| Light (1-2 experiments/day) | Weekly | One week accumulates enough new outcomes for ACE to find real patterns |
+| Heavy (5+ experiments/day) | Nightly | High experiment volume means new signal accumulates faster |
+| Occasional (a few experiments/week) | Biweekly or on-demand | Not enough data to justify frequent evolution |
+
+**Prerequisites — run meta mode only when:**
+- At least **5-10 experiments** have been recorded across your managed projects since the last meta run. ACE analyzes cross-project data; with fewer than 5 experiments, it lacks the sample size to distinguish signal from noise.
+- The factory has been through at least one full Build-Discover-Improve cycle on at least one project. Running meta mode on a brand-new factory with no experiment history is a no-op.
+
+**Signs it's time to run meta mode:**
+- **Stale playbooks**: Agents keep making the same mistakes that get reverted — the playbooks haven't learned to avoid those patterns yet.
+- **Consistent revert patterns**: You see 3+ reverts in the same category across projects, but the Strategist keeps proposing that category.
+- **New project types**: You started managing a project in a language or domain the factory hasn't seen before. Meta mode can generate domain-specific playbook rules from the new experiment data.
+- **Playbook counters are outdated**: Check `~/.factory/playbooks/*.md` — if the `helpful`/`harmful` counters are far behind the actual experiment count in `results.tsv`, ACE needs to catch up.
+
+**When NOT to run meta mode:**
+- **Right after initial build.** The factory just scaffolded a project and has zero or one experiment. ACE has nothing to learn from yet. Wait until the project has been through several improve cycles.
+- **After every improve loop.** This is the most common mistake. Each improve cycle produces 1-5 experiments — not enough new data to meaningfully change playbooks. The result is noisy churn: rules get added and removed in rapid succession without converging.
+- **When the last meta run was recent and few new experiments have run.** If you ran meta mode yesterday and only 2 new experiments have completed since, skip it.
+- **During a focused improvement sprint.** If you're using `--focus` to target a specific area, finish the focused work first. Meta mode's broad playbook evolution can dilute focus-specific learnings.
+
+**Automation:** For long-running factory deployments, schedule meta mode on a regular cadence:
+
+```bash
+# Weekly meta mode via cron, Sunday night
+0 2 * * 0 cd ~/remote-factory && factory ceo ~/remote-factory --mode meta
+
+# Or use the factory's own tmux loop for nightly runs
+factory tmux ~/remote-factory --loop --interval 86400 --mode meta
+```
+
 ## Hard Guardrails
 
 The loop is autonomous but not unconstrained. These guardrails cannot be overridden:

@@ -70,6 +70,14 @@ factory ceo ~/my-project --mode meta
 
 Meta mode runs the full improvement loop, then reflects on the outcomes to evolve all 7 agent playbooks. See [Self-Improvement Loop](self-improvement.md) for the full picture — including cross-project learning, CEO self-evaluation, and how the pieces fit together.
 
+## When to Run
+
+ACE produces meaningful playbook updates only when there is enough experiment data to analyze. Running it too frequently churns rules on small samples; ignoring it means agents never learn from their mistakes.
+
+**Recommended cadence:** Weekly for most projects, nightly if you are running 5+ experiments per day. Wait until at least 5-10 experiments have been recorded across your managed projects before the first run.
+
+**When to skip:** Right after initial project setup (no experiment data yet), or when fewer than 3 new experiments have completed since the last ACE run. See [When to Run Meta Mode](self-improvement.md#when-to-run-meta-mode) for the full decision framework.
+
 ## What Gets Evolved
 
 All 7 agent roles have playbooks:
