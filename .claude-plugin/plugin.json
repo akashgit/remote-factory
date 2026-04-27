@@ -1,0 +1,20 @@
+{
+  "name": "factory",
+  "version": "0.1.2",
+  "description": "Multi-agent software evolution. Autonomously study, strategize, build, review, and evaluate code changes using specialist AI agents.",
+  "author": {
+    "name": "Akash Garg"
+  },
+  "homepage": "https://github.com/akashgit/remote-factory",
+  "repository": "https://github.com/akashgit/remote-factory",
+  "license": "MIT",
+  "keywords": [
+    "factory",
+    "agents",
+    "evolution",
+    "eval",
+    "multi-agent",
+    "software-evolution",
+    "autonomous"
+  ]
+}
