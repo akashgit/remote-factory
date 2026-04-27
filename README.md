@@ -11,7 +11,7 @@
 # Build — have a fleshed-out idea? Pass the file.
 factory ceo ~/ideas/weather-dashboard.md
 
-# Interactive — just starting to think about it? Brainstorm first.
+# [WIP] Interactive — just starting to think about it? Brainstorm first.
 factory ceo "distributed eval runner" --mode interactive
 
 # Improve — point it at any codebase
