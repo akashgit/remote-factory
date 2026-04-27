@@ -263,6 +263,28 @@ class CostBudget(BaseModel):
     current_month_spent: float = 0.0
 
 
+# ── session summary ──────────────────────────────────────────
+
+
+class SessionSummary(BaseModel):
+    """End-of-cycle summary: what was built, deferred, and needs human input."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    project_name: str
+    generated_at: datetime
+    mode: str
+    experiments_kept: list[ExperimentRecord]
+    experiments_reverted: list[ExperimentRecord]
+    experiments_errored: list[ExperimentRecord]
+    backlog_remaining: list[str]
+    guard_violations: list[str]
+    needs_human_input: list[str]
+    score_start: float | None
+    score_end: float | None
+    total_cost_usd: float | None
+
+
 # ── protocols ─────────────────────────────────────────────────────
 
 

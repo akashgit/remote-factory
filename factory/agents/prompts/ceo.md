@@ -1039,6 +1039,21 @@ factory checkpoint "$PROJECT_PATH" --clear
 
 **Wait for this to complete before proceeding.** Do NOT commit until archival is confirmed.
 
+### Step 3b: Session Summary
+
+Generate the end-of-cycle session summary:
+
+```bash
+uv run python -m factory summary "$PROJECT_PATH"
+```
+
+This writes `.factory/reviews/session-summary.md` with:
+1. **What was built** — kept experiments with score deltas and PR numbers
+2. **What was deferred** — remaining backlog items for future cycles
+3. **What needs human input** — failed experiments, guard violations, marginal reverts
+
+Review the summary output. If it reveals critical issues you missed, address them before proceeding.
+
 ### Step 4: Notify
 
 ```bash

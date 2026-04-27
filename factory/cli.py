@@ -407,6 +407,24 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_summary(args: argparse.Namespace) -> int:
+    """Generate an end-of-session summary report."""
+    from factory.summary import format_summary, generate_summary, save_summary
+
+    project_path = Path(args.path).resolve()
+    _emit_cli_event(project_path, "summary.started", {})
+    summary = _run(generate_summary(project_path))
+    output = format_summary(summary)
+    _run(save_summary(project_path, summary))
+    _emit_cli_event(project_path, "summary.completed", {
+        "kept": len(summary.experiments_kept),
+        "reverted": len(summary.experiments_reverted),
+        "errored": len(summary.experiments_errored),
+        "backlog": len(summary.backlog_remaining),
+    })
+    print(output)
+    return 0
+
 
 def cmd_export(args: argparse.Namespace) -> int:
     """Export a complete project snapshot as JSON to stdout."""
@@ -1877,6 +1895,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+    # summary
+    p = sub.add_parser("summary", help="Generate end-of-session summary report")
+    p.add_argument("path", help="Path to the project")
+
     # research
     p = sub.add_parser("research", help="Print research citation index for experiments")
     p.add_argument("path", help="Path to the project")
@@ -2150,6 +2172,7 @@ def main(argv: list[str] | None = None) -> int:
         "deferred-list": cmd_backlog_list,
         "backlog-add": cmd_backlog_add,
         "status": cmd_status,
+        "summary": cmd_summary,
         "research": cmd_research,
         "diff": cmd_diff,
         "explain": cmd_explain,
