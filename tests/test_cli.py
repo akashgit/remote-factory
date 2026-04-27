@@ -66,6 +66,16 @@ class TestParser:
         assert args.id == 1
         assert args.verdict == "keep"
 
+    def test_finalize_with_scores(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "finalize", "/path", "--id", "1", "--verdict", "keep",
+            "--hypothesis", "h", "--summary", "s",
+            "--score-before", "0.80", "--score-after", "0.85",
+        ])
+        assert args.score_before == 0.80
+        assert args.score_after == 0.85
+
     def test_no_command_returns_1(self):
         assert main([]) == 1
 

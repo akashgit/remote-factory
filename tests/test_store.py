@@ -99,6 +99,23 @@ class TestExperiments:
         assert len(records) == 1
         assert records[0].verdict == "keep"
 
+    async def test_finalize_persists_scores_and_delta(self, store, sample_config):
+        await store.init(sample_config)
+        exp_id = await store.begin("H1")
+        record = ExperimentRecord(
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="H1", change_summary="stuff",
+            issue_number=None, pr_number=None,
+            score_before=0.80, score_after=0.85, delta=None,
+            verdict="keep", cost_usd=None, notes="",
+        )
+        await store.finalize(exp_id, record)
+        records = await store.load_history()
+        assert len(records) == 1
+        assert records[0].score_before == 0.80
+        assert records[0].score_after == 0.85
+        assert records[0].delta == 0.05
+
 
 class TestReadConfig:
     async def test_read_config(self, store, sample_config):
