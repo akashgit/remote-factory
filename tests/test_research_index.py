@@ -6,8 +6,10 @@ from pathlib import Path
 
 from factory.cli import cmd_research
 from factory.research_index import (
+    backfill_citations,
     build_citation_index,
     citation_coverage,
+    extract_citations,
     uncited_experiments,
 )
 
@@ -47,6 +49,71 @@ def _make_row(
         "notes": "",
         "research_citations": citations,
     }
+
+
+class TestExtractCitations:
+    def test_extracts_urls(self) -> None:
+        text = "Based on https://arxiv.org/abs/2405.12345 and https://github.com/user/repo"
+        cites = extract_citations(text)
+        assert "https://arxiv.org/abs/2405.12345" in cites
+        assert "https://github.com/user/repo" in cites
+
+    def test_extracts_issue_refs(self) -> None:
+        text = "Closes #115 and related to #42"
+        cites = extract_citations(text)
+        assert "#115" in cites
+        assert "#42" in cites
+
+    def test_extracts_arxiv_ids(self) -> None:
+        text = "Informed by arxiv:2405.12345 and arxiv/2301.0001"
+        cites = extract_citations(text)
+        assert "arxiv:2405.12345" in cites
+        assert "arxiv:2301.0001" in cites
+
+    def test_empty_text(self) -> None:
+        assert extract_citations("") == []
+
+    def test_deduplicates(self) -> None:
+        text = "#42 and #42 again"
+        cites = extract_citations(text)
+        assert cites.count("#42") == 1
+
+
+class TestBackfillCitations:
+    def test_empty_project(self, tmp_path: Path) -> None:
+        index = backfill_citations(tmp_path)
+        assert index == {}
+
+    def test_extracts_from_hypothesis(self, tmp_path: Path) -> None:
+        _write_results_tsv(tmp_path, [
+            _make_row(1, hypothesis="Fix issue #115 based on https://example.com"),
+            _make_row(2, hypothesis="Just a plain hypothesis"),
+        ])
+        index = backfill_citations(tmp_path)
+        assert "1" in index
+        assert "#115" in index["1"]
+        assert "https://example.com" in index["1"]
+        assert "2" not in index
+
+    def test_writes_citations_json(self, tmp_path: Path) -> None:
+        _write_results_tsv(tmp_path, [
+            _make_row(1, hypothesis="See #42"),
+        ])
+        backfill_citations(tmp_path)
+        citations_file = tmp_path / ".factory" / "citations.json"
+        assert citations_file.exists()
+
+    def test_coverage_uses_backfill(self, tmp_path: Path) -> None:
+        """citation_coverage should read from backfilled citations.json."""
+        _write_results_tsv(tmp_path, [
+            _make_row(1, hypothesis="Fix issue #115"),
+            _make_row(2, hypothesis="Fix issue #42"),
+            _make_row(3, hypothesis="Plain hypothesis"),
+        ])
+        assert citation_coverage(tmp_path) == 0.0
+        backfill_citations(tmp_path)
+        coverage = citation_coverage(tmp_path)
+        assert coverage > 0.0
 
 
 class TestBuildCitationIndex:
