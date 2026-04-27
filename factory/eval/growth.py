@@ -286,6 +286,41 @@ def eval_research_grounding(project_path: Path) -> dict:
         }
 
 
+def _discover_managed_projects(project_path: Path) -> int:
+    """Count factory-managed projects from multiple sources.
+
+    Sources checked (deduplicated by resolved path):
+    1. FACTORY_MANAGED_DIRS env var — colon-separated list of directories to scan
+    2. FACTORY_PROJECTS_DIR env var — single directory (legacy)
+    3. Sibling directories of the current project (parent dir scan)
+    """
+    seen: set[Path] = set()
+
+    def _scan_dir(directory: Path) -> None:
+        if not directory.is_dir():
+            return
+        for child in directory.iterdir():
+            if child.is_dir() and (child / ".factory" / "results.tsv").exists():
+                seen.add(child.resolve())
+
+    managed_dirs = os.environ.get("FACTORY_MANAGED_DIRS", "")
+    if managed_dirs:
+        for entry in managed_dirs.split(":"):
+            entry = entry.strip()
+            if entry:
+                _scan_dir(Path(entry))
+
+    projects_dir_str = os.environ.get("FACTORY_PROJECTS_DIR", "")
+    if projects_dir_str:
+        _scan_dir(Path(projects_dir_str))
+
+    parent = project_path.resolve().parent
+    _scan_dir(parent)
+
+    seen.discard(project_path.resolve())
+    return len(seen)
+
+
 def eval_factory_effectiveness(project_path: Path) -> dict:
     """Measure whether the factory is effective: keep rate, positive deltas, multi-project reach."""
     try:
@@ -331,13 +366,8 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
         else:
             delta_score = 0.5
 
-        # Sub-score C: Multi-project management
-        projects_dir = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
-        managed = 0
-        if projects_dir.exists():
-            for child in projects_dir.iterdir():
-                if child.is_dir() and (child / ".factory" / "results.tsv").exists():
-                    managed += 1
+        # Sub-score C: Multi-project management (auto-discovery)
+        managed = _discover_managed_projects(project_path)
         multi_project = min(1.0, managed / 3)
 
         score = 0.45 * keep_rate + 0.30 * delta_score + 0.25 * multi_project

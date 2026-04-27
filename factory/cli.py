@@ -247,6 +247,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
+    score_before = getattr(args, "score_before", None)
+    score_after = getattr(args, "score_after", None)
     record = ExperimentRecord(
         id=args.id,
         timestamp=datetime.now(),
@@ -254,8 +256,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         change_summary=args.summary or "",
         issue_number=args.issue,
         pr_number=args.pr,
-        score_before=None,
-        score_after=None,
+        score_before=score_before,
+        score_after=score_after,
         delta=None,
         verdict=args.verdict,
         cost_usd=args.cost,
@@ -1856,6 +1858,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--issue", default=None, type=int, help="GitHub issue number")
     p.add_argument("--pr", default=None, type=int, help="GitHub PR number")
     p.add_argument("--notes", default=None, help="Additional notes")
+    p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
+    p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
 
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")

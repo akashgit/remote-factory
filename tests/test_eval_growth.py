@@ -402,8 +402,12 @@ class TestFactoryEffectiveness:
         assert result["score"] < 0.3
 
     def test_multi_project_detection(self, tmp_path, monkeypatch):
+        workspace = tmp_path / "workspace"
+        main_project = workspace / "main-project"
+        main_project.mkdir(parents=True)
         projects = tmp_path / "factory-projects"
         monkeypatch.setenv("FACTORY_PROJECTS_DIR", str(projects))
+        monkeypatch.delenv("FACTORY_MANAGED_DIRS", raising=False)
         for name in ["proj-a", "proj-b", "proj-c"]:
             (projects / name / ".factory").mkdir(parents=True)
             _write_tsv(projects / name / ".factory" / "results.tsv", [
@@ -413,6 +417,47 @@ class TestFactoryEffectiveness:
             {"id": str(i), "hypothesis": f"Exp {i}", "verdict": "keep", "delta": "0.01"}
             for i in range(8)
         ]
-        _write_tsv(tmp_path / ".factory" / "results.tsv", main_tsv_rows)
-        result = eval_factory_effectiveness(tmp_path)
+        _write_tsv(main_project / ".factory" / "results.tsv", main_tsv_rows)
+        result = eval_factory_effectiveness(main_project)
         assert "managed_projects=3" in result["details"]
+
+    def test_sibling_directory_auto_discovery(self, tmp_path, monkeypatch):
+        """Auto-discover sibling projects in the parent directory."""
+        monkeypatch.delenv("FACTORY_PROJECTS_DIR", raising=False)
+        monkeypatch.delenv("FACTORY_MANAGED_DIRS", raising=False)
+        main_project = tmp_path / "main-project"
+        main_project.mkdir()
+        _write_tsv(main_project / ".factory" / "results.tsv", [
+            {"id": str(i), "hypothesis": f"Exp {i}", "verdict": "keep", "delta": "0.01"}
+            for i in range(8)
+        ])
+        for name in ["sibling-a", "sibling-b"]:
+            sibling = tmp_path / name
+            sibling.mkdir()
+            (sibling / ".factory").mkdir()
+            _write_tsv(sibling / ".factory" / "results.tsv", [
+                {"id": "1", "hypothesis": "test", "verdict": "keep"},
+            ])
+        result = eval_factory_effectiveness(main_project)
+        assert "managed_projects=2" in result["details"]
+
+    def test_managed_dirs_env_var(self, tmp_path, monkeypatch):
+        """FACTORY_MANAGED_DIRS env var supports colon-separated paths."""
+        dir_a = tmp_path / "dir-a"
+        dir_b = tmp_path / "dir-b"
+        for d in [dir_a, dir_b]:
+            for name in ["proj-1", "proj-2"]:
+                (d / name / ".factory").mkdir(parents=True)
+                _write_tsv(d / name / ".factory" / "results.tsv", [
+                    {"id": "1", "hypothesis": "test", "verdict": "keep"},
+                ])
+        main_project = tmp_path / "main"
+        main_project.mkdir()
+        _write_tsv(main_project / ".factory" / "results.tsv", [
+            {"id": str(i), "hypothesis": f"Exp {i}", "verdict": "keep", "delta": "0.01"}
+            for i in range(8)
+        ])
+        monkeypatch.setenv("FACTORY_MANAGED_DIRS", f"{dir_a}:{dir_b}")
+        monkeypatch.delenv("FACTORY_PROJECTS_DIR", raising=False)
+        result = eval_factory_effectiveness(main_project)
+        assert "managed_projects=4" in result["details"]
