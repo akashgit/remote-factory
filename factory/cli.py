@@ -909,6 +909,18 @@ def cmd_research(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backfill_citations(args: argparse.Namespace) -> int:
+    """Backfill citations from experiment text into .factory/citations.json."""
+    from factory.research_index import backfill_citations
+
+    project_path = Path(args.path).resolve()
+    index = backfill_citations(project_path)
+    print(f"Backfilled citations for {len(index)} experiments")
+    for exp_id, cites in sorted(index.items(), key=lambda x: int(x[0])):
+        print(f"  #{exp_id}: {', '.join(cites[:5])}")
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare two experiments side-by-side."""
     from factory.analysis import compare_experiments, format_comparison
@@ -1903,6 +1915,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("summary", help="Generate end-of-session summary report")
     p.add_argument("path", help="Path to the project")
 
+    # backfill-citations
+    p = sub.add_parser("backfill-citations", help="Extract citations from experiment text into citations.json")
+    p.add_argument("path", help="Path to the project")
+
     # research
     p = sub.add_parser("research", help="Print research citation index for experiments")
     p.add_argument("path", help="Path to the project")
@@ -2178,6 +2194,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": cmd_status,
         "summary": cmd_summary,
         "research": cmd_research,
+        "backfill-citations": cmd_backfill_citations,
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,
