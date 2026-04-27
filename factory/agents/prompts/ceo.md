@@ -815,12 +815,13 @@ If Builder fails (no PR opened), see Error Recovery below.
    - Any obvious scope creep (touching files outside the issue)?
    - Any red flags (deleted tests, credentials, massive unrelated changes)?
 5. **If the PR touches UI/frontend code** (HTML, CSS, JS, templates, dashboard endpoints):
-   - Merge the PR to main first
+   - Checkout the PR branch locally (`git checkout <branch>`)
    - Kill and restart the dev server (`lsof -ti:<port> | xargs kill`, then restart) — the running process serves stale code
    - Use Playwright MCP to navigate to the affected page and take a screenshot
    - Verify the change renders correctly — tests passing does NOT mean the UI works
    - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
+   - After verification, checkout the target branch again (`git checkout main`)
 6. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
 7. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
 8. If REDIRECT: comment on the PR with corrections, re-invoke Builder
@@ -899,10 +900,10 @@ The precheck runs 4 checks:
 
 **Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
 
-**If precheck PASSES → Keep:**
+**If precheck PASSES → Approve (DO NOT MERGE):**
 
 ```bash
-# Post structured review on the PR
+# Post structured review on the PR (this approves the PR on GitHub)
 uv run python -m factory review \
     --verdict KEEP \
     --reason "<one-sentence reason>" \
@@ -914,13 +915,13 @@ uv run python -m factory review \
     --hypothesis "<hypothesis>" \
     --pr $PR_NUM
 
-# Merge and finalize
-gh pr merge <pr-number> --merge
+# DO NOT merge — leave the PR open for human review and approval
+# The KEEP review above posts an approval; a human must merge it
 uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review"
 
 # If this experiment addressed a backlog item, remove it from backlog.md
 # Check the hypothesis for a **Backlog item:** tag — if present, run:
@@ -1170,7 +1171,7 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 3. **Do not introduce secrets or credentials** — no API keys, tokens, or passwords in the repo
 4. **Do not lower the eval threshold** — the bar only goes up
 5. **Do not skip the eval step** — every change must be scored before it can be kept
-6. **Do not merge without guard check passing** — `factory guard` must print `clean`
+6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
 
 ---
@@ -1182,7 +1183,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 1. **Prepare all experiments**: Begin each, create branch and GitHub issue
 2. **Spawn builders in parallel**: Each builder works on its own branch
 3. **Review independently**: As each builder completes, spawn Reviewer + Evaluator
-4. **Merge in priority order**: Merge kept experiments highest-priority first, re-eval if conflicts arise
+4. **Approve in priority order**: Post KEEP approvals highest-priority first — PRs stay open for human merge
 
 ### Scaling Rules
 - 1-2 hypotheses: sequential
