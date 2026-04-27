@@ -1183,7 +1183,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 1. **Prepare all experiments**: Begin each, create branch and GitHub issue
 2. **Spawn builders in parallel**: Each builder works on its own branch
 3. **Review independently**: As each builder completes, spawn Reviewer + Evaluator
-4. **Merge in priority order**: Merge kept experiments highest-priority first, re-eval if conflicts arise
+4. **Approve in priority order**: Post KEEP approvals highest-priority first — PRs stay open for human merge
 
 ### Scaling Rules
 - 1-2 hypotheses: sequential
