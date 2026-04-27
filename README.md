@@ -107,6 +107,27 @@ factory ceo "personal finance tracker" --mode interactive
 
 The CEO spawns the Researcher to survey the landscape (similar projects, tech stacks, pitfalls), then the Distiller synthesizes a structured project spec. You review the draft, give feedback, and iterate until you approve — then the Factory proceeds to build it. No code is written until you sign off on the spec.
 
+### Headless & continuous loop
+
+By default, `factory ceo` launches an interactive Claude Code session — you can watch the agents work, steer decisions, and provide input. For unattended operation, two flags change that:
+
+```bash
+# Headless — pipe mode, no interaction (for scripting, cron jobs)
+factory ceo ~/my-project --headless
+
+# Loop — run improvement cycles continuously (default: every 30 min)
+factory run ~/my-project --loop
+factory run ~/my-project --loop --interval 3600        # every hour
+factory run ~/my-project --loop --max-cycles 5         # stop after 5 cycles
+
+# Detached tmux — loop in the background, come back later
+factory tmux ~/my-project --loop
+factory tmux-ls                                        # list active sessions
+factory tmux-stop --path ~/my-project                  # stop a session
+```
+
+`--headless` uses `claude -p` (pipe mode) instead of a foreground session — useful for automation where no human is watching. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine them with `factory tmux` to leave the Factory improving your project on an always-on machine. Each cycle is a full Researcher → Strategist → Builder → Evaluator → CEO decision pass; failed cycles don't stop the loop.
+
 ## Self-Evolving Agents
 
 The factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.

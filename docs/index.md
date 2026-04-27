@@ -81,6 +81,23 @@ factory ceo "distributed eval runner" --mode interactive
 
 Have a rough idea? Interactive mode researches the space, drafts a structured spec via the Distiller agent, and lets you iterate on it before any code is written.
 
+### Headless & continuous loop
+
+For unattended operation — scripting, cron jobs, or always-on machines:
+
+```bash
+# Headless — pipe mode, no interaction
+factory ceo ~/my-project --headless
+
+# Loop — continuous improvement (default: every 30 min)
+factory run ~/my-project --loop
+
+# Detached tmux — loop in the background
+factory tmux ~/my-project --loop
+```
+
+`--headless` disables the interactive session. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine with `factory tmux` to leave the Factory running on an always-on machine. See [Getting Started](getting-started.md) for full details.
+
 ## Quick Start
 
 ```bash
