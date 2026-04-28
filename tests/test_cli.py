@@ -828,6 +828,19 @@ class TestHeartbeatLoop:
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 completed. Sleeping for 60s..." in out
 
+    def test_loop_passes_no_github_flag(self, tmp_path):
+        """--no-github flag is propagated through the loop path."""
+        with patch("factory.cli._run_single_cycle", return_value=0) as mock_cycle, \
+             patch("factory.cli._chain_modes", return_value=0) as mock_chain:
+            result = main([
+                "run", str(tmp_path), "--loop", "--max-cycles", "1", "--no-github",
+            ])
+        assert result == 0
+        mock_cycle.assert_called_once()
+        assert mock_cycle.call_args.kwargs.get("no_github") is True
+        mock_chain.assert_called_once()
+        assert mock_chain.call_args.kwargs.get("no_github") is True
+
 
 # ── Factory v2: agent and ceo commands ────────────────────────
 
