@@ -497,7 +497,6 @@ class TestStreamingOutput:
     async def test_tee_stream_collects_output(self) -> None:
         """tee_stream() collects all bytes in buffer."""
         from io import BytesIO
-        import asyncio
 
         from factory.runners._stream import tee_stream
 
@@ -785,7 +784,6 @@ class TestBobPromptCacheInvalidation:
 
     def test_no_update_when_prompt_unchanged(self, tmp_path: Path) -> None:
         """Second call with same prompt does not rewrite the file."""
-        import yaml
         from factory.runners.bob import _ensure_custom_modes
 
         prompt = "You are the CEO agent."
