@@ -1001,6 +1001,28 @@ class TestCmdCeo:
         args = parser.parse_args(["ceo", "/some/path"])
         assert args.headless is False
 
+    def test_ceo_headless_no_github_includes_directive(self, tmp_path):
+        """cmd_ceo --headless --no-github includes GitHub Disabled directive in task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless", "--no-github"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Disabled (--no-github)" in task
+        assert "Do NOT create GitHub issues or PRs" in task
+
+    def test_ceo_foreground_no_github_includes_directive(self, tmp_path):
+        """cmd_ceo --no-github (foreground) includes GitHub Disabled directive."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--no-github"])
+        cmd = mock_exec.call_args[0][1]
+        # Find the task argument (after --dangerously-skip-permissions)
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## GitHub Disabled (--no-github)" in task
+        assert "Do NOT create GitHub issues or PRs" in task
+
 
 class TestSlugify:
     def test_basic_slug(self):
