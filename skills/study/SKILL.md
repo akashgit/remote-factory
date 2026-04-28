@@ -29,4 +29,10 @@ This produces a report at `.factory/strategy/observations.md` covering:
 - **Hypothesis budget** — how many improvements to target this cycle
 - **Cross-project insights** — patterns from sibling projects (if any)
 
+For cross-project insights, pass `--projects-dir`:
+
+```bash
+factory study "$(pwd)" --projects-dir ~/factory-projects
+```
+
 After studying, use `/factory:implement` to act on the findings.
