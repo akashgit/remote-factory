@@ -217,6 +217,7 @@ async def invoke_agents_parallel(
     timeout: float = 600.0,
     dangerously_skip_permissions: bool = True,
     model: str | None = None,
+    runner_name: str | None = None,
 ) -> list[tuple[str, int]]:
     """Invoke multiple agents concurrently. Returns list of (output, return_code)."""
     coros = [
@@ -227,6 +228,7 @@ async def invoke_agents_parallel(
             timeout=timeout,
             dangerously_skip_permissions=dangerously_skip_permissions,
             model=model,
+            runner_name=runner_name,
         )
         for role, task in tasks
     ]
