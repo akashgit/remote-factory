@@ -1928,13 +1928,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch, no_github=no_github)
+    budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
     skip_improve = mode in ("improve", "meta") or discover_only
 
     if not loop:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
-            discover_only=discover_only, model=model, **budget_kwargs,
+            discover_only=discover_only, model=model, no_github=no_github, **budget_kwargs,
         )
         if code != 0:
             return code
@@ -1968,7 +1968,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
-                discover_only=discover_only, model=model, **budget_kwargs,
+                discover_only=discover_only, model=model, no_github=no_github, **budget_kwargs,
             )
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
