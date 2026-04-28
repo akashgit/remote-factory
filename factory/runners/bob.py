@@ -123,13 +123,14 @@ def _prompt_hash(prompt: str) -> str:
     return hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
 
-def _ensure_custom_modes(cwd: Path, role: str, prompt: str) -> None:
-    """Ensure the factory custom mode exists in .bob/custom_modes.yaml.
+def _ensure_custom_modes(project_path: Path, role: str, prompt: str) -> None:
+    """Ensure the factory custom mode exists in .factory/.bob/custom_modes.yaml.
 
     Creates the mode for the given role if it doesn't exist.
     Updates the mode if the prompt has changed (detected via hash).
     """
-    bob_dir = cwd / ".bob"
+    # NOTE: Bob Shell limits roleDefinition to 2000 chars; large prompts are truncated
+    bob_dir = project_path / ".factory" / ".bob"
     bob_dir.mkdir(parents=True, exist_ok=True)
 
     modes_file = bob_dir / "custom_modes.yaml"
@@ -176,22 +177,12 @@ def _ensure_custom_modes(cwd: Path, role: str, prompt: str) -> None:
     logger.info("Wrote bob custom mode: %s (hash %s) to %s", mode_slug, current_hash, modes_file)
 
 
-MODEL_TO_CHAT_MODE: dict[str, str] = {
-    "opus": "factory-ceo",
-    "sonnet": "factory-builder",
-    "haiku": "factory-researcher",
-}
-
-
 def _get_chat_mode(role: str, model: str | None) -> str:
     """Determine the chat mode to use.
 
-    Priority:
-    1. Model-based mapping (if model is specified and matches)
-    2. Role-based mode (factory-<role>)
+    Always returns the role-based mode (factory-<role>).
+    The model parameter is accepted for API compatibility but not used.
     """
-    if model and model.lower() in MODEL_TO_CHAT_MODE:
-        return MODEL_TO_CHAT_MODE[model.lower()]
     return f"factory-{role}"
 
 
@@ -241,12 +232,14 @@ class BobRunner:
             self._emit_ceiling_event(project_path, e)
             return str(e), 1
 
-        _ensure_custom_modes(cwd, role, prompt)
+        _ensure_custom_modes(project_path, role, prompt)
 
         chat_mode = _get_chat_mode(role, model)
         full_task = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
 
-        cmd = ["bob", "-p", full_task, "--yolo", f"--chat-mode={chat_mode}"]
+        cmd = ["bob", "-p", full_task, f"--chat-mode={chat_mode}"]
+        if dangerously_skip_permissions:
+            cmd.append("--yolo")
 
         logger.info("BobRunner headless: cwd=%s, role=%s, chat_mode=%s", cwd, role, chat_mode)
 
@@ -300,6 +293,7 @@ class BobRunner:
         *,
         model: str | None = None,
         role: str = "ceo",
+        dangerously_skip_permissions: bool = False,
     ) -> NoReturn:
         """Replace process with interactive Bob Shell session."""
         project_path = self._find_project_path(cwd)
@@ -308,13 +302,12 @@ class BobRunner:
         _persist_key(project_path)
 
         if is_dry_run():
-            print(f"[DRY-RUN] Would exec: bob --chat-mode=factory-{role} --yolo")
+            yolo_flag = " --yolo" if dangerously_skip_permissions else ""
+            print(f"[DRY-RUN] Would exec: bob --chat-mode=factory-{role}{yolo_flag}")
             print(f"[DRY-RUN] Task: {task[:200]}...")
             raise SystemExit(0)
 
         _check_auth()
-
-        project_path = self._find_project_path(cwd)
 
         try:
             check_ceilings(project_path, self.cycle_start)
@@ -322,16 +315,17 @@ class BobRunner:
             print(f"ERROR: {e}")
             raise SystemExit(1) from e
 
-        _ensure_custom_modes(cwd, role, prompt)
+        _ensure_custom_modes(project_path, role, prompt)
 
         chat_mode = _get_chat_mode(role, model)
 
         cmd = [
             "bob",
             f"--chat-mode={chat_mode}",
-            "--yolo",
             "-i", task,
         ]
+        if dangerously_skip_permissions:
+            cmd.append("--yolo")
 
         logger.info("BobRunner interactive_exec: cwd=%s, chat_mode=%s", cwd, chat_mode)
 
