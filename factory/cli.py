@@ -1116,11 +1116,17 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "backlog items.", file=sys.stderr)
             return 1
 
-    project_path, context = _resolve_input(raw_path)
     interactive_idea: str | None = None
     if mode == "interactive":
-        interactive_idea = context or "(ask the user to describe their idea)"
-        context = None  # idea is embedded in the Phase 0 block, not as Project Specification
+        # In interactive mode the positional arg is always an idea string, not a path.
+        # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
+        interactive_idea = raw_path
+        slug = _slugify(raw_path[:50])
+        project_path = _PROJECTS_DIR / slug
+        _ensure_repo(project_path)
+        context = None
+    else:
+        project_path, context = _resolve_input(raw_path)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     if mode == "auto":
