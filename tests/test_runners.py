@@ -90,6 +90,118 @@ class TestBobRunner:
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
         assert is_dry_run() is False
 
+    def test_interactive_exec_dry_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """interactive_exec prints dry-run message and exits."""
+        monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
+        (tmp_path / ".factory").mkdir()
+
+        runner = BobRunner()
+
+        with pytest.raises(SystemExit) as exc_info:
+            runner.interactive_exec(
+                prompt="Test prompt",
+                task="Test task",
+                cwd=tmp_path,
+                role="ceo",
+            )
+
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert "[DRY-RUN]" in captured.out
+
+    async def test_headless_timeout(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BobRunner.headless() handles timeout gracefully."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
+
+        import factory.runners.bob as bob_module
+        bob_module._auth_checked = False
+
+        (tmp_path / ".factory").mkdir()
+
+        with patch("factory.runners.bob.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+            with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.kill = AsyncMock()
+                mock_proc.wait = AsyncMock()
+                mock_exec.return_value = mock_proc
+
+                runner = BobRunner()
+                stdout, code = await runner.headless(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                    timeout=0.1,
+                )
+
+        assert code == 1
+        assert "timed out" in stdout.lower()
+        bob_module._auth_checked = False
+
+    def test_count_cycle_invocations_with_datetime(self, tmp_path: Path) -> None:
+        """count_cycle_invocations filters by cycle_start datetime."""
+        from datetime import datetime, timezone, timedelta
+        from factory.runners.usage import count_cycle_invocations, get_usage_log_path
+        import json
+
+        (tmp_path / ".factory").mkdir()
+
+        now = datetime.now(timezone.utc)
+        old_time = now - timedelta(hours=2)
+
+        log_path = get_usage_log_path(tmp_path)
+        entries = [
+            {"timestamp": old_time.isoformat(), "role": "a", "cwd": str(tmp_path),
+             "duration_seconds": 1.0, "exit_code": 0, "dry_run": False},
+            {"timestamp": now.isoformat(), "role": "b", "cwd": str(tmp_path),
+             "duration_seconds": 1.0, "exit_code": 0, "dry_run": False},
+            {"timestamp": now.isoformat(), "role": "c", "cwd": str(tmp_path),
+             "duration_seconds": 1.0, "exit_code": 0, "dry_run": True},
+        ]
+
+        with open(log_path, "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
+
+        cycle_start = now - timedelta(hours=1)
+        count = count_cycle_invocations(tmp_path, cycle_start)
+        assert count == 1
+
+    async def test_headless_ceiling_exceeded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BobRunner returns error when ceiling exceeded."""
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
+
+        import factory.runners.bob as bob_module
+        bob_module._auth_checked = False
+
+        (tmp_path / ".factory").mkdir()
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+
+        runner = BobRunner()
+        stdout, code = await runner.headless(
+            prompt="Test",
+            task="Test",
+            cwd=tmp_path,
+            role="researcher",
+        )
+
+        assert code == 1
+        assert "ceiling" in stdout.lower() or "exceeded" in stdout.lower()
+        bob_module._auth_checked = False
+
     async def test_dry_run_returns_stub(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
 

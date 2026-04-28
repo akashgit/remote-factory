@@ -106,8 +106,52 @@ class TestCycleState:
         assert len(loaded.initial_prompt) <= 1000
 
 
+class TestBudgetAllowsRespawn:
+    """Tests for _budget_allows_respawn()."""
+
+    def test_returns_true_under_ceiling(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.ceo_completion import _budget_allows_respawn
+
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
+        (tmp_path / ".factory").mkdir()
+
+        assert _budget_allows_respawn("bob", tmp_path) is True
+
+    def test_returns_false_over_ceiling(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.ceo_completion import _budget_allows_respawn
+        from factory.runners.usage import log_usage
+
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
+        (tmp_path / ".factory").mkdir()
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+
+        assert _budget_allows_respawn("bob", tmp_path) is False
+
+    def test_claude_always_allowed(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import _budget_allows_respawn
+
+        assert _budget_allows_respawn("claude", tmp_path) is True
+        assert _budget_allows_respawn(None, tmp_path) is True
+
+
 class TestDetectIncomplete:
     """Tests for _detect_incomplete()."""
+
+    def test_build_incomplete_no_eval_profile(self, tmp_path: Path) -> None:
+        """Build mode without strategy needs eval profile."""
+        from factory.ceo_completion import _detect_incomplete
+
+        (tmp_path / ".factory").mkdir()
+
+        gap = _detect_incomplete(tmp_path, "build")
+        assert gap is not None
+        assert gap.mode == "build"
+        assert gap.next_item == "discovery"
+        assert "no eval profile" in gap.reason
 
     def test_improve_complete_when_all_verdicts(self, tmp_path: Path) -> None:
         """Improve mode is complete when verdict count >= hypothesis count."""
@@ -204,6 +248,21 @@ class TestBuildContinuationTask:
         assert "do not re-plan" in task
         assert "Spawn Builder for H3" in task
         assert "2/5" in task
+
+    def test_discover_continuation(self) -> None:
+        """Discover mode continuation tells CEO to resume discovery."""
+        from factory.ceo_completion import _build_continuation_task, IncompleteGap
+
+        gap = IncompleteGap(
+            mode="discover",
+            planned=1,
+            completed=0,
+            next_item="eval_profile",
+            reason="discover.incomplete",
+        )
+
+        task = _build_continuation_task(gap)
+        assert "Resume Discovery" in task or "discover" in task.lower()
 
     def test_build_continuation(self) -> None:
         """Build mode continuation tells CEO to resume from next phase."""
