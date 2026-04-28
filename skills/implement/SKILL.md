@@ -21,7 +21,9 @@ command -v factory >/dev/null 2>&1 || uv tool install "${CLAUDE_PLUGIN_ROOT}"
 
 ## Execution
 
-Run the Factory CEO in **focus mode** on the current project. Focus mode generates exactly one hypothesis for the target, builds it, reviews it, evaluates it, and keeps or reverts based on results.
+The project must have `.factory/` initialized (run `factory ceo "$(pwd)"` or `/factory:study` first). Focus mode requires improve mode — it will error if the project hasn't been set up yet.
+
+Run the Factory CEO in **focus mode** on the current project:
 
 ```bash
 factory ceo "$(pwd)" --focus "$ARGUMENTS"

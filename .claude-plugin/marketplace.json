@@ -1,7 +1,7 @@
 {
   "name": "remote-factory",
   "owner": {
-    "name": "Akash Garg"
+    "name": "Akash Srivastava"
   },
   "metadata": {
     "description": "Multi-agent software evolution plugins for Claude Code"
