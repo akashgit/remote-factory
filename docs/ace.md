@@ -74,7 +74,7 @@ Meta mode runs the full improvement loop, then reflects on the outcomes to evolv
 
 ACE produces meaningful playbook updates only when there is enough experiment data to analyze. Running it too frequently churns rules on small samples; ignoring it means agents never learn from their mistakes.
 
-**Recommended cadence:** Weekly for most projects, nightly if you are running 5+ experiments per day. Wait until at least 5-10 experiments have been recorded across your managed projects before the first run.
+**Recommended cadence:** Weekly for most projects, nightly if you are running 5+ experiments per day. Wait until at least 5 experiments have been recorded across your managed projects before the first run (10+ preferred for stronger signal).
 
 **When to skip:** Right after initial project setup (no experiment data yet), or when fewer than 3 new experiments have completed since the last ACE run. See [When to Run Meta Mode](self-improvement.md#when-to-run-meta-mode) for the full decision framework.
 

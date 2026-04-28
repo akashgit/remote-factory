@@ -270,10 +270,10 @@ Meta mode is the factory's most powerful self-improvement mechanism, but it has 
 |-------------|---------|-----------|
 | Light (1-2 experiments/day) | Weekly | One week accumulates enough new outcomes for ACE to find real patterns |
 | Heavy (5+ experiments/day) | Nightly | High experiment volume means new signal accumulates faster |
-| Occasional (a few experiments/week) | Biweekly or on-demand | Not enough data to justify frequent evolution |
+| Occasional (a few experiments/week) | Every two weeks or on-demand | Not enough data to justify frequent evolution |
 
 **Prerequisites — run meta mode only when:**
-- At least **5-10 experiments** have been recorded across your managed projects since the last meta run. ACE analyzes cross-project data; with fewer than 5 experiments, it lacks the sample size to distinguish signal from noise.
+- At least **5 experiments** have been recorded across your managed projects since the last meta run (10+ preferred for stronger signal). ACE analyzes cross-project data; with fewer than 5 experiments, it lacks the sample size to distinguish signal from noise.
 - The factory has been through at least one full Build-Discover-Improve cycle on at least one project. Running meta mode on a brand-new factory with no experiment history is a no-op.
 
 **Signs it's time to run meta mode:**
@@ -295,6 +295,7 @@ Meta mode is the factory's most powerful self-improvement mechanism, but it has 
 0 2 * * 0 cd ~/remote-factory && factory ceo ~/remote-factory --mode meta
 
 # Or use the factory's own tmux loop for nightly runs
+# Note: --mode is forwarded through tmux → run → ceo
 factory tmux ~/remote-factory --loop --interval 86400 --mode meta
 ```
 

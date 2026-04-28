@@ -70,7 +70,9 @@ Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence cou
 factory ceo ~/my-project --mode meta
 ```
 
-Meta mode is the factory's recursive self-improvement: improve the project, then improve the agents that improved the project. Over time, agents get sharper at the specific kinds of changes that work for *your* codebase. For active projects, run meta mode on a regular cadence — weekly is a good default, nightly if the factory is running many experiments per day. Don't run it right after initial build or after every improve cycle; ACE needs enough experiment data (at least 5-10 across projects) to produce meaningful playbook updates. See [ACE Self-Improvement](docs/ace.md) for details.
+Meta mode is the factory's recursive self-improvement: improve the project, then improve the agents that improved the project. Over time, agents get sharper at the specific kinds of changes that work for *your* codebase. For active projects, run meta mode on a regular cadence — weekly is a good default, nightly if the factory is running many experiments per day.
+
+Don't run it right after initial build or after every improve cycle; ACE needs enough experiment data (at least 5 across projects) to produce meaningful playbook updates. See [ACE Self-Improvement](docs/ace.md) for details.
 
 ## Quick Start
 

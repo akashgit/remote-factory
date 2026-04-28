@@ -491,7 +491,7 @@ echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PR
 
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
 
-Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Running ACE after every improve cycle adds noise: playbooks churn on small sample sizes and the factory wastes time re-evolving rules that haven't accumulated meaningful evidence. Meta mode should be run on a separate cadence — see **Meta Mode Cadence** below.
+Skip this step in Improve mode — ACE playbook evolution is handled by Meta mode (`--mode meta`), which runs the full Improve loop followed by ACE. Running ACE after every improve cycle adds noise: playbooks churn on small sample sizes and the factory wastes time re-evolving rules that haven't accumulated meaningful evidence. Meta mode should be run on a separate cadence — see [Meta Mode Cadence](#meta-mode-cadence) below.
 
 ### Step 1: Hypothesize (Strategist Agent)
 
@@ -910,7 +910,7 @@ Meta mode is powerful but has diminishing returns if run too frequently or too e
 - Mid-session as a "bonus step" — meta mode is a full cycle, not an addon
 
 **If a user asks about meta mode, advise:**
-1. "Have you run at least 5-10 experiments across your projects?" If no, it is premature.
+1. "Have you run at least 5 experiments across your projects?" If no, it is premature.
 2. "Are you seeing the same failure patterns repeating?" If yes, meta mode can help.
 3. "How often are you running it?" If more than weekly, suggest reducing frequency.
 
