@@ -452,21 +452,17 @@ class TestKeyPersistence:
         auth_file.write_text("file-based-key")
 
         # Change to tmp_path so _find_auth_file can find it
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_path)
+        monkeypatch.chdir(tmp_path)
 
-            from factory.runners.bob import _check_auth
+        from factory.runners.bob import _check_auth
 
-            _check_auth()
+        _check_auth()
 
-            # Verify the key was injected into os.environ
-            assert os.environ.get("BOBSHELL_API_KEY") == "file-based-key"
-        finally:
-            os.chdir(original_cwd)
-            # Clean up injected env var
-            monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
-            bob_module._auth_checked = False
+        # Verify the key was injected into os.environ
+        assert os.environ.get("BOBSHELL_API_KEY") == "file-based-key"
+        # Clean up injected env var
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        bob_module._auth_checked = False
 
     def test_check_auth_prefers_env_var(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -482,19 +478,15 @@ class TestKeyPersistence:
         auth_file = tmp_path / ".factory" / ".bob_auth"
         auth_file.write_text("file-key")
 
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_path)
+        monkeypatch.chdir(tmp_path)
 
-            from factory.runners.bob import _check_auth
+        from factory.runners.bob import _check_auth
 
-            _check_auth()
+        _check_auth()
 
-            # Env var should still be the original value
-            assert os.environ.get("BOBSHELL_API_KEY") == "env-key"
-        finally:
-            os.chdir(original_cwd)
-            bob_module._auth_checked = False
+        # Env var should still be the original value
+        assert os.environ.get("BOBSHELL_API_KEY") == "env-key"
+        bob_module._auth_checked = False
 
     def test_preflight_error_unchanged_when_no_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -506,19 +498,15 @@ class TestKeyPersistence:
         bob_module._auth_checked = False
 
         # No .factory directory, no auth file
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_path)
+        monkeypatch.chdir(tmp_path)
 
-            from factory.runners.bob import _check_auth, BobAuthError
+        from factory.runners.bob import _check_auth, BobAuthError
 
-            with pytest.raises(BobAuthError) as exc_info:
-                _check_auth()
+        with pytest.raises(BobAuthError) as exc_info:
+            _check_auth()
 
-            assert "BOBSHELL_API_KEY environment variable is not set" in str(exc_info.value)
-        finally:
-            os.chdir(original_cwd)
-            bob_module._auth_checked = False
+        assert "BOBSHELL_API_KEY environment variable is not set" in str(exc_info.value)
+        bob_module._auth_checked = False
 
     async def test_headless_passes_key_to_subprocess(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -535,38 +523,35 @@ class TestKeyPersistence:
         auth_file = tmp_path / ".factory" / ".bob_auth"
         auth_file.write_text("subprocess-test-key")
 
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(tmp_path)
+        monkeypatch.chdir(tmp_path)
+
+        with patch(
+            "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b"output", b"")
 
             with patch(
-                "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
-            ) as mock_stream:
-                mock_stream.return_value = (b"output", b"")
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
 
-                with patch(
-                    "asyncio.create_subprocess_exec", new_callable=AsyncMock
-                ) as mock_exec:
-                    mock_proc = AsyncMock()
-                    mock_proc.returncode = 0
-                    mock_exec.return_value = mock_proc
+                runner = BobRunner()
+                await runner.headless(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                )
 
-                    runner = BobRunner()
-                    await runner.headless(
-                        prompt="Test",
-                        task="Test",
-                        cwd=tmp_path,
-                        role="researcher",
-                    )
+                # Verify the subprocess was called with env containing the key
+                call_kwargs = mock_exec.call_args.kwargs
+                assert "env" in call_kwargs
+                assert call_kwargs["env"].get("BOBSHELL_API_KEY") == "subprocess-test-key"
 
-                    # Verify the subprocess was called with env containing the key
-                    call_kwargs = mock_exec.call_args.kwargs
-                    assert "env" in call_kwargs
-                    assert call_kwargs["env"].get("BOBSHELL_API_KEY") == "subprocess-test-key"
-        finally:
-            os.chdir(original_cwd)
-            monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
-            bob_module._auth_checked = False
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        bob_module._auth_checked = False
 
 
 class TestStreamingOutput:
@@ -872,86 +857,3 @@ class TestStreamingOutput:
                 assert "Line 1" in content
                 assert "Line 2" in content
                 assert "Line 3" in content
-
-
-class TestBobPromptCacheInvalidation:
-    """Tests for bob custom_modes.yaml cache invalidation on prompt changes."""
-
-    def test_creates_mode_with_hash(self, tmp_path: Path) -> None:
-        """First call creates a mode with a _promptHash field."""
-        import yaml
-        from factory.runners.bob import _ensure_custom_modes
-
-        _ensure_custom_modes(tmp_path, "ceo", "You are the CEO agent.")
-
-        modes_file = tmp_path / ".factory" / ".bob" / "custom_modes.yaml"
-        assert modes_file.exists()
-
-        data = yaml.safe_load(modes_file.read_text())
-        modes = data["customModes"]
-        assert len(modes) == 1
-        assert modes[0]["slug"] == "factory-ceo"
-        assert "_promptHash" in modes[0]
-        assert len(modes[0]["_promptHash"]) == 16
-
-    def test_no_update_when_prompt_unchanged(self, tmp_path: Path) -> None:
-        """Second call with same prompt does not rewrite the file."""
-        from factory.runners.bob import _ensure_custom_modes
-
-        prompt = "You are the CEO agent."
-        _ensure_custom_modes(tmp_path, "ceo", prompt)
-
-        modes_file = tmp_path / ".factory" / ".bob" / "custom_modes.yaml"
-        mtime_before = modes_file.stat().st_mtime
-
-        # Small delay to ensure mtime would change if file was written
-        import time
-        time.sleep(0.01)
-
-        _ensure_custom_modes(tmp_path, "ceo", prompt)
-
-        mtime_after = modes_file.stat().st_mtime
-        assert mtime_after == mtime_before, "File should not be rewritten when prompt unchanged"
-
-    def test_updates_mode_when_prompt_changes(self, tmp_path: Path) -> None:
-        """Changed prompt triggers cache invalidation and mode update."""
-        import yaml
-        from factory.runners.bob import _ensure_custom_modes
-
-        old_prompt = "You are the CEO agent v1."
-        new_prompt = "You are the CEO agent v2 with new guardrails."
-
-        _ensure_custom_modes(tmp_path, "ceo", old_prompt)
-
-        modes_file = tmp_path / ".factory" / ".bob" / "custom_modes.yaml"
-        data_before = yaml.safe_load(modes_file.read_text())
-        hash_before = data_before["customModes"][0]["_promptHash"]
-
-        _ensure_custom_modes(tmp_path, "ceo", new_prompt)
-
-        data_after = yaml.safe_load(modes_file.read_text())
-        hash_after = data_after["customModes"][0]["_promptHash"]
-
-        assert hash_before != hash_after, "Hash should change when prompt changes"
-        assert "v2" in data_after["customModes"][0]["roleDefinition"]
-
-    def test_preserves_other_modes_when_updating(self, tmp_path: Path) -> None:
-        """Updating one mode does not remove other modes."""
-        import yaml
-        from factory.runners.bob import _ensure_custom_modes
-
-        _ensure_custom_modes(tmp_path, "ceo", "CEO prompt")
-        _ensure_custom_modes(tmp_path, "builder", "Builder prompt")
-
-        modes_file = tmp_path / ".factory" / ".bob" / "custom_modes.yaml"
-        data = yaml.safe_load(modes_file.read_text())
-        assert len(data["customModes"]) == 2
-
-        # Update CEO prompt
-        _ensure_custom_modes(tmp_path, "ceo", "CEO prompt UPDATED")
-
-        data_after = yaml.safe_load(modes_file.read_text())
-        assert len(data_after["customModes"]) == 2
-
-        slugs = {m["slug"] for m in data_after["customModes"]}
-        assert slugs == {"factory-ceo", "factory-builder"}

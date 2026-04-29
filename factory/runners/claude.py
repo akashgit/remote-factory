@@ -96,6 +96,7 @@ class ClaudeRunner:
         *,
         model: str | None = None,
         role: str = "ceo",
+        dangerously_skip_permissions: bool = False,
     ) -> NoReturn:
         """Replace process with interactive Claude Code session.
 
@@ -105,14 +106,16 @@ class ClaudeRunner:
             cwd: Working directory (os.chdir is called before exec).
             model: Optional model override.
             role: Agent role (unused by claude, but kept for API compatibility).
+            dangerously_skip_permissions: If True, skip permission prompts.
         """
         _ = role  # unused by claude runner
         cmd = [
             "claude",
             "--append-system-prompt", prompt,
-            "--dangerously-skip-permissions",
-            task,
         ]
+        if dangerously_skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        cmd.append(task)
         if model:
             cmd.extend(["--model", model])
             os.environ["FACTORY_MODEL"] = model

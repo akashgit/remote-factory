@@ -46,6 +46,7 @@ class Runner(Protocol):
         *,
         model: str | None = None,
         role: str = "ceo",
+        dangerously_skip_permissions: bool = False,
     ) -> NoReturn:
         """Replace the current process with an interactive CLI session.
 
@@ -57,5 +58,6 @@ class Runner(Protocol):
             cwd: Working directory (os.chdir is called before exec).
             model: Optional model override.
             role: Agent role name (used by bob for custom mode selection).
+            dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
         """
         ...

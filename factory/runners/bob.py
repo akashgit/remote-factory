@@ -3,17 +3,13 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
+import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NoReturn
-
-import shutil
-
-import yaml
 
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.usage import (
@@ -89,6 +85,11 @@ def _check_auth(start_path: Path | None = None) -> None:
     2. File .factory/.bob_auth (searched from start_path upward, or cwd if None)
 
     If found in file, injects into os.environ for subprocess inheritance.
+
+    Limitation: _auth_checked is a module-level flag, so the check only runs once
+    per Python process. If the key changes or expires mid-session, the cached
+    result won't reflect that. For long-running processes, consider restarting
+    the factory rather than relying on key rotation.
     """
     global _auth_checked
     if _auth_checked:
@@ -150,65 +151,6 @@ def _make_env_with_bob_path() -> dict[str, str]:
     return env
 
 
-def _prompt_hash(prompt: str) -> str:
-    """Compute a short hash of the prompt for cache invalidation."""
-    return hashlib.sha256(prompt.encode()).hexdigest()[:16]
-
-
-def _ensure_custom_modes(project_path: Path, role: str, prompt: str) -> None:
-    """Ensure the factory custom mode exists in .factory/.bob/custom_modes.yaml.
-
-    Creates the mode for the given role if it doesn't exist.
-    Updates the mode if the prompt has changed (detected via hash).
-    """
-    # NOTE: Bob Shell limits roleDefinition to 2000 chars; large prompts are truncated
-    bob_dir = project_path / ".factory" / ".bob"
-    bob_dir.mkdir(parents=True, exist_ok=True)
-
-    modes_file = bob_dir / "custom_modes.yaml"
-
-    existing_modes: dict = {}
-    if modes_file.exists():
-        try:
-            existing_modes = yaml.safe_load(modes_file.read_text()) or {}
-        except yaml.YAMLError:
-            existing_modes = {}
-
-    custom_modes = existing_modes.get("customModes", [])
-
-    mode_slug = f"factory-{role}"
-    current_hash = _prompt_hash(prompt)
-
-    # Find existing mode if any
-    existing_mode_idx = None
-    for idx, m in enumerate(custom_modes):
-        if m.get("slug") == mode_slug:
-            existing_mode_idx = idx
-            break
-
-    if existing_mode_idx is not None:
-        existing_hash = custom_modes[existing_mode_idx].get("_promptHash")
-        if existing_hash == current_hash:
-            return  # Cache hit — prompt unchanged
-        # Cache miss — prompt changed, update the mode
-        logger.info("Prompt changed for %s (hash %s → %s), updating mode", role, existing_hash, current_hash)
-        custom_modes.pop(existing_mode_idx)
-
-    new_mode = {
-        "slug": mode_slug,
-        "name": f"Factory {role.title()}",
-        "roleDefinition": prompt[:2000],
-        "whenToUse": f"Factory agent role: {role}",
-        "groups": ["read", "command", "edit"],
-        "_promptHash": current_hash,
-    }
-    custom_modes.append(new_mode)
-    existing_modes["customModes"] = custom_modes
-
-    modes_file.write_text(yaml.dump(existing_modes, default_flow_style=False, allow_unicode=True))
-    logger.info("Wrote bob custom mode: %s (hash %s) to %s", mode_slug, current_hash, modes_file)
-
-
 def _get_chat_mode(role: str, model: str | None) -> str:
     """Determine the chat mode to use.
 
@@ -250,6 +192,11 @@ class BobRunner:
         """Run a headless Bob Shell invocation.
 
         Returns (stdout, return_code).
+
+        Note: The prompt+task are passed as a CLI argument via `-p`. Very large prompts
+        may hit the OS ARG_MAX limit (typically 128-256KB on Linux). If you encounter
+        "Argument list too long" errors, consider reducing prompt size or using a
+        file-based approach for prompt injection.
         """
         self._role = role
         project_path = self._find_project_path(cwd)

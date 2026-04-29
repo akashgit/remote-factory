@@ -97,6 +97,7 @@ async def invoke_agent(
     dangerously_skip_permissions: bool = True,
     model: str | None = None,
     runner_name: str | None = None,
+    _track_failures: bool = True,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -108,11 +109,14 @@ async def invoke_agent(
         dangerously_skip_permissions: If True, skip permission prompts.
         model: Optional model override.
         runner_name: CLI backend to use ("claude" or "bob"). Defaults to FACTORY_RUNNER env var.
+        _track_failures: If True (default), track consecutive failures globally.
+            Set to False when called from invoke_agents_parallel to avoid race conditions.
 
     Returns (stdout, return_code).
 
     Raises:
-        ConsecutiveAgentFailureError: If too many consecutive agent spawns fail.
+        ConsecutiveAgentFailureError: If too many consecutive agent spawns fail
+            (only when _track_failures=True).
     """
     global _consecutive_failures
 
@@ -137,8 +141,9 @@ async def invoke_agent(
     except Exception as e:
         logger.error("%s agent failed: %s", role, e)
         _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
-        _consecutive_failures += 1
-        _check_failure_threshold(project_path, role)
+        if _track_failures:
+            _consecutive_failures += 1
+            _check_failure_threshold(project_path, role)
         return f"Error: {e}", 1
 
     if return_code != 0:
@@ -147,15 +152,17 @@ async def invoke_agent(
             project_path, "agent.failed", agent=role,
             data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
         )
-        _consecutive_failures += 1
-        _check_failure_threshold(project_path, role)
+        if _track_failures:
+            _consecutive_failures += 1
+            _check_failure_threshold(project_path, role)
     else:
         _emit_safe(
             project_path, "agent.completed", agent=role,
             data={"return_code": 0},
         )
-        # Reset counter on success
-        _consecutive_failures = 0
+        if _track_failures:
+            # Reset counter on success
+            _consecutive_failures = 0
 
     _save_review(project_path, role, stdout, return_code)
 
@@ -219,7 +226,12 @@ async def invoke_agents_parallel(
     model: str | None = None,
     runner_name: str | None = None,
 ) -> list[tuple[str, int]]:
-    """Invoke multiple agents concurrently. Returns list of (output, return_code)."""
+    """Invoke multiple agents concurrently. Returns list of (output, return_code).
+
+    Raises:
+        ConsecutiveAgentFailureError: If all agents in the batch fail, indicating
+            infrastructure problems (e.g., API key not propagating to subprocesses).
+    """
     coros = [
         invoke_agent(
             role,
@@ -229,7 +241,25 @@ async def invoke_agents_parallel(
             dangerously_skip_permissions=dangerously_skip_permissions,
             model=model,
             runner_name=runner_name,
+            _track_failures=False,  # Avoid race condition; track locally below
         )
         for role, task in tasks
     ]
-    return list(await asyncio.gather(*coros))
+    results = list(await asyncio.gather(*coros))
+
+    # Track failures locally to avoid race condition with global counter
+    failure_count = sum(1 for _, code in results if code != 0)
+    if failure_count >= _FAILURE_ABORT_THRESHOLD and failure_count == len(results):
+        # All agents failed — likely infrastructure issue
+        _emit_safe(
+            project_path,
+            "cycle.aborted",
+            data={
+                "reason": "consecutive_agent_failures",
+                "failure_count": failure_count,
+                "last_agent": "parallel_batch",
+            },
+        )
+        raise ConsecutiveAgentFailureError(failure_count, "parallel_batch")
+
+    return results

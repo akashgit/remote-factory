@@ -108,6 +108,8 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 - All invocations are logged to `.factory/bob_usage.jsonl`
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
 
+**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
+
 ## Running the factory
 
 ```bash

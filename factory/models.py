@@ -301,6 +301,7 @@ class CycleState(BaseModel):
     mode: Literal["build", "discover", "improve", "meta"]
     initial_prompt: str = ""
     respawns: int = 0
+    runner_name: str | None = None
 
 
 # ── protocols ─────────────────────────────────────────────────────

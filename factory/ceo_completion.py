@@ -95,7 +95,9 @@ def delete_cycle_state(project_path: Path) -> bool:
     return False
 
 
-def create_cycle_state(mode: str, initial_prompt: str = "") -> CycleState:
+def create_cycle_state(
+    mode: str, initial_prompt: str = "", runner_name: str | None = None
+) -> CycleState:
     """Create a new CycleState for a fresh cycle."""
     return CycleState(
         cycle_id=str(uuid.uuid4())[:8],
@@ -103,6 +105,7 @@ def create_cycle_state(mode: str, initial_prompt: str = "") -> CycleState:
         mode=mode,  # type: ignore[arg-type]
         initial_prompt=initial_prompt[:1000],  # Truncate to avoid bloat
         respawns=0,
+        runner_name=runner_name,
     )
 
 
@@ -365,7 +368,7 @@ async def run_ceo_with_completion_guard(
     # Check for existing in-flight cycle (respawn scenario)
     cycle_state = read_cycle_state(project_path)
     if cycle_state:
-        # Continuing an existing cycle — use its mode, not the passed-in one
+        # Continuing an existing cycle — use its mode and runner, not the passed-in ones
         log.info(
             "cycle_state_found",
             cycle_id=cycle_state.cycle_id,
@@ -373,9 +376,12 @@ async def run_ceo_with_completion_guard(
             passed_mode=mode,
         )
         mode = cycle_state.mode
+        # Restore runner_name from persisted state (if set)
+        if cycle_state.runner_name:
+            runner_name = cycle_state.runner_name
     else:
         # Fresh cycle — create new state
-        cycle_state = create_cycle_state(mode, initial_task)
+        cycle_state = create_cycle_state(mode, initial_task, runner_name)
         write_cycle_state(project_path, cycle_state)
         log.info("cycle_state_created", cycle_id=cycle_state.cycle_id, mode=mode)
 
