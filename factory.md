@@ -21,6 +21,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - README.md
 - docs/**
 - CLAUDE.md
+- factory.md
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
@@ -63,11 +64,10 @@ main
 
 ## Hypothesis Budget
 <!-- Controls how many hypotheses the Strategist generates per cycle. -->
-<!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->
+<!-- These are defaults — override per-run with --min-growth, --max-new -->
 
 - min_growth: 2
-- min_fix: 0
-- max_total: 7
+- max_new: 2
 
 ## Smoke Test
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
