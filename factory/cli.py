@@ -1810,6 +1810,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
+            # Save checkpoint after each cycle for crash resilience
+            from factory.checkpoint_hook import reconstruct_and_save
+            reconstruct_and_save(project_path)
+
             # Re-detect mode for next cycle (state may have advanced)
             mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
 
