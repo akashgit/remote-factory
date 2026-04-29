@@ -200,6 +200,56 @@ factory ceo "Build a REST API for bookmark management with tags and search"
 
 **Why Obsidian?** The vault is the factory's long-term memory. Experiment history, cross-project insights, research notes, and agent learnings all live there. Without a vault, the factory still works but starts fresh every time. See [Obsidian setup](docs/setup.md#optional-obsidian-vault).
 
+## Runners
+
+The factory supports multiple CLI backends. By default, it uses **Claude Code** (`claude` CLI). **Bob Shell** (`bob` CLI) is available as an alternative.
+
+### Selecting a Runner
+
+```bash
+# Via environment variable (affects all commands)
+export FACTORY_RUNNER=bob
+
+# Via CLI flag (per-command)
+factory ceo ~/my-project --runner bob
+factory run ~/my-project --loop --runner bob
+```
+
+### Bob Shell Setup
+
+Bob Shell requires an API key:
+
+```bash
+# 1. Install Bob Shell (see bob-shell docs)
+# 2. Set your API key
+export BOBSHELL_API_KEY=your-key-here
+
+# 3. Run with --runner bob
+factory ceo ~/my-project --runner bob
+```
+
+The factory persists the API key to `.factory/.bob_auth` for nested agent spawns.
+
+### Bob Shell Guardrails
+
+Bob Shell lacks token telemetry, so the factory enforces invocation ceilings:
+
+| Ceiling | Default | Environment Variable |
+|---------|---------|---------------------|
+| Per-cycle | 3 | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` |
+| Per-day | 20 | `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` |
+
+When a ceiling is exceeded, the factory aborts with an actionable error message.
+
+**Dry-run mode** for testing (no API calls):
+
+```bash
+export FACTORY_BOB_DRY_RUN=1
+factory ceo ~/my-project --runner bob  # Returns stub responses
+```
+
+See [CLAUDE.md](CLAUDE.md) for full runner implementation details.
+
 ## Architecture
 
 Three layers, strict separation of concerns:
