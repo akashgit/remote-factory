@@ -114,7 +114,7 @@ class TestBudgetAllowsRespawn:
     ) -> None:
         from factory.ceo_completion import _budget_allows_respawn
 
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "10")
         (tmp_path / ".factory").mkdir()
 
         assert _budget_allows_respawn("bob", tmp_path) is True
@@ -125,7 +125,7 @@ class TestBudgetAllowsRespawn:
         from factory.ceo_completion import _budget_allows_respawn
         from factory.runners.usage import log_usage
 
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "1")
         (tmp_path / ".factory").mkdir()
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
 

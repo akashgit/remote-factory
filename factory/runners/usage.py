@@ -10,6 +10,9 @@ from typing import TypedDict
 
 USAGE_LOG_NAME = "bob_usage.jsonl"
 
+# Session start time — captured at module import for session-scoped ceiling enforcement
+_session_start = datetime.now(timezone.utc)
+
 
 class UsageEntry(TypedDict):
     timestamp: str
@@ -50,13 +53,13 @@ def log_usage(
         f.write(json.dumps(entry) + "\n")
 
 
-def count_today_invocations(project_path: Path, *, include_dry_run: bool = False) -> int:
-    """Count non-dry-run bob invocations from today."""
+def count_session_invocations(project_path: Path, *, include_dry_run: bool = False) -> int:
+    """Count non-dry-run bob invocations since the current session started."""
     log_path = get_usage_log_path(project_path)
     if not log_path.exists():
         return 0
 
-    today = datetime.now(timezone.utc).date().isoformat()
+    session_start_iso = _session_start.isoformat()
     count = 0
 
     with open(log_path) as f:
@@ -66,7 +69,8 @@ def count_today_invocations(project_path: Path, *, include_dry_run: bool = False
                 continue
             try:
                 entry = json.loads(line)
-                if entry.get("timestamp", "").startswith(today):
+                ts = entry.get("timestamp", "")
+                if ts >= session_start_iso:
                     if include_dry_run or not entry.get("dry_run", False):
                         count += 1
             except json.JSONDecodeError:
@@ -78,10 +82,10 @@ def count_today_invocations(project_path: Path, *, include_dry_run: bool = False
 def count_cycle_invocations(project_path: Path, cycle_start: datetime | None = None) -> int:
     """Count non-dry-run bob invocations in the current cycle.
 
-    If cycle_start is None, counts all invocations from today (approximation).
+    If cycle_start is None, counts all invocations from the session (approximation).
     """
     if cycle_start is None:
-        return count_today_invocations(project_path)
+        return count_session_invocations(project_path)
 
     log_path = get_usage_log_path(project_path)
     if not log_path.exists():
@@ -111,9 +115,9 @@ def get_cycle_ceiling() -> int:
     return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "3"))
 
 
-def get_daily_ceiling() -> int:
-    """Get the per-day invocation ceiling from env var."""
-    return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "20"))
+def get_session_ceiling() -> int:
+    """Get the per-session invocation ceiling from env var."""
+    return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "50"))
 
 
 class CeilingExceededError(Exception):
@@ -138,12 +142,12 @@ def check_ceilings(
 
     Raises CeilingExceededError if any ceiling is exceeded.
     """
-    # Check per-day ceiling
-    daily_count = count_today_invocations(project_path)
-    daily_limit = get_daily_ceiling()
-    if daily_count >= daily_limit:
+    # Check per-session ceiling
+    session_count = count_session_invocations(project_path)
+    session_limit = get_session_ceiling()
+    if session_count >= session_limit:
         raise CeilingExceededError(
-            "daily", daily_count, daily_limit, "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY"
+            "session", session_count, session_limit, "FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION"
         )
 
     # Check per-cycle ceiling

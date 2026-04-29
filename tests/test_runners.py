@@ -11,7 +11,7 @@ from factory.runners import ClaudeRunner, BobRunner, get_runner, is_dry_run
 from factory.runners.usage import (
     CeilingExceededError,
     check_ceilings,
-    count_today_invocations,
+    count_session_invocations,
     get_usage_log_path,
     log_usage,
 )
@@ -181,7 +181,7 @@ class TestBobRunner:
         """BobRunner returns error when ceiling exceeded."""
         monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "1")
 
         import factory.runners.bob as bob_module
         bob_module._auth_checked = False
@@ -262,7 +262,7 @@ class TestUsageTracking:
         assert entry["exit_code"] == 0
         assert entry["dry_run"] is False
 
-    def test_count_today_invocations(self, tmp_path: Path) -> None:
+    def test_count_session_invocations(self, tmp_path: Path) -> None:
         (tmp_path / ".factory").mkdir()
 
         # Log some entries
@@ -270,17 +270,51 @@ class TestUsageTracking:
         log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
         log_usage(tmp_path, "c", tmp_path, 1.0, 0, dry_run=True)  # dry-run, shouldn't count
 
-        count = count_today_invocations(tmp_path)
+        count = count_session_invocations(tmp_path)
         assert count == 2  # dry-run excluded
 
-    def test_count_today_includes_dry_run(self, tmp_path: Path) -> None:
+    def test_count_session_includes_dry_run(self, tmp_path: Path) -> None:
         (tmp_path / ".factory").mkdir()
 
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
         log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=True)
 
-        count = count_today_invocations(tmp_path, include_dry_run=True)
+        count = count_session_invocations(tmp_path, include_dry_run=True)
         assert count == 2
+
+    def test_count_session_excludes_pre_session_entries(self, tmp_path: Path) -> None:
+        """Entries before _session_start are not counted."""
+        from datetime import timedelta
+        import factory.runners.usage as usage_module
+
+        (tmp_path / ".factory").mkdir()
+
+        # Save original session start
+        original_session_start = usage_module._session_start
+
+        # Write an entry with timestamp before session start
+        log_path = get_usage_log_path(tmp_path)
+        old_time = original_session_start - timedelta(hours=1)
+        import json
+        with open(log_path, "w") as f:
+            entry = {
+                "timestamp": old_time.isoformat(),
+                "role": "old",
+                "cwd": str(tmp_path),
+                "duration_seconds": 1.0,
+                "exit_code": 0,
+                "dry_run": False,
+            }
+            f.write(json.dumps(entry) + "\n")
+
+        # This entry should not be counted
+        count = count_session_invocations(tmp_path)
+        assert count == 0
+
+        # Now add an entry after session start
+        log_usage(tmp_path, "new", tmp_path, 1.0, 0, dry_run=False)
+        count = count_session_invocations(tmp_path)
+        assert count == 1
 
 
 class TestCeilings:
@@ -288,7 +322,7 @@ class TestCeilings:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "10")
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "5")
 
         # Log a few entries (under ceiling)
@@ -298,11 +332,11 @@ class TestCeilings:
         # Should not raise
         check_ceilings(tmp_path)
 
-    def test_check_ceilings_fails_on_daily(
+    def test_check_ceilings_fails_on_session(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "2")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "2")
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "10")
 
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
@@ -311,14 +345,14 @@ class TestCeilings:
         with pytest.raises(CeilingExceededError) as exc_info:
             check_ceilings(tmp_path)
 
-        assert exc_info.value.ceiling_name == "daily"
-        assert exc_info.value.env_var == "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY"
+        assert exc_info.value.ceiling_name == "session"
+        assert exc_info.value.env_var == "FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION"
 
     def test_check_ceilings_fails_on_cycle(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "100")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION", "100")
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "1")
 
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
@@ -330,12 +364,12 @@ class TestCeilings:
         assert exc_info.value.env_var == "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE"
 
     def test_ceiling_error_message_is_actionable(self) -> None:
-        error = CeilingExceededError("daily", 5, 5, "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY")
+        error = CeilingExceededError("session", 5, 5, "FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION")
         msg = str(error)
 
         assert "ceiling exceeded" in msg.lower()
         assert "5/5" in msg
-        assert "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY=10" in msg  # suggests bumping
+        assert "FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION=10" in msg  # suggests bumping
 
 
 class TestBobAuthPreflight:

@@ -104,7 +104,7 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 
 **Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
 - `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 3)
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` (default: 20)
+- `FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION` (default: 50)
 - All invocations are logged to `.factory/bob_usage.jsonl`
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
 
