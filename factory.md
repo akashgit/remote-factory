@@ -18,11 +18,12 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - factory/dashboard/static/*
 - tests/**/*.py
 - templates/**
+- README.md
+- docs/**
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
 
-- README.md
 - pyproject.toml
 
 ## Guards
