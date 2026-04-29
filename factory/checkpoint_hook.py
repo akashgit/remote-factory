@@ -57,8 +57,9 @@ def _detect_completed_agents(project_path: Path, events: list[dict]) -> list[str
             for e in events
         )
         review_exists = (reviews_dir / f"{role}-latest.md").exists()
+        verdict_exists = (reviews_dir / f"ceo-verdict-{role}.md").exists()
 
-        if agent_completed or review_exists:
+        if agent_completed or review_exists or verdict_exists:
             completed.append(role)
 
     return completed

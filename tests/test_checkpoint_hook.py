@@ -61,6 +61,17 @@ def test_reconstruct_after_researcher(factory_project: Path) -> None:
     assert state.active_experiment_id is None
 
 
+def test_reconstruct_detects_ceo_verdict_files(factory_project: Path) -> None:
+    """CEO verdict files (ceo-verdict-{role}.md) also indicate agent completion."""
+    (factory_project / ".factory" / "reviews" / "ceo-verdict-researcher.md").write_text("PROCEED")
+    (factory_project / ".factory" / "reviews" / "ceo-verdict-strategist.md").write_text("PROCEED")
+
+    state = reconstruct_state(factory_project)
+    assert "researcher" in state.completed_agents
+    assert "strategist" in state.completed_agents
+    assert "builder" not in state.completed_agents
+
+
 def test_reconstruct_after_researcher_and_strategist(factory_project: Path) -> None:
     """After both researcher and strategist complete."""
     events_file = factory_project / ".factory" / "events.jsonl"
