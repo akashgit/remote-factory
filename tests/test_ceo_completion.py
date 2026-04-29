@@ -228,6 +228,226 @@ class TestDetectIncomplete:
         assert "no eval_profile.json" in gap.reason
 
 
+class TestCountVerdictsWithResultsTsv:
+    """Tests for _count_verdicts() using results.tsv with timestamp filtering.
+
+    These tests verify the primary code path (results.tsv) rather than the
+    fallback path (verdict.json files). The timestamp filtering is critical
+    for preventing cross-cycle contamination.
+    """
+
+    def _write_results_tsv(self, tmp_path: Path, rows: list[dict]) -> None:
+        """Helper to write a results.tsv with the given rows."""
+        import csv
+        from factory.store import TSV_COLUMNS
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir(parents=True, exist_ok=True)
+        tsv_path = factory_dir / "results.tsv"
+
+        with open(tsv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=TSV_COLUMNS, dialect="excel-tab")
+            writer.writeheader()
+            for row in rows:
+                # Fill in defaults for required columns
+                full_row = {col: "" for col in TSV_COLUMNS}
+                full_row.update(row)
+                writer.writerow(full_row)
+
+    def test_counts_all_verdicts_when_no_since_ts(self, tmp_path: Path) -> None:
+        """Without since_ts, all verdicts are counted."""
+        from factory.ceo_completion import _count_verdicts
+
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
+            {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": "keep"},
+        ])
+
+        count = _count_verdicts(tmp_path)
+        assert count == 3
+
+    def test_filters_by_since_ts(self, tmp_path: Path) -> None:
+        """With since_ts, only verdicts after that time are counted."""
+        from factory.ceo_completion import _count_verdicts
+
+        # Two old rows from a previous cycle, one new row from current cycle
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "revert"},
+            {"id": "3", "timestamp": "2026-04-29T14:00:00+00:00", "verdict": "keep"},
+        ])
+
+        # Filter to only count after noon on Apr 29
+        since = datetime(2026, 4, 29, 12, 0, 0, tzinfo=timezone.utc)
+        count = _count_verdicts(tmp_path, since_ts=since)
+        assert count == 1
+
+    def test_ignores_pending_verdicts(self, tmp_path: Path) -> None:
+        """Rows without keep/revert/error verdict are not counted."""
+        from factory.ceo_completion import _count_verdicts
+
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "pending"},
+            {"id": "3", "timestamp": "2026-04-28T12:00:00+00:00", "verdict": ""},
+        ])
+
+        count = _count_verdicts(tmp_path)
+        assert count == 1
+
+    def test_handles_error_verdict(self, tmp_path: Path) -> None:
+        """Error verdicts are counted (they are finalized experiments)."""
+        from factory.ceo_completion import _count_verdicts
+
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "error"},
+        ])
+
+        count = _count_verdicts(tmp_path)
+        assert count == 2
+
+    def test_handles_naive_timestamps(self, tmp_path: Path) -> None:
+        """Timestamps without timezone are treated as UTC."""
+        from factory.ceo_completion import _count_verdicts
+
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T10:00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-29T14:00:00", "verdict": "keep"},
+        ])
+
+        since = datetime(2026, 4, 29, 12, 0, 0, tzinfo=timezone.utc)
+        count = _count_verdicts(tmp_path, since_ts=since)
+        assert count == 1
+
+    def test_cross_cycle_scenario(self, tmp_path: Path) -> None:
+        """Realistic scenario: 3 experiments from old cycle, 2 from current cycle."""
+        from factory.ceo_completion import _count_verdicts
+
+        # Old cycle started at 2026-04-28T08:00:00
+        # Current cycle started at 2026-04-29T10:00:00
+        self._write_results_tsv(tmp_path, [
+            # Old cycle experiments
+            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "revert"},
+            {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
+            # Current cycle experiments
+            {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+            {"id": "5", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
+        ])
+
+        # Current cycle started at 10:00 on Apr 29
+        current_cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
+        count = _count_verdicts(tmp_path, since_ts=current_cycle_start)
+        assert count == 2
+
+
+class TestDetectIncompleteWithTimestampFiltering:
+    """Tests for _detect_incomplete() with cycle_started_at parameter.
+
+    These tests verify that _detect_incomplete correctly scopes verdict counting
+    to the current cycle, preventing cross-cycle contamination.
+    """
+
+    def _write_results_tsv(self, tmp_path: Path, rows: list[dict]) -> None:
+        """Helper to write a results.tsv with the given rows."""
+        import csv
+        from factory.store import TSV_COLUMNS
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir(parents=True, exist_ok=True)
+        tsv_path = factory_dir / "results.tsv"
+
+        with open(tsv_path, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=TSV_COLUMNS, dialect="excel-tab")
+            writer.writeheader()
+            for row in rows:
+                full_row = {col: "" for col in TSV_COLUMNS}
+                full_row.update(row)
+                writer.writerow(full_row)
+
+    def test_improve_filters_by_cycle_start(self, tmp_path: Path) -> None:
+        """Improve mode only counts verdicts from the current cycle."""
+        from factory.ceo_completion import _detect_incomplete
+
+        # Setup: 2 hypotheses in current strategy
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Hypotheses\n\n#### H1: First\n\n#### H2: Second\n"
+        )
+
+        # 3 old verdicts from previous cycle, 1 from current cycle
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "3", "timestamp": "2026-04-28T11:00:00+00:00", "verdict": "keep"},
+            {"id": "4", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+        ])
+
+        # Current cycle started at 10:00 on Apr 29 — only 1 verdict should count
+        cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
+        gap = _detect_incomplete(tmp_path, "improve", cycle_started_at=cycle_start)
+
+        # Should be incomplete: 2 hypotheses, only 1 current-cycle verdict
+        assert gap is not None
+        assert gap.planned == 2
+        assert gap.completed == 1
+        assert gap.next_item == "H2"
+
+    def test_improve_complete_with_cycle_filtering(self, tmp_path: Path) -> None:
+        """Improve mode is complete when current-cycle verdicts match hypotheses."""
+        from factory.ceo_completion import _detect_incomplete
+
+        # Setup: 2 hypotheses
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Hypotheses\n\n#### H1: First\n\n#### H2: Second\n"
+        )
+
+        # 1 old verdict, 2 current-cycle verdicts
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+            {"id": "3", "timestamp": "2026-04-29T12:00:00+00:00", "verdict": "revert"},
+        ])
+
+        cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
+        gap = _detect_incomplete(tmp_path, "improve", cycle_started_at=cycle_start)
+
+        # Should be complete: 2 hypotheses, 2 current-cycle verdicts
+        assert gap is None
+
+    def test_build_filters_by_cycle_start(self, tmp_path: Path) -> None:
+        """Build mode only counts verdicts from the current cycle."""
+        from factory.ceo_completion import _detect_incomplete
+
+        # Setup: 3 phases in build plan
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Build Plan\n\n#### H1: Phase 1\n\n#### H2: Phase 2\n\n#### H3: Phase 3\n"
+        )
+
+        # 2 old verdicts, 1 current
+        self._write_results_tsv(tmp_path, [
+            {"id": "1", "timestamp": "2026-04-28T09:00:00+00:00", "verdict": "keep"},
+            {"id": "2", "timestamp": "2026-04-28T10:00:00+00:00", "verdict": "keep"},
+            {"id": "3", "timestamp": "2026-04-29T11:00:00+00:00", "verdict": "keep"},
+        ])
+
+        cycle_start = datetime(2026, 4, 29, 10, 0, 0, tzinfo=timezone.utc)
+        gap = _detect_incomplete(tmp_path, "build", cycle_started_at=cycle_start)
+
+        # Should be incomplete: 3 phases, only 1 current-cycle verdict
+        assert gap is not None
+        assert gap.planned == 3
+        assert gap.completed == 1
+        assert gap.next_item == "Phase2"
+
+
 class TestBuildContinuationTask:
     """Tests for _build_continuation_task()."""
 

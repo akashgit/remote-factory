@@ -31,7 +31,7 @@ class Runner(Protocol):
             timeout: Maximum execution time in seconds.
             model: Optional model override.
             dangerously_skip_permissions: If True, skip permission prompts.
-            role: Agent role name (used by bob for custom mode selection).
+            role: Agent role name (used for logging and output prefixing).
 
         Returns:
             (stdout, return_code) tuple.
@@ -57,7 +57,7 @@ class Runner(Protocol):
             task: The initial user message.
             cwd: Working directory (os.chdir is called before exec).
             model: Optional model override.
-            role: Agent role name (used by bob for custom mode selection).
+            role: Agent role name (used for logging and output prefixing).
             dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
         """
         ...
