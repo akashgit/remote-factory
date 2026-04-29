@@ -20,6 +20,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - templates/**
 - README.md
 - docs/**
+- CLAUDE.md
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
