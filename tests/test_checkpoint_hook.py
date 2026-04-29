@@ -136,7 +136,10 @@ def test_reconstruct_with_eval_scores(factory_project: Path) -> None:
 
 
 def test_reconstruct_respects_cycle_boundary(factory_project: Path) -> None:
-    """Only considers events after the last cycle.started."""
+    """Only considers events after the last cycle.started.
+
+    Stale review files from old cycles must NOT count as completed agents.
+    """
     events_file = factory_project / ".factory" / "events.jsonl"
     events = [
         {"type": "agent.completed", "timestamp": "2026-04-29T08:00:00+00:00",
@@ -149,11 +152,14 @@ def test_reconstruct_respects_cycle_boundary(factory_project: Path) -> None:
          "project": "test", "agent": "researcher", "data": {"return_code": 0}},
     ]
     events_file.write_text("\n".join(json.dumps(e) for e in events) + "\n")
+    # Stale review files from cycle 1
     (factory_project / ".factory" / "reviews" / "researcher-latest.md").write_text("done")
     (factory_project / ".factory" / "reviews" / "strategist-latest.md").write_text("old")
 
     state = reconstruct_state(factory_project)
     assert "researcher" in state.completed_agents
+    # Strategist has a stale review file but no event in current cycle — must be excluded
+    assert "strategist" not in state.completed_agents
 
 
 def test_reconstruct_missing_events_file(factory_project: Path) -> None:

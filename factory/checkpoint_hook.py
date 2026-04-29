@@ -47,20 +47,27 @@ def _load_recent_events(project_path: Path) -> list[dict]:
 
 
 def _detect_completed_agents(project_path: Path, events: list[dict]) -> list[str]:
-    """Determine which agent roles have completed from events and review files."""
+    """Determine which agent roles have completed from events and review files.
+
+    When a cycle boundary exists in events, only trust event-based signals
+    to avoid stale review files from a previous cycle.
+    """
     completed = []
     reviews_dir = project_path / ".factory" / "reviews"
+    has_cycle_boundary = any(e.get("type") == "cycle.started" for e in events)
 
     for role in AGENT_ROLES:
         agent_completed = any(
             e.get("type") == "agent.completed" and e.get("agent") == role
             for e in events
         )
-        review_exists = (reviews_dir / f"{role}-latest.md").exists()
-        verdict_exists = (reviews_dir / f"ceo-verdict-{role}.md").exists()
-
-        if agent_completed or review_exists or verdict_exists:
+        if agent_completed:
             completed.append(role)
+        elif not has_cycle_boundary:
+            review_exists = (reviews_dir / f"{role}-latest.md").exists()
+            verdict_exists = (reviews_dir / f"ceo-verdict-{role}.md").exists()
+            if review_exists or verdict_exists:
+                completed.append(role)
 
     return completed
 
@@ -103,8 +110,6 @@ def _get_last_eval_scores(project_path: Path, events: list[dict]) -> dict[str, f
             data = event.get("data", {})
             if "composite" in data:
                 last_scores["composite"] = data["composite"]
-            if "dimensions" in data:
-                last_scores["dimensions"] = data["dimensions"]
     return last_scores
 
 
