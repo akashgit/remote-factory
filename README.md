@@ -237,7 +237,7 @@ Bob Shell lacks token telemetry, so the factory enforces invocation ceilings:
 | Ceiling | Default | Environment Variable |
 |---------|---------|---------------------|
 | Per-cycle | 3 | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` |
-| Per-day | 20 | `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` |
+| Per-session | 50 | `FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION` |
 
 When a ceiling is exceeded, the factory aborts with an actionable error message.
 
