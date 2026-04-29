@@ -10,6 +10,7 @@ import pytest
 from factory.runners import ClaudeRunner, BobRunner, get_runner, is_dry_run
 from factory.runners.usage import (
     CeilingExceededError,
+    CeilingWarning,
     check_ceilings,
     count_today_invocations,
     get_usage_log_path,
@@ -336,6 +337,78 @@ class TestCeilings:
         assert "ceiling exceeded" in msg.lower()
         assert "5/5" in msg
         assert "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY=10" in msg  # suggests bumping
+
+
+class TestCeilingWarning:
+    def test_warning_returned_when_daily_ceiling_near(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns CeilingWarning when ≤2 daily invocations remain."""
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "5")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "100")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "c", tmp_path, 1.0, 0, dry_run=False)
+
+        warning = check_ceilings(tmp_path)
+
+        assert warning is not None
+        assert isinstance(warning, CeilingWarning)
+        assert warning.ceiling_name == "daily"
+        assert warning.remaining == 2
+        assert warning.limit == 5
+
+    def test_warning_returned_when_cycle_ceiling_near(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns CeilingWarning when ≤2 cycle invocations remain."""
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "100")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "4")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
+
+        warning = check_ceilings(tmp_path)
+
+        assert warning is not None
+        assert isinstance(warning, CeilingWarning)
+        assert warning.ceiling_name == "per-cycle"
+        assert warning.remaining == 2
+        assert warning.limit == 4
+
+    def test_no_warning_when_sufficient_invocations_remain(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns None when >2 invocations remain."""
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "10")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+
+        warning = check_ceilings(tmp_path)
+
+        assert warning is None
+
+    def test_warning_at_exactly_one_remaining(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns CeilingWarning when exactly 1 invocation remains."""
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "3")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "100")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
+
+        warning = check_ceilings(tmp_path)
+
+        assert warning is not None
+        assert warning.ceiling_name == "daily"
+        assert warning.remaining == 1
 
 
 class TestBobAuthPreflight:
