@@ -166,6 +166,9 @@ async def invoke_agent(
 
     _save_review(project_path, role, stdout, return_code)
 
+    # Save checkpoint after each agent for crash-resilient resume
+    _save_checkpoint_safe(project_path)
+
     return stdout, return_code
 
 
@@ -195,6 +198,16 @@ def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
         emit_event(project_path, event_type, **kwargs)  # type: ignore[arg-type]
     except Exception:
         logger.debug("Failed to emit event %s", event_type, exc_info=True)
+
+
+def _save_checkpoint_safe(project_path: Path) -> None:
+    """Save a checkpoint from disk state, swallowing errors."""
+    try:
+        from factory.checkpoint_hook import reconstruct_and_save
+
+        reconstruct_and_save(project_path)
+    except Exception:
+        logger.debug("Failed to save checkpoint", exc_info=True)
 
 
 def _save_review(project_path: Path, role: str, output: str, return_code: int) -> None:
