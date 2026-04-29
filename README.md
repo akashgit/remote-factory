@@ -4,6 +4,8 @@
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
+[![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bobshell.ai)
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
@@ -24,6 +26,21 @@ factory ceo ~/my-project --focus "add WebSocket support"
 The CEO runs as a foreground Claude Code session — you can talk to it at any time, just like you would with Claude Code. Ask it what it's doing, steer it if something looks off, provide missing credentials, or redirect its focus mid-cycle. It's autonomous by default, collaborative when you want it to be.
 
 Under the hood, the CEO orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
+
+## What's New in v0.2.0
+
+- **Bob Shell runner** — Alternative CLI backend via `--runner bob`. Includes dry-run mode, per-cycle/daily usage ceilings, and auth persistence for nested subagents
+- **Interactive ideation** — `--mode interactive` launches a research → brainstorm → refine loop with the new Distiller agent before any code is written
+- **Focused mode** — `--focus "add auth"` pins a single backlog item: one hypothesis, one experiment, done
+- **CEO completion guard** — Auto-resumes when the CEO exits prematurely. Cycle state persists across respawns with cross-cycle scoping to prevent stale experiment contamination
+- **Unified backlog** — Replaces the old deferred-items system. The Strategist clears backlog items each cycle with convergence tracking
+- **Session summaries** — End-of-cycle reports: what was built, what was deferred, what needs human input
+- **Experiment checkpoint/resume** — CEO saves progress per-experiment for crash-resilient recovery
+- **Auto-discovery** — Managed projects are auto-detected from the projects directory
+- **Citation backfill** — Research grounding scores now extract and backfill citations from experiment history
+- **1144 tests** — Up from 878 at initial release
+
+See the [full changelog](CHANGELOG.md) for details.
 
 ## How It Works
 
@@ -351,7 +368,7 @@ See `factory --help` for the complete list.
 
 ```bash
 uv sync --all-groups              # Install all deps including dev
-uv run pytest -v                  # 954 tests
+uv run pytest -v                  # 1144 tests
 uv run ruff check .               # Lint
 uv run mypy factory/              # Type check
 ```

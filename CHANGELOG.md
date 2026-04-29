@@ -1,5 +1,35 @@
 # Changelog
 
+## v0.2.0 (2026-04-29)
+
+### Features
+
+- **Bob Shell runner** — Alternative CLI backend via `--runner bob` or `FACTORY_RUNNER=bob`. Protocol-based runner abstraction (`factory/runners/`) with dry-run mode (`FACTORY_BOB_DRY_RUN=1`), per-cycle and per-day invocation ceilings, auth persistence for nested subagents, and streaming output with role-prefixed lines
+- **CEO completion guard** — Auto-resumes when the CEO exits before all planned work is complete. Cycle state persists in `.factory/state/cycle.json` across respawns, with cross-cycle scoping (timestamps in `results.tsv`) to prevent stale experiment contamination. Configurable max respawns via `FACTORY_CEO_MAX_RESPAWNS`, 24-hour staleness threshold, and budget-aware re-spawn gating
+- **Interactive ideation mode** — `factory ceo "idea" --mode interactive` launches a research → brainstorm → refine loop before any code is written. The new Distiller agent synthesizes research and user feedback into a structured project spec (`idea.md`). Up to 5 refinement iterations with targeted follow-up research
+- **Focused mode** — `--focus "target"` pins a single backlog item and scopes the entire pipeline: one item, one hypothesis, one experiment, done. Requires improve mode, mutually exclusive with `--loop`
+- **Unified backlog** — Replaces the old deferred-items system with `.factory/strategy/backlog.md`. The Strategist clears backlog items each cycle with convergence tracking — new items are capped, backlog must shrink not grow. CLI: `factory backlog-list`, `factory backlog-add`, `factory backlog-remove`
+- **Session summaries** — End-of-cycle reports via `factory summary`: what was built (kept experiments with score deltas), what was deferred, what needs human input. Written to `.factory/reviews/session-summary.md`
+- **Experiment checkpoint/resume** — Per-experiment CEO state saved via `factory checkpoint` for crash-resilient recovery. Includes completed agents, pending agents, hypothesis state, and completed experiment IDs
+- **Auto-discovery** — Managed projects auto-detected from projects directory. `factory study` scans sibling projects for cross-project insights
+- **Citation backfill** — Research grounding scores now extract and backfill citations from experiment history for more accurate `research_grounding` dimension scoring
+- **Model override** — `--model` flag and `FACTORY_MODEL` env var for controlling which model agent subprocesses use
+
+### Fixes
+
+- **CEO no longer auto-merges PRs** — Leaves merge for human review, matching the no-merge policy (#125)
+- **Guard check ignores auto-generated lock files** — `uv.lock`, `package-lock.json`, etc. no longer trigger scope violations
+- **Interactive mode path resolution** — Idea strings are no longer treated as file paths (#125)
+- **Reviewer prompt** — Corrected from "merge" to "approve PR" to match the no-merge policy
+- **Discover auto-chains** — Discovery mode proceeds directly to improve mode instead of stopping
+- **Deferred item persistence** — Deferred items survive strategy rewrites across cycles
+- **Calendar-time estimate stripping** — CEO gate rejects agent outputs containing time estimates like "8-10 weeks"
+
+### Quality
+
+- **1144 tests** — Up from 878 at v0.1.0 (30% increase)
+- **Codecov** — Coverage reporting integrated into CI
+
 ## v0.1.1 (2026-04-24)
 
 ### Fixes
