@@ -89,6 +89,27 @@ All domain models live in `factory/models.py` as strict Pydantic v2 models. Key 
 
 Requires Claude Code installed and authenticated. The factory spawns `claude` subprocesses — it does not call the API directly. Any Claude Code authentication method works (API key, Vertex AI, etc.).
 
+## Runners
+
+The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI), but Bob Shell (`bob` CLI) is also supported as a switchable alternative.
+
+**Runner selection:** Set `FACTORY_RUNNER=bob` to use Bob Shell, or pass `--runner bob` to individual commands. Default is `claude`.
+
+**Bob Shell specifics:**
+- Requires `BOBSHELL_API_KEY` environment variable to be set
+- Uses 'code' mode; agent role definitions are injected via the prompt
+- Model selection is not configurable (Bob Shell uses its default model)
+
+**Dry-run mode:** Set `FACTORY_BOB_DRY_RUN=1` to test Bob Shell integration without spending tokens. The factory returns stub responses and logs usage. This is automatically set in tests via `tests/conftest.py`.
+
+**Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
+- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 3)
+- `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` (default: 20)
+- All invocations are logged to `.factory/bob_usage.jsonl`
+- Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
+
+**Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
+
 ## Running the factory
 
 ```bash
@@ -129,7 +150,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a `claude -p` subprocess. The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`.
 
 ## Observability
 

@@ -1039,6 +1039,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project_path = Path(args.project).resolve()
     timeout = getattr(args, "timeout", 600.0)
     model = _resolve_model(args)
+    runner = _resolve_runner(args)
 
     result, code = _run(invoke_agent(
         role,
@@ -1047,6 +1048,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         timeout=timeout,
         dangerously_skip_permissions=True,
         model=model,
+        runner_name=runner,
     ))
     print(result)
     return code
@@ -1088,6 +1090,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     With --mode interactive: brainstorm an idea via research + Distiller before building.
     """
     from factory.agents.runner import resolve_prompt
+    from factory.runners import get_runner
 
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
@@ -1129,13 +1132,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
-    if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     discover_only = getattr(args, "discover_only", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+    runner_name = _resolve_runner(args)
 
     if focus and prompt_file:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
@@ -1168,15 +1173,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
-        from factory.agents.runner import invoke_agent
+        # Uses completion guard to auto-resume on premature exit
+        from factory.ceo_completion import run_ceo_with_completion_guard
 
-        result, code = _run(invoke_agent(
-            "ceo",
-            task,
+        result, code = _run(run_ceo_with_completion_guard(
             project_path,
-            timeout=3600.0,
-            dangerously_skip_permissions=True,
+            task,
+            mode=mode,
+            runner_name=runner_name,
             model=model,
+            timeout=3600.0,
         ))
         print(result)
         if code == 0:
@@ -1190,22 +1196,13 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model,
         )
 
-    # Interactive foreground mode: launch claude with CEO prompt as system context
+    # Interactive foreground mode: use runner's interactive_exec
     prompt = resolve_prompt("ceo", project_path)
-
-    cmd = [
-        "claude",
-        "--append-system-prompt", prompt,
-        "--dangerously-skip-permissions",
-        task,  # initial user message
-    ]
-    if model:
-        cmd.extend(["--model", model])
-        os.environ["FACTORY_MODEL"] = model
-
-    # Replace this process with the interactive claude session
-    os.chdir(project_path)
-    os.execvp("claude", cmd)
+    runner = get_runner(runner_name)
+    runner.interactive_exec(
+        prompt, task, project_path,
+        model=model, role="ceo", dangerously_skip_permissions=True
+    )
 
 
 def _is_github_url(path: str) -> bool:
@@ -1223,6 +1220,17 @@ def _resolve_model(args: argparse.Namespace) -> str | None:
         return flag
     env = (os.environ.get("FACTORY_MODEL") or "").strip()
     return env or None
+
+
+def _resolve_runner(args: argparse.Namespace) -> str | None:
+    """Resolve runner: CLI flag > FACTORY_RUNNER env var > None (default to 'claude').
+
+    Returns None to let get_runner() handle the default.
+    """
+    flag = (getattr(args, "runner", None) or "").strip()
+    if flag:
+        return flag
+    return None
 
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
@@ -1490,14 +1498,34 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
-def _auto_detect_mode(project_path: Path, has_prompt: bool = False) -> str:
+def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
     """Detect the right mode based on project state.
+
+    Checks for an in-flight cycle first — if one exists, returns its mode
+    regardless of current project state (prevents mode flip on respawn).
+
+    Args:
+        project_path: Path to the project.
+        has_prompt: True if a build spec is available.
+        force_fresh: If True, ignores in-flight cycle and detects from scratch.
 
     When a build spec is available (--prompt, idea file, or raw prompt),
     no_factory routes to build (not discover).
     """
-    from factory.state import detect_state
+    from factory.ceo_completion import read_cycle_state
     from factory.models import ProjectState
+    from factory.state import detect_state
+
+    # Layer 2: Check for in-flight cycle (unless forced fresh)
+    if not force_fresh:
+        cycle_state = read_cycle_state(project_path)
+        if cycle_state:
+            print(
+                f"  In-flight cycle: {cycle_state.cycle_id} → mode: {cycle_state.mode} "
+                f"(respawns: {cycle_state.respawns})",
+                file=sys.stderr,
+            )
+            return cycle_state.mode
 
     state = detect_state(project_path)
     mode_map = {
@@ -1706,8 +1734,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     mode = getattr(args, "mode", "auto")
-    if mode == "auto":
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
@@ -2061,6 +2090,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timeout in seconds (default: 600)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
+    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -2074,10 +2105,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta", "interactive"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, "
-             "improve, meta, or interactive (research + brainstorm → spec → build)",
+        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
+             "build, discover, improve, meta, or interactive (research + brainstorm → spec → build)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2099,6 +2130,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
+    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -2110,9 +2143,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
         default="auto",
-        help="Run mode: auto (default, detects from project state), build, discover, improve, or meta",
+        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
+             "build, discover, improve, or meta",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2142,6 +2176,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
+    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -2149,9 +2185,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["auto", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
         default="auto",
-        help="Run mode (default: auto)",
+        help="Run mode (default: auto, respects in-flight cycle)",
     )
     p.add_argument("--loop", action="store_true", default=False, help="Enable loop mode")
     p.add_argument("--interval", type=int, default=1800, help="Loop interval in seconds")
@@ -2160,6 +2196,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Attach to session after creating")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
+    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # tmux-ls — list factory tmux sessions
     sub.add_parser("tmux-ls", help="List running factory tmux sessions")
