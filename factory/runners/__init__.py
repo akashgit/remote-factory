@@ -5,10 +5,14 @@ from __future__ import annotations
 import os
 from typing import Literal
 
+import structlog
+
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.protocol import Runner
+
+log = structlog.get_logger()
 
 __all__ = [
     "Runner",
@@ -45,11 +49,14 @@ def get_runner(name: str | None = None) -> Runner:
 
     if resolved not in _RUNNERS:
         available = ", ".join(_RUNNERS.keys())
+        log.error("unknown_runner", requested=resolved, available=available)
         raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
 
+    log.info("runner_selected", runner=resolved)
     return _RUNNERS[resolved]()
 
 
 def register_runner(name: str, runner_class: type[Runner]) -> None:
     """Register a runner implementation (used by bob module on import)."""
     _RUNNERS[name] = runner_class
+    log.info("runner_registered", runner=name)

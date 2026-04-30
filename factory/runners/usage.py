@@ -8,6 +8,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TypedDict
 
+import structlog
+
+log = structlog.get_logger()
+
 USAGE_LOG_NAME = "bob_usage.jsonl"
 
 
@@ -49,6 +53,8 @@ def log_usage(
     with open(log_path, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
+    log.info("usage_logged", role=role, duration=duration_seconds, exit_code=exit_code, dry_run=dry_run)
+
 
 def count_today_invocations(project_path: Path, *, include_dry_run: bool = False) -> int:
     """Count non-dry-run bob invocations from today."""
@@ -72,6 +78,7 @@ def count_today_invocations(project_path: Path, *, include_dry_run: bool = False
             except json.JSONDecodeError:
                 continue
 
+    log.debug("today_invocations_counted", count=count, include_dry_run=include_dry_run)
     return count
 
 
@@ -103,17 +110,22 @@ def count_cycle_invocations(project_path: Path, cycle_start: datetime | None = N
             except json.JSONDecodeError:
                 continue
 
+    log.debug("cycle_invocations_counted", count=count, cycle_start=cycle_start_iso)
     return count
 
 
 def get_cycle_ceiling() -> int:
     """Get the per-cycle invocation ceiling from env var."""
-    return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "3"))
+    ceiling = int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "3"))
+    log.debug("cycle_ceiling_read", ceiling=ceiling)
+    return ceiling
 
 
 def get_daily_ceiling() -> int:
     """Get the per-day invocation ceiling from env var."""
-    return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "20"))
+    ceiling = int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "20"))
+    log.debug("daily_ceiling_read", ceiling=ceiling)
+    return ceiling
 
 
 class CeilingExceededError(Exception):
@@ -142,6 +154,7 @@ def check_ceilings(
     daily_count = count_today_invocations(project_path)
     daily_limit = get_daily_ceiling()
     if daily_count >= daily_limit:
+        log.warning("daily_ceiling_exceeded", count=daily_count, limit=daily_limit)
         raise CeilingExceededError(
             "daily", daily_count, daily_limit, "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY"
         )
@@ -150,6 +163,9 @@ def check_ceilings(
     cycle_count = count_cycle_invocations(project_path, cycle_start)
     cycle_limit = get_cycle_ceiling()
     if cycle_count >= cycle_limit:
+        log.warning("cycle_ceiling_exceeded", count=cycle_count, limit=cycle_limit)
         raise CeilingExceededError(
             "per-cycle", cycle_count, cycle_limit, "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE"
         )
+
+    log.debug("ceilings_ok", daily=f"{daily_count}/{daily_limit}", cycle=f"{cycle_count}/{cycle_limit}")

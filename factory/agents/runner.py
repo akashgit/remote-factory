@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import asyncio
-import logging
+import uuid
 from pathlib import Path
 from typing import Literal
+
+import structlog
 
 from factory.ace.injector import inject_playbook, load_playbook
 from factory.runners import get_runner
 
-logger = logging.getLogger(__name__)
+log = structlog.get_logger()
 
 AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "distiller", "ceo"]
 
@@ -59,13 +61,13 @@ def resolve_prompt(role: AgentRole, project_path: Path | None = None) -> str:
     if project_path is not None:
         override_path = project_path / ".factory" / "agents" / f"{role}.md"
         if override_path.exists():
-            logger.info("Using project-specific prompt for %s: %s", role, override_path)
+            log.info("prompt_resolved", role=role, source="project_override", path=str(override_path))
             prompt = override_path.read_text()
             # Auto-inject evolved playbook even with project overrides
             playbook = load_playbook(role)
             if playbook:
                 prompt = inject_playbook(prompt, playbook)
-                logger.info("Injected playbook for %s (project override)", role)
+                log.info("playbook_injected", role=role, source="project_override")
             return prompt
 
     # Fall back to factory default
@@ -83,7 +85,7 @@ def resolve_prompt(role: AgentRole, project_path: Path | None = None) -> str:
     playbook = load_playbook(role)
     if playbook:
         prompt = inject_playbook(prompt, playbook)
-        logger.info("Injected playbook for %s", role)
+        log.info("playbook_injected", role=role, source="factory_default")
 
     return prompt
 
@@ -120,9 +122,38 @@ async def invoke_agent(
     """
     global _consecutive_failures
 
+    cycle_id = uuid.uuid4().hex[:8]
+    structlog.contextvars.bind_contextvars(agent=role, cycle_id=cycle_id)
+
+    try:
+        return await _invoke_agent_inner(
+            role, task, project_path,
+            timeout=timeout,
+            dangerously_skip_permissions=dangerously_skip_permissions,
+            model=model,
+            runner_name=runner_name,
+            _track_failures=_track_failures,
+        )
+    finally:
+        structlog.contextvars.clear_contextvars()
+
+
+async def _invoke_agent_inner(
+    role: AgentRole,
+    task: str,
+    project_path: Path,
+    *,
+    timeout: float,
+    dangerously_skip_permissions: bool,
+    model: str | None,
+    runner_name: str | None,
+    _track_failures: bool,
+) -> tuple[str, int]:
+    global _consecutive_failures
+
     prompt = resolve_prompt(role, project_path)
 
-    logger.info("Invoking %s agent for %s", role, project_path.name)
+    log.info("agent_invoked", project=project_path.name)
 
     _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
 
@@ -139,7 +170,7 @@ async def invoke_agent(
             role=role,
         )
     except Exception as e:
-        logger.error("%s agent failed: %s", role, e)
+        log.error("agent_failed", error=str(e))
         _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
         if _track_failures:
             _consecutive_failures += 1
@@ -147,7 +178,7 @@ async def invoke_agent(
         return f"Error: {e}", 1
 
     if return_code != 0:
-        logger.warning("%s agent exited with code %d", role, return_code)
+        log.warning("agent_exited_nonzero", return_code=return_code)
         _emit_safe(
             project_path, "agent.failed", agent=role,
             data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
@@ -160,6 +191,7 @@ async def invoke_agent(
             project_path, "agent.completed", agent=role,
             data={"return_code": 0},
         )
+        log.info("agent_completed", return_code=0)
         if _track_failures:
             # Reset counter on success
             _consecutive_failures = 0
@@ -194,7 +226,7 @@ def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
 
         emit_event(project_path, event_type, **kwargs)  # type: ignore[arg-type]
     except Exception:
-        logger.debug("Failed to emit event %s", event_type, exc_info=True)
+        log.debug("event_emit_failed", event_type=event_type)
 
 
 def _save_review(project_path: Path, role: str, output: str, return_code: int) -> None:
@@ -212,9 +244,9 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         header = f"# {role.title()} Agent Output\n\n- **timestamp:** {ts}\n- **exit_code:** {return_code}\n\n---\n\n"
         review_path.write_text(header + output)
-        logger.debug("Saved review output for %s to %s", role, review_path)
+        log.debug("review_saved", role=role, path=str(review_path))
     except Exception:
-        logger.debug("Failed to save review for %s", role, exc_info=True)
+        log.debug("review_save_failed", role=role)
 
 
 async def invoke_agents_parallel(
