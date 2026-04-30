@@ -600,6 +600,8 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
 
 7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
 
+8. **After e2e PASSES, persist the smoke test command.** Capture the command that verified the core flow as the `## Smoke Test` in `factory.md` so every future Improve-mode precheck runs it automatically. Examples: `curl -sf http://localhost:8000/health`, `python main.py --self-test`, `pytest tests/e2e/ -x -q`. If the project is a long-running server, use a health-check command, not the start command. If the project is a CLI/pipeline, use a command that runs the core flow on sample input. This is MANDATORY — an unconfigured smoke test means Improve mode has no E2E gate.
+
 ### B5a: Persist Backlog Items
 
 Before leaving Build mode, extract any items that were deferred (only those requiring human intervention) so they become the project's backlog for Improve mode.
@@ -663,7 +665,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    FACTORY_HOME="$(uv run python -m factory home)"
    cp "$FACTORY_HOME/templates/factory_config.md" "$PROJECT_PATH/factory.md"
    ```
-   Fill in: Goal, Scope, Guards, Eval command, Threshold.
+   Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
 
 5. Initialize the factory store:
    ```bash
@@ -682,7 +684,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 ### E2E Verification (if not already done)
 
-Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.**
+Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.** Ensure the `## Smoke Test` in `factory.md` is configured with a working E2E command — Improve mode relies on this for its per-experiment E2E gate.
 
 After Review mode, state is `has_factory`. Proceed to **Improve mode**.
 
@@ -841,6 +843,8 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2c. Create GitHub Issue
 
+For **code-only** hypotheses (`**Type:** code` or no Type field):
+
 ```bash
 gh issue create \
     --title "<hypothesis title>" \
@@ -860,9 +864,41 @@ gh issue create \
 - Do NOT touch files outside declared scope"
 ```
 
+For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), add execution sections:
+
+```bash
+gh issue create \
+    --title "<hypothesis title>" \
+    --label "implementation" \
+    --body "Factory experiment $EXP_ID. Hypothesis: <text>
+
+## What to Build
+<specific changes — code prerequisites if any>
+
+## Execution Step
+<copied verbatim from the hypothesis **Execution step:** field>
+
+## Acceptance Criteria
+- [ ] <code outcomes, if any>
+- [ ] Tests pass
+- [ ] Eval score does not regress
+
+## Execution Acceptance Criteria
+- [ ] Execution step ran to completion
+- [ ] Output artifacts exist: <copied from **Expected output:** field>
+- [ ] Results are non-empty and valid
+
+## Constraints
+- Read CLAUDE.md before starting
+- Do NOT touch files outside declared scope
+- The task is NOT complete until execution artifacts exist — code-only completion is a failure"
+```
+
 Save issue number as `$ISSUE_NUM`.
 
 #### 2d. Implement (Builder Agent)
+
+Set `$BUILDER_TIMEOUT` based on hypothesis type: **600** for code-only hypotheses, **1800** for operational or mixed hypotheses (pipelines, benchmarks, and Docker builds need more time).
 
 ```bash
 factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
@@ -871,9 +907,10 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
 4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION (e.g. experiment/3-add-retry-logic)
 5. Implement exactly what the issue describes
-6. Run tests and evals
-7. Commit and open PR targeting main
-Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
+6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
+7. Run tests and evals
+8. Commit and open PR targeting main
+Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
 ```
 
 If Builder fails (no PR opened), see Error Recovery below.
@@ -897,10 +934,18 @@ If Builder fails (no PR opened), see Error Recovery below.
    - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
    - After verification, checkout the target branch again (`git checkout main`)
-6. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
-7. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
-8. If REDIRECT: comment on the PR with corrections, re-invoke Builder
-9. If PROCEED: continue to 2e
+6. **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
+   - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
+   - Check if those artifacts exist in the project: `ls -la <artifact paths>`
+   - If artifacts are missing or empty, REDIRECT the Builder with `--timeout 1800`: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
+   - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
+   - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
+     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
+     b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
+7. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+8. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
+9. If REDIRECT: comment on the PR with corrections, re-invoke Builder
+10. If PROCEED: continue to 2e
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -954,6 +999,30 @@ State whether the hypothesis was validated." --project "$PROJECT_PATH"
 
 Save output as `score_after`.
 
+#### 2f-e2e. E2E Verification
+
+**After eval, verify the project still runs end-to-end on the PR branch.** This is the Improve-mode equivalent of Build mode's B5 gate. Every experiment must pass E2E — not just ones labeled "operational."
+
+1. **Read the `## Smoke Test` from `factory.md`.** If configured, run it:
+   ```bash
+   cd "$PROJECT_PATH" && <smoke_test_command>
+   ```
+
+2. **If the smoke test is NOT configured:** Run a B5-style manual check — figure out how to run the project (read README, CLAUDE.md, package.json), try to start it, verify the core flow works. Then **persist the working command** as the `## Smoke Test` in `factory.md` on the target branch (checkout main, update factory.md, commit, checkout the PR branch again). Do NOT commit factory.md changes to the experiment branch — it would pollute the PR diff and may trigger a scope guard violation.
+
+3. **If E2E fails:**
+   - REDIRECT the Builder to fix the regression (with `--timeout 1800` if the fix involves execution).
+   - If the failure is environmental (missing service, credentials not available), write status BLOCKED in the verdict. The CEO must decide: either resolve the blocker (ask the user for credentials, start the service) and retry, or skip E2E for this experiment with an explicit note. If skipped, the precheck smoke_test check will also fail unless the smoke test is unconfigured — in that case the experiment proceeds without E2E, but the CEO MUST configure the smoke test before the next cycle.
+
+4. **Write result** to `.factory/reviews/ceo-verdict-e2e.md`:
+   ```markdown
+   ## E2E Verification
+   - **Status:** PASS | FAIL | BLOCKED
+   - **Command:** <what was run>
+   - **Result:** <output summary>
+   - **Smoke test configured:** yes | no (configured it now)
+   ```
+
 #### 2g. Hard Precheck Gate (NON-OVERRIDABLE)
 
 **Before making any keep/revert decision, run the precheck gate.** This is a hard gate — you CANNOT override a failed precheck. A failure means mandatory revert, no exceptions.
@@ -971,7 +1040,7 @@ The precheck runs 4 checks:
 1. **score_direction** — score must not regress AND must meet threshold
 2. **scope** — guard check must pass (no out-of-scope modifications)
 3. **anti_pattern** — hypothesis must not be >60% similar to a previously reverted experiment
-4. **smoke_test** — if configured in factory.md, the smoke test command must pass
+4. **smoke_test** — the smoke test command from factory.md must pass (this should always be configured — if it's not, you should have configured it in step 2f-e2e above)
 
 **Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
 
@@ -996,7 +1065,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass"
 
 # If this experiment addressed a backlog item, remove it from backlog.md
 # Check the hypothesis for a **Backlog item:** tag — if present, run:
@@ -1024,7 +1093,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1037,6 +1106,9 @@ Always include structured metadata in `--notes`:
 - `builder_failed=true` — if builder didn't produce a PR
 - `reviewer_failed=true` — if reviewer reported violations
 - `archivist_spawned=true/false` — archival compliance tracking
+- `hypothesis_type=code|operational|mixed` — whether execution was required
+- `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
+- `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
