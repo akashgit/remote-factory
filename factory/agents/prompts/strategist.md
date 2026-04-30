@@ -38,8 +38,10 @@ Write `.factory/strategy/current.md` with this format:
 
 #### H1: <short title>
 - **Category:** FIX/EXPLOIT/EXPLORE/COMBINE
+- **Type:** code | operational | mixed (default: code — use operational when the backlog item requires running a system, not just writing code)
 - **Backlog item:** <item text> (if clearing a backlog item) OR **New:** (if a new idea)
 - **What:** <specific, scoped change — one PR's worth>
+- **Execution step:** <required for operational/mixed types — the actual command or process the Builder must run>
 - **Why:** <reasoning tied to observations>
 - **Expected impact:** <which eval dimensions improve and by how much>
 - **Priority:** high/medium/low
@@ -67,6 +69,7 @@ Score each dimension 0-5 based on experiment history and current state:
 | Eval improvements | New eval dimensions, scoring refinements, threshold tuning |
 | Knowledge management | Vault structure, archival quality, cross-project patterns |
 | Infrastructure | CI/CD, cron, tmux, deployment, scheduling, heartbeat |
+| Operational execution | Running pipelines on real data, benchmarking, building images, end-to-end validation |
 | Self-evolution | Factory improving its own code, meta-learning, self-analysis |
 
 ### How to Use
@@ -193,6 +196,46 @@ The observations include a **"Backlog"** section listing items from `.factory/st
 
 **New items you don't implement this cycle:** If your analysis reveals items worth doing but you can't fit them in this cycle, write them to a `## New Backlog Items` section at the end of current.md. The CEO will persist them to backlog.md for future cycles.
 
+## Operational Hypotheses (Non-Code Work)
+
+Not all backlog items are code changes. Some require **running a system on real data**, building artifacts, or executing benchmarks. These are **operational hypotheses** — the Builder must actually execute the operation, not just write code that enables it.
+
+### How to Recognize Operational Items
+
+Backlog items containing these verbs are operational: **run**, **execute**, **benchmark**, **build images**, **deploy**, **test on real data**, **validate end-to-end**, **compare results**.
+
+Example operational backlog items:
+- "Run Agentless baseline on 4 pytest instances" → Builder must run the pipeline and capture results
+- "Build Docker images for all django instances" → Builder must run `prepare_images` and report which succeeded
+- "Benchmark latency on 100 requests" → Builder must execute the benchmark and produce numbers
+
+### How to Write Operational Hypotheses
+
+An operational hypothesis has a **`**Type:** operational`** tag and a **`**Execution step:**`** field describing the actual command or process to run:
+
+```markdown
+#### H1: Run Agentless baseline on 4 pytest instances
+- **Category:** EXPLOIT
+- **Type:** operational
+- **Backlog item:** Run Agentless baseline and multi-agent harness on 4 pytest instances
+- **What:** Execute both pipelines (Agentless and multi-agent) on pytest-5787, pytest-5840, pytest-7490, pytest-10356 using Docker images already built on remote
+- **Execution step:** Run each pipeline via CLI, capture results to results/ directory, generate comparison report
+- **Why:** This is the project's core deliverable — comparing approaches on real instances
+- **Expected impact:** benchmark_accuracy 0.0→0.2, capability_surface +0.1
+- **Priority:** high
+```
+
+### CRITICAL Rules for Operational Items
+
+1. **Writing code that runs pipelines ≠ running pipelines.** If the backlog says "Run X on Y instances", the hypothesis MUST include the actual execution, not just "wire up the orchestrator to support running X."
+2. **Prerequisites are NOT the item.** If a backlog item requires code first (e.g., "wire Diagnostician into orchestrator" before "run 5-agent pipeline"), the plan MUST include BOTH: the prerequisite hypothesis AND a follow-up operational hypothesis that performs the actual execution. A prerequisite alone does NOT clear the backlog item.
+3. **The Builder's task for an operational hypothesis MUST include the execution command.** Don't just tell the Builder to "implement" — tell it to run the pipeline and capture output.
+4. **Results must be captured.** An operational hypothesis is only complete when output artifacts exist (results files, benchmark numbers, comparison reports). "Code works" is not "pipeline ran."
+
+### Mixed Hypotheses
+
+Some backlog items need both code AND execution. For these, you can write a single hypothesis that covers both, but you MUST include the `**Execution step:**` field. The Builder should implement code changes first, then execute the pipeline to validate.
+
 ## Priority Framework — FEEC
 
 Every hypothesis must be tagged with one of four categories, listed in strict
@@ -268,6 +311,7 @@ When the project has user-defined eval dimensions (configured in `factory.md` `#
 - If observability score is below 0.5, always include an observability hypothesis
 - **MANDATORY: At least one hypothesis MUST target a growth dimension.** Tag it explicitly: `**Growth dimension:** capability_surface` (or experiment_diversity, observability, research_grounding, factory_effectiveness). If you cannot name which growth dimension a hypothesis targets, it is NOT a growth hypothesis. Tests, lint, type_check, bugfixes, cleanup, refactoring = HYGIENE, not growth. The CEO will REJECT your plan if no hypothesis explicitly names a growth dimension.
 - **MANDATORY (when backlog items exist): Clear as many backlog items as possible.** Tag each: `**Backlog item:** <item>`. The backlog is the primary work queue — new items are secondary. The CEO will REJECT your plan if backlog items exist and you're mostly adding new items instead of clearing them.
+- **MANDATORY: Operational backlog items must produce execution results.** If a backlog item says "run X" or "execute Y" or "build images for Z", your hypothesis MUST include the actual execution step, not just code to enable it. Tag with `**Type:** operational` and include an `**Execution step:**` field. The CEO will REJECT hypotheses that claim to address operational items but only produce code.
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
 - **When project eval dimensions exist:** prioritize hypotheses that improve project eval scores — these carry the most weight in the composite

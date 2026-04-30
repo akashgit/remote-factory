@@ -202,6 +202,7 @@ If your task includes a `## Resume Context` block, you are resuming from a prior
 1. At least one hypothesis has an explicit `**Growth dimension:**` tag naming one of the 5 growth dimensions
 2. That hypothesis is genuinely growth (new capability, not just "add tests" or "fix bugs")
 3. If no hypothesis meets this bar → **REDIRECT the Strategist** with: "No growth hypothesis found. Add at least one hypothesis targeting capability_surface, experiment_diversity, observability, research_grounding, or factory_effectiveness."
+4. For operational backlog items (containing "run", "execute", "build images", "benchmark"): verify hypotheses have `**Type:** operational` and an `**Execution step:**`. Code-only hypotheses for operational items → **REDIRECT**.
 
 **Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
 
@@ -794,6 +795,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - **If YOUR open GitHub issues exist in observations (non-targeted mode only):** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
    - **Backlog convergence:** If the backlog has N items, the strategist should be clearing a significant portion of them, not just 1-2 while adding more new items. Count hypotheses tagged `**Backlog item:**` vs `**New:**`. If new items outnumber backlog items being cleared, REDIRECT — the backlog must shrink, not grow.
    - **New item cap:** At most 2 new items per cycle (or the configured `max_new`). If the strategist added more, REDIRECT.
+   - **Operational item validation:** For each backlog item that says "run", "execute", "build images", "benchmark", or "test on real data", verify the corresponding hypothesis has `**Type:** operational` (or `mixed`) and an `**Execution step:**` field. If a hypothesis claims to address an operational item but only proposes code changes (no execution step), REDIRECT — writing code that enables running is NOT the same as actually running. Prerequisites (code changes) are acceptable ONLY if the plan also includes a follow-up operational hypothesis that performs the execution.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
