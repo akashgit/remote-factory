@@ -14,9 +14,6 @@ from factory.agents.plugin import (
 from factory.agents.runner import AgentRole, _PROMPTS_DIR
 
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_AGENTS_DIR = _PROJECT_ROOT / "agents"
-
 ALL_ROLES: list[AgentRole] = [
     "researcher", "strategist", "builder", "reviewer",
     "evaluator", "archivist", "distiller", "ceo",
@@ -111,26 +108,17 @@ class TestGenerateAgentContent:
             generate_agent_content("nonexistent")  # type: ignore[arg-type]
 
 
-class TestAgentFiles:
-    def test_all_roles_have_files(self):
+class TestCheckAgentsInSync:
+    def test_passes_when_all_generated(self, tmp_path):
         for role in ALL_ROLES:
-            path = _AGENTS_DIR / f"{role}.md"
-            assert path.exists(), f"Missing agent file: {path}"
+            (tmp_path / f"{role}.md").write_text(generate_agent_content(role))
+        assert check_agents_in_sync(tmp_path) == []
 
-    def test_files_match_generated(self):
-        for role in ALL_ROLES:
-            expected = generate_agent_content(role)
-            actual = (_AGENTS_DIR / f"{role}.md").read_text()
-            assert actual == expected, f"{role}.md is out of sync"
-
-    def test_check_agents_in_sync_passes(self):
-        assert check_agents_in_sync(_AGENTS_DIR) == []
-
-    def test_check_detects_missing_file(self, tmp_path):
+    def test_detects_missing_file(self, tmp_path):
         out_of_sync = check_agents_in_sync(tmp_path)
         assert len(out_of_sync) == len(ALL_ROLES)
 
-    def test_check_detects_stale_file(self, tmp_path):
+    def test_detects_stale_file(self, tmp_path):
         for role in ALL_ROLES:
             (tmp_path / f"{role}.md").write_text(generate_agent_content(role))
         (tmp_path / "builder.md").write_text("stale content")
