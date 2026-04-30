@@ -932,13 +932,13 @@ If Builder fails (no PR opened), see Error Recovery below.
    - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
    - After verification, checkout the target branch again (`git checkout main`)
-6. **If the hypothesis is operational or mixed** (`**Type:** operational` or `**Type:** mixed`):
+6. **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
    - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
    - Check if those artifacts exist in the project: `ls -la <artifact paths>`
-   - If artifacts are missing or empty, REDIRECT the Builder: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
+   - If artifacts are missing or empty, REDIRECT the Builder with `--timeout 1800`: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
    - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
    - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
-     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.), OR
+     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
      b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
 7. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
 8. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
@@ -1080,6 +1080,8 @@ Always include structured metadata in `--notes`:
 - `builder_failed=true` — if builder didn't produce a PR
 - `reviewer_failed=true` — if reviewer reported violations
 - `archivist_spawned=true/false` — archival compliance tracking
+- `hypothesis_type=code|operational|mixed` — whether execution was required
+- `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
