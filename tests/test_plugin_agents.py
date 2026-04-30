@@ -1,0 +1,138 @@
+"""Tests for plugin agent generation and sync."""
+
+from pathlib import Path
+
+import pytest
+import yaml
+
+from factory.agents.plugin import (
+    AGENT_CONFIG,
+    AgentMeta,
+    check_agents_in_sync,
+    generate_agent_content,
+)
+from factory.agents.runner import AgentRole, _PROMPTS_DIR
+
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_AGENTS_DIR = _PROJECT_ROOT / "agents"
+
+ALL_ROLES: list[AgentRole] = [
+    "researcher", "strategist", "builder", "reviewer",
+    "evaluator", "archivist", "distiller", "ceo",
+]
+
+
+def _parse_frontmatter(content: str) -> dict:
+    """Extract YAML frontmatter from a markdown file."""
+    assert content.startswith("---\n")
+    end = content.index("---\n", 4)
+    return yaml.safe_load(content[4:end])
+
+
+class TestAgentConfig:
+    def test_covers_all_roles(self):
+        for role in ALL_ROLES:
+            assert role in AGENT_CONFIG, f"Missing config for {role}"
+
+    def test_all_entries_are_agent_meta(self):
+        for role, meta in AGENT_CONFIG.items():
+            assert isinstance(meta, AgentMeta), f"{role} config is not AgentMeta"
+
+    def test_ceo_uses_opus(self):
+        assert AGENT_CONFIG["ceo"].model == "opus"
+
+    def test_non_ceo_agents_use_sonnet(self):
+        for role, meta in AGENT_CONFIG.items():
+            if role != "ceo":
+                assert meta.model == "sonnet", f"{role} should use sonnet, got {meta.model}"
+
+    def test_builder_has_edit_write(self):
+        tools = AGENT_CONFIG["builder"].tools
+        assert "Edit" in tools
+        assert "Write" in tools
+
+    def test_researcher_has_web_tools(self):
+        tools = AGENT_CONFIG["researcher"].tools
+        assert "WebSearch" in tools
+        assert "WebFetch" in tools
+
+    def test_distiller_has_no_bash(self):
+        assert "Bash" not in AGENT_CONFIG["distiller"].tools
+
+    def test_all_agents_with_bash_except_distiller(self):
+        for role, meta in AGENT_CONFIG.items():
+            if role == "distiller":
+                assert "Bash" not in meta.tools
+            else:
+                assert "Bash" in meta.tools, f"{role} should have Bash"
+
+
+class TestGenerateAgentContent:
+    def test_has_frontmatter(self):
+        content = generate_agent_content("researcher")
+        assert content.startswith("---\n")
+        assert "\n---\n" in content[4:]
+
+    def test_frontmatter_has_required_fields(self):
+        for role in ALL_ROLES:
+            content = generate_agent_content(role)
+            fm = _parse_frontmatter(content)
+            assert "name" in fm, f"{role}: missing name"
+            assert "description" in fm, f"{role}: missing description"
+            assert "model" in fm, f"{role}: missing model"
+            assert "tools" in fm, f"{role}: missing tools"
+
+    def test_frontmatter_name_matches_role(self):
+        for role in ALL_ROLES:
+            fm = _parse_frontmatter(generate_agent_content(role))
+            assert fm["name"] == role
+
+    def test_has_generated_comment(self):
+        content = generate_agent_content("builder")
+        assert "GENERATED FILE" in content
+        assert "factory/agents/prompts/builder.md" in content
+
+    def test_has_prerequisite_note(self):
+        content = generate_agent_content("builder")
+        assert "factory" in content
+        assert "uv tool install" in content
+
+    def test_preserves_prompt_content(self):
+        for role in ALL_ROLES:
+            source = (_PROMPTS_DIR / f"{role}.md").read_text()
+            generated = generate_agent_content(role)
+            assert generated.endswith(source), (
+                f"{role}: generated file does not end with source prompt"
+            )
+
+    def test_unknown_role_raises(self):
+        with pytest.raises(ValueError, match="Unknown agent role"):
+            generate_agent_content("nonexistent")  # type: ignore[arg-type]
+
+
+class TestAgentFiles:
+    def test_all_roles_have_files(self):
+        for role in ALL_ROLES:
+            path = _AGENTS_DIR / f"{role}.md"
+            assert path.exists(), f"Missing agent file: {path}"
+
+    def test_files_match_generated(self):
+        for role in ALL_ROLES:
+            expected = generate_agent_content(role)
+            actual = (_AGENTS_DIR / f"{role}.md").read_text()
+            assert actual == expected, f"{role}.md is out of sync"
+
+    def test_check_agents_in_sync_passes(self):
+        assert check_agents_in_sync(_AGENTS_DIR) == []
+
+    def test_check_detects_missing_file(self, tmp_path):
+        out_of_sync = check_agents_in_sync(tmp_path)
+        assert len(out_of_sync) == len(ALL_ROLES)
+
+    def test_check_detects_stale_file(self, tmp_path):
+        for role in ALL_ROLES:
+            (tmp_path / f"{role}.md").write_text(generate_agent_content(role))
+        (tmp_path / "builder.md").write_text("stale content")
+        out_of_sync = check_agents_in_sync(tmp_path)
+        assert out_of_sync == ["builder"]

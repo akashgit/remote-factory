@@ -1126,33 +1126,27 @@ def cmd_self_update(args: argparse.Namespace) -> int:
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    """Install the Factory CEO as a Claude Code agent."""
-    from factory.agents.runner import resolve_prompt
+    """Install Factory agents as Claude Code agents."""
+    from factory.agents.plugin import AGENT_CONFIG, generate_agent_content
 
     agents_dir = Path.home() / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
-    agent_path = agents_dir / "factory-ceo.md"
 
-    ceo_prompt = resolve_prompt("ceo")
+    role_filter = getattr(args, "role", None)
+    roles = [role_filter] if role_filter else list(AGENT_CONFIG)
 
-    frontmatter = (
-        "---\n"
-        "name: factory-ceo\n"
-        "description: Factory CEO — autonomous multi-agent software evolution orchestrator. "
-        "Detects project state, spawns specialist agents (researcher, strategist, builder, "
-        "reviewer, evaluator, archivist), runs experiments, and makes keep/revert decisions.\n"
-        "model: opus\n"
-        "---\n\n"
-    )
+    for role in roles:
+        content = generate_agent_content(role)
+        agent_path = agents_dir / f"factory-{role}.md"
+        agent_path.write_text(content)
+        print(f"  Installed factory-{role} -> {agent_path}")
 
-    agent_path.write_text(frontmatter + ceo_prompt)
-    print(f"Installed factory-ceo agent to {agent_path}")
     print()
     print("Usage:")
-    print("  claude --agent factory-ceo              # from any project directory")
-    print('  claude --agent factory-ceo "improve X"   # with initial prompt')
+    print("  claude --agent factory-<role>              # from any project directory")
+    print('  claude --agent factory-ceo "improve X"     # with initial prompt')
     print()
-    print("Or from within Claude Code, ask: \"use the factory-ceo agent\"")
+    print("Or from within Claude Code, ask: \"use the factory-<role> agent\"")
     return 0
 
 
@@ -2305,8 +2299,15 @@ def build_parser() -> argparse.ArgumentParser:
     # self-update
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
-    # install — install Factory CEO as a Claude Code agent
-    sub.add_parser("install", help="Install Factory CEO as a Claude Code agent (~/.claude/agents/)")
+    # install — install Factory agents as Claude Code agents
+    p = sub.add_parser("install", help="Install Factory agents as Claude Code agents (~/.claude/agents/)")
+    p.add_argument(
+        "--role",
+        choices=["researcher", "strategist", "builder", "reviewer",
+                 "evaluator", "archivist", "distiller", "ceo"],
+        default=None,
+        help="Install only a specific agent role (default: all)",
+    )
 
     # serve-mcp — MCP stdio server
     sub.add_parser("serve-mcp", help="Start the Factory MCP stdio server")
