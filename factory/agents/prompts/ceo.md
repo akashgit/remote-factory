@@ -598,9 +598,9 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
    - **User input needed:** <what, if anything>
    ```
 
-7. **Persist the smoke test command.** You just verified how to run the project — capture that as the `## Smoke Test` in `factory.md` so every future Improve-mode precheck runs it automatically. Write the command that verifies the core flow (e.g., `curl -sf http://localhost:8000/health`, `python main.py --self-test`, `pytest tests/e2e/ -x -q`). If the project is a long-running server, use a health-check command, not the start command. If the project is a CLI/pipeline, use a command that runs the core flow on sample input. This is MANDATORY — an unconfigured smoke test means Improve mode has no E2E gate.
+7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
 
-8. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
+8. **After e2e PASSES, persist the smoke test command.** Capture the command that verified the core flow as the `## Smoke Test` in `factory.md` so every future Improve-mode precheck runs it automatically. Examples: `curl -sf http://localhost:8000/health`, `python main.py --self-test`, `pytest tests/e2e/ -x -q`. If the project is a long-running server, use a health-check command, not the start command. If the project is a CLI/pipeline, use a command that runs the core flow on sample input. This is MANDATORY — an unconfigured smoke test means Improve mode has no E2E gate.
 
 ### B5a: Persist Backlog Items
 
@@ -1008,12 +1008,11 @@ Save output as `score_after`.
    cd "$PROJECT_PATH" && <smoke_test_command>
    ```
 
-2. **If the smoke test is NOT configured:** Run a B5-style manual check — figure out how to run the project (read README, CLAUDE.md, package.json), try to start it, verify the core flow works. Then **persist the working command** as the `## Smoke Test` in `factory.md` so future cycles have it automatically. Commit the factory.md update.
+2. **If the smoke test is NOT configured:** Run a B5-style manual check — figure out how to run the project (read README, CLAUDE.md, package.json), try to start it, verify the core flow works. Then **persist the working command** as the `## Smoke Test` in `factory.md` on the target branch (checkout main, update factory.md, commit, checkout the PR branch again). Do NOT commit factory.md changes to the experiment branch — it would pollute the PR diff and may trigger a scope guard violation.
 
 3. **If E2E fails:**
-   - REDIRECT the Builder to fix the regression (with `--timeout 1800` if the fix involves execution), OR
-   - If the failure is environmental (missing service, credentials not available), document it in the verdict and note it — the precheck `smoke_test` check will also catch it.
-   - Do NOT proceed to precheck with a known E2E failure — fix it first or document why it cannot be fixed this cycle.
+   - REDIRECT the Builder to fix the regression (with `--timeout 1800` if the fix involves execution).
+   - If the failure is environmental (missing service, credentials not available), write status BLOCKED in the verdict. The CEO must decide: either resolve the blocker (ask the user for credentials, start the service) and retry, or skip E2E for this experiment with an explicit note. If skipped, the precheck smoke_test check will also fail unless the smoke test is unconfigured — in that case the experiment proceeds without E2E, but the CEO MUST configure the smoke test before the next cycle.
 
 4. **Write result** to `.factory/reviews/ceo-verdict-e2e.md`:
    ```markdown
@@ -1066,7 +1065,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass"
 
 # If this experiment addressed a backlog item, remove it from backlog.md
 # Check the hypothesis for a **Backlog item:** tag — if present, run:
@@ -1094,7 +1093,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1109,6 +1108,7 @@ Always include structured metadata in `--notes`:
 - `archivist_spawned=true/false` — archival compliance tracking
 - `hypothesis_type=code|operational|mixed` — whether execution was required
 - `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
+- `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
