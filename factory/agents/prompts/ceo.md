@@ -798,6 +798,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - **Backlog convergence:** If the backlog has N items, the strategist should be clearing a significant portion of them, not just 1-2 while adding more new items. Count hypotheses tagged `**Backlog item:**` vs `**New:**`. If new items outnumber backlog items being cleared, REDIRECT — the backlog must shrink, not grow.
    - **New item cap:** At most 2 new items per cycle (or the configured `max_new`). If the strategist added more, REDIRECT.
    - **Operational item validation:** For each backlog item that says "run", "execute", "benchmark", "build images", "deploy", "test on real data", "validate end-to-end", or "compare results", verify the corresponding hypothesis has `**Type:** operational` (or `mixed`), an `**Execution step:**` field, and an `**Expected output:**` field. If a hypothesis claims to address an operational item but only proposes code changes (no execution step), REDIRECT — writing code that enables running is NOT the same as actually running. Prerequisites (code changes) are acceptable ONLY if the plan also includes a follow-up operational hypothesis that performs the execution.
+   - **Backlog item adequacy:** For each hypothesis tagged `**Backlog item:**`, read the original item text from `.factory/strategy/backlog.md` and compare against what the hypothesis actually proposes. Does the hypothesis FULLY address what the backlog item asks for? (The operational item validation above catches the execution-specific case; this check covers ALL backlog items.) Common mismatches: a hypothesis that implements a subset of features but the backlog item asks for the full set; a hypothesis that adds an endpoint but the backlog item asks for the endpoint plus UI; a hypothesis that writes a config parser but the backlog item asks for the parser plus validation plus error handling. If the hypothesis only partially addresses the item, REDIRECT: "H2 claims to clear backlog item '<item>' but only covers <subset> — either expand H2 to cover the full item, split into multiple hypotheses, or retag H2 so it does not claim to clear the backlog item."
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
@@ -1065,12 +1066,26 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass"
-
-# If this experiment addressed a backlog item, remove it from backlog.md
-# Check the hypothesis for a **Backlog item:** tag — if present, run:
-uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=yes"
 ```
+
+**Backlog item verification — if the hypothesis has a `**Backlog item:**` tag:**
+
+Before removing the item, verify the delivered work actually solves it:
+
+1. Read the original backlog item text from `.factory/strategy/backlog.md`.
+2. Read what was delivered: the PR diff (`gh pr diff $PR_NUM`), E2E result from `ceo-verdict-e2e.md`, and any execution artifacts.
+3. Judge: does the delivered work FULLY satisfy what the backlog item asks for?
+   - **YES** (fully solved): remove it.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+     ```
+   - **NO** (not solved, only prerequisites): do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
+   - **PARTIAL** (some progress but not complete): update the item to reflect remaining work.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
+     uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
+     ```
 
 **If precheck FAILS → Mandatory Revert:**
 
@@ -1093,7 +1108,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1109,6 +1124,7 @@ Always include structured metadata in `--notes`:
 - `hypothesis_type=code|operational|mixed` — whether execution was required
 - `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
 - `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
+- `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
@@ -1201,6 +1217,12 @@ This writes `.factory/reviews/session-summary.md` with:
 3. **What needs human input** — failed experiments, guard violations, marginal reverts
 
 Review the summary output. If it reveals critical issues you missed, address them before proceeding.
+
+**Backlog completion check:** Before exiting, verify that kept experiments actually cleared their backlog items:
+1. Read `.factory/strategy/backlog.md` — list remaining items.
+2. For each hypothesis tagged `**Backlog item:**` that was kept this cycle, verify the item was removed. If it's still in the backlog (removal was skipped because the item wasn't fully solved), that's expected — but flag it.
+3. If any backlog items remain that a kept experiment claimed to fully address, something went wrong — investigate before proceeding. The item may need to be re-added or the experiment's verdict reconsidered.
+4. Write the backlog status to the session summary: how many items were cleared, how many remain, which ones were partially addressed.
 
 ### Step 4: Notify
 
