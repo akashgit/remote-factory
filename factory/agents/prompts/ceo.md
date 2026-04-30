@@ -896,6 +896,8 @@ Save issue number as `$ISSUE_NUM`.
 
 #### 2d. Implement (Builder Agent)
 
+Set `$BUILDER_TIMEOUT` based on hypothesis type: **600** for code-only hypotheses, **1800** for operational or mixed hypotheses (pipelines, benchmarks, and Docker builds need more time).
+
 ```bash
 factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
 1. Read the issue: gh issue view $ISSUE_NUM
@@ -906,7 +908,7 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
 7. Run tests and evals
 8. Commit and open PR targeting main
-Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
+Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
 ```
 
 If Builder fails (no PR opened), see Error Recovery below.
@@ -931,8 +933,8 @@ If Builder fails (no PR opened), see Error Recovery below.
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
    - After verification, checkout the target branch again (`git checkout main`)
 6. **If the hypothesis is operational or mixed** (`**Type:** operational` or `**Type:** mixed`):
-   - Read the `**Expected output:**` field from the hypothesis
-   - Check if the expected output artifacts exist in the project: `ls -la <artifact paths>`
+   - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
+   - Check if those artifacts exist in the project: `ls -la <artifact paths>`
    - If artifacts are missing or empty, REDIRECT the Builder: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
    - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
    - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
