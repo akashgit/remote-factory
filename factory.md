@@ -64,8 +64,7 @@ main
 <!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->
 
 - min_growth: 2
-- min_fix: 0
-- max_total: 7
+- max_new: 2
 
 ## Smoke Test
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
