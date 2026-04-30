@@ -1066,20 +1066,26 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass"
-
-# If this experiment addressed a backlog item, verify it was actually solved before removing:
-# 1. Read the original backlog item text from .factory/strategy/backlog.md
-# 2. Read what was delivered: the PR diff (gh pr diff $PR_NUM), E2E result, execution artifacts
-# 3. Judge: does the delivered work FULLY satisfy what the backlog item asks for?
-#    - YES (fully solved): remove it
-#      uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
-#    - NO (not solved, only prerequisites): do NOT remove. Note what's still missing in the
-#      verdict. The item stays in the backlog for the next cycle.
-#    - PARTIAL (some progress but not complete): update the item to reflect remaining work:
-#      uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
-#      uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=yes"
 ```
+
+**Backlog item verification — if the hypothesis has a `**Backlog item:**` tag:**
+
+Before removing the item, verify the delivered work actually solves it:
+
+1. Read the original backlog item text from `.factory/strategy/backlog.md`.
+2. Read what was delivered: the PR diff (`gh pr diff $PR_NUM`), E2E result from `ceo-verdict-e2e.md`, and any execution artifacts.
+3. Judge: does the delivered work FULLY satisfy what the backlog item asks for?
+   - **YES** (fully solved): remove it.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+     ```
+   - **NO** (not solved, only prerequisites): do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
+   - **PARTIAL** (some progress but not complete): update the item to reflect remaining work.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
+     uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
+     ```
 
 **If precheck FAILS → Mandatory Revert:**
 
@@ -1102,7 +1108,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1118,6 +1124,7 @@ Always include structured metadata in `--notes`:
 - `hypothesis_type=code|operational|mixed` — whether execution was required
 - `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
 - `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
+- `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
