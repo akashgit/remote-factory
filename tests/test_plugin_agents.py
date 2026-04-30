@@ -1,6 +1,5 @@
 """Tests for plugin agent generation and sync."""
 
-from pathlib import Path
 
 import pytest
 import yaml
