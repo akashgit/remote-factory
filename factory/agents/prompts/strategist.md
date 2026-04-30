@@ -236,7 +236,7 @@ An operational hypothesis has `**Type:** operational` and `**Execution step:**` 
 
 ### Mixed Hypotheses
 
-Some backlog items need both code AND execution. For these, you can write a single hypothesis that covers both, but you MUST include the `**Execution step:**` field. The Builder should implement code changes first, then execute the pipeline to validate.
+Some backlog items need both code AND execution. For these, you can write a single hypothesis that covers both, but you MUST include the `**Execution step:**` and `**Expected output:**` fields. The Builder should implement code changes first, then execute the pipeline to validate.
 
 ## Priority Framework — FEEC
 
@@ -252,7 +252,7 @@ priority order:
 
 **Backlog priority:** When backlog items exist, they are the primary work. Present backlog-clearing hypotheses first (using FEEC ordering within them), then any new hypotheses.
 
-When generating hypotheses, always evaluate and tag them:
+When generating hypotheses, always evaluate and tag them (use the full template from the Output section above — including Type, Execution step, and Expected output for operational/mixed hypotheses):
 
 ```markdown
 #### H1: <title>
