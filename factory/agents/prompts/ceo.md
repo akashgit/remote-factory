@@ -841,6 +841,8 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2c. Create GitHub Issue
 
+For **code-only** hypotheses (`**Type:** code` or no Type field):
+
 ```bash
 gh issue create \
     --title "<hypothesis title>" \
@@ -860,6 +862,36 @@ gh issue create \
 - Do NOT touch files outside declared scope"
 ```
 
+For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), add execution sections:
+
+```bash
+gh issue create \
+    --title "<hypothesis title>" \
+    --label "implementation" \
+    --body "Factory experiment $EXP_ID. Hypothesis: <text>
+
+## What to Build
+<specific changes — code prerequisites if any>
+
+## Execution Step
+<copied verbatim from the hypothesis **Execution step:** field>
+
+## Acceptance Criteria
+- [ ] <code outcomes, if any>
+- [ ] Tests pass
+- [ ] Eval score does not regress
+
+## Execution Acceptance Criteria
+- [ ] Execution step ran to completion
+- [ ] Output artifacts exist: <copied from **Expected output:** field>
+- [ ] Results are non-empty and valid
+
+## Constraints
+- Read CLAUDE.md before starting
+- Do NOT touch files outside declared scope
+- The task is NOT complete until execution artifacts exist — code-only completion is a failure"
+```
+
 Save issue number as `$ISSUE_NUM`.
 
 #### 2d. Implement (Builder Agent)
@@ -871,8 +903,9 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
 4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION (e.g. experiment/3-add-retry-logic)
 5. Implement exactly what the issue describes
-6. Run tests and evals
-7. Commit and open PR targeting main
+6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
+7. Run tests and evals
+8. Commit and open PR targeting main
 Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
 ```
 
@@ -897,10 +930,18 @@ If Builder fails (no PR opened), see Error Recovery below.
    - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
    - After verification, checkout the target branch again (`git checkout main`)
-6. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
-7. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
-8. If REDIRECT: comment on the PR with corrections, re-invoke Builder
-9. If PROCEED: continue to 2e
+6. **If the hypothesis is operational or mixed** (`**Type:** operational` or `**Type:** mixed`):
+   - Read the `**Expected output:**` field from the hypothesis
+   - Check if the expected output artifacts exist in the project: `ls -la <artifact paths>`
+   - If artifacts are missing or empty, REDIRECT the Builder: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
+   - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
+   - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
+     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.), OR
+     b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
+7. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+8. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
+9. If REDIRECT: comment on the PR with corrections, re-invoke Builder
+10. If PROCEED: continue to 2e
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
