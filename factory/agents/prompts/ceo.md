@@ -598,7 +598,9 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
    - **User input needed:** <what, if anything>
    ```
 
-7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
+7. **Persist the smoke test command.** You just verified how to run the project — capture that as the `## Smoke Test` in `factory.md` so every future Improve-mode precheck runs it automatically. Write the command that verifies the core flow (e.g., `curl -sf http://localhost:8000/health`, `python main.py --self-test`, `pytest tests/e2e/ -x -q`). If the project is a long-running server, use a health-check command, not the start command. If the project is a CLI/pipeline, use a command that runs the core flow on sample input. This is MANDATORY — an unconfigured smoke test means Improve mode has no E2E gate.
+
+8. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
 
 ### B5a: Persist Backlog Items
 
@@ -663,7 +665,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    FACTORY_HOME="$(uv run python -m factory home)"
    cp "$FACTORY_HOME/templates/factory_config.md" "$PROJECT_PATH/factory.md"
    ```
-   Fill in: Goal, Scope, Guards, Eval command, Threshold.
+   Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
 
 5. Initialize the factory store:
    ```bash
@@ -682,7 +684,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 ### E2E Verification (if not already done)
 
-Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.**
+Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.** Ensure the `## Smoke Test` in `factory.md` is configured with a working E2E command — Improve mode relies on this for its per-experiment E2E gate.
 
 After Review mode, state is `has_factory`. Proceed to **Improve mode**.
 
@@ -997,6 +999,31 @@ State whether the hypothesis was validated." --project "$PROJECT_PATH"
 
 Save output as `score_after`.
 
+#### 2f-e2e. E2E Verification
+
+**After eval, verify the project still runs end-to-end on the PR branch.** This is the Improve-mode equivalent of Build mode's B5 gate. Every experiment must pass E2E — not just ones labeled "operational."
+
+1. **Read the `## Smoke Test` from `factory.md`.** If configured, run it:
+   ```bash
+   cd "$PROJECT_PATH" && <smoke_test_command>
+   ```
+
+2. **If the smoke test is NOT configured:** Run a B5-style manual check — figure out how to run the project (read README, CLAUDE.md, package.json), try to start it, verify the core flow works. Then **persist the working command** as the `## Smoke Test` in `factory.md` so future cycles have it automatically. Commit the factory.md update.
+
+3. **If E2E fails:**
+   - REDIRECT the Builder to fix the regression (with `--timeout 1800` if the fix involves execution), OR
+   - If the failure is environmental (missing service, credentials not available), document it in the verdict and note it — the precheck `smoke_test` check will also catch it.
+   - Do NOT proceed to precheck with a known E2E failure — fix it first or document why it cannot be fixed this cycle.
+
+4. **Write result** to `.factory/reviews/ceo-verdict-e2e.md`:
+   ```markdown
+   ## E2E Verification
+   - **Status:** PASS | FAIL | BLOCKED
+   - **Command:** <what was run>
+   - **Result:** <output summary>
+   - **Smoke test configured:** yes | no (configured it now)
+   ```
+
 #### 2g. Hard Precheck Gate (NON-OVERRIDABLE)
 
 **Before making any keep/revert decision, run the precheck gate.** This is a hard gate — you CANNOT override a failed precheck. A failure means mandatory revert, no exceptions.
@@ -1014,7 +1041,7 @@ The precheck runs 4 checks:
 1. **score_direction** — score must not regress AND must meet threshold
 2. **scope** — guard check must pass (no out-of-scope modifications)
 3. **anti_pattern** — hypothesis must not be >60% similar to a previously reverted experiment
-4. **smoke_test** — if configured in factory.md, the smoke test command must pass
+4. **smoke_test** — the smoke test command from factory.md must pass (this should always be configured — if it's not, you should have configured it in step 2f-e2e above)
 
 **Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
 
