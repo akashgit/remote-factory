@@ -42,6 +42,7 @@ Write `.factory/strategy/current.md` with this format:
 - **Backlog item:** <item text> (if clearing a backlog item) OR **New:** (if a new idea)
 - **What:** <specific, scoped change — one PR's worth>
 - **Execution step:** <required for operational/mixed types — the actual command or process the Builder must run>
+- **Expected output:** <required for operational/mixed types — what artifacts or results the execution must produce>
 - **Why:** <reasoning tied to observations>
 - **Expected impact:** <which eval dimensions improve and by how much>
 - **Priority:** high/medium/low
@@ -211,7 +212,7 @@ Example operational backlog items:
 
 ### How to Write Operational Hypotheses
 
-An operational hypothesis has a **`**Type:** operational`** tag and a **`**Execution step:**`** field describing the actual command or process to run:
+An operational hypothesis has `**Type:** operational` and `**Execution step:**` fields describing the actual command or process to run:
 
 ```markdown
 #### H1: Run Agentless baseline on 4 pytest instances
@@ -220,6 +221,7 @@ An operational hypothesis has a **`**Type:** operational`** tag and a **`**Execu
 - **Backlog item:** Run Agentless baseline and multi-agent harness on 4 pytest instances
 - **What:** Execute both pipelines (Agentless and multi-agent) on pytest-5787, pytest-5840, pytest-7490, pytest-10356 using Docker images already built on remote
 - **Execution step:** Run each pipeline via CLI, capture results to results/ directory, generate comparison report
+- **Expected output:** results/agentless-baseline.json, results/multi-agent-harness.json, results/comparison-report.md
 - **Why:** This is the project's core deliverable — comparing approaches on real instances
 - **Expected impact:** benchmark_accuracy 0.0→0.2, capability_surface +0.1
 - **Priority:** high
@@ -311,7 +313,7 @@ When the project has user-defined eval dimensions (configured in `factory.md` `#
 - If observability score is below 0.5, always include an observability hypothesis
 - **MANDATORY: At least one hypothesis MUST target a growth dimension.** Tag it explicitly: `**Growth dimension:** capability_surface` (or experiment_diversity, observability, research_grounding, factory_effectiveness). If you cannot name which growth dimension a hypothesis targets, it is NOT a growth hypothesis. Tests, lint, type_check, bugfixes, cleanup, refactoring = HYGIENE, not growth. The CEO will REJECT your plan if no hypothesis explicitly names a growth dimension.
 - **MANDATORY (when backlog items exist): Clear as many backlog items as possible.** Tag each: `**Backlog item:** <item>`. The backlog is the primary work queue — new items are secondary. The CEO will REJECT your plan if backlog items exist and you're mostly adding new items instead of clearing them.
-- **MANDATORY: Operational backlog items must produce execution results.** If a backlog item says "run X" or "execute Y" or "build images for Z", your hypothesis MUST include the actual execution step, not just code to enable it. Tag with `**Type:** operational` and include an `**Execution step:**` field. The CEO will REJECT hypotheses that claim to address operational items but only produce code.
+- **MANDATORY: Operational backlog items must produce execution results.** If a backlog item says "run X" or "execute Y" or "build images for Z", your hypothesis MUST include the actual execution step, not just code to enable it. Tag with `**Type:** operational` and include `**Execution step:**` and `**Expected output:**` fields. The CEO will REJECT hypotheses that claim to address operational items but only produce code.
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
 - **When project eval dimensions exist:** prioritize hypotheses that improve project eval scores — these carry the most weight in the composite
