@@ -5,7 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
+
 from factory.agents.runner import AgentRole
+
+log = structlog.get_logger()
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _PLUGIN_AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
@@ -103,16 +107,19 @@ def generate_agent_content(role: AgentRole) -> str:
     YAML frontmatter and a generated-file header.
     """
     if role not in AGENT_CONFIG:
+        log.error("plugin_generate_unknown_role", role=role)
         raise ValueError(f"Unknown agent role: {role!r}")
 
     meta = AGENT_CONFIG[role]
     prompt_path = _PROMPTS_DIR / f"{role}.md"
     if not prompt_path.exists():
+        log.error("plugin_generate_prompt_missing", role=role, path=str(prompt_path))
         raise FileNotFoundError(f"Source prompt not found: {prompt_path}")
 
     prompt = prompt_path.read_text()
     tools_yaml = "\n".join(f"  - {t}" for t in meta.tools)
 
+    log.info("plugin_agent_generated", role=role)
     return (
         f"---\n"
         f"name: {role}\n"
@@ -153,4 +160,5 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
         if agent_path.read_text() != expected:
             out_of_sync.append(role)
 
+    log.info("plugin_sync_check", out_of_sync_count=len(out_of_sync), out_of_sync=out_of_sync)
     return out_of_sync

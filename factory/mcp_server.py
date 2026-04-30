@@ -23,7 +23,9 @@ async def handle_get_score(project_path: str) -> str:
     """Read .factory/last_eval.json and return its contents as JSON text."""
     p = Path(project_path).resolve()
     last_eval = p / ".factory" / "last_eval.json"
+    log.info("tool_get_score", project=str(p))
     if not last_eval.exists():
+        log.warning("tool_get_score_not_found", path=str(last_eval))
         return json.dumps({"error": f"No last_eval.json found at {last_eval}"})
     return last_eval.read_text()
 
@@ -34,12 +36,15 @@ async def handle_list_experiments(project_path: str, last_n: int = 10) -> str:
 
     p = Path(project_path).resolve()
     factory_dir = p / ".factory"
+    log.info("tool_list_experiments", project=str(p), last_n=last_n)
     if not factory_dir.is_dir():
+        log.warning("tool_list_experiments_no_factory_dir", path=str(p))
         return json.dumps({"error": f"No .factory/ directory at {p}"})
 
     store = ExperimentStore(p)
     records = await store.load_history()
     tail = records[-last_n:] if last_n > 0 else records
+    log.info("tool_list_experiments_result", count=len(tail))
     return json.dumps(
         [r.model_dump(mode="json") for r in tail],
         indent=2,
@@ -52,6 +57,7 @@ async def handle_get_status(project_path: str) -> str:
     from factory.state import detect_state
 
     p = Path(project_path).resolve()
+    log.info("tool_get_status", project=str(p))
     state = detect_state(p)
     result: dict[str, object] = {"project_path": str(p), "state": state.value}
 
@@ -59,13 +65,16 @@ async def handle_get_status(project_path: str) -> str:
     if config_path.exists():
         result["config"] = json.loads(config_path.read_text())
 
+    log.info("tool_get_status_result", state=state.value)
     return json.dumps(result, indent=2, default=str)
 
 
 async def handle_list_projects(projects_dir: str) -> str:
     """Scan for subdirectories containing .factory/config.json."""
     d = Path(projects_dir).resolve()
+    log.info("tool_list_projects", directory=str(d))
     if not d.is_dir():
+        log.warning("tool_list_projects_not_found", path=str(d))
         return json.dumps({"error": f"Directory not found: {d}"})
 
     projects: list[dict[str, str]] = []
@@ -78,6 +87,7 @@ async def handle_list_projects(projects_dir: str) -> str:
                 "goal": config.get("goal", ""),
             })
 
+    log.info("tool_list_projects_result", count=len(projects))
     return json.dumps(projects, indent=2)
 
 
@@ -151,11 +161,13 @@ _TOOLS = [
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    log.debug("mcp_list_tools")
     return _TOOLS
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    log.info("mcp_call_tool", tool=name)
     handlers = {
         "factory_get_score": lambda args: handle_get_score(args["project_path"]),
         "factory_list_experiments": lambda args: handle_list_experiments(
@@ -167,14 +179,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     handler = handlers.get(name)
     if handler is None:
+        log.warning("mcp_call_tool_unknown", tool=name)
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
     result_text = await handler(arguments)
+    log.info("mcp_call_tool_complete", tool=name)
     return [TextContent(type="text", text=result_text)]
 
 
 async def run_server() -> None:
     """Start the MCP stdio server."""
+    log.info("mcp_server_starting")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -185,4 +200,5 @@ async def run_server() -> None:
 
 def main() -> None:
     """Entry point for the serve-mcp CLI command."""
+    log.info("mcp_main_entry")
     asyncio.run(run_server())
