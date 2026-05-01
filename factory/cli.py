@@ -1141,6 +1141,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
+    no_github = getattr(args, "no_github", False)
 
     if focus and prompt_file:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
@@ -1164,6 +1165,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only,
         interactive_idea=interactive_idea,
+        no_github=no_github,
     )
 
     from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
@@ -1193,7 +1195,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             project_path, focus=focus,
             min_growth=min_growth, max_new=max_new, branch=branch,
             already_improved=mode in ("improve", "meta") or discover_only,
-            model=model,
+            model=model, no_github=no_github,
         )
 
     # Interactive foreground mode: use runner's interactive_exec
@@ -1393,6 +1395,8 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         run_args += f" --max-cycles {args.max_cycles}"
     if model:
         run_args += f" --model {shlex.quote(model)}"
+    if getattr(args, "no_github", False):
+        run_args += " --no-github"
 
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
@@ -1561,6 +1565,7 @@ def _build_ceo_task(
     branch: str | None = None,
     discover_only: bool = False,
     interactive_idea: str | None = None,
+    no_github: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1619,6 +1624,15 @@ def _build_ceo_task(
     if context:
         task += f"\n\n## Project Specification\n\n{context}"
 
+    if no_github:
+        task += (
+            "\n\n## GitHub Disabled (--no-github)\n\n"
+            "**CRITICAL:** Do NOT create GitHub issues or PRs. This run is local-only.\n"
+            "- Skip step 2c (Create GitHub Issue) entirely\n"
+            "- Skip PR creation in the Builder agent task\n"
+            "- Experiments still work — just no GitHub tracking\n"
+        )
+
     if mode == "build":
         task += (
             "\n\nRun Build mode: the project is new or incomplete. Follow the Build mode "
@@ -1667,6 +1681,7 @@ def _chain_modes(
     already_improved: bool = False,
     max_chains: int = 3,
     model: str | None = None,
+    no_github: bool = False,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -1693,7 +1708,7 @@ def _chain_modes(
         code = _run_single_cycle(
             project_path, next_mode, focus=focus,
             min_growth=min_growth, max_new=max_new, branch=branch,
-            model=model,
+            model=model, no_github=no_github,
         )
         if code != 0:
             return code
@@ -1711,6 +1726,7 @@ def _run_single_cycle(
     branch: str | None = None,
     discover_only: bool = False,
     model: str | None = None,
+    no_github: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -1723,7 +1739,7 @@ def _run_single_cycle(
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
-        discover_only=discover_only,
+        discover_only=discover_only, no_github=no_github,
     )
 
     checkpoint = load_checkpoint(project_path)
@@ -1763,6 +1779,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+    no_github = getattr(args, "no_github", False)
 
     if focus and loop:
         print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
@@ -1786,14 +1803,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not loop:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
-            discover_only=discover_only, model=model, **budget_kwargs,
+            discover_only=discover_only, model=model, no_github=no_github, **budget_kwargs,
         )
         if code != 0:
             return code
         return _chain_modes(
             project_path, focus=focus, already_improved=skip_improve,
             min_growth=min_growth, max_new=max_new, branch=branch,
-            model=model,
+            model=model, no_github=no_github,
         )
 
     # Heartbeat loop mode
@@ -1820,12 +1837,12 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
-                discover_only=discover_only, model=model, **budget_kwargs,
+                discover_only=discover_only, model=model, no_github=no_github, **budget_kwargs,
             )
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, max_new=max_new, branch=branch,
-                model=model,
+                model=model, no_github=no_github,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -2153,6 +2170,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument(
+        "--no-github", action="store_true", default=False,
+        help="Disable GitHub operations (issue creation, PR creation). Use for local-only experimentation.",
+    )
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -2199,6 +2220,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument(
+        "--no-github", action="store_true", default=False,
+        help="Disable GitHub operations (issue creation, PR creation). Use for local-only experimentation.",
+    )
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -2219,6 +2244,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument(
+        "--no-github", action="store_true", default=False,
+        help="Disable GitHub operations (issue creation, PR creation). Use for local-only experimentation.",
+    )
 
     # tmux-ls — list factory tmux sessions
     sub.add_parser("tmux-ls", help="List running factory tmux sessions")

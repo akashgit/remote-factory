@@ -826,6 +826,123 @@ class TestCmdCeo:
         args = parser.parse_args(["ceo", "/some/path"])
         assert args.headless is False
 
+    def test_ceo_parser_has_no_github_flag(self):
+        """Parser accepts --no-github flag."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_ceo_parser_default_no_github_false(self):
+        """Parser defaults --no-github to False."""
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.no_github is False
+
+    def test_ceo_headless_no_github_includes_directive(self, tmp_path):
+        """cmd_ceo --headless --no-github includes GitHub Disabled directive in task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless", "--no-github"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Disabled (--no-github)" in task
+        assert "Do NOT create GitHub issues or PRs" in task
+
+    def test_ceo_foreground_no_github_includes_directive(self, tmp_path):
+        """cmd_ceo --no-github (foreground) includes GitHub Disabled directive."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--no-github"])
+        cmd = mock_exec.call_args[0][1]
+        # Find the task argument (after --dangerously-skip-permissions)
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## GitHub Disabled (--no-github)" in task
+        assert "Do NOT create GitHub issues or PRs" in task
+
+
+class TestCmdRunNoGithub:
+    def test_run_parser_has_no_github_flag(self):
+        """Parser accepts --no-github flag on run command."""
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_run_parser_default_no_github_false(self):
+        """Parser defaults --no-github to False on run command."""
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.no_github is False
+
+    def test_loop_passes_no_github_flag(self, tmp_path):
+        """--no-github flag is propagated through the loop path."""
+        with patch("factory.cli._run_single_cycle", return_value=0) as mock_cycle, \
+             patch("factory.cli._chain_modes", return_value=0) as mock_chain:
+            result = main([
+                "run", str(tmp_path), "--loop", "--max-cycles", "1", "--no-github",
+            ])
+        assert result == 0
+        mock_cycle.assert_called_once()
+        assert mock_cycle.call_args.kwargs.get("no_github") is True
+        mock_chain.assert_called_once()
+        assert mock_chain.call_args.kwargs.get("no_github") is True
+
+
+class TestCmdTmuxNoGithub:
+    def test_tmux_parser_has_no_github_flag(self):
+        """Parser accepts --no-github flag on tmux command."""
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_tmux_parser_default_no_github_false(self):
+        """Parser defaults --no-github to False on tmux command."""
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path"])
+        assert args.no_github is False
+
+    def test_tmux_forwards_no_github_flag(self, tmp_path):
+        """cmd_tmux --no-github includes the flag in the shell command."""
+        def mock_subprocess_run(args, **kwargs):
+            result = type("Result", (), {"returncode": 1 if "has-session" in args else 0})()
+            return result
+
+        with patch("factory.cli.subprocess.run", side_effect=mock_subprocess_run) as mock_run, \
+             patch("factory.cli._tmux_available", return_value=True):
+            main(["tmux", str(tmp_path), "--no-github"])
+
+        # Find the new-session call (second call after has-session check fails)
+        new_session_call = None
+        for call in mock_run.call_args_list:
+            if "new-session" in call[0][0]:
+                new_session_call = call
+                break
+
+        assert new_session_call is not None, "new-session call not found"
+        shell_cmd = new_session_call[0][0][-1]  # Last arg is the shell command
+        assert "--no-github" in shell_cmd
+
+    def test_tmux_without_no_github_flag(self, tmp_path):
+        """cmd_tmux without --no-github does not include the flag."""
+        def mock_subprocess_run(args, **kwargs):
+            result = type("Result", (), {"returncode": 1 if "has-session" in args else 0})()
+            return result
+
+        with patch("factory.cli.subprocess.run", side_effect=mock_subprocess_run) as mock_run, \
+             patch("factory.cli._tmux_available", return_value=True):
+            main(["tmux", str(tmp_path)])
+
+        # Find the new-session call
+        new_session_call = None
+        for call in mock_run.call_args_list:
+            if "new-session" in call[0][0]:
+                new_session_call = call
+                break
+
+        assert new_session_call is not None, "new-session call not found"
+        shell_cmd = new_session_call[0][0][-1]
+        assert "--no-github" not in shell_cmd
+
 
 class TestSlugify:
     def test_basic_slug(self):
