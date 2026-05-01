@@ -244,3 +244,151 @@ class TestStrategy:
     async def test_read_missing_strategy(self, store, sample_config):
         await store.init(sample_config)
         assert await store.read_strategy() is None
+
+
+class TestReparseResearchTarget:
+    """Tests for parsing research mode sections from factory.md."""
+
+    async def test_parse_research_target(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n\n"
+            "## Research Target\n"
+            "- Objective: Minimize latency\n"
+            "- Metric: p99_ms\n"
+            "- Target: 50.0\n"
+            "- Run Command: python benchmark.py\n"
+            "- Result Path: results/bench.json\n"
+            "- Result Parser: json\n"
+            "- Timeout: 1800\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.research_target is not None
+        assert config.research_target.objective == "Minimize latency"
+        assert config.research_target.metric == "p99_ms"
+        assert config.research_target.target == 50.0
+        assert config.research_target.run_command == "python benchmark.py"
+        assert config.research_target.result_path == "results/bench.json"
+        assert config.research_target.result_parser == "json"
+        assert config.research_target.timeout == 1800
+
+    async def test_parse_mutable_and_fixed_surfaces(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Mutable Surfaces\n"
+            "- src/model.py\n"
+            "- src/optimizer.py\n\n"
+            "## Fixed Surfaces\n"
+            "- data/\n"
+            "- configs/\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.mutable_surfaces == ["src/model.py", "src/optimizer.py"]
+        assert config.fixed_surfaces == ["data/", "configs/"]
+
+    async def test_parse_research_constraints(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Research Constraints\n"
+            "- No extra dependencies\n"
+            "- Must keep backward compat\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.research_constraints == ["No extra dependencies", "Must keep backward compat"]
+
+    async def test_parse_cost_budget(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Cost Budget\n"
+            "- Max per cycle: 5.0\n"
+            "- Max total: 50.0\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.cost_budget is not None
+        assert config.cost_budget.max_per_cycle == 5.0
+        assert config.cost_budget.max_total == 50.0
+
+    async def test_backward_compat_no_research_sections(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.research_target is None
+        assert config.mutable_surfaces == []
+        assert config.fixed_surfaces == []
+        assert config.research_constraints == []
+        assert config.cost_budget is None
+
+    async def test_case_insensitive_research_keys(self, store):
+        """Keys like 'objective' and 'Objective' should both work."""
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Research Target\n"
+            "- objective: Minimize loss\n"
+            "- metric: val_loss\n"
+            "- target: 0.01\n"
+            "- run command: python train.py\n"
+            "- result path: metrics.json\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.research_target is not None
+        assert config.research_target.objective == "Minimize loss"
+        assert config.research_target.run_command == "python train.py"
+
+    async def test_incomplete_research_target_returns_none(self, store):
+        """Missing required fields should produce None, not crash."""
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Research Target\n"
+            "- Objective: Minimize loss\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.research_target is None

@@ -25,6 +25,7 @@ You DO:
 - **Build mode:** All phases (B0–B6) must be attempted
 - **Improve mode:** Every approved hypothesis must have a Builder keep/revert verdict
 - **Discover mode:** The eval profile must be generated
+- **Research mode:** Every approved hypothesis must have a verdict, or a termination condition must be met
 - **Meta mode:** Same as Improve, plus ACE playbook evolution
 
 **Self-judged early exits are FORBIDDEN.** Do not exit because:
@@ -202,6 +203,7 @@ If your task includes a `## Resume Context` block, you are resuming from a prior
 1. At least one hypothesis has an explicit `**Growth dimension:**` tag naming one of the 5 growth dimensions
 2. That hypothesis is genuinely growth (new capability, not just "add tests" or "fix bugs")
 3. If no hypothesis meets this bar → **REDIRECT the Strategist** with: "No growth hypothesis found. Add at least one hypothesis targeting capability_surface, experiment_diversity, observability, research_grounding, or factory_effectiveness."
+4. For operational backlog items (containing "run", "execute", "benchmark", "build images", "deploy", "test on real data", "validate end-to-end", "compare results"): verify hypotheses have `**Type:** operational`, an `**Execution step:**`, and an `**Expected output:**`. Code-only hypotheses for operational items → **REDIRECT**.
 
 **Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
 
@@ -226,7 +228,7 @@ uv run python -m factory detect "$PROJECT_PATH"
 - `no_repo` or `incomplete` → **Build mode**
 - `no_factory` → **Discover mode**
 - `evals_pending_review` → **Review mode**
-- `has_factory` → **Improve mode**
+- `has_factory` → **Improve mode** (or **Research mode** if `research_target` is configured and `--mode research` is set)
 
 **Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
 
@@ -599,6 +601,8 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
 
 7. **Only proceed when e2e PASSES.** If BLOCKED on user input, wait for the user to respond. If FAIL, spawn the Builder to fix the issue and re-test.
 
+8. **After e2e PASSES, persist the smoke test command.** Capture the command that verified the core flow as the `## Smoke Test` in `factory.md` so every future Improve-mode precheck runs it automatically. Examples: `curl -sf http://localhost:8000/health`, `python main.py --self-test`, `pytest tests/e2e/ -x -q`. If the project is a long-running server, use a health-check command, not the start command. If the project is a CLI/pipeline, use a command that runs the core flow on sample input. This is MANDATORY — an unconfigured smoke test means Improve mode has no E2E gate.
+
 ### B5a: Persist Backlog Items
 
 Before leaving Build mode, extract any items that were deferred (only those requiring human intervention) so they become the project's backlog for Improve mode.
@@ -662,7 +666,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    FACTORY_HOME="$(uv run python -m factory home)"
    cp "$FACTORY_HOME/templates/factory_config.md" "$PROJECT_PATH/factory.md"
    ```
-   Fill in: Goal, Scope, Guards, Eval command, Threshold.
+   Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
 
 5. Initialize the factory store:
    ```bash
@@ -681,7 +685,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 ### E2E Verification (if not already done)
 
-Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.**
+Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.** Ensure the `## Smoke Test` in `factory.md` is configured with a working E2E command — Improve mode relies on this for its per-experiment E2E gate.
 
 After Review mode, state is `has_factory`. Proceed to **Improve mode**.
 
@@ -794,6 +798,8 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
    - **If YOUR open GitHub issues exist in observations (non-targeted mode only):** does at least one hypothesis address them? REDIRECT if your issues are ignored without justification. Community issues (filed by others) should NOT drive hypotheses unless explicitly targeted via --focus.
    - **Backlog convergence:** If the backlog has N items, the strategist should be clearing a significant portion of them, not just 1-2 while adding more new items. Count hypotheses tagged `**Backlog item:**` vs `**New:**`. If new items outnumber backlog items being cleared, REDIRECT — the backlog must shrink, not grow.
    - **New item cap:** At most 2 new items per cycle (or the configured `max_new`). If the strategist added more, REDIRECT.
+   - **Operational item validation:** For each backlog item that says "run", "execute", "benchmark", "build images", "deploy", "test on real data", "validate end-to-end", or "compare results", verify the corresponding hypothesis has `**Type:** operational` (or `mixed`), an `**Execution step:**` field, and an `**Expected output:**` field. If a hypothesis claims to address an operational item but only proposes code changes (no execution step), REDIRECT — writing code that enables running is NOT the same as actually running. Prerequisites (code changes) are acceptable ONLY if the plan also includes a follow-up operational hypothesis that performs the execution.
+   - **Backlog item adequacy:** For each hypothesis tagged `**Backlog item:**`, read the original item text from `.factory/strategy/backlog.md` and compare against what the hypothesis actually proposes. Does the hypothesis FULLY address what the backlog item asks for? (The operational item validation above catches the execution-specific case; this check covers ALL backlog items.) Common mismatches: a hypothesis that implements a subset of features but the backlog item asks for the full set; a hypothesis that adds an endpoint but the backlog item asks for the endpoint plus UI; a hypothesis that writes a config parser but the backlog item asks for the parser plus validation plus error handling. If the hypothesis only partially addresses the item, REDIRECT: "H2 claims to clear backlog item '<item>' but only covers <subset> — either expand H2 to cover the full item, split into multiple hypotheses, or retag H2 so it does not claim to clear the backlog item."
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with corrections (e.g., "H2 is too vague — specify which files to change", "H1 duplicates reverted experiment #5")
 5. If PROCEED: write `PLAN APPROVED` in your verdict, list the approved hypotheses in priority order
@@ -839,6 +845,8 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2c. Create GitHub Issue
 
+For **code-only** hypotheses (`**Type:** code` or no Type field):
+
 ```bash
 gh issue create \
     --title "<hypothesis title>" \
@@ -858,9 +866,41 @@ gh issue create \
 - Do NOT touch files outside declared scope"
 ```
 
+For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), add execution sections:
+
+```bash
+gh issue create \
+    --title "<hypothesis title>" \
+    --label "implementation" \
+    --body "Factory experiment $EXP_ID. Hypothesis: <text>
+
+## What to Build
+<specific changes — code prerequisites if any>
+
+## Execution Step
+<copied verbatim from the hypothesis **Execution step:** field>
+
+## Acceptance Criteria
+- [ ] <code outcomes, if any>
+- [ ] Tests pass
+- [ ] Eval score does not regress
+
+## Execution Acceptance Criteria
+- [ ] Execution step ran to completion
+- [ ] Output artifacts exist: <copied from **Expected output:** field>
+- [ ] Results are non-empty and valid
+
+## Constraints
+- Read CLAUDE.md before starting
+- Do NOT touch files outside declared scope
+- The task is NOT complete until execution artifacts exist — code-only completion is a failure"
+```
+
 Save issue number as `$ISSUE_NUM`.
 
 #### 2d. Implement (Builder Agent)
+
+Set `$BUILDER_TIMEOUT` based on hypothesis type: **600** for code-only hypotheses, **1800** for operational or mixed hypotheses (pipelines, benchmarks, and Docker builds need more time).
 
 ```bash
 factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
@@ -869,9 +909,10 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
 4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION (e.g. experiment/3-add-retry-logic)
 5. Implement exactly what the issue describes
-6. Run tests and evals
-7. Commit and open PR targeting main
-Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
+6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
+7. Run tests and evals
+8. Commit and open PR targeting main
+Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
 ```
 
 If Builder fails (no PR opened), see Error Recovery below.
@@ -895,10 +936,18 @@ If Builder fails (no PR opened), see Error Recovery below.
    - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
    - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
    - After verification, checkout the target branch again (`git checkout main`)
-6. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
-7. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
-8. If REDIRECT: comment on the PR with corrections, re-invoke Builder
-9. If PROCEED: continue to 2e
+6. **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
+   - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
+   - Check if those artifacts exist in the project: `ls -la <artifact paths>`
+   - If artifacts are missing or empty, REDIRECT the Builder with `--timeout 1800`: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
+   - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
+   - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
+     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
+     b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
+7. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+8. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
+9. If REDIRECT: comment on the PR with corrections, re-invoke Builder
+10. If PROCEED: continue to 2e
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -952,6 +1001,30 @@ State whether the hypothesis was validated." --project "$PROJECT_PATH"
 
 Save output as `score_after`.
 
+#### 2f-e2e. E2E Verification
+
+**After eval, verify the project still runs end-to-end on the PR branch.** This is the Improve-mode equivalent of Build mode's B5 gate. Every experiment must pass E2E — not just ones labeled "operational."
+
+1. **Read the `## Smoke Test` from `factory.md`.** If configured, run it:
+   ```bash
+   cd "$PROJECT_PATH" && <smoke_test_command>
+   ```
+
+2. **If the smoke test is NOT configured:** Run a B5-style manual check — figure out how to run the project (read README, CLAUDE.md, package.json), try to start it, verify the core flow works. Then **persist the working command** as the `## Smoke Test` in `factory.md` on the target branch (checkout main, update factory.md, commit, checkout the PR branch again). Do NOT commit factory.md changes to the experiment branch — it would pollute the PR diff and may trigger a scope guard violation.
+
+3. **If E2E fails:**
+   - REDIRECT the Builder to fix the regression (with `--timeout 1800` if the fix involves execution).
+   - If the failure is environmental (missing service, credentials not available), write status BLOCKED in the verdict. The CEO must decide: either resolve the blocker (ask the user for credentials, start the service) and retry, or skip E2E for this experiment with an explicit note. If skipped, the precheck smoke_test check will also fail unless the smoke test is unconfigured — in that case the experiment proceeds without E2E, but the CEO MUST configure the smoke test before the next cycle.
+
+4. **Write result** to `.factory/reviews/ceo-verdict-e2e.md`:
+   ```markdown
+   ## E2E Verification
+   - **Status:** PASS | FAIL | BLOCKED
+   - **Command:** <what was run>
+   - **Result:** <output summary>
+   - **Smoke test configured:** yes | no (configured it now)
+   ```
+
 #### 2g. Hard Precheck Gate (NON-OVERRIDABLE)
 
 **Before making any keep/revert decision, run the precheck gate.** This is a hard gate — you CANNOT override a failed precheck. A failure means mandatory revert, no exceptions.
@@ -969,7 +1042,7 @@ The precheck runs 4 checks:
 1. **score_direction** — score must not regress AND must meet threshold
 2. **scope** — guard check must pass (no out-of-scope modifications)
 3. **anti_pattern** — hypothesis must not be >60% similar to a previously reverted experiment
-4. **smoke_test** — if configured in factory.md, the smoke test command must pass
+4. **smoke_test** — the smoke test command from factory.md must pass (this should always be configured — if it's not, you should have configured it in step 2f-e2e above)
 
 **Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
 
@@ -990,15 +1063,36 @@ uv run python -m factory review \
 
 # DO NOT merge — leave the PR open for human review and approval
 # The KEEP review above posts an approval; a human must merge it
+```
+
+**Backlog item verification — if the hypothesis has a `**Backlog item:**` tag:**
+
+Before removing the item AND before calling finalize, verify the delivered work actually solves it:
+
+1. Read the original backlog item text from `.factory/strategy/backlog.md`.
+2. Read what was delivered: the PR diff (`gh pr diff $PR_NUM`), E2E result from `ceo-verdict-e2e.md`, and any execution artifacts.
+3. Judge: does the delivered work FULLY satisfy what the backlog item asks for? Set `BACKLOG_CLEARED` accordingly:
+   - **YES** (fully solved): `BACKLOG_CLEARED=yes`. Remove it.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+     ```
+   - **NO** (not solved, only prerequisites): `BACKLOG_CLEARED=no`. Do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
+   - **PARTIAL** (some progress but not complete): `BACKLOG_CLEARED=partial`. Update the item to reflect remaining work.
+     ```bash
+     uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
+     uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
+     ```
+
+If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
+
+**Finalize the experiment (after backlog verification):**
+
+```bash
 uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review"
-
-# If this experiment addressed a backlog item, remove it from backlog.md
-# Check the hypothesis for a **Backlog item:** tag — if present, run:
-uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED"
 ```
 
 **If precheck FAILS → Mandatory Revert:**
@@ -1022,7 +1116,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1035,6 +1129,10 @@ Always include structured metadata in `--notes`:
 - `builder_failed=true` — if builder didn't produce a PR
 - `reviewer_failed=true` — if reviewer reported violations
 - `archivist_spawned=true/false` — archival compliance tracking
+- `hypothesis_type=code|operational|mixed` — whether execution was required
+- `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
+- `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
+- `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
@@ -1128,6 +1226,12 @@ This writes `.factory/reviews/session-summary.md` with:
 
 Review the summary output. If it reveals critical issues you missed, address them before proceeding.
 
+**Backlog completion check:** Before exiting, verify that kept experiments actually cleared their backlog items:
+1. Read `.factory/strategy/backlog.md` — list remaining items.
+2. For each hypothesis tagged `**Backlog item:**` that was kept this cycle, verify the item was removed. If it's still in the backlog (removal was skipped because the item wasn't fully solved), that's expected — but flag it.
+3. If any backlog items remain that a kept experiment claimed to fully address, something went wrong — investigate before proceeding. The item may need to be re-added or the experiment's verdict reconsidered.
+4. Write the backlog status to the session summary: how many items were cleared, how many remain, which ones were partially addressed.
+
 ### Step 4: Notify
 
 ```bash
@@ -1139,6 +1243,443 @@ uv run python -m factory notify "$PROJECT_PATH"
 ```bash
 cd "$PROJECT_PATH" && git add .factory/ && git commit -m "factory: log experiment results and update strategy"
 ```
+
+---
+
+## Mode: Research (`has_factory` + `research_target` configured)
+
+The research evolution loop. You orchestrate specialist agents through a systematic 6-phase cycle to improve a measurable research target (e.g., benchmark accuracy, resolve rate) through iterative failure analysis and targeted fixes.
+
+**When to enter:** The factory config (`.factory/config.json`) has a non-null `research_target` field. Auto-detected by the CLI when `research_target` is present — no need for explicit `--mode research`.
+
+**Key differences from Improve mode:**
+- Uses `run_command` (from `ResearchTarget` config) instead of `eval_command` for the primary measurement
+- Failure Analyst agent replaces standard observations — produces structured failure analysis instead of general observations
+- Mutable/fixed surface constraints are enforced: Builder MUST only modify files in `mutable_surfaces`, MUST NOT touch `fixed_surfaces`
+- The primary keep/revert decision is driven by the research target metric; hygiene is a hard gate (any regression → automatic revert)
+- The experiment IS the eval — the `run_command` produces the target metric
+- Monotonic improvement policy: the aggregate target metric must never regress below the previous best
+
+### Variable Definitions
+
+Before starting the cycle, establish these variables that are referenced throughout:
+
+- `$CYCLE_ID`: Format `cycle-NNN` where NNN is a zero-padded counter (e.g., `cycle-001`). For the baseline run, use `000-baseline`. Derive by counting existing directories in `.factory/research/runs/`.
+- `$RUN_TIMEOUT`: Read from `research_target.timeout` in `.factory/config.json` (default: 3600).
+- `$MUTABLE_SURFACES`: Read `mutable_surfaces` array from `.factory/config.json`, join with newlines.
+- `$FIXED_SURFACES`: Read `fixed_surfaces` array from `.factory/config.json`, join with newlines.
+- `$RESEARCH_CONSTRAINTS`: Read `research_constraints` array from `.factory/config.json`, join with newlines.
+
+### Phase R0: BASELINE
+
+Establish the starting point by running the system and recording the baseline metric.
+
+1. **Read the research target config** from `.factory/config.json` field `research_target`:
+   - `objective`: what we're trying to achieve (e.g., "maximize SWE-bench resolve rate")
+   - `metric`: the key to extract from the result file (e.g., `resolved/total`)
+   - `target`: the goal value (e.g., `0.35`)
+   - `run_command`: the command to execute (e.g., `python run_benchmark.py`)
+   - `result_path`: where the result file is written (e.g., `results/output.json`)
+   - `result_parser`: how to parse it (default: `json`)
+   - `timeout`: max seconds for the run command
+
+2. **Read constraint surfaces** from `.factory/config.json`:
+   - `mutable_surfaces`: files the Builder is allowed to modify
+   - `fixed_surfaces`: files the Builder MUST NOT modify (eval infrastructure, test data, ground truth)
+   - `research_constraints`: additional free-text constraints
+
+3. **Execute the baseline run.** The Evaluator agent runs the shell command directly and manages artifacts:
+
+   ```bash
+   factory agent evaluator --task "Run research baseline for $PROJECT_PATH.
+
+   1. Read .factory/config.json and extract research_target fields
+   2. mkdir -p .factory/research/runs/000-baseline
+   3. cd $PROJECT_PATH && $RUN_COMMAND
+   4. Read the result file at $RESULT_PATH
+   5. Extract the metric '$METRIC' from the JSON (use dotted paths for nested keys, slash for ratios like 'resolved/total')
+   6. Write .factory/research/runs/000-baseline/summary.json with format:
+      {\"status\": \"PASS\", \"metric\": \"$METRIC\", \"metric_value\": <extracted value>, \"duration_seconds\": <elapsed>, \"command\": \"$RUN_COMMAND\"}
+   7. Copy stdout to .factory/research/runs/000-baseline/stdout.log
+   8. Copy stderr to .factory/research/runs/000-baseline/stderr.log
+   9. Report: metric name, metric value, run status, duration." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
+   ```
+
+4. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+
+5. **Check for prior runs:**
+   ```bash
+   ls "$PROJECT_PATH/.factory/research/runs/"
+   ```
+   If prior runs exist, the previous best metric is the highest metric value across all prior run summaries. Read each `summary.json` to find it.
+
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode research \
+  --completed "baseline" --pending "failure_analyst,strategist,builder,evaluator,archivist"
+```
+
+### Phase R1: ANALYZE (Failure Analyst Agent)
+
+Spawn the Failure Analyst to classify failures from the baseline run. Read `.factory/config.json` to get the mutable surfaces list, then pass it inline.
+
+```bash
+factory agent failure_analyst --task "Analyze research run results for $PROJECT_PATH.
+
+Read the run artifacts at .factory/research/runs/$CYCLE_ID/
+Read the research target config from .factory/config.json (objective, metric, target).
+The current metric value is $CURRENT_METRIC (target: $TARGET).
+
+Mutable surfaces (files that CAN be changed):
+$MUTABLE_SURFACES
+
+Read prior run summaries for comparison from .factory/research/runs/*/summary.json.
+
+Produce failure_analysis.md in the run directory AND print a summary to stdout." --project "$PROJECT_PATH" --timeout 300
+```
+
+**R1-review: CEO Review — Failure Analysis**
+
+1. Read `.factory/reviews/failure_analyst-latest.md` and `.factory/research/runs/$CYCLE_ID/failure_analysis.md`
+2. Check: Are failures classified specifically (not vague)? Is the failure distribution computed? Are suggested interventions within mutable surfaces?
+3. Write verdict to `.factory/reviews/ceo-verdict-failure_analyst.md`
+4. If REDIRECT: re-invoke with specific gaps (e.g., "Missing per-instance classification", "Suggested fixes reference fixed surfaces")
+5. If PROCEED: continue to R2
+
+**MANDATORY Archivist — record failure analysis (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Failure Analyst's findings for $PROJECT_PATH research cycle.
+Read .factory/research/runs/$CYCLE_ID/failure_analysis.md and .factory/reviews/ceo-verdict-failure_analyst.md.
+Write failure analysis notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after failure analysis — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode research \
+  --completed "baseline,failure_analyst" --pending "strategist,builder,evaluator,archivist"
+```
+
+### Phase R2: HYPOTHESIZE (Strategist Agent)
+
+Spawn the Strategist with failure analysis context to generate targeted hypotheses.
+
+```bash
+factory agent strategist --task "Generate research hypotheses for $PROJECT_PATH.
+
+Read the failure analysis at .factory/research/runs/$CYCLE_ID/failure_analysis.md.
+Read the research target config from .factory/config.json.
+Read the CEO's failure analysis review at .factory/reviews/ceo-verdict-failure_analyst.md.
+
+The dominant failure mode is: $DOMINANT_FAILURE_MODE ($FAILURE_PERCENTAGE%)
+Current metric: $CURRENT_METRIC (target: $TARGET, previous best: $PREVIOUS_BEST)
+
+## Constraints — CRITICAL
+- Hypotheses MUST only modify files in mutable_surfaces: $MUTABLE_SURFACES
+- Hypotheses MUST NOT modify files in fixed_surfaces: $FIXED_SURFACES
+- Additional constraints: $RESEARCH_CONSTRAINTS
+
+Generate 1-3 hypotheses that target the dominant failure modes identified by the Failure Analyst.
+Prioritize by expected impact on the target metric.
+Each hypothesis must name specific files from mutable_surfaces to modify.
+
+$(cat $PROJECT_PATH/.factory/strategy/research.md 2>/dev/null || echo 'No prior research')
+
+$(uv run python -m factory history $PROJECT_PATH 2>/dev/null || echo 'No experiments yet')
+
+Write hypotheses to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
+```
+
+**R2-review: CEO Review — Strategy (HARD GATE)**
+
+This is a **hard gate**. The Builder MUST NOT start until you approve.
+
+1. Read `.factory/reviews/strategist-latest.md` and `.factory/strategy/current.md`
+2. **Surface constraint check (MANDATORY):** For each hypothesis, verify:
+   - All target files are in `mutable_surfaces` — if ANY file is in `fixed_surfaces`, **REDIRECT immediately**
+   - No hypothesis proposes changes to eval infrastructure, test data, or ground truth
+3. Verify hypotheses target the dominant failure modes from the Failure Analyst's report
+4. Verify expected impact is realistic given the failure distribution
+5. **Hypothesis count check:** Research mode should have 1-3 hypotheses. More than 3 → REDIRECT.
+6. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
+7. If REDIRECT: re-invoke with corrections (e.g., "H2 targets a fixed surface", "No hypothesis addresses the dominant failure mode")
+8. If PROCEED: write `PLAN APPROVED`
+
+**MANDATORY Archivist — record strategy (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Strategist's research hypotheses and CEO approval.
+Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
+Write strategy snapshot to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode research \
+  --completed "baseline,failure_analyst,strategist" --pending "builder,evaluator,archivist"
+```
+
+### Phase R3: IMPLEMENT (Builder Agent — per hypothesis)
+
+For each approved hypothesis, sequentially:
+
+#### R3a. Begin Experiment and Create Issue
+
+```bash
+uv run python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
+```
+
+Save the printed experiment ID as `$EXP_ID`.
+
+```bash
+gh issue create \
+    --title "<hypothesis title>" \
+    --body "Factory experiment $EXP_ID (research mode). Hypothesis: <text>
+
+## What to Build
+<specific changes within mutable surfaces>
+
+## Surface Constraints
+- Mutable: $MUTABLE_SURFACES
+- Fixed (DO NOT TOUCH): $FIXED_SURFACES
+
+## Acceptance Criteria
+- [ ] Changes stay within mutable surfaces
+- [ ] Tests pass
+- [ ] No hygiene regression"
+```
+
+Save issue number as `$ISSUE_NUM`.
+
+#### R3b. Implement
+
+```bash
+factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
+
+1. Read the issue: gh issue view $ISSUE_NUM
+2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
+3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
+4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION
+5. Implement exactly what the hypothesis describes
+
+## Surface Constraints — CRITICAL
+You MUST only modify files in mutable_surfaces:
+$MUTABLE_SURFACES
+
+You MUST NOT modify ANY of these fixed_surfaces:
+$FIXED_SURFACES
+
+Violation of surface constraints is an automatic revert — no exceptions.
+
+6. Run tests after implementation
+7. Commit and open PR targeting $TARGET_BRANCH" --project "$PROJECT_PATH" --timeout 600
+```
+
+**R3-review: CEO Review — Builder PR**
+
+Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one addition:
+
+1. **Surface constraint verification (MANDATORY):** Read the PR diff and check every modified file:
+   ```bash
+   gh pr diff $PR_NUM --name-only
+   ```
+   - If ANY modified file is in `fixed_surfaces` → **ABORT immediately**, close PR, revert
+   - If ANY modified file is NOT in `mutable_surfaces` → **REDIRECT** the Builder to remove those changes
+2. Standard review: does the PR match the hypothesis? Scope creep? Tests included?
+3. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+
+**MANDATORY Archivist — record build (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Builder's work for research experiment $EXP_ID.
+Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
+Write implementation notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+### Phase R4: RUN
+
+Execute the `run_command` again on the modified code (PR branch) and compare against baseline.
+
+```bash
+factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
+
+1. Read .factory/config.json and extract research_target fields
+2. mkdir -p .factory/research/runs/$CYCLE_ID
+3. cd $PROJECT_PATH && $RUN_COMMAND
+4. Read the result file at $RESULT_PATH
+5. Extract the metric '$METRIC' from the JSON
+6. Write .factory/research/runs/$CYCLE_ID/summary.json with format:
+   {\"status\": \"PASS\", \"metric\": \"$METRIC\", \"metric_value\": <extracted value>, \"duration_seconds\": <elapsed>, \"command\": \"$RUN_COMMAND\"}
+7. Copy stdout/stderr to .factory/research/runs/$CYCLE_ID/
+8. Compare against baseline: $BASELINE_METRIC and previous best: $PREVIOUS_BEST
+9. Report: metric before, metric after, delta, whether target is met." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
+```
+
+Save the new metric value as `$METRIC_AFTER`.
+
+### Phase R5: VERDICT
+
+The verdict decision is driven by the research target metric, with hygiene as a hard gate.
+
+**Decision priority:** The research target metric is the primary signal. The standard `factory eval` composite score is used only as a hygiene gate — any regression in hygiene dimensions (tests, lint, type_check) is an automatic revert, but the composite score is NOT the primary keep/revert criterion. The research metric is.
+
+#### R5a. Hygiene Gate (NON-OVERRIDABLE)
+
+Run the standard eval to check hygiene dimensions:
+
+```bash
+uv run python -m factory eval "$PROJECT_PATH"
+```
+
+Read the JSON output and compare each hygiene dimension (tests, lint, type_check, coverage) against the baseline scores captured before the experiment. **If ANY hygiene dimension regresses:** mandatory revert, even if the research target improved. Hygiene is a gate, not a tradeoff.
+
+#### R5b. Monotonic Improvement Check
+
+The research target metric must satisfy the **monotonic improvement policy:**
+
+1. `$METRIC_AFTER >= $PREVIOUS_BEST` — the aggregate metric must not regress below the previous best
+2. **V2 (not yet implemented):** Per-instance regression tracking. For V1, only the aggregate metric is checked. If per-instance result files are available, the CEO SHOULD manually spot-check a sample of previously-solved instances, but this is advisory, not a hard gate.
+
+**If monotonic check fails:** revert. Record the regression in the verdict notes.
+
+#### R5c. Precheck Gate
+
+Run the standard precheck (same as Improve mode):
+
+```bash
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
+uv run python -m factory precheck "$PROJECT_PATH" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --hypothesis "$HYPOTHESIS" \
+    --baseline $BASELINE_SHA
+```
+
+If precheck fails → mandatory revert.
+
+#### R5d. Keep/Revert Decision
+
+**KEEP if ALL of the following are true:**
+- Research target metric improved or held steady (`$METRIC_AFTER >= $PREVIOUS_BEST`)
+- No hygiene regression
+- Precheck gate passes
+
+**REVERT if ANY of the following are true:**
+- Research target metric regressed
+- Any hygiene dimension regressed
+- Precheck gate fails
+
+**If KEEP:**
+
+```bash
+# Approve the PR (do NOT merge — leave for human review)
+uv run python -m factory review \
+    --verdict KEEP \
+    --reason "research target $METRIC: $BASELINE_METRIC → $METRIC_AFTER (target: $TARGET)" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --guards "scope:PASS,surface:PASS,hygiene:PASS,monotonic:PASS" \
+    --experiment-id $EXP_ID \
+    --hypothesis "$HYPOTHESIS" \
+    --pr $PR_NUM
+
+# Finalize
+uv run python -m factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict keep \
+    --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
+    --issue $ISSUE_NUM --pr $PR_NUM \
+    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass"
+```
+
+**If REVERT:**
+
+```bash
+uv run python -m factory review \
+    --verdict REVERT \
+    --reason "$REVERT_REASON" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --experiment-id $EXP_ID \
+    --hypothesis "$HYPOTHESIS" \
+    --pr $PR_NUM
+
+gh pr close $PR_NUM
+cd "$PROJECT_PATH" && git checkout $TARGET_BRANCH
+
+uv run python -m factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict revert \
+    --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
+    --issue $ISSUE_NUM \
+    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS"
+```
+
+#### R5e. Termination Conditions
+
+After each hypothesis verdict, check whether the research cycle should terminate:
+
+1. **Target met:** `$METRIC_AFTER >= $TARGET` → cycle complete. Record success and proceed to Final Archive.
+2. **Budget exhausted:** if `cost_budget` is configured in `.factory/config.json` and the total cost exceeds `max_per_cycle` → cycle complete. Record budget exhaustion.
+3. **All hypotheses processed:** all approved hypotheses have verdicts → cycle complete (standard completion).
+
+If none of the above: continue to the next hypothesis (loop back to R3).
+
+**MANDATORY Archivist — record experiment outcome (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record research experiment $EXP_ID outcome (verdict: $VERDICT).
+Research target: $METRIC = $METRIC_AFTER (baseline: $BASELINE_METRIC, target: $TARGET).
+Write experiment note with decision rationale to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after research experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Save crash-recovery checkpoint:
+```bash
+factory checkpoint "$PROJECT_PATH" --save --mode research \
+  --completed "baseline,failure_analyst,strategist" --pending "builder,evaluator,archivist" \
+  --experiment $EXP_ID --completed-hypotheses "$COMPLETED_EXP_IDS"
+```
+
+### Research Mode Error Recovery
+
+**Run command fails (non-zero exit):** The Evaluator should still save stdout/stderr/summary.json with `status: "FAIL"`. The CEO reads the summary, decides whether to revert or debug. If the failure is in the system under test (expected), proceed to Failure Analyst. If the failure is environmental (missing dependency, permission denied), fix and retry.
+
+**Run command times out:** Summary status is `"TIMEOUT"`. Check if the timeout is too low (increase `research_target.timeout` in factory.md). If the system is genuinely hanging, revert the change and finalize as error.
+
+**Result file missing or unparseable:** Summary status is `"ERROR"`. Check `result_path` in config — is it correct? Did the run command write to a different location? Fix config and retry.
+
+**Failure Analyst produces empty/irrelevant analysis:** REDIRECT with specific guidance: "Read the stdout.log and stderr.log in the run directory. Classify each instance's outcome."
+
+**Builder modifies fixed surfaces:** ABORT immediately. Close PR, revert, finalize as error with `notes="ceo:revert reason=fixed_surface_violation"`.
+
+### Final Archive and Notify
+
+After all hypotheses are processed or a termination condition is met, follow the same final archive protocol as Improve mode (Step 3, Step 3b, Step 4, Step 5).
+
+The session summary should additionally report:
+- Research target metric trajectory: baseline → final
+- Distance to target: how far from the goal
+- Dominant failure modes addressed vs remaining
 
 ---
 

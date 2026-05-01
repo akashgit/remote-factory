@@ -217,24 +217,25 @@ def _detect_incomplete(
         cycle_started_at: If provided, only counts experiments created after this time.
             This prevents counting stale experiments from previous cycles.
     """
-    if mode in ("improve", "meta"):
+    if mode in ("improve", "meta", "research"):
         planned = _count_hypotheses(project_path)
         completed = _count_verdicts(project_path, since_ts=cycle_started_at)
 
         if planned == 0:
-            # No strategy yet — not an incomplete improve cycle, probably discover mode
+            # No strategy yet — not an incomplete cycle, probably discover mode
             return None
 
         if completed >= planned:
             return None
 
         next_h = completed + 1
+        reason_prefix = "research" if mode == "research" else "improve"
         return IncompleteGap(
             mode=mode,
             planned=planned,
             completed=completed,
             next_item=f"H{next_h}",
-            reason=f"improve.incomplete: {completed}/{planned} hypotheses have verdicts",
+            reason=f"{reason_prefix}.incomplete: {completed}/{planned} hypotheses have verdicts",
         )
 
     elif mode == "discover":
@@ -301,7 +302,17 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
             f"Respawn count: {cycle_state.respawns}\n\n"
         )
 
-    if gap.mode in ("improve", "meta"):
+    if gap.mode == "research":
+        body = (
+            f"Resume execution from hypothesis {gap.next_item}. "
+            f"Strategy is already approved at .factory/strategy/current.md — "
+            f"do not re-plan, do not re-run Researcher, Strategist, or Failure Analyst. "
+            f"The baseline run (R0) and failure analysis (R1) are already complete. "
+            f"Spawn Builder for {gap.next_item} immediately, then continue the "
+            f"research cycle (R3–R5) for each remaining hypothesis. "
+            f"Progress so far: {gap.completed}/{gap.planned} hypotheses have verdicts."
+        )
+    elif gap.mode in ("improve", "meta"):
         body = (
             f"Resume execution from hypothesis {gap.next_item}. "
             f"Strategy is already approved at .factory/strategy/current.md — "

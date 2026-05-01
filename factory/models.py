@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
@@ -57,6 +58,55 @@ class EvalWeights(BaseModel):
     project: float = 0.0
 
 
+class ResearchTarget(BaseModel):
+    """Research mode target — defines the objective, metric, and how to measure it."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    objective: str
+    metric: str
+    target: float
+    run_command: str
+    result_path: str
+    result_parser: Literal["json"] = "json"
+    timeout: int = 3600
+
+
+class CostBudgetConfig(BaseModel):
+    """Per-project cost budget limits for research mode."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    max_per_cycle: float | None = None
+    max_total: float | None = None
+
+
+class RunStatus(str, Enum):
+    """Possible outcomes of a research run."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    ERROR = "ERROR"
+    TIMEOUT = "TIMEOUT"
+
+
+class RunResult(BaseModel):
+    """Result of executing a research run command."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    status: RunStatus
+    metric_value: float
+    duration_seconds: float
+    artifacts_path: Path
+    stdout: str
+    stderr: str
+
+
+class ResultParseError(Exception):
+    """Raised when a result file cannot be parsed to extract the target metric."""
+
+
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -73,6 +123,11 @@ class FactoryConfig(BaseModel):
     smoke_test: str = ""
     project_eval: list[ProjectEvalDimension] = []
     eval_weights: EvalWeights = EvalWeights()
+    research_target: ResearchTarget | None = None
+    mutable_surfaces: list[str] = []
+    fixed_surfaces: list[str] = []
+    research_constraints: list[str] = []
+    cost_budget: CostBudgetConfig | None = None
 
 
 # ── eval ──────────────────────────────────────────────────────────
@@ -298,7 +353,7 @@ class CycleState(BaseModel):
 
     cycle_id: str
     started_at: datetime
-    mode: Literal["build", "discover", "improve", "meta"]
+    mode: Literal["build", "discover", "improve", "meta", "research"]
     initial_prompt: str = ""
     respawns: int = 0
     runner_name: str | None = None

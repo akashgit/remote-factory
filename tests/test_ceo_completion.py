@@ -448,6 +448,59 @@ class TestDetectIncompleteWithTimestampFiltering:
         assert gap.next_item == "Phase2"
 
 
+class TestDetectIncompleteResearchMode:
+    """Tests for _detect_incomplete() with research mode."""
+
+    def test_research_incomplete_when_missing_verdicts(self, tmp_path: Path) -> None:
+        """Research mode is incomplete when verdict count < hypothesis count."""
+        from factory.ceo_completion import _detect_incomplete
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Hypotheses\n\n#### H1: Fix localization\n\n#### H2: Improve planning\n"
+        )
+
+        exp_dir = tmp_path / ".factory" / "experiments" / "001"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+
+        gap = _detect_incomplete(tmp_path, "research")
+        assert gap is not None
+        assert gap.mode == "research"
+        assert gap.planned == 2
+        assert gap.completed == 1
+        assert gap.next_item == "H2"
+        assert "research.incomplete" in gap.reason
+
+    def test_research_complete_when_all_verdicts(self, tmp_path: Path) -> None:
+        """Research mode is complete when all hypotheses have verdicts."""
+        from factory.ceo_completion import _detect_incomplete
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Hypotheses\n\n#### H1: Fix localization\n\n#### H2: Improve planning\n"
+        )
+
+        for i in (1, 2):
+            exp_dir = tmp_path / ".factory" / "experiments" / f"00{i}"
+            exp_dir.mkdir(parents=True)
+            (exp_dir / "verdict.json").write_text('{"verdict": "keep"}')
+
+        gap = _detect_incomplete(tmp_path, "research")
+        assert gap is None
+
+    def test_research_no_strategy_returns_none(self, tmp_path: Path) -> None:
+        """No strategy file means nothing planned — not incomplete."""
+        from factory.ceo_completion import _detect_incomplete
+
+        (tmp_path / ".factory").mkdir()
+
+        gap = _detect_incomplete(tmp_path, "research")
+        assert gap is None
+
+
 class TestBuildContinuationTask:
     """Tests for _build_continuation_task()."""
 
@@ -499,6 +552,24 @@ class TestBuildContinuationTask:
         task = _build_continuation_task(gap)
         assert "Resume Build pipeline" in task
         assert "Phase4" in task
+
+    def test_research_continuation(self) -> None:
+        """Research mode continuation tells CEO to spawn Builder for next H."""
+        from factory.ceo_completion import _build_continuation_task, IncompleteGap
+
+        gap = IncompleteGap(
+            mode="research",
+            planned=3,
+            completed=1,
+            next_item="H2",
+            reason="research.incomplete",
+        )
+
+        task = _build_continuation_task(gap)
+        assert "Resume execution from hypothesis H2" in task
+        assert "RESEARCH" in task
+        assert "do not re-plan" in task
+        assert "1/3" in task
 
     def test_continuation_includes_mode_directive(self) -> None:
         """Continuation task includes explicit mode directive to prevent flip."""
@@ -1001,3 +1072,70 @@ class TestAutoDetectModeWithCycle:
         # Should ignore stale cycle and detect from state
         mode = _auto_detect_mode(tmp_path, has_prompt=False)
         assert mode == "discover"  # no_factory state
+
+
+class TestCeoPromptResearchMode:
+    """Tests for research mode content in the CEO prompt."""
+
+    @pytest.fixture()
+    def ceo_prompt(self) -> str:
+        """Load the CEO prompt from the factory agents prompts directory."""
+        prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "ceo.md"
+        return prompt_path.read_text()
+
+    def test_research_mode_section_exists(self, ceo_prompt: str) -> None:
+        """The CEO prompt contains a ## Mode: Research section."""
+        assert "## Mode: Research" in ceo_prompt
+
+    def test_all_six_phases_present(self, ceo_prompt: str) -> None:
+        """All 6 research mode phases are documented."""
+        assert "### Phase R0: BASELINE" in ceo_prompt
+        assert "### Phase R1: ANALYZE" in ceo_prompt
+        assert "### Phase R2: HYPOTHESIZE" in ceo_prompt
+        assert "### Phase R3: IMPLEMENT" in ceo_prompt
+        assert "### Phase R4: RUN" in ceo_prompt
+        assert "### Phase R5: VERDICT" in ceo_prompt
+
+    def test_references_research_infrastructure(self, ceo_prompt: str) -> None:
+        """The prompt references ResearchTarget config, failure_analyst, and run_command."""
+        assert "research_target" in ceo_prompt
+        assert "failure_analyst" in ceo_prompt
+        assert "run_command" in ceo_prompt
+
+    def test_mutable_fixed_surfaces_enforced(self, ceo_prompt: str) -> None:
+        """The prompt enforces mutable/fixed surface constraints."""
+        assert "mutable_surfaces" in ceo_prompt
+        assert "fixed_surfaces" in ceo_prompt
+
+    def test_eval_weight_split(self, ceo_prompt: str) -> None:
+        """The research eval weighting prioritizes the research metric over hygiene/growth."""
+        assert "hygiene" in ceo_prompt.lower()
+        assert "research" in ceo_prompt.lower()
+
+    def test_monotonic_improvement_policy(self, ceo_prompt: str) -> None:
+        """The monotonic improvement policy is documented."""
+        assert "monotonic" in ceo_prompt.lower()
+        assert "previous best" in ceo_prompt.lower()
+
+    def test_termination_conditions(self, ceo_prompt: str) -> None:
+        """Termination conditions are documented."""
+        assert "Target met" in ceo_prompt
+        assert "Budget exhausted" in ceo_prompt
+
+    def test_hygiene_regression_gate(self, ceo_prompt: str) -> None:
+        """Hygiene regression is a hard gate in research mode."""
+        # Find the research mode section and check for hygiene gate
+        research_idx = ceo_prompt.index("## Mode: Research")
+        meta_idx = ceo_prompt.index("## Mode: Meta")
+        research_section = ceo_prompt[research_idx:meta_idx]
+        assert "hygiene" in research_section.lower()
+        assert "revert" in research_section.lower()
+
+    def test_research_mode_in_cycle_completion(self, ceo_prompt: str) -> None:
+        """Research mode is listed in the cycle completion rules."""
+        assert "Research mode" in ceo_prompt
+        # Check it appears in the completion section at top of prompt
+        completion_idx = ceo_prompt.index("Cycle Completion")
+        state_machine_idx = ceo_prompt.index("## State Machine")
+        completion_section = ceo_prompt[completion_idx:state_machine_idx]
+        assert "Research mode" in completion_section

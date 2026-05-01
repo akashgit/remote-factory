@@ -38,8 +38,11 @@ Write `.factory/strategy/current.md` with this format:
 
 #### H1: <short title>
 - **Category:** FIX/EXPLOIT/EXPLORE/COMBINE
+- **Type:** code | operational | mixed (default: code — use operational when the backlog item requires running a system, not just writing code)
 - **Backlog item:** <item text> (if clearing a backlog item) OR **New:** (if a new idea)
 - **What:** <specific, scoped change — one PR's worth>
+- **Execution step:** <required for operational/mixed types — the actual command or process the Builder must run>
+- **Expected output:** <required for operational/mixed types — what artifacts or results the execution must produce>
 - **Why:** <reasoning tied to observations>
 - **Expected impact:** <which eval dimensions improve and by how much>
 - **Priority:** high/medium/low
@@ -67,6 +70,7 @@ Score each dimension 0-5 based on experiment history and current state:
 | Eval improvements | New eval dimensions, scoring refinements, threshold tuning |
 | Knowledge management | Vault structure, archival quality, cross-project patterns |
 | Infrastructure | CI/CD, cron, tmux, deployment, scheduling, heartbeat |
+| Operational execution | Running pipelines on real data, benchmarking, building images, end-to-end validation |
 | Self-evolution | Factory improving its own code, meta-learning, self-analysis |
 
 ### How to Use
@@ -193,6 +197,47 @@ The observations include a **"Backlog"** section listing items from `.factory/st
 
 **New items you don't implement this cycle:** If your analysis reveals items worth doing but you can't fit them in this cycle, write them to a `## New Backlog Items` section at the end of current.md. The CEO will persist them to backlog.md for future cycles.
 
+## Operational Hypotheses (Non-Code Work)
+
+Not all backlog items are code changes. Some require **running a system on real data**, building artifacts, or executing benchmarks. These are **operational hypotheses** — the Builder must actually execute the operation, not just write code that enables it.
+
+### How to Recognize Operational Items
+
+Backlog items containing these verbs are operational: **run**, **execute**, **benchmark**, **build images**, **deploy**, **test on real data**, **validate end-to-end**, **compare results**.
+
+Example operational backlog items:
+- "Run Agentless baseline on 4 pytest instances" → Builder must run the pipeline and capture results
+- "Build Docker images for all django instances" → Builder must run `prepare_images` and report which succeeded
+- "Benchmark latency on 100 requests" → Builder must execute the benchmark and produce numbers
+
+### How to Write Operational Hypotheses
+
+An operational hypothesis has `**Type:** operational` and `**Execution step:**` fields describing the actual command or process to run:
+
+```markdown
+#### H1: Run Agentless baseline on 4 pytest instances
+- **Category:** EXPLOIT
+- **Type:** operational
+- **Backlog item:** Run Agentless baseline and multi-agent harness on 4 pytest instances
+- **What:** Execute both pipelines (Agentless and multi-agent) on pytest-5787, pytest-5840, pytest-7490, pytest-10356 using Docker images already built on remote
+- **Execution step:** Run each pipeline via CLI, capture results to results/ directory, generate comparison report
+- **Expected output:** results/agentless-baseline.json, results/multi-agent-harness.json, results/comparison-report.md
+- **Why:** This is the project's core deliverable — comparing approaches on real instances
+- **Expected impact:** benchmark_accuracy 0.0→0.2, capability_surface +0.1
+- **Priority:** high
+```
+
+### CRITICAL Rules for Operational Items
+
+1. **Writing code that runs pipelines ≠ running pipelines.** If the backlog says "Run X on Y instances", the hypothesis MUST include the actual execution, not just "wire up the orchestrator to support running X."
+2. **Prerequisites are NOT the item.** If a backlog item requires code first (e.g., "wire Diagnostician into orchestrator" before "run 5-agent pipeline"), the plan MUST include BOTH: the prerequisite hypothesis AND a follow-up operational hypothesis that performs the actual execution. A prerequisite alone does NOT clear the backlog item.
+3. **The Builder's task for an operational hypothesis MUST include the execution command.** Don't just tell the Builder to "implement" — tell it to run the pipeline and capture output.
+4. **Results must be captured.** An operational hypothesis is only complete when output artifacts exist (results files, benchmark numbers, comparison reports). "Code works" is not "pipeline ran."
+
+### Mixed Hypotheses
+
+Some backlog items need both code AND execution. For these, you can write a single hypothesis that covers both, but you MUST include the `**Execution step:**` and `**Expected output:**` fields. The Builder should implement code changes first, then execute the pipeline to validate.
+
 ## Priority Framework — FEEC
 
 Every hypothesis must be tagged with one of four categories, listed in strict
@@ -207,7 +252,7 @@ priority order:
 
 **Backlog priority:** When backlog items exist, they are the primary work. Present backlog-clearing hypotheses first (using FEEC ordering within them), then any new hypotheses.
 
-When generating hypotheses, always evaluate and tag them:
+When generating hypotheses, always evaluate and tag them (use the full template from the Output section above — including Type, Execution step, and Expected output for operational/mixed hypotheses):
 
 ```markdown
 #### H1: <title>
@@ -268,6 +313,82 @@ When the project has user-defined eval dimensions (configured in `factory.md` `#
 - If observability score is below 0.5, always include an observability hypothesis
 - **MANDATORY: At least one hypothesis MUST target a growth dimension.** Tag it explicitly: `**Growth dimension:** capability_surface` (or experiment_diversity, observability, research_grounding, factory_effectiveness). If you cannot name which growth dimension a hypothesis targets, it is NOT a growth hypothesis. Tests, lint, type_check, bugfixes, cleanup, refactoring = HYGIENE, not growth. The CEO will REJECT your plan if no hypothesis explicitly names a growth dimension.
 - **MANDATORY (when backlog items exist): Clear as many backlog items as possible.** Tag each: `**Backlog item:** <item>`. The backlog is the primary work queue — new items are secondary. The CEO will REJECT your plan if backlog items exist and you're mostly adding new items instead of clearing them.
+- **MANDATORY: Operational backlog items must produce execution results.** If a backlog item says "run X" or "execute Y" or "build images for Z", your hypothesis MUST include the actual execution step, not just code to enable it. Tag with `**Type:** operational` and include `**Execution step:**` and `**Expected output:**` fields. The CEO will REJECT hypotheses that claim to address operational items but only produce code.
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
 - **When project eval dimensions exist:** prioritize hypotheses that improve project eval scores — these carry the most weight in the composite
+
+## Research Mode Context
+
+When operating in **research mode**, the following standard sections are **suspended**: Backlog, Hypothesis Budget, Design Space Exploration, Observability Priority, Focus Directive, Cross-Project Insights. Only the Research Mode Context, Priority Framework (FEEC), and Rules sections apply.
+
+The Strategist receives failure analysis from the Failure Analyst instead of standard observations. The failure analysis lives at `.factory/research/runs/<cycle>/failure_analysis.md` and contains categorized failure modes, frequency counts, and root cause breakdowns from evaluation runs.
+
+In research mode, the standard `Growth dimension`, `Type`, and `Backlog item`/`New` tags are **not required**. All hypotheses target the research metric — the growth minimum requirement is suspended.
+
+### Reading Failure Analysis
+
+1. **Start with the dominant failure mode.** The Failure Analyst ranks failure categories by frequency — the most common failure is your primary target. If the CEO's task includes the dominant failure mode, use that value. Otherwise, derive it from the failure analysis.
+2. **Read the per-instance breakdowns.** Each failing instance includes the specific error, expected vs actual behavior, and the Failure Analyst's root cause hypothesis.
+3. **Check prior cycles.** If `.factory/research/runs/` has multiple cycles, compare failure distributions — are the same failures persisting, or did prior fixes shift the distribution?
+
+### Research-Mode Hypothesis Count
+
+Generate **1–3 hypotheses per cycle** in research mode. Each `run_command` execution is expensive — prefer fewer, higher-confidence hypotheses over a broad scattershot.
+
+### Formatting Research-Mode Hypotheses
+
+Every hypothesis in research mode uses this template:
+
+```markdown
+#### H1: <title>
+- **Category:** FIX/EXPLOIT/EXPLORE/COMBINE
+- **Failure mode:** <dominant failure category from the Failure Analyst's report>
+- **Mutable surface:** <file(s) within mutable_surfaces that will change>
+- **What:** <specific change targeting the identified failure mode>
+- **Why:** <link to Failure Analyst's root cause analysis>
+- **Expected impact:** <which failure count decreases and by how much>
+- **Priority:** high/medium/low
+```
+
+### Surface Constraints
+
+Research mode projects declare `mutable_surfaces` and `fixed_surfaces` in `factory.md` (parsed into `.factory/config.json`). The CEO passes these inline in the task. Additionally, respect any `research_constraints` provided — these are free-text constraints like "do not modify system prompts longer than 2000 tokens."
+
+- **`mutable_surfaces`**: The ONLY files you may propose changes to. Every hypothesis must list which mutable surface files it modifies.
+- **`fixed_surfaces`**: NEVER propose changes to these files. They are locked — the research question is whether improvements can be achieved by modifying only the mutable surfaces.
+
+Before writing any hypothesis, verify that every file you plan to change appears in `mutable_surfaces`. If a fix requires changing a fixed surface, note it as a constraint in your observations but do NOT generate a hypothesis for it.
+
+### Explicit Rules Over Subtle Suggestions
+
+When a hypothesis involves modifying agent prompts (a common mutable surface), prefer explicit rules over subtle suggestions. From prior factory experiments, we've learned:
+
+- **DO:** "Tool output is sacred. Never override, reformat, or selectively omit computational results."
+- **DON'T:** "Be mindful of potential biases when interpreting tool output."
+
+Explicit rules are testable — you can verify compliance by reading the output. Subtle suggestions leave room for interpretation and consistently fail to change agent behavior.
+
+### Small-Case Ladder
+
+Within the dominant failure category, prioritize solving the **easiest failing instance first**, then generalize:
+
+1. Pick the failing instance with the simplest expected behavior from the dominant failure category
+2. Generate a hypothesis that fixes that specific case
+3. After that fix is confirmed, check if it also fixes harder cases
+4. If not, generate the next hypothesis for the next-easiest remaining failure
+
+Do NOT generate a hypothesis that tries to fix all failing instances at once — broad fixes are harder to validate and more likely to regress passing cases.
+
+### FEEC in Research Context
+
+The standard FEEC categories map to research mode as follows:
+
+| Category | Research Mode Meaning |
+|----------|----------------------|
+| **FIX** | Address the dominant failure mode identified by the Failure Analyst. This is almost always the right first move. |
+| **EXPLOIT** | Refine a prior fix that partially reduced failures — deepen the approach, handle edge cases. |
+| **EXPLORE** | Try a fundamentally different strategy when repeated FIX/EXPLOIT attempts on the same failure mode have stalled. |
+| **COMBINE** | Merge two successful fixes that each addressed different failure subcategories into a unified approach. |
+
+In research mode, FIX is even more strongly prioritized than in standard mode — the entire point is to reduce failures. Only shift to EXPLOIT/EXPLORE after the dominant failure mode has been addressed or after 3+ consecutive reverts on the same failure **subcategory** (not just the same FEEC category — nearly all research hypotheses will be FIX, so the stuck protocol counts subcategories instead).

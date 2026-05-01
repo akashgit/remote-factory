@@ -95,6 +95,11 @@ class TestParser:
         args = parser.parse_args(["agent", "distiller", "--task", "test", "--project", "/p"])
         assert args.role == "distiller"
 
+    def test_ceo_agent_failure_analyst_choice(self):
+        parser = build_parser()
+        args = parser.parse_args(["agent", "failure_analyst", "--task", "test", "--project", "/p"])
+        assert args.role == "failure_analyst"
+
 
 class TestCmdCeoInteractive:
     def test_interactive_headless_incompatible(self, capsys):
@@ -919,3 +924,59 @@ class TestResolveInput:
         task_arg = mock_agent.call_args[0][1]  # second positional = task
         assert "Build X that does Y" in task_arg
         assert "Project Specification" in task_arg
+
+
+class TestResearchMode:
+    def test_ceo_parser_accepts_research_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "research"])
+        assert args.mode == "research"
+
+    def test_run_parser_accepts_research_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--mode", "research"])
+        assert args.mode == "research"
+
+    def test_tmux_parser_accepts_research_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path", "--mode", "research"])
+        assert args.mode == "research"
+
+    def test_research_mode_task_text(self, tmp_path):
+        """--mode research includes research-specific instructions in the CEO task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "Research mode" in task
+        assert "research_target" in task
+
+    def test_auto_detect_research_mode(self, tmp_project, sample_config):
+        """Auto-detection returns 'research' when config has research_target."""
+        from factory.models import ResearchTarget
+        from factory.store import ExperimentStore
+
+        rt = ResearchTarget(
+            objective="Minimize loss",
+            metric="val_loss",
+            target=0.01,
+            run_command="python train.py",
+            result_path="metrics.json",
+        )
+        config_with_research = sample_config.model_copy(update={"research_target": rt})
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(config_with_research))
+
+        from factory.cli import _auto_detect_mode
+        mode = _auto_detect_mode(tmp_project, force_fresh=True)
+        assert mode == "research"
+
+    def test_auto_detect_improve_without_research(self, tmp_project, sample_config):
+        """Auto-detection returns 'improve' when no research_target is set."""
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+
+        from factory.cli import _auto_detect_mode
+        mode = _auto_detect_mode(tmp_project, force_fresh=True)
+        assert mode == "improve"

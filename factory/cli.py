@@ -1536,6 +1536,16 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
         ProjectState.HAS_FACTORY: "improve",
     }
     mode = mode_map[state]
+
+    if state == ProjectState.HAS_FACTORY:
+        try:
+            from factory.store import ExperimentStore
+            config = _run(ExperimentStore(project_path).read_config())
+            if config.research_target is not None:
+                mode = "research"
+        except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+            pass
+
     print(f"  State: {state.value} → mode: {mode}", file=sys.stderr)
     return mode
 
@@ -1634,6 +1644,15 @@ def _build_ceo_task(
             "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
             "on this project (experiments, keep/revert decisions). Then run ACE playbook "
             "evolution for all agent roles using cross-project experiment data."
+        )
+    elif mode == "research":
+        task += (
+            "\n\nRun Research mode: the project has a research target defined in factory.md. "
+            "Read the research_target from config.json to understand the objective, metric, "
+            "target value, and run command. Each cycle: form a hypothesis to improve the "
+            "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
+            "untouched), run the research command, compare results against the target, and "
+            "make a keep/revert decision. Respect research_constraints and cost_budget."
         )
 
     return task
@@ -2082,7 +2101,8 @@ def build_parser() -> argparse.ArgumentParser:
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "distiller", "ceo"],
+                                     "evaluator", "archivist", "distiller", "ceo",
+                                     "failure_analyst"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
@@ -2105,10 +2125,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, meta, or interactive (research + brainstorm → spec → build)",
+             "build, discover, improve, meta, interactive (research + brainstorm → spec → build), "
+             "or research (autonomous research optimization)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2143,10 +2164,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, or meta",
+             "build, discover, improve, meta, or research",
     )
     p.add_argument(
         "--focus", default=None,
@@ -2185,7 +2206,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"],
         default="auto",
         help="Run mode (default: auto, respects in-flight cycle)",
     )

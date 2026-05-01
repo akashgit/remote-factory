@@ -12,7 +12,10 @@ from factory.runners import get_runner
 
 logger = logging.getLogger(__name__)
 
-AgentRole = Literal["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "distiller", "ceo"]
+AgentRole = Literal[
+    "researcher", "strategist", "builder", "reviewer", "evaluator",
+    "archivist", "distiller", "ceo", "failure_analyst",
+]
 
 # Consecutive failure tracking
 _consecutive_failures: int = 0
