@@ -224,10 +224,34 @@ class TestCmdCeoResearchIdeation:
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
-    def test_research_focus_incompatible(self, capsys):
-        result = main(["ceo", "swe-bench solver", "--mode", "research", "--focus", "UI"])
+    def test_research_focus_works_with_existing_project(self, tmp_path):
+        """--focus works with --mode research on existing projects with research_target."""
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        rt = {"objective": "maximize accuracy", "metric": "accuracy",
+              "target": 0.9, "run_command": "python run.py",
+              "result_path": "results.json"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "research", "--focus", "tokenizer"])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Focus Directive" in task
+        assert "tokenizer" in task
+
+    def test_research_file_input_not_ideation(self, tmp_path, capsys):
+        """--mode research with a file path treats it as a spec, not an idea string."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# My Research Project\n")
+        result = main(["ceo", str(spec_file), "--mode", "research"])
+        # File gets resolved as spec input, not as an idea string for ideation.
+        # Errors because the resulting project has no research_target configured.
         assert result == 1
-        assert "mutually exclusive" in capsys.readouterr().err.lower()
+        assert "research_target" in capsys.readouterr().err
 
     def test_research_existing_dir_no_target_errors(self, tmp_path, capsys):
         """--mode research on existing dir without research_target errors."""

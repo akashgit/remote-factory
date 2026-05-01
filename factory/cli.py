@@ -1204,11 +1204,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "Research ideation generates the spec; --prompt provides one.",
                   file=sys.stderr)
             return 1
-        if focus:
-            print("Error: --mode research and --focus are mutually exclusive. "
-                  "Research ideation is for new research projects; --focus targets "
-                  "existing backlog items.", file=sys.stderr)
-            return 1
 
     interactive_idea: str | None = None
     research_ideation: str | None = None
@@ -1220,7 +1215,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
-    elif mode == "research" and not Path(raw_path).expanduser().is_dir():
+    elif mode == "research" and not Path(raw_path).expanduser().is_dir() and not Path(raw_path).expanduser().is_file():
         # New research project from idea — enter research ideation
         if headless:
             print("Error: --mode research for new projects requires foreground mode "
@@ -1256,8 +1251,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode != "improve":
-        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+    if focus and mode not in ("improve", "research"):
+        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
@@ -1268,7 +1263,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
-    ceo_mode = "build" if mode in ("interactive",) or research_ideation else mode
+    ceo_mode = "build" if mode == "interactive" or research_ideation else mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
@@ -1906,8 +1901,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode != "improve":
-        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+    if focus and mode not in ("improve", "research"):
+        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
