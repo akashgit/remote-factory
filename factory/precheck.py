@@ -144,7 +144,6 @@ def check_anti_pattern(
 def check_surfaces(
     project_path: Path,
     baseline_sha: str,
-    fixed_surfaces: list[str],
 ) -> CheckResult:
     """Run factory guard --check-surfaces and report pass/fail.
 
@@ -323,7 +322,7 @@ def run_precheck(
 
     # 3. Fixed surface guard (only if baseline + fixed_surfaces provided)
     if baseline_sha and fixed_surfaces:
-        checks.append(check_surfaces(project_path, baseline_sha, fixed_surfaces))
+        checks.append(check_surfaces(project_path, baseline_sha))
 
     # 4. Ground truth leakage check (only if fixed_surfaces provided)
     if fixed_surfaces:

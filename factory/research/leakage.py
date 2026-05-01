@@ -123,7 +123,7 @@ def _extract_specific_values(text: str) -> set[str]:
     for m in _NUMERIC_RE.finditer(text):
         val = m.group(1)
         # Skip very common numbers
-        if val not in ("0", "1", "2", "10", "100", "0.0", "1.0", "0.5"):
+        if val not in ("10", "100", "0.0", "1.0", "0.5"):
             values.add(val)
     for m in _QUOTED_RE.finditer(text):
         val = m.group(1) or m.group(2)

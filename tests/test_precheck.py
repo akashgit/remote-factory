@@ -243,7 +243,7 @@ class TestCheckSurfaces:
     @patch("factory.precheck.subprocess.run")
     def test_clean(self, mock_run):
         mock_run.return_value = MagicMock(returncode=0, stdout="clean\n", stderr="")
-        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        r = check_surfaces(Path("/tmp/test"), "abc123")
         assert r.passed
         assert r.name == "fixed_surfaces"
 
@@ -254,21 +254,21 @@ class TestCheckSurfaces:
             stdout="VIOLATION: Fixed surface modified: data/truth.json",
             stderr="",
         )
-        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        r = check_surfaces(Path("/tmp/test"), "abc123")
         assert not r.passed
         assert "truth.json" in r.detail
 
     @patch("factory.precheck.subprocess.run")
     def test_timeout(self, mock_run):
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="guard", timeout=60)
-        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        r = check_surfaces(Path("/tmp/test"), "abc123")
         assert not r.passed
         assert "timed out" in r.detail.lower()
 
     @patch("factory.precheck.subprocess.run")
     def test_command_not_found(self, mock_run):
         mock_run.side_effect = FileNotFoundError()
-        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        r = check_surfaces(Path("/tmp/test"), "abc123")
         assert not r.passed
         assert "not found" in r.detail.lower()
 

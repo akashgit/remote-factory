@@ -1565,10 +1565,11 @@ Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one ad
    ```
    - If ANY modified file is in `fixed_surfaces` → **ABORT immediately**, close PR, revert
    - If ANY modified file is NOT in `mutable_surfaces` → **REDIRECT** the Builder to remove those changes
-2. **Ground truth leakage scan on PR diff (MANDATORY):** The Builder may have read fixed surface files (no file modification = Layer 1 doesn't fire) and embedded ground-truth-derived logic in code. Scan the diff:
+2. **Ground truth leakage scan on PR diff (MANDATORY):** The Builder may have read fixed surface files (no file modification = Layer 1 doesn't fire) and embedded ground-truth-derived logic in code. Scan the diff using a temp file (do NOT use shell variable expansion — diffs contain special chars that break `"$DIFF_TEXT"`):
    ```bash
-   DIFF_TEXT=$(gh pr diff $PR_NUM)
-   uv run python -m factory leakage-check "$PROJECT_PATH" --text "$DIFF_TEXT"
+   gh pr diff $PR_NUM > /tmp/factory-pr-diff-$PR_NUM.txt
+   uv run python -m factory leakage-check "$PROJECT_PATH" --text-file /tmp/factory-pr-diff-$PR_NUM.txt
+   rm -f /tmp/factory-pr-diff-$PR_NUM.txt
    ```
    If risk level is `medium` or `high` → **REDIRECT** the Builder: "PR diff contains tokens/values that match ground truth files. Remove ground-truth-derived logic and re-implement from first principles using only the problem description."
 3. Standard review: does the PR match the hypothesis? Scope creep? Tests included?

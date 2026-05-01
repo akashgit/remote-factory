@@ -799,7 +799,18 @@ def cmd_leakage_check(args: argparse.Namespace) -> int:
         print("SKIP: no fixed surface files found to fingerprint")
         return 0
 
-    report = scan_for_leakage(args.text, fingerprints, args.sensitivity)
+    text = args.text
+    if args.text_file:
+        text = Path(args.text_file).read_text()
+    elif args.text is None:
+        import sys
+        if not sys.stdin.isatty():
+            text = sys.stdin.read()
+        else:
+            print("ERROR: provide --text, --text-file, or pipe to stdin")
+            return 1
+
+    report = scan_for_leakage(text, fingerprints, args.sensitivity)
 
     output = {
         "flagged": report.flagged,
@@ -2038,7 +2049,8 @@ def build_parser() -> argparse.ArgumentParser:
     # leakage-check
     p = sub.add_parser("leakage-check", help="Scan text for ground truth leakage against fixed surfaces")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--text", required=True, help="Text to scan for leakage (hypothesis, strategy, etc.)")
+    p.add_argument("--text", default=None, help="Text to scan for leakage (hypothesis, strategy, etc.)")
+    p.add_argument("--text-file", default=None, help="Path to file containing text to scan (safer for large diffs)")
     p.add_argument("--sensitivity", choices=["low", "medium", "high"], default="medium",
                     help="Sensitivity level (default: medium)")
 
