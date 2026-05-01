@@ -1,17 +1,18 @@
 """Universal hygiene eval dimensions applied to every factory-managed project.
 
-These 6 dimensions are mandatory and cannot be removed. They are computed by
+These 7 dimensions are mandatory and cannot be removed. They are computed by
 the factory itself (not by per-project eval/score.py) and auto-detect the
 project's tooling. Projects can ADD dimensions via eval/score.py but cannot
 remove any of these.
 
-Together with the 5 growth dimensions in growth.py, these form the 11
+Together with the 5 growth dimensions in growth.py, these form the 12
 mandatory eval dimensions that define the factory's quality baseline.
 
 All functions take a project_path and return an EvalResult-compatible dict.
 If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -20,12 +21,13 @@ from pathlib import Path
 # Relative weights within the hygiene category (sum to 1.0).
 # The runner normalizes these so that hygiene gets 50% of the composite.
 HYGIENE_WEIGHTS = {
-    "tests": 0.30,
-    "lint": 0.15,
-    "type_check": 0.10,
-    "coverage": 0.25,
-    "guard_patterns": 0.10,
-    "config_parser": 0.10,
+    "tests": 0.28,
+    "lint": 0.14,
+    "type_check": 0.09,
+    "coverage": 0.23,
+    "guard_patterns": 0.09,
+    "config_parser": 0.09,
+    "security": 0.08,
 }
 
 
@@ -523,11 +525,73 @@ def eval_config_parser(project_path: Path) -> dict:
         }
 
 
+# ── Dimension 7: security (weight 0.08) ─────────────────────────
+
+
+def eval_security(project_path: Path) -> dict:
+    """Run security scanners across detected sub-projects. Partial credit per issue."""
+    sub_projects = _find_sub_projects(project_path)
+    total_issues = 0
+    ran_any = False
+    details_parts: list[str] = []
+
+    for sp in sub_projects:
+        if _detect_python_project(sp):
+            rc, stdout, stderr = _run_cmd(
+                ["python", "-m", "bandit", "-r", ".", "-f", "json", "-q"], sp,
+            )
+            if rc == 1 and "Command not found" in stderr:
+                continue
+            try:
+                data = json.loads(stdout) if stdout.strip() else {}
+                issues = data.get("results", [])
+                count = len(issues)
+            except (json.JSONDecodeError, TypeError):
+                count = 0
+            if rc == 0 and count == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}: clean")
+            elif count > 0:
+                ran_any = True
+                total_issues += count
+                details_parts.append(f"{sp.name}: {count} issues")
+
+        if _detect_node_project(sp):
+            rc, stdout, stderr = _run_cmd(["npm", "audit", "--json"], sp, timeout=180)
+            if rc == 1 and "Command not found" in stderr:
+                continue
+            try:
+                data = json.loads(stdout) if stdout.strip() else {}
+                vulns = data.get("metadata", {}).get("vulnerabilities", {})
+                count = sum(vulns.get(sev, 0) for sev in ("low", "moderate", "high", "critical"))
+            except (json.JSONDecodeError, TypeError):
+                count = 0
+            if count == 0 and rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(js): clean")
+            elif count > 0:
+                ran_any = True
+                total_issues += count
+                details_parts.append(f"{sp.name}(js): {count} vulnerabilities")
+
+    if not ran_any:
+        return _neutral("security", "no security scanner detected")
+
+    score = max(0.0, 1.0 - total_issues * 0.1)
+    return {
+        "name": "security",
+        "score": round(score, 4),
+        "weight": HYGIENE_WEIGHTS["security"],
+        "passed": total_issues == 0,
+        "details": "; ".join(details_parts),
+    }
+
+
 # ── Public API ─────────────────────────────────────────────────────
 
 
 def compute_hygiene_results(project_path: Path) -> list[dict]:
-    """Compute all 6 mandatory hygiene dimensions for a project."""
+    """Compute all 7 mandatory hygiene dimensions for a project."""
     return [
         eval_tests(project_path),
         eval_lint(project_path),
@@ -535,4 +599,5 @@ def compute_hygiene_results(project_path: Path) -> list[dict]:
         eval_coverage(project_path),
         eval_guard_patterns(project_path),
         eval_config_parser(project_path),
+        eval_security(project_path),
     ]

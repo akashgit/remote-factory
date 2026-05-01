@@ -62,7 +62,7 @@ class TestRunEval:
         result = await run_eval("nonexistent_command_xyz", tmp_path, threshold=0.0)
         names = {r.name for r in result.results}
         # All 11 mandatory should still be present
-        assert len(names) >= 11
+        assert len(names) >= 12
         assert "tests" in names
         assert "capability_surface" in names
 
@@ -79,12 +79,12 @@ class TestRunEval:
         result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0, timeout=1.0)
         # Mandatory dimensions still computed
         names = {r.name for r in result.results}
-        assert len(names) >= 11
+        assert len(names) >= 12
 
     async def test_weight_split_is_50_50(self, tmp_path):
         """Hygiene dimensions get 50% total weight, growth gets 50%."""
         result = await run_eval("true", tmp_path, threshold=0.0)
-        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser"}
+        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser", "security"}
         growth_names = {
             "capability_surface", "experiment_diversity", "observability",
             "research_grounding", "factory_effectiveness",
