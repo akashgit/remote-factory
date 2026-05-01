@@ -13,8 +13,11 @@
 # Build — have a fleshed-out idea? Pass the file.
 factory ceo ~/ideas/weather-dashboard.md
 
-# [WIP] Interactive — just starting to think about it? Brainstorm first.
+# Interactive — just starting to think about it? Brainstorm first.
 factory ceo "let's create a pomodoro app" --mode interactive
+
+# Research — iteratively improve a measurable metric
+factory ceo "SWE-bench solver agent" --mode research
 
 # Improve — point it at any codebase
 factory ceo ~/my-project
@@ -25,20 +28,21 @@ factory ceo ~/my-project --focus "add WebSocket support"
 
 The CEO runs as a foreground Claude Code session — you can talk to it at any time, just like you would with Claude Code. Ask it what it's doing, steer it if something looks off, provide missing credentials, or redirect its focus mid-cycle. It's autonomous by default, collaborative when you want it to be.
 
-Under the hood, the CEO orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
+Under the hood, the CEO orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and itself — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. Every change is a hypothesis: scored before and after, kept only if it improves the score, archived as institutional memory. Failed experiments aren't wasted — they teach the agents what to avoid next time.
 
 ## What's New in v0.2.0
 
 - **Bob Shell runner** — Alternative CLI backend via `--runner bob`. Includes dry-run mode, per-cycle/daily usage ceilings, and auth persistence for nested subagents
 - **Interactive ideation** — `--mode interactive` launches a research → brainstorm → refine loop with the new Distiller agent before any code is written
-- **Focused mode** — `--focus "add auth"` pins a single backlog item: one hypothesis, one experiment, done
+- **Research ideation** — `--mode research` for metric-driven projects. Pass a raw idea and the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building
+- **Focused mode** — `--focus "add auth"` pins a single backlog item: one hypothesis, one experiment, done. Works in both improve and research modes
 - **CEO completion guard** — Auto-resumes when the CEO exits prematurely. Cycle state persists across respawns with cross-cycle scoping to prevent stale experiment contamination
 - **Unified backlog** — Replaces the old deferred-items system. The Strategist clears backlog items each cycle with convergence tracking
 - **Session summaries** — End-of-cycle reports: what was built, what was deferred, what needs human input
 - **Experiment checkpoint/resume** — CEO saves progress per-experiment for crash-resilient recovery
 - **Auto-discovery** — Managed projects are auto-detected from the projects directory
 - **Citation backfill** — Research grounding scores now extract and backfill citations from experiment history
-- **1144 tests** — Up from 878 at initial release
+- **1320 tests** — Up from 878 at initial release
 
 See the [full changelog](CHANGELOG.md) for details.
 
@@ -111,7 +115,27 @@ factory ceo ~/my-project --focus "add structured logging"
 
 If the item isn't already in the backlog, it gets added automatically. The Researcher scopes its research to the target, the Strategist generates exactly one hypothesis, the Builder implements it, and the cycle ends after the keep/revert decision. No other backlog items are touched.
 
-`--focus` requires the project to already be built (improve mode). It's mutually exclusive with `--loop`.
+`--focus` requires the project to already be built (improve or research mode). It's mutually exclusive with `--loop`.
+
+### Research — iteratively improve a metric
+
+For projects where the goal is to improve a measurable metric against a dataset — benchmarks, model tuning, prompt optimization — research mode runs a specialized loop with leakage guards and metric tracking:
+
+```bash
+# New research project — starts with ideation to collect config
+factory ceo "SWE-bench solver agent" --mode research
+factory ceo "prompt optimization for code review" --mode research
+
+# Existing research project — runs the research improvement loop
+factory ceo ~/my-research-project --mode research
+
+# Focus on a specific research hypothesis
+factory ceo ~/my-research-project --mode research --focus "try chain-of-thought prompting"
+```
+
+For new ideas, research mode enters an ideation phase (like `--mode interactive`) where the Distiller collects the research configuration: target metric, run command, mutable surfaces (files the Builder can edit), fixed surfaces (ground truth that must not be touched), and constraints. Once approved, the Factory builds the project and transitions to the research improvement loop.
+
+Research mode requires foreground mode (incompatible with `--headless` for new projects).
 
 ### Interactive — brainstorm before building
 
@@ -232,6 +256,7 @@ The CEO detects your project's state and chooses the right mode automatically:
 | No repo exists | **Build** — scaffold from your spec or prompt |
 | Code exists, no `.factory/` | **Discover** — introspect project, generate eval dimensions |
 | Factory initialized | **Improve** — run the experiment loop |
+| Factory + `research_target` | **Research** — metric-driven improvement with leakage guards |
 
 See [Architecture](docs/architecture.md) for the full technical deep-dive, including the eval system, FEEC strategy priority, and state machine.
 
@@ -368,7 +393,7 @@ See `factory --help` for the complete list.
 
 ```bash
 uv sync --all-groups              # Install all deps including dev
-uv run pytest -v                  # 1144 tests
+uv run pytest -v                  # 1320 tests
 uv run ruff check .               # Lint
 uv run mypy factory/              # Type check
 ```

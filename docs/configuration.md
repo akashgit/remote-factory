@@ -146,6 +146,71 @@ Soft rules that guide behavior but don't block merges:
 - Add tests for any new public function
 ```
 
+### `## Research Target`
+
+Only for research/benchmark projects. Defines the metric to improve iteratively. When present, auto-detection routes to research mode instead of improve mode.
+
+```markdown
+## Research Target
+- objective: maximize SWE-bench resolve rate
+- metric: resolved/total
+- target: 0.35
+- run_command: python run_benchmark.py
+- result_path: results/output.json
+- result_parser: json
+- timeout: 3600
+```
+
+| Field | Purpose |
+|-------|---------|
+| `objective` | Human-readable description of the research goal |
+| `metric` | Key to extract from results (JSON path or regex) |
+| `target` | Goal value — experiments stop when this is reached |
+| `run_command` | Shell command to execute the benchmark/evaluation |
+| `result_path` | Where the run command writes results |
+| `result_parser` | How to parse results: `json`, `regex`, or `exit_code` |
+| `timeout` | Maximum seconds for the run command |
+
+### `## Mutable Surfaces`
+
+Files the Builder is allowed to modify during research experiments. One glob pattern per line. Only used in research mode.
+
+```markdown
+## Mutable Surfaces
+- src/**/*.py
+- config/*.yaml
+```
+
+### `## Fixed Surfaces`
+
+Ground truth files, test data, and eval infrastructure. These are fingerprinted for leakage detection and must never be modified. One glob pattern per line. Only used in research mode.
+
+```markdown
+## Fixed Surfaces
+- tests/gold/*.json
+- eval/**/*.py
+- data/benchmark/*.jsonl
+```
+
+### `## Research Constraints`
+
+Additional rules for the research loop. Only used in research mode.
+
+```markdown
+## Research Constraints
+- Do not use GPT-4 (cost constraint)
+- Each experiment must complete within 30 minutes
+```
+
+### `## Cost Budget`
+
+Per-cycle or total budget constraints for research experiments.
+
+```markdown
+## Cost Budget
+$5/cycle, $50 total
+```
+
 ## `.factory/` Directory
 
 Generated at runtime by the factory. Add to `.gitignore` — do not edit manually:

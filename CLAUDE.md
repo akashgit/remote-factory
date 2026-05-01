@@ -47,7 +47,7 @@ Pure tools that don't make decisions. Entry point is `factory/cli.py` → `facto
 
 ### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
 
-A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Interactive/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
+A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Research/Interactive/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 
@@ -118,6 +118,7 @@ factory ceo "Build a weather CLI"               # Raw idea as positional arg
 factory ceo ~/ideas/spec.md                     # Spec file → new project
 factory ceo https://github.com/user/repo        # Clone and improve
 factory ceo "distributed eval runner" --mode interactive  # Brainstorm → build
+factory ceo "SWE-bench solver" --mode research            # Research ideation → build
 
 # Improve — point at existing codebase
 factory ceo /path/to/project                    # Single improvement cycle
@@ -150,7 +151,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Requires improve mode; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Works in improve and research modes; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`.
 
 ## Observability
 

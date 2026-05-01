@@ -131,7 +131,39 @@ If the item isn't already in the backlog, it gets added automatically. The entir
 - The **Builder** implements it on an experiment branch
 - After the keep/revert decision, the cycle ends — no looping back for more hypotheses
 
-`--focus` requires the project to already be built (improve mode). It's mutually exclusive with `--loop`.
+`--focus` requires the project to already be built (improve or research mode). It's mutually exclusive with `--loop`.
+
+## Research — Improve a Metric Iteratively
+
+For projects where the goal is to improve a measurable metric against a dataset — benchmarks, model tuning, prompt optimization — research mode provides a specialized workflow with leakage guards and metric tracking.
+
+### From a new idea
+
+```bash
+factory ceo "SWE-bench solver agent" --mode research
+factory ceo "prompt optimization for code review" --mode research
+```
+
+Research ideation works like interactive mode but the Distiller collects additional configuration:
+
+- **Research Target** — the metric to improve, how to run the evaluation, and where results are written
+- **Mutable Surfaces** — which files the Builder is allowed to modify
+- **Fixed Surfaces** — ground truth data and eval infrastructure that must never be touched (fingerprinted for leakage detection)
+- **Research Constraints** — additional rules (e.g., "do not use GPT-4 for cost reasons")
+- **Cost Budget** — per-cycle or total budget limits
+
+Once you approve the spec, the Factory builds the project and transitions to the research improvement loop.
+
+### On an existing research project
+
+```bash
+factory ceo ~/my-research-project --mode research
+factory ceo ~/my-research-project --mode research --focus "try chain-of-thought"
+```
+
+If the project already has `research_target` configured in `factory.md`, research mode skips ideation and runs the research improvement loop directly. Use `--focus` to target a specific hypothesis.
+
+Research mode requires foreground mode for new projects (incompatible with `--headless`). It's mutually exclusive with `--prompt`.
 
 ## Interactive — Brainstorm Before Building
 
