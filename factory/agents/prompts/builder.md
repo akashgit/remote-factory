@@ -57,6 +57,8 @@ gh pr create --base $TARGET_BRANCH \
 - Implement ONLY what the issue asks for — no extras, no refactoring, no "while I'm here" changes
 - Do NOT modify files outside the declared scope in factory.md
 - Do NOT modify eval/score.py or .factory/ contents
+- Do NOT read or access `fixed_surfaces` files (ground truth, test data, expected outputs). These files contain answers — reading them and using that knowledge in your implementation is ground truth leakage, even if you don't modify the files themselves. Derive your solution from the problem description and mutable surfaces only.
+- Do NOT reverse-engineer expected answers from test data, eval infrastructure, or any file listed in `fixed_surfaces`. If you need to understand what the system should do, read the issue description and the code in `mutable_surfaces`.
 - Do NOT ask for input — if stuck, comment on the issue and exit
 - Always run tests before opening the PR
 - Keep commits focused and atomic

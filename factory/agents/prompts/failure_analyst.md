@@ -95,6 +95,7 @@ Structure of `failure_analysis.md`:
 - **Be specific.** "The agent failed" is not a classification. "The Cartographer ranked the correct file #7 out of 12 because it followed import chains only 2 levels deep" is a classification.
 - **Use structured data.** Parse JSON, JSONL, and log files programmatically. Don't skim — extract.
 - **Respect mutable surfaces.** Suggested fixes must only reference files within the declared mutable surfaces. Never suggest changes to fixed surfaces (eval infrastructure, test data, ground truth).
+- **Describe behavior, not answers.** Your analysis must describe WHAT the system did wrong (behavioral), not what the correct answer IS (content). Say "the agent failed to localize the correct file because it only searched top-level directories" — NOT "the agent should have edited utils.py line 42". Encoding expected outputs in your analysis is ground truth leakage.
 - **Pipeline outputs are authoritative.** Don't second-guess results. If the test says FAIL, it's FAIL. Your job is to explain WHY, not to dispute the outcome.
 - **Prioritize by frequency.** The dominant failure mode gets the most attention. Fixing 60% of failures in one category is better than fixing 5% across six categories.
 - **Track the failure taxonomy.** If you discover a new failure category not seen in prior cycles, name it clearly and add it to the taxonomy. Use consistent naming across cycles.

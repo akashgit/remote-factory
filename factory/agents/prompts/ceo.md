@@ -1288,7 +1288,13 @@ Establish the starting point by running the system and recording the baseline me
    - `fixed_surfaces`: files the Builder MUST NOT modify (eval infrastructure, test data, ground truth)
    - `research_constraints`: additional free-text constraints
 
-3. **Execute the baseline run.** The Evaluator agent runs the shell command directly and manages artifacts:
+3. **Pre-flight validation (MANDATORY).** Before spawning any agents, validate the research config:
+   ```bash
+   uv run python -m factory validate-research "$PROJECT_PATH"
+   ```
+   If validation fails (non-empty error list), STOP. Fix the config issues before proceeding. Common errors: empty `fixed_surfaces` (no leakage guards), `mutable_surfaces`/`fixed_surfaces` overlap (ambiguous constraints), patterns matching no files (stale config).
+
+4. **Execute the baseline run.** The Evaluator agent runs the shell command directly and manages artifacts:
 
    ```bash
    factory agent evaluator --task "Run research baseline for $PROJECT_PATH.
@@ -1462,12 +1468,17 @@ This is a **hard gate**. The Builder MUST NOT start until you approve.
 2. **Surface constraint check (MANDATORY):** For each hypothesis, verify:
    - All target files are in `mutable_surfaces` — if ANY file is in `fixed_surfaces`, **REDIRECT immediately**
    - No hypothesis proposes changes to eval infrastructure, test data, or ground truth
-3. Verify hypotheses target the dominant failure modes from the Failure Analyst's report
-4. Verify expected impact is realistic given the failure distribution
-5. **Hypothesis count check:** Research mode should have 1-3 hypotheses. More than 3 → REDIRECT.
-6. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
-7. If REDIRECT: re-invoke with corrections (e.g., "H2 targets a fixed surface", "No hypothesis addresses the dominant failure mode")
-8. If PROCEED: write `PLAN APPROVED`
+3. **Ground truth leakage scan (MANDATORY):** For each hypothesis, run the leakage scanner:
+   ```bash
+   uv run python -m factory leakage-check "$PROJECT_PATH" --text "<hypothesis text>"
+   ```
+   If risk level is `medium` or `high` → **REDIRECT immediately**. The hypothesis encodes ground truth (via negation hints, specific values, or token overlap with fixed surfaces). Tell the Strategist which hypothesis failed and why — it must be rephrased to describe capability improvements, not answers.
+4. Verify hypotheses target the dominant failure modes from the Failure Analyst's report
+5. Verify expected impact is realistic given the failure distribution
+6. **Hypothesis count check:** Research mode should have 1-3 hypotheses. More than 3 → REDIRECT.
+7. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
+8. If REDIRECT: re-invoke with corrections (e.g., "H2 targets a fixed surface", "H1 leaks ground truth via negation hint", "No hypothesis addresses the dominant failure mode")
+9. If PROCEED: write `PLAN APPROVED`
 
 **MANDATORY Archivist — record strategy (DO NOT SKIP):**
 
@@ -1554,8 +1565,14 @@ Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one ad
    ```
    - If ANY modified file is in `fixed_surfaces` → **ABORT immediately**, close PR, revert
    - If ANY modified file is NOT in `mutable_surfaces` → **REDIRECT** the Builder to remove those changes
-2. Standard review: does the PR match the hypothesis? Scope creep? Tests included?
-3. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+2. **Ground truth leakage scan on PR diff (MANDATORY):** The Builder may have read fixed surface files (no file modification = Layer 1 doesn't fire) and embedded ground-truth-derived logic in code. Scan the diff:
+   ```bash
+   DIFF_TEXT=$(gh pr diff $PR_NUM)
+   uv run python -m factory leakage-check "$PROJECT_PATH" --text "$DIFF_TEXT"
+   ```
+   If risk level is `medium` or `high` → **REDIRECT** the Builder: "PR diff contains tokens/values that match ground truth files. Remove ground-truth-derived logic and re-implement from first principles using only the problem description."
+3. Standard review: does the PR match the hypothesis? Scope creep? Tests included?
+4. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -1618,7 +1635,7 @@ The research target metric must satisfy the **monotonic improvement policy:**
 
 #### R5c. Precheck Gate
 
-Run the standard precheck (same as Improve mode):
+Run the standard precheck with surface guard enabled:
 
 ```bash
 BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
@@ -1628,6 +1645,8 @@ uv run python -m factory precheck "$PROJECT_PATH" \
     --hypothesis "$HYPOTHESIS" \
     --baseline $BASELINE_SHA
 ```
+
+The precheck automatically runs fixed surface guards and ground truth leakage detection when `fixed_surfaces` is configured in factory.md. These are hard, non-overridable gates — if the precheck reports a `fixed_surfaces` or `ground_truth_leakage` failure, it is a mandatory revert. No CEO override allowed.
 
 If precheck fails → mandatory revert.
 

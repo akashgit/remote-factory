@@ -13,9 +13,11 @@ from factory.strategy import (
 )
 from factory.precheck import (
     check_anti_pattern,
+    check_leakage,
     check_score_direction,
     check_scope,
     check_smoke_test,
+    check_surfaces,
     run_precheck,
 )
 from factory.review import (
@@ -234,6 +236,81 @@ class TestCheckSmokeTest:
         assert "timed out" in r.detail.lower()
 
 
+# ── precheck: check_surfaces ─────────────────────────────────
+
+
+class TestCheckSurfaces:
+    @patch("factory.precheck.subprocess.run")
+    def test_clean(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0, stdout="clean\n", stderr="")
+        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        assert r.passed
+        assert r.name == "fixed_surfaces"
+
+    @patch("factory.precheck.subprocess.run")
+    def test_violations(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="VIOLATION: Fixed surface modified: data/truth.json",
+            stderr="",
+        )
+        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        assert not r.passed
+        assert "truth.json" in r.detail
+
+    @patch("factory.precheck.subprocess.run")
+    def test_timeout(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="guard", timeout=60)
+        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        assert not r.passed
+        assert "timed out" in r.detail.lower()
+
+    @patch("factory.precheck.subprocess.run")
+    def test_command_not_found(self, mock_run):
+        mock_run.side_effect = FileNotFoundError()
+        r = check_surfaces(Path("/tmp/test"), "abc123", ["data/**"])
+        assert not r.passed
+        assert "not found" in r.detail.lower()
+
+
+# ── precheck: check_leakage ──────────────────────────────────
+
+
+class TestCheckLeakage:
+    def test_no_leakage(self, tmp_path):
+        (tmp_path / "truth.py").write_text("def subtract(a, b): return a - b\n")
+        r = check_leakage(
+            "improve logging in the builder agent",
+            tmp_path,
+            ["truth.py"],
+        )
+        assert r.passed
+        assert r.name == "ground_truth_leakage"
+
+    def test_negation_hint_detected(self, tmp_path):
+        (tmp_path / "truth.py").write_text("def subtract(a, b): return a - b\n")
+        r = check_leakage(
+            "do not subtract from the values",
+            tmp_path,
+            ["truth.py"],
+        )
+        assert not r.passed
+        assert "leakage" in r.detail.lower() or "risk" in r.detail.lower()
+
+    def test_no_fixed_surface_files(self, tmp_path):
+        r = check_leakage(
+            "do not subtract",
+            tmp_path,
+            ["nonexistent.py"],
+        )
+        assert r.passed
+        assert "skipped" in r.detail.lower()
+
+    def test_empty_fixed_surfaces(self, tmp_path):
+        r = check_leakage("anything", tmp_path, [])
+        assert r.passed
+
+
 # ── precheck: run_precheck ────────────────────────────────────
 
 
@@ -293,6 +370,21 @@ class TestRunPrecheck:
         assert not result.passed
         assert "score_direction" in result.blocking_failures
         assert "anti_pattern" in result.blocking_failures
+
+    def test_fixed_surfaces_included(self, tmp_path):
+        (tmp_path / "truth.py").write_text("def subtract(a, b): return a - b\n")
+        result = run_precheck(
+            score_before=0.7,
+            score_after=0.85,
+            threshold=0.8,
+            hypothesis="do not subtract from the values",
+            history=[],
+            project_path=tmp_path,
+            baseline_sha="abc123",
+            fixed_surfaces=["truth.py"],
+        )
+        check_names = [c.name for c in result.checks]
+        assert "ground_truth_leakage" in check_names
 
     def test_summary_output(self):
         result = run_precheck(

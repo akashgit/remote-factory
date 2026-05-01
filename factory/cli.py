@@ -206,15 +206,21 @@ def cmd_guard(args: argparse.Namespace) -> int:
 
     project_path = Path(args.path)
 
-    # Optionally load scope from factory config
+    # Optionally load scope and fixed surfaces from factory config
     scope = None
-    if args.check_scope:
+    fixed_surfaces = None
+    if args.check_scope or args.check_surfaces:
         from factory.store import ExperimentStore
         store = ExperimentStore(project_path)
         config = _run(store.read_config())
-        scope = config.scope
+        if args.check_scope:
+            scope = config.scope
+        if args.check_surfaces:
+            fixed_surfaces = config.fixed_surfaces
 
-    violations = check_all(project_path, args.baseline, allowed_scope=scope)
+    violations = check_all(
+        project_path, args.baseline, allowed_scope=scope, fixed_surfaces=fixed_surfaces,
+    )
     _emit_cli_event(project_path, "guard.completed", {
         "violations": len(violations),
         "clean": len(violations) == 0,
@@ -753,6 +759,7 @@ def cmd_precheck(args: argparse.Namespace) -> int:
         allowed_scope=config.scope if args.baseline else None,
         smoke_test_command=config.smoke_test,
         similarity_threshold=args.similarity_threshold,
+        fixed_surfaces=config.fixed_surfaces if config.fixed_surfaces else None,
     )
 
     # Output as JSON for machine consumption
@@ -772,6 +779,63 @@ def cmd_precheck(args: argparse.Namespace) -> int:
     })
 
     return 0 if result.passed else 1
+
+
+def cmd_leakage_check(args: argparse.Namespace) -> int:
+    """Check text for ground truth leakage against fixed surface fingerprints."""
+    from factory.research.leakage import fingerprint_fixed_surfaces, scan_for_leakage
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    config = _run(store.read_config())
+
+    if not config.fixed_surfaces:
+        print("SKIP: no fixed_surfaces configured in factory.md")
+        return 0
+
+    fingerprints = fingerprint_fixed_surfaces(project_path, config.fixed_surfaces)
+    if not fingerprints:
+        print("SKIP: no fixed surface files found to fingerprint")
+        return 0
+
+    report = scan_for_leakage(args.text, fingerprints, args.sensitivity)
+
+    output = {
+        "flagged": report.flagged,
+        "risk_level": report.risk_level,
+        "findings": [
+            {
+                "source_file": f.source_file,
+                "leaked_token": f.leaked_token,
+                "context": f.context,
+                "leak_type": f.leak_type,
+            }
+            for f in report.findings
+        ],
+    }
+    print(json.dumps(output, indent=2))
+    return 1 if report.risk_level in ("medium", "high") else 0
+
+
+def cmd_validate_research(args: argparse.Namespace) -> int:
+    """Validate research mode configuration for ground truth isolation."""
+    from factory.research.leakage import validate_research_config
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    config = _run(store.read_config())
+
+    errors = validate_research_config(config, project_path)
+
+    if not errors:
+        print("VALID: research config passes all ground truth isolation checks")
+        return 0
+
+    for error in errors:
+        print(f"ERROR: {error}")
+    return 1
 
 
 def cmd_review(args: argparse.Namespace) -> int:
@@ -1906,6 +1970,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
     p.add_argument("--baseline", required=True, help="Baseline commit SHA")
     p.add_argument("--check-scope", action="store_true", help="Also check file scope")
+    p.add_argument("--check-surfaces", action="store_true",
+                    help="Also check fixed surface constraints (research mode)")
 
     # begin
     p = sub.add_parser("begin", help="Start experiment, print ID")
@@ -1967,6 +2033,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     # summary
     p = sub.add_parser("summary", help="Generate end-of-session summary report")
+    p.add_argument("path", help="Path to the project")
+
+    # leakage-check
+    p = sub.add_parser("leakage-check", help="Scan text for ground truth leakage against fixed surfaces")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--text", required=True, help="Text to scan for leakage (hypothesis, strategy, etc.)")
+    p.add_argument("--sensitivity", choices=["low", "medium", "high"], default="medium",
+                    help="Sensitivity level (default: medium)")
+
+    # validate-research
+    p = sub.add_parser("validate-research", help="Validate research mode configuration for ground truth isolation")
     p.add_argument("path", help="Path to the project")
 
     # backfill-citations
@@ -2269,6 +2346,8 @@ def main(argv: list[str] | None = None) -> int:
         "digest": cmd_digest,
         "archive": cmd_archive,
         "precheck": cmd_precheck,
+        "leakage-check": cmd_leakage_check,
+        "validate-research": cmd_validate_research,
         "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,

@@ -77,10 +77,23 @@ uv run python -m factory review \
 
 If `--pr` is provided, the review is posted on the PR automatically. Use `--dry-run` to preview without posting.
 
+## Surface Constraints (Research Mode)
+
+When reviewing PRs for research mode projects (those with `fixed_surfaces` in factory.md):
+
+1. **Check changed files against fixed surfaces**: Run `gh pr diff --name-only` and cross-reference every changed file against `fixed_surfaces` from the factory config. Any modification to a fixed surface file is a **non-negotiable REVERT** — no exceptions, no "the change is harmless" arguments.
+
+2. **Check for ground truth leakage in code**: If the PR diff contains specific values, identifiers, or logic patterns that appear to be derived from ground truth files, flag it as a leakage risk. The Builder should not have read fixed surface files to inform its implementation.
+
+3. **Run the surface guard**: `uv run python -m factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-surfaces`
+
+Fixed surface modification is a **Sacred Rule violation** — treat it the same as deleting tests or modifying eval/score.py.
+
 ## Rules
 
 - Guard violations are non-negotiable — always revert
 - Score regression is non-negotiable — always revert
+- Fixed surface modification is non-negotiable — always revert (research mode)
 - Be strict but fair — don't block good changes for style nitpicks
 - Document your reasoning clearly for the Strategist to learn from
 - Always post reviews on PRs when a PR number is available

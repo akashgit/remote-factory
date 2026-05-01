@@ -139,6 +139,38 @@ def check_scope(project_path: Path, baseline_sha: str, allowed_scope: list[str])
     return None
 
 
+def check_fixed_surfaces(
+    project_path: Path, baseline_sha: str, fixed_surfaces: list[str]
+) -> str | None:
+    """Guard: changed files must not be in the fixed_surfaces list.
+
+    Fixed surfaces are files that must never be modified (e.g. ground truth,
+    test data, eval infrastructure). Uses the same glob matching as check_scope.
+    Returns a violation string if fixed surfaces were modified, None otherwise.
+    """
+    try:
+        diff_output = _run_git(["diff", "--name-only", f"{baseline_sha}..HEAD"], project_path)
+    except subprocess.CalledProcessError:
+        return "Cannot determine changed files"
+
+    if not diff_output.strip():
+        return None
+
+    changed_files = diff_output.strip().splitlines()
+    violated: list[str] = []
+
+    for changed_file in changed_files:
+        basename = changed_file.split("/")[-1]
+        if basename in _AUTO_GENERATED_FILES:
+            continue
+        if any(_glob_match(changed_file, pattern) for pattern in fixed_surfaces):
+            violated.append(changed_file)
+
+    if violated:
+        return f"Fixed surface modified: {', '.join(violated)}"
+    return None
+
+
 def snapshot_eval_tree(project_path: Path) -> str:
     """Take a snapshot of eval/ tree for later comparison."""
     try:
@@ -152,6 +184,7 @@ def check_all(
     baseline_sha: str,
     eval_tree_before: str | None = None,
     allowed_scope: list[str] | None = None,
+    fixed_surfaces: list[str] | None = None,
 ) -> list[str]:
     """Run all guards, return list of violation strings (empty = pass)."""
     violations: list[str] = []
@@ -171,6 +204,11 @@ def check_all(
 
     if allowed_scope is not None:
         v = check_scope(project_path, baseline_sha, allowed_scope)
+        if v:
+            violations.append(v)
+
+    if fixed_surfaces:
+        v = check_fixed_surfaces(project_path, baseline_sha, fixed_surfaces)
         if v:
             violations.append(v)
 

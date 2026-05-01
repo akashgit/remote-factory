@@ -141,6 +141,107 @@ def check_anti_pattern(
     )
 
 
+def check_surfaces(
+    project_path: Path,
+    baseline_sha: str,
+    fixed_surfaces: list[str],
+) -> CheckResult:
+    """Run factory guard --check-surfaces and report pass/fail.
+
+    This is a hard gate — the CEO cannot override a failed surface check.
+    Any modification to a fixed surface file is a mandatory revert.
+    """
+    cmd = [
+        "uv", "run", "python", "-m", "factory", "guard",
+        str(project_path), "--baseline", baseline_sha, "--check-surfaces",
+    ]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=project_path,
+        )
+    except subprocess.TimeoutExpired:
+        return CheckResult(name="fixed_surfaces", passed=False, detail="Surface guard check timed out")
+    except FileNotFoundError:
+        return CheckResult(name="fixed_surfaces", passed=False, detail="Guard command not found")
+
+    if result.returncode == 0:
+        return CheckResult(name="fixed_surfaces", passed=True, detail="No fixed surfaces modified")
+
+    violations = [
+        line.replace("VIOLATION: ", "").strip()
+        for line in result.stdout.splitlines()
+        if line.startswith("VIOLATION:")
+    ]
+    return CheckResult(
+        name="fixed_surfaces",
+        passed=False,
+        detail=f"Fixed surface violations: {'; '.join(violations) or result.stdout.strip()[:200]}",
+    )
+
+
+def check_leakage(
+    hypothesis: str,
+    project_path: Path,
+    fixed_surfaces: list[str],
+    baseline_sha: str | None = None,
+    sensitivity: str = "medium",
+) -> CheckResult:
+    """Check for ground truth content leaking into hypothesis or code diff.
+
+    Scans:
+    1. The hypothesis text against fingerprints of fixed surface files
+    2. The PR diff (if baseline_sha provided) against the same fingerprints
+
+    This catches both direct references ("the answer is 42") and indirect
+    hints ("do NOT use subtraction").
+    """
+    from factory.research.leakage import (
+        fingerprint_fixed_surfaces,
+        get_diff_text,
+        scan_diff_for_leakage,
+        scan_for_leakage,
+    )
+
+    fingerprints = fingerprint_fixed_surfaces(project_path, fixed_surfaces)
+    if not fingerprints:
+        return CheckResult(
+            name="ground_truth_leakage",
+            passed=True,
+            detail="No fixed surface files found to fingerprint (skipped)",
+        )
+
+    # Scan hypothesis text
+    report = scan_for_leakage(hypothesis, fingerprints, sensitivity)
+
+    # Also scan PR diff if baseline is available
+    if baseline_sha and not report.flagged:
+        diff_text = get_diff_text(project_path, baseline_sha)
+        if diff_text:
+            report = scan_diff_for_leakage(diff_text, fingerprints, sensitivity)
+
+    if not report.flagged:
+        return CheckResult(
+            name="ground_truth_leakage",
+            passed=True,
+            detail="No ground truth leakage detected",
+        )
+
+    finding_details = "; ".join(
+        f"{f.leak_type}: '{f.leaked_token}' from {f.source_file}"
+        for f in report.findings[:3]
+    )
+    return CheckResult(
+        name="ground_truth_leakage",
+        passed=report.risk_level not in ("medium", "high"),
+        detail=f"Leakage risk={report.risk_level}: {finding_details}",
+    )
+
+
 def check_smoke_test(
     smoke_test_command: str,
     project_path: Path,
@@ -205,6 +306,7 @@ def run_precheck(
     allowed_scope: list[str] | None = None,
     smoke_test_command: str = "",
     similarity_threshold: float = 0.6,
+    fixed_surfaces: list[str] | None = None,
 ) -> PreCheckResult:
     """Run all prechecks and return aggregate result.
 
@@ -219,10 +321,18 @@ def run_precheck(
     if baseline_sha:
         checks.append(check_scope(project_path, baseline_sha, allowed_scope))
 
-    # 3. Anti-pattern detection
+    # 3. Fixed surface guard (only if baseline + fixed_surfaces provided)
+    if baseline_sha and fixed_surfaces:
+        checks.append(check_surfaces(project_path, baseline_sha, fixed_surfaces))
+
+    # 4. Ground truth leakage check (only if fixed_surfaces provided)
+    if fixed_surfaces:
+        checks.append(check_leakage(hypothesis, project_path, fixed_surfaces, baseline_sha))
+
+    # 5. Anti-pattern detection
     checks.append(check_anti_pattern(hypothesis, history, similarity_threshold))
 
-    # 4. Smoke test
+    # 6. Smoke test
     checks.append(check_smoke_test(smoke_test_command, project_path))
 
     # Aggregate

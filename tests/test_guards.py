@@ -9,6 +9,7 @@ from factory.eval.guards import (
     _glob_match,
     check_eval_immutable,
     check_experiment_branch,
+    check_fixed_surfaces,
     check_git_clean,
     check_scope,
     snapshot_eval_tree,
@@ -153,6 +154,54 @@ class TestGlobMatch:
         assert _glob_match(filepath, pattern) is expected
 
 
+class TestCheckFixedSurfaces:
+    def test_no_violation_safe_files(self, git_project):
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "src" / "new.py").write_text("new\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "safe change"], git_project)
+        result = check_fixed_surfaces(git_project, baseline, ["data/**", "ground_truth.json"])
+        assert result is None
+
+    def test_violation_fixed_surface_modified(self, git_project):
+        (git_project / "ground_truth.json").write_text("{}\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add truth"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "ground_truth.json").write_text('{"answer": 42}\n')
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "modify truth"], git_project)
+        result = check_fixed_surfaces(git_project, baseline, ["ground_truth.json"])
+        assert result is not None
+        assert "ground_truth.json" in result
+
+    def test_lock_files_ignored(self, git_project):
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "uv.lock").write_text("lock content\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "lock change"], git_project)
+        result = check_fixed_surfaces(git_project, baseline, ["**"])
+        assert result is None
+
+    def test_glob_patterns(self, git_project):
+        (git_project / "data").mkdir()
+        (git_project / "data" / "expected.json").write_text("{}\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add data"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "data" / "expected.json").write_text('{"changed": true}\n')
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "modify data"], git_project)
+        result = check_fixed_surfaces(git_project, baseline, ["data/**/*.json"])
+        assert result is not None
+        assert "expected.json" in result
+
+    def test_no_changes(self, git_project):
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        result = check_fixed_surfaces(git_project, baseline, ["data/**"])
+        assert result is None
+
+
 class TestCheckAll:
     def test_clean_passes(self, git_project):
         baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
@@ -162,3 +211,17 @@ class TestCheckAll:
         _git(["commit", "-m", "change"], git_project)
         violations = check_all(git_project, baseline, eval_tree_before=tree)
         assert violations == []
+
+    def test_fixed_surfaces_wired(self, git_project):
+        (git_project / "truth.json").write_text("{}\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add truth"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "truth.json").write_text('{"modified": true}\n')
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "modify truth"], git_project)
+        violations = check_all(
+            git_project, baseline,
+            fixed_surfaces=["truth.json"],
+        )
+        assert any("Fixed surface" in v for v in violations)

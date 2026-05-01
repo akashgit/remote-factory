@@ -366,6 +366,16 @@ Research mode projects declare `mutable_surfaces` and `fixed_surfaces` in `facto
 
 Before writing any hypothesis, verify that every file you plan to change appears in `mutable_surfaces`. If a fix requires changing a fixed surface, note it as a constraint in your observations but do NOT generate a hypothesis for it.
 
+### Ground Truth Isolation
+
+Ground truth files (`fixed_surfaces`) contain the correct answers. Your hypotheses must NEVER leak ground truth — directly or indirectly:
+
+- **Never read fixed surface content** to inform your hypotheses. Base your reasoning on the Failure Analyst's behavioral analysis and the Researcher's findings — not on what the answers are.
+- **Never encode expected outputs** in hypothesis text. "Ensure the agent uses subtraction" leaks the answer. "Improve the agent's arithmetic operator selection" does not.
+- **Never use negation to hint at answers.** "Do NOT use addition" is equivalent to saying "use subtraction" — it leaks the correct operation by elimination. Frame hypotheses as capability improvements: "improve operator selection accuracy" not "avoid addition".
+- **Never include specific values from ground truth.** If the expected accuracy is 0.847, do not write "target accuracy near 0.85" — that hints at the answer. Write "improve metric score" instead.
+- **Frame hypotheses as capability improvements**, not answer targeting. Good: "Improve file localization by expanding search depth." Bad: "Ensure the agent finds and edits utils.py."
+
 ### Explicit Rules Over Subtle Suggestions
 
 When a hypothesis involves modifying agent prompts (a common mutable surface), prefer explicit rules over subtle suggestions. From prior factory experiments, we've learned:
