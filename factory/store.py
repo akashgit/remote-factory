@@ -12,12 +12,14 @@ import structlog
 
 from factory.models import (
     CompositeScore,
+    CostBudgetConfig,
     EvalProfile,
     EvalWeights,
     ExperimentRecord,
     FactoryConfig,
     HypothesisBudget,
     ProjectEvalDimension,
+    ResearchTarget,
 )
 
 log = structlog.get_logger()
@@ -79,6 +81,39 @@ def _parse_project_eval(items: str | list[str] | float) -> list[ProjectEvalDimen
             description=fields.get("description", ""),
         ))
     return dims
+
+
+def _parse_research_target(items: str | list[str] | float) -> ResearchTarget | None:
+    """Parse research target key-value block from factory.md."""
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+    objective = str(kv.get("Objective", ""))
+    metric = str(kv.get("Metric", ""))
+    run_command = str(kv.get("Run Command", ""))
+    result_path = str(kv.get("Result Path", ""))
+    if not objective or not metric or not run_command or not result_path:
+        return None
+    return ResearchTarget(
+        objective=objective,
+        metric=metric,
+        target=float(str(kv.get("Target", "0.0"))),
+        run_command=run_command,
+        result_path=result_path,
+        result_parser=str(kv.get("Result Parser", "json")),
+        timeout=int(float(str(kv.get("Timeout", "3600")))),
+    )
+
+
+def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | None:
+    """Parse cost budget key-value block from factory.md."""
+    kv = _parse_kv_list(items, float)
+    if not kv:
+        return None
+    return CostBudgetConfig(
+        max_per_cycle=float(str(kv["Max per cycle"])) if "Max per cycle" in kv else None,
+        max_total=float(str(kv["Max total"])) if "Max total" in kv else None,
+    )
 
 
 class ExperimentStore:
@@ -179,6 +214,16 @@ class ExperimentStore:
         smoke_test_raw = parsed.get("smoke_test", "")
         smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
 
+        research_target = _parse_research_target(parsed.get("research_target", []))
+        cost_budget = _parse_cost_budget(parsed.get("cost_budget", []))
+
+        mutable_raw = parsed.get("mutable_surfaces", [])
+        mutable_surfaces = list(mutable_raw) if isinstance(mutable_raw, list) else []
+        fixed_raw = parsed.get("fixed_surfaces", [])
+        fixed_surfaces = list(fixed_raw) if isinstance(fixed_raw, list) else []
+        rc_raw = parsed.get("research_constraints", [])
+        research_constraints = list(rc_raw) if isinstance(rc_raw, list) else []
+
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
             scope=list(parsed.get("scope", [])),  # type: ignore[arg-type]
@@ -191,6 +236,11 @@ class ExperimentStore:
             smoke_test=smoke_test,
             project_eval=project_eval_dims,
             eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
+            research_target=research_target,
+            mutable_surfaces=mutable_surfaces,
+            fixed_surfaces=fixed_surfaces,
+            research_constraints=research_constraints,
+            cost_budget=cost_budget,
         )
 
         (self.factory_dir / "config.json").write_text(

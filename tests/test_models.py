@@ -5,7 +5,9 @@ from datetime import datetime
 
 from factory.models import (
     CostBudget,
+    CostBudgetConfig,
     CompositeScore,
+    CycleState,
     EvalDimension,
     EvalProfile,
     EvalResult,
@@ -14,6 +16,7 @@ from factory.models import (
     Hypothesis,
     ProjectProfile,
     ProjectState,
+    ResearchTarget,
 )
 
 
@@ -195,3 +198,123 @@ class TestCostBudget:
     def test_custom_budget(self):
         b = CostBudget(per_experiment_max=5.0, per_session_max=50.0)
         assert b.per_experiment_max == 5.0
+
+
+class TestResearchTarget:
+    def test_valid_target(self):
+        t = ResearchTarget(
+            objective="Minimize latency",
+            metric="p99_latency_ms",
+            target=50.0,
+            run_command="python benchmark.py",
+            result_path="results/benchmark.json",
+        )
+        assert t.objective == "Minimize latency"
+        assert t.result_parser == "json"
+        assert t.timeout == 3600
+
+    def test_custom_defaults(self):
+        t = ResearchTarget(
+            objective="Maximize accuracy",
+            metric="accuracy",
+            target=0.95,
+            run_command="python train.py",
+            result_path="results.json",
+            result_parser="exit_code",
+            timeout=7200,
+        )
+        assert t.result_parser == "exit_code"
+        assert t.timeout == 7200
+
+    def test_rejects_extra_fields(self):
+        with pytest.raises(Exception):
+            ResearchTarget(
+                objective="x", metric="y", target=1.0,
+                run_command="z", result_path="r", extra="bad",
+            )
+
+
+class TestCostBudgetConfig:
+    def test_defaults_none(self):
+        c = CostBudgetConfig()
+        assert c.max_per_cycle is None
+        assert c.max_total is None
+
+    def test_custom_values(self):
+        c = CostBudgetConfig(max_per_cycle=5.0, max_total=100.0)
+        assert c.max_per_cycle == 5.0
+        assert c.max_total == 100.0
+
+    def test_partial_values(self):
+        c = CostBudgetConfig(max_per_cycle=2.5)
+        assert c.max_per_cycle == 2.5
+        assert c.max_total is None
+
+    def test_rejects_extra_fields(self):
+        with pytest.raises(Exception):
+            CostBudgetConfig(max_per_cycle=1.0, extra="bad")
+
+
+class TestFactoryConfigResearchFields:
+    def test_defaults_preserve_backward_compat(self):
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[],
+        )
+        assert config.research_target is None
+        assert config.mutable_surfaces == []
+        assert config.fixed_surfaces == []
+        assert config.research_constraints == []
+        assert config.cost_budget is None
+
+    def test_with_research_target(self):
+        rt = ResearchTarget(
+            objective="Maximize F1",
+            metric="f1_score",
+            target=0.9,
+            run_command="python eval.py",
+            result_path="output.json",
+        )
+        config = FactoryConfig(
+            goal="Research", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], research_target=rt,
+            mutable_surfaces=["src/model.py"], fixed_surfaces=["data/"],
+            research_constraints=["No extra dependencies"],
+            cost_budget=CostBudgetConfig(max_per_cycle=3.0),
+        )
+        assert config.research_target is not None
+        assert config.research_target.objective == "Maximize F1"
+        assert config.mutable_surfaces == ["src/model.py"]
+        assert config.fixed_surfaces == ["data/"]
+        assert config.research_constraints == ["No extra dependencies"]
+        assert config.cost_budget is not None
+        assert config.cost_budget.max_per_cycle == 3.0
+
+    def test_roundtrip_json_with_research(self):
+        rt = ResearchTarget(
+            objective="Minimize loss",
+            metric="val_loss",
+            target=0.01,
+            run_command="python train.py",
+            result_path="metrics.json",
+        )
+        config = FactoryConfig(
+            goal="Research", scope=["src/"], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], research_target=rt,
+            mutable_surfaces=["src/"], fixed_surfaces=["data/"],
+        )
+        data = config.model_dump()
+        restored = FactoryConfig(**data)
+        assert restored.research_target is not None
+        assert restored.research_target.objective == "Minimize loss"
+        assert restored == config
+
+
+class TestCycleStateResearchMode:
+    def test_research_mode_accepted(self):
+        cs = CycleState(
+            cycle_id="test-123",
+            started_at=datetime.now(),
+            mode="research",
+        )
+        assert cs.mode == "research"
