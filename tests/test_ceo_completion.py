@@ -570,6 +570,7 @@ class TestBuildContinuationTask:
         assert "RESEARCH" in task
         assert "do not re-plan" in task
         assert "1/3" in task
+        assert "R1.5" in task
 
     def test_continuation_includes_mode_directive(self) -> None:
         """Continuation task includes explicit mode directive to prevent flip."""
@@ -1087,14 +1088,31 @@ class TestCeoPromptResearchMode:
         """The CEO prompt contains a ## Mode: Research section."""
         assert "## Mode: Research" in ceo_prompt
 
-    def test_all_six_phases_present(self, ceo_prompt: str) -> None:
-        """All 6 research mode phases are documented."""
+    def test_all_seven_phases_present(self, ceo_prompt: str) -> None:
+        """All 7 research mode phases are documented."""
         assert "### Phase R0: BASELINE" in ceo_prompt
         assert "### Phase R1: ANALYZE" in ceo_prompt
+        assert "### Phase R1.5: RESEARCH" in ceo_prompt
         assert "### Phase R2: HYPOTHESIZE" in ceo_prompt
         assert "### Phase R3: IMPLEMENT" in ceo_prompt
         assert "### Phase R4: RUN" in ceo_prompt
         assert "### Phase R5: VERDICT" in ceo_prompt
+
+    def test_researcher_phase_in_research_mode(self, ceo_prompt: str) -> None:
+        """R1.5 (Researcher) exists between R1 (Analyze) and R2 (Hypothesize)."""
+        research_idx = ceo_prompt.index("## Mode: Research")
+        meta_idx = ceo_prompt.index("## Mode: Meta")
+        research_section = ceo_prompt[research_idx:meta_idx]
+
+        r1_idx = research_section.index("### Phase R1: ANALYZE")
+        r15_idx = research_section.index("### Phase R1.5: RESEARCH")
+        r2_idx = research_section.index("### Phase R2: HYPOTHESIZE")
+        assert r1_idx < r15_idx < r2_idx
+
+        r15_section = research_section[r15_idx:r2_idx]
+        assert "failure_analysis.md" in r15_section
+        assert "research.md" in r15_section
+        assert "archivist after research" in r15_section
 
     def test_references_research_infrastructure(self, ceo_prompt: str) -> None:
         """The prompt references ResearchTarget config, failure_analyst, and run_command."""

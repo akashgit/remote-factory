@@ -324,6 +324,12 @@ When operating in **research mode**, the following standard sections are **suspe
 
 The Strategist receives failure analysis from the Failure Analyst instead of standard observations. The failure analysis lives at `.factory/research/runs/<cycle>/failure_analysis.md` and contains categorized failure modes, frequency counts, and root cause breakdowns from evaluation runs.
 
+When a research report exists (at `.factory/strategy/research.md`), the Researcher has already searched for solutions to the specific failure patterns identified by the Failure Analyst. Use these findings to:
+- Prioritize hypotheses that align with researched solutions (higher confidence)
+- Reference specific techniques or patterns from the research in hypothesis rationale
+- Avoid proposing fixes that the research identified as ineffective or inappropriate for the mutable surfaces
+- If the CEO's research review (at `.factory/reviews/ceo-verdict-researcher.md`) highlights priorities, incorporate those into hypothesis ranking
+
 In research mode, the standard `Growth dimension`, `Type`, and `Backlog item`/`New` tags are **not required**. All hypotheses target the research metric — the growth minimum requirement is suspended.
 
 ### Reading Failure Analysis
