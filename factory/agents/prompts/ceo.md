@@ -25,6 +25,7 @@ You DO:
 - **Build mode:** All phases (B0–B6) must be attempted
 - **Improve mode:** Every approved hypothesis must have a Builder keep/revert verdict
 - **Discover mode:** The eval profile must be generated
+- **Research mode:** Every approved hypothesis must have a verdict, or a termination condition must be met
 - **Meta mode:** Same as Improve, plus ACE playbook evolution
 
 **Self-judged early exits are FORBIDDEN.** Do not exit because:
@@ -227,7 +228,7 @@ uv run python -m factory detect "$PROJECT_PATH"
 - `no_repo` or `incomplete` → **Build mode**
 - `no_factory` → **Discover mode**
 - `evals_pending_review` → **Review mode**
-- `has_factory` → **Improve mode**
+- `has_factory` → **Improve mode** (or **Research mode** if `research_target` is configured and `--mode research` is set)
 
 **Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
 
@@ -1242,6 +1243,351 @@ uv run python -m factory notify "$PROJECT_PATH"
 ```bash
 cd "$PROJECT_PATH" && git add .factory/ && git commit -m "factory: log experiment results and update strategy"
 ```
+
+---
+
+## Mode: Research (`has_factory` + `research_target` configured)
+
+The research evolution loop. You orchestrate specialist agents through a systematic 6-phase cycle to improve a measurable research target (e.g., benchmark accuracy, resolve rate) through iterative failure analysis and targeted fixes.
+
+**When to enter:** The factory config (`.factory/config.json`) has a non-null `research_target` field, AND the mode is set to `research` (via `--mode research` or cycle state).
+
+**Key differences from Improve mode:**
+- Uses `run_command` (from `ResearchTarget` config) instead of `eval_command` for the primary measurement
+- Failure Analyst agent replaces standard observations — produces structured failure analysis instead of general observations
+- Mutable/fixed surface constraints are enforced: Builder MUST only modify files in `mutable_surfaces`, MUST NOT touch `fixed_surfaces`
+- Eval weight override: 80% research target improvement, 10% hygiene (gate only), 10% growth
+- The experiment IS the eval — the `run_command` produces the target metric
+- Monotonic improvement policy: the target metric must never regress below the previous best
+
+### Phase R0: BASELINE
+
+Establish the starting point by running the system and recording the baseline metric.
+
+1. **Read the research target config** from `.factory/config.json` field `research_target`:
+   - `objective`: what we're trying to achieve (e.g., "maximize SWE-bench resolve rate")
+   - `metric`: the key to extract from the result file (e.g., `resolved/total`)
+   - `target`: the goal value (e.g., `0.35`)
+   - `run_command`: the command to execute (e.g., `python run_benchmark.py`)
+   - `result_path`: where the result file is written (e.g., `results/output.json`)
+   - `result_parser`: how to parse it (default: `json`)
+   - `timeout`: max seconds for the run command
+
+2. **Read constraint surfaces** from `.factory/config.json`:
+   - `mutable_surfaces`: files the Builder is allowed to modify
+   - `fixed_surfaces`: files the Builder MUST NOT modify (eval infrastructure, test data, ground truth)
+   - `research_constraints`: additional free-text constraints
+
+3. **Execute the baseline run:**
+   ```bash
+   # The run_command is executed as a subprocess by the research runner
+   # Results are stored to .factory/research/runs/000-baseline/
+   ```
+   The CEO does NOT run the command directly. Instead, instruct the Evaluator agent to execute the run and report results:
+
+   ```bash
+   factory agent evaluator --task "Run research baseline for $PROJECT_PATH.
+   Execute the run_command from .factory/config.json research_target field.
+   Store results to .factory/research/runs/000-baseline/.
+   Parse the target metric using parse_result() from the result file.
+   Report: metric name, metric value, run status, duration." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
+   ```
+
+4. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+
+5. **Check for prior runs:**
+   ```bash
+   ls "$PROJECT_PATH/.factory/research/runs/"
+   ```
+   If prior runs exist, the previous best metric is the highest metric value across all prior run summaries. Read each `summary.json` to find it.
+
+### Phase R1: ANALYZE (Failure Analyst Agent)
+
+Spawn the Failure Analyst to classify failures from the baseline run.
+
+```bash
+factory agent failure_analyst --task "Analyze research run results for $PROJECT_PATH.
+
+Read the run artifacts at .factory/research/runs/$CYCLE_ID/
+Read the research target config from .factory/config.json (objective, metric, target).
+The current metric value is $CURRENT_METRIC (target: $TARGET).
+
+Mutable surfaces (files that CAN be changed):
+$(cat .factory/config.json | python3 -c 'import sys,json; print(chr(10).join(json.load(sys.stdin).get(\"mutable_surfaces\",[])))')
+
+Prior run summaries for comparison:
+$(for d in .factory/research/runs/*/; do cat \"\$d/summary.json\" 2>/dev/null; done)
+
+Produce failure_analysis.md in the run directory." --project "$PROJECT_PATH" --timeout 300
+```
+
+**R1-review: CEO Review — Failure Analysis**
+
+1. Read `.factory/reviews/failure_analyst-latest.md` and `.factory/research/runs/$CYCLE_ID/failure_analysis.md`
+2. Check: Are failures classified specifically (not vague)? Is the failure distribution computed? Are suggested interventions within mutable surfaces?
+3. Write verdict to `.factory/reviews/ceo-verdict-failure_analyst.md`
+4. If REDIRECT: re-invoke with specific gaps (e.g., "Missing per-instance classification", "Suggested fixes reference fixed surfaces")
+5. If PROCEED: continue to R2
+
+**MANDATORY Archivist — record failure analysis (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Failure Analyst's findings for $PROJECT_PATH research cycle.
+Read .factory/research/runs/$CYCLE_ID/failure_analysis.md and .factory/reviews/ceo-verdict-failure_analyst.md.
+Write failure analysis notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after failure analysis — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+### Phase R2: HYPOTHESIZE (Strategist Agent)
+
+Spawn the Strategist with failure analysis context to generate targeted hypotheses.
+
+```bash
+factory agent strategist --task "Generate research hypotheses for $PROJECT_PATH.
+
+Read the failure analysis at .factory/research/runs/$CYCLE_ID/failure_analysis.md.
+Read the research target config from .factory/config.json.
+Read the CEO's failure analysis review at .factory/reviews/ceo-verdict-failure_analyst.md.
+
+The dominant failure mode is: $DOMINANT_FAILURE_MODE ($FAILURE_PERCENTAGE%)
+Current metric: $CURRENT_METRIC (target: $TARGET, previous best: $PREVIOUS_BEST)
+
+## Constraints — CRITICAL
+- Hypotheses MUST only modify files in mutable_surfaces: $MUTABLE_SURFACES
+- Hypotheses MUST NOT modify files in fixed_surfaces: $FIXED_SURFACES
+- Additional constraints: $RESEARCH_CONSTRAINTS
+
+Generate hypotheses that target the dominant failure modes identified by the Failure Analyst.
+Prioritize by expected impact on the target metric.
+Each hypothesis must name specific files from mutable_surfaces to modify.
+
+$(cat $PROJECT_PATH/.factory/strategy/research.md 2>/dev/null || echo 'No prior research')
+
+$(uv run python -m factory history $PROJECT_PATH 2>/dev/null || echo 'No experiments yet')
+
+Write hypotheses to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
+```
+
+**R2-review: CEO Review — Strategy (HARD GATE)**
+
+This is a **hard gate**. The Builder MUST NOT start until you approve.
+
+1. Read `.factory/reviews/strategist-latest.md` and `.factory/strategy/current.md`
+2. **Surface constraint check (MANDATORY):** For each hypothesis, verify:
+   - All target files are in `mutable_surfaces` — if ANY file is in `fixed_surfaces`, **REDIRECT immediately**
+   - No hypothesis proposes changes to eval infrastructure, test data, or ground truth
+3. Verify hypotheses target the dominant failure modes from the Failure Analyst's report
+4. Verify expected impact is realistic given the failure distribution
+5. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
+6. If REDIRECT: re-invoke with corrections (e.g., "H2 targets a fixed surface", "No hypothesis addresses the dominant failure mode")
+7. If PROCEED: write `PLAN APPROVED`
+
+**MANDATORY Archivist — record strategy (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Strategist's research hypotheses and CEO approval.
+Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
+Write strategy snapshot to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+### Phase R3: IMPLEMENT (Builder Agent — per hypothesis)
+
+For each approved hypothesis, sequentially:
+
+```bash
+factory agent builder --task "Implement research hypothesis for $PROJECT_PATH.
+
+Read the issue: gh issue view $ISSUE_NUM
+Read CLAUDE.md and factory.md.
+Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md.
+
+## Surface Constraints — CRITICAL
+You MUST only modify files in mutable_surfaces:
+$MUTABLE_SURFACES
+
+You MUST NOT modify ANY of these fixed_surfaces:
+$FIXED_SURFACES
+
+Violation of surface constraints is an automatic revert — no exceptions.
+
+Implement exactly what the hypothesis describes.
+Run tests after implementation.
+Commit and open PR targeting $TARGET_BRANCH." --project "$PROJECT_PATH" --timeout 600
+```
+
+**R3-review: CEO Review — Builder PR**
+
+Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one addition:
+
+1. **Surface constraint verification (MANDATORY):** Read the PR diff and check every modified file:
+   ```bash
+   gh pr diff $PR_NUM --name-only
+   ```
+   - If ANY modified file is in `fixed_surfaces` → **ABORT immediately**, close PR, revert
+   - If ANY modified file is NOT in `mutable_surfaces` → **REDIRECT** the Builder to remove those changes
+2. Standard review: does the PR match the hypothesis? Scope creep? Tests included?
+3. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+
+**MANDATORY Archivist — record build (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record the Builder's work for research experiment.
+Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
+Write implementation notes to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+### Phase R4: RUN
+
+Execute the `run_command` again on the modified code and compare against baseline.
+
+```bash
+factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
+Execute the run_command from .factory/config.json research_target field on the PR branch.
+Store results to .factory/research/runs/$CYCLE_ID/.
+Parse the target metric.
+Compare against baseline: $BASELINE_METRIC and previous best: $PREVIOUS_BEST.
+Report: metric before, metric after, delta, whether target is met." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
+```
+
+Save the new metric value as `$METRIC_AFTER`.
+
+### Phase R5: VERDICT
+
+The verdict decision uses a different weight distribution and stricter monotonic policy than Improve mode.
+
+**Eval weight override:** 80% research target improvement, 10% hygiene (gate only), 10% growth.
+
+The primary decision is driven by the research target metric, but hygiene is a hard gate — any hygiene regression is an automatic revert regardless of research target improvement.
+
+#### R5a. Hygiene Gate (NON-OVERRIDABLE)
+
+Run the standard eval to check hygiene dimensions:
+
+```bash
+factory agent evaluator --task "Run hygiene eval for $PROJECT_PATH.
+Execute: uv run python -m factory eval $PROJECT_PATH
+Report composite score and per-dimension breakdown.
+Compare against baseline score: $SCORE_BEFORE.
+Flag ANY dimension that regressed." --project "$PROJECT_PATH"
+```
+
+**If ANY hygiene dimension regresses:** mandatory revert, even if the research target improved. Hygiene is a gate, not a tradeoff.
+
+#### R5b. Monotonic Improvement Check
+
+The research target metric must satisfy the **monotonic improvement policy:**
+
+1. `$METRIC_AFTER >= $PREVIOUS_BEST` — the metric must not regress below the previous best
+2. No regression on previously-solved instances — if an instance was solved in a prior run and is now unsolved, that counts as a regression even if the aggregate metric improved
+
+**If monotonic check fails:** revert. Record the specific regressions in the verdict notes.
+
+#### R5c. Keep/Revert Decision
+
+**KEEP if ALL of the following are true:**
+- Research target metric improved or held steady (`$METRIC_AFTER >= $PREVIOUS_BEST`)
+- No hygiene regression
+- No regression on previously-solved instances
+- Precheck gate passes (run standard `factory precheck` as in Improve mode)
+
+**REVERT if ANY of the following are true:**
+- Research target metric regressed
+- Any hygiene dimension regressed
+- Previously-solved instances regressed
+- Precheck gate fails
+
+**If KEEP:**
+
+```bash
+# Approve the PR (do NOT merge — leave for human review)
+uv run python -m factory review \
+    --verdict KEEP \
+    --reason "research target $METRIC: $BASELINE_METRIC → $METRIC_AFTER (target: $TARGET)" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --guards "scope:PASS,surface:PASS,hygiene:PASS,monotonic:PASS" \
+    --experiment-id $EXP_ID \
+    --hypothesis "$HYPOTHESIS" \
+    --pr $PR_NUM
+
+# Finalize
+uv run python -m factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict keep \
+    --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
+    --issue $ISSUE_NUM --pr $PR_NUM \
+    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass"
+```
+
+**If REVERT:**
+
+```bash
+uv run python -m factory review \
+    --verdict REVERT \
+    --reason "$REVERT_REASON" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --experiment-id $EXP_ID \
+    --hypothesis "$HYPOTHESIS" \
+    --pr $PR_NUM
+
+gh pr close $PR_NUM
+cd "$PROJECT_PATH" && git checkout $TARGET_BRANCH
+
+uv run python -m factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict revert \
+    --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
+    --issue $ISSUE_NUM \
+    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS"
+```
+
+#### R5d. Termination Conditions
+
+After each hypothesis verdict, check whether the research cycle should terminate:
+
+1. **Target met:** `$METRIC_AFTER >= $TARGET` → cycle complete. Record success and proceed to Final Archive.
+2. **Budget exhausted:** if `cost_budget` is configured in `.factory/config.json` and the total cost exceeds `max_per_cycle` → cycle complete. Record budget exhaustion.
+3. **Max cycles exceeded:** if the number of experiments in this cycle exceeds the hypothesis count → cycle complete.
+4. **All hypotheses processed:** all approved hypotheses have verdicts → cycle complete (standard completion).
+
+If none of the above: continue to the next hypothesis (loop back to R3).
+
+**MANDATORY Archivist — record experiment outcome (DO NOT SKIP):**
+
+```bash
+factory agent archivist --task "Record research experiment $EXP_ID outcome (verdict: $VERDICT).
+Research target: $METRIC = $METRIC_AFTER (baseline: $BASELINE_METRIC, target: $TARGET).
+Write experiment note with decision rationale to the vault." --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after research experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+### Final Archive and Notify
+
+After all hypotheses are processed or a termination condition is met, follow the same final archive protocol as Improve mode (Step 3, Step 3b, Step 4, Step 5).
+
+The session summary should additionally report:
+- Research target metric trajectory: baseline → final
+- Distance to target: how far from the goal
+- Dominant failure modes addressed vs remaining
 
 ---
 
