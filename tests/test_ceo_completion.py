@@ -1166,3 +1166,32 @@ class TestCeoPromptResearchMode:
         assert "validate-research" in research_section
         assert "leakage-check" in research_section
         assert "text-file" in research_section
+
+    def test_research_ideation_phase_0_activation(self, ceo_prompt: str) -> None:
+        """Phase 0 activates for both Interactive and Research Ideation."""
+        assert "Research Ideation Mode (Phase 0)" in ceo_prompt
+
+    def test_research_ideation_distiller_instruction(self, ceo_prompt: str) -> None:
+        """Phase 0 includes research-specific Distiller invocation."""
+        phase0_idx = ceo_prompt.index("## Phase 0: Ideation")
+        build_idx = ceo_prompt.index("## Mode: Build")
+        phase0_section = ceo_prompt[phase0_idx:build_idx]
+        assert "This is a research project" in phase0_section
+        assert "Research Configuration" in phase0_section
+
+    def test_review_mode_populates_research_config(self, ceo_prompt: str) -> None:
+        """Review mode populates factory.md research sections from approved spec."""
+        review_idx = ceo_prompt.index("## Mode: Review")
+        improve_idx = ceo_prompt.index("## Mode: Improve")
+        review_section = ceo_prompt[review_idx:improve_idx]
+        assert "Research Configuration" in review_section
+        assert "Research Target" in review_section
+        assert "Mutable Surfaces" in review_section
+        assert "Fixed Surfaces" in review_section
+
+    def test_review_mode_transitions_to_research(self, ceo_prompt: str) -> None:
+        """Review mode mentions transitioning to Research mode when research_target is configured."""
+        review_idx = ceo_prompt.index("## Mode: Review")
+        improve_idx = ceo_prompt.index("## Mode: Improve")
+        review_section = ceo_prompt[review_idx:improve_idx]
+        assert "Research mode" in review_section

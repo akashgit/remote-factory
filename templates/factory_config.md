@@ -91,3 +91,44 @@ curl -sf http://localhost:8000/health
 - Prefer small, incremental changes over large rewrites
 - Each change should be accompanied by at least one test
 - Follow the existing code style and conventions
+
+## Research Target
+<!-- Only for research/benchmark projects. Define the metric to improve. -->
+<!-- Example:
+- objective: maximize SWE-bench resolve rate
+- metric: resolved/total
+- target: 0.35
+- run_command: python run_benchmark.py
+- result_path: results/output.json
+- result_parser: json
+- timeout: 3600
+-->
+
+## Mutable Surfaces
+<!-- Files the Builder is allowed to modify during research experiments. -->
+<!-- One glob pattern per line. Only used in research mode. -->
+<!-- Example:
+- src/**/*.py
+- config/*.yaml
+-->
+
+## Fixed Surfaces
+<!-- Ground truth files, test data, eval infrastructure. -->
+<!-- These files are fingerprinted for leakage detection and MUST NOT be modified. -->
+<!-- One glob pattern per line. Only used in research mode. -->
+<!-- Example:
+- tests/gold/*.json
+- eval/**/*.py
+- data/benchmark/*.jsonl
+-->
+
+## Research Constraints
+<!-- Additional rules for the research loop. Only used in research mode. -->
+<!-- Example:
+- Do not use GPT-4 (cost constraint)
+- Each experiment must complete within 30 minutes
+-->
+
+## Cost Budget
+<!-- Per-cycle or total budget constraints for research experiments. -->
+<!-- Example: $5/cycle, $50 total -->

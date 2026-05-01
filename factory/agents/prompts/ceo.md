@@ -230,13 +230,15 @@ uv run python -m factory detect "$PROJECT_PATH"
 - `evals_pending_review` → **Review mode**
 - `has_factory` → **Improve mode** (or **Research mode** if `research_target` is configured and `--mode research` is set)
 
-**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
+**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
 
 ---
 
 ## Phase 0: Ideation (Interactive Mode)
 
-This phase activates when your task includes a `## Interactive Ideation Mode (Phase 0)` section. You are running in foreground interactive mode — the user can see your output and respond.
+This phase activates when your task includes a `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)` section. You are running in foreground interactive mode — the user can see your output and respond.
+
+**Research ideation** works identically to regular ideation, except the Distiller MUST produce a Research Configuration section in its output. See the I1 step below for how to instruct the Distiller.
 
 ### Purpose
 
@@ -278,7 +280,9 @@ Apply the standard CEO Review Gate:
 
 ### I1: Distill (Distiller Agent)
 
-Spawn the Distiller to synthesize the research into a structured spec:
+Spawn the Distiller to synthesize the research into a structured spec.
+
+**For regular ideation** (`## Interactive Ideation Mode`):
 
 ```bash
 factory agent distiller --task "Distill a project specification from research and a raw idea.
@@ -288,6 +292,22 @@ Raw idea: <RAW_IDEA>
 Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
 
 Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
+```
+
+**For research ideation** (`## Research Ideation Mode`):
+
+```bash
+factory agent distiller --task "Distill a project specification from research and a raw idea.
+
+Raw idea: <RAW_IDEA>
+
+This is a research project. You MUST include the Research Configuration section
+in your output with all fields filled (Research Target, Mutable Surfaces, Fixed
+Surfaces, Research Constraints, Cost Budget).
+
+Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
+
+Produce a complete idea.md specification with research configuration." --project "$PROJECT_PATH" --timeout 300
 ```
 
 ### I1r: CEO Review — Draft Spec
@@ -334,6 +354,8 @@ factory agent distiller --task "Refine the project specification based on user f
 
 Raw idea: <RAW_IDEA>
 
+<If research ideation: add 'This is a research project. You MUST include the Research Configuration section in your output with all fields filled.'>
+
 ## Prior Draft
 
 <paste the previous draft>
@@ -358,14 +380,18 @@ Read the Distiller's output and return to **I2** (present the updated draft to t
 When the user approves the spec:
 
 1. **Persist the spec**: Write the final idea.md content to `.factory/strategy/current.md` (prepend `## Project Specification\n\n` before the content)
-2. **Spawn Archivist** to record the ideation process:
+2. **If this is research ideation** (task included `## Research Ideation Mode`):
+   - The approved spec should contain a `## Research Configuration` section with Research Target, Mutable Surfaces, Fixed Surfaces, etc.
+   - Verify it's present. If the Distiller omitted it, REDIRECT with: "This is a research project — the spec MUST include a Research Configuration section."
+   - The research config will be extracted and populated into `factory.md` during Review mode (step 4b).
+3. **Spawn Archivist** to record the ideation process:
    ```bash
    factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
    Read .factory/strategy/current.md (the approved spec).
    Read .factory/strategy/research.md (the research).
    Write project inception notes to the vault." --project "$PROJECT_PATH"
    ```
-3. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
+4. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
 
 **Important:** Do not skip Build mode's Research and Strategy steps just because Phase 0 did research. Phase 0 research is broad and exploratory (what should we build?). Build mode research is implementation-focused (how do we build it?).
 
@@ -668,6 +694,15 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    ```
    Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
 
+4b. **If `.factory/strategy/current.md` contains a `## Research Configuration` section:**
+   Populate the research sections in `factory.md` from the approved spec:
+   - Copy Research Target fields (objective, metric, target, run_command, result_path, result_parser, timeout) to `## Research Target`
+   - Copy Mutable Surfaces patterns to `## Mutable Surfaces`
+   - Copy Fixed Surfaces patterns to `## Fixed Surfaces`
+   - Copy Research Constraints to `## Research Constraints`
+   - Copy Cost Budget to `## Cost Budget`
+   After `factory init`, the config parser will read these sections and populate `config.json` with `research_target`, `mutable_surfaces`, `fixed_surfaces`, etc.
+
 5. Initialize the factory store:
    ```bash
    uv run python -m factory init "$PROJECT_PATH"
@@ -687,7 +722,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 Before transitioning to Improve mode, verify the project runs end-to-end. Follow the same E2E Verification Gate protocol from Build mode (step B5). If it was already verified during Build mode and nothing has changed, skip this. But if this is a pre-existing project entering the factory for the first time, **you must verify it runs before you start improving it.** Ensure the `## Smoke Test` in `factory.md` is configured with a working E2E command — Improve mode relies on this for its per-experiment E2E gate.
 
-After Review mode, state is `has_factory`. Proceed to **Improve mode**.
+After Review mode, state is `has_factory`. If `research_target` is configured in `config.json`, proceed to **Research mode**. Otherwise, proceed to **Improve mode**.
 
 ---
 
