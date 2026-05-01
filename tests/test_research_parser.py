@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from factory.research.models import ResultParseError
-from factory.research.parser import parse_result
+from factory.models import ResultParseError
+from factory.research.runner import parse_result
 
 
 @pytest.fixture

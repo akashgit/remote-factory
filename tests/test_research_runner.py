@@ -3,8 +3,7 @@
 import json
 from pathlib import Path
 
-from factory.models import ResearchTarget
-from factory.research.models import RunStatus
+from factory.models import ResearchTarget, RunStatus
 from factory.research.runner import execute_run
 
 

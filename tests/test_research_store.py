@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from factory.research.store import (
+from factory.research.runner import (
     create_run_dir,
     ensure_research_dir,
     list_runs,
