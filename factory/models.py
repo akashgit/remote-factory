@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict
@@ -78,6 +79,32 @@ class CostBudgetConfig(BaseModel):
 
     max_per_cycle: float | None = None
     max_total: float | None = None
+
+
+class RunStatus(str, Enum):
+    """Possible outcomes of a research run."""
+
+    PASS = "PASS"
+    FAIL = "FAIL"
+    ERROR = "ERROR"
+    TIMEOUT = "TIMEOUT"
+
+
+class RunResult(BaseModel):
+    """Result of executing a research run command."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    status: RunStatus
+    metric_value: float
+    duration_seconds: float
+    artifacts_path: Path
+    stdout: str
+    stderr: str
+
+
+class ResultParseError(Exception):
+    """Raised when a result file cannot be parsed to extract the target metric."""
 
 
 class FactoryConfig(BaseModel):
