@@ -176,7 +176,7 @@ class BobRunner:
         if cycle_start is not None:
             self.cycle_start = cycle_start
         elif project_path is not None:
-            # Lazy import to avoid circular dependencies
+            # Lazy import: ceo_completion imports runners, so module-level import would cycle
             from factory.ceo_completion import read_cycle_state
 
             state = read_cycle_state(project_path)

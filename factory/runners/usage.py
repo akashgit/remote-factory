@@ -129,7 +129,7 @@ def _emit_warning_event(project_path: Path, warning: CeilingWarning) -> None:
             },
         )
     except Exception:
-        log.debug("Failed to emit ceiling warning event", exc_info=True)
+        log.warning("Failed to emit ceiling warning event", exc_info=True)
 
 
 def check_ceilings(
