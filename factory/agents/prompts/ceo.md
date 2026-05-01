@@ -1062,30 +1062,37 @@ uv run python -m factory review \
 
 # DO NOT merge — leave the PR open for human review and approval
 # The KEEP review above posts an approval; a human must merge it
-uv run python -m factory finalize "$PROJECT_PATH" \
-    --id $EXP_ID --verdict keep \
-    --hypothesis "<hypothesis>" --summary "<changes>" \
-    --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=yes"
 ```
 
 **Backlog item verification — if the hypothesis has a `**Backlog item:**` tag:**
 
-Before removing the item, verify the delivered work actually solves it:
+Before removing the item AND before calling finalize, verify the delivered work actually solves it:
 
 1. Read the original backlog item text from `.factory/strategy/backlog.md`.
 2. Read what was delivered: the PR diff (`gh pr diff $PR_NUM`), E2E result from `ceo-verdict-e2e.md`, and any execution artifacts.
-3. Judge: does the delivered work FULLY satisfy what the backlog item asks for?
-   - **YES** (fully solved): remove it.
+3. Judge: does the delivered work FULLY satisfy what the backlog item asks for? Set `BACKLOG_CLEARED` accordingly:
+   - **YES** (fully solved): `BACKLOG_CLEARED=yes`. Remove it.
      ```bash
      uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
      ```
-   - **NO** (not solved, only prerequisites): do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
-   - **PARTIAL** (some progress but not complete): update the item to reflect remaining work.
+   - **NO** (not solved, only prerequisites): `BACKLOG_CLEARED=no`. Do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
+   - **PARTIAL** (some progress but not complete): `BACKLOG_CLEARED=partial`. Update the item to reflect remaining work.
      ```bash
      uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
      uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
      ```
+
+If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
+
+**Finalize the experiment (after backlog verification):**
+
+```bash
+uv run python -m factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict keep \
+    --hypothesis "<hypothesis>" --summary "<changes>" \
+    --issue $ISSUE_NUM --pr $PR_NUM \
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED"
+```
 
 **If precheck FAILS → Mandatory Revert:**
 
