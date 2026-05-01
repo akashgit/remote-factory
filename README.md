@@ -220,7 +220,7 @@ factory run ~/my-project --loop --runner bob
 Bob Shell requires an API key:
 
 ```bash
-# 1. Install Bob Shell (see bob-shell docs)
+# 1. Install Bob Shell (https://bob.ibm.com/docs/shell)
 # 2. Set your API key
 export BOBSHELL_API_KEY=your-key-here
 
@@ -236,8 +236,7 @@ Bob Shell lacks token telemetry, so the factory enforces invocation ceilings:
 
 | Ceiling | Default | Environment Variable |
 |---------|---------|---------------------|
-| Per-cycle | 3 | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` |
-| Per-session | 50 | `FACTORY_BOB_MAX_INVOCATIONS_PER_SESSION` |
+| Per-cycle | 8 | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` |
 
 When a ceiling is exceeded, the factory aborts with an actionable error message.
 
