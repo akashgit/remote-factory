@@ -243,6 +243,12 @@ class TestCmdCeoResearchIdeation:
         assert "## Focus Directive" in task
         assert "tokenizer" in task
 
+    def test_research_focus_incompatible_new_project(self, capsys):
+        """--focus with --mode research on a new idea string errors."""
+        result = main(["ceo", "swe-bench solver", "--mode", "research", "--focus", "tokenizer"])
+        assert result == 1
+        assert "focus" in capsys.readouterr().err.lower()
+
     def test_research_file_input_not_ideation(self, tmp_path, capsys):
         """--mode research with a file path treats it as a spec, not an idea string."""
         spec_file = tmp_path / "spec.md"

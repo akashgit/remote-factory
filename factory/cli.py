@@ -1215,11 +1215,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
-    elif mode == "research" and not Path(raw_path).expanduser().is_dir() and not Path(raw_path).expanduser().is_file():
+    elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
         # New research project from idea — enter research ideation
         if headless:
             print("Error: --mode research for new projects requires foreground mode "
                   "(incompatible with --headless)", file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --focus cannot be used with research ideation for new projects. "
+                  "--focus targets existing backlog items.", file=sys.stderr)
             return 1
         research_ideation = raw_path
         slug = _slugify(raw_path[:50])
