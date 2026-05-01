@@ -1198,11 +1198,34 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "backlog items.", file=sys.stderr)
             return 1
 
+    if mode == "research":
+        if prompt_file:
+            print("Error: --mode research and --prompt are mutually exclusive. "
+                  "Research ideation generates the spec; --prompt provides one.",
+                  file=sys.stderr)
+            return 1
+
     interactive_idea: str | None = None
+    research_ideation: str | None = None
     if mode == "interactive":
         # In interactive mode the positional arg is always an idea string, not a path.
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
+        slug = _slugify(raw_path[:50])
+        project_path = _PROJECTS_DIR / slug
+        _ensure_repo(project_path)
+        context = None
+    elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
+        # New research project from idea — enter research ideation
+        if headless:
+            print("Error: --mode research for new projects requires foreground mode "
+                  "(incompatible with --headless)", file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --focus cannot be used with research ideation for new projects. "
+                  "--focus targets existing backlog items.", file=sys.stderr)
+            return 1
+        research_ideation = raw_path
         slug = _slugify(raw_path[:50])
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
@@ -1221,28 +1244,36 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
 
+    if mode == "research" and not research_ideation and not _has_research_target(project_path):
+        print("Error: --mode research requires research_target in factory.md. "
+              "Either configure research_target manually, or pass an idea string "
+              "to start research ideation: factory ceo \"your idea\" --mode research",
+              file=sys.stderr)
+        return 1
+
     if focus and prompt_file:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode != "improve":
-        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+    if focus and mode not in ("improve", "research"):
+        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    _print_banner("ideation" if mode == "interactive" else mode)
+    _print_banner("ideation" if mode in ("interactive", "research") and (interactive_idea or research_ideation) else mode)
     _ensure_dashboard(project_path)
 
     if focus:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
-    ceo_mode = "build" if mode == "interactive" else mode
+    ceo_mode = "build" if mode == "interactive" or research_ideation else mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only,
         interactive_idea=interactive_idea,
+        research_ideation=research_ideation,
     )
 
     from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
@@ -1577,6 +1608,16 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
 
 
 
+def _has_research_target(project_path: Path) -> bool:
+    """Check if project already has research_target configured."""
+    try:
+        from factory.store import ExperimentStore
+        config = _run(ExperimentStore(project_path).read_config())
+        return config.research_target is not None
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+        return False
+
+
 def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
     """Detect the right mode based on project state.
 
@@ -1616,14 +1657,8 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     }
     mode = mode_map[state]
 
-    if state == ProjectState.HAS_FACTORY:
-        try:
-            from factory.store import ExperimentStore
-            config = _run(ExperimentStore(project_path).read_config())
-            if config.research_target is not None:
-                mode = "research"
-        except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
-            pass
+    if state == ProjectState.HAS_FACTORY and _has_research_target(project_path):
+        mode = "research"
 
     print(f"  State: {state.value} → mode: {mode}", file=sys.stderr)
     return mode
@@ -1640,6 +1675,7 @@ def _build_ceo_task(
     branch: str | None = None,
     discover_only: bool = False,
     interactive_idea: str | None = None,
+    research_ideation: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1654,6 +1690,24 @@ def _build_ceo_task(
             f"in your system prompt.\n\n"
             f"After the user approves the final spec, persist it to "
             f".factory/strategy/current.md and proceed to Build mode.\n"
+        )
+
+    if research_ideation:
+        task += (
+            f"\n\n## Research Ideation Mode (Phase 0)\n\n"
+            f"**Raw idea from user:** {research_ideation}\n\n"
+            f"You are in research ideation mode. This is like interactive ideation, "
+            f"but the Distiller MUST collect research configuration:\n"
+            f"- Research Target (objective, metric, target value, run_command, result_path)\n"
+            f"- Mutable Surfaces (files the Builder can modify)\n"
+            f"- Fixed Surfaces (ground truth / eval files that must never be touched)\n"
+            f"- Research Constraints (additional rules)\n"
+            f"- Cost Budget (optional)\n\n"
+            f"Follow the Phase 0: Ideation protocol, but tell the Distiller this is a "
+            f"research project. After the user approves, persist the spec AND the research "
+            f"config to .factory/strategy/current.md, then proceed to Build mode. "
+            f"During Review mode (factory.md creation), populate the research sections "
+            f"from the approved spec.\n"
         )
 
     if prompt_file:
@@ -1851,8 +1905,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode != "improve":
-        print(f"Error: --focus (targeted mode) only works in improve mode, got '{mode}'. "
+    if focus and mode not in ("improve", "research"):
+        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 

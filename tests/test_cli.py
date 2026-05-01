@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec
+from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec, _has_research_target
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -173,6 +173,168 @@ class TestCmdCeoInteractive:
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
+
+
+def _make_config(*, research_target: dict | None = None) -> dict:
+    """Build a valid FactoryConfig dict for testing."""
+    config: dict = {
+        "goal": "test project",
+        "scope": ["src/**/*.py"],
+        "guards": ["Do not delete tests"],
+        "eval_command": "python eval/score.py",
+        "eval_threshold": 0.8,
+        "constraints": ["Prefer small changes"],
+    }
+    if research_target is not None:
+        config["research_target"] = research_target
+    return config
+
+
+class TestHasResearchTarget:
+    def test_returns_false_no_factory(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        assert _has_research_target(tmp_path) is False
+
+    def test_returns_false_no_research_target(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text(json.dumps(_make_config()))
+        assert _has_research_target(tmp_path) is False
+
+    def test_returns_true_with_research_target(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        rt = {"objective": "maximize accuracy", "metric": "accuracy",
+              "target": 0.9, "run_command": "python run.py",
+              "result_path": "results.json"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
+        assert _has_research_target(tmp_path) is True
+
+
+class TestCmdCeoResearchIdeation:
+    def test_research_headless_new_project_incompatible(self, capsys):
+        result = main(["ceo", "swe-bench solver", "--mode", "research", "--headless"])
+        assert result == 1
+        assert "foreground" in capsys.readouterr().err.lower()
+
+    def test_research_prompt_incompatible(self, capsys):
+        result = main(["ceo", "swe-bench solver", "--mode", "research", "--prompt", "file.md"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err.lower()
+
+    def test_research_focus_works_with_existing_project(self, tmp_path):
+        """--focus works with --mode research on existing projects with research_target."""
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        rt = {"objective": "maximize accuracy", "metric": "accuracy",
+              "target": 0.9, "run_command": "python run.py",
+              "result_path": "results.json"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "research", "--focus", "tokenizer"])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Focus Directive" in task
+        assert "tokenizer" in task
+
+    def test_research_focus_incompatible_new_project(self, capsys):
+        """--focus with --mode research on a new idea string errors."""
+        result = main(["ceo", "swe-bench solver", "--mode", "research", "--focus", "tokenizer"])
+        assert result == 1
+        assert "focus" in capsys.readouterr().err.lower()
+
+    def test_research_file_input_not_ideation(self, tmp_path, capsys):
+        """--mode research with a file path treats it as a spec, not an idea string."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# My Research Project\n")
+        result = main(["ceo", str(spec_file), "--mode", "research"])
+        # File gets resolved as spec input, not as an idea string for ideation.
+        # Errors because the resulting project has no research_target configured.
+        assert result == 1
+        assert "research_target" in capsys.readouterr().err
+
+    def test_research_existing_dir_no_target_errors(self, tmp_path, capsys):
+        """--mode research on existing dir without research_target errors."""
+        (tmp_path / ".git").mkdir()
+        result = main(["ceo", str(tmp_path), "--mode", "research"])
+        assert result == 1
+        assert "research_target" in capsys.readouterr().err
+
+    def test_research_ideation_foreground_uses_execvp(self):
+        """--mode research with idea string launches via os.execvp."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "swe-bench solver agent", "--mode", "research"])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        assert cmd[0] == "claude"
+
+    def test_research_ideation_task_has_research_phase_0(self):
+        """--mode research with idea injects Research Ideation Phase 0 block."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "swe-bench solver agent", "--mode", "research"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Research Ideation Mode (Phase 0)" in task
+        assert "swe-bench solver agent" in task
+
+    def test_research_ideation_task_mode_is_build(self):
+        """--mode research with idea sets Mode: build (not research) since it enters ideation first."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "swe-bench solver agent", "--mode", "research"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Mode: build" in task
+
+    def test_research_ideation_no_interactive_block(self):
+        """--mode research should NOT inject Interactive Ideation block."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "swe-bench solver agent", "--mode", "research"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Interactive Ideation Mode" not in task
+
+    def test_research_ideation_mentions_research_config(self):
+        """--mode research ideation task mentions research config fields."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "swe-bench solver agent", "--mode", "research"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Research Target" in task
+        assert "Mutable Surfaces" in task
+        assert "Fixed Surfaces" in task
+
+    def test_research_existing_project_with_target_skips_ideation(self, tmp_path):
+        """--mode research on existing project WITH research_target skips ideation."""
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        rt = {"objective": "maximize accuracy", "metric": "accuracy",
+              "target": 0.9, "run_command": "python run.py",
+              "result_path": "results.json"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "research"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Research Ideation Mode" not in task
+        assert "Mode: research" in task
 
 
 class TestCmdDetect:
@@ -944,6 +1106,13 @@ class TestResearchMode:
 
     def test_research_mode_task_text(self, tmp_path):
         """--mode research includes research-specific instructions in the CEO task."""
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        rt = {"objective": "maximize accuracy", "metric": "accuracy",
+              "target": 0.9, "run_command": "python run.py",
+              "result_path": "results.json"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])

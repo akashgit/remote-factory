@@ -54,6 +54,36 @@ deployment target, specific business logic choices. Keep this short —
 most decisions should be made by the Distiller based on research.>
 ```
 
+**If the project is a research/benchmarking project** (iteratively improving a measurable metric against a dataset), append this additional section to the spec:
+
+```markdown
+## Research Configuration
+
+### Research Target
+- **Objective**: <what we're trying to achieve, e.g. "maximize SWE-bench resolve rate">
+- **Metric**: <key to extract from results, e.g. "resolved/total">
+- **Target**: <goal value, e.g. 0.35>
+- **Run Command**: <shell command to execute the benchmark/evaluation>
+- **Result Path**: <where results are written, e.g. "results/output.json">
+- **Result Parser**: <json|regex|exit_code>
+- **Timeout**: <max seconds for the run command>
+
+### Mutable Surfaces
+<Files the Builder agent is allowed to modify — one glob pattern per line>
+
+### Fixed Surfaces
+<Ground truth files, test data, eval infrastructure — MUST NOT be modified.
+These are fingerprinted for leakage detection.>
+
+### Research Constraints
+<Additional rules for the research loop, e.g. "do not use GPT-4 for cost reasons">
+
+### Cost Budget
+<Optional: per-cycle or total budget constraints>
+```
+
+**If the project is NOT a research project**, do not include the Research Configuration section at all — omit it entirely.
+
 ## Refinement Mode
 
 When your task includes a `## Prior Draft` and `## User Feedback` section, you are refining a previous draft:
@@ -74,3 +104,5 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 - Do not include timelines or effort estimates — the factory uses AI agents
 - Do not include deployment or CI/CD setup — the factory handles that separately
 - If the user's idea is too broad for a single project, narrow it to an achievable MVP and note what was deferred in Non-Goals
+- **Always consider research mode.** Evaluate whether this project is a research/benchmarking project (iteratively improving a measurable metric against a dataset). If yes, include the Research Configuration section with all fields filled. If no, omit the Research Configuration section entirely. If unclear, flag it in Open Questions: "Should this project use research mode? Research mode is for projects that iteratively improve a metric (accuracy, resolve rate, latency) against a fixed dataset/benchmark."
+- When your task explicitly states "This is a research project", the Research Configuration section is MANDATORY — fill all fields based on the research findings and the user's idea
