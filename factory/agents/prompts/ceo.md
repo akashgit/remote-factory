@@ -1316,7 +1316,7 @@ Establish the starting point by running the system and recording the baseline me
 Save crash-recovery checkpoint:
 ```bash
 factory checkpoint "$PROJECT_PATH" --save --mode research \
-  --completed "baseline" --pending "failure_analyst,researcher,strategist,builder,evaluator,archivist"
+  --completed "baseline" --pending "failure_analyst,strategist,builder,evaluator,archivist"
 ```
 
 ### Phase R1: ANALYZE (Failure Analyst Agent)
@@ -1362,64 +1362,12 @@ echo "- [x] archivist after failure analysis — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 Save crash-recovery checkpoint:
 ```bash
 factory checkpoint "$PROJECT_PATH" --save --mode research \
-  --completed "baseline,failure_analyst" --pending "researcher,strategist,builder,evaluator,archivist"
-```
-
-### Phase R1.5: RESEARCH (Researcher Agent)
-
-After the Failure Analyst classifies what failed and why, spawn the Researcher to search for solutions to those specific failure patterns. This step is optional — if the Researcher fails, the Strategist can still work from the failure analysis alone.
-
-```bash
-factory agent researcher --task "Mode 4 failure research for $PROJECT_PATH.
-
-Read the failure analysis at .factory/research/runs/$CYCLE_ID/failure_analysis.md.
-Read the research target config from .factory/config.json (objective: $OBJECTIVE, metric: $METRIC, target: $TARGET).
-
-The dominant failure mode is: $DOMINANT_FAILURE_MODE ($FAILURE_PERCENTAGE%)
-Current metric: $CURRENT_METRIC (target: $TARGET, previous best: $PREVIOUS_BEST)
-
-Mutable surfaces (files that CAN be changed):
-$MUTABLE_SURFACES
-
-Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on these failure patterns (skip if unset).
-
-Search the web for solutions, workarounds, and best practices for the dominant failure modes.
-Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
-```
-
-If the Researcher fails, proceed — the Strategist can work from failure analysis alone.
-
-**R1.5-review: CEO Review — Research**
-
-Apply the **CEO Review Gate**:
-1. Read `.factory/reviews/researcher-latest.md` and `.factory/strategy/research.md`
-2. Check: Are findings specific to the failure patterns from R1? Did web research surface actionable fixes? Are suggested solutions within mutable surfaces?
-3. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
-4. If REDIRECT: re-invoke the Researcher with specific gaps (e.g., "Research focused on general domain, not the specific LOCALIZATION_MISS failure pattern")
-5. If PROCEED: continue to R2
-
-**MANDATORY Archivist — record research findings (DO NOT SKIP):**
-
-```bash
-factory agent archivist --task "Record the Researcher's failure-targeted findings for $PROJECT_PATH research cycle.
-Read .factory/strategy/research.md, .factory/research/runs/$CYCLE_ID/failure_analysis.md, and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to the vault." --project "$PROJECT_PATH"
-```
-
-Then write checkpoint:
-```bash
-echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
-```
-
-Save crash-recovery checkpoint:
-```bash
-factory checkpoint "$PROJECT_PATH" --save --mode research \
-  --completed "baseline,failure_analyst,researcher" --pending "strategist,builder,evaluator,archivist"
+  --completed "baseline,failure_analyst" --pending "strategist,builder,evaluator,archivist"
 ```
 
 ### Phase R2: HYPOTHESIZE (Strategist Agent)
 
-Spawn the Strategist with failure analysis context and research findings to generate targeted hypotheses.
+Spawn the Strategist with failure analysis context to generate targeted hypotheses.
 
 ```bash
 factory agent strategist --task "Generate research hypotheses for $PROJECT_PATH.
@@ -1427,7 +1375,6 @@ factory agent strategist --task "Generate research hypotheses for $PROJECT_PATH.
 Read the failure analysis at .factory/research/runs/$CYCLE_ID/failure_analysis.md.
 Read the research target config from .factory/config.json.
 Read the CEO's failure analysis review at .factory/reviews/ceo-verdict-failure_analyst.md.
-Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md (if it exists).
 
 The dominant failure mode is: $DOMINANT_FAILURE_MODE ($FAILURE_PERCENTAGE%)
 Current metric: $CURRENT_METRIC (target: $TARGET, previous best: $PREVIOUS_BEST)
@@ -1479,7 +1426,7 @@ echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PR
 Save crash-recovery checkpoint:
 ```bash
 factory checkpoint "$PROJECT_PATH" --save --mode research \
-  --completed "baseline,failure_analyst,researcher,strategist" --pending "builder,evaluator,archivist"
+  --completed "baseline,failure_analyst,strategist" --pending "builder,evaluator,archivist"
 ```
 
 ### Phase R3: IMPLEMENT (Builder Agent — per hypothesis)
@@ -1709,7 +1656,7 @@ echo "- [x] archivist after research experiment $EXP_ID ($VERDICT) — $(date -u
 Save crash-recovery checkpoint:
 ```bash
 factory checkpoint "$PROJECT_PATH" --save --mode research \
-  --completed "baseline,failure_analyst,researcher,strategist" --pending "builder,evaluator,archivist" \
+  --completed "baseline,failure_analyst,strategist" --pending "builder,evaluator,archivist" \
   --experiment $EXP_ID --completed-hypotheses "$COMPLETED_EXP_IDS"
 ```
 
