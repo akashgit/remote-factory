@@ -1344,7 +1344,7 @@ Produce failure_analysis.md in the run directory AND print a summary to stdout."
 2. Check: Are failures classified specifically (not vague)? Is the failure distribution computed? Are suggested interventions within mutable surfaces?
 3. Write verdict to `.factory/reviews/ceo-verdict-failure_analyst.md`
 4. If REDIRECT: re-invoke with specific gaps (e.g., "Missing per-instance classification", "Suggested fixes reference fixed surfaces")
-5. If PROCEED: continue to R2
+5. If PROCEED: continue to R1.5
 
 **MANDATORY Archivist — record failure analysis (DO NOT SKIP):**
 
@@ -1380,6 +1380,12 @@ Current metric: $CURRENT_METRIC (target: $TARGET, previous best: $PREVIOUS_BEST)
 
 Mutable surfaces (files that CAN be changed):
 $MUTABLE_SURFACES
+
+Fixed surfaces (files that MUST NOT be changed):
+$FIXED_SURFACES
+
+Research constraints:
+$RESEARCH_CONSTRAINTS
 
 Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on these failure patterns (skip if unset).
 
