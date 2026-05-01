@@ -25,7 +25,10 @@ class TestResolvePrompt:
         assert len(prompt) > 100
 
     def test_all_default_prompts_exist(self):
-        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist", "distiller", "ceo"]
+        roles: list[AgentRole] = [
+            "researcher", "strategist", "evaluator", "reviewer",
+            "archivist", "distiller", "ceo", "failure_analyst",
+        ]
         for role in roles:
             prompt = resolve_prompt(role)
             assert len(prompt) > 50, f"Prompt for {role} is too short"
@@ -64,10 +67,19 @@ class TestResolvePrompt:
         assert _PROMPTS_DIR.is_dir()
 
     def test_each_prompt_has_header(self):
-        roles: list[AgentRole] = ["researcher", "strategist", "evaluator", "reviewer", "archivist", "distiller", "ceo"]
+        roles: list[AgentRole] = [
+            "researcher", "strategist", "evaluator", "reviewer",
+            "archivist", "distiller", "ceo", "failure_analyst",
+        ]
         for role in roles:
             prompt = resolve_prompt(role)
             assert prompt.startswith("# "), f"Prompt for {role} should start with '# '"
+
+    def test_failure_analyst_prompt_content(self):
+        prompt = resolve_prompt("failure_analyst")
+        assert "Failure Analyst" in prompt
+        assert "failure_analysis.md" in prompt
+        assert "Per-Instance Classification" in prompt
 
 
 class TestResearcherPromptModes:
