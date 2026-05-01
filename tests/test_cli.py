@@ -1024,6 +1024,62 @@ class TestCmdCeo:
         assert "Do NOT create GitHub issues or PRs" in task
 
 
+class TestCmdTmuxNoGithub:
+    def test_tmux_parser_has_no_github_flag(self):
+        """Parser accepts --no-github flag on tmux command."""
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_tmux_parser_default_no_github_false(self):
+        """Parser defaults --no-github to False on tmux command."""
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path"])
+        assert args.no_github is False
+
+    def test_tmux_forwards_no_github_flag(self, tmp_path):
+        """cmd_tmux --no-github includes the flag in the shell command."""
+        def mock_subprocess_run(args, **kwargs):
+            result = type("Result", (), {"returncode": 1 if "has-session" in args else 0})()
+            return result
+
+        with patch("factory.cli.subprocess.run", side_effect=mock_subprocess_run) as mock_run, \
+             patch("factory.cli._tmux_available", return_value=True):
+            main(["tmux", str(tmp_path), "--no-github"])
+
+        # Find the new-session call (second call after has-session check fails)
+        new_session_call = None
+        for call in mock_run.call_args_list:
+            if "new-session" in call[0][0]:
+                new_session_call = call
+                break
+
+        assert new_session_call is not None, "new-session call not found"
+        shell_cmd = new_session_call[0][0][-1]  # Last arg is the shell command
+        assert "--no-github" in shell_cmd
+
+    def test_tmux_without_no_github_flag(self, tmp_path):
+        """cmd_tmux without --no-github does not include the flag."""
+        def mock_subprocess_run(args, **kwargs):
+            result = type("Result", (), {"returncode": 1 if "has-session" in args else 0})()
+            return result
+
+        with patch("factory.cli.subprocess.run", side_effect=mock_subprocess_run) as mock_run, \
+             patch("factory.cli._tmux_available", return_value=True):
+            main(["tmux", str(tmp_path)])
+
+        # Find the new-session call
+        new_session_call = None
+        for call in mock_run.call_args_list:
+            if "new-session" in call[0][0]:
+                new_session_call = call
+                break
+
+        assert new_session_call is not None, "new-session call not found"
+        shell_cmd = new_session_call[0][0][-1]
+        assert "--no-github" not in shell_cmd
+
+
 class TestSlugify:
     def test_basic_slug(self):
         assert _slugify("Locals Know") == "locals-know"

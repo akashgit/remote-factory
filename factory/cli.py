@@ -1505,6 +1505,8 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         run_args += f" --max-cycles {args.max_cycles}"
     if model:
         run_args += f" --model {shlex.quote(model)}"
+    if getattr(args, "no_github", False):
+        run_args += " --no-github"
 
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
@@ -2389,6 +2391,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument(
+        "--no-github", action="store_true", default=False,
+        help="Disable GitHub operations (issue creation, PR creation). Use for local-only experimentation.",
+    )
 
     # tmux-ls — list factory tmux sessions
     sub.add_parser("tmux-ls", help="List running factory tmux sessions")
