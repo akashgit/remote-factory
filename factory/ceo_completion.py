@@ -307,7 +307,7 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
             f"Resume execution from hypothesis {gap.next_item}. "
             f"Strategy is already approved at .factory/strategy/current.md — "
             f"do not re-plan, do not re-run Researcher, Strategist, or Failure Analyst. "
-            f"The baseline run (R0) and failure analysis (R1) are already complete. "
+            f"The baseline run (R0), failure analysis (R1), and research (R1.5) are already complete. "
             f"Spawn Builder for {gap.next_item} immediately, then continue the "
             f"research cycle (R3–R5) for each remaining hypothesis. "
             f"Progress so far: {gap.completed}/{gap.planned} hypotheses have verdicts."
