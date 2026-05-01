@@ -801,7 +801,11 @@ def cmd_leakage_check(args: argparse.Namespace) -> int:
 
     text = args.text
     if args.text_file:
-        text = Path(args.text_file).read_text()
+        text_path = Path(args.text_file)
+        if not text_path.is_file():
+            print(f"ERROR: text file not found: {args.text_file}")
+            return 1
+        text = text_path.read_text()
     elif args.text is None:
         import sys
         if not sys.stdin.isatty():

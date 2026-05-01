@@ -1157,3 +1157,12 @@ class TestCeoPromptResearchMode:
         state_machine_idx = ceo_prompt.index("## State Machine")
         completion_section = ceo_prompt[completion_idx:state_machine_idx]
         assert "Research mode" in completion_section
+
+    def test_leakage_guards_in_research_mode(self, ceo_prompt: str) -> None:
+        """Research mode includes ground truth leakage guards."""
+        research_idx = ceo_prompt.index("## Mode: Research")
+        meta_idx = ceo_prompt.index("## Mode: Meta")
+        research_section = ceo_prompt[research_idx:meta_idx]
+        assert "validate-research" in research_section
+        assert "leakage-check" in research_section
+        assert "text-file" in research_section
