@@ -93,8 +93,9 @@ def _parse_research_target(items: str | list[str] | float) -> ResearchTarget | N
     run_command = str(kv.get("Run Command", ""))
     result_path = str(kv.get("Result Path", ""))
     if not objective or not metric or not run_command or not result_path:
+        log.debug("research_target_incomplete", keys=list(kv.keys()))
         return None
-    return ResearchTarget(
+    rt = ResearchTarget(
         objective=objective,
         metric=metric,
         target=float(str(kv.get("Target", "0.0"))),
@@ -103,6 +104,8 @@ def _parse_research_target(items: str | list[str] | float) -> ResearchTarget | N
         result_parser=str(kv.get("Result Parser", "json")),
         timeout=int(float(str(kv.get("Timeout", "3600")))),
     )
+    log.debug("research_target_parsed", metric=metric, target=rt.target)
+    return rt
 
 
 def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | None:
@@ -110,10 +113,12 @@ def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | Non
     kv = _parse_kv_list(items, float)
     if not kv:
         return None
-    return CostBudgetConfig(
+    budget = CostBudgetConfig(
         max_per_cycle=float(str(kv["Max per cycle"])) if "Max per cycle" in kv else None,
         max_total=float(str(kv["Max total"])) if "Max total" in kv else None,
     )
+    log.debug("cost_budget_parsed", max_per_cycle=budget.max_per_cycle, max_total=budget.max_total)
+    return budget
 
 
 class ExperimentStore:
