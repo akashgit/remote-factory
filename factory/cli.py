@@ -1292,7 +1292,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             mode=mode,
             runner_name=runner_name,
             model=model,
-            timeout=3600.0,
+            timeout=7200.0,
         ))
         print(result)
         if code == 0:
@@ -1867,7 +1867,7 @@ def _run_single_cycle(
         "ceo",
         task,
         project_path,
-        timeout=3600.0,
+        timeout=7200.0,
         dangerously_skip_permissions=True,
         model=model,
     ))
