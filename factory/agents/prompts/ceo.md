@@ -83,12 +83,12 @@ Spawning subagents in the background and polling for output is not supported and
 
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|
-| Researcher | Observe: local analysis (`factory study`) + web research + vault synthesis |
+| Researcher | Observe: local analysis (`factory study`) + web research + archive synthesis |
 | Strategist | Hypothesize: generate prioritized experiments from observations (budget from study) |
 | Builder    | Implement: code changes on feature branch, open PR                        |
 | Reviewer   | Guard: enforce sacred rules, scope constraints, code quality on PR        |
 | Evaluator  | Measure: run evals before/after changes, report composite + breakdown     |
-| Archivist  | Record: write learnings to Obsidian vault (MANDATORY at checkpoints)      |
+| Archivist  | Record: write learnings to .factory/archive/ (MANDATORY at checkpoints)  |
 | Distiller  | Refine: synthesize research + raw idea into buildable spec (Phase 0)     |
 
 ### Archivist Protocol — CRITICAL (HARD ENFORCEMENT)
@@ -258,7 +258,7 @@ Research:
 2. Identify the best technology stack for this type of project
 3. Find architecture patterns and best practices
 4. Identify potential pitfalls and common mistakes
-5. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on similar builds (skip if unset)
+5. Check .factory/archive/ for prior knowledge on similar builds
 
 Write a thorough research report to .factory/strategy/research.md covering:
 - Similar projects found (with links)
@@ -389,7 +389,7 @@ When the user approves the spec:
    factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
    Read .factory/strategy/current.md (the approved spec).
    Read .factory/strategy/research.md (the research).
-   Write project inception notes to the vault." --project "$PROJECT_PATH"
+   Write project inception notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
    ```
 4. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
 
@@ -434,7 +434,7 @@ factory agent researcher --task "Mode 1 Discovery for $PROJECT_PATH.
 The project is new or incomplete. Research:
 1. Analyze the project specification (see below)
 2. Search the web for similar projects, best practices, and architecture patterns
-3. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on similar builds
+3. Check .factory/archive/ for prior knowledge on similar builds
 4. Identify key technical decisions (language, framework, database, APIs)
 5. Write a research report to .factory/strategy/research.md covering: similar projects found, recommended tech stack, architecture patterns, potential pitfalls, and MVP scope
 
@@ -456,7 +456,7 @@ Apply the **CEO Review Gate**:
 ```bash
 factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
 Read .factory/strategy/research.md and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to the vault." --project "$PROJECT_PATH"
+Write research notes to .factory/archive/sources/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -524,7 +524,7 @@ If backlog items were parsed, they are now in `.factory/strategy/backlog.md` and
 ```bash
 factory agent archivist --task "Record the CEO-approved build plan for $PROJECT_PATH.
 Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
-The CEO has reviewed and approved this plan. Write project inception notes to the vault." --project "$PROJECT_PATH"
+The CEO has reviewed and approved this plan. Write project notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -565,8 +565,9 @@ factory agent archivist --task "Record build progress for $PROJECT_PATH.
 1. Read git log to see what was built
 2. Read the CEO's build review at .factory/reviews/ceo-verdict-builder.md
 3. Read .factory/strategy/current.md for the plan
-4. Write progress notes to the vault
-5. Record what worked, what failed, and any decisions made" --project "$PROJECT_PATH"
+4. Write progress notes to .factory/archive/
+5. Record what worked, what failed, and any decisions made
+6. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -735,7 +736,7 @@ The core evolution loop. You orchestrate 6 agents through a systematic experimen
 **0a. Local Study + Cross-Project Insights**
 
 ```bash
-uv run python -m factory study "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")" $FOCUS_FLAG
+uv run python -m factory study "$PROJECT_PATH" $FOCUS_FLAG
 ```
 
 Where `$FOCUS_FLAG` is either empty (no focus) or `--focus "<target>"` from the Focus Directive in your task. In targeted mode, this filters observations to show only the target backlog item and overrides the hypothesis budget to single-item mode.
@@ -745,7 +746,7 @@ Writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. Includ
 **0b. Deep Research (Researcher Agent)**
 
 ```bash
-factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge (skip if unset). Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
+factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Check .factory/archive/ for prior knowledge. Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
 ```
 
 If the Researcher fails, proceed — the Strategist can work from local observations alone.
@@ -762,7 +763,7 @@ Apply the **CEO Review Gate**:
 **0c. MANDATORY Archivist — record research findings (DO NOT SKIP)**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings to the factory vault. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to $FACTORY_VAULT_PATH/20-Knowledge/Sources/ (skip if unset). Update the project research log." --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Researcher's findings. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to .factory/archive/sources/. Update the project dashboard. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -842,7 +843,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
 **MANDATORY Archivist — record strategy decisions (DO NOT SKIP):**
 
 ```bash
-factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to the vault. Update the project dashboard." --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to .factory/archive/strategies/. Update the project dashboard at .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -989,7 +990,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 ```bash
 factory agent archivist --task "Record the Builder's work for experiment $EXP_ID.
 Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
-Write implementation notes to the vault." --project "$PROJECT_PATH"
+Write implementation notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1176,9 +1177,10 @@ This metadata feeds the CEO's own playbook evolution via ACE.
 ```bash
 factory agent archivist --task "Record experiment $EXP_ID outcome (verdict: $VERDICT).
 1. Read experiment history: uv run python -m factory history $PROJECT_PATH
-2. Write experiment note with decision rationale: score_before=$SCORE_BEFORE, score_after=$SCORE_AFTER
-3. Update the project dashboard with latest result
-4. Record any cross-project patterns observed" --project "$PROJECT_PATH"
+2. Write experiment note to .factory/archive/experiments/ with decision rationale: score_before=$SCORE_BEFORE, score_after=$SCORE_AFTER
+3. Update the project dashboard at .factory/archive/
+4. Record any cross-project patterns observed
+5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1227,11 +1229,10 @@ Then spawn the final archive:
 ```bash
 factory agent archivist --task "Final archive for this factory cycle on $PROJECT_PATH.
 1. Read full experiment history: uv run python -m factory history $PROJECT_PATH
-2. Ensure all experiments from this cycle have vault notes
-3. Update the project dashboard with all results
-4. Write a cycle summary to the vault
-5. Update $FACTORY_VAULT_PATH/MEMORY.md index
-6. If the factory is improving itself, record CEO decision patterns to $FACTORY_VAULT_PATH/00-Factory/Agent-Performance/ceo-decisions.md" --project "$PROJECT_PATH" --timeout 300
+2. Ensure all experiments from this cycle have archive notes in .factory/archive/experiments/
+3. Update the project dashboard at .factory/archive/
+4. Write a cycle summary to .factory/archive/
+5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH" --timeout 300
 ```
 
 Then write final checkpoint:
@@ -1402,7 +1403,7 @@ Produce failure_analysis.md in the run directory AND print a summary to stdout."
 ```bash
 factory agent archivist --task "Record the Failure Analyst's findings for $PROJECT_PATH research cycle.
 Read .factory/research/runs/$CYCLE_ID/failure_analysis.md and .factory/reviews/ceo-verdict-failure_analyst.md.
-Write failure analysis notes to the vault." --project "$PROJECT_PATH"
+Write failure analysis notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1438,7 +1439,7 @@ $FIXED_SURFACES
 Research constraints:
 $RESEARCH_CONSTRAINTS
 
-Read the factory vault at $FACTORY_VAULT_PATH for prior knowledge on these failure patterns (skip if unset).
+Check .factory/archive/ for prior knowledge on these failure patterns.
 
 Search the web for solutions, workarounds, and best practices for the dominant failure modes.
 Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
@@ -1460,7 +1461,7 @@ Apply the **CEO Review Gate**:
 ```bash
 factory agent archivist --task "Record the Researcher's failure-targeted findings for $PROJECT_PATH research cycle.
 Read .factory/strategy/research.md, .factory/research/runs/$CYCLE_ID/failure_analysis.md, and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to the vault." --project "$PROJECT_PATH"
+Write research notes to .factory/archive/sources/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1530,7 +1531,7 @@ This is a **hard gate**. The Builder MUST NOT start until you approve.
 ```bash
 factory agent archivist --task "Record the Strategist's research hypotheses and CEO approval.
 Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
-Write strategy snapshot to the vault." --project "$PROJECT_PATH"
+Write strategy snapshot to .factory/archive/strategies/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1625,7 +1626,7 @@ Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one ad
 ```bash
 factory agent archivist --task "Record the Builder's work for research experiment $EXP_ID.
 Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
-Write implementation notes to the vault." --project "$PROJECT_PATH"
+Write implementation notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1769,7 +1770,7 @@ If none of the above: continue to the next hypothesis (loop back to R3).
 ```bash
 factory agent archivist --task "Record research experiment $EXP_ID outcome (verdict: $VERDICT).
 Research target: $METRIC = $METRIC_AFTER (baseline: $BASELINE_METRIC, target: $TARGET).
-Write experiment note with decision rationale to the vault." --project "$PROJECT_PATH"
+Write experiment note with decision rationale to .factory/archive/experiments/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1831,13 +1832,13 @@ After the Improve loop completes (all experiments finalized), run ACE to distill
 #### M1: Collect Cross-Project Data
 
 ```bash
-uv run python -m factory insights "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
+uv run python -m factory insights "$PROJECT_PATH"
 ```
 
 #### M2: Run ACE for All Roles
 
 ```bash
-uv run python -m factory ace "$PROJECT_PATH" --projects-dir "$(dirname "$PROJECT_PATH")"
+uv run python -m factory ace "$PROJECT_PATH"
 ```
 
 This analyzes experiment outcomes across all managed projects (including the experiments just run in Phase 1) and evolves per-agent playbooks with empirically-backed DO/DON'T rules.
@@ -1847,9 +1848,10 @@ This analyzes experiment outcomes across all managed projects (including the exp
 ```bash
 factory agent archivist --task "Record ACE playbook evolution.
 1. Read all playbooks in ~/.factory/playbooks/
-2. Write a playbook evolution note to $FACTORY_VAULT_PATH/00-Factory/Agent-Performance/
+2. Write a playbook evolution note to .factory/archive/
 3. Record which bullets were added, removed, or had counters updated
-4. Update the factory dashboard" --project "$PROJECT_PATH"
+4. Update the project dashboard at .factory/archive/
+5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Note: Evolved playbooks are stored in `~/.factory/playbooks/` (user-local), NOT in the factory source tree. They are never committed to the factory repo — they are personal to each user's experiment history.
@@ -1887,7 +1889,7 @@ You learn from your own decisions. Every keep/revert decision and every agent fa
 
 1. **Decision metadata in --notes**: Every `factory finalize` call includes structured CEO notes (see Step 2g). These are parsed by the ACE reflector to generate CEO playbook bullets.
 
-2. **Archivist vault entries**: The Archivist writes CEO decision patterns to `$FACTORY_VAULT_PATH/00-Factory/Agent-Performance/ceo-decisions.md`. This captures qualitative reasoning that structured notes can't.
+2. **Archivist archive entries**: The Archivist writes CEO decision patterns to `.factory/archive/`. This captures qualitative reasoning that structured notes can't.
 
 3. **Playbook evolution**: The ACE reflector analyzes CEO notes across all projects to generate bullets like:
    - DO: "Trust Evaluator scores — 90% of keep decisions with positive deltas held up"
@@ -1964,7 +1966,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
    - Evaluated (scores measured before and after)
    - Documented (clear commit messages, PR description)
    - Maintainable (clean code, no hacks)
-5. **When stuck**: Pick the simpler option, record reasoning in the vault, move on.
+5. **When stuck**: Pick the simpler option, record reasoning in .factory/archive/, move on.
 
 ---
 
@@ -2046,31 +2048,24 @@ If prior details are lost:
 
 ---
 
-## Obsidian Vault Integration
+## Archive Structure
 
-The factory uses an Obsidian vault as its institutional memory:
+The factory uses `.factory/archive/` as its institutional memory (per-project):
 
 ```
-$FACTORY_VAULT_PATH/
-├── 00-Factory/              # Cross-project knowledge
-│   ├── Dashboard.md         # Factory-wide status
-│   ├── Patterns.md          # Recurring patterns
-│   ├── Decisions.md         # Major decisions log
-│   └── Agent-Performance/   # Per-agent performance tracking
-│       ├── ceo-decisions.md # CEO keep/revert patterns
-│       └── <role>-perf.md   # Per-agent metrics
-├── 10-Projects/{name}/      # Per-project notes
-├── 20-Knowledge/            # Concepts and sources
-├── _templates/              # Note templates
-└── MEMORY.md                # Index for agent orientation
+.factory/archive/
+├── experiments/              # Per-experiment notes
+│   └── {project}-{NNN}.md
+├── strategies/               # Strategy snapshots
+│   └── {project}-{date}.md
+├── sources/                  # Research source notes
+│   └── {source-name}.md
+├── patterns/                 # Cross-project patterns
+│   └── patterns.md
+└── {project}.md              # Project dashboard
 ```
 
-### obsidian-cli commands
-- `obsidian create vault="factory" name="path/to/note" content="..." silent`
-- `obsidian read vault="factory" file="note name"`
-- `obsidian search vault="factory" query="term" limit=10`
-- `obsidian append vault="factory" file="note name" content="..."`
-- `obsidian property:set vault="factory" name="status" value="done" file="note name"`
+The Archivist writes directly to this directory. After writing, it runs `factory report-update` to regenerate `.factory/performance_report.json`, which the ACE reflector reads for qualitative signals.
 
 ---
 

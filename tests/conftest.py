@@ -16,6 +16,14 @@ os.environ["FACTORY_BOB_DRY_RUN"] = "1"
 os.environ["FACTORY_CEO_RESPAWN_DISABLED"] = "1"
 
 
+@pytest.fixture(autouse=True)
+def _isolate_registry(tmp_path: Path) -> None:
+    """Redirect global registry to tmp_path during tests to avoid polluting ~/.factory/."""
+    os.environ["FACTORY_REGISTRY_DIR"] = str(tmp_path / ".factory-test-registry")
+    yield  # type: ignore[misc]
+    os.environ.pop("FACTORY_REGISTRY_DIR", None)
+
+
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> Path:
     """Create a minimal project directory with git init."""

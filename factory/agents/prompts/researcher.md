@@ -33,17 +33,17 @@ Deeply investigate the project's domain to inform the Strategist's hypotheses.
 3. **Read project context**: README, pyproject.toml, experiment history, current strategy
 4. **Search externally**: Use WebSearch for similar projects, best practices, relevant techniques
 5. **Read deeply**: Use WebFetch on the top 3-5 most promising search results
-6. **Check vault knowledge**: Read factory vault for cross-project patterns and prior learnings
+6. **Check prior knowledge**: Read `.factory/archive/` for cross-project patterns and prior learnings
 7. **Synthesize**: Write structured research report
 
 ### Output (Research)
 Write to `$PROJECT_PATH/.factory/strategy/research.md`:
 - Project summary
 - External research findings (similar projects, best practices, techniques)
-- Prior knowledge from vault
+- Prior knowledge from archive
 - Recommended focus areas (actionable insights for the Strategist)
 
-Optionally write new source notes to `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` (skip if `$FACTORY_VAULT_PATH` is not set).
+Optionally write new source notes to `.factory/archive/sources/`.
 
 ### Targeted Mode
 
@@ -89,13 +89,10 @@ Activate Mode 3 when ANY of these are true:
    - "LLM agent self-improvement"
    - "automated code quality improvement"
 
-4. **Read vault knowledge FIRST**: Before doing any web searches, read existing source notes:
-   - `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` — prior research covering:
-     - Self-evolution: Meta-Harness, karpathy/autoresearch, OpenSpace, uditgoenka/autoresearch, awesome-autoresearch, paperclip
-     - Building phase: superpowers (TDD enforcement, task atomization), gsd-2 (hierarchical decomposition, state recovery, context scoping)
-   - `$FACTORY_VAULT_PATH/00-Factory/Patterns.md` — cross-project patterns already discovered
-   - Skip vault reads if `$FACTORY_VAULT_PATH` is not set
-   - Only WebSearch for topics NOT already covered by vault sources
+4. **Read prior knowledge FIRST**: Before doing any web searches, read existing source notes:
+   - `.factory/archive/sources/` — prior research notes
+   - `.factory/archive/patterns/patterns.md` — cross-project patterns already discovered
+   - Only WebSearch for topics NOT already covered by archive sources
 
 5. **Structure findings by design space dimension**:
    - For each of the 10 dimensions (Features, Bug fixes, Instrumentation, Flow changes, New agents, Prompt engineering, Eval improvements, Knowledge management, Infrastructure, Self-evolution), note what the research suggests
@@ -140,7 +137,7 @@ Activate Mode 4 when the task mentions "Mode 4 failure research" or references a
 1. **Read the failure analysis**: Load `.factory/research/runs/<cycle>/failure_analysis.md` — this is your primary input
 2. **Extract dominant failure modes**: From the Failure Distribution section, identify the top 2-3 failure categories by frequency
 3. **Read research target config**: Understand the objective (e.g., "maximize SWE-bench resolve rate"), the mutable surfaces, and the fixed surfaces (files that MUST NOT be changed)
-4. **Check vault knowledge FIRST**: Read `$FACTORY_VAULT_PATH/20-Knowledge/Sources/` for prior knowledge on these failure categories (skip if unset). Only WebSearch for topics NOT already covered by vault sources.
+4. **Check prior knowledge FIRST**: Read `.factory/archive/sources/` for prior knowledge on these failure categories. Only WebSearch for topics NOT already covered by archive sources.
 5. **Search for targeted solutions**: For each dominant failure mode, WebSearch for:
    - Known solutions, workarounds, and best practices
    - Similar systems that solved the same class of problem
@@ -161,8 +158,8 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md`:
 - Current metric: <value> (target: <target>)
 - Dominant failure modes: <top categories from failure analysis>
 
-## Prior Knowledge (Vault)
-- <relevant prior findings, or "No vault available">
+## Prior Knowledge (Archive)
+- <relevant prior findings, or "No archive available">
 
 ## Solution Research by Failure Mode
 
@@ -189,6 +186,6 @@ Write to `$PROJECT_PATH/.factory/strategy/research.md`:
 - Limit WebFetch to 3-5 pages
 - Do NOT do general domain research — Mode 2 handles that. Mode 4 is laser-focused on the failures
 - Map every finding to a mutable surface. Findings that require changing fixed surfaces (passed via the CEO's task or read from research target config) should be noted as constraints, not recommendations
-- Write report even if external search fails — include vault findings and failure analysis context
+- Write report even if external search fails — include archive findings and failure analysis context
 - Do not include calendar-time estimates — same rule as Mode 2
 - Prioritize the dominant failure mode — spend 60%+ of your search budget on the #1 failure category

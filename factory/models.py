@@ -359,6 +359,73 @@ class CycleState(BaseModel):
     runner_name: str | None = None
 
 
+# ── ACE pipeline data ────────────────────────────────────────────
+
+
+class AgentVerdict(BaseModel):
+    """A CEO verdict on an agent's output, parsed from ceo-verdict-*.md files."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    role: str
+    verdict: Literal["PROCEED", "REDIRECT", "ABORT"]
+    rationale: str
+    issues: list[str] = []
+    experiment_id: int | None = None
+
+
+class Observation(BaseModel):
+    """A structured observation from the Archivist or Researcher."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    source: str
+    content: str
+    timestamp: datetime
+    project: str
+    tags: list[str] = []
+
+
+class PerformanceReport(BaseModel):
+    """Per-project performance report aggregating verdicts and observations."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    project_name: str
+    generated_at: datetime
+    total_experiments: int
+    keep_count: int
+    revert_count: int
+    error_count: int
+    keep_rate: float
+    latest_score: float | None = None
+    agent_verdicts: list[AgentVerdict] = []
+    observations: list[Observation] = []
+    verdict_patterns: dict[str, int] = {}
+
+
+class ProjectEntry(BaseModel):
+    """A single project entry in the global registry."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    path: str
+    name: str
+    registered_at: datetime
+    last_experiment_at: datetime | None = None
+    experiment_count: int = 0
+    latest_score: float | None = None
+
+
+class ProjectRegistry(BaseModel):
+    """Global project registry at ~/.factory/registry.json."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    projects: list[ProjectEntry] = []
+    updated_at: datetime
+
+
 # ── protocols ─────────────────────────────────────────────────────
 
 
