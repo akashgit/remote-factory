@@ -209,6 +209,22 @@ graph LR
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
+## Built with the Factory
+
+Real projects built, improved, or researched using the Factory.
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
+| **HLS design space explorer** | Multi-agent system for hardware synthesis optimization with ILP-based global search | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Client inquiry agent** | AI agent that drafts and optimizes client responses using company knowledge bases | Build + Improve |
+| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with the Factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
+
 ## License
 
 [MIT](https://github.com/akashgit/remote-factory/blob/main/LICENSE) — Akash Srivastava

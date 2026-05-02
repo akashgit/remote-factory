@@ -274,6 +274,24 @@ Run meta mode on a regular cadence — weekly is a good default. It needs at lea
 
 ---
 
+## Built with the Factory
+
+Real projects built, improved, or researched using the Factory — from one-line ideas to running systems.
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language descriptions and hand-drawn sketches into executable CadQuery Python code for 3D model generation | Research |
+| **HLS design space explorer** | Multi-agent system for hardware synthesis optimization — each sub-function gets its own optimizer agent, then an ILP solver finds the global optimum | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Client inquiry agent** | AI agent that drafts and optimizes client responses using company knowledge bases | Build + Improve |
+| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with the Factory? Open a PR to add it here — a one-liner is all it takes. It helps others see what's possible.
+
+---
+
 ## Runners
 
 The factory supports multiple CLI backends. By default it uses **Claude Code** (`claude` CLI). **Bob Shell** (`bob` CLI) is available as an alternative:
