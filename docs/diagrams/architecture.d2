@@ -91,7 +91,7 @@ ceo: {
     label: |md
       **CEO Orchestrator**
       - Detects project state
-      - Routes to mode (Build/Discover/Review/Improve/Interactive)
+      - Routes to mode (Build/Discover/Review/Improve/Interactive/Research)
       - Spawns specialist agents
       - Makes keep/revert decisions
       - Runs precheck hard gate
@@ -167,6 +167,11 @@ agents: {
   }
   distiller: {
     label: "💡 Distiller\nRefine Ideas"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
+  }
+  failure_analyst: {
+    label: "🔬 Failure Analyst\nClassify Failures"
     shape: rectangle
     style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 8 }
   }

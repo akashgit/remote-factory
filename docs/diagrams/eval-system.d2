@@ -182,3 +182,57 @@ mixer -> composite: "weighted sum"
 composite -> threshold
 threshold -> pass: "yes"
 threshold -> fail: "no"
+
+# ── Research Mode Interaction ────────────────────
+
+research_mode: {
+  label: "Research Mode Eval"
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 12; bold: true }
+
+  run_cmd: {
+    label: "run_command\n(research target)"
+    shape: parallelogram
+    style: { fill: "#b2ebf2"; stroke: "#00838f"; border-radius: 4 }
+  }
+
+  metric: {
+    label: "Research Metric\n(primary signal)"
+    shape: diamond
+    style: { fill: "#b2ebf2"; stroke: "#00838f"; font-size: 14; bold: true }
+  }
+
+  monotonic: {
+    label: "metric >= previous_best?"
+    shape: hexagon
+    style: { fill: "#fff9c4"; stroke: "#f57f17" }
+  }
+
+  leakage_gate: {
+    label: "Leakage Check\n(fixed surfaces)"
+    shape: hexagon
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 13 }
+  }
+
+  r_pass: {
+    label: "KEEP"
+    shape: rectangle
+    style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8; bold: true }
+  }
+
+  r_fail: {
+    label: "REVERT"
+    shape: rectangle
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 8; bold: true }
+  }
+
+  run_cmd -> metric
+  metric -> monotonic
+  monotonic -> leakage_gate: "yes"
+  monotonic -> r_fail: "regressed"
+  leakage_gate -> r_pass: "clean"
+  leakage_gate -> r_fail: "leaked"
+}
+
+hygiene -> research_mode: "hygiene as hard gate\n(any regression → revert)" {
+  style: { font-size: 12; stroke: "#00838f"; stroke-dash: 5 }
+}

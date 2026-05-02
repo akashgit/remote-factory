@@ -228,3 +228,79 @@ targeted_note: {
 arch4 -> targeted_note: "--focus: exit" {
   style: { stroke: "#1976d2"; stroke-dash: 5; font-size: 13 }
 }
+
+# ── E2E Verification (Build Mode) ──────────────
+
+e2e_note: {
+  label: |md
+    **E2E Verification** (Build Mode)
+    After Builder completes all phases,
+    CEO runs smoke test to confirm
+    the project actually works end-to-end.
+  |
+  shape: rectangle
+  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 8; font-size: 13; italic: true }
+  width: 320
+}
+
+# ── Research Mode Branch ──────────────────────
+
+research_label: {
+  label: "Research Mode Branch"
+  shape: text
+  style: { font-size: 22; bold: true; font-color: "#00838f" }
+}
+
+r_failure_analyst: {
+  label: "Failure Analyst — classify run failures by root cause"
+  shape: rectangle
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 8; font-size: 16 }
+  width: 460
+  height: 60
+}
+
+r_researcher: {
+  label: "Researcher — targeted solutions for dominant failure patterns"
+  shape: rectangle
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 8; font-size: 16 }
+  width: 480
+  height: 60
+}
+
+r_leakage: {
+  label: "Leakage Check (HARD GATE)"
+  shape: hexagon
+  style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 16; bold: true }
+}
+
+r_run: {
+  label: "Evaluator — re-run research target command"
+  shape: rectangle
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 8; font-size: 16 }
+  width: 420
+  height: 60
+}
+
+r_monotonic: {
+  label: "Monotonic Improvement Gate\nmetric >= previous_best"
+  shape: hexagon
+  style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 15; bold: true }
+}
+
+research_label -> r_failure_analyst -> r_researcher -> strategist
+ceo_s -> r_leakage: "research mode" {
+  style: { stroke: "#00838f"; stroke-width: 2; font-size: 13 }
+}
+r_leakage -> arch2: "pass" {
+  style: { stroke: "#2e7d32"; stroke-width: 2 }
+}
+post_eval -> r_run: "research mode" {
+  style: { stroke: "#00838f"; stroke-width: 2; font-size: 13 }
+}
+r_run -> r_monotonic
+r_monotonic -> keep: "metric improved" {
+  style: { stroke: "#2e7d32"; stroke-width: 3; font-size: 15 }
+}
+r_monotonic -> revert: "metric regressed" {
+  style: { stroke: "#c62828"; stroke-width: 3; font-size: 15 }
+}

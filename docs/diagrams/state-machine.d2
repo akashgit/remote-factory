@@ -129,6 +129,24 @@ interactive: {
   width: 300
 }
 
+research: {
+  label: |md
+    **Research Mode** *(metric optimization)*
+    1. Baseline → Evaluator runs target metric
+    2. Analyze → Failure Analyst classifies failures
+    3. Research → Researcher finds targeted solutions
+    4. Hypothesize → Strategist (1-3 hypotheses)
+    5. Build → Builder (mutable surfaces only)
+    6. Run → Re-evaluate target metric
+    7. Verdict → monotonic improvement gate
+
+    *Leakage guards at Strategy, Build, Precheck*
+  |
+  shape: rectangle
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 12; font-size: 15 }
+  width: 320
+}
+
 meta: {
   label: |md
     **Meta Mode**
@@ -171,11 +189,17 @@ has_factory -> improve {
 has_factory -> improve: "--focus (targeted)" {
   style: { stroke: "#1976d2"; stroke-width: 2; font-size: 13; stroke-dash: 3 }
 }
+has_factory -> research: "--mode research" {
+  style: { stroke: "#00838f"; stroke-width: 2; font-size: 13 }
+}
 has_factory -> meta: "--mode meta" {
   style: { stroke: "#ef6c00"; stroke-width: 2; font-size: 13 }
 }
 no_repo -> interactive: "--mode interactive" {
   style: { stroke: "#1976d2"; stroke-width: 2; font-size: 13 }
+}
+no_repo -> research: "--mode research" {
+  style: { stroke: "#00838f"; stroke-width: 2; font-size: 13 }
 }
 
 # ── transitions back (dashed) ────────────────────
@@ -193,6 +217,9 @@ improve -> has_factory: "cycle done" {
   style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
 }
 interactive -> build: "spec approved" {
+  style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
+}
+research -> has_factory: "cycle done" {
   style: { stroke-dash: 5; stroke: "#aaa"; font-size: 12 }
 }
 meta -> has_factory: "ACE done" {

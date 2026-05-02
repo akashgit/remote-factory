@@ -16,6 +16,9 @@ factory ceo ~/ideas/weather-dashboard.md
 # Interactive — just starting to think about it? Brainstorm first.
 factory ceo "distributed eval runner" --mode interactive
 
+# Research — have a metric to optimize? The factory runs experiments.
+factory ceo "SWE-bench solver agent" --mode research
+
 # Improve — point it at any codebase
 factory ceo ~/my-project
 
@@ -42,7 +45,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
 
 ## Workflows
 
@@ -80,6 +83,15 @@ factory ceo "distributed eval runner" --mode interactive
 ```
 
 Have a rough idea? Interactive mode researches the space, drafts a structured spec via the Distiller agent, and lets you iterate on it before any code is written.
+
+### Research — optimize a metric iteratively
+
+```bash
+factory ceo "SWE-bench solver agent" --mode research
+factory ceo ~/my-research-project --mode research
+```
+
+For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. Leakage guards prevent ground truth from contaminating hypotheses, and monotonic improvement ensures the metric never regresses below the previous best. See [Getting Started](getting-started.md#research-mode-in-detail) for the full picture.
 
 ### Headless & continuous loop
 
@@ -150,7 +162,7 @@ graph TB
     subgraph agents ["Specialist Agents"]
         R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
         RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
-        DI["Distiller"]
+        DI["Distiller"] ~~~ FA["Failure Analyst"]
     end
     subgraph ceo ["CEO Agent"]
         C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]

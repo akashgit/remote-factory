@@ -240,3 +240,76 @@ experiments -> ace: "experiment outcomes feed learning" {
 ace -> strategy: "evolved playbooks improve agents" {
   style: { font-size: 13; stroke-dash: 5 }
 }
+
+# ── Research Mode Artifacts ──────────────────────
+
+research_config: {
+  label: "Research Configuration"
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 12; bold: true; font-size: 16 }
+
+  research_target: {
+    label: |md
+      **research_target**
+      objective, metric, target,
+      run_command, result_path,
+      result_parser, timeout
+    |
+    shape: document
+    style: { fill: "#b2ebf2"; stroke: "#00838f"; border-radius: 6; font-size: 13 }
+    width: 220
+  }
+
+  mutable_surfaces: {
+    label: "mutable_surfaces\nfiles Builder can modify"
+    shape: document
+    style: { fill: "#b2ebf2"; stroke: "#00838f"; border-radius: 6; font-size: 13 }
+    width: 220
+  }
+
+  fixed_surfaces: {
+    label: "fixed_surfaces\nground truth (locked)\nfingerprinted for leakage"
+    shape: document
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 6; font-size: 13 }
+    width: 220
+  }
+}
+
+research_artifacts: {
+  label: "Research Run Artifacts"
+  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 12; bold: true; font-size: 16 }
+
+  runs: {
+    label: |md
+      **research/runs/<cycle_id>/**
+      - stdout.log
+      - stderr.log
+      - summary.json
+      - failure_analysis.md
+    |
+    shape: page
+    style: { fill: "#b2ebf2"; stroke: "#00838f"; border-radius: 6; font-size: 12 }
+    width: 220
+  }
+
+  leakage: {
+    label: "Leakage Guard\ntoken overlap, negation\nhints, specific values"
+    shape: hexagon
+    style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 13 }
+  }
+}
+
+config -> research_config: "research target config" {
+  style: { font-size: 13; stroke: "#00838f" }
+}
+research_config -> strategy: "surface constraints" {
+  style: { font-size: 13; stroke: "#00838f" }
+}
+research_config -> research_artifacts: "run_command execution" {
+  style: { font-size: 13; stroke: "#00838f" }
+}
+research_artifacts -> strategy: "failure analysis informs hypotheses" {
+  style: { font-size: 13; stroke: "#00838f"; stroke-dash: 5 }
+}
+research_config -> research_artifacts.leakage: "fixed surface fingerprints" {
+  style: { font-size: 12; stroke: "#c62828" }
+}
