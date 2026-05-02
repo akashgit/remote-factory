@@ -122,9 +122,9 @@ cd remote-factory && uv sync && uv tool install -e .
 factory install
 ```
 
-**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — the factory stores all state locally.
 
-The factory's long-term memory lives in `.factory/archive/` inside each project and in a global registry at `~/.factory/registry.json`. Projects are auto-registered when experiments begin — no manual setup needed.
+Per-project state lives in `.factory/` (experiment history, strategy, archive notes). Global state lives in `~/.factory/` (project registry, evolved playbooks). Projects are auto-registered when experiments begin — no manual setup needed. See [Setup Guide](setup.md) for environment variables and authentication options.
 
 ## Self-Evolving Agents
 

@@ -247,11 +247,14 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 
 ## Environment Variables
 
-The Factory spawns Claude Code as subprocesses — it does not call the Claude API directly. Configure Claude Code authentication however you normally would (API key, Vertex AI, etc.).
+The Factory spawns Claude Code as subprocesses — it does not call the Claude API directly. No external services are required beyond Claude Code itself.
 
-| Variable | Purpose | Default | Required |
-|----------|---------|---------|----------|
-| `FACTORY_PROJECTS_DIR` | Parent directory for prompt-created projects | `~/factory-projects` | Optional |
-| `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` | Optional |
-| `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* | Optional |
-| `FACTORY_REGISTRY_DIR` | Override registry location (primarily for testing) | `~/.factory` | Optional |
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `FACTORY_PROJECTS_DIR` | Parent directory for projects created from prompts | `~/factory-projects` |
+| `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* |
+| `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` |
+| `FACTORY_REGISTRY_DIR` | Override global registry location | `~/.factory` |
+| `FACTORY_RUNNER` | CLI backend: `claude` or `bob` | `claude` |
+
+See [Setup Guide — Environment Variables](setup.md#environment-variables) for the full list, including Claude Code authentication, Bob Shell, notifications, and advanced CEO options.

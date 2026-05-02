@@ -18,7 +18,7 @@ pytest -k "test_detect" -v       # By name pattern
 pytest --cov                     # With coverage
 ```
 
-Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`. Shared fixtures (`tmp_project`, `sample_config`, `python_project`, `obsidian_vault`) live in `tests/conftest.py`.
+Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`. Shared fixtures (`tmp_project`, `sample_config`, `python_project`) live in `tests/conftest.py`. An autouse `_isolate_registry` fixture redirects the global registry to a temp directory during tests.
 
 ## Lint & Type Check
 
@@ -81,7 +81,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ├── reviews/                  # Agent output capture + CEO review verdicts
 │   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
-├── archive/                  # Long-term knowledge store (replaces vault dependency)
+├── archive/                  # Long-term knowledge store (Archivist notes)
 │   ├── experiments/          # Per-experiment learnings and decision rationale
 │   ├── patterns/             # Recurring patterns and anti-patterns
 │   └── decisions/            # Major architectural and strategy decisions

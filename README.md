@@ -34,7 +34,9 @@ factory ceo "Build a personal homepage with a blog"
 
 Both forms are equivalent. This README uses `uv run python -m factory` throughout so you can copy-paste without installing first. If you've installed the CLI, just replace `uv run python -m factory` with `factory`.
 
-See the [full setup guide](docs/setup.md) for authentication, MCP servers, and tmux configuration.
+The factory stores all state locally — no external services required beyond Claude Code. Per-project state lives in `.factory/` (add it to `.gitignore`). Global state (project registry, evolved playbooks) lives in `~/.factory/`.
+
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and tmux configuration.
 
 ---
 
@@ -340,7 +342,7 @@ See `factory --help` for the complete list.
 
 | Doc | What's in it |
 |-----|-------------|
-| [Setup Guide](docs/setup.md) | Full installation, authentication, environment setup |
+| [Setup Guide](docs/setup.md) | Installation, authentication, environment variables, what you don't need |
 | [Getting Started](docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md configuration |
 | [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow diagrams |
 | [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |

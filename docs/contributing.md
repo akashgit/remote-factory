@@ -19,7 +19,7 @@ uv run pytest --cov               # With coverage
 
 Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without the `@pytest.mark.asyncio` decorator.
 
-Shared fixtures (`tmp_project`, `sample_config`, `python_project`, `obsidian_vault`) live in `tests/conftest.py`. An autouse `_isolate_registry` fixture redirects the global registry to a temp directory during tests.
+Shared fixtures (`tmp_project`, `sample_config`, `python_project`) live in `tests/conftest.py`. An autouse `_isolate_registry` fixture redirects the global registry to a temp directory during tests.
 
 ## Linting and Type Checking
 
