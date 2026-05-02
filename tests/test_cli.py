@@ -940,13 +940,13 @@ class TestCmdCeo:
             ["git", "clone", url, "/tmp/factory-ceo"], check=True,
         )
 
-    def test_ceo_headless_timeout_is_1_hour(self, tmp_path):
-        """CEO agent gets 3600s timeout in headless mode."""
+    def test_ceo_headless_timeout_is_2_hours(self, tmp_path):
+        """CEO agent gets 7200s timeout in headless mode."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
-        assert call_kwargs["timeout"] == 3600.0
+        assert call_kwargs["timeout"] == 7200.0
 
     def test_ceo_foreground_uses_execvp(self, tmp_path):
         """cmd_ceo (default) launches claude interactively via os.execvp."""
