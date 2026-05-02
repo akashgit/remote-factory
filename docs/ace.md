@@ -14,9 +14,10 @@ across all projects   Generate      Merge &       Auto-append
 
 ### 1. Reflect (`factory/ace/reflector.py`)
 
-Analyzes experiment outcomes across all factory-managed projects:
+Analyzes experiment outcomes across all factory-managed projects (discovered via the global registry at `~/.factory/registry.json`, with directory scanning as fallback):
+- Loads data from performance reports (`.factory/performance_report.json`) with TSV fallback
 - Computes category success rates (which types of changes get kept vs reverted)
-- Generates candidate playbook bullets for all 7 agent roles
+- Generates candidate playbook bullets for all 7 agent roles from experiment outcomes, CEO verdict patterns, and observation coverage
 - Each bullet is a behavioral rule: DO (reinforced pattern) or DON'T (anti-pattern)
 
 ### 2. Curate (`factory/ace/curator.py`)
@@ -90,7 +91,7 @@ All 7 agent roles have playbooks:
 | Builder | Implementation patterns that pass review, common pitfalls |
 | Reviewer | What to focus on in code review, false positive patterns |
 | Evaluator | Score interpretation, when to flag anomalies |
-| Archivist | What to record, vault organization patterns |
+| Archivist | What to record, archive organization patterns |
 
 ## Design Principles
 

@@ -61,29 +61,36 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 2. **Discovery** (`factory/discovery/`): `introspect.py` → `profile.py` → `generate.py` — detects project language/framework, builds an `EvalProfile` of dimensions, generates `eval/score.py`
 3. **Eval** (`factory/eval/`): `runner.py` executes the eval command as a subprocess, expects JSON stdout `{"results": [...]}`. Growth dimensions (`growth.py`) are computed locally and merged at 50/50 with project hygiene dimensions. `scorer.py` computes the weighted composite
 4. **Strategy** (`factory/strategy.py`): FEEC priority heuristic (Fix > Exploit > Explore > Combine) classifies hypotheses by keyword matching, with stuck detection after 3+ consecutive same-category reverts
-5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts
-6. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
-7. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
+5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts. Auto-registers projects in the global registry on `begin()` and updates stats on `finalize()`
+6. **Registry** (`factory/registry.py`): Global project registry at `~/.factory/registry.json` — self-registration pattern, project discovery for ACE/insights without `--projects-dir`
+7. **Report** (`factory/report.py`): Performance report generation — consolidates experiment records, CEO verdicts, and observations into `.factory/performance_report.json` for ACE consumption
+8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
+9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 
 ### Target project's `.factory/` layout
 
 ```
 .factory/
-├── config.json           # Parsed from factory.md (FactoryConfig model)
-├── eval_profile.json     # Discovered eval dimensions (EvalProfile model)
-├── results.tsv           # Append-only experiment history
+├── config.json               # Parsed from factory.md (FactoryConfig model)
+├── eval_profile.json         # Discovered eval dimensions (EvalProfile model)
+├── results.tsv               # Append-only experiment history
+├── performance_report.json   # Consolidated project data for ACE (auto-generated)
 ├── experiments/
-│   └── 001/              # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
-├── strategy/             # observations.md, current.md, backlog.md, insights.md, research.md
-├── reviews/              # Agent output capture + CEO review verdicts
-│   ├── <role>-latest.md  # Auto-saved stdout from each agent invocation
-│   └── ceo-verdict-<role>.md  # CEO's review verdict (PROCEED/REDIRECT/ABORT)
-└── agents/               # Per-project agent prompt overrides
+│   └── 001/                  # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
+├── strategy/                 # observations.md, current.md, backlog.md, insights.md, research.md
+├── reviews/                  # Agent output capture + CEO review verdicts
+│   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
+│   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
+├── archive/                  # Long-term knowledge store (replaces vault dependency)
+│   ├── experiments/          # Per-experiment learnings and decision rationale
+│   ├── patterns/             # Recurring patterns and anti-patterns
+│   └── decisions/            # Major architectural and strategy decisions
+└── agents/                   # Per-project agent prompt overrides
 ```
 
 ### Models
 
-All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`. The `Notifier` protocol defines the async notification interface.
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`. The `Notifier` protocol defines the async notification interface.
 
 ## Environment
 

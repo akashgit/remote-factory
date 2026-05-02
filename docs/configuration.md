@@ -217,10 +217,11 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 
 ```
 .factory/
-├── config.json           # Parsed from factory.md
-├── eval_profile.json     # Discovered eval dimensions
-├── results.tsv           # Append-only experiment history
-├── events.jsonl          # Structured event log
+├── config.json              # Parsed from factory.md
+├── eval_profile.json        # Discovered eval dimensions
+├── results.tsv              # Append-only experiment history
+├── events.jsonl             # Structured event log
+├── performance_report.json  # Aggregated verdicts, observations, stats
 ├── experiments/
 │   └── 001/
 │       ├── hypothesis.md
@@ -231,11 +232,17 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 ├── strategy/
 │   ├── current.md
 │   ├── observations.md
+│   ├── backlog.md
 │   └── insights.md
 ├── reviews/
 │   ├── <role>-latest.md
 │   └── ceo-verdict-<role>.md
-└── agents/               # Per-project prompt overrides
+├── archive/                 # Archivist notes
+│   ├── experiments/
+│   ├── strategies/
+│   ├── sources/
+│   └── patterns/
+└── agents/                  # Per-project prompt overrides
 ```
 
 ## Environment Variables
@@ -244,7 +251,7 @@ The Factory spawns Claude Code as subprocesses — it does not call the Claude A
 
 | Variable | Purpose | Default | Required |
 |----------|---------|---------|----------|
-| `FACTORY_VAULT_PATH` | Obsidian vault for persistent cross-project memory | *(none — vault features disabled)* | Optional |
 | `FACTORY_PROJECTS_DIR` | Parent directory for prompt-created projects | `~/factory-projects` | Optional |
 | `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` | Optional |
 | `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* | Optional |
+| `FACTORY_REGISTRY_DIR` | Override registry location (primarily for testing) | `~/.factory` | Optional |

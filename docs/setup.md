@@ -84,22 +84,6 @@ The factory uses [MCP](https://modelcontextprotocol.io/) for extended capabiliti
 
 To add MCP servers to a target project, create a `.mcp.json` in its root. The Builder agent will use available MCP tools when working on that project.
 
-## Optional: Obsidian Vault
-
-The factory can archive experiment history and cross-project knowledge to an Obsidian vault:
-
-```bash
-factory vault-init
-```
-
-This creates a vault directory with the expected structure. Configure a custom path:
-
-```bash
-export FACTORY_VAULT_PATH=~/my-factory-vault
-```
-
-If unset and the default path doesn't exist, vault features are skipped gracefully.
-
 ## Full Setup From Scratch
 
 ```bash
@@ -117,10 +101,7 @@ cd remote-factory && uv sync && uv tool install -e .
 # 4. Register CEO agent
 factory install
 
-# 5. Optional: Initialize vault
-factory vault-init
-
-# 6. Verify
+# 5. Verify
 factory --help
 factory detect /path/to/any/project
 ```
