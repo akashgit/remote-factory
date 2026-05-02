@@ -483,6 +483,35 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report_update(args: argparse.Namespace) -> int:
+    """Generate a performance report for a project."""
+    from factory.report import save_performance_report
+
+    project_path = Path(args.path).resolve()
+    report_path = save_performance_report(project_path)
+    print(f"Performance report written to {report_path}")
+    return 0
+
+
+def cmd_registry_list(args: argparse.Namespace) -> int:
+    """List all registered factory-managed projects."""
+    from factory.registry import list_projects
+
+    projects = list_projects()
+    if not projects:
+        print("No registered projects. Projects are auto-registered when experiments begin.")
+        return 0
+
+    header = f"{'Name':<30} {'Experiments':>11} {'Score':>8} {'Last Experiment':<20}"
+    print(header)
+    print("-" * len(header))
+    for p in projects:
+        score = f"{p.latest_score:.3f}" if p.latest_score is not None else "n/a"
+        last = p.last_experiment_at.strftime("%Y-%m-%d %H:%M") if p.last_experiment_at else "never"
+        print(f"{p.name:<30} {p.experiment_count:>11} {score:>8} {last:<20}")
+    return 0
+
+
 def cmd_ace(args: argparse.Namespace) -> int:
     """Run ACE self-improvement on agent playbooks."""
     from factory.ace.curator import curate_playbook
@@ -492,7 +521,16 @@ def cmd_ace(args: argparse.Namespace) -> int:
     from factory.insights import discover_projects, load_all_histories
 
     project_path = Path(args.path).resolve()
-    projects_dir = Path(args.projects_dir).expanduser().resolve()
+    projects_dir_raw = getattr(args, "projects_dir", None)
+    if projects_dir_raw:
+        projects_dir = Path(projects_dir_raw).expanduser().resolve()
+    else:
+        from factory.registry import get_project_paths
+        reg_paths = get_project_paths()
+        if reg_paths:
+            projects_dir = reg_paths[0].parent
+        else:
+            projects_dir = project_path.parent
     dry_run = getattr(args, "dry_run", False)
 
     _emit_cli_event(project_path, "ace.started", {"dry_run": dry_run})
@@ -638,7 +676,16 @@ def cmd_insights(args: argparse.Namespace) -> int:
     )
 
     project_path = Path(args.path).resolve()
-    projects_dir = Path(args.projects_dir).expanduser().resolve()
+    projects_dir_raw = getattr(args, "projects_dir", None)
+    if projects_dir_raw:
+        projects_dir = Path(projects_dir_raw).expanduser().resolve()
+    else:
+        from factory.registry import get_project_paths
+        reg_paths = get_project_paths()
+        if reg_paths:
+            projects_dir = reg_paths[0].parent
+        else:
+            projects_dir = project_path.parent
     _emit_cli_event(project_path, "insights.started", {"projects_dir": str(projects_dir)})
     project_paths = discover_projects(projects_dir)
 
@@ -2164,16 +2211,23 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
     p.add_argument("path", help="Path to the project (insights.md written here)")
     p.add_argument(
-        "--projects-dir", default="~/factory-projects",
-        help="Directory containing factory-managed projects (default: ~/factory-projects)",
+        "--projects-dir", default=None,
+        help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
+
+    # report-update
+    p = sub.add_parser("report-update", help="Generate performance report for a project")
+    p.add_argument("path", help="Path to the project")
+
+    # registry-list
+    sub.add_parser("registry-list", help="List all registered factory-managed projects")
 
     # ace
     p = sub.add_parser("ace", help="Run ACE self-improvement on agent playbooks")
     p.add_argument("path", help="Path to the project")
     p.add_argument(
-        "--projects-dir", default="~/factory-projects",
-        help="Directory containing factory-managed projects (default: ~/factory-projects)",
+        "--projects-dir", default=None,
+        help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
     p.add_argument(
         "--dry-run", action="store_true", default=False,
@@ -2444,6 +2498,8 @@ def main(argv: list[str] | None = None) -> int:
         "explain": cmd_explain,
         "export": cmd_export,
         "insights": cmd_insights,
+        "report-update": cmd_report_update,
+        "registry-list": cmd_registry_list,
         "ace": cmd_ace,
         "ace-stats": cmd_ace_stats,
         "digest": cmd_digest,

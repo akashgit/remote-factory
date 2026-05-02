@@ -273,6 +273,7 @@ class ExperimentStore:
 
         Idempotent: if the next experiment dir already exists (e.g. from a
         previous interrupted run), return its ID without crashing.
+        Also registers the project in the global registry (non-blocking).
         """
         exp_id = await self.next_id()
         log.info("experiment_begin", exp_id=exp_id, hypothesis=hypothesis[:80])
@@ -281,6 +282,13 @@ class ExperimentStore:
         hyp_path = exp_dir / "hypothesis.md"
         if not hyp_path.exists():
             hyp_path.write_text(hypothesis)
+
+        try:
+            from factory.registry import register_project
+            register_project(self.project_path)
+        except Exception as exc:
+            log.debug("registry_begin_failed", error=str(exc))
+
         return exp_id
 
     async def save_eval(
@@ -353,6 +361,17 @@ class ExperimentStore:
                 record.notes,
                 "|".join(record.research_citations) if record.research_citations else "",
             ])
+
+        try:
+            from factory.registry import update_project_stats
+            scores = [record.score_after] if record.score_after is not None else []
+            update_project_stats(
+                self.project_path,
+                experiment_count=record.id,
+                latest_score=scores[-1] if scores else None,
+            )
+        except Exception as exc:
+            log.debug("registry_finalize_failed", error=str(exc))
 
     async def load_history(self) -> list[ExperimentRecord]:
         """Parse results.tsv into a list of ExperimentRecords."""

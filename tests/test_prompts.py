@@ -89,10 +89,10 @@ class TestArchivistPrompt:
     def test_has_preflight_checklist(self, archivist_prompt: str) -> None:
         assert "Pre-flight Checklist" in archivist_prompt
 
-    def test_uses_path_not_name_for_nested(self, archivist_prompt: str) -> None:
-        # All nested paths should use path= not name=
-        assert 'path="10-Projects' in archivist_prompt
-        assert 'name="10-Projects' not in archivist_prompt
+    def test_uses_archive_dir_not_vault(self, archivist_prompt: str) -> None:
+        assert ".factory/archive/" in archivist_prompt
+        assert "obsidian-cli" not in archivist_prompt.lower()
+        assert "$FACTORY_VAULT_PATH" not in archivist_prompt
 
 
 # ── CEO ──────────────────────────────────────────────────────────
