@@ -247,7 +247,7 @@ The `Modifiable` section defines **mutable surfaces** — files the Builder can 
 
 ### The research cycle
 
-Research mode follows six phases:
+Research mode follows seven phases:
 
 | Phase | Agent | What happens |
 |-------|-------|-------------|
