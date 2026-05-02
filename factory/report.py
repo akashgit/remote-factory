@@ -181,14 +181,6 @@ def _parse_datetimes(data: dict) -> None:
         if key in data and isinstance(data[key], str):
             data[key] = datetime.fromisoformat(data[key])
 
-    for entry in data.get("agent_verdicts", []):
-        pass  # no datetime fields
-
     for obs in data.get("observations", []):
         if "timestamp" in obs and isinstance(obs["timestamp"], str):
             obs["timestamp"] = datetime.fromisoformat(obs["timestamp"])
-
-    for entry in data.get("projects", []):
-        for key in ("registered_at", "last_experiment_at"):
-            if key in entry and isinstance(entry[key], str):
-                entry[key] = datetime.fromisoformat(entry[key])
