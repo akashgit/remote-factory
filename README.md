@@ -283,7 +283,7 @@ Real projects built, improved, or researched using the Factory — from one-line
 | **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
 | **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
 | **Text/Sketch → CAD** | Converts natural language descriptions and hand-drawn sketches into executable CadQuery Python code for 3D model generation | Research |
-| **HLS design space explorer** | Multi-agent system for chip design optimization — each sub-function gets its own optimizer agent exploring pragma/code variants, then an ILP solver finds the global optimum | Build |
+| **HLS design space explorer** | Parallel AI agents optimize HLS sub-kernels (pragma tuning, code transforms), then an ILP solver composes the globally optimal design under area constraints — achieving optimal speedups on cryptographic benchmarks | Build |
 | **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
 | **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase using the factory's focused improve loop | Focus + Improve |
 | **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
