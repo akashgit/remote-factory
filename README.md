@@ -66,8 +66,6 @@ Here's a complete workflow — from a one-line idea to a continuously improving 
 ### Step 1: Build from an idea
 
 ```bash
-cd ~/cursor-projects/remote-factory
-
 uv run python -m factory ceo "Build a personal homepage with a blog and projects section"
 ```
 
@@ -133,8 +131,8 @@ uv run python -m factory backlog-add ~/factory-projects/... "add RSS feed for th
 # File a GitHub issue — the Strategist reads open issues
 gh issue create --title "Add contact form" --body "Simple form with email notification"
 
-# Nudge hypothesis generation with a prompt
-uv run python -m factory ceo ~/factory-projects/... --prompt "focus on performance"
+# Pass a spec file to guide the next build phase
+uv run python -m factory ceo ~/factory-projects/... --prompt ~/ideas/performance-spec.md
 ```
 
 ### Step 5: Run it continuously
