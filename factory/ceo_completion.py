@@ -339,18 +339,12 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
 
 
 def _budget_allows_respawn(runner_name: str | None, project_path: Path) -> bool:
-    """Check if budget/ceiling allows another spawn."""
-    if runner_name == "bob":
-        from factory.runners.usage import check_ceilings, CeilingExceededError
-        from datetime import datetime, timezone
+    """Check if budget/ceiling allows another spawn.
 
-        try:
-            check_ceilings(project_path, datetime.now(timezone.utc))
-            return True
-        except CeilingExceededError:
-            return False
-
-    # Claude runner has no ceiling
+    With only per-cycle limits (no daily/session limit), we can always start
+    a new cycle. The per-cycle limit is enforced within BobRunner during execution.
+    """
+    # All runners can respawn - per-cycle limits are enforced within the cycle
     return True
 
 

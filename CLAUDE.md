@@ -103,9 +103,9 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 **Dry-run mode:** Set `FACTORY_BOB_DRY_RUN=1` to test Bob Shell integration without spending tokens. The factory returns stub responses and logs usage. This is automatically set in tests via `tests/conftest.py`.
 
 **Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 3)
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` (default: 20)
+- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8)
 - All invocations are logged to `.factory/bob_usage.jsonl`
+- When ≤2 invocations remain before the ceiling, a warning is logged and emitted to `.factory/events.jsonl` (type: `bob.ceiling_warning`)
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
 
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.

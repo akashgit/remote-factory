@@ -107,29 +107,18 @@ class TestCycleState:
 
 
 class TestBudgetAllowsRespawn:
-    """Tests for _budget_allows_respawn()."""
+    """Tests for _budget_allows_respawn().
 
-    def test_returns_true_under_ceiling(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    With only per-cycle limits (no daily/session limit), respawn is always allowed.
+    Per-cycle limits are enforced within BobRunner during execution.
+    """
+
+    def test_bob_always_allowed(self, tmp_path: Path) -> None:
         from factory.ceo_completion import _budget_allows_respawn
 
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
         (tmp_path / ".factory").mkdir()
-
+        # Always returns True - per-cycle limits are enforced within BobRunner
         assert _budget_allows_respawn("bob", tmp_path) is True
-
-    def test_returns_false_over_ceiling(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from factory.ceo_completion import _budget_allows_respawn
-        from factory.runners.usage import log_usage
-
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
-        (tmp_path / ".factory").mkdir()
-        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
-
-        assert _budget_allows_respawn("bob", tmp_path) is False
 
     def test_claude_always_allowed(self, tmp_path: Path) -> None:
         from factory.ceo_completion import _budget_allows_respawn

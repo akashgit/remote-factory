@@ -129,7 +129,7 @@ async def invoke_agent(
 
     _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
 
-    runner = get_runner(runner_name)
+    runner = get_runner(runner_name, project_path=project_path)
 
     try:
         stdout, return_code = await runner.headless(
