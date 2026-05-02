@@ -1,0 +1,147 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: "Data Flow — Core Pipeline"
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+inputs: {
+  label: "Input Sources"
+  style: { fill: "#BBDEFB"; stroke: "#1565C0"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 4
+
+  idea: {
+    label: "Raw idea"
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  spec: {
+    label: "Spec file"
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  repo: {
+    label: "GitHub URL"
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  path: {
+    label: "Local path"
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+}
+
+config: {
+  label: "Configuration"
+  style: { fill: "#E8EAF6"; stroke: "#5C6BC0"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  factory_md: {
+    label: "factory.md"
+    shape: document
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  config_json: {
+    label: "config.json"
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  eval_profile: {
+    label: "eval_profile.json"
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+
+  factory_md -> config_json: "factory init" {
+    style: { font-size: 10; font-color: "#0D1B2A" }
+  }
+}
+
+strategy: {
+  label: "Strategy Layer"
+  style: { fill: "#E8F5E9"; stroke: "#2E7D32"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 4
+
+  observations: {
+    label: observations.md
+    shape: document
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+  research: {
+    label: research.md
+    shape: document
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+  backlog: {
+    label: backlog.md
+    shape: document
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; bold: true }
+  }
+  current: {
+    label: current.md
+    shape: document
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+}
+
+experiments: {
+  label: "Experiment Artifacts"
+  style: { fill: "#FFF3E0"; stroke: "#EF6C00"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 4
+
+  hypothesis: {
+    label: hypothesis.md
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 11; border-radius: 4 }
+  }
+  eval_before: {
+    label: eval_before
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 11; border-radius: 4 }
+  }
+  eval_after: {
+    label: eval_after
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 11; border-radius: 4 }
+  }
+  verdict: {
+    label: verdict.json
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 11; border-radius: 4 }
+  }
+}
+
+external: {
+  label: "External"
+  style: { fill: "#F3E5F5"; stroke: "#7B1FA2"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 3
+
+  github: {
+    label: GitHub
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+  vault: {
+    label: "Obsidian Vault"
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+  results_tsv: {
+    label: results.tsv
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12 }
+  }
+}
+
+inputs -> config: "resolve input" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+config -> strategy: "goals + constraints" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+strategy -> experiments: "hypotheses" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+experiments -> external: "persist" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}

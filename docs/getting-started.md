@@ -1,6 +1,6 @@
 # Getting Started
 
-This guide walks you through creating your first project with the Factory, from a one-line idea to a running, self-improving codebase.
+This guide follows the lifecycle of a Factory project — from a one-line idea through autonomous improvement and back to your steering wheel.
 
 ## Prerequisites
 
@@ -10,11 +10,23 @@ Make sure you've completed the [Setup](setup.md) steps:
 - Claude Code installed and authenticated
 - The Factory installed (`factory --help` should work)
 
-## Build — Start from an Idea
+## The Lifecycle
 
-The Factory accepts several types of input. Pick whichever matches where you are.
+Every Factory project follows the same arc:
 
-### From a prompt
+```
+Idea → Build → Backlog appears → Improve (auto / focus / prompt / issues) → Steer → Loop
+```
+
+The Factory handles the transitions automatically. You decide when to intervene.
+
+---
+
+## 1. Start from an Idea
+
+The Factory accepts three entry points depending on how far along your thinking is.
+
+### Build — you know what you want
 
 The simplest path. Describe what you want and the Factory handles everything else:
 
@@ -25,71 +37,152 @@ factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 This will:
 
 1. Create a project directory at `~/factory-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
-2. Initialize a git repo
+2. Initialize a git repo and scaffold the project
 3. Save your prompt as the build spec (`.factory/strategy/current.md`)
-4. Launch the CEO agent in build mode
+4. Launch the CEO agent in Build mode
 
-The directory name is derived from your prompt (lowercased, slugified, truncated to 50 chars). Set `FACTORY_PROJECTS_DIR` to change the parent directory:
+The directory name is derived from your prompt (lowercased, slugified, truncated to 50 chars). Set `FACTORY_PROJECTS_DIR` to change the parent directory.
 
-```bash
-export FACTORY_PROJECTS_DIR=~/my-projects
-factory ceo "Build a weather dashboard"
-# creates ~/my-projects/build-a-weather-dashboard/
-```
-
-### From an idea file
-
-If you have a longer spec written up in a markdown file:
+You can also pass a spec file or a GitHub URL:
 
 ```bash
-factory ceo ~/ideas/weather-dashboard.md
+factory ceo ~/ideas/weather-dashboard.md      # longer spec as markdown
+factory ceo https://github.com/user/repo      # clone and improve
 ```
 
-The Factory reads the file contents as the build spec and creates a project directory named after the file. This is useful when your idea needs more than a one-liner — write out the requirements, constraints, and examples in the file.
+### Interactive — you have a rough idea
 
-### From a GitHub repo
-
-Clone and improve an existing repo:
-
-```bash
-factory ceo https://github.com/user/repo
-```
-
-The Factory clones the repo to a temporary directory, discovers what it does, sets up evaluation dimensions, and starts improving it. If you plan to keep the results, clone the repo yourself first and use the local directory path instead — temp directories don't survive reboots.
-
-### Interactive ideation
-
-If you have a rough idea but want to brainstorm before building:
+When you want to brainstorm before committing to a design:
 
 ```bash
 factory ceo "distributed eval runner" --mode interactive
 ```
 
-The CEO researches the space via the Researcher, then iteratively refines the idea with you through the Distiller agent. Once you approve the final spec, it proceeds to build.
+Interactive mode runs a three-step loop before any code is written:
 
-## Improve — Make an Existing Codebase Better
+1. **Research** — the Researcher surveys similar projects, tech stacks, and pitfalls
+2. **Distill** — the Distiller synthesizes the research into a structured spec (features, architecture, non-goals)
+3. **Iterate** — the CEO presents the draft to you for feedback. Revise until you approve.
 
-Point the Factory at a local codebase:
+Once you sign off, the spec is persisted and the Factory proceeds to Build mode. Incompatible with `--headless` and `--focus`.
+
+### Research — you have a metric to optimize
+
+For projects where the goal is to improve a measurable metric against a dataset — benchmarks, model tuning, prompt optimization:
+
+```bash
+factory ceo "SWE-bench solver agent" --mode research
+```
+
+Research ideation works like interactive mode but the Distiller collects additional configuration:
+
+- **Research Target** — the metric to improve, the command to run evaluation, where results are written
+- **Mutable Surfaces** — files the Builder is allowed to modify
+- **Fixed Surfaces** — ground truth data and eval infrastructure that must never be touched
+- **Research Constraints** — additional rules (e.g., "do not use GPT-4 for cost reasons")
+
+Once you approve the spec, the Factory builds the project and transitions to the research improvement loop. See [Research Mode in Detail](#research-mode-in-detail) below.
+
+---
+
+## 2. The Build Phase
+
+Whichever entry point you chose, Build mode follows the same sequence:
+
+1. The Researcher does a focused research pass ("how do we build this?")
+2. The Strategist creates a phased implementation plan
+3. The Builder implements each phase, opening PRs along the way
+4. An E2E verification gate confirms the project actually runs
+
+When Build completes, the project has code, tests, a `factory.md` configuration, and a discovered eval profile. Items that were deferred during build — performance improvements, edge cases, nice-to-haves — appear in the **backlog**.
+
+---
+
+## 3. The Backlog Appears
+
+After the first build, the Factory creates `.factory/strategy/backlog.md` — a unified work queue that feeds all future improvement. The backlog accumulates items from several sources:
+
+- Features deferred during initial build
+- Issues you file on GitHub
+- Items the Researcher discovers during observation
+- Ideas you add manually with `factory backlog-add`
+
+```bash
+factory backlog-list ~/my-project                     # see what's queued
+factory backlog-add ~/my-project "add rate limiting"  # add your own item
+factory backlog-remove ~/my-project "old item"        # remove a completed item
+```
+
+---
+
+## 4. Improve — The Core Loop
+
+Point the Factory at an existing codebase and it runs the improvement cycle:
 
 ```bash
 factory ceo ~/my-project
 ```
 
-If the project already has a `.factory/` directory, the Factory resumes where it left off. If not, it runs discovery first — detecting the language, framework, and test setup — then starts improvement cycles.
+If the project already has a `.factory/` directory, the Factory resumes where it left off. If not, it runs discovery first — detecting the language, framework, and test setup — then starts improving.
 
 ### What happens in a cycle
 
 1. **Observe** — the Researcher analyzes the project and searches for best practices
-2. **Hypothesize** — the Strategist generates ranked hypotheses from the backlog
+2. **Hypothesize** — the Strategist generates ranked hypotheses from the backlog using FEEC priority (Fix > Exploit > Explore > Combine)
 3. **Build** — the Builder implements one hypothesis on an experiment branch
-4. **Guard** — the Reviewer checks for guard violations
-5. **Measure** — the Evaluator scores before and after
-6. **Decide** — the CEO keeps (score went up) or reverts (score went down)
+4. **Guard** — the Reviewer checks for guard violations and code quality
+5. **Measure** — the Evaluator scores before and after using the three-tier eval system
+6. **Decide** — the CEO runs precheck (non-overridable hard gate) then keeps (score went up) or reverts (score went down)
 7. **Record** — the Archivist records the outcome for future learning
 
-### Continuous improvement
+Each cycle produces a numbered experiment directory under `.factory/experiments/` with the hypothesis, diffs, eval results, and verdict.
 
-`factory run` is equivalent to `factory ceo` but designed for unattended operation — run it in a loop so the Factory keeps improving your project:
+---
+
+## 5. Steering the Factory
+
+The Factory runs autonomously, but you have four ways to steer it:
+
+### `--focus` — build exactly one thing
+
+When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits:
+
+```bash
+factory ceo ~/my-project --focus "add authentication middleware"
+factory ceo ~/my-project --focus "fix the CSV export bug"
+```
+
+The entire pipeline is scoped to that single target — the Researcher focuses its research, the Strategist generates exactly one hypothesis, and after the keep/revert decision the cycle ends. Mutually exclusive with `--loop`.
+
+### `--prompt` — give general direction
+
+Nudge the Strategist's hypothesis generation without pinning a specific item:
+
+```bash
+factory ceo ~/my-project --prompt "focus on performance improvements"
+```
+
+### GitHub Issues — async steering
+
+File issues on the project's GitHub repo. The Strategist reads open issues and factors them into hypothesis ranking:
+
+```bash
+gh issue create --title "Add WebSocket support" --body "Need real-time updates for the dashboard"
+```
+
+### `backlog-add` — queue an item
+
+Add items directly to the backlog for the next cycle to pick up:
+
+```bash
+factory backlog-add ~/my-project "add structured logging"
+```
+
+---
+
+## 6. Continuous Loop
+
+For unattended operation, wrap the CEO in a heartbeat loop:
 
 ```bash
 factory run ~/my-project --loop                    # every 30 min (default)
@@ -114,75 +207,106 @@ factory ceo ~/my-project              # interactive (default)
 factory ceo ~/my-project --headless   # pipe mode, no interaction
 ```
 
-## Focus — Build Exactly One Thing
+---
 
-When you know exactly what you want built, `--focus` pins a single item from the backlog, generates one hypothesis, runs one experiment, and exits:
+## Research Mode in Detail
 
-```bash
-factory ceo ~/my-project --focus "add authentication middleware"
-factory ceo ~/my-project --focus "fix the CSV export bug"
-factory ceo ~/my-project --focus "add structured logging"
+Research mode replaces the standard Improve loop with a specialized cycle designed for metric optimization against a dataset. It adds the Failure Analyst agent, leakage guards, and monotonic improvement enforcement.
+
+### When to use it
+
+Use research mode when your project has a measurable target metric and a reproducible evaluation command — benchmarks (SWE-bench, HumanEval), model accuracy, prompt optimization, CAD query systems, mathematical reasoning.
+
+### Configuring a research project
+
+The research target is configured in `factory.md`:
+
+```markdown
+## Research Target
+- objective: maximize SWE-bench resolve rate
+- metric: resolved/total
+- target: 0.35
+- run_command: python run_benchmark.py
+- result_path: results/output.json
+- timeout: 3600
+
+## Mutable Surfaces
+- src/agent.py
+- src/localization.py
+- prompts/*.md
+
+## Fixed Surfaces
+- eval/
+- data/ground_truth.json
+- tests/
 ```
 
-If the item isn't already in the backlog, it gets added automatically. The entire pipeline is scoped to that single target:
+**Mutable surfaces** are files the Builder can change. **Fixed surfaces** are ground truth data and eval infrastructure that must never be modified. Fixed surfaces are fingerprinted for leakage detection.
 
-- The **Researcher** focuses its web research on the target item
-- The **Strategist** generates exactly one hypothesis — no other backlog items are touched
-- The **Builder** implements it on an experiment branch
-- After the keep/revert decision, the cycle ends — no looping back for more hypotheses
+### The research cycle
 
-`--focus` requires the project to already be built (improve or research mode). It's mutually exclusive with `--loop`.
+Research mode follows seven phases:
 
-## Research — Improve a Metric Iteratively
+| Phase | Agent | What happens |
+|-------|-------|-------------|
+| **R0 — Baseline** | Evaluator | Run `run_command`, record starting metric |
+| **R1 — Failure Analysis** | Failure Analyst | Classify failures by root cause, aggregate into categories, suggest interventions |
+| **R1.5 — Research** | Researcher | Search web for targeted solutions to dominant failure patterns |
+| **R2 — Strategy** | Strategist | Generate 1–3 hypotheses targeting dominant failure modes |
+| **R3 — Build** | Builder | Implement hypothesis, modifying only mutable surfaces |
+| **R4 — Run** | Evaluator | Re-run `run_command`, extract new metric |
+| **R5 — Verdict** | CEO | Keep if metric improved monotonically; revert otherwise |
 
-For projects where the goal is to improve a measurable metric against a dataset — benchmarks, model tuning, prompt optimization — research mode provides a specialized workflow with leakage guards and metric tracking.
+### Cycle progression example
 
-### From a new idea
+A SWE-bench solver agent improving over five cycles:
+
+| Cycle | Metric | Failure Mode Targeted | Verdict | Cumulative |
+|-------|--------|----------------------|---------|------------|
+| 000 | 0.18 | — (baseline) | — | 0.18 |
+| 001 | 0.22 | FILE_NOT_FOUND — agent searched wrong directories | KEEP | 0.22 |
+| 002 | 0.24 | SYNTAX_ERROR — generated patches had indentation bugs | KEEP | 0.24 |
+| 003 | 0.21 | TIMEOUT — overly broad search strategy | REVERT | 0.24 |
+| 004 | 0.27 | INCOMPLETE_EDIT — partial file modifications | KEEP | 0.27 |
+| 005 | 0.30 | WRONG_FILE — localization errors | KEEP | 0.30 |
+
+Cycle 003 regressed below the previous best (0.24), so it was automatically reverted. The metric ratchets forward — it can never go below the previous best.
+
+### Leakage guards
+
+Research mode enforces three layers of ground truth protection:
+
+1. **Token overlap** — fingerprints fixed surface files and checks hypothesis/diff text for suspicious token overlap using Jaccard similarity
+2. **Negation hints** — detects patterns like "do NOT use subtraction" that encode ground truth by exclusion
+3. **Specific values** — extracts numeric literals and quoted strings from fixed surfaces, flags if they appear in hypothesis text
+
+Leakage checks run at three hard gates: Strategy review, Builder review, and Precheck. A medium or high leakage risk triggers an automatic redirect or revert.
+
+### Running research mode
 
 ```bash
+# New research project (ideation → build → research loop)
 factory ceo "SWE-bench solver agent" --mode research
-factory ceo "prompt optimization for code review" --mode research
+
+# Existing research project (skip ideation, run research loop)
+factory ceo ~/my-swe-bench-solver --mode research
+
+# Focus on a specific hypothesis within research mode
+factory ceo ~/my-swe-bench-solver --mode research --focus "try chain-of-thought prompting"
+
+# Continuous research loop
+factory run ~/my-swe-bench-solver --mode research --loop
 ```
 
-Research ideation works like interactive mode but the Distiller collects additional configuration:
+### Named use cases
 
-- **Research Target** — the metric to improve, how to run the evaluation, and where results are written
-- **Mutable Surfaces** — which files the Builder is allowed to modify
-- **Fixed Surfaces** — ground truth data and eval infrastructure that must never be touched (fingerprinted for leakage detection)
-- **Research Constraints** — additional rules (e.g., "do not use GPT-4 for cost reasons")
-- **Cost Budget** — per-cycle or total budget limits
+| Project | Metric | Mutable Surfaces | What improves |
+|---------|--------|-----------------|---------------|
+| **SWE-bench solver** | resolve rate | agent logic, prompts, localization | Patch generation accuracy |
+| **Mathematical reasoning** | solve rate | chain-of-thought templates, tool calls | Proof strategy selection |
+| **CAD query optimization** | query accuracy | query builder, schema mapping | Entity resolution, join logic |
 
-Once you approve the spec, the Factory builds the project and transitions to the research improvement loop.
-
-### On an existing research project
-
-```bash
-factory ceo ~/my-research-project --mode research
-factory ceo ~/my-research-project --mode research --focus "try chain-of-thought"
-```
-
-If the project already has `research_target` configured in `factory.md`, research mode skips ideation and runs the research improvement loop directly. Use `--focus` to target a specific hypothesis.
-
-Research mode requires foreground mode for new projects (incompatible with `--headless`). It's mutually exclusive with `--prompt`.
-
-## Interactive — Brainstorm Before Building
-
-When you have a rough idea but want to explore the space before committing to a design:
-
-```bash
-factory ceo "distributed eval runner" --mode interactive
-factory ceo "personal finance tracker" --mode interactive
-```
-
-Interactive mode runs a three-step loop before any code is written:
-
-1. **Research** — the Researcher surveys similar projects, tech stacks, architecture patterns, and pitfalls
-2. **Distill** — the Distiller synthesizes the research into a structured project spec (features, architecture, non-goals)
-3. **Iterate** — the CEO presents the draft to you. Give feedback, ask for changes, or request more research on a specific topic. The Distiller revises until you approve.
-
-Once you sign off, the spec is persisted and the Factory proceeds to Build mode. Phase 0 research is broad ("what should we build?"); Build mode does a second, focused research pass ("how do we build it?").
-
-`--mode interactive` is incompatible with `--headless` and `--focus`.
+---
 
 ## Writing a `factory.md`
 

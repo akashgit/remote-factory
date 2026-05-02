@@ -24,7 +24,7 @@ Prompt: `factory/agents/prompts/ceo.md`
 
 ### Layer 3: Specialist Agents
 
-Seven specialist Claude Code subprocesses, each with a narrow responsibility:
+Eight specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
@@ -35,6 +35,7 @@ Seven specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Evaluator** | Run evals, compare before/after scores | `factory agent evaluator --task "..."` |
 | **Archivist** | Write learnings to vault, update dashboards | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
+| **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
@@ -60,11 +61,14 @@ The CEO detects project state and routes to the appropriate mode:
 |------|------|-------------|
 | `--focus "item"` | **Targeted** | Pins one backlog item, one hypothesis, one experiment, then exits |
 | `--mode interactive` | **Interactive** | Research → Distiller spec → user feedback loop → build |
+| `--mode research` | **Research** | Failure analysis → targeted research → hypothesis → build → metric evaluation with leakage guards and monotonic improvement |
 | `--mode meta` | **Meta** | Full Improve loop on the factory itself, then ACE playbook evolution |
 
 State detection logic lives in `factory/state.py`.
 
 ![State Machine](diagrams/state-machine.svg)
+
+> **Note:** Explicit flags (`--mode interactive`, `--mode research`, `--mode meta`, `--focus`) override auto-detection. All modes return to `has_factory` on completion.
 
 ## Data Flow
 
@@ -86,6 +90,27 @@ factory/discovery/generate.py     → Generate eval/score.py script
 5. User approves         → spec persisted to .factory/strategy/current.md
 6. Transition            → proceed to Build mode
 ```
+
+### Research Pipeline (Research Mode)
+
+```
+1. Baseline        → Evaluator runs run_command, records starting metric
+2. Failure Analyst → Classifies failures (per-instance root cause + aggregated categories)
+3. Researcher      → Web search for targeted solutions to dominant failure patterns
+4. Strategist      → 1-3 hypotheses targeting dominant failure modes
+   └─ CEO gate: mutable_surfaces check + leakage scan
+5. Builder         → Implements hypothesis (mutable surfaces only)
+   └─ CEO gate: fixed_surfaces check + leakage scan
+6. Run             → Re-executes run_command, extracts new metric
+7. Verdict         → Keep if metric >= previous_best AND hygiene intact; else revert
+```
+
+Key differences from Improve mode:
+- **Failure Analyst** replaces the standard Researcher observation step
+- **Mutable/fixed surfaces** enforce strict file-level access control
+- **Leakage guards** scan hypotheses and diffs for ground truth contamination (token overlap, negation hints, specific values)
+- **Monotonic improvement** — the metric must never regress below the previous best
+- **Precheck** adds fixed surface guard + leakage detector on top of standard checks
 
 ### Experiment Loop (Improve Mode)
 
@@ -109,6 +134,30 @@ factory/eval/guards.py    → Guard rule enforcement (scope, immutability)
 ```
 
 ![Eval System](diagrams/eval-system.svg)
+
+### Data Flow
+
+![Core Pipeline](diagrams/dataflow-core.svg)
+
+For research projects and ACE self-improvement, additional data flows manage mutable/fixed surfaces, leakage guards, and playbook evolution:
+
+![Research & Self-Improvement](diagrams/dataflow-research.svg)
+
+### Experiment Lifecycle
+
+Each experiment follows three phases. **Phase 1** observes the project and generates hypotheses:
+
+![Observe & Plan](diagrams/lifecycle-observe.svg)
+
+**Phase 2** executes the approved hypothesis — building, reviewing, and evaluating:
+
+![Execute](diagrams/lifecycle-execute.svg)
+
+**Phase 3** runs a non-overridable precheck gate and makes the keep/revert decision:
+
+![Decision](diagrams/lifecycle-decide.svg)
+
+In standard mode, the cycle loops back to the next hypothesis. In targeted mode (`--focus`), it exits after one decision.
 
 ### Strategy
 
@@ -167,11 +216,14 @@ Generated at runtime — not checked into version control:
 
 ## Diagrams
 
-- [Architecture Overview](diagrams/architecture.svg)
-- [Data Flow](diagrams/data-flow.svg)
-- [Experiment Lifecycle](diagrams/experiment-lifecycle.svg)
-- [Eval System](diagrams/eval-system.svg)
 - [State Machine](diagrams/state-machine.svg)
+- [Architecture Overview](diagrams/architecture.svg)
+- [Eval System](diagrams/eval-system.svg)
+- [Data Flow — Core Pipeline](diagrams/dataflow-core.svg)
+- [Data Flow — Research & Self-Improvement](diagrams/dataflow-research.svg)
+- [Experiment Lifecycle — Observe & Plan](diagrams/lifecycle-observe.svg)
+- [Experiment Lifecycle — Execute](diagrams/lifecycle-execute.svg)
+- [Experiment Lifecycle — Decide](diagrams/lifecycle-decide.svg)
 
 ## Related Docs
 
