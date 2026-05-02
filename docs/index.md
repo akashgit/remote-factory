@@ -211,7 +211,7 @@ graph LR
 
 ## Built with the Factory
 
-The factory is used to build and improve projects daily. Here are a few examples:
+The factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
 
 | Project | What it does | Mode |
 |---------|-------------|------|
