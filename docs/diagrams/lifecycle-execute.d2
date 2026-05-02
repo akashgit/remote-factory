@@ -54,10 +54,10 @@ e2e: {
   style: { fill: "#C8E6C9"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6; italic: true }
 }
 
-baseline -> begin -> issue -> builder -> ceo_b -> reviewer -> post_eval
+baseline -> begin -> issue -> builder -> ceo_b -> reviewer -> post_eval -> e2e
 
-builder -> e2e: "build mode" {
-  style: { stroke: "#2E7D32"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+e2e -> e2e: "fail → fix" {
+  style: { stroke: "#C62828"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
 }
 
 ceo_b -> builder: "redirect" {

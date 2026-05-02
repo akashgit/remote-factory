@@ -32,7 +32,8 @@ factory ceo ~/my-project --focus "add WebSocket support"
 graph LR
     A["🔍 Researcher<br><i>observe</i>"] --> B["🎯 Strategist<br><i>hypothesize</i>"]
     B --> C["🔨 Builder<br><i>implement</i>"]
-    C --> D["📊 Evaluator<br><i>measure</i>"]
+    C --> RV["🛡️ Reviewer<br><i>guard</i>"]
+    RV --> D["📊 Evaluator<br><i>measure</i>"]
     D --> E{"CEO<br><i>decide</i>"}
     E -- "score ↑" --> F["✅ KEEP"]
     E -- "score ↓" --> G["↩️ REVERT"]

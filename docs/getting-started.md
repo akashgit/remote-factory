@@ -230,19 +230,18 @@ The research target is configured in `factory.md`:
 - result_path: results/output.json
 - timeout: 3600
 
-## Scope
-### Modifiable
+## Mutable Surfaces
 - src/agent.py
 - src/localization.py
 - prompts/*.md
 
-### Read-only
+## Fixed Surfaces
 - eval/
 - data/ground_truth.json
 - tests/
 ```
 
-The `Modifiable` section defines **mutable surfaces** — files the Builder can change. Everything under `Read-only` plus eval infrastructure constitutes **fixed surfaces** — ground truth that must never be modified. Fixed surfaces are fingerprinted for leakage detection.
+**Mutable surfaces** are files the Builder can change. **Fixed surfaces** are ground truth data and eval infrastructure that must never be modified. Fixed surfaces are fingerprinted for leakage detection.
 
 ### The research cycle
 
