@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Factory Diagrams — Review</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --bg: #ffffff; --fg: #1a1a2e; --card: #f8f9fa; --border: #dee2e6; --accent: #4361ee; }
+  [data-theme="dark"] { --bg: #0d1117; --fg: #c9d1d9; --card: #161b22; --border: #30363d; --accent: #58a6ff; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--fg); transition: background 0.2s, color 0.2s; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 20px; }
+  .toggle { cursor: pointer; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--fg); font-size: 13px; }
+  nav { display: flex; gap: 8px; padding: 12px 32px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  nav a { padding: 6px 12px; border-radius: 16px; font-size: 13px; text-decoration: none; color: var(--fg); background: var(--card); border: 1px solid var(--border); transition: all 0.15s; }
+  nav a:hover, nav a.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  main { padding: 24px 32px; max-width: 1200px; margin: 0 auto; }
+  .diagram { margin-bottom: 48px; scroll-margin-top: 70px; }
+  .diagram h2 { font-size: 18px; margin-bottom: 4px; }
+  .diagram p { font-size: 14px; color: var(--fg); opacity: 0.7; margin-bottom: 12px; }
+  .svg-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; }
+  .svg-wrap img { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  .dims { font-size: 11px; opacity: 0.5; margin-top: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Factory Diagrams — PR #172 Review</h1>
+  <button class="toggle" onclick="toggleTheme()">Toggle Dark/Light</button>
+</header>
+<nav>
+  <a href="#state-machine">State Machine</a>
+  <a href="#architecture">Architecture</a>
+  <a href="#lifecycle-observe">Lifecycle: Observe</a>
+  <a href="#lifecycle-execute">Lifecycle: Execute</a>
+  <a href="#lifecycle-decide">Lifecycle: Decide</a>
+  <a href="#dataflow-core">Data Flow: Core</a>
+  <a href="#dataflow-research">Data Flow: Research</a>
+  <a href="#eval-system">Eval System</a>
+</nav>
+<main>
+  <section class="diagram" id="state-machine">
+    <h2>State Machine</h2>
+    <p>Project state detection and mode routing. Detect → States → Modes.</p>
+    <div class="svg-wrap"><img src="state-machine.svg" alt="State Machine"></div>
+  </section>
+  <section class="diagram" id="architecture">
+    <h2>Architecture</h2>
+    <p>Three-layer system: CLI tools → CEO orchestrator → 8 specialist agents → storage.</p>
+    <div class="svg-wrap"><img src="architecture.svg" alt="Architecture"></div>
+  </section>
+  <section class="diagram" id="lifecycle-observe">
+    <h2>Experiment Lifecycle — Phase 1: Observe & Plan</h2>
+    <p>Study → Researcher → CEO review → Strategist → CEO hard gate → approved hypotheses. Research mode adds Failure Analyst and leakage checks.</p>
+    <div class="svg-wrap"><img src="lifecycle-observe.svg" alt="Lifecycle: Observe"></div>
+  </section>
+  <section class="diagram" id="lifecycle-execute">
+    <h2>Experiment Lifecycle — Phase 2: Execute</h2>
+    <p>Baseline eval → begin experiment → GitHub issue → Builder → CEO review → Reviewer → post-change eval.</p>
+    <div class="svg-wrap"><img src="lifecycle-execute.svg" alt="Lifecycle: Execute"></div>
+  </section>
+  <section class="diagram" id="lifecycle-decide">
+    <h2>Experiment Lifecycle — Phase 3: Decision</h2>
+    <p>Precheck hard gate with 4 checks → KEEP or REVERT. Research mode adds monotonic improvement gate.</p>
+    <div class="svg-wrap"><img src="lifecycle-decide.svg" alt="Lifecycle: Decide"></div>
+  </section>
+  <section class="diagram" id="dataflow-core">
+    <h2>Data Flow — Core Pipeline</h2>
+    <p>Inputs → configuration → strategy → experiment artifacts → external storage.</p>
+    <div class="svg-wrap"><img src="dataflow-core.svg" alt="Data Flow: Core"></div>
+  </section>
+  <section class="diagram" id="dataflow-research">
+    <h2>Data Flow — Research & Self-Improvement</h2>
+    <p>Research configuration with mutable/fixed surfaces, run artifacts with leakage guards, and ACE self-improvement loop.</p>
+    <div class="svg-wrap"><img src="dataflow-research.svg" alt="Data Flow: Research"></div>
+  </section>
+  <section class="diagram" id="eval-system">
+    <h2>Three-Tier Eval System</h2>
+    <p>Hygiene (6 dims) + Growth (5 dims) + Project (user-defined) → weight mixer → composite score → pass/fail.</p>
+    <div class="svg-wrap"><img src="eval-system.svg" alt="Eval System"></div>
+  </section>
+</main>
+<script>
+  function toggleTheme() {
+    document.body.toggleAttribute('data-theme');
+    if (document.body.hasAttribute('data-theme')) document.body.setAttribute('data-theme', 'dark');
+  }
+  const links = document.querySelectorAll('nav a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const a = document.querySelector(`nav a[href="#${e.target.id}"]`);
+        if (a) a.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-10% 0px -80% 0px' });
+  document.querySelectorAll('.diagram').forEach(s => observer.observe(s));
+</script>
+</body>
+</html>

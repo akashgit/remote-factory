@@ -68,6 +68,8 @@ State detection logic lives in `factory/state.py`.
 
 ![State Machine](diagrams/state-machine.svg)
 
+> **Note:** Explicit flags (`--mode interactive`, `--mode research`, `--mode meta`, `--focus`) override auto-detection. All modes return to `has_factory` on completion.
+
 ## Data Flow
 
 ### Discovery Pipeline
@@ -133,6 +135,30 @@ factory/eval/guards.py    → Guard rule enforcement (scope, immutability)
 
 ![Eval System](diagrams/eval-system.svg)
 
+### Data Flow
+
+![Core Pipeline](diagrams/dataflow-core.svg)
+
+For research projects and ACE self-improvement, additional data flows manage mutable/fixed surfaces, leakage guards, and playbook evolution:
+
+![Research & Self-Improvement](diagrams/dataflow-research.svg)
+
+### Experiment Lifecycle
+
+Each experiment follows three phases. **Phase 1** observes the project and generates hypotheses:
+
+![Observe & Plan](diagrams/lifecycle-observe.svg)
+
+**Phase 2** executes the approved hypothesis — building, reviewing, and evaluating:
+
+![Execute](diagrams/lifecycle-execute.svg)
+
+**Phase 3** runs a non-overridable precheck gate and makes the keep/revert decision:
+
+![Decision](diagrams/lifecycle-decide.svg)
+
+In standard mode, the cycle loops back to the next hypothesis. In targeted mode (`--focus`), it exits after one decision.
+
 ### Strategy
 
 `factory/strategy.py` implements FEEC priority: **Fix** > **Exploit** > **Explore** > **Combine**.
@@ -190,11 +216,14 @@ Generated at runtime — not checked into version control:
 
 ## Diagrams
 
-- [Architecture Overview](diagrams/architecture.svg)
-- [Data Flow](diagrams/data-flow.svg)
-- [Experiment Lifecycle](diagrams/experiment-lifecycle.svg)
-- [Eval System](diagrams/eval-system.svg)
 - [State Machine](diagrams/state-machine.svg)
+- [Architecture Overview](diagrams/architecture.svg)
+- [Eval System](diagrams/eval-system.svg)
+- [Data Flow — Core Pipeline](diagrams/dataflow-core.svg)
+- [Data Flow — Research & Self-Improvement](diagrams/dataflow-research.svg)
+- [Experiment Lifecycle — Observe & Plan](diagrams/lifecycle-observe.svg)
+- [Experiment Lifecycle — Execute](diagrams/lifecycle-execute.svg)
+- [Experiment Lifecycle — Decide](diagrams/lifecycle-decide.svg)
 
 ## Related Docs
 

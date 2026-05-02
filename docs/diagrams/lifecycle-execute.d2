@@ -1,0 +1,72 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: "Experiment Lifecycle — Phase 2: Execute"
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+baseline: {
+  label: "Baseline\nEval"
+  style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+begin: {
+  label: "factory begin\n+ branch"
+  style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+}
+
+issue: {
+  label: "GitHub Issue"
+  style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+}
+
+builder: {
+  label: Builder
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+ceo_b: {
+  label: "CEO Review"
+  shape: hexagon
+  style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 13 }
+}
+
+reviewer: {
+  label: Reviewer
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+post_eval: {
+  label: "Post-change\nEval"
+  style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+e2e: {
+  label: "E2E Smoke Test"
+  style: { fill: "#C8E6C9"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6; italic: true }
+}
+
+baseline -> begin -> issue -> builder -> ceo_b -> reviewer -> post_eval
+
+builder -> e2e: "build mode" {
+  style: { stroke: "#2E7D32"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+}
+
+ceo_b -> builder: "redirect" {
+  style: { stroke: "#C62828"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+}
+
+archivist_note: {
+  label: "Archivist fires after Builder and after each experiment"
+  near: bottom-center
+  shape: text
+  style: { font-size: 11; italic: true; font-color: "#0D1B2A" }
+}

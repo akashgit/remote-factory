@@ -1,238 +1,148 @@
 direction: down
 
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
 title: {
   label: Three-Tier Eval System
   near: top-center
   shape: text
-  style: { font-size: 28; bold: true; font-color: "#1a1a2e" }
-}
-
-# ── Input ─────────────────────────────────────────
-
-project: {
-  label: "Target Project"
-  shape: rectangle
-  style: { fill: "#e3f2fd"; stroke: "#1976d2"; border-radius: 8 }
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
 }
 
 eval_cmd: {
   label: "factory eval <path>"
   shape: parallelogram
-  style: { fill: "#e8eaf6"; stroke: "#5c6bc0"; border-radius: 4 }
+  style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 14 }
 }
-
-# ── Tier 1: Hygiene (auto-discovered) ─────────────
 
 hygiene: {
-  label: "Tier 1: Hygiene Dimensions"
-  style: { fill: "#e3f2fd"; stroke: "#1565c0"; border-radius: 12; bold: true }
+  label: "Tier 1: Hygiene (auto-discovered)"
+  style: { fill: "#BBDEFB"; stroke: "#1565C0"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-rows: 2
 
   tests: {
-    label: "tests\npytest"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    label: tests
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   lint: {
-    label: "lint\nruff"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    label: lint
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   type_check: {
-    label: "type_check\nmypy"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    label: type_check
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   coverage: {
-    label: "coverage\npytest --cov"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+    label: coverage
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
-  guard_patterns: {
-    label: "guard_patterns\nrule compliance"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  guards: {
+    label: guard_patterns
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
-  config_parser: {
-    label: "config_parser\nfactory.md valid"
-    shape: rectangle
-    style: { fill: "#bbdefb"; stroke: "#1976d2"; border-radius: 6 }
+  config: {
+    label: config_parser
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
 }
-
-# ── Tier 2: Growth (computed locally) ─────────────
 
 growth: {
-  label: "Tier 2: Growth Dimensions"
-  style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 12; bold: true }
+  label: "Tier 2: Growth (computed locally)"
+  style: { fill: "#C8E6C9"; stroke: "#2E7D32"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-rows: 2
 
   capability: {
-    label: "capability_surface\nmodules, functions,\nentry points"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    label: capability_surface
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   diversity: {
-    label: "experiment_diversity\ncategory distribution"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    label: experiment_diversity
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   observability: {
-    label: "observability\nlogging, tracing"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    label: observability
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
-  research: {
-    label: "research_grounding\ncitations, evidence"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+  research_g: {
+    label: research_grounding
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
   effectiveness: {
-    label: "factory_effectiveness\nkeep rate, score delta"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#43a047"; border-radius: 6 }
+    label: factory_effectiveness
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
 }
-
-# ── Tier 3: Project (user-defined) ────────────────
 
 project_eval: {
-  label: "Tier 3: Project Eval (user-defined)"
-  style: { fill: "#f3e5f5"; stroke: "#7b1fa2"; border-radius: 12; bold: true }
+  label: "Tier 3: Project (user-defined, optional)"
+  style: { fill: "#E1BEE7"; stroke: "#7B1FA2"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 3
 
-  dim1: {
-    label: "benchmark_accuracy\npython eval/benchmark.py"
-    shape: rectangle
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  d1: {
+    label: "benchmark"
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
-  dim2: {
-    label: "latency_p99\npython eval/latency.py"
-    shape: rectangle
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6 }
+  d2: {
+    label: "latency"
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
   }
-  dim3: {
-    label: "...\ncustom dimensions"
-    shape: rectangle
-    style: { fill: "#e1bee7"; stroke: "#8e24aa"; border-radius: 6; italic: true }
+  d3: {
+    label: "..."
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; italic: true; border-radius: 4 }
   }
 }
-
-# ── Weight Mixer ──────────────────────────────────
 
 mixer: {
   label: "Weight Mixer"
-  style: { fill: "#fff3e0"; stroke: "#ef6c00"; border-radius: 12; bold: true }
-
-  default_weights: {
-    label: |md
-      **Default weights:**
-      No project eval → 50% / 50% / 0%
-      With project eval → 30% / 20% / 50%
-      Custom → from `## Eval Weights`
-    |
-    shape: rectangle
-    style: { fill: "#fff8e1"; stroke: "#ff8f00"; border-radius: 8; font-size: 12 }
-  }
-
-  normalize: {
-    label: "Normalize each tier\nto its target weight"
-    shape: rectangle
-    style: { fill: "#ffe0b2"; stroke: "#ef6c00"; border-radius: 8 }
-  }
-
-  default_weights -> normalize
+  shape: hexagon
+  style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 14; bold: true }
 }
-
-# ── Output ────────────────────────────────────────
 
 composite: {
-  label: "Composite Score\n0.0 – 1.0"
+  label: "Composite Score (0.0–1.0)"
   shape: diamond
-  style: { fill: "#fff9c4"; stroke: "#f9a825"; font-size: 16; bold: true }
-}
-
-threshold: {
-  label: "≥ Threshold?"
-  shape: hexagon
-  style: { fill: "#fff9c4"; stroke: "#f57f17" }
+  style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 14; bold: true }
 }
 
 pass: {
-  label: "PASS ✅"
-  shape: rectangle
-  style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8; bold: true }
+  label: PASS
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
 }
 
 fail: {
-  label: "FAIL ❌"
-  shape: rectangle
-  style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 8; bold: true }
+  label: FAIL
+  style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
 }
 
-# ── Connections ───────────────────────────────────
+eval_cmd -> hygiene
+eval_cmd -> growth
+eval_cmd -> project_eval
 
-project -> eval_cmd
-eval_cmd -> hygiene: "eval/score.py"
-eval_cmd -> growth: "computed locally"
-eval_cmd -> project_eval: "user commands"
-
-hygiene -> mixer: "6 scores"
-growth -> mixer: "5 scores"
-project_eval -> mixer: "N scores"
-
-mixer -> composite: "weighted sum"
-composite -> threshold
-threshold -> pass: "yes"
-threshold -> fail: "no"
-
-# ── Research Mode Interaction ────────────────────
-
-research_mode: {
-  label: "Research Mode Eval"
-  style: { fill: "#e0f7fa"; stroke: "#00838f"; border-radius: 12; bold: true }
-
-  run_cmd: {
-    label: "run_command\n(research target)"
-    shape: parallelogram
-    style: { fill: "#b2ebf2"; stroke: "#00838f"; border-radius: 4 }
-  }
-
-  metric: {
-    label: "Research Metric\n(primary signal)"
-    shape: diamond
-    style: { fill: "#b2ebf2"; stroke: "#00838f"; font-size: 14; bold: true }
-  }
-
-  monotonic: {
-    label: "metric >= previous_best?"
-    shape: hexagon
-    style: { fill: "#fff9c4"; stroke: "#f57f17" }
-  }
-
-  leakage_gate: {
-    label: "Leakage Check\n(fixed surfaces)"
-    shape: hexagon
-    style: { fill: "#ffcdd2"; stroke: "#c62828"; font-size: 13 }
-  }
-
-  r_pass: {
-    label: "KEEP"
-    shape: rectangle
-    style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8; bold: true }
-  }
-
-  r_fail: {
-    label: "REVERT"
-    shape: rectangle
-    style: { fill: "#ffcdd2"; stroke: "#c62828"; border-radius: 8; bold: true }
-  }
-
-  run_cmd -> metric
-  metric -> monotonic
-  monotonic -> leakage_gate: "yes"
-  monotonic -> r_fail: "regressed"
-  leakage_gate -> r_pass: "clean"
-  leakage_gate -> r_fail: "leaked"
+hygiene -> mixer: "50% (or 30%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+growth -> mixer: "50% (or 20%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+project_eval -> mixer: "0% (or 50%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
 }
 
-hygiene -> research_mode: "hygiene as hard gate\n(any regression → revert)" {
-  style: { font-size: 12; stroke: "#00838f"; stroke-dash: 5 }
+mixer -> composite
+composite -> pass: ">= threshold" {
+  style: { stroke: "#2E7D32"; stroke-width: 2; font-size: 12; font-color: "#0D1B2A" }
+}
+composite -> fail: "< threshold" {
+  style: { stroke: "#C62828"; stroke-width: 2; font-size: 12; font-color: "#0D1B2A" }
+}
+
+weights_note: {
+  label: "Weights: 50/50/0 (no project eval) or 30/20/50 (with project eval)"
+  near: bottom-center
+  shape: text
+  style: { font-size: 11; italic: true; font-color: "#0D1B2A" }
 }
