@@ -172,7 +172,7 @@ checks: {
 }
 
 keep: {
-  label: "KEEP — merge PR\nfactory review --approve\nfactory finalize --verdict keep"
+  label: "KEEP — approve PR (open for human review)\nfactory review --approve\nfactory finalize --verdict keep"
   shape: rectangle
   style: { fill: "#c8e6c9"; stroke: "#2e7d32"; border-radius: 8; font-size: 15 }
   width: 320
@@ -241,6 +241,10 @@ e2e_note: {
   shape: rectangle
   style: { fill: "#e8f5e9"; stroke: "#2e7d32"; border-radius: 8; font-size: 13; italic: true }
   width: 320
+}
+
+builder -> e2e_note: "build mode only" {
+  style: { stroke: "#2e7d32"; stroke-dash: 5; font-size: 13 }
 }
 
 # ── Research Mode Branch ──────────────────────

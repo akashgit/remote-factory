@@ -228,7 +228,6 @@ The research target is configured in `factory.md`:
 - target: 0.35
 - run_command: python run_benchmark.py
 - result_path: results/output.json
-- result_parser: json
 - timeout: 3600
 
 ## Scope
