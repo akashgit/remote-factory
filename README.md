@@ -34,14 +34,9 @@ factory ceo "Build a personal homepage with a blog"
 
 Both forms are equivalent. This README uses `uv run python -m factory` throughout so you can copy-paste without installing first. If you've installed the CLI, just replace `uv run python -m factory` with `factory`.
 
-**Optional: set up the vault** for persistent cross-project memory:
+The factory stores all state locally — no external services required beyond Claude Code. Per-project state lives in `.factory/` (add it to `.gitignore`). Global state (project registry, evolved playbooks) lives in `~/.factory/`.
 
-```bash
-export FACTORY_VAULT_PATH=~/factory-vault
-uv run python -m factory vault-init
-```
-
-See the [full setup guide](docs/setup.md) for authentication, MCP servers, and tmux configuration.
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and tmux configuration.
 
 ---
 
@@ -106,7 +101,7 @@ Each improvement cycle:
 4. **Guard** — the Reviewer checks for violations and code quality
 5. **Measure** — the Evaluator scores before and after using the three-tier eval
 6. **Decide** — the CEO runs a hard precheck gate, then keeps (score went up) or reverts (score went down)
-7. **Record** — the Archivist records the outcome for future learning
+7. **Record** — the Archivist records the outcome to `.factory/archive/` for future learning
 
 ![Experiment Lifecycle — Observe & Plan](docs/diagrams/lifecycle-observe.svg)
 
@@ -322,6 +317,8 @@ factory explain <path> --exp N
 factory study <path>                    # Analyze code + write observations
 factory insights <path>                 # Cross-project patterns
 factory ace <path>                      # ACE playbook evolution
+factory report-update <path>            # Regenerate performance report
+factory registry-list                   # List registered projects
 
 # Backlog
 factory backlog-list <path>
@@ -345,7 +342,7 @@ See `factory --help` for the complete list.
 
 | Doc | What's in it |
 |-----|-------------|
-| [Setup Guide](docs/setup.md) | Full installation, authentication, environment setup |
+| [Setup Guide](docs/setup.md) | Installation, authentication, environment variables, what you don't need |
 | [Getting Started](docs/getting-started.md) | Lifecycle walkthrough, research mode details, factory.md configuration |
 | [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow diagrams |
 | [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |

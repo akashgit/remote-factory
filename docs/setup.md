@@ -84,21 +84,60 @@ The factory uses [MCP](https://modelcontextprotocol.io/) for extended capabiliti
 
 To add MCP servers to a target project, create a `.mcp.json` in its root. The Builder agent will use available MCP tools when working on that project.
 
-## Optional: Obsidian Vault
+## What You Don't Need
 
-The factory can archive experiment history and cross-project knowledge to an Obsidian vault:
+- **No Obsidian.** The factory stores all state locally in `.factory/` inside each project and `~/.factory/` globally. Earlier versions used an Obsidian vault — that dependency has been removed entirely.
+- **No external database.** Everything is flat files: TSV for experiment history, JSON for config and reports, markdown for strategy and archive notes.
+- **No API keys for the factory itself.** The factory spawns Claude Code subprocesses — however you've authenticated Claude Code is how the factory accesses Claude. No separate Anthropic API key is needed.
 
-```bash
-factory vault-init
-```
+## Environment Variables
 
-This creates a vault directory with the expected structure. Configure a custom path:
+The factory reads these environment variables. None are required for basic usage — the defaults work out of the box.
 
-```bash
-export FACTORY_VAULT_PATH=~/my-factory-vault
-```
+### Claude Code Authentication
 
-If unset and the default path doesn't exist, vault features are skipped gracefully.
+The factory inherits Claude Code's authentication. Configure whichever method you use:
+
+| Variable | Purpose |
+|----------|---------|
+| `ANTHROPIC_API_KEY` | Direct API authentication |
+| `CLAUDE_CODE_USE_VERTEX` | Set to `1` for Google Cloud Vertex AI |
+| `ANTHROPIC_VERTEX_PROJECT_ID` | Vertex AI project ID |
+| `CLOUD_ML_REGION` | Vertex AI region (e.g., `us-east5`) |
+
+### Factory Configuration
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `FACTORY_PROJECTS_DIR` | Parent directory for projects created from prompts | `~/factory-projects` |
+| `FACTORY_MODEL` | Model override for agent subprocesses | *(Claude Code default)* |
+| `FACTORY_PLAYBOOKS_DIR` | Directory for ACE-evolved agent playbooks | `~/.factory/playbooks` |
+| `FACTORY_REGISTRY_DIR` | Override global registry location | `~/.factory` |
+| `FACTORY_VAULT_PATH` | Legacy: path to Obsidian vault (optional, for Archivist) | *(unset — not needed)* |
+| `FACTORY_RUNNER` | CLI backend: `claude` or `bob` | `claude` |
+| `FACTORY_RUNNER_QUIET` | Suppress runner output (`1` to enable) | *(unset)* |
+
+### Bob Shell (alternative runner)
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `BOBSHELL_API_KEY` | Bob Shell API key | *(required if using Bob)* |
+| `FACTORY_BOB_DRY_RUN` | Test mode — no API calls (`1` to enable) | *(unset)* |
+| `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` | Per-cycle invocation ceiling | `8` |
+
+### Notifications (optional)
+
+| Variable | Purpose |
+|----------|---------|
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token for push notifications |
+| `TELEGRAM_CHAT_ID` | Telegram chat ID for notifications |
+
+### CEO Behavior (advanced)
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `FACTORY_CEO_RESPAWN_DISABLED` | Disable automatic CEO respawn on crash (`1`) | *(unset)* |
+| `FACTORY_CEO_MAX_RESPAWNS` | Maximum respawn attempts per cycle | `3` |
 
 ## Full Setup From Scratch
 
@@ -117,10 +156,7 @@ cd remote-factory && uv sync && uv tool install -e .
 # 4. Register CEO agent
 factory install
 
-# 5. Optional: Initialize vault
-factory vault-init
-
-# 6. Verify
+# 5. Verify
 factory --help
 factory detect /path/to/any/project
 ```

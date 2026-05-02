@@ -28,7 +28,7 @@ Computed by the factory itself. These measure whether the project is actually ev
 | `capability_surface` | Modules, public functions, entry points | 0.28 |
 | `experiment_diversity` | Variety of hypothesis categories attempted | 0.22 |
 | `observability` | Logging, error handling, monitoring | 0.20 |
-| `research_grounding` | Changes informed by research (vault, papers) | 0.16 |
+| `research_grounding` | Changes informed by research (archive, papers) | 0.16 |
 | `factory_effectiveness` | Keep rate, score trajectory | 0.14 |
 
 Implementation: `factory/eval/growth.py`

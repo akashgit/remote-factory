@@ -28,12 +28,12 @@ Eight specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
-| **Researcher** | Observe code, search for best practices, read vault knowledge | `factory agent researcher --task "..."` |
+| **Researcher** | Observe code, search for best practices, read prior knowledge | `factory agent researcher --task "..."` |
 | **Strategist** | Generate ranked hypotheses using FEEC priority | `factory agent strategist --task "..."` |
 | **Builder** | Implement a single hypothesis, open a PR | `factory agent builder --task "..."` |
 | **Reviewer** | Guard rules + structured code review | `factory agent reviewer --task "..."` |
 | **Evaluator** | Run evals, compare before/after scores | `factory agent evaluator --task "..."` |
-| **Archivist** | Write learnings to vault, update dashboards | `factory agent archivist --task "..."` |
+| **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
 
@@ -120,7 +120,7 @@ Key differences from Improve mode:
 3. Builder implements   → experiment branch + PR
 4. Evaluator measures   → eval_before.json, eval_after.json
 5. CEO decides          → keep (merge) or revert (close PR)
-6. Archivist records    → vault notes, experiment artifacts
+6. Archivist records    → .factory/archive/ notes, performance report
 ```
 
 ### Eval Pipeline
@@ -184,6 +184,8 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/insights.py` | Cross-project pattern analysis |
 | `factory/checkpoint.py` | CEO checkpoint save/load |
 | `factory/analysis.py` | Experiment comparison (diff, explain) |
+| `factory/registry.py` | Global project registry (`~/.factory/registry.json`) |
+| `factory/report.py` | Performance report generation and loading |
 | `factory/agents/runner.py` | Agent subprocess spawner + event emission |
 
 ## `.factory/` Directory
@@ -192,10 +194,11 @@ Generated at runtime — not checked into version control:
 
 ```
 .factory/
-├── config.json           # Parsed from factory.md
-├── eval_profile.json     # Discovered eval dimensions
-├── results.tsv           # Append-only experiment history
-├── events.jsonl          # Structured event log
+├── config.json              # Parsed from factory.md
+├── eval_profile.json        # Discovered eval dimensions
+├── results.tsv              # Append-only experiment history
+├── events.jsonl             # Structured event log
+├── performance_report.json  # Aggregated verdicts, observations, experiment stats
 ├── experiments/
 │   └── 001/
 │       ├── hypothesis.md
@@ -204,14 +207,19 @@ Generated at runtime — not checked into version control:
 │       ├── changes.diff
 │       └── verdict.json
 ├── strategy/
-│   ├── current.md        # Active hypotheses
-│   ├── observations.md   # Researcher findings
-│   ├── backlog.md        # Unified backlog (features, deferred items, issues)
-│   └── insights.md       # Cross-project patterns
+│   ├── current.md           # Active hypotheses
+│   ├── observations.md      # Researcher findings
+│   ├── backlog.md           # Unified backlog (features, deferred items, issues)
+│   └── insights.md          # Cross-project patterns
 ├── reviews/
 │   ├── <role>-latest.md
 │   └── ceo-verdict-<role>.md
-└── agents/               # Per-project prompt overrides
+├── archive/                 # Archivist notes (institutional memory)
+│   ├── experiments/         # Per-experiment notes
+│   ├── strategies/          # Strategy snapshots
+│   ├── sources/             # Research source notes
+│   └── patterns/            # Cross-project patterns
+└── agents/                  # Per-project prompt overrides
 ```
 
 ## Diagrams
