@@ -364,11 +364,10 @@ class ExperimentStore:
 
         try:
             from factory.registry import update_project_stats
-            scores = [record.score_after] if record.score_after is not None else []
             update_project_stats(
                 self.project_path,
                 experiment_count=record.id,
-                latest_score=scores[-1] if scores else None,
+                latest_score=record.score_after,
             )
         except Exception as exc:
             log.debug("registry_finalize_failed", error=str(exc))
