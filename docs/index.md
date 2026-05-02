@@ -209,6 +209,23 @@ graph LR
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
+## Built with the Factory
+
+The factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
+| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with the Factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
+
 ## License
 
 [MIT](https://github.com/akashgit/remote-factory/blob/main/LICENSE) — Akash Srivastava

@@ -274,6 +274,25 @@ Run meta mode on a regular cadence — weekly is a good default. It needs at lea
 
 ---
 
+## Built with the Factory
+
+The factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language descriptions and hand-drawn sketches into executable CadQuery Python code for 3D model generation | Research |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination under area constraints, then global expert agents apply cross-function optimizations (dataflow, inlining) — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
+| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with the Factory? Open a PR to add it here — it helps others see what's possible.
+
+---
+
 ## Runners
 
 The factory supports multiple CLI backends. By default it uses **Claude Code** (`claude` CLI). **Bob Shell** (`bob` CLI) is available as an alternative:
