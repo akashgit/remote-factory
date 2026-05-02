@@ -9,7 +9,10 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec, _has_research_target
+from factory.cli import (
+    main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec,
+    _has_research_target, _build_ceo_task, _chain_modes, _run_single_cycle,
+)
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -1149,3 +1152,181 @@ class TestResearchMode:
         from factory.cli import _auto_detect_mode
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
         assert mode == "improve"
+
+
+# ── --no-github flag tests ──────────────────────────────────────
+
+
+class TestNoGithubParserFlag:
+    """Parser-level tests: --no-github is accepted and defaults correctly."""
+
+    def test_ceo_no_github_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.no_github is False
+
+    def test_ceo_no_github_enabled(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_run_no_github_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.no_github is False
+
+    def test_run_no_github_enabled(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+    def test_tmux_no_github_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path"])
+        assert args.no_github is False
+
+    def test_tmux_no_github_enabled(self):
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path", "--no-github"])
+        assert args.no_github is True
+
+
+class TestNoGithubBuildCeoTask:
+    """_build_ceo_task includes/excludes GitHub disabled section based on flag."""
+
+    def test_no_github_true_includes_disabled_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", no_github=True)
+        assert "## GitHub Operations Disabled" in task
+        assert "--no-github" in task
+        assert "Do NOT:" in task
+        assert "Create or post pull requests" in task
+        assert "Push to remote repositories" in task
+
+    def test_no_github_false_excludes_disabled_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", no_github=False)
+        assert "## GitHub Operations Disabled" not in task
+        assert "Do NOT:" not in task
+
+    def test_no_github_default_excludes_disabled_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve")
+        assert "## GitHub Operations Disabled" not in task
+
+
+class TestNoGithubCmdTmux:
+    """cmd_tmux forwards --no-github in the shell command string."""
+
+    def test_tmux_forwards_no_github(self, tmp_path):
+        """--no-github is included in the tmux shell command."""
+        with patch("factory.cli._tmux_available", return_value=True), \
+             patch("factory.cli.subprocess.run") as mock_run:
+            # First call: has-session check (no existing session)
+            # Second call: new-session (create tmux session)
+            mock_run.side_effect = [
+                type("Result", (), {"returncode": 1})(),   # has-session: not found
+                type("Result", (), {"returncode": 0})(),   # new-session: success
+            ]
+            result = main(["tmux", str(tmp_path), "--no-github"])
+
+        assert result == 0
+        # The second subprocess.run call creates the tmux session
+        tmux_call = mock_run.call_args_list[1]
+        shell_cmd = tmux_call[0][0][-1]  # last element is the shell command string
+        assert "--no-github" in shell_cmd
+
+    def test_tmux_omits_no_github_when_not_set(self, tmp_path):
+        """--no-github is NOT in the tmux shell command when flag is absent."""
+        with patch("factory.cli._tmux_available", return_value=True), \
+             patch("factory.cli.subprocess.run") as mock_run:
+            mock_run.side_effect = [
+                type("Result", (), {"returncode": 1})(),
+                type("Result", (), {"returncode": 0})(),
+            ]
+            result = main(["tmux", str(tmp_path)])
+
+        assert result == 0
+        tmux_call = mock_run.call_args_list[1]
+        shell_cmd = tmux_call[0][0][-1]
+        assert "--no-github" not in shell_cmd
+
+
+class TestNoGithubRunSingleCycle:
+    """_run_single_cycle passes no_github through to _build_ceo_task."""
+
+    def test_no_github_true_in_single_cycle(self, tmp_path):
+        """_run_single_cycle with no_github=True produces task with disabled section."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            _run_single_cycle(tmp_path, "improve", no_github=True)
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" in task
+
+    def test_no_github_false_in_single_cycle(self, tmp_path):
+        """_run_single_cycle with no_github=False produces task without disabled section."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            _run_single_cycle(tmp_path, "improve", no_github=False)
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" not in task
+
+
+class TestNoGithubChainModes:
+    """_chain_modes passes no_github through to _run_single_cycle."""
+
+    def test_chain_modes_passes_no_github(self, tmp_path):
+        """_chain_modes forwards no_github to _run_single_cycle."""
+        from factory.models import ProjectState
+        with patch("factory.cli._run_single_cycle", return_value=0) as mock_cycle, \
+             patch("factory.cli._auto_detect_mode", return_value="improve"), \
+             patch("factory.state.detect_state", return_value=ProjectState.HAS_FACTORY):
+            _chain_modes(tmp_path, no_github=True, already_improved=False)
+        # _run_single_cycle should have been called with no_github=True
+        call_kwargs = mock_cycle.call_args[1]
+        assert call_kwargs["no_github"] is True
+
+    def test_chain_modes_default_no_github_false(self, tmp_path):
+        """_chain_modes defaults no_github to False."""
+        from factory.models import ProjectState
+        with patch("factory.cli._run_single_cycle", return_value=0) as mock_cycle, \
+             patch("factory.cli._auto_detect_mode", return_value="improve"), \
+             patch("factory.state.detect_state", return_value=ProjectState.HAS_FACTORY):
+            _chain_modes(tmp_path, already_improved=False)
+        call_kwargs = mock_cycle.call_args[1]
+        assert call_kwargs["no_github"] is False
+
+
+class TestNoGithubEndToEnd:
+    """End-to-end tests: --no-github flows from CLI args through the full pipeline."""
+
+    def test_ceo_headless_no_github_in_task(self, tmp_path):
+        """cmd_ceo --headless --no-github includes disabled section in CEO task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless", "--no-github"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" in task
+
+    def test_ceo_headless_without_no_github(self, tmp_path):
+        """cmd_ceo --headless without --no-github does not include disabled section."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" not in task
+
+    def test_run_no_github_in_task(self, tmp_path):
+        """cmd_run --no-github includes disabled section in CEO task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--no-github"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" in task
+
+    def test_run_without_no_github(self, tmp_path):
+        """cmd_run without --no-github does not include disabled section."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## GitHub Operations Disabled" not in task
