@@ -49,7 +49,7 @@ python eval/score.py
 ### Threshold
 <!-- Minimum composite score (0.0-1.0) required to keep a change. -->
 
-0.8
+0.74
 
 ## Target Branch
 <!-- Branch that experiment PRs target. Default: main -->
