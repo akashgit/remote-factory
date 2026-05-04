@@ -1,7 +1,8 @@
 """EvalRunner — compute mandatory dimensions and merge with project-specific evals.
 
 The factory's eval system has mandatory dimensions that apply to every project:
-  - 6 hygiene dimensions (tests, lint, type_check, coverage, guard_patterns, config_parser)
+  - 7 hygiene dimensions (tests, lint, type_check, coverage, guard_patterns,
+    config_parser, security)
   - 5 growth dimensions (capability_surface, experiment_diversity, observability,
     research_grounding, factory_effectiveness)
 
@@ -123,7 +124,7 @@ async def _run_project_eval(
     """Run the project's eval/score.py (if it exists) and return additional results.
 
     Returns an empty list if the command fails or returns no results.
-    These are project-specific ADDITIONS to the mandatory 11 dimensions.
+    These are project-specific ADDITIONS to the mandatory 12 dimensions.
     """
     parts = eval_command.split()
 

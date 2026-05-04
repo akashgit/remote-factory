@@ -1,11 +1,11 @@
 """Universal hygiene eval dimensions applied to every factory-managed project.
 
-These 6 dimensions are mandatory and cannot be removed. They are computed by
+These 7 dimensions are mandatory and cannot be removed. They are computed by
 the factory itself (not by per-project eval/score.py) and auto-detect the
 project's tooling. Projects can ADD dimensions via eval/score.py but cannot
 remove any of these.
 
-Together with the 5 growth dimensions in growth.py, these form the 11
+Together with the 5 growth dimensions in growth.py, these form the 12
 mandatory eval dimensions that define the factory's quality baseline.
 
 All functions take a project_path and return an EvalResult-compatible dict.
@@ -17,15 +17,20 @@ import re
 import subprocess
 from pathlib import Path
 
+import structlog
+
+log = structlog.get_logger()
+
 # Relative weights within the hygiene category (sum to 1.0).
 # The runner normalizes these so that hygiene gets 50% of the composite.
 HYGIENE_WEIGHTS = {
-    "tests": 0.30,
-    "lint": 0.15,
-    "type_check": 0.10,
-    "coverage": 0.25,
-    "guard_patterns": 0.10,
-    "config_parser": 0.10,
+    "tests": 0.28,
+    "lint": 0.14,
+    "type_check": 0.09,
+    "coverage": 0.23,
+    "guard_patterns": 0.09,
+    "config_parser": 0.09,
+    "security": 0.08,
 }
 
 
@@ -523,11 +528,57 @@ def eval_config_parser(project_path: Path) -> dict:
         }
 
 
+# ── Dimension 7: security (weight 0.08) ─────────────────────────
+
+
+def eval_security(project_path: Path) -> dict:
+    """Run security scanners via the pluggable scanner registry.
+
+    Delegates to factory.security.ScannerRegistry for scanner detection and
+    execution. Each registered scanner (bandit, npm-audit, semgrep, trivy,
+    git-secrets) auto-detects applicability and runs if appropriate.
+
+    Scoring: partial credit, deducting 0.1 per issue found across all scanners.
+    Returns neutral (0.5) when no scanner is applicable.
+    """
+    from factory.security import get_default_registry
+
+    registry = get_default_registry()
+    sub_projects = _find_sub_projects(project_path)
+    total_issues = 0
+    ran_any = False
+    details_parts: list[str] = []
+
+    for sp in sub_projects:
+        results = registry.scan(sp)
+        for result in results:
+            ran_any = True
+            count = result.issue_count
+            total_issues += count
+            label = f"{sp.name}({result.scanner_name})"
+            if count > 0:
+                details_parts.append(f"{label}: {count} issues")
+            else:
+                details_parts.append(f"{label}: clean")
+
+    if not ran_any:
+        return _neutral("security", "no security scanner detected")
+
+    score = max(0.0, 1.0 - total_issues * 0.1)
+    return {
+        "name": "security",
+        "score": round(score, 4),
+        "weight": HYGIENE_WEIGHTS["security"],
+        "passed": total_issues == 0,
+        "details": "; ".join(details_parts),
+    }
+
+
 # ── Public API ─────────────────────────────────────────────────────
 
 
 def compute_hygiene_results(project_path: Path) -> list[dict]:
-    """Compute all 6 mandatory hygiene dimensions for a project."""
+    """Compute all 7 mandatory hygiene dimensions for a project."""
     return [
         eval_tests(project_path),
         eval_lint(project_path),
@@ -535,4 +586,5 @@ def compute_hygiene_results(project_path: Path) -> list[dict]:
         eval_coverage(project_path),
         eval_guard_patterns(project_path),
         eval_config_parser(project_path),
+        eval_security(project_path),
     ]

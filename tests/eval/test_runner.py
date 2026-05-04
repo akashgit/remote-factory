@@ -7,26 +7,27 @@ from factory.eval.runner import run_eval
 
 class TestRunEval:
     async def test_always_has_mandatory_dimensions(self, tmp_path):
-        """Even with no project eval, all 11 mandatory dimensions are present."""
+        """Even with no project eval, all 12 mandatory dimensions are present."""
         # No eval/score.py — just mandatory dimensions
         result = await run_eval("true", tmp_path, threshold=0.0)
         names = {r.name for r in result.results}
-        # 6 hygiene + 5 growth = 11 mandatory
+        # 7 hygiene + 5 growth = 12 mandatory
         assert "tests" in names
         assert "lint" in names
         assert "type_check" in names
         assert "coverage" in names
         assert "guard_patterns" in names
         assert "config_parser" in names
+        assert "security" in names
         assert "capability_surface" in names
         assert "experiment_diversity" in names
         assert "observability" in names
         assert "research_grounding" in names
         assert "factory_effectiveness" in names
-        assert len(result.results) >= 11
+        assert len(result.results) >= 12
 
     async def test_project_additions_merged(self, tmp_path):
-        """Project eval/score.py can add extra dimensions beyond the 11."""
+        """Project eval/score.py can add extra dimensions beyond the 12."""
         script = tmp_path / "score.py"
         script.write_text(
             'import json, sys\n'
@@ -37,10 +38,10 @@ class TestRunEval:
         )
         result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0)
         names = {r.name for r in result.results}
-        # 11 mandatory + 2 project additions
+        # 12 mandatory + 2 project additions
         assert "ui_renders" in names
         assert "api_health" in names
-        assert len(result.results) >= 13
+        assert len(result.results) >= 14
 
     async def test_project_cannot_override_mandatory(self, tmp_path):
         """If project eval returns a dimension with the same name as mandatory, it's ignored."""
@@ -61,8 +62,8 @@ class TestRunEval:
         """If project eval command fails, mandatory dimensions still run."""
         result = await run_eval("nonexistent_command_xyz", tmp_path, threshold=0.0)
         names = {r.name for r in result.results}
-        # All 11 mandatory should still be present
-        assert len(names) >= 11
+        # All 12 mandatory should still be present
+        assert len(names) >= 12
         assert "tests" in names
         assert "capability_surface" in names
 
@@ -79,12 +80,12 @@ class TestRunEval:
         result = await run_eval(f"{sys.executable} {script}", tmp_path, threshold=0.0, timeout=1.0)
         # Mandatory dimensions still computed
         names = {r.name for r in result.results}
-        assert len(names) >= 11
+        assert len(names) >= 12
 
     async def test_weight_split_is_50_50(self, tmp_path):
         """Hygiene dimensions get 50% total weight, growth gets 50%."""
         result = await run_eval("true", tmp_path, threshold=0.0)
-        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser"}
+        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser", "security"}
         growth_names = {
             "capability_surface", "experiment_diversity", "observability",
             "research_grounding", "factory_effectiveness",
