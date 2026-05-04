@@ -188,13 +188,26 @@ def eval_observability(project_path: Path) -> dict:
         }
 
 
+def _collect_archive_sources(archive_dir: Path) -> list[Path]:
+    """Collect markdown source files from .factory/archive/ subdirectories."""
+    sources: list[Path] = []
+    for subdir in ("sources", "research"):
+        d = archive_dir / subdir
+        if d.exists():
+            sources.extend(d.glob("*.md"))
+    return sources
+
+
 def eval_research_grounding(project_path: Path) -> dict:
     """Measure whether improvements are informed by research (vault sources, papers, repos)."""
     try:
         from factory.obsidian.notes import vault_path as _get_vault
 
         vault = _get_vault()
-        if vault is None:
+        archive_dir = project_path / ".factory" / "archive"
+        use_archive = vault is None and archive_dir.exists()
+
+        if vault is None and not use_archive:
             return {
                 "name": "research_grounding",
                 "score": 0.0,
@@ -203,19 +216,21 @@ def eval_research_grounding(project_path: Path) -> dict:
                 "details": "vault not configured — set $FACTORY_VAULT_PATH",
             }
 
-        # Sub-score A: Research knowledge exists (source notes in vault)
-        sources_dir = vault / "20-Knowledge" / "Sources"
-        source_count = len(list(sources_dir.glob("*.md"))) if sources_dir.exists() else 0
+        # Sub-score A: Research knowledge exists
+        if vault is not None:
+            sources_dir = vault / "20-Knowledge" / "Sources"
+            source_files = list(sources_dir.glob("*.md")) if sources_dir.exists() else []
+        else:
+            source_files = _collect_archive_sources(archive_dir)
+        source_count = len(source_files)
         knowledge_score = min(1.0, source_count / 8)
 
         # Sub-score B: Research informs experiments (keyword match)
-        # Only use filename-derived keywords (not generic frontmatter tags)
         source_keywords: set[str] = set()
-        if sources_dir.exists():
-            for src in sources_dir.glob("*.md"):
-                for word in re.split(r"[-_.]", src.stem.lower()):
-                    if len(word) >= 5:
-                        source_keywords.add(word)
+        for src in source_files:
+            for word in re.split(r"[-_.]", src.stem.lower()):
+                if len(word) >= 5:
+                    source_keywords.add(word)
 
         tsv_path = project_path / ".factory" / "results.tsv"
         referenced = 0
@@ -236,15 +251,17 @@ def eval_research_grounding(project_path: Path) -> dict:
         research_md = project_path / ".factory" / "strategy" / "research.md"
         has_research = 1.0 if research_md.exists() else 0.0
 
-        # Sub-score D: Experiment notes documented in vault
-        project_name = project_path.resolve().name
-        project_vault = vault / "10-Projects" / project_name
-        # Check Experiments/ subdirectory (canonical location)
-        exp_dir = project_vault / "Experiments"
-        exp_dir_count = len(list(exp_dir.glob("*.md"))) if exp_dir.exists() else 0
-        # Fallback: check flat Exp-*.md files at project level
-        flat_count = len(list(project_vault.glob("Exp-*.md"))) if project_vault.exists() else 0
-        exp_notes = max(exp_dir_count, flat_count)
+        # Sub-score D: Experiment notes documented
+        if vault is not None:
+            project_name = project_path.resolve().name
+            project_vault = vault / "10-Projects" / project_name
+            exp_dir = project_vault / "Experiments"
+            exp_dir_count = len(list(exp_dir.glob("*.md"))) if exp_dir.exists() else 0
+            flat_count = len(list(project_vault.glob("Exp-*.md"))) if project_vault.exists() else 0
+            exp_notes = max(exp_dir_count, flat_count)
+        else:
+            archive_exp_dir = archive_dir / "experiments"
+            exp_notes = len(list(archive_exp_dir.glob("*.md"))) if archive_exp_dir.exists() else 0
         factory_exp_dir = project_path / ".factory" / "experiments"
         exp_total = len(list(factory_exp_dir.iterdir())) if factory_exp_dir.exists() else 0
         doc_ratio = min(1.0, exp_notes / max(exp_total, 1))
@@ -254,7 +271,6 @@ def eval_research_grounding(project_path: Path) -> dict:
 
         citation_ratio = citation_coverage(project_path)
 
-        # Rebalance weights to include citation_ratio at 0.20
         score = (
             0.20 * knowledge_score
             + 0.28 * utilization
@@ -262,8 +278,9 @@ def eval_research_grounding(project_path: Path) -> dict:
             + 0.20 * doc_ratio
             + 0.20 * citation_ratio
         )
+        source_label = "archive" if use_archive else "vault"
         details = (
-            f"sources={source_count}, utilization={utilization:.2f}, "
+            f"sources={source_count} ({source_label}), utilization={utilization:.2f}, "
             f"research_report={'yes' if has_research else 'no'}, "
             f"doc_ratio={doc_ratio:.2f} ({exp_notes}/{max(exp_total, 1)}), "
             f"citation_ratio={citation_ratio:.2f}"
