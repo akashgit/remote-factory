@@ -367,6 +367,18 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 
+def cmd_message(args: argparse.Namespace) -> int:
+    """Send a message to a running Factory CEO for the next cycle."""
+    from factory.messages import write_message
+
+    project_path = Path(args.path).resolve()
+    text = args.text
+    msg = write_message(project_path, text)
+    print(f"Message queued: {msg.id}")
+    print("The CEO will see this message on its next cycle.")
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     """Export a complete project snapshot as JSON to stdout."""
     from factory.store import ExperimentStore
@@ -677,6 +689,7 @@ def cmd_precheck(args: argparse.Namespace) -> int:
         allowed_scope=config.scope if args.baseline else None,
         smoke_test_command=config.smoke_test,
         similarity_threshold=args.similarity_threshold,
+        hard_constraints=config.hard_constraints or None,
     )
 
     # Output as JSON for machine consumption
@@ -1397,7 +1410,19 @@ def _build_ceo_task(
     branch: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
+    from factory.messages import mark_read, read_pending
+
     task = f"Project: {project_path}\nMode: {mode}"
+
+    # Inject any pending user messages
+    pending = read_pending(project_path)
+    if pending:
+        task += "\n\n## User Messages\n"
+        task += "The user has sent the following directives. Treat these as high-priority:\n\n"
+        for msg in pending:
+            ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            task += f"**[{ts}]** {msg.text}\n\n"
+        mark_read(project_path, [m.id for m in pending])
 
     if prompt_file:
         task += (
@@ -1697,6 +1722,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+    # message
+    p = sub.add_parser("message", help="Send a message to the CEO for the next cycle")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("text", help="Message text to send to the CEO")
+
     # research
     p = sub.add_parser("research", help="Print research citation index for experiments")
     p.add_argument("path", help="Path to the project")
@@ -1945,6 +1975,7 @@ def main(argv: list[str] | None = None) -> int:
         "notify": cmd_notify,
         "study": cmd_study,
         "status": cmd_status,
+        "message": cmd_message,
         "research": cmd_research,
         "diff": cmd_diff,
         "explain": cmd_explain,

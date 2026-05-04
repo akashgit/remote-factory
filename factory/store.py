@@ -16,6 +16,7 @@ from factory.models import (
     EvalWeights,
     ExperimentRecord,
     FactoryConfig,
+    HardConstraint,
     HypothesisBudget,
     ProjectEvalDimension,
 )
@@ -79,6 +80,34 @@ def _parse_project_eval(items: str | list[str] | float) -> list[ProjectEvalDimen
             description=fields.get("description", ""),
         ))
     return dims
+
+
+def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstraint]:
+    """Parse hard constraint entries from factory.md.
+
+    Each list item starts with 'name: X' and may have continuation lines
+    with key: value pairs (check, description).
+    """
+    if not isinstance(items, list):
+        return []
+    constraints: list[HardConstraint] = []
+    for item in items:
+        lines = str(item).split("\n")
+        fields: dict[str, str] = {}
+        for line in lines:
+            if ":" in line:
+                key, val = line.split(":", 1)
+                fields[key.strip()] = val.strip()
+        name = fields.get("name", "")
+        check = fields.get("check", "")
+        if not name or not check:
+            continue
+        constraints.append(HardConstraint(
+            name=name,
+            check=check,
+            description=fields.get("description", ""),
+        ))
+    return constraints
 
 
 class ExperimentStore:
@@ -175,6 +204,7 @@ class ExperimentStore:
         budget_kwargs: dict[str, object] = _parse_kv_list(parsed.get("hypothesis_budget", []), int)
         weights_kwargs: dict[str, object] = _parse_kv_list(parsed.get("eval_weights", []), float)
         project_eval_dims = _parse_project_eval(parsed.get("project_eval", []))
+        hard_constraints = _parse_hard_constraints(parsed.get("hard_constraints", []))
 
         smoke_test_raw = parsed.get("smoke_test", "")
         smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
@@ -191,6 +221,7 @@ class ExperimentStore:
             smoke_test=smoke_test,
             project_eval=project_eval_dims,
             eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
+            hard_constraints=hard_constraints,
         )
 
         (self.factory_dir / "config.json").write_text(

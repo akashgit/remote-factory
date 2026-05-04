@@ -58,6 +58,20 @@ class EvalWeights(BaseModel):
     project: float = 0.0
 
 
+class HardConstraint(BaseModel):
+    """A user-defined hard constraint enforced at precheck time.
+
+    Each constraint defines a shell command that must exit 0 for the experiment
+    to be kept. Non-zero exit → mandatory revert. The CEO cannot override this.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    check: str
+    description: str = ""
+
+
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -74,6 +88,7 @@ class FactoryConfig(BaseModel):
     smoke_test: str = ""
     project_eval: list[ProjectEvalDimension] = []
     eval_weights: EvalWeights = EvalWeights()
+    hard_constraints: list[HardConstraint] = []
 
 
 # ── eval ──────────────────────────────────────────────────────────

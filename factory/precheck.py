@@ -11,6 +11,7 @@ from pathlib import Path
 
 import structlog
 
+from factory.models import HardConstraint
 from factory.strategy import find_anti_patterns
 
 log = structlog.get_logger()
@@ -193,6 +194,62 @@ def check_smoke_test(
     )
 
 
+def check_hard_constraints(
+    constraints: list[HardConstraint],
+    project_path: Path,
+    timeout: float = 120,
+) -> list[CheckResult]:
+    """Run user-defined hard constraint checks.
+
+    Each constraint's `check` command is executed as a shell subprocess.
+    Non-zero exit code = failure = mandatory revert.
+    """
+    results: list[CheckResult] = []
+    for constraint in constraints:
+        try:
+            result = subprocess.run(
+                constraint.check,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                cwd=project_path,
+            )
+        except subprocess.TimeoutExpired:
+            results.append(CheckResult(
+                name=f"hard_constraint:{constraint.name}",
+                passed=False,
+                detail=f"Hard constraint '{constraint.name}' timed out after {timeout}s",
+            ))
+            continue
+        except Exception as e:
+            results.append(CheckResult(
+                name=f"hard_constraint:{constraint.name}",
+                passed=False,
+                detail=f"Hard constraint '{constraint.name}' error: {e}",
+            ))
+            continue
+
+        if result.returncode == 0:
+            results.append(CheckResult(
+                name=f"hard_constraint:{constraint.name}",
+                passed=True,
+                detail=f"Hard constraint '{constraint.name}' passed",
+            ))
+        else:
+            stderr_snippet = result.stderr.strip()[:200] if result.stderr else ""
+            stdout_snippet = result.stdout.strip()[:200] if result.stdout else ""
+            output = stderr_snippet or stdout_snippet or f"exit code {result.returncode}"
+            desc = f" ({constraint.description})" if constraint.description else ""
+            results.append(CheckResult(
+                name=f"hard_constraint:{constraint.name}",
+                passed=False,
+                detail=f"Hard constraint '{constraint.name}' failed{desc}: {output}",
+            ))
+
+    return results
+
+
 def run_precheck(
     *,
     score_before: float | None,
@@ -205,6 +262,7 @@ def run_precheck(
     allowed_scope: list[str] | None = None,
     smoke_test_command: str = "",
     similarity_threshold: float = 0.6,
+    hard_constraints: list[HardConstraint] | None = None,
 ) -> PreCheckResult:
     """Run all prechecks and return aggregate result.
 
@@ -224,6 +282,10 @@ def run_precheck(
 
     # 4. Smoke test
     checks.append(check_smoke_test(smoke_test_command, project_path))
+
+    # 5. Hard constraints (user-defined checks from factory.md)
+    if hard_constraints:
+        checks.extend(check_hard_constraints(hard_constraints, project_path))
 
     # Aggregate
     failures = [c.name for c in checks if not c.passed]
