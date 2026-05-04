@@ -248,13 +248,48 @@ def cmd_begin(args: argparse.Namespace) -> int:
 
 
 def cmd_finalize(args: argparse.Namespace) -> int:
+    from factory.precheck import run_precheck
     from factory.store import ExperimentStore
-    from factory.models import ExperimentRecord
+    from factory.models import ExperimentRecord, FactoryConfig
 
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
     score_before = getattr(args, "score_before", None)
     score_after = getattr(args, "score_after", None)
+    verdict = args.verdict
+    notes = args.notes or ""
+
+    if verdict == "keep":
+        config_path = project_path / ".factory" / "config.json"
+        if config_path.exists():
+            import json
+            config = FactoryConfig(**json.loads(config_path.read_text()))
+            history = _run(store.load_history()) if hasattr(store, "load_history") else []
+            history_dicts = [r.model_dump() if hasattr(r, "model_dump") else r for r in history]
+
+            precheck_result = run_precheck(
+                score_before=score_before,
+                score_after=score_after,
+                threshold=config.eval_threshold,
+                hypothesis=args.hypothesis or "",
+                history=history_dicts,
+                project_path=project_path,
+                smoke_test_command=config.smoke_test,
+                hard_constraints=config.hard_constraints or None,
+            )
+
+            if not precheck_result.passed:
+                verdict = "revert"
+                failure_detail = "; ".join(precheck_result.blocking_failures)
+                notes = f"[OVERRIDDEN by finalize gate] precheck failed: {failure_detail}. {notes}"
+                _emit_cli_event(project_path, "verdict.overridden", {
+                    "exp_id": args.id,
+                    "original_verdict": "keep",
+                    "new_verdict": "revert",
+                    "reason": failure_detail,
+                })
+                print(f"⚠ Finalize gate: precheck FAILED — overriding keep → revert ({failure_detail})")
+
     record = ExperimentRecord(
         id=args.id,
         timestamp=datetime.now(),
@@ -265,17 +300,26 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         score_before=score_before,
         score_after=score_after,
         delta=None,
-        verdict=args.verdict,
+        verdict=verdict,
         cost_usd=args.cost,
-        notes=args.notes or "",
+        notes=notes,
     )
     _run(store.finalize(args.id, record))
     _emit_cli_event(project_path, "experiment.finalize", {
         "exp_id": args.id,
-        "verdict": args.verdict,
+        "verdict": verdict,
         "hypothesis": (args.hypothesis or "")[:200],
     })
-    print(f"Finalized experiment {args.id} — verdict={args.verdict}")
+    print(f"Finalized experiment {args.id} — verdict={verdict}")
+    return 0
+
+
+def cmd_message(args: argparse.Namespace) -> int:
+    from factory.messages import write_message
+
+    project_path = Path(args.path)
+    msg = write_message(project_path, args.text)
+    print(f"Message queued (id={msg.id}). The CEO will see it at the start of the next cycle.")
     return 0
 
 
@@ -1729,7 +1773,18 @@ def _build_ceo_task(
     research_ideation: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
+    from factory.messages import mark_read, read_pending
+
     task = f"Project: {project_path}\nMode: {mode}"
+
+    pending = read_pending(project_path)
+    if pending:
+        task += "\n\n## User Messages\n"
+        task += "The user has sent the following directives. Treat these as HIGH PRIORITY:\n\n"
+        for msg in pending:
+            ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            task += f"**[{ts}]** {msg.text}\n\n"
+        mark_read(project_path, [m.id for m in pending])
 
     if interactive_idea:
         task += (
@@ -2302,6 +2357,11 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
+    # message — send a directive to the CEO
+    p = sub.add_parser("message", help="Send a message to the CEO for the next cycle")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("text", help="Message text")
+
     # self-update
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
@@ -2511,6 +2571,7 @@ def main(argv: list[str] | None = None) -> int:
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
         "vault-init": cmd_vault_init,
+        "message": cmd_message,
         "self-update": cmd_self_update,
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
