@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 log = structlog.get_logger()
@@ -122,6 +122,40 @@ def create_app(projects_dir: Path) -> FastAPI:
             },
         )
 
+    @app.get("/api/projects/{name}/factory/browse")
+    async def factory_browse(name: str, path: str = "") -> list[dict[str, Any]]:
+        log.info("dashboard_request", endpoint="/api/projects/{name}/factory/browse", project=name, path=path)
+        factory_root = projects_dir / name / ".factory"
+        target = _resolve_factory_path(factory_root, path)
+        if not target.is_dir():
+            raise HTTPException(status_code=404, detail="Directory not found")
+        entries: list[dict[str, Any]] = []
+        for child in sorted(target.iterdir(), key=lambda p: (not p.is_dir(), p.name)):
+            try:
+                stat = child.stat()
+            except OSError:
+                continue
+            entries.append({
+                "name": child.name,
+                "is_dir": child.is_dir(),
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            })
+        return entries
+
+    @app.get("/api/projects/{name}/factory/file")
+    async def factory_file(name: str, path: str = "") -> PlainTextResponse:
+        log.info("dashboard_request", endpoint="/api/projects/{name}/factory/file", project=name, path=path)
+        factory_root = projects_dir / name / ".factory"
+        target = _resolve_factory_path(factory_root, path)
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail="File not found")
+        try:
+            content = target.read_text(errors="replace")
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        return PlainTextResponse(content)
+
     return app
 
 
@@ -161,6 +195,23 @@ async def _sse_generator(projects_dir: Path, request: Request):
                     positions[key] = f.tell()
 
         await asyncio.sleep(1)
+
+
+_ALLOWED_SUBDIRS = {"strategy", "reviews", "experiments", "archive", "agents"}
+
+
+def _resolve_factory_path(factory_root: Path, subpath: str) -> Path:
+    """Resolve a subpath inside .factory/, guarding against traversal."""
+    if not subpath:
+        raise HTTPException(status_code=400, detail="path parameter is required")
+    resolved = (factory_root / subpath).resolve()
+    if not resolved.parts or not str(resolved).startswith(str(factory_root.resolve())):
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+    rel = resolved.relative_to(factory_root.resolve())
+    top_dir = rel.parts[0] if rel.parts else ""
+    if top_dir not in _ALLOWED_SUBDIRS:
+        raise HTTPException(status_code=403, detail=f"Access to '{top_dir}' not allowed")
+    return resolved
 
 
 def _project_summary(path: Path) -> dict[str, Any]:

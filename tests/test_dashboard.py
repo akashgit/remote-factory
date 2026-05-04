@@ -398,3 +398,133 @@ class TestBanner:
         captured = capsys.readouterr()
         assert "Factory v2" in captured.err
         assert "meta" in captured.err
+
+
+@pytest.fixture()
+def artifact_projects_dir(tmp_path: Path) -> Path:
+    """Projects dir with .factory/ subdirectories populated for artifact browsing."""
+    proj = tmp_path / "proj-x"
+    factory = proj / ".factory"
+
+    strat = factory / "strategy"
+    strat.mkdir(parents=True)
+    (strat / "current.md").write_text("# Current\nFocus on tests")
+    (strat / "observations.md").write_text("# Observations\n- item 1")
+
+    reviews = factory / "reviews"
+    reviews.mkdir()
+    (reviews / "ceo-verdict-builder.md").write_text("PROCEED")
+    (reviews / "builder-latest.md").write_text("Build output")
+
+    exp = factory / "experiments" / "001"
+    exp.mkdir(parents=True)
+    (exp / "hypothesis.md").write_text("Test hypothesis")
+    (exp / "eval_after.json").write_text('{"results": []}')
+
+    archive = factory / "archive" / "patterns"
+    archive.mkdir(parents=True)
+    (archive / "retry-logic.md").write_text("# Retry Pattern")
+
+    return tmp_path
+
+
+@pytest.fixture()
+def artifact_client(artifact_projects_dir: Path) -> TestClient:
+    return TestClient(create_app(artifact_projects_dir))
+
+
+class TestFactoryBrowse:
+    def test_browse_strategy(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=strategy")
+        assert resp.status_code == 200
+        entries = resp.json()
+        names = [e["name"] for e in entries]
+        assert "current.md" in names
+        assert "observations.md" in names
+        for entry in entries:
+            assert "size" in entry
+            assert "modified" in entry
+            assert "is_dir" in entry
+
+    def test_browse_reviews(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=reviews")
+        assert resp.status_code == 200
+        names = [e["name"] for e in resp.json()]
+        assert "ceo-verdict-builder.md" in names
+        assert "builder-latest.md" in names
+
+    def test_browse_experiments(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=experiments")
+        assert resp.status_code == 200
+        entries = resp.json()
+        assert len(entries) == 1
+        assert entries[0]["name"] == "001"
+        assert entries[0]["is_dir"] is True
+
+    def test_browse_experiment_subdir(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=experiments/001")
+        assert resp.status_code == 200
+        names = [e["name"] for e in resp.json()]
+        assert "hypothesis.md" in names
+        assert "eval_after.json" in names
+
+    def test_browse_archive_nested(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=archive")
+        assert resp.status_code == 200
+        entries = resp.json()
+        assert entries[0]["name"] == "patterns"
+        assert entries[0]["is_dir"] is True
+
+    def test_browse_nonexistent_dir(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=strategy/nonexistent")
+        assert resp.status_code == 404
+
+    def test_browse_missing_path_param(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse")
+        assert resp.status_code == 400
+
+    def test_browse_path_traversal_dotdot(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=../../etc")
+        assert resp.status_code == 403
+
+    def test_browse_path_traversal_absolute(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=/etc/passwd")
+        assert resp.status_code == 403
+
+    def test_browse_disallowed_subdir(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/browse?path=config.json")
+        assert resp.status_code == 403
+
+
+class TestFactoryFile:
+    def test_read_markdown_file(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=strategy/current.md")
+        assert resp.status_code == 200
+        assert "text/plain" in resp.headers["content-type"]
+        assert "# Current" in resp.text
+
+    def test_read_json_file(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=experiments/001/eval_after.json")
+        assert resp.status_code == 200
+        assert '"results"' in resp.text
+
+    def test_read_review_file(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=reviews/ceo-verdict-builder.md")
+        assert resp.status_code == 200
+        assert "PROCEED" in resp.text
+
+    def test_file_not_found(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=strategy/nonexistent.md")
+        assert resp.status_code == 404
+
+    def test_file_path_traversal(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=../../etc/passwd")
+        assert resp.status_code == 403
+
+    def test_file_disallowed_subdir(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file?path=config.json")
+        assert resp.status_code == 403
+
+    def test_file_missing_path_param(self, artifact_client: TestClient):
+        resp = artifact_client.get("/api/projects/proj-x/factory/file")
+        assert resp.status_code == 400

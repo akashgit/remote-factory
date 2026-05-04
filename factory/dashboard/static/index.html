@@ -77,7 +77,7 @@
 
   main {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 280px 1fr 240px;
     grid-template-rows: 80px 1fr 1fr;
     gap: 0;
     height: calc(100vh - 80px);
@@ -396,6 +396,272 @@
     background: var(--surface);
   }
 
+  /* Artifact browser sidebar */
+  .artifact-panel {
+    grid-column: 3;
+    grid-row: 2 / 4;
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+  }
+
+  .artifact-panel .panel-body {
+    padding: 0;
+  }
+
+  .artifact-tree {
+    font-size: 12px;
+  }
+
+  .artifact-section {
+    border-bottom: 1px solid var(--border);
+  }
+
+  .artifact-section-header {
+    padding: 8px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    user-select: none;
+  }
+
+  .artifact-section-header:hover {
+    background: var(--surface);
+  }
+
+  .artifact-section-header .chevron {
+    transition: transform 0.15s;
+    font-size: 10px;
+  }
+
+  .artifact-section-header.open .chevron {
+    transform: rotate(90deg);
+  }
+
+  .artifact-section-items {
+    display: none;
+  }
+
+  .artifact-section-items.open {
+    display: block;
+  }
+
+  .artifact-file {
+    padding: 4px 12px 4px 24px;
+    cursor: pointer;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 12px;
+  }
+
+  .artifact-file:hover {
+    background: var(--surface);
+    color: var(--accent);
+  }
+
+  .artifact-file.active {
+    background: var(--surface);
+    color: var(--accent);
+    border-left: 2px solid var(--accent);
+  }
+
+  .artifact-dir {
+    padding: 4px 12px 4px 24px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .artifact-dir:hover {
+    background: var(--surface);
+  }
+
+  .artifact-dir-items {
+    display: none;
+  }
+
+  .artifact-dir-items.open {
+    display: block;
+  }
+
+  .artifact-dir-items .artifact-file {
+    padding-left: 36px;
+  }
+
+  .artifact-dir-items .artifact-dir {
+    padding-left: 36px;
+  }
+
+  .artifact-dir-items .artifact-dir-items .artifact-file {
+    padding-left: 48px;
+  }
+
+  /* Slide-out viewer */
+  .artifact-viewer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(2px);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .artifact-viewer {
+    width: 50%;
+    max-width: 700px;
+    min-width: 360px;
+    height: 100%;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    animation: slideIn 0.2s ease;
+  }
+
+  @keyframes slideIn {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+  }
+
+  .artifact-viewer-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+
+  .artifact-viewer-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .artifact-viewer-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 4px;
+  }
+
+  .artifact-viewer-close:hover {
+    color: var(--text);
+  }
+
+  .artifact-viewer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .artifact-viewer-body .markdown-body {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .artifact-viewer-body .markdown-body h1,
+  .artifact-viewer-body .markdown-body h2,
+  .artifact-viewer-body .markdown-body h3 {
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+    margin: 16px 0 8px;
+  }
+
+  .artifact-viewer-body .markdown-body h1 { font-size: 20px; }
+  .artifact-viewer-body .markdown-body h2 { font-size: 16px; }
+  .artifact-viewer-body .markdown-body h3 { font-size: 14px; }
+
+  .artifact-viewer-body .markdown-body code {
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+  }
+
+  .artifact-viewer-body .markdown-body pre {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    margin: 8px 0;
+  }
+
+  .artifact-viewer-body .markdown-body pre code {
+    padding: 0;
+    background: none;
+  }
+
+  .artifact-viewer-body .markdown-body ul,
+  .artifact-viewer-body .markdown-body ol {
+    padding-left: 20px;
+    margin: 8px 0;
+  }
+
+  .artifact-viewer-body .markdown-body blockquote {
+    border-left: 3px solid var(--accent);
+    padding-left: 12px;
+    color: var(--text-dim);
+    margin: 8px 0;
+  }
+
+  .artifact-viewer-body .markdown-body a {
+    color: var(--accent);
+  }
+
+  .artifact-viewer-body .markdown-body table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 8px 0;
+  }
+
+  .artifact-viewer-body .markdown-body th,
+  .artifact-viewer-body .markdown-body td {
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    text-align: left;
+  }
+
+  .artifact-viewer-body .markdown-body th {
+    background: var(--bg);
+  }
+
+  .json-pre {
+    background: var(--bg);
+    padding: 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    overflow-x: auto;
+    font-size: 12px;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
   /* Responsive */
   @media (max-width: 800px) {
     main {
@@ -407,6 +673,8 @@
     .projects-panel { grid-row: 2; max-height: 200px; }
     .events-panel { grid-column: 1; grid-row: 3; max-height: 50vh; }
     .experiments-panel { grid-column: 1; grid-row: 4; max-height: 50vh; }
+    .artifact-panel { display: none; }
+    .artifact-viewer { width: 85%; min-width: 280px; }
   }
 </style>
 </head>
@@ -453,6 +721,13 @@
     </div>
     <div class="panel-body" id="chart-container" style="display:none;height:300px">
       <canvas id="score-chart"></canvas>
+    </div>
+  </div>
+
+  <div class="panel artifact-panel">
+    <div class="panel-header">Artifacts</div>
+    <div class="panel-body" id="artifact-tree">
+      <div class="empty-state">Select a project</div>
     </div>
   </div>
 </main>
@@ -512,6 +787,7 @@ async function selectProject(name) {
   selectedProject = name;
   loadProjects();  // Re-render to update selection
   loadExperiments(name);
+  loadArtifactTree(name);
 }
 
 // ── Experiments ──
@@ -815,9 +1091,9 @@ function closeModal() {
   }
 }
 
-// Close modal on Escape key
+// Close modal/viewer on Escape key
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closeArtifactViewer(); }
 });
 
 // ── Score History Chart ──
@@ -1005,6 +1281,140 @@ function renderKPIs(data) {
   `;
 }
 
+// ── Artifact Browser ──
+const ARTIFACT_SECTIONS = [
+  { key: 'strategy', label: 'Strategy', files: ['current.md', 'observations.md', 'research.md', 'backlog.md', 'insights.md'] },
+  { key: 'reviews', label: 'Reviews' },
+  { key: 'experiments', label: 'Experiments' },
+  { key: 'archive', label: 'Archive' },
+];
+
+async function loadArtifactTree(projectName) {
+  const el = document.getElementById('artifact-tree');
+  if (!projectName) {
+    el.innerHTML = '<div class="empty-state">Select a project</div>';
+    return;
+  }
+
+  let html = '<div class="artifact-tree">';
+  for (const section of ARTIFACT_SECTIONS) {
+    const entries = await fetchBrowse(projectName, section.key);
+    html += renderArtifactSection(projectName, section, entries);
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+async function fetchBrowse(projectName, path) {
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/factory/browse?path=${encodeURIComponent(path)}`);
+    if (!res.ok) return [];
+    return await res.json();
+  } catch { return []; }
+}
+
+function renderArtifactSection(projectName, section, entries) {
+  if (entries.length === 0 && !section.files) return '';
+  const items = section.files
+    ? section.files.map(f => {
+        const found = entries.find(e => e.name === f);
+        if (!found) return '';
+        return `<div class="artifact-file" onclick="openArtifact('${esc(projectName)}','${section.key}/${f}')">${esc(f)}</div>`;
+      }).join('')
+    : renderEntries(projectName, section.key, entries);
+
+  return `<div class="artifact-section">
+    <div class="artifact-section-header" onclick="toggleSection(this)">
+      <span class="chevron">&#9654;</span> ${esc(section.label)}
+    </div>
+    <div class="artifact-section-items">${items}</div>
+  </div>`;
+}
+
+function renderEntries(projectName, basePath, entries) {
+  let html = '';
+  for (const entry of entries) {
+    const fullPath = basePath + '/' + entry.name;
+    if (entry.is_dir) {
+      html += `<div class="artifact-dir" onclick="toggleDir(this, '${esc(projectName)}', '${esc(fullPath)}')">
+        <span class="chevron">&#9654;</span> ${esc(entry.name)}/
+      </div><div class="artifact-dir-items" data-path="${esc(fullPath)}"></div>`;
+    } else {
+      html += `<div class="artifact-file" onclick="openArtifact('${esc(projectName)}','${esc(fullPath)}')">${esc(entry.name)}</div>`;
+    }
+  }
+  return html;
+}
+
+function toggleSection(header) {
+  header.classList.toggle('open');
+  const items = header.nextElementSibling;
+  items.classList.toggle('open');
+}
+
+async function toggleDir(dirEl, projectName, path) {
+  dirEl.classList.toggle('open');
+  const items = dirEl.nextElementSibling;
+  if (items.classList.contains('open')) {
+    items.classList.remove('open');
+    return;
+  }
+  if (!items.dataset.loaded) {
+    const entries = await fetchBrowse(projectName, path);
+    items.innerHTML = renderEntries(projectName, path, entries);
+    items.dataset.loaded = '1';
+  }
+  items.classList.add('open');
+}
+
+async function openArtifact(projectName, path) {
+  closeArtifactViewer();
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectName)}/factory/file?path=${encodeURIComponent(path)}`);
+    if (!res.ok) return;
+    const content = await res.text();
+    showArtifactViewer(path, content);
+  } catch { /* ignore */ }
+}
+
+function showArtifactViewer(path, content) {
+  const overlay = document.createElement('div');
+  overlay.className = 'artifact-viewer-overlay';
+  overlay.id = 'artifact-viewer';
+  overlay.onclick = (e) => { if (e.target === overlay) closeArtifactViewer(); };
+
+  const fileName = path.split('/').pop();
+  const isJson = fileName.endsWith('.json');
+  const isMd = fileName.endsWith('.md');
+
+  let bodyHtml;
+  if (isJson) {
+    try {
+      bodyHtml = '<pre class="json-pre">' + esc(JSON.stringify(JSON.parse(content), null, 2)) + '</pre>';
+    } catch {
+      bodyHtml = '<pre class="json-pre">' + esc(content) + '</pre>';
+    }
+  } else if (isMd && typeof marked !== 'undefined') {
+    bodyHtml = '<div class="markdown-body">' + marked.parse(content) + '</div>';
+  } else {
+    bodyHtml = '<pre class="json-pre">' + esc(content) + '</pre>';
+  }
+
+  overlay.innerHTML = `<div class="artifact-viewer">
+    <div class="artifact-viewer-header">
+      <div class="artifact-viewer-title">${esc(path)}</div>
+      <button class="artifact-viewer-close" onclick="closeArtifactViewer()">&times;</button>
+    </div>
+    <div class="artifact-viewer-body">${bodyHtml}</div>
+  </div>`;
+  document.body.appendChild(overlay);
+}
+
+function closeArtifactViewer() {
+  const existing = document.getElementById('artifact-viewer');
+  if (existing) existing.remove();
+}
+
 // ── Init ──
 loadProjects();
 loadSummary();
@@ -1017,6 +1427,7 @@ setInterval(() => {
   if (selectedProject) loadExperiments(selectedProject);
 }, 10000);
 </script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </body>
 </html>
