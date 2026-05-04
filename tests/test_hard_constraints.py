@@ -1,8 +1,8 @@
-"""Tests for hard constraints — model, parser, and precheck integration."""
+"""Tests for hard constraints — model, parser, precheck, and finalize gate."""
 
 import json
+from argparse import Namespace
 from pathlib import Path
-
 from factory.models import FactoryConfig, HardConstraint
 from factory.precheck import check_hard_constraints, run_precheck
 
@@ -162,3 +162,165 @@ class TestParseHardConstraints:
 
         assert _parse_hard_constraints("not a list") == []
         assert _parse_hard_constraints(42.0) == []
+
+
+def _make_project_with_config(tmp_path: Path, hard_constraints: list[dict] | None = None) -> Path:
+    """Helper to create a project dir with .factory/config.json."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    factory_dir = project / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "experiments").mkdir()
+    (factory_dir / "strategy").mkdir()
+    (factory_dir / "reviews").mkdir()
+    config = {
+        "goal": "test",
+        "scope": [],
+        "guards": [],
+        "eval_command": "echo ok",
+        "eval_threshold": 0.8,
+        "constraints": [],
+        "hard_constraints": hard_constraints or [],
+    }
+    (factory_dir / "config.json").write_text(json.dumps(config))
+    tsv = factory_dir / "results.tsv"
+    tsv.write_text("id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+                   "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes\tresearch_citations\n")
+    return project
+
+
+class TestFinalizeGate:
+    def test_keep_overridden_when_hard_constraint_fails(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_fail", "check": "false", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "revert" in tsv
+        assert "OVERRIDDEN" in tsv
+
+    def test_keep_allowed_when_constraints_pass(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_pass", "check": "true", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "keep" in tsv
+        assert "OVERRIDDEN" not in tsv
+
+    def test_revert_verdict_skips_precheck(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "would_fail", "check": "false", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="revert",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "revert" in tsv
+        assert "OVERRIDDEN" not in tsv
+
+    def test_no_config_skips_precheck(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        factory_dir = project / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "experiments").mkdir()
+        (factory_dir / "strategy").mkdir()
+        (factory_dir / "reviews").mkdir()
+        tsv = factory_dir / "results.tsv"
+        tsv.write_text("id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+                       "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes\tresearch_citations\n")
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+        )
+        cmd_finalize(args)
+        tsv_content = tsv.read_text()
+        assert "keep" in tsv_content
+
+
+class TestMessageCLI:
+    def test_cmd_message_writes_file(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_message
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+        args = Namespace(path=str(project), text="focus on quality gates")
+        result = cmd_message(args)
+        assert result == 0
+        msg_dir = project / ".factory" / "messages"
+        files = list(msg_dir.glob("*.md"))
+        assert len(files) == 1
+        assert "focus on quality gates" in files[0].read_text()
+
+    def test_message_subcommand_parsing(self) -> None:
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["message", "/tmp/project", "hello CEO"])
+        assert args.path == "/tmp/project"
+        assert args.text == "hello CEO"
+
+
+class TestMessageInjection:
+    def test_build_ceo_task_includes_pending_messages(self, tmp_path: Path) -> None:
+        from factory.cli import _build_ceo_task
+        from factory.messages import write_message
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+        write_message(project, "fix quality gates first")
+
+        task = _build_ceo_task(project, "improve")
+        assert "User Messages" in task
+        assert "fix quality gates first" in task
+        assert "HIGH PRIORITY" in task
+
+    def test_build_ceo_task_no_messages(self, tmp_path: Path) -> None:
+        from factory.cli import _build_ceo_task
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        task = _build_ceo_task(project, "improve")
+        assert "User Messages" not in task
+
+    def test_messages_marked_read_after_injection(self, tmp_path: Path) -> None:
+        from factory.cli import _build_ceo_task
+        from factory.messages import read_pending, write_message
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+        write_message(project, "test message")
+        assert len(read_pending(project)) == 1
+
+        _build_ceo_task(project, "improve")
+        assert len(read_pending(project)) == 0
