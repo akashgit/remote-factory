@@ -134,3 +134,46 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
             state.current_mode = inferred
 
     return state
+
+
+def phase_index(phase: str | None) -> int:
+    """Return the 0-based index of a phase in the pipeline, or -1 if unknown."""
+    if phase is None:
+        return -1
+    try:
+        return PHASES.index(phase)
+    except ValueError:
+        return -1
+
+
+def completed_phases(state: FactoryLiveState) -> list[str]:
+    """Return the list of phases completed before the current one."""
+    idx = phase_index(state.current_phase)
+    if idx <= 0:
+        return []
+    return PHASES[:idx]
+
+
+def active_agent_count(state: FactoryLiveState) -> int:
+    """Return the number of currently active agents."""
+    return len(state.active_agents)
+
+
+def format_elapsed(started_at: str) -> str:
+    """Format elapsed time since started_at as a human-readable string."""
+    from datetime import datetime, timezone
+
+    if not started_at:
+        return "0s"
+    try:
+        start = datetime.fromisoformat(started_at)
+    except (ValueError, TypeError):
+        return "0s"
+    now = datetime.now(timezone.utc)
+    elapsed = int((now - start).total_seconds())
+    if elapsed < 0:
+        elapsed = 0
+    if elapsed < 60:
+        return f"{elapsed}s"
+    minutes, seconds = divmod(elapsed, 60)
+    return f"{minutes}m{seconds}s"

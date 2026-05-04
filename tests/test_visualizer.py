@@ -3,7 +3,11 @@
 from factory.visualizer.state import (
     AgentActivity,
     FactoryLiveState,
+    active_agent_count,
+    completed_phases,
+    format_elapsed,
     infer_state,
+    phase_index,
     update_state,
 )
 
@@ -203,3 +207,63 @@ class TestToDict:
         assert d["current_phase"] is None
         assert d["current_mode"] is None
         assert d["current_experiment"] is None
+
+
+class TestPhaseIndex:
+    def test_known_phase(self):
+        assert phase_index("Detect") == 0
+        assert phase_index("Build") == 4
+        assert phase_index("Archive") == 7
+
+    def test_none_phase(self):
+        assert phase_index(None) == -1
+
+    def test_unknown_phase(self):
+        assert phase_index("Unknown") == -1
+
+
+class TestCompletedPhases:
+    def test_no_phase(self):
+        state = FactoryLiveState()
+        assert completed_phases(state) == []
+
+    def test_first_phase(self):
+        state = FactoryLiveState(current_phase="Detect")
+        assert completed_phases(state) == []
+
+    def test_middle_phase(self):
+        state = FactoryLiveState(current_phase="Build")
+        assert completed_phases(state) == ["Detect", "Discover", "Research", "Strategize"]
+
+    def test_last_phase(self):
+        state = FactoryLiveState(current_phase="Archive")
+        assert completed_phases(state) == ["Detect", "Discover", "Research", "Strategize", "Build", "Review", "Eval"]
+
+
+class TestActiveAgentCount:
+    def test_empty(self):
+        assert active_agent_count(FactoryLiveState()) == 0
+
+    def test_with_agents(self):
+        state = FactoryLiveState()
+        state.active_agents["builder"] = AgentActivity(role="builder", task="work", started_at="2026-05-03T12:00:00Z")
+        state.active_agents["reviewer"] = AgentActivity(role="reviewer", task="review", started_at="2026-05-03T12:00:00Z")
+        assert active_agent_count(state) == 2
+
+
+class TestFormatElapsed:
+    def test_empty_string(self):
+        assert format_elapsed("") == "0s"
+
+    def test_invalid_timestamp(self):
+        assert format_elapsed("not-a-date") == "0s"
+
+    def test_recent_timestamp(self):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        result = format_elapsed(now)
+        assert result.endswith("s")
+
+    def test_old_timestamp(self):
+        result = format_elapsed("2020-01-01T00:00:00+00:00")
+        assert "m" in result
