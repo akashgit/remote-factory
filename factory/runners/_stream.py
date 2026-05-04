@@ -7,6 +7,10 @@ import os
 import sys
 from typing import BinaryIO
 
+import structlog
+
+log = structlog.get_logger()
+
 
 def should_stream() -> bool:
     """Determine if we should stream subprocess output to the terminal.
@@ -16,9 +20,12 @@ def should_stream() -> bool:
     - stdout is not a TTY (e.g., piped to file)
     """
     if os.environ.get("FACTORY_RUNNER_QUIET", "").lower() in ("1", "true", "yes"):
+        log.debug("should_stream", result=False, reason="FACTORY_RUNNER_QUIET")
         return False
     if not sys.stdout.isatty():
+        log.debug("should_stream", result=False, reason="not_tty")
         return False
+    log.debug("should_stream", result=True)
     return True
 
 
@@ -67,6 +74,8 @@ async def stream_subprocess(
     Returns:
         (stdout_bytes, stderr_bytes) tuple with all collected output.
     """
+    log.debug("stream_subprocess_start", stream=stream, prefix=prefix)
+
     stdout_buf: list[bytes] = []
     stderr_buf: list[bytes] = []
 
@@ -93,5 +102,12 @@ async def stream_subprocess(
     )
 
     await proc.wait()
+
+    log.debug(
+        "stream_subprocess_complete",
+        returncode=getattr(proc, "returncode", None),
+        stdout_bytes=sum(len(c) for c in stdout_buf),
+        stderr_bytes=sum(len(c) for c in stderr_buf),
+    )
 
     return b"".join(stdout_buf), b"".join(stderr_buf)
