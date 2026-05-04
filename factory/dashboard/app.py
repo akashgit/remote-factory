@@ -11,7 +11,7 @@ from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 log = structlog.get_logger()
@@ -108,6 +108,35 @@ def create_app(projects_dir: Path) -> FastAPI:
             "revert_count": revert_count,
             "keep_rate": keep_count / total_experiments if total_experiments > 0 else 0,
         }
+
+    @app.get("/api/projects/{name}/state")
+    async def project_state(name: str) -> dict[str, Any]:
+        log.info("dashboard_request", endpoint="/api/projects/{name}/state", project=name)
+        from factory.events import load_events
+        from factory.visualizer import infer_state
+
+        path = projects_dir / name
+        events = load_events(path)
+        tail = events[-500:] if len(events) > 500 else events
+        state = infer_state(tail)
+        return state.to_dict()
+
+    @app.get("/api/projects/{name}/agent-output/{role}")
+    async def agent_output(name: str, role: str) -> PlainTextResponse:
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/agent-output/{role}",
+            project=name,
+            role=role,
+        )
+        review_file = projects_dir / name / ".factory" / "reviews" / f"{role}-latest.md"
+        if not review_file.exists():
+            return PlainTextResponse("No output available", status_code=404)
+        try:
+            content = review_file.read_text()
+        except OSError:
+            return PlainTextResponse("Failed to read output", status_code=500)
+        return PlainTextResponse(content)
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
