@@ -37,7 +37,7 @@ def write_message(project_path: Path, text: str) -> Message:
     msg_dir = _messages_dir(project_path)
     msg_dir.mkdir(parents=True, exist_ok=True)
 
-    msg_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S") + "-" + uuid.uuid4().hex[:8]
+    msg_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
     ts = datetime.now(timezone.utc)
 
     path = msg_dir / f"{msg_id}.md"
