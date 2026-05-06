@@ -1127,13 +1127,13 @@ def cmd_self_update(args: argparse.Namespace) -> int:
 
 def cmd_install(args: argparse.Namespace) -> int:
     """Install Factory agents as Claude Code agents."""
-    from factory.agents.plugin import AGENT_CONFIG, generate_agent_content
+    from factory.agents.plugin import generate_agent_content, load_agent_config
 
     agents_dir = Path.home() / ".claude" / "agents"
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     role_filter = getattr(args, "role", None)
-    roles = [role_filter] if role_filter else list(AGENT_CONFIG)
+    roles = [role_filter] if role_filter else list(load_agent_config())
 
     for role in roles:
         content = generate_agent_content(role)
@@ -2303,8 +2303,6 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("install", help="Install Factory agents as Claude Code agents (~/.claude/agents/)")
     p.add_argument(
         "--role",
-        choices=["researcher", "strategist", "builder", "reviewer",
-                 "evaluator", "archivist", "distiller", "ceo"],
         default=None,
         help="Install only a specific agent role (default: all)",
     )

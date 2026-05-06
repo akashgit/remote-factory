@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass
 from pathlib import Path
 
-from factory.agents.runner import AgentRole
+import yaml
 
-_PROMPTS_DIR = Path(__file__).parent / "prompts"
+from factory.agents.runner import _PROMPTS_DIR
+
+_AGENTS_YML = Path(__file__).parent / "agents.yml"
 _PLUGIN_AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
 
 
@@ -18,99 +21,37 @@ class AgentMeta:
     tools: list[str]
 
 
-AGENT_CONFIG: dict[AgentRole, AgentMeta] = {
-    "researcher": AgentMeta(
-        description=(
-            "Deep research and discovery for software projects. "
-            "Analyzes codebases, researches best practices, and synthesizes findings "
-            "to inform strategy. Use when the user wants to study a project or research "
-            "a domain before making changes."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "WebSearch", "WebFetch", "Grep", "Glob"],
-    ),
-    "strategist": AgentMeta(
-        description=(
-            "Generate prioritized improvement hypotheses for a software project. "
-            "Reads backlog, experiment history, and eval scores to produce a ranked "
-            "strategy. Use when the user wants a plan for what to improve next."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "Grep", "Glob"],
-    ),
-    "builder": AgentMeta(
-        description=(
-            "Implement a single focused change and open a pull request. "
-            "Reads issues, writes code, runs tests, and creates PRs on feature branches. "
-            "Use when the user wants a specific feature built or bug fixed."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "Edit", "Write", "Grep", "Glob"],
-    ),
-    "reviewer": AgentMeta(
-        description=(
-            "Review pull requests against guard rules, eval scores, and code quality criteria. "
-            "Makes keep/revert decisions on changes. Use when the user wants a structured "
-            "code review or keep/revert verdict."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "Grep", "Glob"],
-    ),
-    "evaluator": AgentMeta(
-        description=(
-            "Run project evaluations and interpret the results. "
-            "Executes eval commands, compares before/after scores, and explains trends. "
-            "Use when the user wants to measure project quality or understand score changes."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "Grep", "Glob"],
-    ),
-    "archivist": AgentMeta(
-        description=(
-            "Record experiment results, research findings, and project knowledge to an "
-            "Obsidian vault or local archive. Maintains institutional memory across cycles. "
-            "Use when the user wants to archive findings or update project dashboards."
-        ),
-        model="sonnet",
-        tools=["Bash", "Read", "Write", "Grep", "Glob"],
-    ),
-    "distiller": AgentMeta(
-        description=(
-            "Transform vague ideas into precise, buildable project specifications. "
-            "Combines user intent with research findings to produce structured specs. "
-            "Use when the user has a raw idea that needs refining into a concrete plan."
-        ),
-        model="sonnet",
-        tools=["Read", "Write"],
-    ),
-    "ceo": AgentMeta(
-        description=(
-            "Autonomous orchestrator for the full Factory workflow. "
-            "Detects project state, spawns specialist agents, runs experiments, "
-            "makes keep/revert decisions, and ensures mandatory archival. "
-            "Use when the user wants a complete evolution cycle."
-        ),
-        model="opus",
-        tools=["Bash", "Read", "Write", "Edit", "Grep", "Glob", "WebSearch", "WebFetch"],
-    ),
-}
+@functools.cache
+def load_agent_config() -> dict[str, AgentMeta]:
+    """Load agent metadata from agents.yml.
+
+    Only includes roles that also have a prompt file in prompts/.
+    """
+    raw: dict[str, dict] = yaml.safe_load(_AGENTS_YML.read_text())
+    config: dict[str, AgentMeta] = {}
+    for role, entry in raw.items():
+        if not (_PROMPTS_DIR / f"{role}.md").exists():
+            continue
+        config[role] = AgentMeta(
+            description=entry.get("description", ""),
+            model=entry["model"],
+            tools=entry.get("tools", []),
+        )
+    return config
 
 
-def generate_agent_content(role: AgentRole) -> str:
+def generate_agent_content(role: str) -> str:
     """Generate a complete plugin agent file for the given role.
 
     Reads the source prompt from factory/agents/prompts/<role>.md and prepends
     YAML frontmatter and a generated-file header.
     """
-    if role not in AGENT_CONFIG:
+    config = load_agent_config()
+    if role not in config:
         raise ValueError(f"Unknown agent role: {role!r}")
 
-    meta = AGENT_CONFIG[role]
-    prompt_path = _PROMPTS_DIR / f"{role}.md"
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Source prompt not found: {prompt_path}")
-
-    prompt = prompt_path.read_text()
+    meta = config[role]
+    prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
     tools_yaml = "\n".join(f"  - {t}" for t in meta.tools)
 
     return (
@@ -141,8 +82,9 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
     if agents_dir is None:
         agents_dir = _PLUGIN_AGENTS_DIR
 
+    config = load_agent_config()
     out_of_sync: list[str] = []
-    for role in AGENT_CONFIG:
+    for role in config:
         expected = generate_agent_content(role)
         agent_path = agents_dir / f"{role}.md"
 
