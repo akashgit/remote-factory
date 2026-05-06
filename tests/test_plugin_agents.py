@@ -123,3 +123,32 @@ class TestCheckAgentsInSync:
         (tmp_path / "builder.md").write_text("stale content")
         out_of_sync = check_agents_in_sync(tmp_path)
         assert out_of_sync == ["builder"]
+
+
+class TestCmdInstall:
+    def test_installs_all_agents(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role=None))
+        assert rc == 0
+        agents_dir = tmp_path / ".claude" / "agents"
+        for role in ALL_ROLES:
+            agent_file = agents_dir / f"factory-{role}.md"
+            assert agent_file.exists(), f"Missing agent file for {role}"
+            content = agent_file.read_text()
+            assert content.startswith("---\n")
+
+    def test_installs_single_role(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role="builder"))
+        assert rc == 0
+        agents_dir = tmp_path / ".claude" / "agents"
+        assert (agents_dir / "factory-builder.md").exists()
+        assert not (agents_dir / "factory-ceo.md").exists()
