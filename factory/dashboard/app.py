@@ -5,18 +5,267 @@ from __future__ import annotations
 import asyncio
 import csv
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import structlog
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 log = structlog.get_logger()
 
 _STATIC_DIR = Path(__file__).parent / "static"
+
+_VERDICT_RE = re.compile(r"\*\*Verdict:\*\*\s*(PROCEED|REDIRECT|ABORT)")
+_RATIONALE_RE = re.compile(r"\*\*Rationale:\*\*\s*(.+?)(?:\n|$)")
+_ISSUES_RE = re.compile(r"\*\*Issues found:\*\*\s*(.+?)(?:\n\*\*|\Z)", re.DOTALL)
+
+
+def _read_text_safe(path: Path) -> str | None:
+    """Return file contents or None if missing/unreadable."""
+    try:
+        return path.read_text()
+    except OSError:
+        return None
+
+
+def _read_json_safe(path: Path) -> dict[str, Any] | None:
+    """Return parsed JSON dict or None if missing/unreadable."""
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _parse_single_verdict(path: Path) -> dict[str, Any] | None:
+    """Parse a ceo-verdict-*.md file into structured verdict data."""
+    text = _read_text_safe(path)
+    if not text:
+        return None
+    verdict_match = _VERDICT_RE.search(text)
+    if not verdict_match:
+        return None
+
+    rationale_match = _RATIONALE_RE.search(text)
+    rationale = rationale_match.group(1).strip() if rationale_match else ""
+
+    issues: list[str] = []
+    issues_match = _ISSUES_RE.search(text)
+    if issues_match:
+        issues_text = issues_match.group(1).strip()
+        if issues_text.lower() not in ("none", ""):
+            for line in issues_text.splitlines():
+                line = line.strip().lstrip("- ")
+                if line:
+                    issues.append(line)
+
+    return {
+        "decision": verdict_match.group(1),
+        "rationale": rationale,
+        "issues": issues,
+    }
+
+
+def _parse_diff_stats(diff_text: str) -> dict[str, int]:
+    """Count files changed, insertions, and deletions from a unified diff."""
+    files = 0
+    insertions = 0
+    deletions = 0
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            files += 1
+        elif line.startswith("+") and not line.startswith("+++"):
+            insertions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+    return {"files_changed": files, "insertions": insertions, "deletions": deletions}
+
+
+def _resolve_experiment_id(
+    project_path: Path, events: list[dict[str, Any]]
+) -> int | None:
+    """Resolve the current or latest experiment ID."""
+    from factory.visualizer import infer_state
+
+    tail = events[-500:] if len(events) > 500 else events
+    state = infer_state(tail)
+    if state.current_experiment and state.current_experiment.get("id") is not None:
+        return int(state.current_experiment["id"])
+
+    tsv_path = project_path / ".factory" / "results.tsv"
+    if tsv_path.exists():
+        rows = _load_tsv(tsv_path)
+        if rows:
+            try:
+                return int(rows[-1]["id"])
+            except (KeyError, ValueError):
+                pass
+    return None
+
+
+def _phase_data_detect(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    config = _read_json_safe(factory_dir / "config.json") or {}
+    profile = _read_json_safe(factory_dir / "eval_profile.json") or {}
+    dims = profile.get("dimensions", [])
+    return {
+        "goal": config.get("goal", ""),
+        "scope": config.get("scope", []),
+        "eval_threshold": config.get("eval_threshold"),
+        "eval_command": config.get("eval_command", ""),
+        "constraints": config.get("constraints", []),
+        "guards": config.get("guards", []),
+        "language": profile.get("project_type", ""),
+        "dimensions_count": len(dims),
+    }, None
+
+
+def _phase_data_discover(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    profile = _read_json_safe(factory_dir / "eval_profile.json") or {}
+    dims = profile.get("dimensions", [])
+    return {
+        "project_type": profile.get("project_type", ""),
+        "confidence": profile.get("confidence"),
+        "human_reviewed": profile.get("human_reviewed", False),
+        "dimensions": [
+            {
+                "name": d.get("name", ""),
+                "weight": d.get("weight", 0),
+                "source": d.get("source", ""),
+                "description": d.get("description", ""),
+            }
+            for d in dims
+        ],
+    }, None
+
+
+def _phase_data_research(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    verdict = _parse_single_verdict(
+        factory_dir / "reviews" / "ceo-verdict-researcher.md"
+    )
+    return {
+        "research": _read_text_safe(factory_dir / "strategy" / "research.md") or "",
+        "observations": _read_text_safe(
+            factory_dir / "strategy" / "observations.md"
+        )
+        or "",
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "researcher-latest.md"
+        )
+        or "",
+    }, verdict
+
+
+def _phase_data_strategize(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    verdict = _parse_single_verdict(
+        factory_dir / "reviews" / "ceo-verdict-strategist.md"
+    )
+    return {
+        "strategy": _read_text_safe(factory_dir / "strategy" / "current.md") or "",
+        "backlog": _read_text_safe(factory_dir / "strategy" / "backlog.md") or "",
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "strategist-latest.md"
+        )
+        or "",
+    }, verdict
+
+
+def _phase_data_build(
+    factory_dir: Path, exp_id: int | None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    verdict = _parse_single_verdict(
+        factory_dir / "reviews" / "ceo-verdict-builder.md"
+    )
+    data: dict[str, Any] = {
+        "experiment_id": exp_id,
+        "hypothesis": "",
+        "diff": "",
+        "diff_stats": {"files_changed": 0, "insertions": 0, "deletions": 0},
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "builder-latest.md"
+        )
+        or "",
+    }
+    if exp_id is not None:
+        exp_dir = factory_dir / "experiments" / str(exp_id).zfill(3)
+        data["hypothesis"] = _read_text_safe(exp_dir / "hypothesis.md") or ""
+        diff = _read_text_safe(exp_dir / "changes.diff") or ""
+        data["diff"] = diff
+        if diff:
+            data["diff_stats"] = _parse_diff_stats(diff)
+    return data, verdict
+
+
+def _phase_data_review(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    verdict = _parse_single_verdict(
+        factory_dir / "reviews" / "ceo-verdict-reviewer.md"
+    )
+    return {
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "reviewer-latest.md"
+        )
+        or "",
+    }, verdict
+
+
+def _phase_data_eval(
+    factory_dir: Path, exp_id: int | None
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    data: dict[str, Any] = {
+        "experiment_id": exp_id,
+        "score_before": None,
+        "score_after": None,
+        "delta": None,
+        "last_eval": _read_json_safe(factory_dir / "last_eval.json"),
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "evaluator-latest.md"
+        )
+        or "",
+    }
+    if exp_id is not None:
+        exp_dir = factory_dir / "experiments" / str(exp_id).zfill(3)
+        before = _read_json_safe(exp_dir / "eval_before.json")
+        after = _read_json_safe(exp_dir / "eval_after.json")
+        data["score_before"] = before
+        data["score_after"] = after
+        if before and after:
+            try:
+                data["delta"] = round(
+                    float(after.get("total", 0)) - float(before.get("total", 0)), 4
+                )
+            except (TypeError, ValueError):
+                pass
+    return data, None
+
+
+def _phase_data_archive(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    return {
+        "agent_output": _read_text_safe(
+            factory_dir / "reviews" / "archivist-latest.md"
+        )
+        or "",
+        "session_summary": _read_text_safe(
+            factory_dir / "reviews" / "session-summary.md"
+        )
+        or "",
+        "performance_report": _read_json_safe(
+            factory_dir / "performance_report.json"
+        ),
+    }, None
 
 
 def create_app(projects_dir: Path) -> FastAPI:
@@ -109,16 +358,61 @@ def create_app(projects_dir: Path) -> FastAPI:
             "keep_rate": keep_count / total_experiments if total_experiments > 0 else 0,
         }
 
+    @app.get("/api/projects/{name}/details")
+    async def project_details(name: str) -> dict[str, Any]:
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/details",
+            project=name,
+        )
+        path = projects_dir / name
+        factory_dir = path / ".factory"
+
+        factory_md = _read_text_safe(path / "factory.md")
+        config = _read_json_safe(factory_dir / "config.json")
+        profile = _read_json_safe(factory_dir / "eval_profile.json")
+        backlog = _read_text_safe(factory_dir / "strategy" / "backlog.md")
+        checkpoint = _read_json_safe(factory_dir / "checkpoint.json")
+        report = _read_json_safe(factory_dir / "performance_report.json")
+
+        has_factory = factory_dir.exists()
+        has_config = config is not None
+        has_profile = profile is not None
+
+        if has_config:
+            status = "ready"
+        elif has_profile:
+            status = "pending_review"
+        elif has_factory:
+            status = "discovering"
+        else:
+            status = "new"
+
+        return {
+            "name": name,
+            "status": status,
+            "factory_md": factory_md,
+            "config": config,
+            "eval_profile": profile,
+            "backlog": backlog,
+            "checkpoint": checkpoint,
+            "performance_report": report,
+        }
+
     @app.get("/api/projects/{name}/state")
     async def project_state(name: str) -> dict[str, Any]:
         log.info("dashboard_request", endpoint="/api/projects/{name}/state", project=name)
         from factory.events import load_events
-        from factory.visualizer import infer_state
+        from factory.visualizer import infer_mode_from_artifacts, infer_state
 
         path = projects_dir / name
         events = load_events(path)
         tail = events[-500:] if len(events) > 500 else events
         state = infer_state(tail)
+        if state.current_mode is None:
+            inferred = infer_mode_from_artifacts(path / ".factory")
+            if inferred:
+                state.current_mode = inferred
         return state.to_dict()
 
     @app.get("/api/projects/{name}/agent-output/{role}")
@@ -137,6 +431,97 @@ def create_app(projects_dir: Path) -> FastAPI:
         except OSError:
             return PlainTextResponse("Failed to read output", status_code=500)
         return PlainTextResponse(content)
+
+    @app.get("/api/projects/{name}/phase-detail/{phase}")
+    async def phase_detail(name: str, phase: str) -> JSONResponse:
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/phase-detail/{phase}",
+            project=name,
+            phase=phase,
+        )
+        from factory.visualizer import (
+            PHASES,
+            MODE_PHASES,
+            _get_phases_for_mode,
+            infer_mode_from_artifacts,
+            infer_state,
+            phase_index,
+        )
+
+        path = projects_dir / name
+        factory_dir = path / ".factory"
+
+        from factory.events import load_events
+
+        events = load_events(path)
+        tail = events[-500:] if len(events) > 500 else events
+        state = infer_state(tail)
+        mode = state.current_mode
+        if mode is None:
+            mode = infer_mode_from_artifacts(factory_dir)
+
+        mode_phases_list = _get_phases_for_mode(mode)
+        if phase not in mode_phases_list and phase not in PHASES:
+            return JSONResponse(
+                {"error": f"Invalid phase: {phase}"}, status_code=400
+            )
+
+        current_idx = phase_index(state.current_phase, mode)
+        requested_idx = phase_index(phase, mode)
+        if requested_idx < 0:
+            requested_idx = phase_index(phase)
+            current_idx = phase_index(state.current_phase)
+        if requested_idx < 0:
+            status = "future"
+        elif current_idx < 0:
+            status = "future"
+        elif requested_idx < current_idx:
+            status = "completed"
+        elif requested_idx == current_idx:
+            status = "active"
+        else:
+            status = "future"
+
+        if status == "future":
+            return JSONResponse(
+                {"phase": phase, "status": "future", "data": None, "verdict": None}
+            )
+
+        # Resolve builder_key from mode phase definition
+        builder_key: str | None = None
+        mode_lower = (mode or "").lower()
+        phase_defs = MODE_PHASES.get(mode_lower)
+        if phase_defs:
+            for display, bkey, _ in phase_defs:
+                if display == phase:
+                    builder_key = bkey
+                    break
+        if builder_key is None:
+            builder_key = phase.lower()
+
+        exp_id = _resolve_experiment_id(path, events)
+        _PHASE_BUILDERS: dict[str, Any] = {
+            "detect": lambda: _phase_data_detect(factory_dir),
+            "discover": lambda: _phase_data_discover(factory_dir),
+            "research": lambda: _phase_data_research(factory_dir),
+            "strategize": lambda: _phase_data_strategize(factory_dir),
+            "build": lambda: _phase_data_build(factory_dir, exp_id),
+            "review": lambda: _phase_data_review(factory_dir),
+            "eval": lambda: _phase_data_eval(factory_dir, exp_id),
+            "archive": lambda: _phase_data_archive(factory_dir),
+        }
+
+        builder = _PHASE_BUILDERS.get(builder_key)
+        if not builder:
+            return JSONResponse(
+                {"phase": phase, "status": status, "data": None, "verdict": None}
+            )
+
+        data, verdict = builder()
+        return JSONResponse(
+            {"phase": phase, "status": status, "data": data, "verdict": verdict}
+        )
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:

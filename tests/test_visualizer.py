@@ -1,11 +1,14 @@
 """Tests for the factory visualizer state inference module."""
 
 from factory.visualizer.state import (
+    PHASES,
     AgentActivity,
     FactoryLiveState,
+    _get_phases_for_mode,
     active_agent_count,
     completed_phases,
     format_elapsed,
+    infer_mode_from_artifacts,
     infer_state,
     phase_index,
     update_state,
@@ -77,7 +80,8 @@ class TestAgentTracking:
 class TestPhaseInference:
     def test_detect_phase(self):
         state = infer_state([_event("detect", data={"state": "new"})])
-        assert state.current_phase == "Detect"
+        assert state.current_phase == "Research"
+        assert state.current_mode == "Build"
 
     def test_discover_phase(self):
         state = infer_state([_event("discover.started")])
@@ -175,7 +179,7 @@ class TestUpdateState:
     def test_incremental_update(self):
         state = FactoryLiveState()
         state = update_state(state, _event("detect", data={"state": "new"}))
-        assert state.current_phase == "Detect"
+        assert state.current_phase == "Research"
         assert state.current_mode == "Build"
 
         state = update_state(state, _event("agent.started", agent="builder", data={"task": "work"}))
@@ -267,3 +271,169 @@ class TestFormatElapsed:
     def test_old_timestamp(self):
         result = format_elapsed("2020-01-01T00:00:00+00:00")
         assert "m" in result
+
+
+class TestModeAwarePhaseInference:
+    def test_improve_researcher_sets_observe(self):
+        events = [
+            _event("cycle.started", data={"mode": "improve"}),
+            _event("agent.started", agent="researcher", data={"task": "study"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Observe"
+
+    def test_improve_strategist_sets_hypothesize(self):
+        events = [
+            _event("cycle.started", data={"mode": "improve"}),
+            _event("agent.started", agent="strategist", data={"task": "plan"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Hypothesize"
+
+    def test_research_failure_analyst_sets_analyze(self):
+        events = [
+            _event("cycle.started", data={"mode": "research"}),
+            _event("agent.started", agent="failure_analyst", data={"task": "analyze"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Analyze"
+
+    def test_research_evaluator_sets_run(self):
+        events = [
+            _event("cycle.started", data={"mode": "research"}),
+            _event("agent.started", agent="evaluator", data={"task": "eval"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Run"
+
+    def test_build_strategist_sets_plan(self):
+        events = [
+            _event("cycle.started", data={"mode": "build"}),
+            _event("agent.started", agent="strategist", data={"task": "plan"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Plan"
+
+    def test_no_mode_uses_generic_mapping(self):
+        events = [
+            _event("agent.started", agent="researcher", data={"task": "study"}),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "Research"
+
+    def test_meta_ace_event_sets_ace_phase(self):
+        events = [
+            _event("cycle.started", data={"mode": "meta"}),
+            _event("ace.started"),
+        ]
+        state = infer_state(events)
+        assert state.current_phase == "ACE"
+
+    def test_hypothesis_number_increments(self):
+        events = [
+            _event("cycle.started", data={"mode": "improve"}),
+            _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
+            _event("experiment.finalize", data={"exp_id": 1, "verdict": "keep"}),
+            _event("experiment.begin", data={"exp_id": 2, "hypothesis": "H2"}),
+        ]
+        state = infer_state(events)
+        assert state.hypothesis_number == 2
+        assert state.current_experiment["hypothesis_number"] == 2
+
+    def test_hypothesis_number_resets_on_new_cycle(self):
+        events = [
+            _event("cycle.started", data={"mode": "improve"}),
+            _event("experiment.begin", data={"exp_id": 1, "hypothesis": "H1"}),
+            _event("cycle.started", data={"mode": "improve"}),
+        ]
+        state = infer_state(events)
+        assert state.hypothesis_number == 0
+
+    def test_to_dict_includes_mode_phases(self):
+        events = [_event("cycle.started", data={"mode": "improve"})]
+        state = infer_state(events)
+        d = state.to_dict()
+        assert d["phases"] == ["Observe", "Hypothesize", "Build", "Review", "Eval", "Archive"]
+        assert "Build" in d["loop_phases"]
+        assert "Observe" not in d["loop_phases"]
+        assert d["hypothesis_number"] == 0
+
+    def test_to_dict_research_mode_phases(self):
+        events = [_event("cycle.started", data={"mode": "research"})]
+        state = infer_state(events)
+        d = state.to_dict()
+        assert d["phases"][0] == "Baseline"
+        assert "Run" in d["loop_phases"]
+
+    def test_to_dict_no_mode_uses_generic(self):
+        d = FactoryLiveState().to_dict()
+        assert d["phases"] == PHASES
+        assert d["loop_phases"] == []
+
+
+class TestModeAwarePhaseIndex:
+    def test_improve_observe_index(self):
+        assert phase_index("Observe", mode="improve") == 0
+
+    def test_improve_hypothesize_index(self):
+        assert phase_index("Hypothesize", mode="improve") == 1
+
+    def test_improve_research_not_found(self):
+        assert phase_index("Research", mode="improve") == -1
+
+    def test_generic_research_found(self):
+        assert phase_index("Research", mode=None) == 2
+
+    def test_completed_phases_mode_aware(self):
+        state = FactoryLiveState(current_phase="Build", current_mode="improve")
+        assert completed_phases(state) == ["Observe", "Hypothesize"]
+
+    def test_completed_phases_generic(self):
+        state = FactoryLiveState(current_phase="Build", current_mode=None)
+        assert completed_phases(state) == ["Detect", "Discover", "Research", "Strategize"]
+
+
+class TestGetPhasesForMode:
+    def test_improve(self):
+        phases = _get_phases_for_mode("improve")
+        assert phases[0] == "Observe"
+        assert "Archive" in phases
+
+    def test_research(self):
+        phases = _get_phases_for_mode("research")
+        assert phases[0] == "Baseline"
+        assert "Run" in phases
+
+    def test_unknown_mode(self):
+        assert _get_phases_for_mode("unknown") == PHASES
+
+    def test_none_mode(self):
+        assert _get_phases_for_mode(None) == PHASES
+
+
+class TestInferModeFromArtifacts:
+    def test_improve_from_config(self, tmp_path):
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text('{"goal":"test"}')
+        assert infer_mode_from_artifacts(factory_dir) == "improve"
+
+    def test_research_from_target(self, tmp_path):
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text(
+            '{"goal":"test","research_target":{"metric":"latency"}}'
+        )
+        assert infer_mode_from_artifacts(factory_dir) == "research"
+
+    def test_discover_from_profile(self, tmp_path):
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "eval_profile.json").write_text('{"project_type":"python"}')
+        assert infer_mode_from_artifacts(factory_dir) == "discover"
+
+    def test_none_from_empty(self, tmp_path):
+        assert infer_mode_from_artifacts(tmp_path / ".factory") is None
+
+    def test_none_from_missing(self, tmp_path):
+        assert infer_mode_from_artifacts(tmp_path / "nonexistent") is None

@@ -14,8 +14,12 @@ from factory.dashboard.app import (
     create_app,
     _load_experiment_dimensions,
     _load_latest_dimensions,
+    _parse_diff_stats,
+    _parse_single_verdict,
     _project_summary,
     _load_tsv,
+    _read_json_safe,
+    _read_text_safe,
 )
 
 
@@ -398,3 +402,379 @@ class TestBanner:
         captured = capsys.readouterr()
         assert "Factory v2" in captured.err
         assert "meta" in captured.err
+
+
+# ── Phase Detail Tests ──
+
+
+@pytest.fixture()
+def phase_projects_dir(tmp_path: Path) -> Path:
+    """Projects dir with full .factory/ artifacts for phase-detail tests."""
+    proj = tmp_path / "proj-phase"
+    factory = proj / ".factory"
+
+    # Create all subdirs
+    for subdir in ["experiments/001", "experiments/002", "strategy", "reviews"]:
+        (factory / subdir).mkdir(parents=True)
+
+    # Config
+    (factory / "config.json").write_text(json.dumps({
+        "goal": "Build a weather CLI",
+        "scope": ["src/"],
+        "guards": ["Do not delete tests"],
+        "eval_command": "python eval/score.py",
+        "eval_threshold": 0.74,
+        "constraints": ["Prefer small changes"],
+    }))
+
+    # Eval profile
+    (factory / "eval_profile.json").write_text(json.dumps({
+        "project_type": "cli_tool",
+        "confidence": 0.85,
+        "human_reviewed": True,
+        "dimensions": [
+            {"name": "tests", "weight": 0.4, "source": "discovered",
+             "description": "Run test suite", "command": "pytest"},
+            {"name": "lint", "weight": 0.3, "source": "discovered",
+             "description": "Lint check", "command": "ruff check ."},
+        ],
+    }))
+
+    # Strategy files
+    (factory / "strategy" / "research.md").write_text(
+        "# Research\nThe project uses argparse for CLI."
+    )
+    (factory / "strategy" / "observations.md").write_text(
+        "# Observations\n- No structured logging\n- 72% test coverage"
+    )
+    (factory / "strategy" / "current.md").write_text(
+        "## H1: Add structlog\nInstrument all modules with structlog."
+    )
+    (factory / "strategy" / "backlog.md").write_text(
+        "- Add retry logic\n- Improve error messages"
+    )
+
+    # Agent outputs
+    (factory / "reviews" / "researcher-latest.md").write_text("Researcher output here")
+    (factory / "reviews" / "strategist-latest.md").write_text("Strategist output here")
+    (factory / "reviews" / "builder-latest.md").write_text("Builder output here")
+    (factory / "reviews" / "reviewer-latest.md").write_text("Reviewer output here")
+    (factory / "reviews" / "evaluator-latest.md").write_text("Evaluator output here")
+    (factory / "reviews" / "archivist-latest.md").write_text("Archivist output here")
+    (factory / "reviews" / "session-summary.md").write_text("# Session Summary\nAll good.")
+
+    # CEO verdicts
+    (factory / "reviews" / "ceo-verdict-researcher.md").write_text(
+        "**Verdict:** PROCEED\n**Rationale:** Research is thorough\n"
+        "**Issues found:** None"
+    )
+    (factory / "reviews" / "ceo-verdict-strategist.md").write_text(
+        "**Verdict:** PROCEED\n**Rationale:** Strategy approved\n"
+        "**Issues found:** None"
+    )
+    (factory / "reviews" / "ceo-verdict-builder.md").write_text(
+        "**Verdict:** REDIRECT\n**Rationale:** Missing test coverage\n"
+        "**Issues found:**\n- No tests for new module\n- Unused import"
+    )
+    (factory / "reviews" / "ceo-verdict-reviewer.md").write_text(
+        "**Verdict:** ABORT\n**Rationale:** Critical regression\n"
+        "**Issues found:** None"
+    )
+
+    # Experiment artifacts
+    (factory / "experiments" / "001" / "hypothesis.md").write_text(
+        "Add structlog to all modules"
+    )
+    (factory / "experiments" / "001" / "eval_before.json").write_text(json.dumps({
+        "total": 0.65, "results": [
+            {"name": "tests", "score": 0.8, "weight": 0.4, "passed": True},
+            {"name": "lint", "score": 0.5, "weight": 0.3, "passed": False},
+        ],
+    }))
+    (factory / "experiments" / "001" / "eval_after.json").write_text(json.dumps({
+        "total": 0.78, "results": [
+            {"name": "tests", "score": 0.9, "weight": 0.4, "passed": True},
+            {"name": "lint", "score": 0.7, "weight": 0.3, "passed": True},
+        ],
+    }))
+    (factory / "experiments" / "001" / "changes.diff").write_text(
+        "diff --git a/src/main.py b/src/main.py\n"
+        "--- a/src/main.py\n"
+        "+++ b/src/main.py\n"
+        "@@ -1,3 +1,5 @@\n"
+        "+import structlog\n"
+        "+log = structlog.get_logger()\n"
+        " def main():\n"
+        "-    print('hello')\n"
+        "+    log.info('hello')\n"
+    )
+
+    # Results TSV
+    tsv = io.StringIO()
+    writer = csv.writer(tsv, dialect="excel-tab")
+    writer.writerow(["id", "timestamp", "hypothesis", "change_summary",
+                     "issue_number", "pr_number", "score_before", "score_after",
+                     "delta", "verdict", "cost_usd", "notes"])
+    writer.writerow(["1", "2026-05-01T10:00:00", "Add structlog", "Added logging",
+                     "", "", "0.650", "0.780", "0.130", "keep", "0.40", ""])
+    (factory / "results.tsv").write_text(tsv.getvalue())
+
+    # Performance report
+    (factory / "performance_report.json").write_text(json.dumps({
+        "project_name": "proj-phase",
+        "total_experiments": 1,
+        "keep_count": 1,
+        "revert_count": 0,
+        "keep_rate": 1.0,
+        "latest_score": 0.78,
+    }))
+
+    # Events — set current phase to Eval (so Research/Strategize/Build are completed)
+    from factory.events import emit_event
+    emit_event(proj, "cycle.started", data={"mode": "Improve"})
+    emit_event(proj, "detect", data={"state": "running"})
+    emit_event(proj, "agent.started", agent="researcher", data={"task": "analyze"})
+    emit_event(proj, "agent.completed", agent="researcher", data={"return_code": 0})
+    emit_event(proj, "agent.started", agent="strategist", data={"task": "plan"})
+    emit_event(proj, "agent.completed", agent="strategist", data={"return_code": 0})
+    emit_event(proj, "experiment.begin", data={"exp_id": 1, "hypothesis": "Add structlog"})
+    emit_event(proj, "agent.started", agent="builder", data={"task": "implement"})
+    emit_event(proj, "agent.completed", agent="builder", data={"return_code": 0})
+    emit_event(proj, "agent.started", agent="reviewer", data={"task": "review"})
+    emit_event(proj, "agent.completed", agent="reviewer", data={"return_code": 0})
+    emit_event(proj, "eval.started", data={"command": "python eval/score.py"})
+    emit_event(proj, "eval.completed", data={"composite": 0.78, "passed": True, "dimensions": 2})
+
+    return tmp_path
+
+
+@pytest.fixture()
+def phase_client(phase_projects_dir: Path) -> TestClient:
+    app = create_app(phase_projects_dir)
+    return TestClient(app)
+
+
+class TestPhaseDetailHelpers:
+    def test_read_text_safe_exists(self, tmp_path: Path):
+        f = tmp_path / "test.txt"
+        f.write_text("hello")
+        assert _read_text_safe(f) == "hello"
+
+    def test_read_text_safe_missing(self, tmp_path: Path):
+        assert _read_text_safe(tmp_path / "nope.txt") is None
+
+    def test_read_json_safe_exists(self, tmp_path: Path):
+        f = tmp_path / "test.json"
+        f.write_text('{"key": "val"}')
+        assert _read_json_safe(f) == {"key": "val"}
+
+    def test_read_json_safe_invalid(self, tmp_path: Path):
+        f = tmp_path / "bad.json"
+        f.write_text("not json")
+        assert _read_json_safe(f) is None
+
+    def test_parse_single_verdict_proceed(self, tmp_path: Path):
+        f = tmp_path / "verdict.md"
+        f.write_text(
+            "**Verdict:** PROCEED\n**Rationale:** Looks good\n"
+            "**Issues found:** None"
+        )
+        v = _parse_single_verdict(f)
+        assert v is not None
+        assert v["decision"] == "PROCEED"
+        assert v["rationale"] == "Looks good"
+        assert v["issues"] == []
+
+    def test_parse_single_verdict_with_issues(self, tmp_path: Path):
+        f = tmp_path / "verdict.md"
+        f.write_text(
+            "**Verdict:** REDIRECT\n**Rationale:** Needs work\n"
+            "**Issues found:**\n- Missing tests\n- Unused import"
+        )
+        v = _parse_single_verdict(f)
+        assert v is not None
+        assert v["decision"] == "REDIRECT"
+        assert v["issues"] == ["Missing tests", "Unused import"]
+
+    def test_parse_single_verdict_missing(self, tmp_path: Path):
+        assert _parse_single_verdict(tmp_path / "nope.md") is None
+
+    def test_parse_single_verdict_no_match(self, tmp_path: Path):
+        f = tmp_path / "verdict.md"
+        f.write_text("Just some notes, no verdict here.")
+        assert _parse_single_verdict(f) is None
+
+    def test_parse_diff_stats(self):
+        diff = (
+            "diff --git a/foo.py b/foo.py\n"
+            "--- a/foo.py\n"
+            "+++ b/foo.py\n"
+            "+added line 1\n"
+            "+added line 2\n"
+            "-removed line\n"
+            "diff --git a/bar.py b/bar.py\n"
+            "+another add\n"
+        )
+        stats = _parse_diff_stats(diff)
+        assert stats["files_changed"] == 2
+        assert stats["insertions"] == 3
+        assert stats["deletions"] == 1
+
+
+class TestPhaseDetailAPI:
+    def test_invalid_phase_returns_400(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Invalid")
+        assert resp.status_code == 400
+        assert "Invalid phase" in resp.json()["error"]
+
+    def test_detect_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Detect")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["phase"] == "Detect"
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert data["goal"] == "Build a weather CLI"
+        assert data["eval_threshold"] == 0.74
+        assert data["dimensions_count"] == 2
+        assert body["verdict"] is None
+
+    def test_discover_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Discover")
+        body = resp.json()
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert data["project_type"] == "cli_tool"
+        assert data["human_reviewed"] is True
+        assert len(data["dimensions"]) == 2
+        assert data["dimensions"][0]["name"] == "tests"
+
+    def test_research_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Research")
+        body = resp.json()
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert "argparse" in data["research"]
+        assert "72% test coverage" in data["observations"]
+        assert data["agent_output"] == "Researcher output here"
+        verdict = body["verdict"]
+        assert verdict["decision"] == "PROCEED"
+        assert verdict["rationale"] == "Research is thorough"
+
+    def test_strategize_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Strategize")
+        body = resp.json()
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert "H1" in data["strategy"]
+        assert "retry logic" in data["backlog"]
+        verdict = body["verdict"]
+        assert verdict["decision"] == "PROCEED"
+
+    def test_build_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Build")
+        body = resp.json()
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert data["experiment_id"] == 1
+        assert "structlog" in data["hypothesis"]
+        assert "diff --git" in data["diff"]
+        assert data["diff_stats"]["files_changed"] == 1
+        assert data["diff_stats"]["insertions"] == 3
+        assert data["diff_stats"]["deletions"] == 1
+        verdict = body["verdict"]
+        assert verdict["decision"] == "REDIRECT"
+        assert len(verdict["issues"]) == 2
+
+    def test_review_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Review")
+        body = resp.json()
+        assert body["status"] == "completed"
+        data = body["data"]
+        assert data["agent_output"] == "Reviewer output here"
+        verdict = body["verdict"]
+        assert verdict["decision"] == "ABORT"
+
+    def test_eval_phase(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Eval")
+        body = resp.json()
+        assert body["phase"] == "Eval"
+        assert body["status"] == "active"
+        data = body["data"]
+        assert data["experiment_id"] == 1
+        assert data["score_before"]["total"] == 0.65
+        assert data["score_after"]["total"] == 0.78
+        assert data["delta"] == pytest.approx(0.13)
+
+    def test_archive_phase_is_future(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Archive")
+        body = resp.json()
+        assert body["status"] == "future"
+        assert body["data"] is None
+
+    def test_missing_files_graceful(self, phase_projects_dir: Path):
+        """Phase detail with no artifacts should return empty strings, not crash."""
+        app = create_app(phase_projects_dir)
+        client = TestClient(app)
+        # proj-phase has events but let's test a project with no strategy files
+        proj_empty = phase_projects_dir / "proj-empty"
+        factory_empty = proj_empty / ".factory"
+        factory_empty.mkdir(parents=True)
+        (factory_empty / "config.json").write_text('{"goal":"test"}')
+
+        from factory.events import emit_event
+        emit_event(proj_empty, "agent.started", agent="researcher")
+        emit_event(proj_empty, "agent.completed", agent="researcher")
+
+        app2 = create_app(phase_projects_dir)
+        c2 = TestClient(app2)
+        resp = c2.get("/api/projects/proj-empty/phase-detail/Research")
+        body = resp.json()
+        assert body["status"] == "active"
+        assert body["data"]["research"] == ""
+        assert body["data"]["observations"] == ""
+        assert body["verdict"] is None
+
+
+class TestModeAwarePhaseDetail:
+    def test_state_includes_phases_list(self, phase_client: TestClient):
+        resp = phase_client.get("/api/projects/proj-phase/state")
+        assert resp.status_code == 200
+        state = resp.json()
+        assert "phases" in state
+        assert isinstance(state["phases"], list)
+        assert len(state["phases"]) > 0
+        assert "hypothesis_number" in state
+        assert "loop_phases" in state
+
+    def test_mode_specific_phase_accepted(self, phase_projects_dir: Path):
+        """Improve mode phase names should be accepted by phase-detail."""
+        proj = phase_projects_dir / "proj-improve"
+        factory = proj / ".factory"
+        factory.mkdir(parents=True)
+        (factory / "config.json").write_text('{"goal":"test"}')
+        (factory / "strategy" / "research.md").parents[0].mkdir(exist_ok=True)
+        (factory / "strategy" / "research.md").write_text("# Research\nFindings here.")
+        (factory / "reviews").mkdir(exist_ok=True)
+        (factory / "reviews" / "researcher-latest.md").write_text("Output")
+
+        from factory.events import emit_event
+        emit_event(proj, "cycle.started", data={"mode": "improve"})
+        emit_event(proj, "agent.started", agent="researcher", data={"task": "study"})
+        emit_event(proj, "agent.completed", agent="researcher")
+        emit_event(proj, "agent.started", agent="strategist", data={"task": "plan"})
+
+        app = create_app(phase_projects_dir)
+        c = TestClient(app)
+
+        resp = c.get("/api/projects/proj-improve/phase-detail/Observe")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["phase"] == "Observe"
+        assert body["status"] == "completed"
+        assert "Findings here" in body["data"]["research"]
+
+    def test_generic_phase_still_accepted(self, phase_client: TestClient):
+        """Generic phase names (backward compat) should not return 400."""
+        resp = phase_client.get("/api/projects/proj-phase/phase-detail/Research")
+        assert resp.status_code == 200
