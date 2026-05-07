@@ -6,7 +6,6 @@ messages and injects them into the CEO's task string each cycle.
 
 from __future__ import annotations
 
-import shutil
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -79,5 +78,5 @@ def mark_read(project_path: Path, message_ids: list[str]) -> None:
     for msg_id in message_ids:
         src = msg_dir / f"{msg_id}.md"
         if src.exists():
-            shutil.move(str(src), str(read_dir / src.name))
+            src.rename(read_dir / src.name)
             log.debug("message_marked_read", id=msg_id)

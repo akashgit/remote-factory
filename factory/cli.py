@@ -1418,9 +1418,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model,
             timeout=7200.0,
         ))
-        if pending_ids:
-            mark_read(project_path, pending_ids)
         print(result)
+        if code == 0:
+            if pending_ids:
+                mark_read(project_path, pending_ids)
         if code != 0:
             return code
         return _chain_modes(
@@ -1430,7 +1431,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model, no_github=no_github,
         )
 
-    # Interactive foreground mode: use runner's interactive_exec
+    # Interactive foreground mode: use runner's interactive_exec.
+    # Mark read before exec — interactive_exec replaces the process via os.execvp
+    # so there's no post-execution hook. If the session fails to launch, messages
+    # are lost. This is accepted: the user is at the terminal and can re-send.
     if pending_ids:
         mark_read(project_path, pending_ids)
     prompt = resolve_prompt("ceo", project_path)
@@ -2065,6 +2069,7 @@ def _run_single_cycle(
     if code == 0:
         if pending_ids:
             mark_read(project_path, pending_ids)
+
 
     print(result)
     return code
