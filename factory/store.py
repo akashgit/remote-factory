@@ -17,6 +17,7 @@ from factory.models import (
     EvalWeights,
     ExperimentRecord,
     FactoryConfig,
+    HardConstraint,
     HypothesisBudget,
     ProjectEvalDimension,
     ResearchTarget,
@@ -118,6 +119,34 @@ def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | Non
     )
     log.debug("cost_budget_parsed", max_per_cycle=budget.max_per_cycle, max_total=budget.max_total)
     return budget
+
+
+def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstraint]:
+    """Parse hard constraint entries from factory.md.
+
+    Each list item starts with 'name: X' and may have continuation lines
+    with key: value pairs (check, description).
+    """
+    if not isinstance(items, list):
+        return []
+    constraints: list[HardConstraint] = []
+    for item in items:
+        lines = str(item).split("\n")
+        fields: dict[str, str] = {}
+        for line in lines:
+            if ":" in line:
+                key, val = line.split(":", 1)
+                fields[key.strip()] = val.strip()
+        name = fields.get("name", "")
+        check = fields.get("check", "")
+        if not name or not check:
+            continue
+        constraints.append(HardConstraint(
+            name=name,
+            check=check,
+            description=fields.get("description", ""),
+        ))
+    return constraints
 
 
 class ExperimentStore:
@@ -227,6 +256,7 @@ class ExperimentStore:
         fixed_surfaces = list(fixed_raw) if isinstance(fixed_raw, list) else []
         rc_raw = parsed.get("research_constraints", [])
         research_constraints = list(rc_raw) if isinstance(rc_raw, list) else []
+        hard_constraints = _parse_hard_constraints(parsed.get("hard_constraints", []))
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -245,6 +275,7 @@ class ExperimentStore:
             fixed_surfaces=fixed_surfaces,
             research_constraints=research_constraints,
             cost_budget=cost_budget,
+            hard_constraints=hard_constraints,
         )
 
         (self.factory_dir / "config.json").write_text(

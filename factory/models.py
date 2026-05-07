@@ -35,6 +35,20 @@ class HypothesisBudget(BaseModel):
     max_new: int = 2
 
 
+class HardConstraint(BaseModel):
+    """A user-defined constraint enforced at the code level via precheck.
+
+    Each constraint has a shell command that must exit 0 for the constraint to pass.
+    Non-zero exit = mandatory revert. The CEO cannot override this.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    check: str
+    description: str = ""
+
+
 class ProjectEvalDimension(BaseModel):
     """A user-defined project-specific eval dimension (e.g. benchmark accuracy, latency)."""
 
@@ -128,6 +142,7 @@ class FactoryConfig(BaseModel):
     fixed_surfaces: list[str] = []
     research_constraints: list[str] = []
     cost_budget: CostBudgetConfig | None = None
+    hard_constraints: list[HardConstraint] = []
 
 
 # ── eval ──────────────────────────────────────────────────────────
