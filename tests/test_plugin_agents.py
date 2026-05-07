@@ -14,7 +14,7 @@ from factory.agents.runner import AgentRole, _PROMPTS_DIR
 
 ALL_ROLES: list[AgentRole] = [
     "researcher", "strategist", "builder", "reviewer",
-    "evaluator", "archivist", "distiller", "ceo",
+    "evaluator", "archivist", "distiller", "ceo", "failure_analyst",
 ]
 
 

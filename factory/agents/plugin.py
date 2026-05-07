@@ -52,15 +52,16 @@ def generate_agent_content(role: str) -> str:
 
     meta = config[role]
     prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
-    tools_yaml = "\n".join(f"  - {t}" for t in meta.tools)
+    frontmatter = yaml.dump(
+        {"name": role, "description": meta.description, "model": meta.model, "tools": meta.tools},
+        default_flow_style=False,
+        sort_keys=False,
+        allow_unicode=True,
+    ).rstrip("\n")
 
     return (
         f"---\n"
-        f"name: {role}\n"
-        f"description: \"{meta.description}\"\n"
-        f"model: {meta.model}\n"
-        f"tools:\n"
-        f"{tools_yaml}\n"
+        f"{frontmatter}\n"
         f"---\n"
         f"\n"
         f"<!-- GENERATED FILE — do not edit directly.\n"

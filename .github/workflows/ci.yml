@@ -47,3 +47,5 @@ jobs:
         run: uv run ruff check .
       - name: Mypy
         run: uv run mypy factory/
+      - name: Check plugin agents in sync
+        run: uv run python scripts/sync_agents.py --check
