@@ -100,8 +100,6 @@ def _resolve_experiment_id(
     project_path: Path, events: list[dict[str, Any]]
 ) -> int | None:
     """Resolve the current or latest experiment ID."""
-    from factory.visualizer import infer_state
-
     tail = events[-500:] if len(events) > 500 else events
     state = infer_state(tail)
     if state.current_experiment and state.current_experiment.get("id") is not None:
