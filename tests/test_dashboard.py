@@ -714,8 +714,6 @@ class TestPhaseDetailAPI:
 
     def test_missing_files_graceful(self, phase_projects_dir: Path):
         """Phase detail with no artifacts should return empty strings, not crash."""
-        app = create_app(phase_projects_dir)
-        client = TestClient(app)
         # proj-phase has events but let's test a project with no strategy files
         proj_empty = phase_projects_dir / "proj-empty"
         factory_empty = proj_empty / ".factory"

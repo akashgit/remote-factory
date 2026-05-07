@@ -4,9 +4,8 @@
 <!-- Fill in each section below. -->
 
 ## Goal
-<!-- A single sentence describing what this project should achieve. -->
 
-Provide a CLI and agent framework ("Remote Factory") that autonomously evolves software projects through systematic experimentation — detecting project state, discovering eval harnesses, running improvement cycles, and archiving learnings.
+Domain-agnostic multi-agent software evolution loop that can auto-discover evals and continuously improve any software project.
 
 ## Scope
 
@@ -15,19 +14,17 @@ Provide a CLI and agent framework ("Remote Factory") that autonomously evolves s
 <!-- One path per line. Glob patterns are supported. -->
 
 - factory/**/*.py
+- factory/agents/prompts/*.md
 - factory/dashboard/static/*
 - tests/**/*.py
 - templates/**
 - docs/**
-- eval/score.py
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
 
 - README.md
 - pyproject.toml
-- CLAUDE.md
-- factory.md
 
 ## Guards
 <!-- Rules the factory must never violate. Checked before every commit. -->
@@ -35,6 +32,7 @@ Provide a CLI and agent framework ("Remote Factory") that autonomously evolves s
 - Do not delete or overwrite existing tests
 - Do not modify files outside the declared scope
 - Do not introduce secrets or credentials into the repository
+- Do not modify test fixtures that other tests depend on
 
 ## Eval
 
@@ -49,27 +47,32 @@ python eval/score.py
 ### Threshold
 <!-- Minimum composite score (0.0-1.0) required to keep a change. -->
 
-0.74
+0.8
 
 ## Target Branch
-<!-- Branch that experiment PRs target. Default: main -->
-<!-- Set to a different branch (e.g. factory/dev) to stage factory changes before merging to main -->
 
 main
 
 ## Project Eval
-<!-- No project-specific eval dimensions for this project. -->
+<!-- No project-specific eval dimensions for the factory itself -->
+<!-- The factory uses the standard hygiene + growth eval framework -->
 
 ## Eval Weights
-<!-- Default: hygiene 0.50, growth 0.50 -->
+<!-- Using defaults: 50/50 hygiene/growth (no project eval) -->
+
+## Hypothesis Budget
+<!-- Controls how many hypotheses the Strategist generates per cycle. -->
+<!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->
+
+- min_growth: 2
+- min_fix: 0
+- max_total: 7
 
 ## Smoke Test
-<!-- Optional shell command that must pass before any change is kept. -->
-<!-- If configured, this runs as part of `factory precheck` — failure = mandatory revert. -->
-<!-- Use for e2e verification: hit an endpoint, run a CLI command, check a process starts. -->
+<!-- Optional e2e smoke test command. Failure = mandatory revert. -->
 
 ```bash
-uv run python -m factory detect . && uv run python -m factory --help
+pytest tests/ -x -q --tb=short
 ```
 
 ## Constraints
@@ -78,18 +81,3 @@ uv run python -m factory detect . && uv run python -m factory --help
 - Prefer small, incremental changes over large rewrites
 - Each change should be accompanied by at least one test
 - Follow the existing code style and conventions
-
-## Research Target
-<!-- Not a research project. -->
-
-## Mutable Surfaces
-<!-- Not used — this is not a research project. -->
-
-## Fixed Surfaces
-<!-- Not used — this is not a research project. -->
-
-## Research Constraints
-<!-- Not used. -->
-
-## Cost Budget
-<!-- Not configured. -->

@@ -178,7 +178,7 @@ _AGENT_TO_PHASE: dict[str, str] = {
 }
 
 
-def _get_phases_for_mode(mode: str | None) -> list[str]:
+def get_phases_for_mode(mode: str | None) -> list[str]:
     """Return the phase display-name list for a mode, falling back to PHASES."""
     mode_lower = (mode or "").lower()
     defs = MODE_PHASES.get(mode_lower)
@@ -274,7 +274,7 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
         if inferred and not state.current_mode:
             state.current_mode = inferred
         if state.current_phase is None:
-            mode_phases = _get_phases_for_mode(state.current_mode)
+            mode_phases = get_phases_for_mode(state.current_mode)
             state.current_phase = mode_phases[0]
 
     # --- Resolve mode-specific lookup tables ---
@@ -318,7 +318,7 @@ def phase_index(phase: str | None, mode: str | None = None) -> int:
     """Return the 0-based index of a phase in the mode's pipeline, or -1."""
     if phase is None:
         return -1
-    phases = _get_phases_for_mode(mode)
+    phases = get_phases_for_mode(mode)
     try:
         return phases.index(phase)
     except ValueError:
@@ -327,7 +327,7 @@ def phase_index(phase: str | None, mode: str | None = None) -> int:
 
 def completed_phases(state: FactoryLiveState) -> list[str]:
     """Return the list of phases completed before the current one."""
-    phases = _get_phases_for_mode(state.current_mode)
+    phases = get_phases_for_mode(state.current_mode)
     idx = phase_index(state.current_phase, state.current_mode)
     if idx <= 0:
         return []

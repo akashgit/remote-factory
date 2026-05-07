@@ -11,11 +11,23 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from factory.events import load_events
+from factory.visualizer import (
+    MODE_PHASES,
+    PHASES,
+    get_phases_for_mode,
+    infer_mode_from_artifacts,
+    infer_state,
+    phase_index,
+)
+
 log = structlog.get_logger()
+
+_SAFE_NAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
 
 _STATIC_DIR = Path(__file__).parent / "static"
 
@@ -268,6 +280,12 @@ def _phase_data_archive(
     }, None
 
 
+def _validate_path_segment(value: str, label: str = "name") -> None:
+    """Reject path segments that could escape the projects directory."""
+    if not _SAFE_NAME_RE.match(value) or ".." in value:
+        raise HTTPException(status_code=400, detail=f"Invalid {label}: {value}")
+
+
 def create_app(projects_dir: Path) -> FastAPI:
     """Create the FastAPI dashboard app bound to a projects directory."""
     log.info("dashboard_create_app", projects_dir=str(projects_dir))
@@ -360,6 +378,7 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/projects/{name}/details")
     async def project_details(name: str) -> dict[str, Any]:
+        _validate_path_segment(name)
         log.info(
             "dashboard_request",
             endpoint="/api/projects/{name}/details",
@@ -401,10 +420,8 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/projects/{name}/state")
     async def project_state(name: str) -> dict[str, Any]:
+        _validate_path_segment(name)
         log.info("dashboard_request", endpoint="/api/projects/{name}/state", project=name)
-        from factory.events import load_events
-        from factory.visualizer import infer_mode_from_artifacts, infer_state
-
         path = projects_dir / name
         events = load_events(path)
         tail = events[-500:] if len(events) > 500 else events
@@ -417,6 +434,8 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/projects/{name}/agent-output/{role}")
     async def agent_output(name: str, role: str) -> PlainTextResponse:
+        _validate_path_segment(name)
+        _validate_path_segment(role, "role")
         log.info(
             "dashboard_request",
             endpoint="/api/projects/{name}/agent-output/{role}",
@@ -434,26 +453,16 @@ def create_app(projects_dir: Path) -> FastAPI:
 
     @app.get("/api/projects/{name}/phase-detail/{phase}")
     async def phase_detail(name: str, phase: str) -> JSONResponse:
+        _validate_path_segment(name)
+        _validate_path_segment(phase, "phase")
         log.info(
             "dashboard_request",
             endpoint="/api/projects/{name}/phase-detail/{phase}",
             project=name,
             phase=phase,
         )
-        from factory.visualizer import (
-            PHASES,
-            MODE_PHASES,
-            _get_phases_for_mode,
-            infer_mode_from_artifacts,
-            infer_state,
-            phase_index,
-        )
-
         path = projects_dir / name
         factory_dir = path / ".factory"
-
-        from factory.events import load_events
-
         events = load_events(path)
         tail = events[-500:] if len(events) > 500 else events
         state = infer_state(tail)
@@ -461,7 +470,7 @@ def create_app(projects_dir: Path) -> FastAPI:
         if mode is None:
             mode = infer_mode_from_artifacts(factory_dir)
 
-        mode_phases_list = _get_phases_for_mode(mode)
+        mode_phases_list = get_phases_for_mode(mode)
         if phase not in mode_phases_list and phase not in PHASES:
             return JSONResponse(
                 {"error": f"Invalid phase: {phase}"}, status_code=400

@@ -4,7 +4,7 @@ from factory.visualizer.state import (
     PHASES,
     AgentActivity,
     FactoryLiveState,
-    _get_phases_for_mode,
+    get_phases_for_mode,
     active_agent_count,
     completed_phases,
     format_elapsed,
@@ -395,20 +395,20 @@ class TestModeAwarePhaseIndex:
 
 class TestGetPhasesForMode:
     def test_improve(self):
-        phases = _get_phases_for_mode("improve")
+        phases = get_phases_for_mode("improve")
         assert phases[0] == "Observe"
         assert "Archive" in phases
 
     def test_research(self):
-        phases = _get_phases_for_mode("research")
+        phases = get_phases_for_mode("research")
         assert phases[0] == "Baseline"
         assert "Run" in phases
 
     def test_unknown_mode(self):
-        assert _get_phases_for_mode("unknown") == PHASES
+        assert get_phases_for_mode("unknown") == PHASES
 
     def test_none_mode(self):
-        assert _get_phases_for_mode(None) == PHASES
+        assert get_phases_for_mode(None) == PHASES
 
 
 class TestInferModeFromArtifacts:
