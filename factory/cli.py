@@ -314,6 +314,15 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_message(args: argparse.Namespace) -> int:
+    from factory.messages import write_message
+
+    project_path = Path(args.path)
+    msg = write_message(project_path, args.text)
+    print(f"Message queued (id={msg.id}). The CEO will see it at the start of the next cycle.")
+    return 0
+
+
 def cmd_history(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
 
@@ -1818,7 +1827,18 @@ def _build_ceo_task(
     research_ideation: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
+    from factory.messages import mark_read, read_pending
+
     task = f"Project: {project_path}\nMode: {mode}"
+
+    pending = read_pending(project_path)
+    if pending:
+        task += "\n\n## User Messages\n"
+        task += "The user has sent the following directives. Treat these as HIGH PRIORITY:\n\n"
+        for msg in pending:
+            ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            task += f"**[{ts}]** {msg.text}\n\n"
+        mark_read(project_path, [m.id for m in pending])
 
     if interactive_idea:
         task += (
@@ -2390,6 +2410,11 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
+    # message — send a directive to the CEO
+    p = sub.add_parser("message", help="Send a message to the CEO for the next cycle")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("text", help="Message text")
+
     # self-update
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
@@ -2605,6 +2630,7 @@ def main(argv: list[str] | None = None) -> int:
         "resume": cmd_resume,
         "log": cmd_log,
         "vault-init": cmd_vault_init,
+        "message": cmd_message,
         "self-update": cmd_self_update,
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
