@@ -1133,7 +1133,14 @@ def cmd_install(args: argparse.Namespace) -> int:
     agents_dir.mkdir(parents=True, exist_ok=True)
 
     role_filter = getattr(args, "role", None)
-    roles = [role_filter] if role_filter else list(load_agent_config())
+    config = load_agent_config()
+
+    if role_filter and role_filter not in config:
+        print(f"Unknown role: {role_filter!r}", file=sys.stderr)
+        print(f"Available roles: {', '.join(config)}", file=sys.stderr)
+        return 1
+
+    roles = [role_filter] if role_filter else list(config)
 
     for role in roles:
         content = generate_agent_content(role)

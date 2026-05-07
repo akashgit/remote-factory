@@ -164,3 +164,12 @@ class TestCmdInstall:
         agents_dir = tmp_path / ".claude" / "agents"
         assert (agents_dir / "factory-builder.md").exists()
         assert not (agents_dir / "factory-ceo.md").exists()
+
+    def test_rejects_invalid_role(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role="nonexistent"))
+        assert rc == 1
