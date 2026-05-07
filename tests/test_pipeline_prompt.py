@@ -1,0 +1,97 @@
+"""Tests for the pipeline skill structure."""
+
+from pathlib import Path
+
+import pytest
+
+_SKILLS_DIR = Path(__file__).parent.parent / "skills"
+
+
+@pytest.fixture
+def pipeline_skill() -> str:
+    return (_SKILLS_DIR / "pipeline" / "SKILL.md").read_text()
+
+
+@pytest.fixture
+def subagents_skill() -> str:
+    return (_SKILLS_DIR / "pipeline-subagents" / "SKILL.md").read_text()
+
+
+class TestPipelineSkillStructure:
+    def test_exists(self):
+        assert (_SKILLS_DIR / "pipeline" / "SKILL.md").exists()
+
+    def test_has_frontmatter(self, pipeline_skill):
+        assert pipeline_skill.startswith("---\n")
+        assert "name: pipeline" in pipeline_skill
+
+    def test_has_design_phase(self, pipeline_skill):
+        assert "Phase 1" in pipeline_skill
+        assert "Design" in pipeline_skill
+
+    def test_has_execution_phase(self, pipeline_skill):
+        assert "Phase 2" in pipeline_skill
+        assert "Execute" in pipeline_skill
+
+    def test_has_pipeline_table_format(self, pipeline_skill):
+        assert "| Step |" in pipeline_skill
+        assert "Depends On" in pipeline_skill
+
+    def test_has_gate_decision_protocol(self, pipeline_skill):
+        assert "PROCEED" in pipeline_skill
+        assert "REDIRECT" in pipeline_skill
+        assert "ABORT" in pipeline_skill
+
+    def test_has_parallel_execution(self, pipeline_skill):
+        assert "parallel" in pipeline_skill.lower()
+
+    def test_references_factory_agent_command(self, pipeline_skill):
+        assert "factory agent" in pipeline_skill
+
+    def test_references_specialist_roles(self, pipeline_skill):
+        for role in ["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"]:
+            assert role in pipeline_skill
+
+    def test_has_archivist_requirement(self, pipeline_skill):
+        prompt_lower = pipeline_skill.lower()
+        assert "archivist" in prompt_lower
+        assert "mandatory" in prompt_lower or "always include" in prompt_lower
+
+    def test_has_error_recovery(self, pipeline_skill):
+        assert "Error" in pipeline_skill or "error" in pipeline_skill
+
+    def test_has_summary_output(self, pipeline_skill):
+        assert "summary" in pipeline_skill.lower()
+
+
+class TestPipelineSubagentsSkillStructure:
+    def test_exists(self):
+        assert (_SKILLS_DIR / "pipeline-subagents" / "SKILL.md").exists()
+
+    def test_has_frontmatter(self, subagents_skill):
+        assert subagents_skill.startswith("---\n")
+        assert "name: pipeline-subagents" in subagents_skill
+
+    def test_uses_agent_tool(self, subagents_skill):
+        assert "Agent tool" in subagents_skill or "Agent(" in subagents_skill
+
+    def test_references_factory_subagent_types(self, subagents_skill):
+        assert "factory-researcher" in subagents_skill
+        assert "factory-builder" in subagents_skill
+
+    def test_has_parallel_execution(self, subagents_skill):
+        assert "parallel" in subagents_skill.lower()
+
+    def test_has_background_execution(self, subagents_skill):
+        assert "run_in_background" in subagents_skill
+
+    def test_has_gate_protocol(self, subagents_skill):
+        assert "PROCEED" in subagents_skill
+        assert "REDIRECT" in subagents_skill
+        assert "ABORT" in subagents_skill
+
+    def test_has_design_phase(self, subagents_skill):
+        assert "Phase 1" in subagents_skill
+
+    def test_has_execution_phase(self, subagents_skill):
+        assert "Phase 2" in subagents_skill
