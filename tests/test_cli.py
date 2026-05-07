@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import signal
+import threading
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
@@ -760,15 +761,12 @@ class TestHeartbeatLoop:
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep") as mock_sleep:
+             patch("factory.cli._chain_modes", return_value=0):
             result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "10",
+                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "0",
             ])
         assert result == 0
         assert mock_agent.call_count == 3
-        assert mock_sleep.call_count == 2
-        mock_sleep.assert_called_with(10)
 
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 started at" in out
@@ -790,13 +788,13 @@ class TestHeartbeatLoop:
 
     def test_loop_graceful_sigterm(self, tmp_path, capsys):
         """SIGTERM during sleep causes clean exit."""
-        def _interrupt_during_sleep(interval: int) -> None:
-            os.kill(os.getpid(), signal.SIGTERM)
+        def _send_sigterm_after_cycle(*args, **kwargs):
+            threading.Timer(0.05, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+            return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+        with patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_send_sigterm_after_cycle)), \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
         out = capsys.readouterr().out
@@ -804,13 +802,13 @@ class TestHeartbeatLoop:
 
     def test_loop_graceful_sigint(self, tmp_path, capsys):
         """SIGINT during sleep causes clean exit."""
-        def _interrupt_during_sleep(interval: int) -> None:
-            os.kill(os.getpid(), signal.SIGINT)
+        def _send_sigint_after_cycle(*args, **kwargs):
+            threading.Timer(0.05, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+            return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+        with patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_send_sigint_after_cycle)), \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
         out = capsys.readouterr().out
@@ -819,14 +817,13 @@ class TestHeartbeatLoop:
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep"):
+             patch("factory.cli._chain_modes", return_value=0):
             result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "60",
+                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "0",
             ])
         assert result == 0
         out = capsys.readouterr().out
-        assert "[factory] Cycle 1 completed. Sleeping for 60s..." in out
+        assert "[factory] Cycle 1 completed. Sleeping for 0s..." in out
 
 
 # ── Factory v2: agent and ceo commands ────────────────────────

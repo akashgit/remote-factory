@@ -11,6 +11,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1999,11 +2000,10 @@ def cmd_run(args: argparse.Namespace) -> int:
     # Heartbeat loop mode
     interval: int = getattr(args, "interval", 1800)
     max_cycles: int | None = getattr(args, "max_cycles", None)
-    shutdown_requested = False
+    shutdown_event = threading.Event()
 
     def _shutdown_handler(signum: int, frame: object) -> None:
-        nonlocal shutdown_requested
-        shutdown_requested = True
+        shutdown_event.set()
 
     old_sigterm = signal.signal(signal.SIGTERM, _shutdown_handler)
     old_sigint = signal.signal(signal.SIGINT, _shutdown_handler)
@@ -2033,7 +2033,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             # Re-detect mode for next cycle (state may have advanced)
             mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context))
 
-            if shutdown_requested:
+            if shutdown_event.is_set():
                 break
 
             if max_cycles is not None and cycle >= max_cycles:
@@ -2041,12 +2041,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             print(f"[factory] Cycle {cycle} completed. Sleeping for {interval}s...")
 
-            try:
-                time.sleep(interval)
-            except (KeyboardInterrupt, SystemExit):
-                shutdown_requested = True
+            shutdown_event.wait(interval)
 
-            if shutdown_requested:
+            if shutdown_event.is_set():
                 break
     finally:
         signal.signal(signal.SIGTERM, old_sigterm)
