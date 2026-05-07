@@ -149,7 +149,7 @@ class TestMessageInjection:
         task = _build_ceo_task(project, "improve")
         assert "User Messages" not in task
 
-    def test_messages_marked_read_after_injection(self, tmp_path: Path) -> None:
+    def test_build_ceo_task_does_not_mark_read(self, tmp_path: Path) -> None:
         from factory.cli import _build_ceo_task
 
         project = tmp_path / "proj"
@@ -159,4 +159,24 @@ class TestMessageInjection:
         assert len(read_pending(project)) == 1
 
         _build_ceo_task(project, "improve")
-        assert len(read_pending(project)) == 0
+        assert len(read_pending(project)) == 1
+
+
+class TestMessageValidation:
+    def test_cmd_message_rejects_nonexistent_path(self, tmp_path: Path) -> None:
+        from argparse import Namespace
+
+        from factory.cli import cmd_message
+
+        args = Namespace(path=str(tmp_path / "nonexistent"), text="hello")
+        assert cmd_message(args) == 1
+
+    def test_cmd_message_rejects_non_factory_project(self, tmp_path: Path) -> None:
+        from argparse import Namespace
+
+        from factory.cli import cmd_message
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        args = Namespace(path=str(project), text="hello")
+        assert cmd_message(args) == 1

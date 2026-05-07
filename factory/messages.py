@@ -37,8 +37,8 @@ def write_message(project_path: Path, text: str) -> Message:
     msg_dir = _messages_dir(project_path)
     msg_dir.mkdir(parents=True, exist_ok=True)
 
-    msg_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
     ts = datetime.now(timezone.utc)
+    msg_id = ts.strftime("%Y%m%dT%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
 
     path = msg_dir / f"{msg_id}.md"
     path.write_text(f"timestamp: {ts.isoformat()}\n\n{text}\n")
@@ -56,8 +56,6 @@ def read_pending(project_path: Path) -> list[Message]:
 
     messages: list[Message] = []
     for path in sorted(msg_dir.glob("*.md")):
-        if path.parent.name == "read":
-            continue
         content = path.read_text()
         lines = content.split("\n", 2)
         ts = datetime.now(timezone.utc)

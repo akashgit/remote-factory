@@ -318,6 +318,12 @@ def cmd_message(args: argparse.Namespace) -> int:
     from factory.messages import write_message
 
     project_path = Path(args.path)
+    if not project_path.exists():
+        print(f"Error: project path does not exist: {project_path}", file=sys.stderr)
+        return 1
+    if not (project_path / ".factory").exists():
+        print(f"Error: not a factory project (no .factory/ directory): {project_path}", file=sys.stderr)
+        return 1
     msg = write_message(project_path, args.text)
     print(f"Message queued (id={msg.id}). The CEO will see it at the start of the next cycle.")
     return 0
@@ -1382,6 +1388,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    from factory.messages import mark_read, read_pending
+
     ceo_mode = "build" if mode == "interactive" or research_ideation else mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
@@ -1391,9 +1399,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         research_ideation=research_ideation,
     )
 
+    pending_ids = [m.id for m in read_pending(project_path)]
+
     standup = _run_standup(project_path, ceo_mode, model=model)
     if standup:
-        task += f"\n\n## Sprint Standup\n\n{standup}"
+        task += f"\n\n## Sprint Standup\n\n{standup}" 
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -1408,6 +1418,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model,
             timeout=7200.0,
         ))
+        if pending_ids:
+            mark_read(project_path, pending_ids)
         print(result)
         if code != 0:
             return code
@@ -1419,6 +1431,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         )
 
     # Interactive foreground mode: use runner's interactive_exec
+    if pending_ids:
+        mark_read(project_path, pending_ids)
     prompt = resolve_prompt("ceo", project_path)
     runner = get_runner(runner_name)
     runner.interactive_exec(
@@ -1827,7 +1841,7 @@ def _build_ceo_task(
     research_ideation: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
-    from factory.messages import mark_read, read_pending
+    from factory.messages import read_pending
 
     task = f"Project: {project_path}\nMode: {mode}"
 
@@ -1838,7 +1852,6 @@ def _build_ceo_task(
         for msg in pending:
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
-        mark_read(project_path, [m.id for m in pending])
 
     if interactive_idea:
         task += (
@@ -2036,6 +2049,10 @@ def _run_single_cycle(
     if standup:
         task += f"\n\n## Sprint Standup\n\n{standup}"
 
+    from factory.messages import mark_read, read_pending
+
+    pending_ids = [m.id for m in read_pending(project_path)]
+
     result, code = _run(invoke_agent(
         "ceo",
         task,
@@ -2044,6 +2061,10 @@ def _run_single_cycle(
         dangerously_skip_permissions=True,
         model=model,
     ))
+
+    if code == 0:
+        if pending_ids:
+            mark_read(project_path, pending_ids)
 
     print(result)
     return code
