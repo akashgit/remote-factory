@@ -32,7 +32,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -B plugin
-          git add agents/
+          git add -f agents/
           git diff --cached --quiet && echo "No changes" && exit 0
           git commit -m "build: generate plugin agent files from $(git rev-parse --short main)"
           git push --force origin plugin
