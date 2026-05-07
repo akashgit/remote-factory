@@ -78,7 +78,7 @@
   main {
     display: grid;
     grid-template-columns: 280px 1fr;
-    grid-template-rows: 80px 1fr 1fr;
+    grid-template-rows: auto auto auto auto 1fr 1fr;
     gap: 0;
     height: calc(100vh - 80px);
   }
@@ -109,21 +109,21 @@
     flex: 1;
   }
 
-  /* Projects panel — spans both content rows (below KPI strip) */
+  /* Projects panel — spans content rows below pipeline/agent bars */
   .projects-panel {
-    grid-row: 2 / 4;
+    grid-row: 5 / 7;
   }
 
-  /* Events panel — top right */
+  /* Events panel — top right of content area */
   .events-panel {
     grid-column: 2;
-    grid-row: 2;
+    grid-row: 5;
   }
 
   /* Experiments panel — bottom right */
   .experiments-panel {
     grid-column: 2;
-    grid-row: 3;
+    grid-row: 6;
     border-bottom: none;
   }
 
@@ -396,17 +396,346 @@
     background: var(--surface);
   }
 
+  /* Pipeline phase bar */
+  .pipeline-bar {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    overflow-x: auto;
+  }
+  .phase-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    color: var(--text-dim);
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .phase-step.completed { color: var(--green); }
+  .phase-step.active {
+    color: var(--bg);
+    background: var(--accent);
+  }
+  .phase-step.clickable { cursor: pointer; }
+  .phase-step.clickable:hover { background: rgba(88,166,255,0.15); }
+  .phase-step.active.clickable:hover { filter: brightness(1.15); }
+  .phase-step.selected-phase { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .phase-arrow {
+    color: var(--border);
+    font-size: 14px;
+    flex-shrink: 0;
+    margin: 0 2px;
+  }
+
+  /* Agent activity cards */
+  .agent-cards {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 8px;
+    padding: 8px 24px;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    min-height: 0;
+  }
+  .agent-cards:empty { display: none; }
+  .agent-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+    animation: fadeIn 0.3s ease;
+  }
+  .agent-card:hover { border-color: var(--accent); }
+  .agent-card .pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 1.5s infinite;
+    flex-shrink: 0;
+  }
+  .agent-card.done .pulse-dot {
+    background: var(--text-dim);
+    animation: none;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(63,185,80,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(63,185,80,0); }
+  }
+  .agent-role {
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: capitalize;
+  }
+  .agent-task {
+    color: var(--text-dim);
+    font-size: 11px;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .agent-timer {
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  /* Phase detail row */
+  .phase-detail-row {
+    grid-column: 1 / -1;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    padding: 0;
+    display: none;
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+  .phase-detail-row.open { display: block; padding: 16px 24px; animation: fadeIn 0.3s ease; }
+  .phase-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .phase-detail-title {
+    font-size: 16px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .verdict-badge {
+    font-size: 10px;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .verdict-badge.proceed { background: #1a3a2a; color: var(--green); }
+  .verdict-badge.redirect { background: #3d2e1f; color: var(--yellow); }
+  .verdict-badge.abort { background: #3d1f1f; color: var(--red); }
+  .phase-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .phase-detail-section { margin-bottom: 12px; }
+  .phase-detail-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+  }
+  .phase-detail-pre {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 250px;
+    overflow-y: auto;
+  }
+  .phase-detail-kv {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: 4px 12px;
+    font-size: 12px;
+  }
+  .phase-detail-kv dt { color: var(--text-dim); font-weight: 600; }
+  .phase-detail-kv dd { color: var(--text); }
+  .phase-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .phase-detail-table th {
+    text-align: left;
+    padding: 4px 8px;
+    color: var(--text-dim);
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+  }
+  .phase-detail-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .score-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .score-bar {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--border);
+    flex: 1;
+    max-width: 120px;
+  }
+  .score-bar-fill { height: 100%; border-radius: 4px; }
+  .collapsible-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 4px 12px;
+    font-size: 11px;
+    font-family: var(--font);
+    cursor: pointer;
+    border-radius: 4px;
+    margin-top: 8px;
+  }
+  .collapsible-toggle:hover { background: var(--surface); color: var(--text); }
+
+  /* Project info button */
+  .project-info-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: var(--font);
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    margin-left: auto;
+  }
+  .project-info-btn:hover { background: var(--surface); color: var(--accent); }
+
+  /* Project status badges */
+  .project-status-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .project-status-badge.ready { background: #1a3a2a; color: var(--green); }
+  .project-status-badge.new { background: #1f3a5f; color: var(--accent); }
+  .project-status-badge.discovering { background: #2d2a1f; color: var(--yellow); }
+  .project-status-badge.pending_review { background: #2a1f3a; color: #d2a8ff; }
+
+  /* Mode indicator badge */
+  .mode-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background: #1f3a5f;
+    color: var(--accent);
+    vertical-align: middle;
+  }
+
+  /* Agent output slide-out panel */
+  .agent-output-panel {
+    position: fixed;
+    top: 0;
+    right: -420px;
+    width: 420px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 900;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.25s ease;
+  }
+  .agent-output-panel.open { right: 0; }
+  .agent-output-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .agent-output-title {
+    font-weight: 700;
+    font-size: 14px;
+    text-transform: capitalize;
+  }
+  .agent-output-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 20px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .agent-output-close:hover { color: var(--text); }
+  .agent-output-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* Event type filters */
+  .event-filters {
+    display: flex;
+    gap: 4px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+  .filter-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 2px 10px;
+    font-size: 10px;
+    font-family: var(--font);
+    cursor: pointer;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+  .filter-btn.active {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .filter-btn:hover:not(.active) { background: rgba(88,166,255,0.1); }
+
   /* Responsive */
   @media (max-width: 800px) {
     main {
       grid-template-columns: 1fr;
-      grid-template-rows: auto auto auto auto;
+      grid-template-rows: auto auto auto auto auto auto auto;
     }
     .kpi-strip { flex-wrap: wrap; }
     .kpi-card { min-width: calc(50% - 12px); }
-    .projects-panel { grid-row: 2; max-height: 200px; }
-    .events-panel { grid-column: 1; grid-row: 3; max-height: 50vh; }
-    .experiments-panel { grid-column: 1; grid-row: 4; max-height: 50vh; }
+    .pipeline-bar { flex-wrap: wrap; }
+    .agent-cards { flex-wrap: wrap; }
+    .projects-panel { max-height: 200px; }
+    .events-panel { max-height: 50vh; }
+    .experiments-panel { max-height: 50vh; }
+    .agent-output-panel { width: 100%; right: -100%; }
+    .phase-detail-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -426,6 +755,12 @@
 <main>
   <div class="kpi-strip" id="kpi-strip"></div>
 
+  <div class="pipeline-bar" id="pipeline-bar"></div>
+
+  <div class="phase-detail-row" id="phase-detail-row"></div>
+
+  <div class="agent-cards" id="agent-cards"></div>
+
   <div class="panel projects-panel">
     <div class="panel-header">Projects</div>
     <div class="panel-body" id="projects-list">
@@ -435,6 +770,13 @@
 
   <div class="panel events-panel">
     <div class="panel-header">Live Events</div>
+    <div class="event-filters" id="event-filters">
+      <button class="filter-btn active" data-filter="all">All</button>
+      <button class="filter-btn" data-filter="agents">Agents</button>
+      <button class="filter-btn" data-filter="evals">Evals</button>
+      <button class="filter-btn" data-filter="experiments">Experiments</button>
+      <button class="filter-btn" data-filter="system">System</button>
+    </div>
     <div class="panel-body" id="events-list">
       <div class="empty-state">Waiting for events...</div>
     </div>
@@ -457,9 +799,19 @@
   </div>
 </main>
 
+<div class="agent-output-panel" id="agent-output-panel">
+  <div class="agent-output-header">
+    <span class="agent-output-title" id="agent-output-title"></span>
+    <button class="agent-output-close" onclick="closeAgentOutput()">&times;</button>
+  </div>
+  <div class="agent-output-body" id="agent-output-body"></div>
+</div>
+
 <script>
 let selectedProject = null;
 let eventCount = 0;
+let expandedPhase = null;
+let currentPhaseGlobal = null;
 
 // ── Projects ──
 async function loadProjects() {
@@ -496,6 +848,8 @@ function renderProjects(projects) {
       <div class="project-name">
         <span class="dot ${p.active ? 'live' : 'idle'}"></span>
         ${esc(p.name)}
+        ${p.name === selectedProject && currentMode ? `<span class="mode-badge">${esc(currentMode)}</span>` : ''}
+        <button class="project-info-btn" onclick="event.stopPropagation(); openProjectDetails('${esc(p.name)}')" title="Project details">info</button>
       </div>
       ${p.goal ? `<div class="project-goal">${esc(p.goal)}</div>` : ''}
       <div class="project-stats">
@@ -510,8 +864,14 @@ function renderProjects(projects) {
 
 async function selectProject(name) {
   selectedProject = name;
-  loadProjects();  // Re-render to update selection
+  if (expandedPhase) {
+    expandedPhase = null;
+    document.getElementById('phase-detail-row').classList.remove('open');
+    document.getElementById('phase-detail-row').innerHTML = '';
+  }
+  loadProjects();
   loadExperiments(name);
+  loadLiveState();
 }
 
 // ── Experiments ──
@@ -608,6 +968,7 @@ function addEvent(event) {
 
   const div = document.createElement('div');
   div.className = 'event-item';
+  div.dataset.eventType = event.type || '';
   div.innerHTML = `
     <span class="event-time">${timeStr}</span>
     <span class="event-badge ${badgeClass}">${esc(event.type)}</span>
@@ -616,6 +977,10 @@ function addEvent(event) {
       ${desc}
     </span>
   `;
+
+  if (!eventMatchesFilter(event.type || '')) {
+    div.style.display = 'none';
+  }
 
   el.insertBefore(div, el.firstChild);
 
@@ -815,9 +1180,18 @@ function closeModal() {
   }
 }
 
-// Close modal on Escape key
+// Close modal/panels on Escape key
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') {
+    closeModal();
+    closeAgentOutput();
+    if (expandedPhase) {
+      expandedPhase = null;
+      document.getElementById('phase-detail-row').classList.remove('open');
+      document.getElementById('phase-detail-row').innerHTML = '';
+      renderPipelineBar(currentPhaseGlobal);
+    }
+  }
 });
 
 // ── Score History Chart ──
@@ -1005,15 +1379,573 @@ function renderKPIs(data) {
   `;
 }
 
+// ── Pipeline Phase Bar ──
+let currentPhases = ['Detect', 'Discover', 'Research', 'Strategize', 'Build', 'Review', 'Eval', 'Archive'];
+let currentLoopPhases = [];
+let currentHypothesisNumber = 0;
+
+function isLoopPhase(phase) {
+  return currentLoopPhases.includes(phase);
+}
+
+function renderPipelineBar(currentPhase) {
+  const el = document.getElementById('pipeline-bar');
+  const phases = currentPhases;
+  const phaseIdx = currentPhase ? phases.indexOf(currentPhase) : -1;
+  el.innerHTML = phases.map((p, i) => {
+    let cls = 'phase-step';
+    let clickable = false;
+    if (i < phaseIdx) { cls += ' completed'; clickable = true; }
+    else if (i === phaseIdx) { cls += ' active'; clickable = true; }
+    if (clickable) cls += ' clickable';
+    if (p === expandedPhase) cls += ' selected-phase';
+    const check = i < phaseIdx ? '&#10003; ' : '';
+    const onclick = clickable ? ` onclick="togglePhaseDetail('${p}')"` : '';
+    const arrow = i < phases.length - 1 ? '<span class="phase-arrow">&#9656;</span>' : '';
+    let label = esc(p);
+    if (currentHypothesisNumber > 0 && isLoopPhase(p) && i >= phaseIdx && phaseIdx >= 0) {
+      label += ` <span style="font-size:9px;opacity:0.7">(H${currentHypothesisNumber})</span>`;
+    }
+    return `<span class="${cls}" data-phase="${p}"${onclick}>${check}${label}</span>${arrow}`;
+  }).join('');
+}
+
+// ── Phase Detail ──
+function togglePhaseDetail(phase) {
+  const row = document.getElementById('phase-detail-row');
+  if (expandedPhase === phase) {
+    expandedPhase = null;
+    row.classList.remove('open');
+    row.innerHTML = '';
+    renderPipelineBar(currentPhaseGlobal);
+    return;
+  }
+  expandedPhase = phase;
+  row.innerHTML = '<div class="empty-state">Loading...</div>';
+  row.classList.add('open');
+  renderPipelineBar(currentPhaseGlobal);
+
+  if (!selectedProject) {
+    row.innerHTML = '<div class="empty-state">Select a project first</div>';
+    return;
+  }
+
+  fetch(`/api/projects/${selectedProject}/phase-detail/${phase}`)
+    .then(res => res.json())
+    .then(data => renderPhaseDetail(data))
+    .catch(() => { row.innerHTML = '<div class="empty-state">Failed to load phase details</div>'; });
+}
+
+function renderPhaseDetail(response) {
+  const row = document.getElementById('phase-detail-row');
+  if (response.status === 'future' || !response.data) {
+    row.innerHTML = '<div class="empty-state">No data available for this phase yet</div>';
+    return;
+  }
+  const header = buildPhaseHeader(response.phase, response.verdict);
+  const renderer = PHASE_RENDERERS[response.phase];
+  const body = renderer ? renderer(response.data) : '';
+  row.innerHTML = header + body;
+}
+
+function buildPhaseHeader(phase, verdict) {
+  let html = '<div class="phase-detail-header">';
+  html += `<span class="phase-detail-title">${esc(phase)}</span>`;
+  if (verdict) {
+    const cls = verdict.decision.toLowerCase();
+    html += `<span class="verdict-badge ${cls}">${esc(verdict.decision)}</span>`;
+  }
+  html += '</div>';
+  if (verdict && verdict.rationale) {
+    html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:12px">${esc(verdict.rationale)}</div>`;
+  }
+  if (verdict && verdict.issues && verdict.issues.length > 0) {
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Issues</div><ul style="font-size:12px;padding-left:16px;color:var(--red)">';
+    verdict.issues.forEach(issue => { html += `<li>${esc(issue)}</li>`; });
+    html += '</ul></div>';
+  }
+  return html;
+}
+
+function renderCollapsible(title, content) {
+  if (!content) return '';
+  const id = 'col-' + Math.random().toString(36).slice(2, 8);
+  return `<div class="phase-detail-section">
+    <div class="phase-detail-section-title">${esc(title)}</div>
+    <div class="phase-detail-pre" id="${id}" style="display:none">${esc(content)}</div>
+    <button class="collapsible-toggle" onclick="var el=document.getElementById('${id}');var shown=el.style.display!=='none';el.style.display=shown?'none':'block';this.textContent=shown?'Show':'Hide'">Show</button>
+  </div>`;
+}
+
+function renderDetectDetail(data) {
+  let html = '<dl class="phase-detail-kv">';
+  html += `<dt>Goal</dt><dd>${esc(data.goal)}</dd>`;
+  html += `<dt>Eval Command</dt><dd><code>${esc(data.eval_command)}</code></dd>`;
+  html += `<dt>Threshold</dt><dd>${data.eval_threshold ?? '—'}</dd>`;
+  html += `<dt>Dimensions</dt><dd>${data.dimensions_count}</dd>`;
+  html += `<dt>Language</dt><dd>${esc(data.language) || '—'}</dd>`;
+  if (data.scope && data.scope.length > 0) {
+    html += `<dt>Scope</dt><dd>${data.scope.map(s => esc(s)).join(', ')}</dd>`;
+  }
+  if (data.guards && data.guards.length > 0) {
+    html += `<dt>Guards</dt><dd>${data.guards.map(g => esc(g)).join('; ')}</dd>`;
+  }
+  if (data.constraints && data.constraints.length > 0) {
+    html += `<dt>Constraints</dt><dd>${data.constraints.map(c => esc(c)).join('; ')}</dd>`;
+  }
+  html += '</dl>';
+  return html;
+}
+
+function renderDiscoverDetail(data) {
+  let html = '<dl class="phase-detail-kv" style="margin-bottom:12px">';
+  html += `<dt>Project Type</dt><dd>${esc(data.project_type) || '—'}</dd>`;
+  html += `<dt>Confidence</dt><dd>${data.confidence != null ? (data.confidence * 100).toFixed(0) + '%' : '—'}</dd>`;
+  html += `<dt>Human Reviewed</dt><dd>${data.human_reviewed ? 'Yes' : 'No'}</dd>`;
+  html += '</dl>';
+  if (data.dimensions && data.dimensions.length > 0) {
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Eval Dimensions</div>';
+    html += '<table class="phase-detail-table"><thead><tr><th>Name</th><th>Weight</th><th>Source</th><th>Description</th></tr></thead><tbody>';
+    data.dimensions.forEach(d => {
+      html += `<tr><td style="font-weight:600">${esc(d.name)}</td><td>${d.weight}</td><td>${esc(d.source)}</td><td style="color:var(--text-dim)">${esc(d.description)}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+  }
+  return html;
+}
+
+function renderResearchDetail(data) {
+  let html = '<div class="phase-detail-grid">';
+  if (data.research) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Research Findings</div><div class="phase-detail-pre">${esc(data.research)}</div></div>`;
+  }
+  if (data.observations) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Observations</div><div class="phase-detail-pre">${esc(data.observations)}</div></div>`;
+  }
+  html += '</div>';
+  html += renderCollapsible('Agent Output', data.agent_output);
+  return html;
+}
+
+function renderStrategizeDetail(data) {
+  let html = '';
+  if (data.strategy) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Strategy</div><div class="phase-detail-pre">${esc(data.strategy)}</div></div>`;
+  }
+  if (data.backlog) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Backlog</div><div class="phase-detail-pre">${esc(data.backlog)}</div></div>`;
+  }
+  html += renderCollapsible('Agent Output', data.agent_output);
+  return html;
+}
+
+function renderBuildDetail(data) {
+  let html = '';
+  if (data.experiment_id != null) {
+    html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Experiment #${data.experiment_id}</div>`;
+  }
+  if (data.hypothesis) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Hypothesis</div><div style="font-size:13px;font-weight:600;margin-bottom:8px">${esc(data.hypothesis)}</div></div>`;
+  }
+  if (data.diff) {
+    const stats = data.diff_stats || {};
+    const statsLine = `${stats.files_changed || 0} file(s), +${stats.insertions || 0}, -${stats.deletions || 0}`;
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Changes <span style="font-weight:400;color:var(--text-dim);text-transform:none">${statsLine}</span></div><div class="phase-detail-pre" style="max-height:300px">${renderDiffLines(data.diff)}</div></div>`;
+  }
+  html += renderCollapsible('Agent Output', data.agent_output);
+  return html;
+}
+
+function renderDiffLines(diff) {
+  return diff.split('\n').map(line => {
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      return `<span style="color:var(--green)">${esc(line)}</span>`;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      return `<span style="color:var(--red)">${esc(line)}</span>`;
+    } else if (line.startsWith('@@')) {
+      return `<span style="color:var(--cyan)">${esc(line)}</span>`;
+    } else if (line.startsWith('diff --git')) {
+      return `<span style="color:var(--accent);font-weight:600">${esc(line)}</span>`;
+    }
+    return esc(line);
+  }).join('\n');
+}
+
+function renderReviewDetail(data) {
+  if (data.agent_output) {
+    return `<div class="phase-detail-section"><div class="phase-detail-section-title">Review Output</div><div class="phase-detail-pre">${esc(data.agent_output)}</div></div>`;
+  }
+  return '<div class="empty-state">No review output available</div>';
+}
+
+function renderEvalDetail(data) {
+  let html = '';
+  if (data.experiment_id != null) {
+    html += `<div style="font-size:12px;color:var(--text-dim);margin-bottom:8px">Experiment #${data.experiment_id}</div>`;
+  }
+
+  const before = data.score_before;
+  const after = data.score_after;
+  if (before && after) {
+    const delta = data.delta;
+    const deltaStr = delta != null ? (delta >= 0 ? '+' : '') + delta.toFixed(4) : '';
+    const deltaColor = delta != null ? (delta >= 0 ? 'var(--green)' : 'var(--red)') : '';
+    html += `<div style="display:flex;gap:24px;align-items:center;margin-bottom:16px">`;
+    html += `<div><div class="phase-detail-section-title">Before</div><div style="font-size:24px;font-weight:800;color:${scoreColor(before.total)}">${(before.total || 0).toFixed(3)}</div></div>`;
+    html += `<div style="font-size:20px;color:var(--text-dim)">→</div>`;
+    html += `<div><div class="phase-detail-section-title">After</div><div style="font-size:24px;font-weight:800;color:${scoreColor(after.total)}">${(after.total || 0).toFixed(3)}</div></div>`;
+    if (deltaStr) {
+      html += `<div style="font-size:18px;font-weight:700;color:${deltaColor}">${deltaStr}</div>`;
+    }
+    html += '</div>';
+
+    // Dimension comparison table
+    const beforeDims = before.results || [];
+    const afterDims = after.results || [];
+    if (beforeDims.length > 0) {
+      html += '<table class="phase-detail-table"><thead><tr><th>Dimension</th><th>Before</th><th>After</th><th>Change</th></tr></thead><tbody>';
+      afterDims.forEach(ad => {
+        const bd = beforeDims.find(b => b.name === ad.name);
+        const bScore = bd ? bd.score : 0;
+        const change = ad.score - bScore;
+        const changeStr = (change >= 0 ? '+' : '') + change.toFixed(3);
+        const changeColor = change >= 0 ? 'var(--green)' : 'var(--red)';
+        html += `<tr><td style="font-weight:600">${esc(ad.name)}</td>`;
+        html += `<td>${bScore.toFixed(3)}</td>`;
+        html += `<td>${ad.score.toFixed(3)}</td>`;
+        html += `<td style="color:${changeColor}">${changeStr}</td></tr>`;
+      });
+      html += '</tbody></table>';
+    }
+  } else if (data.last_eval) {
+    html += `<div><div class="phase-detail-section-title">Latest Score</div><div style="font-size:24px;font-weight:800">${(data.last_eval.total || 0).toFixed(3)}</div></div>`;
+  }
+
+  html += renderCollapsible('Agent Output', data.agent_output);
+  return html;
+}
+
+function renderArchiveDetail(data) {
+  let html = '';
+  if (data.session_summary) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Session Summary</div><div class="phase-detail-pre">${esc(data.session_summary)}</div></div>`;
+  }
+  if (data.performance_report) {
+    const rpt = data.performance_report;
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Performance Report</div>';
+    html += '<dl class="phase-detail-kv">';
+    if (rpt.total_experiments != null) html += `<dt>Total Experiments</dt><dd>${rpt.total_experiments}</dd>`;
+    if (rpt.keep_count != null) html += `<dt>Kept</dt><dd style="color:var(--green)">${rpt.keep_count}</dd>`;
+    if (rpt.revert_count != null) html += `<dt>Reverted</dt><dd style="color:var(--red)">${rpt.revert_count}</dd>`;
+    if (rpt.keep_rate != null) html += `<dt>Keep Rate</dt><dd>${(rpt.keep_rate * 100).toFixed(0)}%</dd>`;
+    if (rpt.latest_score != null) html += `<dt>Latest Score</dt><dd style="color:${scoreColor(rpt.latest_score)}">${rpt.latest_score.toFixed(3)}</dd>`;
+    html += '</dl></div>';
+  }
+  html += renderCollapsible('Agent Output', data.agent_output);
+  return html;
+}
+
+const PHASE_RENDERERS = {
+  Detect: renderDetectDetail,
+  Discover: renderDiscoverDetail,
+  Research: renderResearchDetail,
+  Strategize: renderStrategizeDetail,
+  Build: renderBuildDetail,
+  Review: renderReviewDetail,
+  Eval: renderEvalDetail,
+  Archive: renderArchiveDetail,
+  Observe: renderResearchDetail,
+  Hypothesize: renderStrategizeDetail,
+  Baseline: renderEvalDetail,
+  Analyze: renderResearchDetail,
+  Run: renderEvalDetail,
+  Verdict: renderEvalDetail,
+  Plan: renderStrategizeDetail,
+  Verify: renderEvalDetail,
+  ACE: renderArchiveDetail,
+};
+
+// ── Project Details ──
+function openProjectDetails(name) {
+  const row = document.getElementById('phase-detail-row');
+  if (expandedPhase === '__project__' && selectedProject === name) {
+    expandedPhase = null;
+    row.classList.remove('open');
+    row.innerHTML = '';
+    renderPipelineBar(currentPhaseGlobal);
+    return;
+  }
+  expandedPhase = '__project__';
+  row.innerHTML = '<div class="empty-state">Loading...</div>';
+  row.classList.add('open');
+  renderPipelineBar(currentPhaseGlobal);
+
+  fetch(`/api/projects/${name}/details`)
+    .then(res => res.json())
+    .then(data => renderProjectDetails(data))
+    .catch(() => { row.innerHTML = '<div class="empty-state">Failed to load project details</div>'; });
+}
+
+function renderProjectDetails(data) {
+  const row = document.getElementById('phase-detail-row');
+  let html = '<div class="phase-detail-header">';
+  html += `<span class="phase-detail-title">${esc(data.name)}</span>`;
+  html += `<span class="project-status-badge ${data.status}">${esc(data.status)}</span>`;
+  html += '</div>';
+
+  if (data.status === 'new') {
+    html += '<div class="empty-state">Factory not initialized. Run <code>factory ceo &lt;path&gt;</code> to start.</div>';
+    row.innerHTML = html;
+    return;
+  }
+
+  // Config summary
+  if (data.config) {
+    const c = data.config;
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Configuration</div>';
+    html += '<dl class="phase-detail-kv">';
+    if (c.goal) html += `<dt>Goal</dt><dd>${esc(c.goal)}</dd>`;
+    if (c.eval_command) html += `<dt>Eval Command</dt><dd><code>${esc(c.eval_command)}</code></dd>`;
+    if (c.eval_threshold != null) html += `<dt>Threshold</dt><dd>${c.eval_threshold}</dd>`;
+    if (c.scope && c.scope.length > 0) html += `<dt>Scope</dt><dd>${c.scope.map(s => esc(s)).join(', ')}</dd>`;
+    if (c.guards && c.guards.length > 0) html += `<dt>Guards</dt><dd>${c.guards.map(g => esc(g)).join('; ')}</dd>`;
+    if (c.constraints && c.constraints.length > 0) html += `<dt>Constraints</dt><dd>${c.constraints.map(x => esc(x)).join('; ')}</dd>`;
+    if (c.research_target) html += `<dt>Research Target</dt><dd>${esc(JSON.stringify(c.research_target))}</dd>`;
+    html += '</dl></div>';
+  }
+
+  // Eval profile
+  if (data.eval_profile) {
+    const ep = data.eval_profile;
+    const dims = ep.dimensions || [];
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Eval Profile';
+    if (ep.human_reviewed) html += ' <span style="color:var(--green);font-size:9px">REVIEWED</span>';
+    html += '</div>';
+    if (dims.length > 0) {
+      html += '<table class="phase-detail-table"><thead><tr><th>Dimension</th><th>Weight</th><th>Source</th></tr></thead><tbody>';
+      dims.forEach(d => {
+        html += `<tr><td style="font-weight:600">${esc(d.name)}</td><td>${d.weight}</td><td>${esc(d.source || '')}</td></tr>`;
+      });
+      html += '</tbody></table>';
+    }
+    html += '</div>';
+  }
+
+  // Performance report
+  if (data.performance_report) {
+    const rpt = data.performance_report;
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Performance</div>';
+    html += '<dl class="phase-detail-kv">';
+    if (rpt.total_experiments != null) html += `<dt>Experiments</dt><dd>${rpt.total_experiments}</dd>`;
+    if (rpt.keep_count != null) html += `<dt>Kept</dt><dd style="color:var(--green)">${rpt.keep_count}</dd>`;
+    if (rpt.revert_count != null) html += `<dt>Reverted</dt><dd style="color:var(--red)">${rpt.revert_count}</dd>`;
+    if (rpt.keep_rate != null) html += `<dt>Keep Rate</dt><dd>${(rpt.keep_rate * 100).toFixed(0)}%</dd>`;
+    if (rpt.latest_score != null) html += `<dt>Latest Score</dt><dd style="color:${scoreColor(rpt.latest_score)}">${rpt.latest_score.toFixed(3)}</dd>`;
+    html += '</dl></div>';
+  }
+
+  // Backlog
+  if (data.backlog) {
+    html += `<div class="phase-detail-section"><div class="phase-detail-section-title">Backlog</div><div class="phase-detail-pre">${esc(data.backlog)}</div></div>`;
+  }
+
+  // Checkpoint
+  if (data.checkpoint) {
+    const cp = data.checkpoint;
+    html += '<div class="phase-detail-section"><div class="phase-detail-section-title">Checkpoint (crash recovery)</div>';
+    html += '<dl class="phase-detail-kv">';
+    html += `<dt>Mode</dt><dd>${esc(cp.mode || '')}</dd>`;
+    if (cp.current_hypothesis) html += `<dt>Hypothesis</dt><dd>${esc(cp.current_hypothesis)}</dd>`;
+    if (cp.completed_agents) html += `<dt>Completed</dt><dd>${cp.completed_agents.map(a => esc(a)).join(', ')}</dd>`;
+    if (cp.pending_agents) html += `<dt>Pending</dt><dd>${cp.pending_agents.map(a => esc(a)).join(', ')}</dd>`;
+    html += '</dl></div>';
+  }
+
+  // factory.md source
+  if (data.factory_md) {
+    html += renderCollapsible('factory.md', data.factory_md);
+  }
+
+  row.innerHTML = html;
+}
+
+// ── Agent Activity Cards ──
+let agentDismissTimers = {};
+let agentCardData = {};
+
+function renderAgentCards(activeAgents) {
+  const el = document.getElementById('agent-cards');
+  const now = Date.now();
+
+  for (const [role, info] of Object.entries(activeAgents)) {
+    if (!agentCardData[role]) {
+      agentCardData[role] = { ...info, active: true, completedAt: null };
+    } else {
+      agentCardData[role] = { ...agentCardData[role], ...info, active: true, completedAt: null };
+    }
+    if (agentDismissTimers[role]) {
+      clearTimeout(agentDismissTimers[role]);
+      delete agentDismissTimers[role];
+    }
+  }
+
+  for (const role of Object.keys(agentCardData)) {
+    if (!activeAgents[role] && agentCardData[role].active) {
+      agentCardData[role].active = false;
+      agentCardData[role].completedAt = now;
+      agentDismissTimers[role] = setTimeout(() => {
+        delete agentCardData[role];
+        delete agentDismissTimers[role];
+        renderAgentCardsDOM();
+      }, 10000);
+    }
+  }
+
+  renderAgentCardsDOM();
+}
+
+function renderAgentCardsDOM() {
+  const el = document.getElementById('agent-cards');
+  const entries = Object.entries(agentCardData);
+  if (entries.length === 0) {
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML = entries.map(([role, info]) => {
+    const active = info.active;
+    const cls = active ? 'agent-card' : 'agent-card done';
+    return `
+      <div class="${cls}" onclick="openAgentOutput('${esc(role)}')">
+        <span class="pulse-dot"></span>
+        <span class="agent-role">${esc(role)}</span>
+        <span class="agent-task">${esc((info.task || '').substring(0, 100))}</span>
+        <span class="agent-timer" data-started="${esc(info.started_at)}" data-active="${active}">${active ? '0s' : 'done'}</span>
+      </div>`;
+  }).join('');
+}
+
+setInterval(() => {
+  document.querySelectorAll('.agent-timer[data-active="true"]').forEach(timer => {
+    const started = timer.getAttribute('data-started');
+    if (!started) return;
+    const elapsed = Math.floor((Date.now() - new Date(started).getTime()) / 1000);
+    if (elapsed < 60) timer.textContent = elapsed + 's';
+    else timer.textContent = Math.floor(elapsed / 60) + 'm' + (elapsed % 60) + 's';
+  });
+}, 1000);
+
+// ── Mode Indicator ──
+let currentMode = null;
+
+function updateModeIndicator(mode) {
+  currentMode = mode;
+}
+
+// ── Agent Output Panel ──
+function openAgentOutput(role) {
+  if (!selectedProject) return;
+  const panel = document.getElementById('agent-output-panel');
+  const title = document.getElementById('agent-output-title');
+  const body = document.getElementById('agent-output-body');
+  title.textContent = role + ' output';
+  body.textContent = 'Loading...';
+  panel.classList.add('open');
+
+  fetch(`/api/projects/${selectedProject}/agent-output/${role}`)
+    .then(res => {
+      if (!res.ok) return 'No output available';
+      return res.text();
+    })
+    .then(text => { body.textContent = text; })
+    .catch(() => { body.textContent = 'Failed to load output'; });
+}
+
+function closeAgentOutput() {
+  document.getElementById('agent-output-panel').classList.remove('open');
+}
+
+// ── Event Type Filters ──
+let activeEventFilter = 'all';
+
+const EVENT_FILTER_MAP = {
+  agents: ['agent.started', 'agent.completed', 'agent.failed', 'agent.timeout'],
+  evals: ['eval.started', 'eval.completed', 'guard.completed'],
+  experiments: ['experiment.begin', 'experiment.finalize'],
+  system: ['detect', 'discover.started', 'discover.completed', 'cycle.started', 'cycle.completed',
+           'study.started', 'study.completed', 'insights.started', 'insights.completed',
+           'ace.started', 'ace.completed', 'archive.completed'],
+};
+
+function initEventFilters() {
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeEventFilter = btn.dataset.filter;
+      applyEventFilter();
+    });
+  });
+}
+
+function eventMatchesFilter(eventType) {
+  if (activeEventFilter === 'all') return true;
+  const types = EVENT_FILTER_MAP[activeEventFilter];
+  return types ? types.includes(eventType) : true;
+}
+
+function applyEventFilter() {
+  document.querySelectorAll('.event-item').forEach(item => {
+    const type = item.dataset.eventType || '';
+    item.style.display = eventMatchesFilter(type) ? '' : 'none';
+  });
+}
+
+// ── Live State Polling ──
+async function loadLiveState() {
+  if (!selectedProject) return;
+  try {
+    const res = await fetch(`/api/projects/${selectedProject}/state`);
+    const state = await res.json();
+    const prevPhase = currentPhaseGlobal;
+    currentPhaseGlobal = state.current_phase;
+
+    if (state.phases && state.phases.length > 0) {
+      currentPhases = state.phases;
+    }
+    if (state.loop_phases) {
+      currentLoopPhases = state.loop_phases;
+    }
+    currentHypothesisNumber = state.hypothesis_number || 0;
+
+    renderPipelineBar(state.current_phase);
+    renderAgentCards(state.active_agents || {});
+    updateModeIndicator(state.current_mode);
+    loadProjects();
+
+    if (expandedPhase && prevPhase !== currentPhaseGlobal) {
+      fetch(`/api/projects/${selectedProject}/phase-detail/${expandedPhase}`)
+        .then(r => r.json())
+        .then(d => renderPhaseDetail(d))
+        .catch(() => {});
+    }
+  } catch (e) {
+    // Silently ignore — state endpoint may not have data yet
+  }
+}
+
 // ── Init ──
 loadProjects();
 loadSummary();
 connectSSE();
 initToggle();
+initEventFilters();
+loadLiveState();
+renderPipelineBar(null);
 // Refresh projects every 10s
 setInterval(() => {
   loadProjects();
   loadSummary();
+  loadLiveState();
   if (selectedProject) loadExperiments(selectedProject);
 }, 10000);
 </script>
