@@ -293,6 +293,26 @@ Built something with the Factory? Open a PR to add it here — it helps others s
 
 ---
 
+## Live Dashboard
+
+Monitor factory activity in real time with `factory dashboard`:
+
+```bash
+uv run python -m factory dashboard --projects-dir ~/factory-projects
+```
+
+The dashboard (default port 8420) provides:
+
+- **Pipeline phase bar** — 8-stage flow (Observe → Hypothesize → Build → Guard → Measure → Decide → Record → Archive) with active stage highlighting
+- **Agent activity cards** — live status with pulsing indicators and elapsed timers, auto-dismiss on completion
+- **Agent output panel** — click any agent card to see its full output in a slide-out panel
+- **Event stream** — SSE-powered real-time event log with filters (All / Agents / Evals / Experiments / System)
+- **Multi-project view** — scans a projects directory for all `.factory/`-managed projects, showing experiment history and scores
+
+The dashboard auto-starts in the background when you run `factory ceo` or `factory run`. Designed to run on an always-on machine for continuous monitoring.
+
+---
+
 ## Runners
 
 The factory supports multiple CLI backends. By default it uses **Claude Code** (`claude` CLI). **Bob Shell** (`bob` CLI) is available as an alternative:
