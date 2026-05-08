@@ -749,6 +749,45 @@ class TestHeartbeatParserFlags:
         assert args.max_cycles == 5
 
 
+class TestRunStandup:
+    def test_standup_injects_report_into_ceo_task(self, tmp_path):
+        """When scrummaster returns a report, it appears in the CEO task."""
+        (tmp_path / ".factory").mkdir()
+        standup_report = "## Sprint Standup\n\n**Status:** FRESH\n**Mode:** improve"
+        mock_agent = AsyncMock(side_effect=[
+            (standup_report, 0),           # scrummaster call
+            ("CEO completed", 0),          # ceo call
+        ])
+        with patch("factory.agents.runner.invoke_agent", mock_agent), \
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("shutil.which", return_value="/usr/bin/claude"):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        # Second call is the CEO — check its task string contains the standup
+        ceo_call = mock_agent.call_args_list[1]
+        ceo_task = ceo_call[0][1]
+        assert "Sprint Standup" in ceo_task
+        assert "FRESH" in ceo_task
+
+    def test_standup_skipped_without_factory_dir(self, tmp_path):
+        """Without .factory/, no standup call is made."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_agent.assert_called_once()  # only CEO, no standup
+
+    def test_standup_skipped_without_claude(self, tmp_path):
+        """Without claude CLI, no standup call is made."""
+        (tmp_path / ".factory").mkdir()
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("shutil.which", return_value=None):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_agent.assert_called_once()  # only CEO, no standup
+
+
 class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
@@ -756,12 +795,13 @@ class TestHeartbeatLoop:
              patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
         assert result == 0
-        mock_agent.assert_called_once()
+        mock_agent.assert_called_once()  # no .factory/ dir → no standup call
 
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._chain_modes", return_value=0):
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("factory.cli._run_standup", return_value=None):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "0",
             ])

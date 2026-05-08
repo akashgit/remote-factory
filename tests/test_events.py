@@ -133,6 +133,31 @@ class TestLoadEvents:
         assert len(events) == 2
 
 
+class TestSymlinkResolution:
+    def test_emit_event_resolves_symlinks(self, tmp_path):
+        """Events go to the resolved path even when given a symlink."""
+        real_dir = tmp_path / "real-project"
+        real_dir.mkdir()
+        (real_dir / ".factory").mkdir()
+
+        symlink_dir = tmp_path / "link-project"
+        symlink_dir.symlink_to(real_dir)
+
+        # Emit via symlink path
+        emit_event(symlink_dir, "test.event", data={"via": "symlink"})
+
+        # Load via real path
+        events = load_events(real_dir)
+        assert len(events) == 1
+        assert events[0]["type"] == "test.event"
+        # The project name should be the resolved dir name, not the symlink name
+        assert events[0]["project"] == "real-project"
+
+        # Load via symlink path
+        events2 = load_events(symlink_dir)
+        assert len(events2) == 1
+
+
 class TestDiscoverFactoryProjects:
     def test_finds_projects_with_factory_dir(self, tmp_path):
         (tmp_path / "proj-a" / ".factory").mkdir(parents=True)

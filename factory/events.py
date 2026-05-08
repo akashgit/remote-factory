@@ -20,6 +20,7 @@ def emit_event(
     data: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Append a structured event to .factory/events.jsonl. Returns the event dict."""
+    project_path = project_path.resolve()
     event = {
         "type": event_type,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -45,6 +46,7 @@ def load_events(
     since: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """Load events from .factory/events.jsonl, optionally filtered by timestamp."""
+    project_path = project_path.resolve()
     events_file = project_path / ".factory" / "events.jsonl"
     if not events_file.exists():
         return []

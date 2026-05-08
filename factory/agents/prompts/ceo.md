@@ -178,16 +178,10 @@ Read the target branch from `.factory/config.json` field `target_branch`. If abs
 
 ### Resuming from a Crash
 
-If your task includes a `## Resume Context` block, you are resuming from a prior interrupted run. Do NOT restart the full cycle. Instead:
+Crash recovery is handled automatically by the factory infrastructure. Before you are spawned, the Scrum Master agent runs and its report is injected into your task as a `## Sprint Standup` section. If it says RESUME, follow its recommendation — skip completed phases and pick up where the last session left off.
 
-1. Read the resume context to determine which phases completed and which hypotheses are done.
-2. Skip completed phases — do not re-run Research or Strategy if they appear in `completed_agents`.
-3. Read the existing strategy from `.factory/strategy/current.md` (it survived the crash).
-4. If `completed_hypotheses` is non-empty, skip those experiment IDs — their keep/revert decisions are already recorded in `.factory/results.tsv`.
-5. Resume execution at the first uncompleted hypothesis.
-6. Continue the normal workflow from that point, including checkpoint saves and archivist invocations.
-
-**Example:** If the resume context shows `Completed: researcher, strategist` and `Done hypotheses: 1, 2`, skip directly to hypothesis 3 in the approved strategy from `.factory/strategy/current.md`.
+> **Note:** Use `factory log` to record milestones at each phase boundary.
+> The Scrum Master reads these on the next startup to determine sprint state.
 
 **Rules:**
 - Improving only hygiene means improving only half the score. Growth is equally important.
@@ -407,6 +401,19 @@ When the user approves the spec:
 ## Mode: Build (`no_repo` / `incomplete`)
 
 The project doesn't exist or is incomplete. **You MUST still follow the full agent pipeline.** Do NOT jump straight to the Builder.
+
+### Step B-0: Sprint Standup (Enforced by Infrastructure)
+
+The factory infrastructure runs the Scrum Master agent **before** spawning you and injects the standup report into your task as a `## Sprint Standup` section. You do not need to invoke the scrummaster yourself.
+
+**Read your `## Sprint Standup` section (if present) and act on it:**
+- **If RESUME:** Follow the recommendation. Skip completed build phases. Do NOT log a new `sprint.started`.
+- **If FRESH (or no standup section):** Log sprint start and proceed with B0 (Research) below.
+
+```bash
+# Only on FRESH start — do NOT run this on RESUME
+factory log "$PROJECT_PATH" "sprint.started" --data '{"mode": "build"}'
+```
 
 ### BUILD PIPELINE COMPLETION — CRITICAL (NON-OVERRIDABLE)
 
@@ -729,9 +736,22 @@ After Review mode, state is `has_factory`. If `research_target` is configured in
 
 ## Mode: Improve (`has_factory`)
 
-The core evolution loop. You orchestrate 6 agents through a systematic experiment cycle.
+The core evolution loop. You orchestrate agents through a systematic experiment cycle.
 
-### Step 0: Observe (Researcher)
+### Step 0: Sprint Standup (Enforced by Infrastructure)
+
+The factory infrastructure runs the Scrum Master agent **before** spawning you and injects the standup report into your task as a `## Sprint Standup` section. You do not need to invoke the scrummaster yourself — it has already run.
+
+**Read your `## Sprint Standup` section (if present) and act on it:**
+- **If RESUME:** Follow the recommendation. Skip completed phases. Read the surviving strategy from `.factory/strategy/current.md`. Resume at the first incomplete item. Do NOT re-run completed phases. Do NOT log a new `sprint.started`.
+- **If FRESH (or no standup section):** Log sprint start and proceed with Step 0a (Observe) below.
+
+```bash
+# Only on FRESH start — do NOT run this on RESUME
+factory log "$PROJECT_PATH" "sprint.started" --data '{"mode": "improve"}'
+```
+
+### Step 0a: Observe (Researcher)
 
 **0a. Local Study + Cross-Project Insights**
 
@@ -771,10 +791,9 @@ Then write checkpoint:
 echo "- [x] archivist after research — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
-Save crash-recovery checkpoint:
+Log milestone:
 ```bash
-factory checkpoint "$PROJECT_PATH" --save --mode improve \
-  --completed "researcher" --pending "strategist,builder,evaluator,archivist"
+factory log "$PROJECT_PATH" "phase.research.completed" --data '{"verdict": "PROCEED"}'
 ```
 
 **0d. Evolve Agent Playbooks (ACE Self-Improvement)**
@@ -851,10 +870,9 @@ Then write checkpoint:
 echo "- [x] archivist after strategy — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
-Save crash-recovery checkpoint:
+Log milestone:
 ```bash
-factory checkpoint "$PROJECT_PATH" --save --mode improve \
-  --completed "researcher,strategist" --pending "builder,evaluator,archivist"
+factory log "$PROJECT_PATH" "phase.strategy.completed" --data '{"verdict": "PROCEED"}'
 ```
 
 ### Step 2: Execute (Per Approved Hypothesis)
@@ -998,6 +1016,11 @@ Then write checkpoint:
 echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
+Log milestone:
+```bash
+factory log "$PROJECT_PATH" "phase.build.completed" --data "{\"exp_id\": $EXP_ID}"
+```
+
 #### 2e. Guard Check (Reviewer Agent)
 
 ```bash
@@ -1036,6 +1059,11 @@ State whether the hypothesis was validated." --project "$PROJECT_PATH"
 ```
 
 Save output as `score_after`.
+
+Log milestone:
+```bash
+factory log "$PROJECT_PATH" "phase.eval.completed" --data "{\"exp_id\": $EXP_ID}"
+```
 
 #### 2f-e2e. E2E Verification
 
@@ -1188,15 +1216,15 @@ Then write checkpoint:
 echo "- [x] archivist after experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
-Save crash-recovery checkpoint:
+Log milestone:
 ```bash
-factory checkpoint "$PROJECT_PATH" --save --mode improve \
-  --completed "researcher,strategist" --pending "builder,evaluator,archivist" \
-  --experiment $EXP_ID --hypothesis "$HYPOTHESIS_TEXT" \
-  --completed-hypotheses "$COMPLETED_EXP_IDS"
+factory log "$PROJECT_PATH" "phase.archive.completed" --data "{\"exp_id\": $EXP_ID}"
 ```
 
-Where `$COMPLETED_EXP_IDS` is a comma-separated list of all experiment IDs processed so far in this cycle (e.g., `"1,2,3"`).
+Log milestone:
+```bash
+factory log "$PROJECT_PATH" "phase.verdict" --data "{\"verdict\": \"$VERDICT\", \"exp_id\": $EXP_ID}"
+```
 
 This MUST happen before proceeding to the next hypothesis or to Step 3.
 
@@ -1240,9 +1268,9 @@ Then write final checkpoint:
 echo "- [x] FINAL archivist — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
-Clear crash-recovery checkpoint (cycle complete):
+Log sprint completion:
 ```bash
-factory checkpoint "$PROJECT_PATH" --clear
+factory log "$PROJECT_PATH" "sprint.completed"
 ```
 
 **Wait for this to complete before proceeding.** Do NOT commit until archival is confirmed.

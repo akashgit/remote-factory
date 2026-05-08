@@ -1019,6 +1019,28 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_log(args: argparse.Namespace) -> int:
+    """Append a structured event to .factory/events.jsonl."""
+    import json as json_mod
+
+    from factory.events import emit_event
+
+    project_path = Path(args.path).resolve()
+    event_type = args.event_type
+
+    if args.data:
+        try:
+            data = json_mod.loads(args.data)
+        except json_mod.JSONDecodeError as exc:
+            print(f"Error: invalid JSON in --data: {exc}", file=sys.stderr)
+            return 1
+    else:
+        data = {}
+
+    emit_event(project_path, event_type, agent=args.agent, data=data)
+    return 0
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
     """Load checkpoint and display resume context for the CEO."""
     from factory.checkpoint import format_checkpoint, load_checkpoint
@@ -1360,10 +1382,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         research_ideation=research_ideation,
     )
 
-    from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
-    checkpoint = load_checkpoint(project_path)
-    if checkpoint:
-        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
+    standup = _run_standup(project_path, ceo_mode, model=model)
+    if standup:
+        task += f"\n\n## Sprint Standup\n\n{standup}"
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -1379,8 +1400,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             timeout=7200.0,
         ))
         print(result)
-        if code == 0:
-            clear_checkpoint(project_path)
         if code != 0:
             return code
         return _chain_modes(
@@ -1750,6 +1769,40 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     return mode
 
 
+def _run_standup(project_path: Path, mode: str, model: str | None = None) -> str | None:
+    """Run the scrummaster agent and return its standup report.
+
+    Returns the report text, or None if the scrummaster fails or .factory/ doesn't exist.
+    Swallows all errors so it never blocks the CEO from starting.
+    """
+    import shutil
+
+    factory_dir = project_path / ".factory"
+    if not factory_dir.is_dir():
+        return None
+    if not shutil.which("claude"):
+        return None
+
+    try:
+        from factory.agents.runner import invoke_agent
+
+        task = (
+            f"Run standup for {project_path} (mode: {mode}). "
+            f"Read .factory/events.jsonl, reviews, experiments, strategy, and results.tsv. "
+            f"Report sprint status (FRESH or RESUME), completed phases, in-progress work, "
+            f"pending work, and a specific recommendation for what to do next."
+        )
+        result, code = _run(invoke_agent(
+            "scrummaster", task, project_path,
+            timeout=120.0, dangerously_skip_permissions=True, model=model,
+        ))
+        if code != 0:
+            return None
+        return result
+    except Exception:
+        return None
+
+
 def _build_ceo_task(
     project_path: Path,
     mode: str,
@@ -1948,7 +2001,6 @@ def _run_single_cycle(
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
-    from factory.checkpoint import clear_checkpoint, format_checkpoint, load_checkpoint
 
     if focus:
         from factory.study import add_backlog_item
@@ -1960,9 +2012,9 @@ def _run_single_cycle(
         discover_only=discover_only, no_github=no_github,
     )
 
-    checkpoint = load_checkpoint(project_path)
-    if checkpoint:
-        task += f"\n\n## Resume Context\n\n{format_checkpoint(checkpoint)}"
+    standup = _run_standup(project_path, mode, model=model)
+    if standup:
+        task += f"\n\n## Sprint Standup\n\n{standup}"
 
     result, code = _run(invoke_agent(
         "ceo",
@@ -1972,9 +2024,6 @@ def _run_single_cycle(
         dangerously_skip_permissions=True,
         model=model,
     ))
-
-    if code == 0:
-        clear_checkpoint(project_path)
 
     print(result)
     return code
@@ -2331,6 +2380,13 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")
     p.add_argument("path", help="Path to the project")
 
+    # log
+    p = sub.add_parser("log", help="Append a structured event to .factory/events.jsonl")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("event_type", help="Event type (e.g. phase.research.completed)")
+    p.add_argument("--data", help="JSON data payload")
+    p.add_argument("--agent", help="Agent name to attribute the event to")
+
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
@@ -2547,6 +2603,7 @@ def main(argv: list[str] | None = None) -> int:
         "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
+        "log": cmd_log,
         "vault-init": cmd_vault_init,
         "self-update": cmd_self_update,
         "install": cmd_install,
