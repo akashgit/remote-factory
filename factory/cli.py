@@ -15,6 +15,10 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from factory.messages import Message
 
 
 def _run(coro):  # noqa: ANN001, ANN202
@@ -1845,7 +1849,7 @@ def _build_ceo_task(
     no_github: bool = False,
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
-    messages: list | None = None,
+    messages: list[Message] | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
