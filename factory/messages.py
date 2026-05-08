@@ -15,8 +15,12 @@ import structlog
 
 log = structlog.get_logger()
 
+MAX_MESSAGE_CHARS = 10_000
+MAX_PENDING_MESSAGES = 20
+MAX_TOTAL_CHARS = 50_000
 
-@dataclass
+
+@dataclass(frozen=True)
 class Message:
     id: str
     timestamp: datetime
@@ -33,8 +37,23 @@ def _read_dir(project_path: Path) -> Path:
 
 def write_message(project_path: Path, text: str) -> Message:
     """Write a message to the pending queue. Returns the created Message."""
+    if not text or not text.strip():
+        raise ValueError("Message text must not be empty or whitespace-only.")
+    if len(text) > MAX_MESSAGE_CHARS:
+        raise ValueError(
+            f"Message text exceeds maximum length of {MAX_MESSAGE_CHARS} characters "
+            f"(got {len(text)})."
+        )
+
     msg_dir = _messages_dir(project_path)
     msg_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = list(msg_dir.glob("*.md"))
+    if len(existing) >= MAX_PENDING_MESSAGES:
+        raise ValueError(
+            f"Too many pending messages ({len(existing)} >= {MAX_PENDING_MESSAGES}). "
+            "Wait for existing messages to be consumed before sending more."
+        )
 
     ts = datetime.now(timezone.utc)
     msg_id = ts.strftime("%Y%m%dT%H%M%S%f") + "-" + uuid.uuid4().hex[:8]
@@ -45,10 +64,6 @@ def write_message(project_path: Path, text: str) -> Message:
     msg = Message(id=msg_id, timestamp=ts, text=text)
     log.info("message_written", id=msg_id, chars=len(text))
     return msg
-
-
-MAX_PENDING_MESSAGES = 20
-MAX_TOTAL_CHARS = 50_000
 
 
 def read_pending(
@@ -74,6 +89,8 @@ def read_pending(
     for path in all_paths:
         if len(messages) >= max_messages:
             break
+        if path.is_symlink():
+            continue
         content = path.read_text()
         lines = content.split("\n", 2)
         ts = datetime.now(timezone.utc)
@@ -81,7 +98,7 @@ def read_pending(
             try:
                 ts = datetime.fromisoformat(lines[0].split(":", 1)[1].strip())
             except ValueError:
-                pass
+                log.warning("message_timestamp_parse_failed", path=str(path))
         text = lines[2].strip() if len(lines) > 2 else content.strip()
         if total_chars + len(text) > max_chars and messages:
             log.warning("messages_chars_capped", total_chars=total_chars + len(text), cap=max_chars)
@@ -99,7 +116,14 @@ def mark_read(project_path: Path, message_ids: list[str]) -> None:
     read_dir.mkdir(parents=True, exist_ok=True)
 
     for msg_id in message_ids:
-        src = msg_dir / f"{msg_id}.md"
+        raw = msg_dir / f"{msg_id}.md"
+        if raw.is_symlink():
+            log.warning("mark_read_symlink_skipped", id=msg_id)
+            continue
+        src = raw.resolve()
+        if not src.is_relative_to(msg_dir.resolve()):
+            log.warning("mark_read_path_traversal", id=msg_id)
+            continue
         if src.exists():
             src.rename(read_dir / src.name)
             log.debug("message_marked_read", id=msg_id)

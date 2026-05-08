@@ -319,6 +319,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
 
 def cmd_message(args: argparse.Namespace) -> int:
+    """Queue a message for the CEO agent."""
     from factory.messages import write_message
 
     project_path = Path(args.path)
@@ -328,7 +329,14 @@ def cmd_message(args: argparse.Namespace) -> int:
     if not (project_path / ".factory").exists():
         print(f"Error: not a factory project (no .factory/ directory): {project_path}", file=sys.stderr)
         return 1
-    msg = write_message(project_path, args.text)
+    if not args.text or not args.text.strip():
+        print("Error: message text must not be empty.", file=sys.stderr)
+        return 1
+    try:
+        msg = write_message(project_path, args.text)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
     print(f"Message queued (id={msg.id}). The CEO will see it at the start of the next cycle.")
     return 0
 
@@ -1442,6 +1450,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     # so there's no post-execution hook. If the session fails to launch, messages
     # are lost. This is accepted: the user is at the terminal and can re-send.
     if pending_ids:
+        print(
+            f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
+            file=sys.stderr,
+        )
         mark_read(project_path, pending_ids)
     prompt = resolve_prompt("ceo", project_path)
     runner = get_runner(runner_name)
@@ -2075,7 +2087,6 @@ def _run_single_cycle(
     if code == 0:
         if pending_ids:
             mark_read(project_path, pending_ids)
-
 
     print(result)
     return code
