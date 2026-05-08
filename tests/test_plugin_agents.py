@@ -86,7 +86,6 @@ class TestGenerateAgentContent:
             fm = _parse_frontmatter(content)
             assert "name" in fm, f"{role}: missing name"
             assert "description" in fm, f"{role}: missing description"
-            assert "model" in fm, f"{role}: missing model"
             assert "tools" in fm, f"{role}: missing tools"
 
     def test_frontmatter_name_matches_role(self):
@@ -108,8 +107,9 @@ class TestGenerateAgentContent:
         for role in ALL_ROLES:
             source = (_PROMPTS_DIR / f"{role}.md").read_text()
             generated = generate_agent_content(role)
-            assert generated.endswith(source), (
-                f"{role}: generated file does not end with source prompt"
+            # Generated content may have playbook injected, so check source is in it
+            assert source in generated, (
+                f"{role}: generated file does not include source prompt"
             )
 
     def test_unknown_role_raises(self):

@@ -8,6 +8,7 @@ from pathlib import Path
 
 import yaml
 
+from factory.ace.injector import inject_playbook, load_playbook
 from factory.agents.runner import _PROMPTS_DIR
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
@@ -52,8 +53,11 @@ def generate_agent_content(role: str) -> str:
 
     meta = config[role]
     prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
+    playbook = load_playbook(role)
+    if playbook:
+        prompt = inject_playbook(prompt, playbook)
     frontmatter = yaml.dump(
-        {"name": role, "description": meta.description, "model": meta.model, "tools": meta.tools},
+        {"name": role, "description": meta.description, "tools": meta.tools},
         default_flow_style=False,
         sort_keys=False,
         allow_unicode=True,

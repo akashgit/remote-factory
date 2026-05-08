@@ -104,11 +104,16 @@ Process steps in topological order:
    - Parallel batch: multiple Agent calls in same message
    - Archival: can use `run_in_background: true`
 4. **Read results** — Agent tool returns subagent output directly
-5. **Apply gate rule:**
+5. **Persist review** — Write the agent's output to `.factory/reviews/<role>-latest.md` to match the CLI path's artifact structure:
+   ```bash
+   mkdir -p .factory/reviews
+   ```
+   Then use the Write tool to save the agent output to `.factory/reviews/<role>-latest.md`
+6. **Apply gate rule:**
    - **PROCEED**: Move to next step
    - **REDIRECT**: Re-invoke with corrections (max 2 per step)
    - **ABORT**: Skip downstream steps, jump to summary
-6. **Repeat** until done
+7. **Repeat** until done
 
 ### Error Recovery
 
