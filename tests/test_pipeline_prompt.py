@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pytest
 
+from factory.agents.plugin import load_agent_config
+
 _SKILLS_DIR = Path(__file__).parent.parent / "skills"
 
 
@@ -24,6 +26,7 @@ class TestPipelineSkillStructure:
     def test_has_frontmatter(self, pipeline_skill):
         assert pipeline_skill.startswith("---\n")
         assert "name: pipeline" in pipeline_skill
+        assert "disable-model-invocation: true" in pipeline_skill
 
     def test_has_design_phase(self, pipeline_skill):
         assert "Phase 1" in pipeline_skill
@@ -48,20 +51,30 @@ class TestPipelineSkillStructure:
     def test_references_factory_agent_command(self, pipeline_skill):
         assert "factory agent" in pipeline_skill
 
-    def test_references_specialist_roles(self, pipeline_skill):
-        for role in ["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"]:
-            assert role in pipeline_skill
+    def test_references_roles_from_config(self, pipeline_skill):
+        config = load_agent_config()
+        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        for role in core_roles:
+            assert role in config, f"{role} missing from agents.yml"
+            assert role in pipeline_skill, f"{role} missing from pipeline skill"
 
     def test_has_archivist_requirement(self, pipeline_skill):
         prompt_lower = pipeline_skill.lower()
         assert "archivist" in prompt_lower
         assert "mandatory" in prompt_lower or "always include" in prompt_lower
 
+    def test_creates_pipeline_directory(self, pipeline_skill):
+        assert "mkdir -p .factory/pipeline" in pipeline_skill
+
     def test_has_error_recovery(self, pipeline_skill):
         assert "Error" in pipeline_skill or "error" in pipeline_skill
 
     def test_has_summary_output(self, pipeline_skill):
         assert "summary" in pipeline_skill.lower()
+
+    def test_clarifies_parallel_vs_background(self, pipeline_skill):
+        assert "not shell backgrounding" in pipeline_skill.lower() or \
+               "not shell background" in pipeline_skill.lower()
 
 
 class TestPipelineSubagentsSkillStructure:
@@ -71,13 +84,27 @@ class TestPipelineSubagentsSkillStructure:
     def test_has_frontmatter(self, subagents_skill):
         assert subagents_skill.startswith("---\n")
         assert "name: pipeline-subagents" in subagents_skill
+        assert "disable-model-invocation: true" in subagents_skill
 
     def test_uses_agent_tool(self, subagents_skill):
         assert "Agent tool" in subagents_skill or "Agent(" in subagents_skill
 
-    def test_references_factory_subagent_types(self, subagents_skill):
-        assert "factory-researcher" in subagents_skill
-        assert "factory-builder" in subagents_skill
+    def test_references_roles_matching_config(self, subagents_skill):
+        config = load_agent_config()
+        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        for role in core_roles:
+            assert role in config, f"{role} missing from agents.yml"
+            assert role in subagents_skill, f"{role} missing from subagents skill"
+
+    def test_subagent_types_use_plugin_namespace(self, subagents_skill):
+        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        for role in core_roles:
+            assert f"factory:{role}" in subagents_skill, \
+                f"subagent type 'factory:{role}' not referenced in skill"
+
+    def test_no_bare_or_dash_prefixed_subagent_types(self, subagents_skill):
+        assert "factory-researcher" not in subagents_skill
+        assert "factory-builder" not in subagents_skill
 
     def test_has_parallel_execution(self, subagents_skill):
         assert "parallel" in subagents_skill.lower()
@@ -95,3 +122,6 @@ class TestPipelineSubagentsSkillStructure:
 
     def test_has_execution_phase(self, subagents_skill):
         assert "Phase 2" in subagents_skill
+
+    def test_creates_pipeline_directory(self, subagents_skill):
+        assert "mkdir -p .factory/pipeline" in subagents_skill

@@ -1,6 +1,7 @@
 ---
 name: pipeline-subagents
-description: "Design and execute a custom multi-agent pipeline using Claude Code subagents directly. Spawns factory-researcher, factory-builder, etc. via the Agent tool with native parallel and background execution. Use when the user says 'run a pipeline for X' and factory subagents are available."
+description: "Design and execute a custom multi-agent pipeline using Claude Code subagents directly. Spawns researcher, builder, etc. via the Agent tool with native parallel and background execution. Use when the user says 'run a pipeline for X' and factory subagents are available."
+disable-model-invocation: true
 argument-hint: "<goal>"
 ---
 
@@ -10,44 +11,51 @@ You design and execute custom multi-agent pipelines using Claude Code's native A
 
 The user wants: **$ARGUMENTS**
 
+## Setup
+
+```bash
+mkdir -p .factory/pipeline
+```
+
 ## Your Agents
 
-Spawn specialists using the **Agent tool**:
+Spawn specialists using the **Agent tool** with the plugin-namespaced subagent type `factory:<role>`:
 
 ```
 Agent({
   description: "<short description>",
   prompt: "<detailed task>",
-  subagent_type: "factory-<role>"
+  subagent_type: "factory:<role>"
 })
 ```
 
 | Subagent Type | Purpose |
 |---------------|---------|
-| factory-researcher | Web research, codebase analysis, domain studies |
-| factory-strategist | Generate prioritized hypotheses from observations |
-| factory-builder | Implement code changes on a feature branch, open PRs |
-| factory-reviewer | Review PRs, guard checks, keep/revert verdicts |
-| factory-evaluator | Run evals, compare before/after scores |
-| factory-archivist | Record findings to `.factory/archive/` |
-| factory-distiller | Refine vague ideas into buildable specs |
-| factory-failure_analyst | Classify experiment failures by root cause |
+| factory:researcher | Web research, codebase analysis, domain studies |
+| factory:strategist | Generate prioritized hypotheses from observations |
+| factory:builder | Implement code changes on a feature branch, open PRs |
+| factory:reviewer | Review PRs, guard checks, keep/revert verdicts |
+| factory:evaluator | Run evals, compare before/after scores |
+| factory:archivist | Record findings to `.factory/archive/` |
+| factory:distiller | Refine vague ideas into buildable specs |
 
 ### Parallel Execution
 
 Issue multiple Agent tool calls in the **same message** — they run concurrently:
 
 ```
-Agent({ subagent_type: "factory-researcher", prompt: "Research the auth bug..." })
-Agent({ subagent_type: "factory-evaluator", prompt: "Run baseline eval..." })
+Agent({ subagent_type: "factory:researcher", prompt: "Research the auth bug..." })
+Agent({ subagent_type: "factory:evaluator", prompt: "Run baseline eval..." })
 ```
+
+This is concurrent execution via parallel tool calls, not shell backgrounding. Each Agent call is still individually synchronous.
 
 ### Background Execution
 
 For non-blocking steps (e.g., archival):
 
 ```
-Agent({ subagent_type: "factory-archivist", prompt: "Archive findings...", run_in_background: true })
+Agent({ subagent_type: "factory:archivist", prompt: "Archive findings...", run_in_background: true })
 ```
 
 ## Phase 1: Design the Pipeline
@@ -64,12 +72,12 @@ Agent({ subagent_type: "factory-archivist", prompt: "Archive findings...", run_i
 
 ### Steps
 
-| Step | Role | Task Summary | Depends On | Timeout |
-|------|------|-------------|-----------|---------|
-| S1 | researcher | ... | - | 300 |
-| S2 | evaluator | ... | - | 300 |
-| S3 | strategist | ... | S1, S2 | 300 |
-| ... | ... | ... | ... | ... |
+| Step | Role | Task Summary | Depends On |
+|------|------|-------------|-----------|
+| S1 | researcher | ... | - |
+| S2 | evaluator | ... | - |
+| S3 | strategist | ... | S1, S2 |
+| ... | ... | ... | ... |
 
 ### Gate Rules
 - After S1: PROCEED if ...; REDIRECT if ...
@@ -79,7 +87,7 @@ Agent({ subagent_type: "factory-archivist", prompt: "Archive findings...", run_i
 ### Design Principles
 
 - **Minimize invocations** — only agents needed for this goal
-- **Maximize parallelism** — steps with shared dependencies and no mutual dependency → spawn in same message
+- **Maximize parallelism** — steps whose dependencies are all satisfied and that don't depend on each other can be spawned in the same message
 - **Mandatory archival** — always include at least one archivist step at the end
 - **Gate rules** — define PROCEED/REDIRECT/ABORT criteria for critical transitions
 
