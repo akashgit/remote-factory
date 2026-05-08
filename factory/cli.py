@@ -1390,6 +1390,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     from factory.messages import mark_read, read_pending
 
+    pending = read_pending(project_path)
+    pending_ids = [m.id for m in pending]
+
     ceo_mode = "build" if mode == "interactive" or research_ideation else mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
@@ -1397,9 +1400,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         discover_only=discover_only, no_github=no_github,
         interactive_idea=interactive_idea,
         research_ideation=research_ideation,
+        messages=pending,
     )
-
-    pending_ids = [m.id for m in read_pending(project_path)]
 
     standup = _run_standup(project_path, ceo_mode, model=model)
     if standup:
@@ -1843,17 +1845,15 @@ def _build_ceo_task(
     no_github: bool = False,
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
+    messages: list | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
-    from factory.messages import read_pending
-
     task = f"Project: {project_path}\nMode: {mode}"
 
-    pending = read_pending(project_path)
-    if pending:
+    if messages:
         task += "\n\n## User Messages\n"
         task += "The user has sent the following directives. Treat these as HIGH PRIORITY:\n\n"
-        for msg in pending:
+        for msg in messages:
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
 
@@ -2043,19 +2043,21 @@ def _run_single_cycle(
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    from factory.messages import mark_read, read_pending
+
+    pending = read_pending(project_path)
+    pending_ids = [m.id for m in pending]
+
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
+        messages=pending,
     )
 
     standup = _run_standup(project_path, mode, model=model)
     if standup:
         task += f"\n\n## Sprint Standup\n\n{standup}"
-
-    from factory.messages import mark_read, read_pending
-
-    pending_ids = [m.id for m in read_pending(project_path)]
 
     result, code = _run(invoke_agent(
         "ceo",

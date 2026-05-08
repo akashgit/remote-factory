@@ -128,7 +128,7 @@ class TestMessageCLI:
 
 
 class TestMessageInjection:
-    def test_build_ceo_task_includes_pending_messages(self, tmp_path: Path) -> None:
+    def test_build_ceo_task_includes_messages(self, tmp_path: Path) -> None:
         from factory.cli import _build_ceo_task
 
         project = tmp_path / "proj"
@@ -136,7 +136,8 @@ class TestMessageInjection:
         (project / ".factory").mkdir()
         write_message(project, "fix quality gates first")
 
-        task = _build_ceo_task(project, "improve")
+        pending = read_pending(project)
+        task = _build_ceo_task(project, "improve", messages=pending)
         assert "User Messages" in task
         assert "fix quality gates first" in task
         assert "HIGH PRIORITY" in task
@@ -156,9 +157,10 @@ class TestMessageInjection:
         project.mkdir()
         (project / ".factory").mkdir()
         write_message(project, "test message")
-        assert len(read_pending(project)) == 1
+        pending = read_pending(project)
+        assert len(pending) == 1
 
-        _build_ceo_task(project, "improve")
+        _build_ceo_task(project, "improve", messages=pending)
         assert len(read_pending(project)) == 1
 
 
