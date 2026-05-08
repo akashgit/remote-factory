@@ -47,14 +47,33 @@ def write_message(project_path: Path, text: str) -> Message:
     return msg
 
 
-def read_pending(project_path: Path) -> list[Message]:
-    """Read all pending (unread) messages, ordered by timestamp."""
+MAX_PENDING_MESSAGES = 20
+MAX_TOTAL_CHARS = 50_000
+
+
+def read_pending(
+    project_path: Path,
+    max_messages: int = MAX_PENDING_MESSAGES,
+    max_chars: int = MAX_TOTAL_CHARS,
+) -> list[Message]:
+    """Read pending (unread) messages, ordered by timestamp.
+
+    Caps at ``max_messages`` messages or ``max_chars`` total characters
+    to prevent flooding the CEO task string.
+    """
     msg_dir = _messages_dir(project_path)
     if not msg_dir.exists():
         return []
 
+    all_paths = sorted(msg_dir.glob("*.md"))
+    if len(all_paths) > max_messages:
+        log.warning("messages_capped", total=len(all_paths), cap=max_messages)
+
     messages: list[Message] = []
-    for path in sorted(msg_dir.glob("*.md")):
+    total_chars = 0
+    for path in all_paths:
+        if len(messages) >= max_messages:
+            break
         content = path.read_text()
         lines = content.split("\n", 2)
         ts = datetime.now(timezone.utc)
@@ -64,6 +83,10 @@ def read_pending(project_path: Path) -> list[Message]:
             except ValueError:
                 pass
         text = lines[2].strip() if len(lines) > 2 else content.strip()
+        if total_chars + len(text) > max_chars and messages:
+            log.warning("messages_chars_capped", total_chars=total_chars + len(text), cap=max_chars)
+            break
+        total_chars += len(text)
         messages.append(Message(id=path.stem, timestamp=ts, text=text))
 
     return messages
