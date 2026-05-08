@@ -76,6 +76,11 @@ class TestPipelineSkillStructure:
         assert "not shell backgrounding" in pipeline_skill.lower() or \
                "not shell background" in pipeline_skill.lower()
 
+    def test_step_table_has_structural_format(self, pipeline_skill):
+        import re
+        assert re.search(r"\|\s*S\d+\s*\|", pipeline_skill), \
+            "Pipeline skill should contain step table rows like '| S1 |'"
+
 
 class TestPipelineSubagentsSkillStructure:
     def test_exists(self):
@@ -125,3 +130,11 @@ class TestPipelineSubagentsSkillStructure:
 
     def test_creates_pipeline_directory(self, subagents_skill):
         assert "mkdir -p .factory/pipeline" in subagents_skill
+
+    def test_step_table_has_structural_format(self, subagents_skill):
+        import re
+        assert re.search(r"\|\s*S\d+\s*\|", subagents_skill), \
+            "Subagents skill should contain step table rows like '| S1 |'"
+
+    def test_mentions_failure_analyst(self, subagents_skill):
+        assert "failure_analyst" in subagents_skill

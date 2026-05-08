@@ -39,6 +39,8 @@ Agent({
 | factory:archivist | Record findings to `.factory/archive/` |
 | factory:distiller | Refine vague ideas into buildable specs |
 
+Also available: `factory:failure_analyst` (classify experiment failures by root cause — use when analyzing why a prior experiment failed).
+
 ### Parallel Execution
 
 Issue multiple Agent tool calls in the **same message** — they run concurrently:
