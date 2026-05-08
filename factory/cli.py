@@ -1110,10 +1110,13 @@ def cmd_emit(args: argparse.Namespace) -> int:
     from factory.events import emit_event
 
     project_path = Path(args.project).resolve()
-    data = {}
+    data: dict = {}
     if args.data:
-        import json as _json
-        data = _json.loads(args.data)
+        try:
+            data = json.loads(args.data)
+        except json.JSONDecodeError as e:
+            print(f"Error: --data is not valid JSON: {e}", file=sys.stderr)
+            return 1
     emit_event(project_path, args.event_type, agent=args.agent, data=data)
     return 0
 

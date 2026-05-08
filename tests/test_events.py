@@ -217,3 +217,16 @@ class TestCmdEmit:
         assert event["type"] == "cycle.started"
         assert event["agent"] is None
         assert event["data"]["cycle"] == 1
+
+    def test_cmd_emit_rejects_invalid_json(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.started",
+            agent="researcher",
+            project=str(tmp_path),
+            data="not valid json",
+        )
+        rc = cmd_emit(args)
+        assert rc == 1
