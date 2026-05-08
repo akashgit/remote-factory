@@ -293,6 +293,16 @@ Built something with the Factory? Open a PR to add it here — it helps others s
 
 ---
 
+## How It Compares to GSD
+
+[Get Shit Done (GSD)](https://github.com/gsd-build/get-shit-done) is a great tool that tackles the same problem — turning ideas into working software with AI. Having used both extensively, here's where the Factory differentiates:
+
+- **One command, not many.** GSD asks you to run the same discuss/plan/execute sequence for each phase. The Factory's CEO agent owns the full lifecycle — you give it a spec and come back to working software.
+- **Self-verification that works.** Both tools have verification stages, but GSD often punts things to the human that it could check itself. The Factory's eval-and-revert loop is the core of the system — every change is scored, and regressions are automatically reverted. The result: what you get back has already been extensively verified by agents and just works.
+- **High-level steering, not per-phase commands.** The Factory takes direction at the level humans naturally think — "add dark mode", "improve performance" — and decomposes it internally. You steer via `--focus`, backlog items, or GitHub issues, not by babysitting each phase.
+
+---
+
 ## Live Dashboard
 
 Monitor factory activity in real time with `factory dashboard`:
