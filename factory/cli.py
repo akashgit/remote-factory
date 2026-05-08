@@ -15,6 +15,10 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from factory.messages import Message
 
 
 def _run(coro):  # noqa: ANN001, ANN202
@@ -311,6 +315,29 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         "hypothesis": (args.hypothesis or "")[:200],
     })
     print(f"Finalized experiment {args.id} — verdict={verdict}")
+    return 0
+
+
+def cmd_message(args: argparse.Namespace) -> int:
+    """Queue a message for the CEO agent."""
+    from factory.messages import write_message
+
+    project_path = Path(args.path)
+    if not project_path.exists():
+        print(f"Error: project path does not exist: {project_path}", file=sys.stderr)
+        return 1
+    if not (project_path / ".factory").exists():
+        print(f"Error: not a factory project (no .factory/ directory): {project_path}", file=sys.stderr)
+        return 1
+    if not args.text or not args.text.strip():
+        print("Error: message text must not be empty.", file=sys.stderr)
+        return 1
+    try:
+        msg = write_message(project_path, args.text)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    print(f"Message queued (id={msg.id}). The CEO will see it at the start of the next cycle.")
     return 0
 
 
@@ -1373,6 +1400,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    from factory.messages import mark_read, read_pending
+
+    pending = read_pending(project_path)
+    pending_ids = [m.id for m in pending]
+
     ceo_mode = "build" if mode == "interactive" or research_ideation else mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
@@ -1380,11 +1412,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         discover_only=discover_only, no_github=no_github,
         interactive_idea=interactive_idea,
         research_ideation=research_ideation,
+        messages=pending,
     )
 
     standup = _run_standup(project_path, ceo_mode, model=model)
     if standup:
-        task += f"\n\n## Sprint Standup\n\n{standup}"
+        task += f"\n\n## Sprint Standup\n\n{standup}" 
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -1400,6 +1433,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             timeout=7200.0,
         ))
         print(result)
+        if code == 0:
+            if pending_ids:
+                mark_read(project_path, pending_ids)
         if code != 0:
             return code
         return _chain_modes(
@@ -1409,7 +1445,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             model=model, no_github=no_github,
         )
 
-    # Interactive foreground mode: use runner's interactive_exec
+    # Interactive foreground mode: use runner's interactive_exec.
+    # Mark read before exec — interactive_exec replaces the process via os.execvp
+    # so there's no post-execution hook. If the session fails to launch, messages
+    # are lost. This is accepted: the user is at the terminal and can re-send.
+    if pending_ids:
+        print(
+            f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
+            file=sys.stderr,
+        )
+        mark_read(project_path, pending_ids)
     prompt = resolve_prompt("ceo", project_path)
     runner = get_runner(runner_name)
     runner.interactive_exec(
@@ -1816,9 +1861,17 @@ def _build_ceo_task(
     no_github: bool = False,
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
+    messages: list[Message] | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
+
+    if messages:
+        task += "\n\n## User Messages\n"
+        task += "The user has sent the following directives. Treat these as HIGH PRIORITY:\n\n"
+        for msg in messages:
+            ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+            task += f"**[{ts}]** {msg.text}\n\n"
 
     if interactive_idea:
         task += (
@@ -2006,10 +2059,16 @@ def _run_single_cycle(
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
 
+    from factory.messages import mark_read, read_pending
+
+    pending = read_pending(project_path)
+    pending_ids = [m.id for m in pending]
+
     task = _build_ceo_task(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
+        messages=pending,
     )
 
     standup = _run_standup(project_path, mode, model=model)
@@ -2024,6 +2083,10 @@ def _run_single_cycle(
         dangerously_skip_permissions=True,
         model=model,
     ))
+
+    if code == 0:
+        if pending_ids:
+            mark_read(project_path, pending_ids)
 
     print(result)
     return code
@@ -2390,6 +2453,11 @@ def build_parser() -> argparse.ArgumentParser:
     # vault-init
     p = sub.add_parser("vault-init", help="Create the factory Obsidian vault")
 
+    # message — send a directive to the CEO
+    p = sub.add_parser("message", help="Send a message to the CEO for the next cycle")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("text", help="Message text")
+
     # self-update
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
@@ -2605,6 +2673,7 @@ def main(argv: list[str] | None = None) -> int:
         "resume": cmd_resume,
         "log": cmd_log,
         "vault-init": cmd_vault_init,
+        "message": cmd_message,
         "self-update": cmd_self_update,
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
