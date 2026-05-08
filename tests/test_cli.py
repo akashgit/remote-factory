@@ -80,6 +80,21 @@ class TestParser:
     def test_no_command_returns_1(self):
         assert main([]) == 1
 
+    def test_emit_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["emit", "agent.started", "--agent", "researcher", "--project", "/p"])
+        assert args.command == "emit"
+        assert args.event_type == "agent.started"
+        assert args.agent == "researcher"
+        assert args.project == "/p"
+
+    def test_emit_defaults(self):
+        parser = build_parser()
+        args = parser.parse_args(["emit", "cycle.started"])
+        assert args.agent is None
+        assert args.project == "."
+        assert args.data is None
+
     def test_ceo_mode_interactive(self):
         parser = build_parser()
         args = parser.parse_args(["ceo", "distributed eval runner", "--mode", "interactive"])
