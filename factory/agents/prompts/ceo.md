@@ -1216,14 +1216,10 @@ Then write checkpoint:
 echo "- [x] archivist after experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
 ```
 
-Log milestone:
-```bash
-factory log "$PROJECT_PATH" "phase.archive.completed" --data "{\"exp_id\": $EXP_ID}"
-```
-
-Log milestone:
+Log milestones (verdict first — it happened before archival):
 ```bash
 factory log "$PROJECT_PATH" "phase.verdict" --data "{\"verdict\": \"$VERDICT\", \"exp_id\": $EXP_ID}"
+factory log "$PROJECT_PATH" "phase.archive.completed" --data "{\"exp_id\": $EXP_ID}"
 ```
 
 This MUST happen before proceeding to the next hypothesis or to Step 3.
