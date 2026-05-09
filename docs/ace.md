@@ -17,7 +17,7 @@ across all projects   Generate      Merge &       Auto-append
 Analyzes experiment outcomes across all factory-managed projects (discovered via the global registry at `~/.factory/registry.json`, with directory scanning as fallback):
 - Loads data from performance reports (`.factory/performance_report.json`) with TSV fallback
 - Computes category success rates (which types of changes get kept vs reverted)
-- Generates candidate playbook bullets for all 7 agent roles from experiment outcomes, CEO verdict patterns, and observation coverage
+- Generates candidate playbook bullets for all agent roles from experiment outcomes, CEO verdict patterns, and observation coverage
 - Each bullet is a behavioral rule: DO (reinforced pattern) or DON'T (anti-pattern)
 
 ### 2. Curate (`factory/ace/curator.py`)
@@ -69,7 +69,7 @@ factory ace ~/my-project
 factory ceo ~/my-project --mode meta
 ```
 
-Meta mode runs the full improvement loop, then reflects on the outcomes to evolve all 7 agent playbooks. See [Self-Improvement Loop](self-improvement.md) for the full picture — including cross-project learning, CEO self-evaluation, and how the pieces fit together.
+Meta mode runs the full improvement loop, then reflects on the outcomes to evolve all agent playbooks. See [Self-Improvement Loop](self-improvement.md) for the full picture — including cross-project learning, CEO self-evaluation, and how the pieces fit together.
 
 ## When to Run
 
@@ -81,7 +81,7 @@ ACE produces meaningful playbook updates only when there is enough experiment da
 
 ## What Gets Evolved
 
-All 7 agent roles have playbooks:
+Agent roles with playbooks:
 
 | Role | What ACE learns |
 |------|----------------|
@@ -92,6 +92,7 @@ All 7 agent roles have playbooks:
 | Reviewer | What to focus on in code review, false positive patterns |
 | Evaluator | Score interpretation, when to flag anomalies |
 | Archivist | What to record, archive organization patterns |
+| Scrum Master | Standup patterns, sprint resume effectiveness |
 
 ## Design Principles
 

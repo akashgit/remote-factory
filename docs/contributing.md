@@ -77,7 +77,7 @@ factory ceo ~/remote-factory --focus "shell completions for the factory CLI"
 | **Notifications (Telegram, Slack, etc.)** | Real-time push notifications on keep/revert decisions, cycle completions, and score regressions. A basic `TelegramNotifier` skeleton exists in `factory/notify/telegram.py` but isn't wired into the CEO loop — needs proper integration and multi-provider support |
 | **Parallel experiments** | Run multiple hypotheses concurrently on separate branches, evaluate in parallel |
 | **GitHub Actions integration** | Run the factory as a GitHub Action on push/PR events |
-| **Custom agent roles** | Allow users to define new specialist agents beyond the 7 built-in roles |
+| **Custom agent roles** | Allow users to define new specialist agents beyond the built-in roles |
 | **Dashboard auth** | Add basic authentication to the live dashboard for shared deployments |
 
 ### Hard / Research
@@ -104,11 +104,11 @@ factory/
 ├── strategy.py             # FEEC priority heuristic
 ├── study.py                # Code analysis + observations
 ├── insights.py             # Cross-project patterns
-├── checkpoint.py           # CEO state save/load
+├── checkpoint_hook.py       # Sprint standup state reconstruction
 ├── analysis.py             # Experiment comparison
 ├── agents/
 │   ├── runner.py           # Agent subprocess spawner
-│   ├── prompts/            # Agent role prompts (7 roles)
+│   ├── prompts/            # Agent role prompts (10 roles)
 │   └── playbooks/          # ACE-evolved playbooks
 ├── registry.py             # Global project registry
 ├── report.py               # Performance report generation
