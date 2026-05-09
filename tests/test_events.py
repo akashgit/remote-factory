@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from datetime import datetime, timezone
 
 from factory.events import discover_factory_projects, emit_event, load_events
@@ -180,3 +181,77 @@ class TestDiscoverFactoryProjects:
         projects = discover_factory_projects(tmp_path)
         assert projects[0].name == "alpha"
         assert projects[1].name == "zeta"
+
+
+class TestCmdEmit:
+    def test_cmd_emit_writes_event(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.started",
+            agent="researcher",
+            project=str(tmp_path),
+            data=None,
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        assert events_file.exists()
+
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "agent.started"
+        assert event["agent"] == "researcher"
+
+    def test_cmd_emit_with_data(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.completed",
+            agent="builder",
+            project=str(tmp_path),
+            data='{"task": "fix bug", "duration": 42}',
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "agent.completed"
+        assert event["agent"] == "builder"
+        assert event["data"]["task"] == "fix bug"
+        assert event["data"]["duration"] == 42
+
+    def test_cmd_emit_without_agent(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="cycle.started",
+            agent=None,
+            project=str(tmp_path),
+            data='{"cycle": 1}',
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "cycle.started"
+        assert event["agent"] is None
+        assert event["data"]["cycle"] == 1
+
+    def test_cmd_emit_rejects_invalid_json(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.started",
+            agent="researcher",
+            project=str(tmp_path),
+            data="not valid json",
+        )
+        rc = cmd_emit(args)
+        assert rc == 1

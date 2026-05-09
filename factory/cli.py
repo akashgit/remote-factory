@@ -1155,6 +1155,21 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_emit(args: argparse.Namespace) -> int:
+    from factory.events import emit_event
+
+    project_path = Path(args.project).resolve()
+    data: dict = {}
+    if args.data:
+        try:
+            data = json.loads(args.data)
+        except json.JSONDecodeError as e:
+            print(f"Error: --data is not valid JSON: {e}", file=sys.stderr)
+            return 1
+    emit_event(project_path, args.event_type, agent=args.agent, data=data)
+    return 0
+
+
 def cmd_vault_init(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import init_vault
 
@@ -2481,6 +2496,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
     p.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")
 
+    # emit — emit a structured event to .factory/events.jsonl
+    p = sub.add_parser("emit", help="Emit a structured event to .factory/events.jsonl")
+    p.add_argument("event_type", help="Event type (e.g. agent.started, agent.completed)")
+    p.add_argument("--agent", default=None, help="Agent role name")
+    p.add_argument("--project", default=".", help="Project path")
+    p.add_argument("--data", default=None, help="JSON string of additional event data")
+
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
@@ -2678,6 +2700,7 @@ def main(argv: list[str] | None = None) -> int:
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
         "dashboard": cmd_dashboard,
+        "emit": cmd_emit,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,

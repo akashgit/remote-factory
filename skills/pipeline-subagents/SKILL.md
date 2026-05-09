@@ -99,16 +99,23 @@ Process steps in topological order:
 
 1. **Identify next batch** — steps whose dependencies are all complete
 2. **Build prompts** — incorporate output from prior steps (agent results are returned directly)
-3. **Invoke agents:**
-   - Single step: one Agent call
-   - Parallel batch: multiple Agent calls in same message
-   - Archival: can use `run_in_background: true`
+3. **Emit start event** and **invoke agents:**
+   ```bash
+   factory emit agent.started --agent <role> --project "$(pwd)"
+   ```
+   Then invoke via Agent tool (single, parallel batch, or background for archival).
 4. **Read results** — Agent tool returns subagent output directly
-5. **Apply gate rule:**
+5. **Persist review and emit completion:**
+   ```bash
+   mkdir -p .factory/reviews
+   factory emit agent.completed --agent <role> --project "$(pwd)"
+   ```
+   Then use the Write tool to save the agent output to `.factory/reviews/<role>-latest.md`
+6. **Apply gate rule:**
    - **PROCEED**: Move to next step
    - **REDIRECT**: Re-invoke with corrections (max 2 per step)
    - **ABORT**: Skip downstream steps, jump to summary
-6. **Repeat** until done
+7. **Repeat** until done
 
 ### Error Recovery
 

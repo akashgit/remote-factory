@@ -8,6 +8,8 @@ from pathlib import Path
 
 import yaml
 
+from factory.ace.injector import inject_playbook
+from factory.ace.paths import DEFAULTS_DIR as _PLAYBOOKS_DIR
 from factory.agents.runner import _PROMPTS_DIR
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
@@ -17,7 +19,7 @@ _PLUGIN_AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
 @dataclass(frozen=True)
 class AgentMeta:
     description: str
-    model: str
+    model: str  # from agents.yml; not emitted in frontmatter (subagents inherit parent model)
     tools: list[str]
 
 
@@ -52,8 +54,15 @@ def generate_agent_content(role: str) -> str:
 
     meta = config[role]
     prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
+    # Only inject factory-default playbooks (not user-local ~/.factory/playbooks/)
+    # so that sync_agents.py output is deterministic across machines.
+    playbook_path = _PLAYBOOKS_DIR / f"{role}.md"
+    if playbook_path.exists():
+        playbook = playbook_path.read_text().strip()
+        if playbook:
+            prompt = inject_playbook(prompt, playbook)
     frontmatter = yaml.dump(
-        {"name": role, "description": meta.description, "model": meta.model, "tools": meta.tools},
+        {"name": role, "description": meta.description, "tools": meta.tools},
         default_flow_style=False,
         sort_keys=False,
         allow_unicode=True,
