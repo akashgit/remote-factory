@@ -1323,9 +1323,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
+    issue_ref = getattr(args, "issue", None)
 
     if not raw_path:
         print("Error: provide a project path, GitHub URL, idea file, or prompt",
+              file=sys.stderr)
+        return 1
+
+    if issue_ref and prompt_file:
+        print("Error: --issue and --prompt are mutually exclusive. "
+              "Both provide a build spec.", file=sys.stderr)
+        return 1
+    if issue_ref and focus:
+        print("Error: --issue and --focus are mutually exclusive. "
+              "--issue fetches a spec from a tracker; --focus targets a backlog item.",
               file=sys.stderr)
         return 1
 
@@ -1344,11 +1355,21 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "Interactive mode is for new ideas; --focus targets existing "
                   "backlog items.", file=sys.stderr)
             return 1
+        if issue_ref:
+            print("Error: --mode interactive and --issue are mutually exclusive. "
+                  "Interactive mode generates the spec; --issue provides one.",
+                  file=sys.stderr)
+            return 1
 
     if mode == "research":
         if prompt_file:
             print("Error: --mode research and --prompt are mutually exclusive. "
                   "Research ideation generates the spec; --prompt provides one.",
+                  file=sys.stderr)
+            return 1
+        if issue_ref:
+            print("Error: --mode research and --issue are mutually exclusive. "
+                  "Research ideation generates the spec; --issue provides one.",
                   file=sys.stderr)
             return 1
 
@@ -1381,9 +1402,24 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
+    issue_number: int | None = None
+    issue_url: str | None = None
+    if issue_ref:
+        from factory.issue import fetch_issue, format_issue_as_spec
+        issue_spec = fetch_issue(issue_ref, project_path)
+        context = format_issue_as_spec(issue_spec)
+        issue_number = issue_spec.number
+        issue_url = issue_spec.url
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{context}\n")
+        print(f"  Issue: #{issue_spec.number} → .factory/strategy/current.md", file=sys.stderr)
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
+        mode = _auto_detect_mode(
+            project_path, has_prompt=bool(prompt_file or issue_ref or context),
+            force_fresh=force_fresh,
+        )
     discover_only = getattr(args, "discover_only", False)
     no_github = getattr(args, "no_github", False)
     min_growth = getattr(args, "min_growth", None)
@@ -1391,6 +1427,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
+
+    if issue_ref and no_github:
+        print("Error: --issue and --no-github are mutually exclusive. "
+              "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+        return 1
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
         print("Error: --mode research requires research_target in factory.md. "
@@ -1428,6 +1469,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         interactive_idea=interactive_idea,
         research_ideation=research_ideation,
         messages=pending,
+        issue_number=issue_number, issue_url=issue_url,
     )
 
     standup = _run_standup(project_path, ceo_mode, model=model)
@@ -1877,6 +1919,8 @@ def _build_ceo_task(
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
+    issue_number: int | None = None,
+    issue_url: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1924,6 +1968,22 @@ def _build_ceo_task(
             f"The user has provided a specific prompt file (`{prompt_file}`) as the build spec. "
             f"This is your primary instruction — read it at `.factory/strategy/current.md` and "
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
+        )
+
+    if issue_number:
+        issue_label = f"#{issue_number}"
+        if issue_url:
+            issue_label += f" ({issue_url})"
+        task += (
+            f"\n\n## Directive\n\n"
+            f"The user has pointed the factory at issue {issue_label}. "
+            f"The issue spec has been written to `.factory/strategy/current.md`. "
+            f"Read it and execute exactly what it describes."
+        )
+        task += (
+            f"\n\n## Issue Tracking\n\n"
+            f"This cycle is working on issue #{issue_number}. "
+            f"When finalizing, pass `--issue {issue_number}` to `factory finalize`."
         )
 
     if focus:
@@ -2066,6 +2126,8 @@ def _run_single_cycle(
     discover_only: bool = False,
     no_github: bool = False,
     model: str | None = None,
+    issue_number: int | None = None,
+    issue_url: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -2084,6 +2146,7 @@ def _run_single_cycle(
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         messages=pending,
+        issue_number=issue_number, issue_url=issue_url,
     )
 
     standup = _run_standup(project_path, mode, model=model)
@@ -2111,12 +2174,28 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
+    issue_ref = getattr(args, "issue", None)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
+    issue_number: int | None = None
+    issue_url: str | None = None
+    if issue_ref:
+        from factory.issue import fetch_issue, format_issue_as_spec
+        issue_spec = fetch_issue(issue_ref, project_path)
+        context = format_issue_as_spec(issue_spec)
+        issue_number = issue_spec.number
+        issue_url = issue_spec.url
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{context}\n")
+        print(f"  Issue: #{issue_spec.number} → .factory/strategy/current.md", file=sys.stderr)
     mode = getattr(args, "mode", "auto")
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
+        mode = _auto_detect_mode(
+            project_path, has_prompt=bool(prompt_file or issue_ref or context),
+            force_fresh=force_fresh,
+        )
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
@@ -2126,6 +2205,19 @@ def cmd_run(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
 
+    if issue_ref and prompt_file:
+        print("Error: --issue and --prompt are mutually exclusive. "
+              "Both provide a build spec.", file=sys.stderr)
+        return 1
+    if issue_ref and focus:
+        print("Error: --issue and --focus are mutually exclusive. "
+              "--issue fetches a spec from a tracker; --focus targets a backlog item.",
+              file=sys.stderr)
+        return 1
+    if issue_ref and no_github:
+        print("Error: --issue and --no-github are mutually exclusive. "
+              "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+        return 1
     if focus and loop:
         print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
               "Targeted mode builds exactly one item and exits.", file=sys.stderr)
@@ -2149,6 +2241,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
             discover_only=discover_only, no_github=no_github, model=model,
+            issue_number=issue_number, issue_url=issue_url,
             **budget_kwargs,
         )
         if code != 0:
@@ -2183,6 +2276,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
                 discover_only=discover_only, no_github=no_github, model=model,
+                issue_number=issue_number, issue_url=issue_url,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -2529,6 +2623,11 @@ def build_parser() -> argparse.ArgumentParser:
              "Loaded as the build spec into .factory/strategy/current.md",
     )
     p.add_argument(
+        "--issue", default=None,
+        help="GitHub/GitLab issue number or URL. Fetches issue title+body as the build spec. "
+             "If bare number, infers remote from git remote. If URL, auto-detects forge.",
+    )
+    p.add_argument(
         "--mode",
         choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research"],
         default="auto",
@@ -2570,6 +2669,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
              "Loaded as the build spec into .factory/strategy/current.md",
+    )
+    p.add_argument(
+        "--issue", default=None,
+        help="GitHub/GitLab issue number or URL. Fetches issue title+body as the build spec. "
+             "If bare number, infers remote from git remote. If URL, auto-detects forge.",
     )
     p.add_argument(
         "--mode",
