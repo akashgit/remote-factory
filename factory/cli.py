@@ -1330,6 +1330,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
+    no_github = getattr(args, "no_github", False)
+
     if issue_ref and prompt_file:
         print("Error: --issue and --prompt are mutually exclusive. "
               "Both provide a build spec.", file=sys.stderr)
@@ -1338,6 +1340,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --issue and --focus are mutually exclusive. "
               "--issue fetches a spec from a tracker; --focus targets a backlog item.",
               file=sys.stderr)
+        return 1
+    if issue_ref and no_github:
+        print("Error: --issue and --no-github are mutually exclusive. "
+              "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
         return 1
 
     if mode == "interactive":
@@ -1421,17 +1427,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             force_fresh=force_fresh,
         )
     discover_only = getattr(args, "discover_only", False)
-    no_github = getattr(args, "no_github", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
-
-    if issue_ref and no_github:
-        print("Error: --issue and --no-github are mutually exclusive. "
-              "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
-        return 1
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
         print("Error: --mode research requires research_target in factory.md. "
@@ -2175,27 +2175,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
     issue_ref = getattr(args, "issue", None)
-    if prompt_file:
-        context = _read_prompt_file(project_path, prompt_file)
-    issue_number: int | None = None
-    issue_url: str | None = None
-    if issue_ref:
-        from factory.issue import fetch_issue, format_issue_as_spec
-        issue_spec = fetch_issue(issue_ref, project_path)
-        context = format_issue_as_spec(issue_spec)
-        issue_number = issue_spec.number
-        issue_url = issue_spec.url
-        strategy_dir = project_path / ".factory" / "strategy"
-        strategy_dir.mkdir(parents=True, exist_ok=True)
-        (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{context}\n")
-        print(f"  Issue: #{issue_spec.number} → .factory/strategy/current.md", file=sys.stderr)
-    mode = getattr(args, "mode", "auto")
-    force_fresh = mode == "auto-fresh"
-    if mode in ("auto", "auto-fresh"):
-        mode = _auto_detect_mode(
-            project_path, has_prompt=bool(prompt_file or issue_ref or context),
-            force_fresh=force_fresh,
-        )
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
@@ -2218,6 +2197,29 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: --issue and --no-github are mutually exclusive. "
               "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
         return 1
+
+    if prompt_file:
+        context = _read_prompt_file(project_path, prompt_file)
+    issue_number: int | None = None
+    issue_url: str | None = None
+    if issue_ref:
+        from factory.issue import fetch_issue, format_issue_as_spec
+        issue_spec = fetch_issue(issue_ref, project_path)
+        context = format_issue_as_spec(issue_spec)
+        issue_number = issue_spec.number
+        issue_url = issue_spec.url
+        strategy_dir = project_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{context}\n")
+        print(f"  Issue: #{issue_spec.number} → .factory/strategy/current.md", file=sys.stderr)
+    mode = getattr(args, "mode", "auto")
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(
+            project_path, has_prompt=bool(prompt_file or issue_ref or context),
+            force_fresh=force_fresh,
+        )
+
     if focus and loop:
         print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
               "Targeted mode builds exactly one item and exits.", file=sys.stderr)

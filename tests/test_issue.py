@@ -257,3 +257,19 @@ class TestCLIMutualExclusion:
             "ceo", "some idea", "--issue", "42", "--mode", "research",
         )
         assert code == 1
+
+    def test_issue_no_github_mutual_exclusion_ceo(self) -> None:
+        code = self._parse_args("ceo", "/tmp/fake", "--issue", "42", "--no-github")
+        assert code == 1
+
+    def test_issue_prompt_mutual_exclusion_run(self) -> None:
+        code = self._parse_args("run", "/tmp/fake", "--issue", "42", "--prompt", "foo.md")
+        assert code == 1
+
+    def test_issue_focus_mutual_exclusion_run(self) -> None:
+        code = self._parse_args("run", "/tmp/fake", "--issue", "42", "--focus", "bar")
+        assert code == 1
+
+    def test_issue_no_github_mutual_exclusion_run(self) -> None:
+        code = self._parse_args("run", "/tmp/fake", "--issue", "42", "--no-github")
+        assert code == 1
