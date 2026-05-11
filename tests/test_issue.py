@@ -268,7 +268,7 @@ class TestFocusIssueIntegration:
 
     def test_focus_plain_text_not_resolved(self) -> None:
         from factory.cli import _resolve_focus_issue
-        result = _resolve_focus_issue("dashboard UI", Path("/tmp/fake"), no_github=False)
+        result = _resolve_focus_issue("dashboard UI", Path("/tmp/fake"))
         assert result is None
 
     def test_focus_bare_number_resolved(self) -> None:
@@ -290,17 +290,23 @@ class TestFocusIssueIntegration:
             mock_run.return_value = subprocess.CompletedProcess(
                 args=[], returncode=0, stdout=gh_response, stderr="",
             )
-            result = _resolve_focus_issue("42", Path("/tmp/fake"), no_github=False)
+            result = _resolve_focus_issue("42", Path("/tmp/fake"))
 
         assert result is not None
-        context, number, url = result
+        title, context, number, url = result
         assert number == 42
+        assert title == "Add widgets"
         assert "Add widgets" in context
 
-    def test_focus_no_github_with_issue_ref_exits(self) -> None:
-        with pytest.raises(SystemExit):
-            from factory.cli import _resolve_focus_issue
-            _resolve_focus_issue("42", Path("/tmp/fake"), no_github=True)
+    def test_focus_no_github_checked_by_caller(self) -> None:
+        """no_github is the caller's responsibility — _resolve_focus_issue doesn't check it."""
+        import sys
+        from unittest.mock import patch as mock_patch
+
+        with mock_patch.object(sys, "argv", ["factory", "ceo", "/tmp/fake", "--focus", "42", "--no-github"]):
+            from factory.cli import main
+            code = main()
+        assert code == 1
 
     def test_focus_url_resolved(self) -> None:
         from factory.cli import _resolve_focus_issue
@@ -323,10 +329,37 @@ class TestFocusIssueIntegration:
             result = _resolve_focus_issue(
                 "https://github.com/acme/repo/issues/99",
                 Path("/tmp/fake"),
-                no_github=False,
             )
 
         assert result is not None
-        context, number, url = result
+        title, context, number, url = result
         assert number == 99
+        assert title == "Fix bug"
         assert "Fix bug" in context
+
+    def test_focus_updates_name_with_issue_title(self) -> None:
+        """When --focus resolves to an issue, the focus name should include the issue title."""
+        from factory.cli import _resolve_focus_issue
+
+        gh_response = json.dumps({
+            "number": 42,
+            "title": "Add widgets",
+            "body": "Details.",
+            "labels": [],
+            "url": "https://github.com/org/repo/issues/42",
+        })
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run") as mock_run,
+            patch("pathlib.Path.mkdir"),
+            patch("pathlib.Path.write_text"),
+        ):
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=gh_response, stderr="",
+            )
+            result = _resolve_focus_issue("42", Path("/tmp/fake"))
+
+        assert result is not None
+        title, _context, number, _url = result
+        focus = f"{title} (issue #{number})"
+        assert focus == "Add widgets (issue #42)"

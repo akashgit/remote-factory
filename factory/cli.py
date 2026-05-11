@@ -1386,9 +1386,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     issue_number: int | None = None
     issue_url: str | None = None
     if focus:
-        issue_resolved = _resolve_focus_issue(focus, project_path, no_github)
+        from factory.issue import is_issue_ref
+        if is_issue_ref(focus) and no_github:
+            print("Error: --focus resolved to an issue reference, but --no-github is set. "
+                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            return 1
+        issue_resolved = _resolve_focus_issue(focus, project_path)
         if issue_resolved:
-            context, issue_number, issue_url = issue_resolved
+            title, context, issue_number, issue_url = issue_resolved
+            focus = f"{title} (issue #{issue_number})"
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
@@ -1599,24 +1605,17 @@ def _read_prompt_file(project_path: Path, prompt_file: str) -> str:
 
 
 def _resolve_focus_issue(
-    focus: str, project_path: Path, no_github: bool,
-) -> tuple[str, int, str] | None:
-    """If *focus* looks like an issue ref, fetch it and return (context, number, url).
+    focus: str, project_path: Path,
+) -> tuple[str, str, int, str] | None:
+    """If *focus* looks like an issue ref, fetch it and return (title, context, number, url).
 
     Returns ``None`` when *focus* is a plain backlog-item name.
+    Callers must check ``--no-github`` *before* calling this function.
     """
     from factory.issue import is_issue_ref
 
     if not is_issue_ref(focus):
         return None
-
-    if no_github:
-        print(
-            "Error: --focus resolved to an issue reference, but --no-github is set. "
-            "Issue fetching requires GitHub/GitLab CLI access.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     from factory.issue import fetch_issue, format_issue_as_spec
 
@@ -1632,7 +1631,7 @@ def _resolve_focus_issue(
         f"  Issue: #{issue_spec.number} → .factory/strategy/current.md",
         file=sys.stderr,
     )
-    return context, issue_spec.number, issue_spec.url
+    return issue_spec.title, context, issue_spec.number, issue_spec.url
 
 
 def _persist_spec(project_path: Path, spec: str) -> None:
@@ -2151,7 +2150,8 @@ def _run_single_cycle(
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         messages=pending,
-        issue_number=issue_number, issue_url=issue_url,
+        issue_number=issue_number,
+        issue_url=issue_url,
     )
 
     standup = _run_standup(project_path, mode, model=model)
@@ -2193,9 +2193,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     issue_number: int | None = None
     issue_url: str | None = None
     if focus:
-        issue_resolved = _resolve_focus_issue(focus, project_path, no_github)
+        from factory.issue import is_issue_ref
+        if is_issue_ref(focus) and no_github:
+            print("Error: --focus resolved to an issue reference, but --no-github is set. "
+                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            return 1
+        issue_resolved = _resolve_focus_issue(focus, project_path)
         if issue_resolved:
-            context, issue_number, issue_url = issue_resolved
+            title, context, issue_number, issue_url = issue_resolved
+            focus = f"{title} (issue #{issue_number})"
     mode = getattr(args, "mode", "auto")
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
@@ -2227,7 +2233,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
             discover_only=discover_only, no_github=no_github, model=model,
-            issue_number=issue_number, issue_url=issue_url,
+            issue_number=issue_number,
+            issue_url=issue_url,
             **budget_kwargs,
         )
         if code != 0:
@@ -2262,7 +2269,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
                 discover_only=discover_only, no_github=no_github, model=model,
-                issue_number=issue_number, issue_url=issue_url,
+                issue_number=issue_number,
+                issue_url=issue_url,
                 **budget_kwargs,
             )
             _chain_modes(
