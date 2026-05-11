@@ -1329,6 +1329,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 1
 
+    no_github = getattr(args, "no_github", False)
+
     if mode == "interactive":
         if headless:
             print("Error: --mode interactive requires foreground mode "
@@ -1381,11 +1383,25 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
+    issue_number: int | None = None
+    issue_url: str | None = None
+    if focus:
+        from factory.issue import is_issue_ref
+        if is_issue_ref(focus) and no_github:
+            print("Error: --focus resolved to an issue reference, but --no-github is set. "
+                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            return 1
+        issue_resolved = _resolve_focus_issue(focus, project_path)
+        if issue_resolved:
+            title, context, issue_number, issue_url = issue_resolved
+            focus = f"{title} (issue #{issue_number})"
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
+        mode = _auto_detect_mode(
+            project_path, has_prompt=bool(prompt_file or context),
+            force_fresh=force_fresh,
+        )
     discover_only = getattr(args, "discover_only", False)
-    no_github = getattr(args, "no_github", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
@@ -1428,6 +1444,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         interactive_idea=interactive_idea,
         research_ideation=research_ideation,
         messages=pending,
+        issue_number=issue_number,
+        issue_url=issue_url,
     )
 
     standup = _run_standup(project_path, ceo_mode, model=model)
@@ -1584,6 +1602,36 @@ def _read_prompt_file(project_path: Path, prompt_file: str) -> str:
     spec_path.write_text(f"## Project Specification\n\n{content}\n")
     print(f"  Prompt: {prompt_path.name} → .factory/strategy/current.md", file=sys.stderr)
     return content
+
+
+def _resolve_focus_issue(
+    focus: str, project_path: Path,
+) -> tuple[str, str, int, str] | None:
+    """If *focus* looks like an issue ref, fetch it and return (title, context, number, url).
+
+    Returns ``None`` when *focus* is a plain backlog-item name.
+    Callers must check ``--no-github`` *before* calling this function.
+    """
+    from factory.issue import is_issue_ref
+
+    if not is_issue_ref(focus):
+        return None
+
+    from factory.issue import fetch_issue, format_issue_as_spec
+
+    issue_spec = fetch_issue(focus, project_path)
+    context = format_issue_as_spec(issue_spec)
+
+    strategy_dir = project_path / ".factory" / "strategy"
+    strategy_dir.mkdir(parents=True, exist_ok=True)
+    (strategy_dir / "current.md").write_text(
+        f"## Project Specification\n\n{context}\n"
+    )
+    print(
+        f"  Issue: #{issue_spec.number} → .factory/strategy/current.md",
+        file=sys.stderr,
+    )
+    return issue_spec.title, context, issue_spec.number, issue_spec.url
 
 
 def _persist_spec(project_path: Path, spec: str) -> None:
@@ -1877,6 +1925,8 @@ def _build_ceo_task(
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
+    issue_number: int | None = None,
+    issue_url: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -1927,15 +1977,29 @@ def _build_ceo_task(
         )
 
     if focus:
+        task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
+        if issue_number:
+            issue_label = f"#{issue_number}"
+            if issue_url:
+                issue_label += f" ({issue_url})"
+            task += (
+                f"This target is from issue {issue_label}. "
+                f"The full issue spec has been written to `.factory/strategy/current.md`. "
+                f"Read it for the complete requirements.\n\n"
+            )
         task += (
-            f"\n\n## Focus Directive (Targeted Mode)\n\n"
-            f"Target: {focus}\n\n"
-            f"Single-item mode. This target has been added to the backlog. "
-            f"The Strategist must generate exactly ONE hypothesis for this item. "
-            f"No other hypotheses this cycle — no additional backlog clearing, no new items.\n"
-            f"After this single experiment completes (keep or revert), skip to final archival. "
-            f"Do not loop back for more hypotheses.\n"
+            "Single-item mode. This target has been added to the backlog. "
+            "The Strategist must generate exactly ONE hypothesis for this item. "
+            "No other hypotheses this cycle — no additional backlog clearing, no new items.\n"
+            "After this single experiment completes (keep or revert), skip to final archival. "
+            "Do not loop back for more hypotheses.\n"
         )
+        if issue_number:
+            task += (
+                f"\n## Issue Tracking\n\n"
+                f"This cycle is working on issue #{issue_number}. "
+                f"When finalizing, pass `--issue {issue_number}` to `factory finalize`."
+            )
 
     if branch:
         task += (
@@ -2066,6 +2130,8 @@ def _run_single_cycle(
     discover_only: bool = False,
     no_github: bool = False,
     model: str | None = None,
+    issue_number: int | None = None,
+    issue_url: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -2084,6 +2150,8 @@ def _run_single_cycle(
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         messages=pending,
+        issue_number=issue_number,
+        issue_url=issue_url,
     )
 
     standup = _run_standup(project_path, mode, model=model)
@@ -2111,12 +2179,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
-    if prompt_file:
-        context = _read_prompt_file(project_path, prompt_file)
-    mode = getattr(args, "mode", "auto")
-    force_fresh = mode == "auto-fresh"
-    if mode in ("auto", "auto-fresh"):
-        mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     loop = getattr(args, "loop", False)
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
@@ -2125,6 +2187,28 @@ def cmd_run(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+
+    if prompt_file:
+        context = _read_prompt_file(project_path, prompt_file)
+    issue_number: int | None = None
+    issue_url: str | None = None
+    if focus:
+        from factory.issue import is_issue_ref
+        if is_issue_ref(focus) and no_github:
+            print("Error: --focus resolved to an issue reference, but --no-github is set. "
+                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            return 1
+        issue_resolved = _resolve_focus_issue(focus, project_path)
+        if issue_resolved:
+            title, context, issue_number, issue_url = issue_resolved
+            focus = f"{title} (issue #{issue_number})"
+    mode = getattr(args, "mode", "auto")
+    force_fresh = mode == "auto-fresh"
+    if mode in ("auto", "auto-fresh"):
+        mode = _auto_detect_mode(
+            project_path, has_prompt=bool(prompt_file or context),
+            force_fresh=force_fresh,
+        )
 
     if focus and loop:
         print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
@@ -2149,6 +2233,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
             discover_only=discover_only, no_github=no_github, model=model,
+            issue_number=issue_number,
+            issue_url=issue_url,
             **budget_kwargs,
         )
         if code != 0:
@@ -2183,6 +2269,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
                 discover_only=discover_only, no_github=no_github, model=model,
+                issue_number=issue_number,
+                issue_url=issue_url,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -2538,7 +2626,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--focus", default=None,
-        help="Narrow improvement efforts to a specific area (e.g. 'dashboard UI', 'eval reliability')",
+        help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
+             "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
+             "Issue refs are auto-detected and fetched via gh/glab CLI",
     )
     p.add_argument(
         "--headless", action="store_true", default=False,
@@ -2580,7 +2670,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--focus", default=None,
-        help="Narrow improvement efforts to a specific area (e.g. 'dashboard UI', 'eval reliability')",
+        help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
+             "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
+             "Issue refs are auto-detected and fetched via gh/glab CLI",
     )
     p.add_argument(
         "--discover-only", action="store_true", default=False,
