@@ -9,6 +9,8 @@
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better.
 
+**Why we built this.** Existing AI coding tools like [GSD](https://github.com/gsd-build/get-shit-done) are powerful, but they often require repetitive manual steps and hand verification at every phase. The Factory was built to minimize that — agents verify their own work, and what you get back just works.
+
 ---
 
 ## Quick Start
@@ -290,16 +292,6 @@ The factory has shipped something every day for the last 30 days — products, r
 | **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
 
 Built something with the Factory? Open a PR to add it here — it helps others see what's possible.
-
----
-
-## How It Compares to GSD
-
-[Get Shit Done (GSD)](https://github.com/gsd-build/get-shit-done) is a great tool that tackles the same problem — turning ideas into working software with AI. Having used both extensively, here's where the Factory differentiates:
-
-- **One command, not many.** GSD asks you to run the same discuss/plan/execute sequence for each phase. The Factory's CEO agent owns the full lifecycle — you give it a spec and come back to working software.
-- **Self-verification that works.** Both tools have verification stages, but GSD often punts things to the human that it could check itself. The Factory's eval-and-revert loop is the core of the system — every change is scored, and regressions are automatically reverted. The result: what you get back has already been extensively verified by agents and just works.
-- **High-level steering, not per-phase commands.** The Factory takes direction at the level humans naturally think — "add dark mode", "improve performance" — and decomposes it internally. You steer via `--focus`, backlog items, or GitHub issues, not by babysitting each phase.
 
 ---
 
