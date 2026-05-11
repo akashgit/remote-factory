@@ -170,8 +170,6 @@ def is_issue_ref(ref: str) -> bool:
         return True
     if re.match(r"https?://[^/]+/.+/issues/\d+", ref):
         return True
-    if re.match(r"https?://[^/]+/.+/-/issues/\d+", ref):
-        return True
     if re.match(r"^[^#]+/[^#]+#\d+$", ref):
         return True
     return False

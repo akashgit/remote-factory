@@ -163,6 +163,14 @@ class TestInferRemote:
         assert forge == "github"
         assert owner_repo == "owner/repo"
 
+    def test_unparseable_url(self, tmp_project: Path) -> None:
+        subprocess.run(
+            ["git", "remote", "add", "origin", "file:///local/path"],
+            cwd=tmp_project, capture_output=True, check=True,
+        )
+        with pytest.raises(RuntimeError, match="Cannot parse git remote URL"):
+            infer_remote(tmp_project)
+
 
 # ── format_issue_as_spec ─────────────────────────────────────
 
@@ -363,3 +371,68 @@ class TestFocusIssueIntegration:
         title, _context, number, _url = result
         focus = f"{title} (issue #{number})"
         assert focus == "Add widgets (issue #42)"
+
+
+# ── _build_ceo_task issue embedding ─────────────────────────
+
+
+class TestBuildCeoTaskIssue:
+    """Test that _build_ceo_task embeds issue metadata in the CEO task string."""
+
+    def test_focus_with_issue_number(self) -> None:
+        from factory.cli import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="Add widgets (issue #42)",
+            issue_number=42,
+        )
+        assert "## Focus Directive (Targeted Mode)" in task
+        assert "Target: Add widgets (issue #42)" in task
+        assert "This target is from issue #42" in task
+        assert "## Issue Tracking" in task
+        assert "--issue 42" in task
+
+    def test_focus_with_issue_number_and_url(self) -> None:
+        from factory.cli import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="Fix bug (issue #99)",
+            issue_number=99,
+            issue_url="https://github.com/acme/repo/issues/99",
+        )
+        assert "#99 (https://github.com/acme/repo/issues/99)" in task
+        assert "## Issue Tracking" in task
+
+    def test_focus_without_issue(self) -> None:
+        from factory.cli import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="eval reliability",
+        )
+        assert "## Focus Directive (Targeted Mode)" in task
+        assert "Target: eval reliability" in task
+        assert "## Issue Tracking" not in task
+        assert "This target is from issue" not in task
+
+
+# ── cmd_run --focus + --no-github ───────────────────────────
+
+
+class TestCmdRunFocusNoGithub:
+    """Test that cmd_run checks no_github before resolving issue refs."""
+
+    def test_run_focus_no_github_with_issue_ref_fails(self) -> None:
+        import sys
+        from unittest.mock import patch as mock_patch
+
+        with mock_patch.object(
+            sys, "argv",
+            ["factory", "run", "/tmp/fake", "--focus", "42", "--no-github"],
+        ):
+            from factory.cli import main
+
+            code = main()
+        assert code == 1
