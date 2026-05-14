@@ -183,7 +183,7 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/strategy.py` | FEEC priority heuristic |
 | `factory/study.py` | Interaction log analysis |
 | `factory/insights.py` | Cross-project pattern analysis |
-| `factory/checkpoint_hook.py` | Sprint standup state reconstruction |
+| `factory/checkpoint.py` | CEO checkpoint save/load (legacy, debugging) |
 | `factory/analysis.py` | Experiment comparison (diff, explain) |
 | `factory/registry.py` | Global project registry (`~/.factory/registry.json`) |
 | `factory/report.py` | Performance report generation and loading |

@@ -104,11 +104,11 @@ factory/
 ├── strategy.py             # FEEC priority heuristic
 ├── study.py                # Code analysis + observations
 ├── insights.py             # Cross-project patterns
-├── checkpoint_hook.py       # Sprint standup state reconstruction
+├── checkpoint.py            # CEO checkpoint save/load (legacy, debugging)
 ├── analysis.py             # Experiment comparison
 ├── agents/
 │   ├── runner.py           # Agent subprocess spawner
-│   ├── prompts/            # Agent role prompts (10 roles)
+│   ├── prompts/            # Agent role prompts (9 specialists + CEO)
 │   └── playbooks/          # ACE-evolved playbooks
 ├── registry.py             # Global project registry
 ├── report.py               # Performance report generation

@@ -166,6 +166,9 @@ cli -> ceo: "spawns CEO" {
 ceo -> agents: "delegates" {
   style: { font-size: 12; font-color: "#0D1B2A" }
 }
+ceo -> agents.scrummaster: "standup" {
+  style: { font-size: 12; font-color: "#0D1B2A"; stroke-dash: 4 }
+}
 agents -> stores: "read / write" {
   style: { font-size: 12; font-color: "#0D1B2A" }
 }
