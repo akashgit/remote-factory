@@ -123,9 +123,7 @@ class TestClaudeRunner:
 
             cmd = mock_execvp.call_args[0][1]
             assert "--append-system-prompt" in cmd
-            assert "--system-prompt" not in [
-                arg for arg in cmd if arg != "--append-system-prompt"
-            ]
+            assert "--system-prompt" not in cmd
 
 
 class TestBobRunner:
