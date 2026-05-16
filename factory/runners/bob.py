@@ -161,13 +161,28 @@ class BobRunner:
 
     name: str = "bob"
 
-    def __init__(self, cycle_start: datetime | None = None) -> None:
+    def __init__(
+        self,
+        cycle_start: datetime | None = None,
+        project_path: Path | None = None,
+    ) -> None:
         """Initialize BobRunner.
 
         Args:
             cycle_start: Start time of the current factory cycle (for ceiling tracking).
+                If not provided and project_path is given, reads from cycle.json.
+            project_path: Path to the project (used to read cycle state from cycle.json).
         """
-        self.cycle_start = cycle_start or datetime.now(timezone.utc)
+        if cycle_start is not None:
+            self.cycle_start = cycle_start
+        elif project_path is not None:
+            # Lazy import: ceo_completion imports runners, so module-level import would cycle
+            from factory.ceo_completion import read_cycle_state
+
+            state = read_cycle_state(project_path)
+            self.cycle_start = state.started_at if state else datetime.now(timezone.utc)
+        else:
+            self.cycle_start = datetime.now(timezone.utc)
         self._role: str = "unknown"
 
     async def headless(

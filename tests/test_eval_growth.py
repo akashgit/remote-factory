@@ -360,6 +360,85 @@ class TestResearchGrounding:
             result = eval_research_grounding(tmp_path)
             assert result["score"] < 0.5
 
+    def test_archive_fallback_scores_positive(self, tmp_path):
+        """Score > 0 when archive has sources but vault is unset."""
+        archive = tmp_path / ".factory" / "archive"
+        sources = archive / "sources"
+        sources.mkdir(parents=True)
+        for i in range(5):
+            (sources / f"research-topic-{i}.md").write_text("Content")
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+            _valid_result(result)
+            assert result["score"] > 0.0
+            assert "(archive)" in result["details"]
+
+    def test_archive_research_subdir_counted(self, tmp_path):
+        """Archive research/ subdir files are counted as sources."""
+        archive = tmp_path / ".factory" / "archive"
+        research = archive / "research"
+        research.mkdir(parents=True)
+        for i in range(3):
+            (research / f"analysis-paper-{i}.md").write_text("Content")
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+            assert result["score"] > 0.0
+            assert "sources=3" in result["details"]
+
+    def test_vault_takes_precedence_over_archive(self, tmp_path):
+        """Vault is used when both vault and archive exist."""
+        vault = tmp_path / "obsidian-vaults" / "factory"
+        sources = vault / "20-Knowledge" / "Sources"
+        sources.mkdir(parents=True)
+        for i in range(5):
+            (sources / f"vault-source-{i}.md").write_text("Content")
+        archive = tmp_path / ".factory" / "archive" / "sources"
+        archive.mkdir(parents=True)
+        (archive / "archive-source.md").write_text("Content")
+        with patch("factory.obsidian.notes.vault_path", return_value=vault):
+            result = eval_research_grounding(tmp_path)
+            assert "(vault)" in result["details"]
+            assert "sources=5" in result["details"]
+
+    def test_no_vault_no_archive_returns_zero(self, tmp_path):
+        """Score = 0 when neither vault nor archive has content."""
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+            _valid_result(result)
+            assert result["score"] == 0.0
+
+    def test_archive_experiment_doc_ratio(self, tmp_path):
+        """doc_ratio uses .factory/archive/experiments/ when vault is unset."""
+        archive_exp = tmp_path / ".factory" / "archive" / "experiments"
+        archive_exp.mkdir(parents=True)
+        for i in range(3):
+            (archive_exp / f"exp-{i:03d}.md").write_text("learnings")
+        archive_sources = tmp_path / ".factory" / "archive" / "sources"
+        archive_sources.mkdir(parents=True)
+        (archive_sources / "placeholder.md").write_text("x")
+        factory_exp = tmp_path / ".factory" / "experiments"
+        for i in range(3):
+            (factory_exp / f"{i:03d}").mkdir(parents=True)
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+            assert "doc_ratio=" in result["details"]
+            assert "3/3" in result["details"]
+
+    def test_archive_keyword_utilization(self, tmp_path):
+        """Archive source filenames drive keyword matching against hypotheses."""
+        archive_sources = tmp_path / ".factory" / "archive" / "sources"
+        archive_sources.mkdir(parents=True)
+        (archive_sources / "structured-logging-guide.md").write_text("Content")
+        _write_tsv(tmp_path / ".factory" / "results.tsv", [
+            {"id": "1", "hypothesis": "Add structured logging to agent runner"},
+            {"id": "2", "hypothesis": "Fix crash in parser"},
+            {"id": "3", "hypothesis": "Improve logging coverage"},
+        ])
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+            assert result["score"] > 0.0
+            assert "utilization=" in result["details"]
+
 
 # ── factory_effectiveness ────────────────────────────────────────
 

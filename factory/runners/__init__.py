@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
@@ -29,13 +30,17 @@ _RUNNERS: dict[str, type[Runner]] = {
 }
 
 
-def get_runner(name: str | None = None) -> Runner:
+def get_runner(name: str | None = None, project_path: Path | None = None) -> Runner:
     """Get a runner by name.
 
     Resolution order:
     1. Explicit name argument
     2. FACTORY_RUNNER environment variable
     3. Default to "claude"
+
+    Args:
+        name: Runner name ("claude" or "bob").
+        project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:
         ValueError: If the runner name is not recognized.
@@ -47,6 +52,8 @@ def get_runner(name: str | None = None) -> Runner:
         available = ", ".join(_RUNNERS.keys())
         raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
 
+    if resolved == "bob":
+        return BobRunner(project_path=project_path)
     return _RUNNERS[resolved]()
 
 

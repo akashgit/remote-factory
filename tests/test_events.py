@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from argparse import Namespace
 from datetime import datetime, timezone
 
 from factory.events import discover_factory_projects, emit_event, load_events
@@ -133,6 +134,31 @@ class TestLoadEvents:
         assert len(events) == 2
 
 
+class TestSymlinkResolution:
+    def test_emit_event_resolves_symlinks(self, tmp_path):
+        """Events go to the resolved path even when given a symlink."""
+        real_dir = tmp_path / "real-project"
+        real_dir.mkdir()
+        (real_dir / ".factory").mkdir()
+
+        symlink_dir = tmp_path / "link-project"
+        symlink_dir.symlink_to(real_dir)
+
+        # Emit via symlink path
+        emit_event(symlink_dir, "test.event", data={"via": "symlink"})
+
+        # Load via real path
+        events = load_events(real_dir)
+        assert len(events) == 1
+        assert events[0]["type"] == "test.event"
+        # The project name should be the resolved dir name, not the symlink name
+        assert events[0]["project"] == "real-project"
+
+        # Load via symlink path
+        events2 = load_events(symlink_dir)
+        assert len(events2) == 1
+
+
 class TestDiscoverFactoryProjects:
     def test_finds_projects_with_factory_dir(self, tmp_path):
         (tmp_path / "proj-a" / ".factory").mkdir(parents=True)
@@ -155,3 +181,77 @@ class TestDiscoverFactoryProjects:
         projects = discover_factory_projects(tmp_path)
         assert projects[0].name == "alpha"
         assert projects[1].name == "zeta"
+
+
+class TestCmdEmit:
+    def test_cmd_emit_writes_event(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.started",
+            agent="researcher",
+            project=str(tmp_path),
+            data=None,
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        assert events_file.exists()
+
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "agent.started"
+        assert event["agent"] == "researcher"
+
+    def test_cmd_emit_with_data(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.completed",
+            agent="builder",
+            project=str(tmp_path),
+            data='{"task": "fix bug", "duration": 42}',
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "agent.completed"
+        assert event["agent"] == "builder"
+        assert event["data"]["task"] == "fix bug"
+        assert event["data"]["duration"] == 42
+
+    def test_cmd_emit_without_agent(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="cycle.started",
+            agent=None,
+            project=str(tmp_path),
+            data='{"cycle": 1}',
+        )
+        rc = cmd_emit(args)
+        assert rc == 0
+
+        events_file = tmp_path / ".factory" / "events.jsonl"
+        event = json.loads(events_file.read_text().strip())
+        assert event["type"] == "cycle.started"
+        assert event["agent"] is None
+        assert event["data"]["cycle"] == 1
+
+    def test_cmd_emit_rejects_invalid_json(self, tmp_path):
+        from factory.cli import cmd_emit
+
+        (tmp_path / ".factory").mkdir()
+        args = Namespace(
+            event_type="agent.started",
+            agent="researcher",
+            project=str(tmp_path),
+            data="not valid json",
+        )
+        rc = cmd_emit(args)
+        assert rc == 1

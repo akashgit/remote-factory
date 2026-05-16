@@ -16,6 +16,9 @@ factory ceo ~/ideas/weather-dashboard.md
 # Interactive — just starting to think about it? Brainstorm first.
 factory ceo "distributed eval runner" --mode interactive
 
+# Research — have a metric to optimize? The factory runs experiments.
+factory ceo "SWE-bench solver agent" --mode research
+
 # Improve — point it at any codebase
 factory ceo ~/my-project
 
@@ -29,7 +32,8 @@ factory ceo ~/my-project --focus "add WebSocket support"
 graph LR
     A["🔍 Researcher<br><i>observe</i>"] --> B["🎯 Strategist<br><i>hypothesize</i>"]
     B --> C["🔨 Builder<br><i>implement</i>"]
-    C --> D["📊 Evaluator<br><i>measure</i>"]
+    C --> RV["🛡️ Reviewer<br><i>guard</i>"]
+    RV --> D["📊 Evaluator<br><i>measure</i>"]
     D --> E{"CEO<br><i>decide</i>"}
     E -- "score ↑" --> F["✅ KEEP"]
     E -- "score ↓" --> G["↩️ REVERT"]
@@ -42,7 +46,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates seven specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads vault knowledge. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
 
 ## Workflows
 
@@ -81,6 +85,15 @@ factory ceo "distributed eval runner" --mode interactive
 
 Have a rough idea? Interactive mode researches the space, drafts a structured spec via the Distiller agent, and lets you iterate on it before any code is written.
 
+### Research — optimize a metric iteratively
+
+```bash
+factory ceo "SWE-bench solver agent" --mode research
+factory ceo ~/my-research-project --mode research
+```
+
+For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. Leakage guards prevent ground truth from contaminating hypotheses, and monotonic improvement ensures the metric never regresses below the previous best. See [Getting Started](getting-started.md#research-mode-in-detail) for the full picture.
+
 ### Headless & continuous loop
 
 For unattended operation — scripting, cron jobs, or always-on machines:
@@ -107,15 +120,11 @@ cd remote-factory && uv sync && uv tool install -e .
 
 # Register the CEO as a Claude Code agent
 factory install
-
-# Set up the Obsidian vault (highly recommended)
-export FACTORY_VAULT_PATH=~/factory-vault
-factory vault-init
 ```
 
-**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — the factory stores all state locally.
 
-**Why Obsidian?** The vault is the factory's long-term memory. If you use Claude to brainstorm ideas and save them as vault notes, the factory can build directly from those notes — just reference them by name. Without a vault, the factory still works but starts fresh every time.
+Per-project state lives in `.factory/` (experiment history, strategy, archive notes). Global state lives in `~/.factory/` (project registry, evolved playbooks). Projects are auto-registered when experiments begin — no manual setup needed. See [Setup Guide](setup.md) for environment variables and authentication options.
 
 ## Self-Evolving Agents
 
@@ -150,7 +159,7 @@ graph TB
     subgraph agents ["Specialist Agents"]
         R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
         RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
-        DI["Distiller"]
+        DI["Distiller"] ~~~ FA["Failure Analyst"]
     end
     subgraph ceo ["CEO Agent"]
         C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
@@ -199,6 +208,23 @@ graph LR
 | **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage |
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
+
+## Built with the Factory
+
+The factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
+| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with the Factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
 
 ## License
 

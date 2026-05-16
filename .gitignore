@@ -21,6 +21,9 @@ dist/
 # Per-user configs
 .mcp.json
 
+# Generated plugin agents (scripts/sync_agents.py)
+/agents/
+
 # Dev artifacts
 .playwright-mcp/
 screenshots/

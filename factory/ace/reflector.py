@@ -687,6 +687,128 @@ def update_counters_from_experiments(
     return updated_playbooks
 
 
+def _load_from_reports(project_paths: list[Path]) -> tuple[
+    list[ExperimentRecord],
+    list[tuple[str, str, float | None]],
+    dict[str, list[ExperimentRecord]],
+]:
+    """Load experiment data from performance reports with TSV fallback.
+
+    Tries to read .factory/performance_report.json first. If not present,
+    falls back to loading from TSV via load_all_histories().
+
+    Returns:
+        (all_records, outcomes, histories) tuple.
+    """
+    from factory.report import load_performance_report
+
+    histories: dict[str, list[ExperimentRecord]] = {}
+    report_loaded = False
+
+    for path in project_paths:
+        report = load_performance_report(path)
+        if report and report.total_experiments > 0:
+            from factory.store import ExperimentStore
+            import asyncio
+            try:
+                records = asyncio.run(ExperimentStore(path).load_history())
+                if records:
+                    histories[path.resolve().name] = records
+                    report_loaded = True
+            except Exception:
+                pass
+
+    if not report_loaded:
+        histories = load_all_histories(project_paths)
+
+    all_records: list[ExperimentRecord] = []
+    outcomes: list[tuple[str, str, float | None]] = []
+    for records in histories.values():
+        all_records.extend(records)
+        for r in records:
+            cat = classify_hypothesis(r.hypothesis)
+            outcomes.append((cat, r.verdict, r.delta))
+
+    return all_records, outcomes, histories
+
+
+def _verdict_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets from CEO verdict patterns across projects."""
+    from factory.report import load_performance_report
+
+    bullets: list[PlaybookItem] = []
+    counter = 1
+
+    all_patterns: dict[str, int] = {}
+    for path in project_paths:
+        report = load_performance_report(path)
+        if not report:
+            continue
+        for key, count in report.verdict_patterns.items():
+            all_patterns[key] = all_patterns.get(key, 0) + count
+
+    redirect_total = sum(v for k, v in all_patterns.items() if ":REDIRECT" in k)
+    abort_total = sum(v for k, v in all_patterns.items() if ":ABORT" in k)
+
+    if redirect_total >= 3:
+        top_redirects = sorted(
+            [(k, v) for k, v in all_patterns.items() if ":REDIRECT" in k],
+            key=lambda x: x[1], reverse=True,
+        )
+        role = top_redirects[0][0].split(":")[0]
+        bullets.append(PlaybookItem(
+            id=_make_id("ceo", 100 + counter),
+            content=f"The {role} agent frequently needs REDIRECT ({top_redirects[0][1]} times) — consider improving its prompt or providing clearer task descriptions",
+            helpful=0,
+            harmful=redirect_total,
+            section="DO",
+        ))
+        counter += 1
+
+    if abort_total >= 2:
+        bullets.append(PlaybookItem(
+            id=_make_id("ceo", 100 + counter),
+            content=f"Agent ABORTs occurred {abort_total} times across projects — investigate root causes (crashes, scope violations, or prompt issues)",
+            helpful=0,
+            harmful=abort_total,
+            section="DO",
+        ))
+        counter += 1
+
+    return bullets
+
+
+def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets from archivist observations across projects."""
+    from factory.report import load_performance_report
+
+    bullets: list[PlaybookItem] = []
+    counter = 1
+
+    obs_count = 0
+    archive_count = 0
+    for path in project_paths:
+        report = load_performance_report(path)
+        if not report:
+            continue
+        for obs in report.observations:
+            if "archive" in obs.tags:
+                archive_count += 1
+            obs_count += 1
+
+    if obs_count >= 10 and archive_count < obs_count * 0.3:
+        bullets.append(PlaybookItem(
+            id=_make_id("archivist", 100 + counter),
+            content=f"Archive coverage is low — only {archive_count}/{obs_count} observations are from archive notes. Write more detailed experiment notes",
+            helpful=archive_count,
+            harmful=obs_count - archive_count,
+            section="DO",
+        ))
+        counter += 1
+
+    return bullets
+
+
 def reflect_on_experiments(
     projects_dir: Path,
     project_path: Path | None = None,
@@ -700,26 +822,26 @@ def reflect_on_experiments(
     Returns:
         Dict mapping agent role names to lists of candidate PlaybookItems.
     """
-    # Discover and load all project histories
+    # Primary: scan projects_dir (backward compatible)
     project_paths = discover_projects(projects_dir)
+
+    # Secondary: merge registry entries that aren't already discovered
+    try:
+        from factory.registry import get_project_paths
+        for rp in get_project_paths():
+            if rp.resolve() not in {p.resolve() for p in project_paths}:
+                project_paths.append(rp)
+    except Exception:
+        pass
+
     if project_path and project_path not in project_paths:
         project_paths.append(project_path)
 
-    histories = load_all_histories(project_paths)
-    if not histories:
-        log.info("reflector_skip", reason="no_experiment_data")
-        return {}
-
-    # Flatten all records and build outcome tuples
-    all_records: list[ExperimentRecord] = []
-    outcomes: list[tuple[str, str, float | None]] = []
-    for records in histories.values():
-        all_records.extend(records)
-        for r in records:
-            cat = classify_hypothesis(r.hypothesis)
-            outcomes.append((cat, r.verdict, r.delta))
+    # Load data from performance reports with TSV fallback
+    all_records, outcomes, histories = _load_from_reports(project_paths)
 
     if not outcomes:
+        log.info("reflector_skip", reason="no_experiment_data")
         return {}
 
     log.info("reflector_start", total_experiments=len(outcomes), projects=len(histories))
@@ -734,6 +856,15 @@ def reflect_on_experiments(
         "archivist": _archivist_bullets(outcomes, all_records),
         "ceo": _ceo_bullets(outcomes, all_records),
     }
+
+    # Add verdict-pattern and observation bullets from performance reports
+    verdict_items = _verdict_bullets(project_paths)
+    if verdict_items:
+        candidates.setdefault("ceo", []).extend(verdict_items)
+
+    observation_items = _observation_bullets(project_paths)
+    if observation_items:
+        candidates.setdefault("archivist", []).extend(observation_items)
 
     # Filter empty roles
     candidates = {role: items for role, items in candidates.items() if items}

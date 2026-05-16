@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import signal
+import threading
 from datetime import datetime
 from unittest.mock import patch, AsyncMock
 
@@ -78,6 +79,21 @@ class TestParser:
 
     def test_no_command_returns_1(self):
         assert main([]) == 1
+
+    def test_emit_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["emit", "agent.started", "--agent", "researcher", "--project", "/p"])
+        assert args.command == "emit"
+        assert args.event_type == "agent.started"
+        assert args.agent == "researcher"
+        assert args.project == "/p"
+
+    def test_emit_defaults(self):
+        parser = build_parser()
+        args = parser.parse_args(["emit", "cycle.started"])
+        assert args.agent is None
+        assert args.project == "."
+        assert args.data is None
 
     def test_ceo_mode_interactive(self):
         parser = build_parser()
@@ -748,6 +764,45 @@ class TestHeartbeatParserFlags:
         assert args.max_cycles == 5
 
 
+class TestRunStandup:
+    def test_standup_injects_report_into_ceo_task(self, tmp_path):
+        """When scrummaster returns a report, it appears in the CEO task."""
+        (tmp_path / ".factory").mkdir()
+        standup_report = "## Sprint Standup\n\n**Status:** FRESH\n**Mode:** improve"
+        mock_agent = AsyncMock(side_effect=[
+            (standup_report, 0),           # scrummaster call
+            ("CEO completed", 0),          # ceo call
+        ])
+        with patch("factory.agents.runner.invoke_agent", mock_agent), \
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("shutil.which", return_value="/usr/bin/claude"):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        # Second call is the CEO — check its task string contains the standup
+        ceo_call = mock_agent.call_args_list[1]
+        ceo_task = ceo_call[0][1]
+        assert "Sprint Standup" in ceo_task
+        assert "FRESH" in ceo_task
+
+    def test_standup_skipped_without_factory_dir(self, tmp_path):
+        """Without .factory/, no standup call is made."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_agent.assert_called_once()  # only CEO, no standup
+
+    def test_standup_skipped_without_claude(self, tmp_path):
+        """Without claude CLI, no standup call is made."""
+        (tmp_path / ".factory").mkdir()
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("shutil.which", return_value=None):
+            result = main(["run", str(tmp_path)])
+        assert result == 0
+        mock_agent.assert_called_once()  # only CEO, no standup
+
+
 class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
@@ -755,20 +810,18 @@ class TestHeartbeatLoop:
              patch("factory.cli._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
         assert result == 0
-        mock_agent.assert_called_once()
+        mock_agent.assert_called_once()  # no .factory/ dir → no standup call
 
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep") as mock_sleep:
+             patch("factory.cli._run_standup", return_value=None):
             result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "10",
+                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "0",
             ])
         assert result == 0
         assert mock_agent.call_count == 3
-        assert mock_sleep.call_count == 2
-        mock_sleep.assert_called_with(10)
 
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 started at" in out
@@ -790,13 +843,13 @@ class TestHeartbeatLoop:
 
     def test_loop_graceful_sigterm(self, tmp_path, capsys):
         """SIGTERM during sleep causes clean exit."""
-        def _interrupt_during_sleep(interval: int) -> None:
-            os.kill(os.getpid(), signal.SIGTERM)
+        def _send_sigterm_after_cycle(*args, **kwargs):
+            threading.Timer(0.05, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+            return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+        with patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_send_sigterm_after_cycle)), \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
         out = capsys.readouterr().out
@@ -804,13 +857,13 @@ class TestHeartbeatLoop:
 
     def test_loop_graceful_sigint(self, tmp_path, capsys):
         """SIGINT during sleep causes clean exit."""
-        def _interrupt_during_sleep(interval: int) -> None:
-            os.kill(os.getpid(), signal.SIGINT)
+        def _send_sigint_after_cycle(*args, **kwargs):
+            threading.Timer(0.05, lambda: os.kill(os.getpid(), signal.SIGINT)).start()
+            return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep", side_effect=_interrupt_during_sleep):
-            result = main(["run", str(tmp_path), "--loop", "--interval", "5"])
+        with patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_send_sigint_after_cycle)), \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
         out = capsys.readouterr().out
@@ -819,14 +872,13 @@ class TestHeartbeatLoop:
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.time.sleep"):
+             patch("factory.cli._chain_modes", return_value=0):
             result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "60",
+                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "0",
             ])
         assert result == 0
         out = capsys.readouterr().out
-        assert "[factory] Cycle 1 completed. Sleeping for 60s..." in out
+        assert "[factory] Cycle 1 completed. Sleeping for 0s..." in out
 
 
 # ── Factory v2: agent and ceo commands ────────────────────────
@@ -940,13 +992,13 @@ class TestCmdCeo:
             ["git", "clone", url, "/tmp/factory-ceo"], check=True,
         )
 
-    def test_ceo_headless_timeout_is_1_hour(self, tmp_path):
-        """CEO agent gets 3600s timeout in headless mode."""
+    def test_ceo_headless_timeout_is_2_hours(self, tmp_path):
+        """CEO agent gets 7200s timeout in headless mode."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
-        assert call_kwargs["timeout"] == 3600.0
+        assert call_kwargs["timeout"] == 7200.0
 
     def test_ceo_foreground_uses_execvp(self, tmp_path):
         """cmd_ceo (default) launches claude interactively via os.execvp."""

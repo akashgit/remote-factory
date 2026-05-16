@@ -1,0 +1,73 @@
+researcher:
+  model: sonnet
+  tools: [Bash, Read, WebSearch, WebFetch, Grep, Glob]
+  description: >-
+    Deep research and discovery for software projects.
+    Analyzes codebases, researches best practices, and synthesizes findings
+    to inform strategy. Use when the user wants to study a project or research
+    a domain before making changes.
+
+strategist:
+  model: sonnet
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Generate prioritized improvement hypotheses for a software project.
+    Reads backlog, experiment history, and eval scores to produce a ranked
+    strategy. Use when the user wants a plan for what to improve next.
+
+builder:
+  model: sonnet
+  tools: [Bash, Read, Edit, Write, Grep, Glob]
+  description: >-
+    Implement a single focused change and open a pull request.
+    Reads issues, writes code, runs tests, and creates PRs on feature branches.
+    Use when the user wants a specific feature built or bug fixed.
+
+reviewer:
+  model: sonnet
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Review pull requests against guard rules, eval scores, and code quality criteria.
+    Makes keep/revert decisions on changes. Use when the user wants a structured
+    code review or keep/revert verdict.
+
+evaluator:
+  model: sonnet
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Run project evaluations and interpret the results.
+    Executes eval commands, compares before/after scores, and explains trends.
+    Use when the user wants to measure project quality or understand score changes.
+
+archivist:
+  model: sonnet
+  tools: [Bash, Read, Write, Grep, Glob]
+  description: >-
+    Record experiment results, research findings, and project knowledge to an
+    Obsidian vault or local archive. Maintains institutional memory across cycles.
+    Use when the user wants to archive findings or update project dashboards.
+
+distiller:
+  model: sonnet
+  tools: [Read, Write]
+  description: >-
+    Transform vague ideas into precise, buildable project specifications.
+    Combines user intent with research findings to produce structured specs.
+    Use when the user has a raw idea that needs refining into a concrete plan.
+
+ceo:
+  model: opus
+  tools: [Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch]
+  description: >-
+    Autonomous orchestrator for the full Factory workflow.
+    Detects project state, spawns specialist agents, runs experiments,
+    makes keep/revert decisions, and ensures mandatory archival.
+    Use when the user wants a complete evolution cycle.
+
+failure_analyst:
+  model: sonnet
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Analyze research experiment failures by stage and root cause.
+    Reads run artifacts, classifies failures, and produces structured analysis
+    for the Strategist. Use after a research experiment fails.

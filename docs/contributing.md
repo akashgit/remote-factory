@@ -11,7 +11,7 @@ uv sync --all-groups    # Install all deps including dev
 ## Running Tests
 
 ```bash
-uv run pytest -v                  # Full suite (954 tests)
+uv run pytest -v                  # Full suite (1350+ tests)
 uv run pytest tests/test_cli.py   # Single file
 uv run pytest -k "test_detect"    # By name pattern
 uv run pytest --cov               # With coverage
@@ -19,7 +19,7 @@ uv run pytest --cov               # With coverage
 
 Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without the `@pytest.mark.asyncio` decorator.
 
-Shared fixtures (`tmp_project`, `sample_config`, `python_project`, `obsidian_vault`) live in `tests/conftest.py`.
+Shared fixtures (`tmp_project`, `sample_config`, `python_project`) live in `tests/conftest.py`. An autouse `_isolate_registry` fixture redirects the global registry to a temp directory during tests.
 
 ## Linting and Type Checking
 
@@ -110,14 +110,15 @@ factory/
 │   ├── runner.py           # Agent subprocess spawner
 │   ├── prompts/            # Agent role prompts (7 roles)
 │   └── playbooks/          # ACE-evolved playbooks
+├── registry.py             # Global project registry
+├── report.py               # Performance report generation
 ├── ace/                    # Autonomous Context Engineering
 ├── dashboard/              # FastAPI live dashboard
 ├── discovery/              # Project introspection
 ├── eval/                   # Three-tier eval system
-├── obsidian/               # Vault integration
 └── notify/                 # Telegram notifications
 
-tests/                      # 954 tests mirroring factory/ structure
+tests/                      # 1350+ tests mirroring factory/ structure
 ```
 
 ## Adding a New CLI Command

@@ -18,7 +18,7 @@ pytest -k "test_detect" -v       # By name pattern
 pytest --cov                     # With coverage
 ```
 
-Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`. Shared fixtures (`tmp_project`, `sample_config`, `python_project`, `obsidian_vault`) live in `tests/conftest.py`.
+Tests use `pytest-asyncio` with `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`. Shared fixtures (`tmp_project`, `sample_config`, `python_project`) live in `tests/conftest.py`. An autouse `_isolate_registry` fixture redirects the global registry to a temp directory during tests.
 
 ## Lint & Type Check
 
@@ -51,9 +51,9 @@ A dedicated Claude Code agent that owns the full factory workflow. Spawned via `
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 
-Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+Nine specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
-**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Distiller (refine ideas), CEO (orchestrate).
+**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Distiller (refine ideas), Scrum Master (standup/resume), CEO (orchestrate).
 
 ### Key data flow
 
@@ -61,29 +61,36 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 2. **Discovery** (`factory/discovery/`): `introspect.py` → `profile.py` → `generate.py` — detects project language/framework, builds an `EvalProfile` of dimensions, generates `eval/score.py`
 3. **Eval** (`factory/eval/`): `runner.py` executes the eval command as a subprocess, expects JSON stdout `{"results": [...]}`. Growth dimensions (`growth.py`) are computed locally and merged at 50/50 with project hygiene dimensions. `scorer.py` computes the weighted composite
 4. **Strategy** (`factory/strategy.py`): FEEC priority heuristic (Fix > Exploit > Explore > Combine) classifies hypotheses by keyword matching, with stuck detection after 3+ consecutive same-category reverts
-5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts
-6. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
-7. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
+5. **Store** (`factory/store.py`): `ExperimentStore` manages the `.factory/` directory — config, TSV history, per-experiment dirs with hypothesis/eval/diff/verdict artifacts. Auto-registers projects in the global registry on `begin()` and updates stats on `finalize()`
+6. **Registry** (`factory/registry.py`): Global project registry at `~/.factory/registry.json` — self-registration pattern, project discovery for ACE/insights without `--projects-dir`
+7. **Report** (`factory/report.py`): Performance report generation — consolidates experiment records, CEO verdicts, and observations into `.factory/performance_report.json` for ACE consumption
+8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
+9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 
 ### Target project's `.factory/` layout
 
 ```
 .factory/
-├── config.json           # Parsed from factory.md (FactoryConfig model)
-├── eval_profile.json     # Discovered eval dimensions (EvalProfile model)
-├── results.tsv           # Append-only experiment history
+├── config.json               # Parsed from factory.md (FactoryConfig model)
+├── eval_profile.json         # Discovered eval dimensions (EvalProfile model)
+├── results.tsv               # Append-only experiment history
+├── performance_report.json   # Consolidated project data for ACE (auto-generated)
 ├── experiments/
-│   └── 001/              # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
-├── strategy/             # observations.md, current.md, backlog.md, insights.md, research.md
-├── reviews/              # Agent output capture + CEO review verdicts
-│   ├── <role>-latest.md  # Auto-saved stdout from each agent invocation
-│   └── ceo-verdict-<role>.md  # CEO's review verdict (PROCEED/REDIRECT/ABORT)
-└── agents/               # Per-project agent prompt overrides
+│   └── 001/                  # Per-experiment: hypothesis.md, eval_before.json, eval_after.json, changes.diff, verdict.json
+├── strategy/                 # observations.md, current.md, backlog.md, insights.md, research.md
+├── reviews/                  # Agent output capture + CEO review verdicts
+│   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
+│   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
+├── archive/                  # Long-term knowledge store (Archivist notes)
+│   ├── experiments/          # Per-experiment learnings and decision rationale
+│   ├── patterns/             # Recurring patterns and anti-patterns
+│   └── decisions/            # Major architectural and strategy decisions
+└── agents/                   # Per-project agent prompt overrides
 ```
 
 ### Models
 
-All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`. The `Notifier` protocol defines the async notification interface.
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`. The `Notifier` protocol defines the async notification interface.
 
 ## Environment
 
@@ -103,9 +110,9 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 **Dry-run mode:** Set `FACTORY_BOB_DRY_RUN=1` to test Bob Shell integration without spending tokens. The factory returns stub responses and logs usage. This is automatically set in tests via `tests/conftest.py`.
 
 **Token guardrails:** Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings:
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 3)
-- `FACTORY_BOB_MAX_INVOCATIONS_PER_DAY` (default: 20)
+- `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8)
 - All invocations are logged to `.factory/bob_usage.jsonl`
+- When ≤2 invocations remain before the ceiling, a warning is logged and emitted to `.factory/events.jsonl` (type: `bob.ceiling_warning`)
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
 
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
@@ -127,6 +134,8 @@ factory tmux /path/to/project --loop            # In detached tmux session
 
 # Focus — build exactly one thing
 factory ceo /path/to/project --focus "dashboard UI"  # One item, one hypothesis, done
+factory ceo /path/to/project --focus 42              # Target GitHub issue #42
+factory ceo /path/to/project --focus "owner/repo#42" # Target issue by shorthand
 
 # Meta — improve the factory's own agents
 factory ceo /path/to/project --mode meta        # Improve + ACE playbook evolution
@@ -151,7 +160,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one backlog item (e.g. `--focus "eval reliability"`), generating a single hypothesis and exiting after that experiment. Works in improve and research modes; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve and research modes; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`.
 
 ## Observability
 

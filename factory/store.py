@@ -17,6 +17,7 @@ from factory.models import (
     EvalWeights,
     ExperimentRecord,
     FactoryConfig,
+    HardConstraint,
     HypothesisBudget,
     ProjectEvalDimension,
     ResearchTarget,
@@ -118,6 +119,34 @@ def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | Non
     )
     log.debug("cost_budget_parsed", max_per_cycle=budget.max_per_cycle, max_total=budget.max_total)
     return budget
+
+
+def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstraint]:
+    """Parse hard constraint entries from factory.md.
+
+    Each list item starts with 'name: X' and may have continuation lines
+    with key: value pairs (check, description).
+    """
+    if not isinstance(items, list):
+        return []
+    constraints: list[HardConstraint] = []
+    for item in items:
+        lines = str(item).split("\n")
+        fields: dict[str, str] = {}
+        for line in lines:
+            if ":" in line:
+                key, val = line.split(":", 1)
+                fields[key.strip()] = val.strip()
+        name = fields.get("name", "")
+        check = fields.get("check", "")
+        if not name or not check:
+            continue
+        constraints.append(HardConstraint(
+            name=name,
+            check=check,
+            description=fields.get("description", ""),
+        ))
+    return constraints
 
 
 class ExperimentStore:
@@ -227,6 +256,7 @@ class ExperimentStore:
         fixed_surfaces = list(fixed_raw) if isinstance(fixed_raw, list) else []
         rc_raw = parsed.get("research_constraints", [])
         research_constraints = list(rc_raw) if isinstance(rc_raw, list) else []
+        hard_constraints = _parse_hard_constraints(parsed.get("hard_constraints", []))
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -245,6 +275,7 @@ class ExperimentStore:
             fixed_surfaces=fixed_surfaces,
             research_constraints=research_constraints,
             cost_budget=cost_budget,
+            hard_constraints=hard_constraints,
         )
 
         (self.factory_dir / "config.json").write_text(
@@ -273,6 +304,7 @@ class ExperimentStore:
 
         Idempotent: if the next experiment dir already exists (e.g. from a
         previous interrupted run), return its ID without crashing.
+        Also registers the project in the global registry (non-blocking).
         """
         exp_id = await self.next_id()
         log.info("experiment_begin", exp_id=exp_id, hypothesis=hypothesis[:80])
@@ -281,6 +313,13 @@ class ExperimentStore:
         hyp_path = exp_dir / "hypothesis.md"
         if not hyp_path.exists():
             hyp_path.write_text(hypothesis)
+
+        try:
+            from factory.registry import register_project
+            register_project(self.project_path)
+        except Exception as exc:
+            log.debug("registry_begin_failed", error=str(exc))
+
         return exp_id
 
     async def save_eval(
@@ -353,6 +392,16 @@ class ExperimentStore:
                 record.notes,
                 "|".join(record.research_citations) if record.research_citations else "",
             ])
+
+        try:
+            from factory.registry import update_project_stats
+            update_project_stats(
+                self.project_path,
+                experiment_count=record.id,
+                latest_score=record.score_after,
+            )
+        except Exception as exc:
+            log.debug("registry_finalize_failed", error=str(exc))
 
     async def load_history(self) -> list[ExperimentRecord]:
         """Parse results.tsv into a list of ExperimentRecords."""

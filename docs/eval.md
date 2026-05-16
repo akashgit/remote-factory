@@ -28,7 +28,7 @@ Computed by the factory itself. These measure whether the project is actually ev
 | `capability_surface` | Modules, public functions, entry points | 0.28 |
 | `experiment_diversity` | Variety of hypothesis categories attempted | 0.22 |
 | `observability` | Logging, error handling, monitoring | 0.20 |
-| `research_grounding` | Changes informed by research (vault, papers) | 0.16 |
+| `research_grounding` | Changes informed by research (archive, papers) | 0.16 |
 | `factory_effectiveness` | Keep rate, score trajectory | 0.14 |
 
 Implementation: `factory/eval/growth.py`
@@ -108,6 +108,45 @@ factory precheck ~/my-project \
     --hypothesis "add structured logging" \
     --baseline abc123
 ```
+
+## Research Mode Interaction
+
+In research mode, the eval system works differently. The **research target metric** is the primary signal — hygiene scores serve as a hard gate but don't drive the keep/revert decision.
+
+### Decision hierarchy
+
+1. **Hygiene gate** — any regression in tests, lint, or type_check forces an automatic revert, regardless of metric improvement
+2. **Monotonic improvement** — the research target metric must be `>= previous_best`. If the metric regresses below the highest value achieved in any prior run, the experiment is reverted. The metric ratchets forward — it can never go backward.
+3. **Leakage guard** — if ground truth contamination is detected, the experiment is reverted
+4. **Precheck** — standard precheck (scope, anti-pattern, smoke test) still applies
+
+### Leakage guards for fixed surfaces
+
+Research mode defines **fixed surfaces** — ground truth data, eval scripts, and test fixtures that must never be modified or leaked into hypotheses. Three layers of protection:
+
+| Guard | What it detects | Risk level |
+|-------|----------------|------------|
+| **Token overlap** | Distinctive tokens from fixed surfaces appearing in hypothesis/diff text (Jaccard similarity) | low–medium |
+| **Negation hints** | Patterns like "do NOT use X" where X appears in ground truth — encoding answers by exclusion | high |
+| **Specific values** | Numeric literals or quoted strings extracted from fixed surfaces appearing in hypothesis text | medium |
+
+Leakage checks run at three hard gates:
+
+1. **Strategy review** — CEO scans each hypothesis before approving
+2. **Builder review** — CEO scans the PR diff after implementation
+3. **Precheck** — automated guard check before keep/revert
+
+A medium or high leakage risk triggers an automatic redirect (at Strategy/Builder) or revert (at Precheck).
+
+### Monotonic improvement policy
+
+The research target metric must satisfy `metric_after >= previous_best` for every accepted experiment. This prevents:
+
+- Oscillation between local optima
+- Aggregate regression from individually plausible changes
+- "Two steps forward, one step back" patterns
+
+If a change improves the metric on some instances but regresses on others, the aggregate must still be at or above the previous best. The CEO cannot override a monotonic improvement violation.
 
 ## Running Evals
 

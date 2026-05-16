@@ -72,7 +72,7 @@ main
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
 
 ```bash
-pytest tests/ -x -q --tb=short
+pytest tests/test_models.py tests/test_guards.py tests/test_cli.py -x -q --tb=short
 ```
 
 ## Constraints

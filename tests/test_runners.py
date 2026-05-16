@@ -10,8 +10,9 @@ import pytest
 from factory.runners import ClaudeRunner, BobRunner, get_runner, is_dry_run
 from factory.runners.usage import (
     CeilingExceededError,
+    CeilingWarning,
     check_ceilings,
-    count_today_invocations,
+    count_cycle_invocations,
     get_usage_log_path,
     log_usage,
 )
@@ -75,10 +76,54 @@ class TestClaudeRunner:
                 call_args = mock_exec.call_args
                 cmd = call_args[0]
                 assert cmd[0] == "claude"
+                assert "--append-system-prompt" in cmd
                 assert "-p" in cmd
                 assert "--dangerously-skip-permissions" in cmd
                 assert "--model" in cmd
                 assert "claude-opus-4-7" in cmd
+
+    async def test_headless_separates_prompt_and_task(self, tmp_path: Path) -> None:
+        """headless() passes prompt via --append-system-prompt and task via -p as separate args."""
+        runner = ClaudeRunner()
+
+        with patch(
+            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b"ok", b"")
+
+            with patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                await runner.headless(
+                    prompt="You are the CEO.",
+                    task="Run the experiment",
+                    cwd=tmp_path,
+                )
+
+                cmd = mock_exec.call_args[0]
+                asp_idx = cmd.index("--append-system-prompt")
+                p_idx = cmd.index("-p")
+                assert cmd[asp_idx + 1] == "You are the CEO."
+                assert cmd[p_idx + 1] == "Run the experiment"
+
+    async def test_interactive_exec_uses_append_system_prompt(self, tmp_path: Path) -> None:
+        """interactive_exec() uses --append-system-prompt (not --system-prompt)."""
+        runner = ClaudeRunner()
+
+        with patch("os.chdir"), patch("os.execvp") as mock_execvp:
+            runner.interactive_exec(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            )
+
+            cmd = mock_execvp.call_args[0][1]
+            assert "--append-system-prompt" in cmd
+            assert "--system-prompt" not in cmd
 
 
 class TestBobRunner:
@@ -179,18 +224,24 @@ class TestBobRunner:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """BobRunner returns error when ceiling exceeded."""
+        from datetime import datetime, timezone, timedelta
+
         monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "1")
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "1")
 
         import factory.runners.bob as bob_module
         bob_module._auth_checked = False
 
         (tmp_path / ".factory").mkdir()
 
+        # Create runner FIRST with a cycle_start in the past
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        runner = BobRunner(cycle_start=cycle_start)
+
+        # Log entry AFTER cycle_start so it counts
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
 
-        runner = BobRunner()
         stdout, code = await runner.headless(
             prompt="Test",
             task="Test",
@@ -262,7 +313,9 @@ class TestUsageTracking:
         assert entry["exit_code"] == 0
         assert entry["dry_run"] is False
 
-    def test_count_today_invocations(self, tmp_path: Path) -> None:
+    def test_count_cycle_invocations_with_start(self, tmp_path: Path) -> None:
+        from datetime import datetime, timezone, timedelta
+
         (tmp_path / ".factory").mkdir()
 
         # Log some entries
@@ -270,25 +323,29 @@ class TestUsageTracking:
         log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
         log_usage(tmp_path, "c", tmp_path, 1.0, 0, dry_run=True)  # dry-run, shouldn't count
 
-        count = count_today_invocations(tmp_path)
+        # Count from beginning of the current second
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        count = count_cycle_invocations(tmp_path, cycle_start)
         assert count == 2  # dry-run excluded
 
-    def test_count_today_includes_dry_run(self, tmp_path: Path) -> None:
+    def test_count_cycle_invocations_none_returns_zero(self, tmp_path: Path) -> None:
         (tmp_path / ".factory").mkdir()
 
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
-        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=True)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
 
-        count = count_today_invocations(tmp_path, include_dry_run=True)
-        assert count == 2
+        # Without cycle_start, returns 0
+        count = count_cycle_invocations(tmp_path, None)
+        assert count == 0
 
 
 class TestCeilings:
     def test_check_ceilings_passes_when_under(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from datetime import datetime, timezone, timedelta
+
         (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "10")
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "5")
 
         # Log a few entries (under ceiling)
@@ -296,46 +353,91 @@ class TestCeilings:
         log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
 
         # Should not raise
-        check_ceilings(tmp_path)
-
-    def test_check_ceilings_fails_on_daily(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "2")
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "10")
-
-        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
-        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
-
-        with pytest.raises(CeilingExceededError) as exc_info:
-            check_ceilings(tmp_path)
-
-        assert exc_info.value.ceiling_name == "daily"
-        assert exc_info.value.env_var == "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY"
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        check_ceilings(tmp_path, cycle_start)
 
     def test_check_ceilings_fails_on_cycle(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        from datetime import datetime, timezone, timedelta
+
         (tmp_path / ".factory").mkdir()
-        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_DAY", "100")
         monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "1")
 
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
 
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
         with pytest.raises(CeilingExceededError) as exc_info:
-            check_ceilings(tmp_path)
+            check_ceilings(tmp_path, cycle_start)
 
         assert exc_info.value.ceiling_name == "per-cycle"
         assert exc_info.value.env_var == "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE"
 
     def test_ceiling_error_message_is_actionable(self) -> None:
-        error = CeilingExceededError("daily", 5, 5, "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY")
+        error = CeilingExceededError("per-cycle", 5, 5, "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE")
         msg = str(error)
 
         assert "ceiling exceeded" in msg.lower()
         assert "5/5" in msg
-        assert "FACTORY_BOB_MAX_INVOCATIONS_PER_DAY=10" in msg  # suggests bumping
+        assert "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE=10" in msg  # suggests bumping
+
+
+class TestCeilingWarning:
+    def test_warning_returned_when_cycle_ceiling_near(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns CeilingWarning when ≤2 cycle invocations remain."""
+        from datetime import datetime, timezone, timedelta
+
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "4")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
+
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        warning = check_ceilings(tmp_path, cycle_start)
+
+        assert warning is not None
+        assert isinstance(warning, CeilingWarning)
+        assert warning.ceiling_name == "per-cycle"
+        assert warning.remaining == 2
+        assert warning.limit == 4
+
+    def test_no_warning_when_sufficient_invocations_remain(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns None when >2 invocations remain."""
+        from datetime import datetime, timezone, timedelta
+
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "10")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        warning = check_ceilings(tmp_path, cycle_start)
+
+        assert warning is None
+
+    def test_warning_at_exactly_one_remaining(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """check_ceilings returns CeilingWarning when exactly 1 invocation remains."""
+        from datetime import datetime, timezone, timedelta
+
+        (tmp_path / ".factory").mkdir()
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "3")
+
+        log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
+        log_usage(tmp_path, "b", tmp_path, 1.0, 0, dry_run=False)
+
+        cycle_start = datetime.now(timezone.utc) - timedelta(seconds=5)
+        warning = check_ceilings(tmp_path, cycle_start)
+
+        assert warning is not None
+        assert warning.ceiling_name == "per-cycle"
+        assert warning.remaining == 1
 
 
 class TestBobAuthPreflight:
@@ -857,3 +959,138 @@ class TestStreamingOutput:
                 assert "Line 1" in content
                 assert "Line 2" in content
                 assert "Line 3" in content
+
+
+class TestCeilingAccumulationAcrossInvocations:
+    """Tests that per-cycle ceiling accumulates across invoke_agent calls."""
+
+    async def test_ceiling_accumulates_across_invoke_agent_calls(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify that invocation counts accumulate across multiple invoke_agent calls.
+
+        This test reproduces the bug from PR #136: each get_runner() call created
+        a fresh BobRunner with cycle_start=now(), so the ceiling never accumulated.
+
+        With the fix, get_runner() passes project_path to BobRunner, which reads
+        started_at from .factory/state/cycle.json, ensuring all invocations within
+        a cycle share the same cycle_start and accumulate correctly.
+        """
+        from unittest.mock import AsyncMock, patch
+
+        from factory.agents.runner import invoke_agent
+        from factory.ceo_completion import write_cycle_state, create_cycle_state
+
+        monkeypatch.setenv("FACTORY_RUNNER", "bob")
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
+        monkeypatch.setenv("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "2")
+
+        # Reset auth check state
+        import factory.runners.bob as bob_module
+        bob_module._auth_checked = False
+
+        # Create project structure
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / "state").mkdir()
+
+        # Create a cycle state (simulates an in-flight cycle)
+        cycle_state = create_cycle_state("improve", "test task", "bob")
+        write_cycle_state(tmp_path, cycle_state)
+
+        # Create a minimal agent prompt
+        prompts_dir = tmp_path / ".factory" / "agents"
+        prompts_dir.mkdir()
+        (prompts_dir / "researcher.md").write_text("You are a researcher.")
+
+        # Mock subprocess to avoid actually calling bob
+        with patch(
+            "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b"output", b"")
+
+            with patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                # First invocation — should succeed (1/2)
+                stdout1, code1 = await invoke_agent(
+                    "researcher",
+                    "First task",
+                    tmp_path,
+                    runner_name="bob",
+                )
+                assert code1 == 0, f"First invocation failed: {stdout1}"
+
+                # Second invocation — should succeed (2/2)
+                stdout2, code2 = await invoke_agent(
+                    "researcher",
+                    "Second task",
+                    tmp_path,
+                    runner_name="bob",
+                )
+                assert code2 == 0, f"Second invocation failed: {stdout2}"
+
+                # Third invocation — should fail (3/2 = ceiling exceeded)
+                stdout3, code3 = await invoke_agent(
+                    "researcher",
+                    "Third task",
+                    tmp_path,
+                    runner_name="bob",
+                )
+                assert code3 == 1, "Third invocation should have hit the ceiling"
+                assert "ceiling" in stdout3.lower() or "exceeded" in stdout3.lower()
+
+        bob_module._auth_checked = False
+
+    async def test_bobrunner_reads_cycle_start_from_cycle_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify BobRunner reads started_at from cycle.json when project_path is provided."""
+
+        from factory.ceo_completion import write_cycle_state, create_cycle_state
+        from factory.runners import get_runner
+
+        monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
+
+        # Create project structure
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / "state").mkdir()
+
+        # Create a cycle state with a known started_at
+        cycle_state = create_cycle_state("improve", "test task", "bob")
+        write_cycle_state(tmp_path, cycle_state)
+
+        # Get runner with project_path
+        runner = get_runner("bob", project_path=tmp_path)
+
+        # Runner's cycle_start should match the persisted state's started_at
+        # (allowing for small time differences in serialization)
+        time_diff = abs((runner.cycle_start - cycle_state.started_at).total_seconds())
+        assert time_diff < 1.0, f"cycle_start mismatch: {runner.cycle_start} vs {cycle_state.started_at}"
+
+    async def test_bobrunner_falls_back_to_now_without_cycle_json(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Verify BobRunner falls back to now() when no cycle.json exists."""
+        from datetime import datetime, timezone
+
+        from factory.runners import get_runner
+
+        monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
+
+        # Create project structure but NO cycle.json
+        (tmp_path / ".factory").mkdir()
+
+        now_before = datetime.now(timezone.utc)
+
+        # Get runner with project_path (but no cycle.json exists)
+        runner = get_runner("bob", project_path=tmp_path)
+
+        now_after = datetime.now(timezone.utc)
+
+        # Runner's cycle_start should be between now_before and now_after
+        assert now_before <= runner.cycle_start <= now_after

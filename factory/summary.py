@@ -213,17 +213,10 @@ def _latest_cycle_start(project_path: Path) -> datetime | None:
 
 
 def _detect_mode(project_path: Path) -> str:
-    """Best-effort mode detection from checkpoint or events."""
-    ckpt_path = project_path / ".factory" / "checkpoint.json"
-    if ckpt_path.exists():
-        try:
-            data = json.loads(ckpt_path.read_text())
-            return data.get("mode", "unknown")
-        except (json.JSONDecodeError, OSError):
-            pass
+    """Best-effort mode detection from events or sprint.started log."""
     events = load_events(project_path)
     for ev in reversed(events):
-        if ev.get("type") == "cycle.started" and "mode" in ev.get("data", {}):
+        if ev.get("type") in ("cycle.started", "sprint.started") and "mode" in ev.get("data", {}):
             return ev["data"]["mode"]
     return "unknown"
 
