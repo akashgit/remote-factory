@@ -42,9 +42,7 @@ class ClaudeRunner:
 
         Returns (stdout, return_code).
         """
-        full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["claude", "-p", full_prompt]
+        cmd = ["claude", "--append-system-prompt", prompt, "-p", task]
         if dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if model:
