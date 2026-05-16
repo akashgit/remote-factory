@@ -76,10 +76,57 @@ class TestClaudeRunner:
                 call_args = mock_exec.call_args
                 cmd = call_args[0]
                 assert cmd[0] == "claude"
+                assert "--append-system-prompt" in cmd
+                assert "You are a test agent." in cmd
                 assert "-p" in cmd
+                assert "Say hello" in cmd
                 assert "--dangerously-skip-permissions" in cmd
                 assert "--model" in cmd
                 assert "claude-opus-4-7" in cmd
+
+    async def test_headless_separates_prompt_and_task(self, tmp_path: Path) -> None:
+        """Prompt goes to --append-system-prompt, task goes to -p as separate args."""
+        runner = ClaudeRunner()
+
+        with patch(
+            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b"ok", b"")
+
+            with patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                await runner.headless(
+                    prompt="You are an agent.",
+                    task="Do the thing",
+                    cwd=tmp_path,
+                )
+
+                cmd = list(mock_exec.call_args[0])
+                asp_idx = cmd.index("--append-system-prompt")
+                assert cmd[asp_idx + 1] == "You are an agent."
+                p_idx = cmd.index("-p")
+                assert cmd[p_idx + 1] == "Do the thing"
+
+    def test_interactive_exec_uses_system_prompt(self, tmp_path: Path) -> None:
+        """interactive_exec() uses --system-prompt (not --append-system-prompt)."""
+        runner = ClaudeRunner()
+
+        with patch("os.chdir"), patch("os.execvp") as mock_execvp:
+            runner.interactive_exec(
+                prompt="You are the CEO.",
+                task="Run the factory",
+                cwd=tmp_path,
+            )
+
+            cmd = mock_execvp.call_args[0][1]
+            assert "--system-prompt" in cmd
+            assert "--append-system-prompt" not in cmd
+            assert "You are the CEO." in cmd
 
 
 class TestBobRunner:

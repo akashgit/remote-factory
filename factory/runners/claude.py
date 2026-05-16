@@ -42,9 +42,7 @@ class ClaudeRunner:
 
         Returns (stdout, return_code).
         """
-        full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["claude", "-p", full_prompt]
+        cmd = ["claude", "--append-system-prompt", prompt, "-p", task]
         if dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if model:
@@ -101,7 +99,7 @@ class ClaudeRunner:
         """Replace process with interactive Claude Code session.
 
         Args:
-            prompt: The system prompt to append.
+            prompt: The system prompt (replaces default).
             task: The initial user message.
             cwd: Working directory (os.chdir is called before exec).
             model: Optional model override.
@@ -111,7 +109,7 @@ class ClaudeRunner:
         _ = role  # unused by claude runner
         cmd = [
             "claude",
-            "--append-system-prompt", prompt,
+            "--system-prompt", prompt,
         ]
         if dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
