@@ -1419,6 +1419,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
+    if focus:
+        factory_dir = project_path / ".factory"
+        if factory_dir.exists() and not (factory_dir / "config.json").exists():
+            print("Error: Project has partial factory state (.factory/ exists but is not initialized).\n"
+                  "This happens when the initial build completed but discovery/review did not finish.\n"
+                  f"Run 'factory ceo {project_path}' first to complete initialization, then use --focus.",
+                  file=sys.stderr)
+            return 1
     if focus and mode not in ("improve", "research"):
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
@@ -2218,6 +2226,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
+    if focus:
+        factory_dir = project_path / ".factory"
+        if factory_dir.exists() and not (factory_dir / "config.json").exists():
+            print("Error: Project has partial factory state (.factory/ exists but is not initialized).\n"
+                  "This happens when the initial build completed but discovery/review did not finish.\n"
+                  f"Run 'factory ceo {project_path}' first to complete initialization, then use --focus.",
+                  file=sys.stderr)
+            return 1
     if focus and mode not in ("improve", "research"):
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)

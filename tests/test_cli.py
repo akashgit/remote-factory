@@ -353,6 +353,59 @@ class TestCmdCeoResearchIdeation:
         assert "Mode: research" in task
 
 
+class TestPartialFactoryDetection:
+    """Tests for partial factory state detection with --focus."""
+
+    def test_focus_partial_factory_errors(self, tmp_path, capsys):
+        """--focus on project with .factory/ but no config.json prints actionable error."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".factory").mkdir()
+        # No config.json — partial state
+
+        result = main(["ceo", str(tmp_path), "--mode", "improve", "--focus", "UI"])
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "partial factory state" in err
+        assert "factory ceo" in err
+        assert str(tmp_path) in err
+
+    def test_focus_complete_factory_works(self, tmp_path):
+        """--focus on project with complete .factory/ proceeds normally."""
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text(json.dumps(_make_config()))
+
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "improve", "--focus", "UI"])
+        mock_exec.assert_called_once()
+
+    def test_focus_no_factory_dir_proceeds(self, tmp_path, capsys):
+        """--focus on project without .factory/ does not error on partial check."""
+        (tmp_path / ".git").mkdir()
+        # No .factory/ at all — partial-factory check should pass, proceeds to exec
+
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "improve", "--focus", "UI"])
+        # Should proceed to exec, not error on partial-factory
+        mock_exec.assert_called_once()
+        err = capsys.readouterr().err
+        assert "partial factory state" not in err
+
+    def test_run_partial_factory_errors(self, tmp_path, capsys):
+        """factory run --focus on partial factory also errors."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".factory").mkdir()
+        # No config.json — partial state
+
+        result = main(["run", str(tmp_path), "--mode", "improve", "--focus", "UI"])
+        assert result == 1
+        err = capsys.readouterr().err
+        assert "partial factory state" in err
+
+
 class TestCmdDetect:
     def test_detect_no_repo(self, tmp_path, capsys):
         result = main(["detect", str(tmp_path / "nonexistent")])
