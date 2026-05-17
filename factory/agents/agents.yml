@@ -71,11 +71,3 @@ failure_analyst:
     Analyze research experiment failures by stage and root cause.
     Reads run artifacts, classifies failures, and produces structured analysis
     for the Strategist. Use after a research experiment fails.
-
-scrummaster:
-  model: sonnet
-  tools: [Bash, Read, Grep, Glob]
-  description: >-
-    Perform a standup by reading the event log and .factory/ state to
-    reconstruct context from a previous run. Produces a sprint status report
-    for the CEO to enable crash-resilient resume.

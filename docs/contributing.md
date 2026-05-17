@@ -108,7 +108,7 @@ factory/
 ├── analysis.py             # Experiment comparison
 ├── agents/
 │   ├── runner.py           # Agent subprocess spawner
-│   ├── prompts/            # Agent role prompts (9 specialists + CEO)
+│   ├── prompts/            # Agent role prompts (8 specialists + CEO)
 │   └── playbooks/          # ACE-evolved playbooks
 ├── registry.py             # Global project registry
 ├── report.py               # Performance report generation
