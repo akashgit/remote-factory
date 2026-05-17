@@ -1147,7 +1147,7 @@ class TestDedupeProjectPath:
         assert result == tmp_path / "projects" / "rest-api-4"
 
     def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             p1, _ = _resolve_input("Build a REST API")
             p2, _ = _resolve_input("Create a new REST API")
         assert p1.name == "rest-api"
@@ -1183,7 +1183,7 @@ class TestResolveInput:
         idea_file = tmp_path / "My Project \u2014 Something Cool.md"
         idea_file.write_text("# Build something cool")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
@@ -1192,7 +1192,7 @@ class TestResolveInput:
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
@@ -1204,7 +1204,7 @@ class TestResolveInput:
         py_file = tmp_path / "script.py"
         py_file.write_text("print('hello')")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(py_file))
 
         assert project_path.name == "script"
@@ -1215,7 +1215,7 @@ class TestResolveInput:
         bin_file = tmp_path / "data.bin"
         bin_file.write_bytes(b"\x00\x01\x02\xff")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"), \
              pytest.raises(UnicodeDecodeError):
             _resolve_input(str(bin_file))
 
@@ -1224,7 +1224,7 @@ class TestResolveInput:
         idea_file = tmp_path / "Test Idea \u2014 Details.md"
         idea_file.write_text("# Test Idea\nBuild X that does Y")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"), \
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"), \
              patch("factory.cli._chain_modes", return_value=0), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             main(["ceo", str(idea_file), "--headless"])
@@ -1234,7 +1234,7 @@ class TestResolveInput:
         assert "Project Specification" in task_arg
 
     def test_dir_overrides_slug_for_raw_prompt(self, tmp_path):
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
 
         assert project_path.name == "my-todo"
@@ -1244,7 +1244,7 @@ class TestResolveInput:
         idea_file = tmp_path / "Long Idea Name — Details.md"
         idea_file.write_text("# Build something")
 
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
 
         assert project_path.name == "custom-name"
@@ -1257,7 +1257,7 @@ class TestResolveInput:
         assert context is None
 
     def test_dir_is_slugified(self, tmp_path):
-        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build something", dir_name="My Cool Project!")
 
         assert project_path.name == "my-cool-project"

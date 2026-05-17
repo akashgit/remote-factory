@@ -215,27 +215,27 @@ class TestMasking:
 
 class TestEnsureConfigFile:
     def test_creates_with_template(self, config_dir: Path) -> None:
-        from factory.user_config import _ensure_config_file
+        from factory.user_config import ensure_config_file
 
-        path = _ensure_config_file()
+        path = ensure_config_file()
         assert path.exists()
         content = path.read_text()
         assert "[defaults]" in content
         assert "[credentials." in content
 
     def test_secure_permissions(self, config_dir: Path) -> None:
-        from factory.user_config import _ensure_config_file
+        from factory.user_config import ensure_config_file
 
-        path = _ensure_config_file()
+        path = ensure_config_file()
         mode = stat.S_IMODE(path.stat().st_mode)
         assert mode == 0o600
 
     def test_idempotent(self, config_dir: Path) -> None:
-        from factory.user_config import _ensure_config_file
+        from factory.user_config import ensure_config_file
 
-        _ensure_config_file()
+        ensure_config_file()
         config_dir.write_text("custom content")
-        _ensure_config_file()
+        ensure_config_file()
         assert config_dir.read_text() == "custom content"
 
 

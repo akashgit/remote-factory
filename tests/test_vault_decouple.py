@@ -186,7 +186,7 @@ class TestResolveInputWithoutVault:
         import factory.cli as cli_mod
         from factory.cli import _resolve_input
 
-        monkeypatch.setattr(cli_mod, "_PROJECTS_DIR", tmp_path)
+        monkeypatch.setattr(cli_mod, "_get_projects_dir", lambda: tmp_path)
         path, ctx = _resolve_input("build a weather dashboard")
         assert path.parent == tmp_path
         assert path.exists()
@@ -198,7 +198,7 @@ class TestResolveInputWithoutVault:
         import factory.cli as cli_mod
         from factory.cli import _resolve_input
 
-        monkeypatch.setattr(cli_mod, "_PROJECTS_DIR", tmp_path / "projects")
+        monkeypatch.setattr(cli_mod, "_get_projects_dir", lambda: tmp_path / "projects")
         idea_file = tmp_path / "Weather Dashboard \u2014 live forecast.md"
         idea_file.write_text("# Weather Dashboard\nShow forecasts.")
 

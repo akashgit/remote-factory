@@ -9,6 +9,7 @@ import os
 import re
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -51,7 +52,7 @@ def _validate_profile_name(name: str) -> None:
         )
 
 
-def _validate_credential_keys(keys: dict[str, str]) -> None:
+def _validate_credential_keys(keys: dict[str, Any]) -> None:
     for k in keys:
         if not _CREDENTIAL_KEY_RE.match(k):
             raise ValueError(
@@ -59,12 +60,13 @@ def _validate_credential_keys(keys: dict[str, str]) -> None:
             )
 
 
-def _ensure_config_file() -> Path:
+def ensure_config_file() -> Path:
     """Create config file with secure permissions if it doesn't exist. Returns path."""
-    if CONFIG_PATH.exists():
-        return CONFIG_PATH
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(CONFIG_PATH), os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        fd = os.open(str(CONFIG_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return CONFIG_PATH
     try:
         os.write(fd, _CONFIG_TEMPLATE.encode())
     finally:
@@ -171,7 +173,7 @@ def mask_value(value: str) -> str:
 
 
 def show_config(*, reveal: bool = False) -> str:
-    """Return a human-readable view of the resolved config with secrets masked."""
+    """Return a human-readable view of the on-disk config with secrets masked."""
     if not CONFIG_PATH.exists():
         return f"No config file at {CONFIG_PATH}\nRun: factory config edit"
 
@@ -227,12 +229,6 @@ def migrate_env_to_config() -> str:
             "tomli_w is required for migration: pip install tomli_w"
         ) from None
 
-    if CONFIG_PATH.exists():
-        raise FileExistsError(
-            f"Config file already exists at {CONFIG_PATH}. "
-            "Remove it first or edit manually."
-        )
-
     env_map = {
         "FACTORY_RUNNER": "runner",
         "FACTORY_MODEL": "model",
@@ -259,7 +255,13 @@ def migrate_env_to_config() -> str:
         data["defaults"] = defaults
 
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(str(CONFIG_PATH), os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        fd = os.open(str(CONFIG_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise FileExistsError(
+            f"Config file already exists at {CONFIG_PATH}. "
+            "Remove it first or edit manually."
+        ) from None
     try:
         content = tomli_w.dumps(data)
         os.write(fd, content.encode())

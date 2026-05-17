@@ -1179,9 +1179,9 @@ def cmd_config(args: argparse.Namespace) -> int:
         return 0
 
     if sub == "edit":
-        from factory.user_config import CONFIG_PATH, _ensure_config_file
+        from factory.user_config import CONFIG_PATH, ensure_config_file
 
-        _ensure_config_file()
+        ensure_config_file()
         editor = os.environ.get("EDITOR", "vi")
         return subprocess.call([editor, str(CONFIG_PATH)])
 
@@ -1415,7 +1415,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
@@ -1430,7 +1430,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
         research_ideation = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     else:
@@ -1584,8 +1584,6 @@ def _get_projects_dir() -> Path:
     return Path(raw).expanduser() if raw else Path.home() / "factory-projects"
 
 
-_PROJECTS_DIR = _get_projects_dir()
-
 def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
 
@@ -1604,7 +1602,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     if expanded.is_file():
         idea_content = expanded.read_text()
         slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, idea_content)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, idea_content)
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
         print(f"Idea file: {expanded.name}")
@@ -1620,7 +1618,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
 
     # 4. Raw prompt
     slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
-    project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw)
+    project_path = _dedupe_project_path(_get_projects_dir() / slug, raw)
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
