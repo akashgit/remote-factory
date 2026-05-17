@@ -287,6 +287,7 @@ The factory has shipped something every day for the last 30 days — products, r
 | **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
 | **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
 | **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source Python framework for synthetic data generation — 3 agents (lead, builder, evaluator) autonomously triage issues, code, review, and merge PRs on OpenShift via Multica | Build + Improve |
 | **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
 
 Built something with the Factory? Open a PR to add it here — it helps others see what's possible.
