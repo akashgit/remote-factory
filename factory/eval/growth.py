@@ -9,7 +9,6 @@ All functions take a project_path and return an EvalResult-compatible dict.
 
 import ast
 import csv
-import os
 import re
 from collections import Counter
 from pathlib import Path
@@ -320,14 +319,16 @@ def _discover_managed_projects(project_path: Path) -> int:
             if child.is_dir() and (child / ".factory" / "results.tsv").exists():
                 seen.add(child.resolve())
 
-    managed_dirs = os.environ.get("FACTORY_MANAGED_DIRS", "")
+    from factory.user_config import resolve
+
+    managed_dirs = resolve("managed_dirs", env_var="FACTORY_MANAGED_DIRS") or ""
     if managed_dirs:
         for entry in managed_dirs.split(":"):
             entry = entry.strip()
             if entry:
                 _scan_dir(Path(entry))
 
-    projects_dir_str = os.environ.get("FACTORY_PROJECTS_DIR", "")
+    projects_dir_str = resolve("projects_dir", env_var="FACTORY_PROJECTS_DIR") or ""
     if projects_dir_str:
         _scan_dir(Path(projects_dir_str))
 

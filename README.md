@@ -330,6 +330,34 @@ uv run python -m factory ceo ~/my-project --runner bob
 
 Bob Shell requires `BOBSHELL_API_KEY` and enforces per-cycle invocation ceilings (default: 8). Set `FACTORY_BOB_DRY_RUN=1` to test without API calls.
 
+### User Configuration (`~/.factory/config.toml`)
+
+All `FACTORY_*` env vars can be set in `~/.factory/config.toml` instead. Env vars still work — config.toml is additive. Precedence: CLI flag > env var > profile credential > config.toml default > hardcoded.
+
+```bash
+factory config edit                    # Open config in $EDITOR
+factory config show                    # Show resolved config (secrets masked)
+factory config show --reveal           # Show full values
+factory config migrate                 # Create starter config from current env vars
+```
+
+Credential profiles let you switch between environments:
+
+```toml
+[credentials.vertex]
+ANTHROPIC_API_KEY = "sk-ant-..."
+FACTORY_RUNNER = "claude"
+
+[credentials.bob]
+BOBSHELL_API_KEY = "..."
+FACTORY_RUNNER = "bob"
+```
+
+```bash
+factory ceo ~/my-project --profile vertex
+factory agent researcher --task "..." --project ~/my-project --profile bob
+```
+
 ---
 
 ## CLI Reference

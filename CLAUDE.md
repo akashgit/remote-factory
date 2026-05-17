@@ -96,6 +96,30 @@ All domain models live in `factory/models.py` as strict Pydantic v2 models. Key 
 
 Requires Claude Code installed and authenticated. The factory spawns `claude` subprocesses — it does not call the API directly. Any Claude Code authentication method works (API key, Vertex AI, etc.).
 
+### Configuration (`~/.factory/config.toml`)
+
+All `FACTORY_*` environment variables can also be set in `~/.factory/config.toml`. Env vars remain supported — config.toml is additive. Five-tier precedence: CLI flag > env var > profile credential > config.toml default > hardcoded default.
+
+```toml
+[defaults]
+runner = "claude"
+model = ""
+projects_dir = "~/factory-projects"
+
+[credentials.vertex]
+FACTORY_RUNNER = "claude"
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+**Commands:**
+- `factory config show [--reveal]` — show resolved config with secrets masked
+- `factory config edit` — open `~/.factory/config.toml` in `$EDITOR`
+- `factory config migrate` — create starter config from current env vars (requires `tomli_w`)
+
+**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys are injected into `os.environ`.
+
+**Implementation:** `factory/user_config.py` — `load_config()`, `resolve()`, `show_config()`, `migrate_env_to_config()`.
+
 ## Runners
 
 The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI), but Bob Shell (`bob` CLI) is also supported as a switchable alternative.

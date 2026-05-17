@@ -119,7 +119,10 @@ def _check_auth(start_path: Path | None = None) -> None:
 
 def is_dry_run() -> bool:
     """Return True if dry-run mode is enabled."""
-    return os.environ.get("FACTORY_BOB_DRY_RUN", "").lower() in ("1", "true", "yes")
+    from factory.user_config import resolve
+
+    val = resolve("bob_dry_run", env_var="FACTORY_BOB_DRY_RUN") or ""
+    return val.lower() in ("1", "true", "yes")
 
 
 def _get_bob_bin_dir() -> str | None:

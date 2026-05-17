@@ -7,14 +7,15 @@ tree and are read-only at runtime.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 DEFAULTS_DIR: Path = Path(__file__).parent.parent / "agents" / "playbooks"
 
 
 def user_playbooks_dir() -> Path:
-    override = os.environ.get("FACTORY_PLAYBOOKS_DIR")
+    from factory.user_config import resolve
+
+    override = resolve("playbooks_dir", env_var="FACTORY_PLAYBOOKS_DIR")
     if override:
         d = Path(override).expanduser().resolve()
     else:

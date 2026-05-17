@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 from datetime import datetime
@@ -119,7 +118,9 @@ def vault_path() -> Path | None:
     vault is considered *unavailable* and callers should skip vault operations
     gracefully (writes fall back to ``.factory/archive/``).
     """
-    raw = os.environ.get("FACTORY_VAULT_PATH")
+    from factory.user_config import resolve
+
+    raw = resolve("vault_path", env_var="FACTORY_VAULT_PATH")
     if raw:
         return Path(raw)
     return None

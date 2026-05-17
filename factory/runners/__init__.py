@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -45,7 +44,9 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     Raises:
         ValueError: If the runner name is not recognized.
     """
-    resolved = name or os.environ.get("FACTORY_RUNNER", "claude")
+    from factory.user_config import resolve
+
+    resolved = resolve("runner", cli_value=name, env_var="FACTORY_RUNNER", default="claude") or "claude"
     resolved = resolved.lower().strip()
 
     if resolved not in _RUNNERS:

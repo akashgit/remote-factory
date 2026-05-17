@@ -1164,6 +1164,42 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Manage ~/.factory/config.toml."""
+    sub = getattr(args, "config_command", None)
+    if not sub:
+        print("Usage: factory config {show,edit,migrate}")
+        return 1
+
+    if sub == "show":
+        from factory.user_config import show_config
+
+        reveal = getattr(args, "reveal", False)
+        print(show_config(reveal=reveal))
+        return 0
+
+    if sub == "edit":
+        from factory.user_config import CONFIG_PATH, ensure_config_file
+
+        ensure_config_file()
+        editor = os.environ.get("EDITOR", "vi")
+        return subprocess.call([editor, str(CONFIG_PATH)])
+
+    if sub == "migrate":
+        from factory.user_config import migrate_env_to_config
+
+        try:
+            msg = migrate_env_to_config()
+            print(msg)
+            return 0
+        except (ImportError, FileExistsError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    print(f"Unknown config subcommand: {sub}", file=sys.stderr)
+    return 1
+
+
 def cmd_emit(args: argparse.Namespace) -> int:
     from factory.events import emit_event
 
@@ -1268,6 +1304,10 @@ def cmd_install(args: argparse.Namespace) -> int:
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
 
     role = args.role
     task = args.task
@@ -1326,6 +1366,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     """
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
 
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
@@ -1371,7 +1415,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
@@ -1386,7 +1430,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
         research_ideation = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     else:
@@ -1515,12 +1559,11 @@ def _is_github_url(path: str) -> bool:
 
 
 def _resolve_model(args: argparse.Namespace) -> str | None:
-    """Resolve model: CLI flag > FACTORY_MODEL env var > None."""
-    flag = (getattr(args, "model", None) or "").strip()
-    if flag:
-        return flag
-    env = (os.environ.get("FACTORY_MODEL") or "").strip()
-    return env or None
+    """Resolve model: CLI flag > FACTORY_MODEL env var > config.toml > None."""
+    from factory.user_config import resolve
+
+    flag = (getattr(args, "model", None) or "").strip() or None
+    return resolve("model", cli_value=flag, env_var="FACTORY_MODEL")
 
 
 def _resolve_runner(args: argparse.Namespace) -> str | None:
@@ -1534,7 +1577,12 @@ def _resolve_runner(args: argparse.Namespace) -> str | None:
     return None
 
 
-_PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
+def _get_projects_dir() -> Path:
+    from factory.user_config import resolve
+
+    raw = resolve("projects_dir", env_var="FACTORY_PROJECTS_DIR", default=str(Path.home() / "factory-projects"))
+    return Path(raw).expanduser() if raw else Path.home() / "factory-projects"
+
 
 def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
@@ -1554,7 +1602,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     if expanded.is_file():
         idea_content = expanded.read_text()
         slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
-        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, idea_content)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, idea_content)
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
         print(f"Idea file: {expanded.name}")
@@ -1570,7 +1618,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
 
     # 4. Raw prompt
     slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
-    project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw)
+    project_path = _dedupe_project_path(_get_projects_dir() / slug, raw)
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
@@ -2230,6 +2278,11 @@ def _run_single_cycle(
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
+
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
     loop = getattr(args, "loop", False)
@@ -2639,6 +2692,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
     p.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")
 
+    # config — user configuration management
+    config_parser = sub.add_parser("config", help="Manage ~/.factory/config.toml")
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    p_show = config_sub.add_parser("show", help="Show resolved config (secrets masked)")
+    p_show.add_argument("--reveal", action="store_true", default=False,
+                        help="Show full secret values instead of masking")
+    config_sub.add_parser("edit", help="Open config.toml in $EDITOR")
+    config_sub.add_parser("migrate", help="Create starter config.toml from current env vars")
+
     # emit — emit a structured event to .factory/events.jsonl
     p = sub.add_parser("emit", help="Emit a structured event to .factory/events.jsonl")
     p.add_argument("event_type", help="Event type (e.g. agent.started, agent.completed)")
@@ -2660,6 +2722,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -2712,6 +2776,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -2764,6 +2830,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -2852,6 +2920,7 @@ def main(argv: list[str] | None = None) -> int:
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
         "dashboard": cmd_dashboard,
+        "config": cmd_config,
         "emit": cmd_emit,
         "agent": cmd_agent,
         "ceo": cmd_ceo,

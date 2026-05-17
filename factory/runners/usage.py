@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,7 +87,9 @@ def count_cycle_invocations(project_path: Path, cycle_start: datetime | None = N
 
 def get_cycle_ceiling() -> int:
     """Get the per-cycle invocation ceiling from env var."""
-    return int(os.environ.get("FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", "8"))
+    from factory.user_config import resolve
+
+    return int(resolve("bob_max_invocations_per_cycle", env_var="FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE", default="8") or "8")
 
 
 class CeilingExceededError(Exception):
