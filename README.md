@@ -27,14 +27,14 @@ That's it. You're ready to go. Every command runs from the **factory repo direct
 
 ```bash
 # Option A: run directly (no install needed)
-factory ceo "Build a personal homepage with a blog"
+uv run factory ceo "Build a personal homepage with a blog"
 
 # Option B: install as a CLI tool, then use `factory` anywhere
 uv tool install -e .
 factory ceo "Build a personal homepage with a blog"
 ```
 
-Both forms are equivalent. If running from source without installing, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI via `uv tool install`, bare `factory` works directly.
+If running from source without installing, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI via `uv tool install`, bare `factory` works directly. This README uses bare `factory` throughout — prepend `uv run` if you haven't installed.
 
 The factory stores all state locally — no external services required beyond Claude Code. Per-project state lives in `.factory/` (add it to `.gitignore`). Global state (project registry, evolved playbooks) lives in `~/.factory/`.
 

@@ -1350,14 +1350,15 @@ class TestBuildCeoTaskInteractive:
 
 
 class TestCmdHomeReturnsFactoryDir:
-    def test_cmd_home_returns_dot_factory(self, capsys):
+    def test_cmd_home_returns_package_root(self, capsys):
         from factory.cli import cmd_home
         import argparse
         result = cmd_home(argparse.Namespace())
         assert result == 0
         output = capsys.readouterr().out.strip()
-        assert output.endswith(".factory")
-        assert output == str(Path.home() / ".factory")
+        assert "site-packages" not in output or Path(output).is_dir()
+        assert (Path(output) / "templates").is_dir()
+        assert (Path(output) / "cli.py").is_file()
 
 
 class TestCmdTmuxBareCLI:
@@ -1426,8 +1427,17 @@ class TestResolveProjectPath:
             assert call_args[0] != ""
 
     def test_cmd_archive_resolves_relative_path(self, tmp_path, capsys):
-        """cmd_archive resolves paths so project_path.name is non-empty."""
+        """cmd_archive resolves paths and uses non-empty project_path.name."""
+        from factory.cli import cmd_archive
+        import argparse
+
         project_path = tmp_path / "my-project"
         project_path.mkdir()
-        resolved = project_path.resolve()
-        assert resolved.name == "my-project"
+        (project_path / ".factory").mkdir()
+
+        with patch("factory.cli._run", side_effect=lambda c: []):
+            args = argparse.Namespace(path=str(project_path))
+            result = cmd_archive(args)
+            assert result == 0
+            output = capsys.readouterr().out.strip()
+            assert "Nothing to archive" in output

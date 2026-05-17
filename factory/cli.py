@@ -96,8 +96,8 @@ def _print_banner(mode: str = "improve") -> None:
 
 
 def cmd_home(args: argparse.Namespace) -> int:
-    """Print the factory home directory (~/.factory/)."""
-    factory_home = Path.home() / ".factory"
+    """Print the factory package root (where templates/ lives)."""
+    factory_home = Path(__file__).resolve().parent
     print(factory_home)
     return 0
 

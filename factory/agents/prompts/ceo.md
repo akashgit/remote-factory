@@ -2148,7 +2148,6 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 5. **Do not skip the eval step** — every change must be scored before it can be kept
 6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
-8. **Do not do another agent's job** — the CEO is an executive orchestrator. It delegates ALL technical work to specialist agents (Researcher, Builder, Reviewer, Evaluator, Archivist, etc.) and reviews their output. If an agent times out or fails, retry with adjusted parameters or abort — never take over the agent's work yourself. Reading files to review agent output is fine; doing the agent's actual task is a violation.
 
 ---
 
