@@ -33,6 +33,8 @@ class HypothesisBudget(BaseModel):
 
     min_growth: int = 2
     max_new: int = 2
+    min_fix: int = 0
+    max_total: int | None = None
 
 
 class HardConstraint(BaseModel):
