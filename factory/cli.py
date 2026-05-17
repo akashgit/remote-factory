@@ -1323,6 +1323,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
+    dir_name = getattr(args, "dir", None)
 
     if not raw_path:
         print("Error: provide a project path, GitHub URL, idea file, or prompt",
@@ -1360,7 +1361,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # In interactive mode the positional arg is always an idea string, not a path.
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
-        slug = _slugify(raw_path[:50])
+        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
@@ -1375,12 +1376,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "--focus targets existing backlog items.", file=sys.stderr)
             return 1
         research_ideation = raw_path
-        slug = _slugify(raw_path[:50])
+        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
     else:
-        project_path, context = _resolve_input(raw_path)
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     issue_number: int | None = None
@@ -1526,7 +1527,7 @@ def _resolve_runner(args: argparse.Namespace) -> str | None:
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
 
-def _resolve_input(raw: str) -> tuple[Path, str | None]:
+def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
 
     Handles four input types in priority order:
@@ -1543,7 +1544,7 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     # 2. Existing file (e.g. path to an idea/spec .md file)
     if expanded.is_file():
         idea_content = expanded.read_text()
-        slug = _slugify(expanded.stem.split("\u2014")[0].strip())
+        slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
@@ -1559,7 +1560,7 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
         return Path(tmp_dir).resolve(), None
 
     # 4. Raw prompt
-    slug = _slugify(raw[:50])
+    slug = _slugify(dir_name) if dir_name else _slugify(raw[:50])
     project_path = _PROJECTS_DIR / slug
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
@@ -2629,6 +2630,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
              "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
              "Issue refs are auto-detected and fetched via gh/glab CLI",
+    )
+    p.add_argument(
+        "--dir", default=None,
+        help="Working directory name for the new project (overrides auto-derived name from prompt or idea file). "
+             "Ignored when pointing at an existing directory or GitHub URL.",
     )
     p.add_argument(
         "--headless", action="store_true", default=False,

@@ -1139,6 +1139,40 @@ class TestResolveInput:
         assert "Build X that does Y" in task_arg
         assert "Project Specification" in task_arg
 
+    def test_dir_overrides_slug_for_raw_prompt(self, tmp_path):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
+
+        assert project_path.name == "my-todo"
+        assert (project_path / ".git").is_dir()
+
+    def test_dir_overrides_slug_for_idea_file(self, tmp_path):
+        idea_file = tmp_path / "Long Idea Name — Details.md"
+        idea_file.write_text("# Build something")
+
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
+
+        assert project_path.name == "custom-name"
+        assert (project_path / ".git").is_dir()
+
+    def test_dir_ignored_for_existing_directory(self, tmp_path):
+        project_path, context = _resolve_input(str(tmp_path), dir_name="ignored-name")
+
+        assert project_path == tmp_path
+        assert context is None
+
+    def test_dir_is_slugified(self, tmp_path):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            project_path, context = _resolve_input("Build something", dir_name="My Cool Project!")
+
+        assert project_path.name == "my-cool-project"
+
+    def test_ceo_parser_accepts_dir_argument(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "Build something", "--dir", "my-project"])
+        assert args.dir == "my-project"
+
 
 class TestResearchMode:
     def test_ceo_parser_accepts_research_mode(self):
