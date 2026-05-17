@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -16,7 +15,9 @@ log = structlog.get_logger()
 
 def _default_registry_path() -> Path:
     """Return registry path, respecting FACTORY_REGISTRY_DIR override for testing."""
-    override = os.environ.get("FACTORY_REGISTRY_DIR")
+    from factory.user_config import resolve
+
+    override = resolve("registry_dir", env_var="FACTORY_REGISTRY_DIR")
     base = Path(override) if override else Path.home() / ".factory"
     return base / "registry.json"
 

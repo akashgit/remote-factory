@@ -27,6 +27,9 @@ Homepage = "https://github.com/akashgit/remote-factory"
 Repository = "https://github.com/akashgit/remote-factory"
 Issues = "https://github.com/akashgit/remote-factory/issues"
 
+[project.optional-dependencies]
+migrate = ["tomli_w>=1.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
