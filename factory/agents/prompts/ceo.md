@@ -1001,7 +1001,10 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 5. Implement exactly what the issue describes
 6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
 7. Run tests and evals
-8. Commit and open PR targeting main
+8. Commit and open a DRAFT PR targeting main. Use idempotency:
+   - First check: gh pr list --head <branch> --json number,title
+   - If a PR already exists for this branch, skip creation and use the existing PR number
+   - If no PR exists: gh pr create --draft --base main
 Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
 ```
 
