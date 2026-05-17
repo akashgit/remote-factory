@@ -18,13 +18,13 @@ A dedicated Claude Code agent that owns the full workflow. Spawned via `factory 
 - Spawns specialist agents as subprocesses
 - Makes keep/revert decisions based on eval scores
 - Ensures mandatory archival after every cycle
-- Runs Scrum Master standup for crash-resilient resume via event log
+- Reads event log and `.factory/` state directly for crash-resilient resume
 
 Prompt: `factory/agents/prompts/ceo.md`
 
 ### Layer 3: Specialist Agents
 
-Nine specialist Claude Code subprocesses, each with a narrow responsibility:
+Eight specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
@@ -36,7 +36,6 @@ Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
-| **Scrum Master** | Standup: read event log + project state, produce sprint status report for CEO | `factory agent scrummaster --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`

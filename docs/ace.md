@@ -92,7 +92,6 @@ Agent roles with playbooks:
 | Reviewer | What to focus on in code review, false positive patterns |
 | Evaluator | Score interpretation, when to flag anomalies |
 | Archivist | What to record, archive organization patterns |
-| Scrum Master | Standup patterns, sprint resume effectiveness |
 
 ## Design Principles
 

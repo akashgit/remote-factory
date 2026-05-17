@@ -46,7 +46,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates nine specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, Failure Analyst, and Scrum Master — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
 
 ## Workflows
 

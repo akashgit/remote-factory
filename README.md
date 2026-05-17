@@ -44,7 +44,7 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 
 ## Architecture
 
-A CEO agent orchestrates nine specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, Failure Analyst, and Scrum Master — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess.
 
 ![Architecture](docs/diagrams/architecture.svg)
 
@@ -409,7 +409,7 @@ factory log <path> <event> [--data JSON]  # Record milestone to event log
 
 See `factory --help` for the complete list.
 
-**Crash-resilient resume:** The factory supports automatic recovery from interrupted runs. The Scrum Master agent performs a standup at the start of each cycle, reading the event log and `.factory/` state to reconstruct context and resume from where the previous run left off.
+**Crash-resilient resume:** The factory supports automatic recovery from interrupted runs. The CEO reads the event log and `.factory/` state directly at the start of each cycle to reconstruct context and resume from where the previous run left off.
 
 ---
 
@@ -427,7 +427,7 @@ claude --agent factory-researcher "study the auth system"
 claude --agent factory-builder "add dark mode support"
 ```
 
-Available agents: `factory-researcher`, `factory-strategist`, `factory-builder`, `factory-reviewer`, `factory-evaluator`, `factory-archivist`, `factory-distiller`, `factory-ceo`, `factory-failure_analyst`, `factory-scrummaster`.
+Available agents: `factory-researcher`, `factory-strategist`, `factory-builder`, `factory-reviewer`, `factory-evaluator`, `factory-archivist`, `factory-distiller`, `factory-ceo`, `factory-failure_analyst`.
 
 Agent metadata (model, tools, descriptions) is defined in `factory/agents/agents.yml`. Source prompts live in `factory/agents/prompts/`. A CI workflow auto-generates a `plugin` branch with ready-to-use agent files on every push to main.
 

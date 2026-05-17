@@ -130,10 +130,6 @@ agents: {
     label: "Failure Analyst\nClassify"
     style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
   }
-  scrummaster: {
-    label: "Scrum Master\nStandup"
-    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
-  }
 }
 
 stores: {
@@ -165,9 +161,6 @@ cli -> ceo: "spawns CEO" {
 }
 ceo -> agents: "delegates" {
   style: { font-size: 12; font-color: "#0D1B2A" }
-}
-ceo -> agents.scrummaster: "standup" {
-  style: { font-size: 12; font-color: "#0D1B2A"; stroke-dash: 4 }
 }
 agents -> stores: "read / write" {
   style: { font-size: 12; font-color: "#0D1B2A" }
