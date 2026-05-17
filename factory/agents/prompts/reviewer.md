@@ -61,7 +61,7 @@ You will be given:
 After forming your verdict, use `factory review` to post a structured review on the PR. This makes the review visible and auditable on GitHub.
 
 ```bash
-uv run python -m factory review \
+factory review \
     --verdict <KEEP|REVERT> \
     --reason "<one-sentence summary>" \
     --score-before <before> \
@@ -85,7 +85,7 @@ When reviewing PRs for research mode projects (those with `fixed_surfaces` in fa
 
 2. **Check for ground truth leakage in code**: If the PR diff contains specific values, identifiers, or logic patterns that appear to be derived from ground truth files, flag it as a leakage risk. The Builder should not have read fixed surface files to inform its implementation.
 
-3. **Run the surface guard**: `uv run python -m factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-surfaces`
+3. **Run the surface guard**: `factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-surfaces`
 
 Fixed surface modification is a **Sacred Rule violation** — treat it the same as deleting tests or modifying eval/score.py.
 
