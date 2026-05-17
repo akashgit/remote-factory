@@ -1256,10 +1256,86 @@ def cmd_install(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_profile(args: argparse.Namespace) -> int:
+    """Manage named Claude instance profiles."""
+    from factory.profile import (
+        apply_profile,
+        create_profile,
+        delete_profile,
+        format_profile,
+        list_profiles,
+        PROFILES_DIR,
+    )
+
+    sub = args.profile_command
+
+    if sub == "list":
+        names = list_profiles()
+        if not names:
+            print("No profiles found. Create one with: factory profile create <name> KEY=VALUE ...")
+        else:
+            print(f"Profiles in {PROFILES_DIR}:")
+            for name in names:
+                print(f"  {name}")
+        return 0
+
+    if sub == "create":
+        name = args.name
+        env: dict[str, str] = {}
+        for pair in args.env_pairs:
+            if "=" not in pair:
+                print(f"Error: env pair must be KEY=VALUE, got: {pair!r}", file=sys.stderr)
+                return 1
+            key, _, value = pair.partition("=")
+            if not key:
+                print(f"Error: empty key in: {pair!r}", file=sys.stderr)
+                return 1
+            env[key] = value
+        path = create_profile(name, env)
+        print(f"Profile '{name}' saved to {path}")
+        return 0
+
+    if sub == "show":
+        name = args.name
+        reveal = getattr(args, "reveal", False)
+        try:
+            print(format_profile(name, reveal=reveal))
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    if sub == "delete":
+        name = args.name
+        try:
+            delete_profile(name)
+            print(f"Profile '{name}' deleted.")
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    if sub == "apply":
+        name = args.name
+        try:
+            applied = apply_profile(name)
+            for key, value in sorted(applied.items()):
+                # Emit shell-compatible export statements
+                print(f"export {key}={shlex.quote(value)}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        return 0
+
+    print(f"Unknown profile subcommand: {sub}", file=sys.stderr)
+    return 1
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
 
+    _apply_profile(args)
     role = args.role
     task = args.task
     project_path = Path(args.project).resolve()
@@ -1318,6 +1394,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
 
+    _apply_profile(args)
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
     headless = getattr(args, "headless", False)
@@ -1524,6 +1601,21 @@ def _resolve_runner(args: argparse.Namespace) -> str | None:
     return None
 
 
+def _apply_profile(args: argparse.Namespace) -> None:
+    """If --profile was given, load and apply it to os.environ (exits on error)."""
+    name = (getattr(args, "profile", None) or "").strip()
+    if not name:
+        return
+    from factory.profile import apply_profile
+    try:
+        applied = apply_profile(name)
+        keys = ", ".join(sorted(applied))
+        print(f"Profile '{name}' loaded ({keys})", file=sys.stderr)
+    except (FileNotFoundError, ValueError) as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
 
 def _resolve_input(raw: str) -> tuple[Path, str | None]:
@@ -1701,6 +1793,18 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         # Ensure gcloud SDK is on PATH
         'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
     ]
+
+    # Propagate profile env vars into the tmux shell
+    profile_name = (getattr(args, "profile", None) or "").strip()
+    if profile_name:
+        from factory.profile import load_profile
+        try:
+            profile_env = load_profile(profile_name)
+            for key, value in profile_env.items():
+                run_cmd_parts.append(f"export {key}={shlex.quote(value)}")
+        except (FileNotFoundError, ValueError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     model = _resolve_model(args)
     run_args = f"uv run python -m factory run {project_path}"
@@ -2177,6 +2281,7 @@ def _run_single_cycle(
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
+    _apply_profile(args)
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
     loop = getattr(args, "loop", False)
@@ -2591,6 +2696,30 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project", default=".", help="Project path")
     p.add_argument("--data", default=None, help="JSON string of additional event data")
 
+    # profile — manage named Claude instance profiles
+    p = sub.add_parser("profile", help="Manage named Claude instance profiles")
+    profile_sub = p.add_subparsers(dest="profile_command", required=True)
+
+    pp = profile_sub.add_parser("create", help="Create or update a profile")
+    pp.add_argument("name", help="Profile name (e.g. 'work', 'personal')")
+    pp.add_argument("env_pairs", nargs="*", metavar="KEY=VALUE",
+                    help="Environment variable pairs to store (e.g. ANTHROPIC_API_KEY=sk-ant-...)")
+
+    pp = profile_sub.add_parser("list", help="List available profiles")
+
+    pp = profile_sub.add_parser("show", help="Show a profile's contents")
+    pp.add_argument("name", help="Profile name")
+    pp.add_argument("--reveal", action="store_true", default=False,
+                    help="Show full secret values (masked by default)")
+
+    pp = profile_sub.add_parser("delete", help="Delete a profile")
+    pp.add_argument("name", help="Profile name")
+
+    pp = profile_sub.add_parser("apply",
+                                  help="Print shell export statements for a profile "
+                                       "(eval with: eval $(factory profile apply <name>))")
+    pp.add_argument("name", help="Profile name")
+
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
@@ -2605,6 +2734,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Named Claude profile to use (see: factory profile list)")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -2652,6 +2783,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Named Claude profile to use (see: factory profile list)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -2704,6 +2837,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Named Claude profile to use (see: factory profile list)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -2728,6 +2863,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Named Claude profile to use (see: factory profile list)")
 
     # tmux-ls — list factory tmux sessions
     sub.add_parser("tmux-ls", help="List running factory tmux sessions")
@@ -2793,6 +2930,7 @@ def main(argv: list[str] | None = None) -> int:
         "serve-mcp": cmd_serve_mcp,
         "dashboard": cmd_dashboard,
         "emit": cmd_emit,
+        "profile": cmd_profile,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,
