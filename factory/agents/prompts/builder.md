@@ -45,7 +45,7 @@ cat factory.md
 # 6. Commit and open PR
 git add <changed files>
 git commit -m "<descriptive message>"
-gh pr create --base main \
+gh pr create --base $TARGET_BRANCH \
     --title "<issue title>" \
     --body "Closes #$ISSUE_NUM
 

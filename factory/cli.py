@@ -1560,22 +1560,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         finally:
             remove_worktree(project_path, wt_path, wt_branch)
 
-    # Interactive foreground mode: use runner's interactive_exec.
-    # Mark read before exec — interactive_exec replaces the process via os.execvp
-    # so there's no post-execution hook. Worktree cleanup happens via prune_stale
-    # at next factory startup.
-    if pending_ids:
-        print(
-            f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
-            file=sys.stderr,
+    # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
+    try:
+        if pending_ids:
+            print(
+                f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
+                file=sys.stderr,
+            )
+            mark_read(project_path, pending_ids)
+        prompt = resolve_prompt("ceo", wt_path)
+        runner = get_runner(runner_name)
+        runner.interactive_run(
+            prompt, task, wt_path,
+            model=model, role="ceo", dangerously_skip_permissions=True
         )
-        mark_read(project_path, pending_ids)
-    prompt = resolve_prompt("ceo", wt_path)
-    runner = get_runner(runner_name)
-    runner.interactive_exec(
-        prompt, task, wt_path,
-        model=model, role="ceo", dangerously_skip_permissions=True
-    )
+    finally:
+        remove_worktree(project_path, wt_path, wt_branch)
 
 
 def _is_github_url(path: str) -> bool:

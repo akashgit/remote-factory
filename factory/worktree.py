@@ -15,9 +15,11 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
 
     Returns (worktree_path, branch_name).
     """
+    project_path = project_path.resolve()
     run_id = secrets.token_hex(4)
     branch = f"factory/run-{run_id}"
-    wt_dir = project_path / ".factory" / "worktrees" / f"run-{run_id}"
+    factory_dir = project_path / ".factory"
+    wt_dir = factory_dir / "worktrees" / f"run-{run_id}"
 
     log.info("worktree_create", branch=branch, path=str(wt_dir))
 
@@ -28,14 +30,17 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
         capture_output=True,
     )
 
-    factory_real = (project_path / ".factory").resolve()
+    # Symlink worktree/.factory → the real .factory dir (resolved absolute path).
+    # The worktree lives inside .factory/worktrees/, so this is inherently circular
+    # for recursive traversal — but safe because shutil.rmtree and os.walk don't
+    # follow symlinks by default.
     wt_factory = wt_dir / ".factory"
     if wt_factory.exists() or wt_factory.is_symlink():
         if wt_factory.is_dir() and not wt_factory.is_symlink():
             shutil.rmtree(wt_factory)
         else:
             wt_factory.unlink()
-    wt_factory.symlink_to(factory_real)
+    wt_factory.symlink_to(factory_dir)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
     return wt_dir, branch
@@ -80,9 +85,16 @@ def prune_stale(project_path: Path) -> list[str]:
         active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
+                run_id = d.name.removeprefix("run-")
                 shutil.rmtree(d)
                 pruned.append(f"Removed orphaned directory: {d.name}")
                 log.info("worktree_pruned_orphan", name=d.name)
+                branch = f"factory/run-{run_id}"
+                subprocess.run(
+                    ["git", "branch", "-D", branch],
+                    cwd=project_path,
+                    capture_output=True,
+                )
 
     if pruned:
         log.info("worktree_prune_complete", pruned_count=len(pruned))

@@ -204,9 +204,10 @@ class TestSymlinkResolution:
 
 
 class TestFilelockConcurrency:
-    async def test_filelock_prevents_concurrent_begin(self, git_project: Path) -> None:
-        """Two stores targeting the same .factory/ get sequential IDs."""
+    def test_filelock_prevents_concurrent_begin(self, git_project: Path) -> None:
+        """Two stores targeting the same .factory/ get sequential IDs under real thread contention."""
         import asyncio
+        from concurrent.futures import ThreadPoolExecutor
 
         from factory.store import ExperimentStore
 
@@ -216,13 +217,19 @@ class TestFilelockConcurrency:
             "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes\tresearch_citations\n"
         )
 
-        store_a = ExperimentStore(git_project)
-        store_b = ExperimentStore(git_project)
+        def begin_in_thread(hypothesis: str) -> int:
+            loop = asyncio.new_event_loop()
+            try:
+                store = ExperimentStore(git_project)
+                return loop.run_until_complete(store.begin(hypothesis))
+            finally:
+                loop.close()
 
-        id_a, id_b = await asyncio.gather(
-            store_a.begin("hypothesis A"),
-            store_b.begin("hypothesis B"),
-        )
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            fut_a = pool.submit(begin_in_thread, "hypothesis A")
+            fut_b = pool.submit(begin_in_thread, "hypothesis B")
+            id_a = fut_a.result()
+            id_b = fut_b.result()
 
         assert id_a != id_b
         assert {id_a, id_b} == {1, 2}

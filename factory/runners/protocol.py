@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import NoReturn, Protocol
+from typing import Protocol
 
 
 class Runner(Protocol):
@@ -38,7 +38,7 @@ class Runner(Protocol):
         """
         ...
 
-    def interactive_exec(
+    def interactive_run(
         self,
         prompt: str,
         task: str,
@@ -47,17 +47,21 @@ class Runner(Protocol):
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
-    ) -> NoReturn:
-        """Replace the current process with an interactive CLI session.
+    ) -> int:
+        """Run an interactive CLI session as a subprocess (returns on exit).
 
-        This function does not return — it calls os.execvp to replace the process.
+        Unlike interactive_exec, this uses subprocess.run so the caller regains
+        control after the session finishes — enabling cleanup in finally blocks.
 
         Args:
             prompt: The system prompt to append.
             task: The initial user message.
-            cwd: Working directory (os.chdir is called before exec).
+            cwd: Working directory for the subprocess.
             model: Optional model override.
             role: Agent role name (used for logging and output prefixing).
             dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
+
+        Returns:
+            The subprocess exit code.
         """
         ...
