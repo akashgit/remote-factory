@@ -1441,3 +1441,30 @@ class TestResolveProjectPath:
             assert result == 0
             output = capsys.readouterr().out.strip()
             assert "Nothing to archive" in output
+
+
+class TestNoBareUvRunPythonMFactory:
+    """Guard: no file should use 'uv run python -m factory' — use bare 'factory' instead."""
+
+    SCAN_GLOBS = [
+        "factory/agents/prompts/*.md",
+        "factory/cli.py",
+        "SKILL.md",
+        "README.md",
+        "docs/**/*.md",
+    ]
+
+    def test_no_hardcoded_uv_run_python_m_factory(self):
+        import glob
+        repo_root = Path(__file__).resolve().parent.parent
+        violations: list[str] = []
+        for pattern in self.SCAN_GLOBS:
+            for filepath in glob.glob(str(repo_root / pattern), recursive=True):
+                with open(filepath) as f:
+                    for lineno, line in enumerate(f, 1):
+                        if "uv run python -m factory" in line:
+                            violations.append(f"{Path(filepath).relative_to(repo_root)}:{lineno}")
+        assert violations == [], (
+            f"Found 'uv run python -m factory' — use bare 'factory' instead:\n"
+            + "\n".join(f"  {v}" for v in violations)
+        )
