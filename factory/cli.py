@@ -1570,7 +1570,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             mark_read(project_path, pending_ids)
         prompt = resolve_prompt("ceo", wt_path)
         runner = get_runner(runner_name)
-        runner.interactive_run(
+        return runner.interactive_run(
             prompt, task, wt_path,
             model=model, role="ceo", dangerously_skip_permissions=True
         )
