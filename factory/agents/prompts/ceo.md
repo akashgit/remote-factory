@@ -1157,7 +1157,7 @@ If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
 
 ```bash
 uv run python -m factory finalize "$PROJECT_PATH" \
-    --id $EXP_ID --verdict keep \
+    --id $EXP_ID --verdict keep --force \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
     --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED"
@@ -1754,7 +1754,7 @@ uv run python -m factory review \
 
 # Finalize
 uv run python -m factory finalize "$PROJECT_PATH" \
-    --id $EXP_ID --verdict keep \
+    --id $EXP_ID --verdict keep --force \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
     --issue $ISSUE_NUM --pr $PR_NUM \
     --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass"

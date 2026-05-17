@@ -264,7 +264,9 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     verdict = args.verdict
     notes = args.notes or ""
 
-    if verdict == "keep":
+    force = getattr(args, "force", False)
+
+    if verdict == "keep" and not force:
         config_path = project_path / ".factory" / "config.json"
         if config_path.exists():
             config = FactoryConfig(**json.loads(config_path.read_text()))
@@ -293,6 +295,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                     "reason": failure_detail,
                 })
                 print(f"Finalize gate: precheck FAILED — overriding keep to revert ({failure_detail})")
+
+    if verdict == "keep" and force:
+        _emit_cli_event(project_path, "verdict.force_kept", {
+            "exp_id": args.id,
+        })
+        print("Finalize gate: precheck SKIPPED (--force)")
 
     record = ExperimentRecord(
         id=args.id,
@@ -2376,6 +2384,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notes", default=None, help="Additional notes")
     p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
     p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
+    p.add_argument("--force", action="store_true", default=False,
+                    help="Bypass precheck gate (for pre-existing failures)")
 
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")

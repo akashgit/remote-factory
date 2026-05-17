@@ -189,6 +189,44 @@ def _make_project_with_config(tmp_path: Path, hard_constraints: list[dict] | Non
     return project
 
 
+class TestForceFlag:
+    def test_force_flag_bypasses_precheck(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_fail", "check": "false", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+            force=True,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "keep" in tsv
+        assert "OVERRIDDEN" not in tsv
+
+    def test_force_flag_with_revert_is_noop(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_fail", "check": "false", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="revert",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.5, score_after=0.9,
+            force=True,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "revert" in tsv
+        assert "OVERRIDDEN" not in tsv
+
+
 class TestFinalizeGate:
     def test_keep_overridden_when_hard_constraint_fails(self, tmp_path: Path) -> None:
         from factory.cli import cmd_finalize
