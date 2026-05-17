@@ -1468,3 +1468,30 @@ class TestNoBareUvRunPythonMFactory:
             "Found 'uv run python -m factory' — use bare 'factory' instead:\n"
             + "\n".join(f"  {v}" for v in violations)
         )
+
+
+class TestSacredRule8Present:
+    """Guard: Sacred Rule 8 (CEO must not do another agent's job) must exist in the CEO prompt."""
+
+    REQUIRED_PHRASES = [
+        "Do not do another agent's job",
+        "Sacred Rule 8",
+        "never take over the agent's work yourself",
+    ]
+
+    def test_sacred_rule_8_in_ceo_prompt(self):
+        repo_root = Path(__file__).resolve().parent.parent
+        ceo_prompt = (repo_root / "factory" / "agents" / "prompts" / "ceo.md").read_text()
+        missing = [p for p in self.REQUIRED_PHRASES if p not in ceo_prompt]
+        assert missing == [], (
+            "Sacred Rule 8 is missing or incomplete in ceo.md. Missing phrases:\n"
+            + "\n".join(f"  - {m}" for m in missing)
+        )
+
+    def test_sacred_rule_8_in_sacred_rules_section(self):
+        """Rule 8 must be in the numbered Sacred Rules list, not just mentioned elsewhere."""
+        repo_root = Path(__file__).resolve().parent.parent
+        ceo_prompt = (repo_root / "factory" / "agents" / "prompts" / "ceo.md").read_text()
+        assert '8. **Do not do another agent\'s job**' in ceo_prompt, (
+            "Sacred Rule 8 must be a numbered item (8.) in the Sacred Rules section"
+        )
