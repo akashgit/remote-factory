@@ -138,10 +138,10 @@ Instead of letting the Strategist pick what to work on, start a conversation wit
 
 ```bash
 # Study the project, discuss options, then execute
-uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive
+factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive
 
 # Seed the conversation with a topic
-uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive --focus "auth layer"
+factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive --focus "auth layer"
 ```
 
 The CEO studies the project — backlog, eval scores, open issues, recent experiment history — presents findings and recommendations, and iterates on your feedback. Once you agree on a direction, it transitions into Improve mode and executes.

@@ -412,9 +412,9 @@ Study an existing project and collaboratively decide what to work on next before
 
 Before talking to the user, gather context:
 
-1. **Read the project state**: `uv run python -m factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
-2. **Check recent history**: `uv run python -m factory history "$PROJECT_PATH"` — what was kept/reverted recently?
-3. **Run current eval**: `uv run python -m factory eval "$PROJECT_PATH"` — where are the weak dimensions?
+1. **Read the project state**: `factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
+2. **Check recent history**: `factory history "$PROJECT_PATH"` — what was kept/reverted recently?
+3. **Run current eval**: `factory eval "$PROJECT_PATH"` — where are the weak dimensions?
 4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
 5. **Read the backlog**: What items are pending? What was deferred from Build mode?
 
@@ -443,7 +443,7 @@ Respond naturally. If the user asks for deeper analysis, do it. If they want to 
 When the user approves a direction:
 
 1. **Formulate the work** as a focus directive or set of backlog items
-2. **If it's a single item**: add it to the backlog via `uv run python -m factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
+2. **If it's a single item**: add it to the backlog via `factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
 3. **If it's multiple items**: add each to the backlog, then proceed to Improve mode normally (the Strategist will prioritize from the backlog)
 4. **Do NOT re-run Phase 0e steps** — transition directly into the Improve mode pipeline (Step 0a: Observe)
 
