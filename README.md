@@ -64,7 +64,7 @@ Here's a complete workflow — from a one-line idea to a continuously improving 
 uv run python -m factory ceo "Build a personal homepage with a blog and projects section"
 ```
 
-The Factory creates a project directory at `~/factory-projects/build-a-personal-homepage-...`, initializes a git repo, and launches Build mode. Here's what happens:
+The Factory creates a project directory at `~/factory-projects/personal-homepage-blog-projects/`, initializes a git repo, and launches Build mode. The directory name is auto-derived from your description (filler words stripped, capped at 4 words). Override it with `--dir my-site` if you prefer a specific name. Here's what happens:
 
 1. The **Researcher** surveys similar projects, tech stacks, and architecture patterns
 2. The **Strategist** creates a phased implementation plan (scaffold first, then features)
@@ -82,7 +82,7 @@ After the first build, the Factory creates a backlog — `.factory/strategy/back
 
 ```bash
 # Check what's in the backlog
-uv run python -m factory backlog-list ~/factory-projects/build-a-personal-homepage-...
+uv run python -m factory backlog-list ~/factory-projects/personal-homepage-blog-projects
 ```
 
 ### Step 3: Improve it
@@ -90,7 +90,7 @@ uv run python -m factory backlog-list ~/factory-projects/build-a-personal-homepa
 Point the factory at the project again. It detects the existing `.factory/` directory and enters Improve mode:
 
 ```bash
-uv run python -m factory ceo ~/factory-projects/build-a-personal-homepage-...
+uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects
 ```
 
 Each improvement cycle:
@@ -112,7 +112,7 @@ Each improvement cycle:
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-uv run python -m factory ceo ~/factory-projects/build-a-personal-homepage-... --focus "add dark mode toggle"
+uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects --focus "add dark mode toggle"
 ```
 
 The entire pipeline scopes to that target: the Researcher focuses its research, the Strategist generates exactly one hypothesis, and after the keep/revert decision the cycle ends.

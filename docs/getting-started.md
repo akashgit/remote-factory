@@ -36,12 +36,18 @@ factory ceo "Build a CLI that converts CSV to JSON with streaming support"
 
 This will:
 
-1. Create a project directory at `~/factory-projects/build-a-cli-that-converts-csv-to-json-with-streami/`
+1. Create a project directory at `~/factory-projects/cli-converts-csv-json/`
 2. Initialize a git repo and scaffold the project
 3. Save your prompt as the build spec (`.factory/strategy/current.md`)
 4. Launch the CEO agent in Build mode
 
-The directory name is derived from your prompt (lowercased, slugified, truncated to 50 chars). Set `FACTORY_PROJECTS_DIR` to change the parent directory.
+The directory name is auto-derived from your prompt — filler words (verbs, articles, adjectives like "comprehensive" or "simple") are stripped and the result is capped at 4 words. Override with `--dir`:
+
+```bash
+factory ceo "Build a CLI that converts CSV to JSON" --dir csv2json
+```
+
+Set `FACTORY_PROJECTS_DIR` to change the parent directory.
 
 You can also pass a spec file or a GitHub URL:
 

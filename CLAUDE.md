@@ -121,7 +121,8 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 
 ```bash
 # Build — from idea, spec file, or GitHub URL
-factory ceo "Build a weather CLI"               # Raw idea as positional arg
+factory ceo "Build a weather CLI"               # Raw idea → ~/factory-projects/weather-cli/
+factory ceo "Build a weather CLI" --dir my-app  # Explicit dir name override
 factory ceo ~/ideas/spec.md                     # Spec file → new project
 factory ceo https://github.com/user/repo        # Clone and improve
 factory ceo "distributed eval runner" --mode interactive  # Brainstorm → build

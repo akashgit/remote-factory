@@ -1369,7 +1369,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # In interactive mode the positional arg is always an idea string, not a path.
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
-        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
@@ -1384,7 +1384,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "--focus targets existing backlog items.", file=sys.stderr)
             return 1
         research_ideation = raw_path
-        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
         project_path = _PROJECTS_DIR / slug
         _ensure_repo(project_path)
         context = None
@@ -1568,12 +1568,35 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
         return Path(tmp_dir).resolve(), None
 
     # 4. Raw prompt
-    slug = _slugify(dir_name) if dir_name else _slugify(raw[:50])
+    slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
     project_path = _PROJECTS_DIR / slug
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
+
+
+def _extract_project_name(description: str) -> str:
+    """Extract a concise 2-4 word project name from a verbose description."""
+    import re
+
+    text = description.lower().strip()
+    # Strip leading imperative verbs
+    text = re.sub(
+        r"^(build|create|make|implement|develop|design|write|add|set\s*up|construct|craft)\b\s*",
+        "", text,
+    )
+    # Strip articles and filler adjectives
+    _FILLER = {
+        "a", "an", "the", "that", "which", "with", "for", "and", "or", "using",
+        "comprehensive", "simple", "basic", "advanced", "new", "custom", "full",
+        "complete", "modern", "robust", "scalable", "lightweight", "minimal",
+        "fully", "featured", "production", "ready",
+    }
+    words = [w for w in re.split(r"\s+", text) if w and w not in _FILLER]
+    # Take up to 4 meaningful words
+    name = "-".join(words[:4])
+    return _slugify(name) if name else _slugify(description[:50])
 
 
 def _slugify(text: str) -> str:
