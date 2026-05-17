@@ -96,8 +96,8 @@ def _print_banner(mode: str = "improve") -> None:
 
 
 def cmd_home(args: argparse.Namespace) -> int:
-    """Print the factory installation root directory."""
-    factory_home = Path(__file__).resolve().parent.parent
+    """Print the factory package root (where templates/ lives)."""
+    factory_home = Path(__file__).resolve().parent
     print(factory_home)
     return 0
 
@@ -331,7 +331,7 @@ def cmd_message(args: argparse.Namespace) -> int:
     """Queue a message for the CEO agent."""
     from factory.messages import write_message
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     if not project_path.exists():
         print(f"Error: project path does not exist: {project_path}", file=sys.stderr)
         return 1
@@ -374,7 +374,7 @@ def cmd_notify(args: argparse.Namespace) -> int:
     from factory.notify.telegram import TelegramNotifier
     from factory.store import ExperimentStore
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     store = ExperimentStore(project_path)
     records = _run(store.load_history())
     notifier = TelegramNotifier()
@@ -796,7 +796,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
     from factory.state import detect_state
     from factory.store import ExperimentStore
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     store = ExperimentStore(project_path)
     records = _run(store.load_history())
 
@@ -1807,21 +1807,16 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         print(f"  tmux attach -t {session}")
         return 0
 
-    # Build the factory run command
-    factory_root = Path(__file__).resolve().parent.parent
+    # Build the factory run command — propagate env vars, use bare `factory`
     run_cmd_parts = [
-        f"cd {factory_root}",
-        "source .venv/bin/activate",
-        # Ensure Vertex AI env vars are set (inherit from current env)
-        f"export CLAUDE_CODE_USE_VERTEX={os.environ.get('CLAUDE_CODE_USE_VERTEX', '1')}",
-        f"export CLOUD_ML_REGION={os.environ.get('CLOUD_ML_REGION', 'your-region')}",
-        f"export ANTHROPIC_VERTEX_PROJECT_ID={os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', '')}",
-        # Ensure gcloud SDK is on PATH
+        f"export CLAUDE_CODE_USE_VERTEX={shlex.quote(os.environ.get('CLAUDE_CODE_USE_VERTEX', '1'))}",
+        f"export CLOUD_ML_REGION={shlex.quote(os.environ.get('CLOUD_ML_REGION', ''))}",
+        f"export ANTHROPIC_VERTEX_PROJECT_ID={shlex.quote(os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', ''))}",
         'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
     ]
 
     model = _resolve_model(args)
-    run_args = f"uv run python -m factory run {project_path}"
+    run_args = f"factory run {project_path}"
     if args.mode:
         run_args += f" --mode {args.mode}"
     if args.loop:

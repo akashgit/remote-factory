@@ -43,7 +43,7 @@ curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install
 factory --help
 ```
 
-If you installed from source without `uv tool install`, prefix all commands with `uv run python -m factory` instead of `factory`.
+If running from source without `uv tool install`, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI, bare `factory` works directly.
 
 ## CEO Agent Registration
 

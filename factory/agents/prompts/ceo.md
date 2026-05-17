@@ -119,8 +119,6 @@ Before calling `factory finalize`, read `.factory/reviews/archivist-checkpoints.
 
 **Why this matters:** Learnings that aren't recorded are lost forever. The Archivist is the factory's institutional memory. Every experiment that gets archived feeds ACE self-improvement. Every skipped archival is a learning the factory will never have. Skipping the Archivist even once violates Sacred Rule 7.
 
-**IMPORTANT:** All factory CLI commands must use `uv run python -m factory` (not bare `factory` or `python -m factory`) because dependencies are managed via uv and may not be in the system Python.
-
 ### CEO Review Gate — CRITICAL
 
 You are NOT a passive pipeline. After EVERY agent completes, you MUST review its output before proceeding. Agent outputs are automatically saved to `.factory/reviews/<role>-latest.md`.
@@ -210,7 +208,7 @@ Crash recovery is handled by you directly at Step 0 (Assess Sprint State). You r
 ### Step 1: Detect Project State
 
 ```bash
-uv run python -m factory detect "$PROJECT_PATH"
+factory detect "$PROJECT_PATH"
 ```
 
 | State                  | Meaning                                       | Route to       |
@@ -387,7 +385,7 @@ When the user approves the spec:
    factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
    Read .factory/strategy/current.md (the approved spec).
    Read .factory/strategy/research.md (the research).
-   Write project inception notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+   Write project inception notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
    ```
 4. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
 
@@ -414,9 +412,9 @@ Study an existing project and collaboratively decide what to work on next before
 
 Before talking to the user, gather context:
 
-1. **Read the project state**: `uv run python -m factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
-2. **Check recent history**: `uv run python -m factory history "$PROJECT_PATH"` — what was kept/reverted recently?
-3. **Run current eval**: `uv run python -m factory eval "$PROJECT_PATH"` — where are the weak dimensions?
+1. **Read the project state**: `factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
+2. **Check recent history**: `factory history "$PROJECT_PATH"` — what was kept/reverted recently?
+3. **Run current eval**: `factory eval "$PROJECT_PATH"` — where are the weak dimensions?
 4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
 5. **Read the backlog**: What items are pending? What was deferred from Build mode?
 
@@ -445,7 +443,7 @@ Respond naturally. If the user asks for deeper analysis, do it. If they want to 
 When the user approves a direction:
 
 1. **Formulate the work** as a focus directive or set of backlog items
-2. **If it's a single item**: add it to the backlog via `uv run python -m factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
+2. **If it's a single item**: add it to the backlog via `factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
 3. **If it's multiple items**: add each to the backlog, then proceed to Improve mode normally (the Strategist will prioritize from the backlog)
 4. **Do NOT re-run Phase 0e steps** — transition directly into the Improve mode pipeline (Step 0a: Observe)
 
@@ -539,7 +537,7 @@ Apply the **CEO Review Gate**:
 ```bash
 factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
 Read .factory/strategy/research.md and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to .factory/archive/sources/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write research notes to .factory/archive/sources/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -597,7 +595,7 @@ This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
 5. If PROCEED: write `PLAN APPROVED` in your verdict file, then persist backlog items:
 
 ```bash
-uv run python -m factory backlog-list "$PROJECT_PATH"
+factory backlog-list "$PROJECT_PATH"
 ```
 
 If backlog items were parsed, they are now in `.factory/strategy/backlog.md` and will survive future strategy rewrites. Continue to B2.
@@ -607,7 +605,7 @@ If backlog items were parsed, they are now in `.factory/strategy/backlog.md` and
 ```bash
 factory agent archivist --task "Record the CEO-approved build plan for $PROJECT_PATH.
 Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
-The CEO has reviewed and approved this plan. Write project notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+The CEO has reviewed and approved this plan. Write project notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -650,7 +648,7 @@ factory agent archivist --task "Record build progress for $PROJECT_PATH.
 3. Read .factory/strategy/current.md for the plan
 4. Write progress notes to .factory/archive/
 5. Record what worked, what failed, and any decisions made
-6. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+6. Run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -718,7 +716,7 @@ Unit tests passing means nothing if the project doesn't work as a whole. Before 
 Before leaving Build mode, extract any items that were deferred (only those requiring human intervention) so they become the project's backlog for Improve mode.
 
 ```bash
-uv run python -m factory backlog-list "$PROJECT_PATH"
+factory backlog-list "$PROJECT_PATH"
 ```
 
 This reads the `## Deferred` section from `.factory/strategy/current.md`, merges with any existing `.factory/strategy/backlog.md`, and writes the combined list back. If no backlog items exist, this is a no-op.
@@ -726,7 +724,7 @@ This reads the `## Deferred` section from `.factory/strategy/current.md`, merges
 ### B6: Re-detect state
 
 ```bash
-uv run python -m factory detect "$PROJECT_PATH"
+factory detect "$PROJECT_PATH"
 ```
 
 If state advanced to `no_factory`, continue to **Discover mode**. If still `incomplete`, the Builder can continue with the next phase.
@@ -739,7 +737,7 @@ Auto-discover eval dimensions and generate the eval harness.
 
 1. Run discovery:
    ```bash
-   uv run python -m factory discover "$PROJECT_PATH"
+   factory discover "$PROJECT_PATH"
    ```
 
 2. Verify the output makes sense:
@@ -773,7 +771,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 4. Create `factory.md` from the template:
    ```bash
-   FACTORY_HOME="$(uv run python -m factory home)"
+   FACTORY_HOME="$(factory home)"
    cp "$FACTORY_HOME/templates/factory_config.md" "$PROJECT_PATH/factory.md"
    ```
    Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
@@ -789,12 +787,12 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
 
 5. Initialize the factory store:
    ```bash
-   uv run python -m factory init "$PROJECT_PATH"
+   factory init "$PROJECT_PATH"
    ```
 
 6. Run baseline eval:
    ```bash
-   uv run python -m factory eval "$PROJECT_PATH"
+   factory eval "$PROJECT_PATH"
    ```
 
 7. Commit:
@@ -848,7 +846,7 @@ factory log "$PROJECT_PATH" "sprint.started" --data '{"mode": "improve"}'
 **0a. Local Study + Cross-Project Insights**
 
 ```bash
-uv run python -m factory study "$PROJECT_PATH" $FOCUS_FLAG
+factory study "$PROJECT_PATH" $FOCUS_FLAG
 ```
 
 Where `$FOCUS_FLAG` is either empty (no focus) or `--focus "<target>"` from the Focus Directive in your task. In targeted mode, this filters observations to show only the target backlog item and overrides the hypothesis budget to single-item mode.
@@ -875,7 +873,7 @@ Apply the **CEO Review Gate**:
 **0c. MANDATORY Archivist — record research findings (DO NOT SKIP)**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to .factory/archive/sources/. Update the project dashboard. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Researcher's findings. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to .factory/archive/sources/. Update the project dashboard. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -908,7 +906,7 @@ Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for
 $FOCUS_DIRECTIVE
 
 Context:
-$(uv run python -m factory history "$PROJECT_PATH" 2>/dev/null || echo 'No experiments yet')
+$(factory history "$PROJECT_PATH" 2>/dev/null || echo 'No experiments yet')
 
 $(cat "$PROJECT_PATH/factory.md")
 
@@ -922,7 +920,7 @@ $(cat "$PROJECT_PATH/.factory/strategy/current.md" 2>/dev/null || echo 'No prior
 
 $(cd "$PROJECT_PATH" && git log --oneline -20)
 
-$(uv run python -m factory eval "$PROJECT_PATH")
+$(factory eval "$PROJECT_PATH")
 
 Write hypotheses to .factory/strategy/current.md. Each must be specific, scoped (one PR's worth), tied to observations, with expected impact on eval dimensions. Tag backlog items with **Backlog item:** and new items with **New:**." --project "$PROJECT_PATH" --timeout 300
 ```
@@ -954,7 +952,7 @@ This is a **hard gate**. Do NOT proceed to Step 2 until you approve the hypothes
 **MANDATORY Archivist — record strategy decisions (DO NOT SKIP):**
 
 ```bash
-factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to .factory/archive/strategies/. Update the project dashboard at .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Strategist's decisions and CEO approval. Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md. Write a strategy snapshot to .factory/archive/strategies/. Update the project dashboard at .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -976,7 +974,7 @@ For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 #### 2a. Baseline Eval (Evaluator Agent)
 
 ```bash
-factory agent evaluator --task "Run baseline eval for $PROJECT_PATH. Execute: uv run python -m factory eval $PROJECT_PATH. Parse and report composite score and per-dimension breakdown." --project "$PROJECT_PATH"
+factory agent evaluator --task "Run baseline eval for $PROJECT_PATH. Execute: factory eval $PROJECT_PATH. Parse and report composite score and per-dimension breakdown." --project "$PROJECT_PATH"
 ```
 
 Save the output as `score_before`. If eval crashes, see Error Recovery below.
@@ -984,7 +982,7 @@ Save the output as `score_before`. If eval crashes, see Error Recovery below.
 #### 2b. Begin Experiment
 
 ```bash
-uv run python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
+factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 Save the printed experiment ID as `$EXP_ID`.
@@ -1160,7 +1158,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 ```bash
 factory agent archivist --task "Record the Builder's work for experiment $EXP_ID.
 Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
-Write implementation notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write implementation notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1179,7 +1177,7 @@ factory log "$PROJECT_PATH" "phase.build.completed" --data "{\"exp_id\": $EXP_ID
 BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
 factory agent reviewer --task "Review the Builder's changes for experiment $EXP_ID.
 Read the CEO's preliminary review at .factory/reviews/ceo-verdict-builder.md.
-1. Run guard check: uv run python -m factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-scope
+1. Run guard check: factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-scope
 2. Read the PR diff: gh pr diff <pr-number>
 3. Assess code quality against acceptance criteria
 4. Print verdict: PASS or FAIL with details" --project "$PROJECT_PATH"
@@ -1204,7 +1202,7 @@ Do NOT blindly trust the Reviewer. Validate:
 
 ```bash
 factory agent evaluator --task "Run post-change eval for $PROJECT_PATH on the PR branch.
-Execute: uv run python -m factory eval $PROJECT_PATH
+Execute: factory eval $PROJECT_PATH
 Report composite score and per-dimension breakdown.
 Compare against baseline score: $SCORE_BEFORE
 State whether the hypothesis was validated." --project "$PROJECT_PATH"
@@ -1247,7 +1245,7 @@ factory log "$PROJECT_PATH" "phase.eval.completed" --data "{\"exp_id\": $EXP_ID}
 
 ```bash
 BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
-uv run python -m factory precheck "$PROJECT_PATH" \
+factory precheck "$PROJECT_PATH" \
     --score-before $SCORE_BEFORE \
     --score-after $SCORE_AFTER \
     --hypothesis "<hypothesis text>" \
@@ -1304,7 +1302,7 @@ rm -f /tmp/factory-final-review-$PR_NUM.txt
 gh pr ready $PR_NUM
 
 # Post structured review on the PR (this approves the PR on GitHub)
-uv run python -m factory review \
+factory review \
     --verdict KEEP \
     --reason "<one-sentence reason>" \
     --score-before $SCORE_BEFORE \
@@ -1328,13 +1326,13 @@ Before removing the item AND before calling finalize, verify the delivered work 
 3. Judge: does the delivered work FULLY satisfy what the backlog item asks for? Set `BACKLOG_CLEARED` accordingly:
    - **YES** (fully solved): `BACKLOG_CLEARED=yes`. Remove it.
      ```bash
-     uv run python -m factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
+     factory backlog-remove "$PROJECT_PATH" "<exact backlog item text>"
      ```
    - **NO** (not solved, only prerequisites): `BACKLOG_CLEARED=no`. Do NOT remove. Note what's still missing in the verdict. The item stays in the backlog for the next cycle.
    - **PARTIAL** (some progress but not complete): `BACKLOG_CLEARED=partial`. Update the item to reflect remaining work.
      ```bash
-     uv run python -m factory backlog-remove "$PROJECT_PATH" "<old item text>"
-     uv run python -m factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
+     factory backlog-remove "$PROJECT_PATH" "<old item text>"
+     factory backlog-add "$PROJECT_PATH" "<updated text reflecting what remains>"
      ```
 
 If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
@@ -1342,7 +1340,7 @@ If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
 **Finalize the experiment (after backlog verification):**
 
 ```bash
-uv run python -m factory finalize "$PROJECT_PATH" \
+factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
@@ -1353,7 +1351,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
 
 ```bash
 # Post structured review explaining why
-uv run python -m factory review \
+factory review \
     --verdict REVERT \
     --reason "<which check failed and why>" \
     --score-before $SCORE_BEFORE \
@@ -1366,7 +1364,7 @@ uv run python -m factory review \
 # Close PR and finalize
 gh pr close <pr-number>
 cd "$PROJECT_PATH" && git checkout main
-uv run python -m factory finalize "$PROJECT_PATH" \
+factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
@@ -1394,11 +1392,11 @@ This metadata feeds the CEO's own playbook evolution via ACE.
 
 ```bash
 factory agent archivist --task "Record experiment $EXP_ID outcome (verdict: $VERDICT).
-1. Read experiment history: uv run python -m factory history $PROJECT_PATH
+1. Read experiment history: factory history $PROJECT_PATH
 2. Write experiment note to .factory/archive/experiments/ with decision rationale: score_before=$SCORE_BEFORE, score_after=$SCORE_AFTER
 3. Update the project dashboard at .factory/archive/
 4. Record any cross-project patterns observed
-5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+5. Run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1421,7 +1419,7 @@ This MUST happen before proceeding to the next hypothesis or to Step 3.
 After all experiments are processed, check if the Strategist added new items during this cycle. Read `.factory/strategy/current.md` for a `## New Backlog Items` section. For each new item listed, persist it:
 
 ```bash
-uv run python -m factory backlog-add "$PROJECT_PATH" "<new item text>"
+factory backlog-add "$PROJECT_PATH" "<new item text>"
 ```
 
 This ensures new ideas from the Strategist survive into future cycles.
@@ -1442,11 +1440,11 @@ Then spawn the final archive:
 
 ```bash
 factory agent archivist --task "Final archive for this factory cycle on $PROJECT_PATH.
-1. Read full experiment history: uv run python -m factory history $PROJECT_PATH
+1. Read full experiment history: factory history $PROJECT_PATH
 2. Ensure all experiments from this cycle have archive notes in .factory/archive/experiments/
 3. Update the project dashboard at .factory/archive/
 4. Write a cycle summary to .factory/archive/
-5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH" --timeout 300
+5. Run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH" --timeout 300
 ```
 
 Then write final checkpoint:
@@ -1466,7 +1464,7 @@ factory log "$PROJECT_PATH" "sprint.completed"
 Generate the end-of-cycle session summary:
 
 ```bash
-uv run python -m factory summary "$PROJECT_PATH"
+factory summary "$PROJECT_PATH"
 ```
 
 This writes `.factory/reviews/session-summary.md` with:
@@ -1485,7 +1483,7 @@ Review the summary output. If it reveals critical issues you missed, address the
 ### Step 4: Notify
 
 ```bash
-uv run python -m factory notify "$PROJECT_PATH"
+factory notify "$PROJECT_PATH"
 ```
 
 ### Step 5: Commit Factory State
@@ -1550,7 +1548,7 @@ Establish the starting point by running the system and recording the baseline me
 
 3. **Pre-flight validation (MANDATORY).** Before spawning any agents, validate the research config:
    ```bash
-   uv run python -m factory validate-research "$PROJECT_PATH"
+   factory validate-research "$PROJECT_PATH"
    ```
    If validation fails (non-empty error list), STOP. Fix the config issues before proceeding. Common errors: empty `fixed_surfaces` (no leakage guards), `mutable_surfaces`/`fixed_surfaces` overlap (ambiguous constraints), patterns matching no files (stale config).
 
@@ -1617,7 +1615,7 @@ Produce failure_analysis.md in the run directory AND print a summary to stdout."
 ```bash
 factory agent archivist --task "Record the Failure Analyst's findings for $PROJECT_PATH research cycle.
 Read .factory/research/runs/$CYCLE_ID/failure_analysis.md and .factory/reviews/ceo-verdict-failure_analyst.md.
-Write failure analysis notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write failure analysis notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1675,7 +1673,7 @@ Apply the **CEO Review Gate**:
 ```bash
 factory agent archivist --task "Record the Researcher's failure-targeted findings for $PROJECT_PATH research cycle.
 Read .factory/strategy/research.md, .factory/research/runs/$CYCLE_ID/failure_analysis.md, and .factory/reviews/ceo-verdict-researcher.md.
-Write research notes to .factory/archive/sources/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write research notes to .factory/archive/sources/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1715,7 +1713,7 @@ Each hypothesis must name specific files from mutable_surfaces to modify.
 
 $(cat $PROJECT_PATH/.factory/strategy/research.md 2>/dev/null || echo 'No prior research')
 
-$(uv run python -m factory history $PROJECT_PATH 2>/dev/null || echo 'No experiments yet')
+$(factory history $PROJECT_PATH 2>/dev/null || echo 'No experiments yet')
 
 Write hypotheses to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
@@ -1730,7 +1728,7 @@ This is a **hard gate**. The Builder MUST NOT start until you approve.
    - No hypothesis proposes changes to eval infrastructure, test data, or ground truth
 3. **Ground truth leakage scan (MANDATORY):** For each hypothesis, run the leakage scanner:
    ```bash
-   uv run python -m factory leakage-check "$PROJECT_PATH" --text "<hypothesis text>"
+   factory leakage-check "$PROJECT_PATH" --text "<hypothesis text>"
    ```
    If risk level is `medium` or `high` → **REDIRECT immediately**. The hypothesis encodes ground truth (via negation hints, specific values, or token overlap with fixed surfaces). Tell the Strategist which hypothesis failed and why — it must be rephrased to describe capability improvements, not answers.
 4. Verify hypotheses target the dominant failure modes from the Failure Analyst's report
@@ -1745,7 +1743,7 @@ This is a **hard gate**. The Builder MUST NOT start until you approve.
 ```bash
 factory agent archivist --task "Record the Strategist's research hypotheses and CEO approval.
 Read .factory/strategy/current.md and .factory/reviews/ceo-verdict-strategist.md.
-Write strategy snapshot to .factory/archive/strategies/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write strategy snapshot to .factory/archive/strategies/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1766,7 +1764,7 @@ For each approved hypothesis, sequentially:
 #### R3a. Begin Experiment and Create Issue
 
 ```bash
-uv run python -m factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
+factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 Save the printed experiment ID as `$EXP_ID`.
@@ -1828,7 +1826,7 @@ Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one ad
 2. **Ground truth leakage scan on PR diff (MANDATORY):** The Builder may have read fixed surface files (no file modification = Layer 1 doesn't fire) and embedded ground-truth-derived logic in code. Scan the diff using a temp file (do NOT use shell variable expansion — diffs contain special chars that break `"$DIFF_TEXT"`):
    ```bash
    gh pr diff $PR_NUM > /tmp/factory-pr-diff-$PR_NUM.txt
-   uv run python -m factory leakage-check "$PROJECT_PATH" --text-file /tmp/factory-pr-diff-$PR_NUM.txt
+   factory leakage-check "$PROJECT_PATH" --text-file /tmp/factory-pr-diff-$PR_NUM.txt
    rm -f /tmp/factory-pr-diff-$PR_NUM.txt
    ```
    If risk level is `medium` or `high` → **REDIRECT** the Builder: "PR diff contains tokens/values that match ground truth files. Remove ground-truth-derived logic and re-implement from first principles using only the problem description."
@@ -1840,7 +1838,7 @@ Apply the standard CEO Review Gate (same as Improve mode 2d-review), with one ad
 ```bash
 factory agent archivist --task "Record the Builder's work for research experiment $EXP_ID.
 Read .factory/reviews/ceo-verdict-builder.md and the PR diff.
-Write implementation notes to .factory/archive/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write implementation notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1880,7 +1878,7 @@ The verdict decision is driven by the research target metric, with hygiene as a 
 Run the standard eval to check hygiene dimensions:
 
 ```bash
-uv run python -m factory eval "$PROJECT_PATH"
+factory eval "$PROJECT_PATH"
 ```
 
 Read the JSON output and compare each hygiene dimension (tests, lint, type_check, coverage) against the baseline scores captured before the experiment. **If ANY hygiene dimension regresses:** mandatory revert, even if the research target improved. Hygiene is a gate, not a tradeoff.
@@ -1900,7 +1898,7 @@ Run the standard precheck with surface guard enabled:
 
 ```bash
 BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
-uv run python -m factory precheck "$PROJECT_PATH" \
+factory precheck "$PROJECT_PATH" \
     --score-before $SCORE_BEFORE \
     --score-after $SCORE_AFTER \
     --hypothesis "$HYPOTHESIS" \
@@ -1927,7 +1925,7 @@ If precheck fails → mandatory revert.
 
 ```bash
 # Approve the PR (do NOT merge — leave for human review)
-uv run python -m factory review \
+factory review \
     --verdict KEEP \
     --reason "research target $METRIC: $BASELINE_METRIC → $METRIC_AFTER (target: $TARGET)" \
     --score-before $SCORE_BEFORE \
@@ -1939,7 +1937,7 @@ uv run python -m factory review \
     --pr $PR_NUM
 
 # Finalize
-uv run python -m factory finalize "$PROJECT_PATH" \
+factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
     --issue $ISSUE_NUM --pr $PR_NUM \
@@ -1949,7 +1947,7 @@ uv run python -m factory finalize "$PROJECT_PATH" \
 **If REVERT:**
 
 ```bash
-uv run python -m factory review \
+factory review \
     --verdict REVERT \
     --reason "$REVERT_REASON" \
     --score-before $SCORE_BEFORE \
@@ -1962,7 +1960,7 @@ uv run python -m factory review \
 gh pr close $PR_NUM
 cd "$PROJECT_PATH" && git checkout $TARGET_BRANCH
 
-uv run python -m factory finalize "$PROJECT_PATH" \
+factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
     --issue $ISSUE_NUM \
@@ -1984,7 +1982,7 @@ If none of the above: continue to the next hypothesis (loop back to R3).
 ```bash
 factory agent archivist --task "Record research experiment $EXP_ID outcome (verdict: $VERDICT).
 Research target: $METRIC = $METRIC_AFTER (baseline: $BASELINE_METRIC, target: $TARGET).
-Write experiment note with decision rationale to .factory/archive/experiments/. Then run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+Write experiment note with decision rationale to .factory/archive/experiments/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -2046,13 +2044,13 @@ After the Improve loop completes (all experiments finalized), run ACE to distill
 #### M1: Collect Cross-Project Data
 
 ```bash
-uv run python -m factory insights "$PROJECT_PATH"
+factory insights "$PROJECT_PATH"
 ```
 
 #### M2: Run ACE for All Roles
 
 ```bash
-uv run python -m factory ace "$PROJECT_PATH"
+factory ace "$PROJECT_PATH"
 ```
 
 This analyzes experiment outcomes across all managed projects (including the experiments just run in Phase 1) and evolves per-agent playbooks with empirically-backed DO/DON'T rules.
@@ -2065,7 +2063,7 @@ factory agent archivist --task "Record ACE playbook evolution.
 2. Write a playbook evolution note to .factory/archive/
 3. Record which bullets were added, removed, or had counters updated
 4. Update the project dashboard at .factory/archive/
-5. Run: uv run python -m factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+5. Run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Note: Evolved playbooks are stored in `~/.factory/playbooks/` (user-local), NOT in the factory source tree. They are never committed to the factory repo — they are personal to each user's experiment history.
@@ -2150,7 +2148,6 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 5. **Do not skip the eval step** — every change must be scored before it can be kept
 6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
-8. **Do not do another agent's job** — the CEO is an executive orchestrator. It delegates ALL technical work to specialist agents (Researcher, Builder, Reviewer, Evaluator, Archivist, etc.) and reviews their output. If an agent times out or fails, retry with adjusted parameters or abort — never take over the agent's work yourself. Reading files to review agent output is fine; doing the agent's actual task is a violation.
 
 ---
 
@@ -2193,7 +2190,7 @@ If the Builder doesn't produce a PR:
 2. If builder posted a question, answer it and re-invoke
 3. If builder crashed, finalize as error:
    ```bash
-   uv run python -m factory finalize "$PROJECT_PATH" --id $EXP_ID --verdict error --notes "ceo:error builder_failed=true reason=<summary>"
+   factory finalize "$PROJECT_PATH" --id $EXP_ID --verdict error --notes "ceo:error builder_failed=true reason=<summary>"
    ```
 4. Move to next hypothesis — do not retry the same failure more than once
 
@@ -2257,7 +2254,7 @@ Write `$PROJECT_PATH/.factory/strategy/current.md` with:
 
 If prior details are lost:
 1. Read `$PROJECT_PATH/.factory/strategy/current.md`
-2. Run `uv run python -m factory history "$PROJECT_PATH"`
+2. Run `factory history "$PROJECT_PATH"`
 3. Check open issues/PRs: `gh issue list --state open`
 4. Continue from "Next action" in the strategy file
 

@@ -5,6 +5,7 @@ import json
 import signal
 import threading
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import patch, AsyncMock
 
 import pytest
@@ -1346,3 +1347,124 @@ class TestBuildCeoTaskInteractive:
     def test_existing_mode_is_improve(self, tmp_path):
         task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
         assert "Mode: improve" in task
+
+
+class TestCmdHomeReturnsFactoryDir:
+    def test_cmd_home_returns_package_root(self, capsys):
+        from factory.cli import cmd_home
+        import argparse
+        result = cmd_home(argparse.Namespace())
+        assert result == 0
+        output = capsys.readouterr().out.strip()
+        assert "site-packages" not in output or Path(output).is_dir()
+        assert (Path(output) / "templates").is_dir()
+        assert (Path(output) / "cli.py").is_file()
+
+
+class TestCmdTmuxBareCLI:
+    def test_tmux_command_uses_bare_factory(self):
+        """cmd_tmux generates a shell command using bare 'factory run', not uv run."""
+        from factory.cli import cmd_tmux
+        import argparse
+
+        with patch("factory.cli._tmux_available", return_value=True), \
+             patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {"returncode": 1})()  # has-session fails
+            mock_run.side_effect = [
+                type("R", (), {"returncode": 1})(),  # has-session → no existing session
+                type("R", (), {"returncode": 0})(),   # new-session → success
+            ]
+            args = argparse.Namespace(
+                path="/tmp/test-project",
+                session=None,
+                attach=False,
+                mode=None,
+                loop=True,
+                interval=None,
+                max_cycles=None,
+                model=None,
+                runner=None,
+                no_github=False,
+                profile=None,
+            )
+            result = cmd_tmux(args)
+            assert result == 0
+
+            new_session_call = mock_run.call_args_list[1]
+            shell_cmd = new_session_call[0][0][-1]  # last arg is the shell command
+            assert "factory run" in shell_cmd
+            assert "uv run python -m factory" not in shell_cmd
+            assert "cd " not in shell_cmd
+            assert "source .venv/bin/activate" not in shell_cmd
+
+
+class TestPluginAgentsDirGuard:
+    def test_plugin_agents_dir_none_when_missing(self, tmp_path):
+        """_PLUGIN_AGENTS_DIR is None when the agents/ dir doesn't exist."""
+        from factory.agents import plugin
+        original = plugin._PLUGIN_AGENTS_DIR
+        try:
+            plugin._PLUGIN_AGENTS_DIR = None
+            result = plugin.check_agents_in_sync()
+            assert result == []
+        finally:
+            plugin._PLUGIN_AGENTS_DIR = original
+
+
+class TestResolveProjectPath:
+    def test_cmd_notify_resolves_relative_path(self, tmp_path, capsys):
+        """cmd_notify resolves relative paths so .name is non-empty."""
+        from factory.cli import cmd_notify
+        import argparse
+
+        with patch("factory.cli._run", side_effect=lambda c: []), \
+             patch("factory.notify.telegram.TelegramNotifier") as MockNotifier:
+            mock_instance = MockNotifier.return_value
+            mock_instance.send_digest = AsyncMock()
+            args = argparse.Namespace(path=str(tmp_path))
+            cmd_notify(args)
+            call_args = mock_instance.send_digest.call_args[0]
+            assert call_args[0] != ""
+
+    def test_cmd_archive_resolves_relative_path(self, tmp_path, capsys):
+        """cmd_archive resolves paths and uses non-empty project_path.name."""
+        from factory.cli import cmd_archive
+        import argparse
+
+        project_path = tmp_path / "my-project"
+        project_path.mkdir()
+        (project_path / ".factory").mkdir()
+
+        with patch("factory.cli._run", side_effect=lambda c: []):
+            args = argparse.Namespace(path=str(project_path))
+            result = cmd_archive(args)
+            assert result == 0
+            output = capsys.readouterr().out.strip()
+            assert "Nothing to archive" in output
+
+
+class TestNoBareUvRunPythonMFactory:
+    """Guard: no file should use 'uv run python -m factory' — use bare 'factory' instead."""
+
+    SCAN_GLOBS = [
+        "factory/agents/prompts/*.md",
+        "factory/cli.py",
+        "SKILL.md",
+        "README.md",
+        "docs/**/*.md",
+    ]
+
+    def test_no_hardcoded_uv_run_python_m_factory(self):
+        import glob
+        repo_root = Path(__file__).resolve().parent.parent
+        violations: list[str] = []
+        for pattern in self.SCAN_GLOBS:
+            for filepath in glob.glob(str(repo_root / pattern), recursive=True):
+                with open(filepath) as f:
+                    for lineno, line in enumerate(f, 1):
+                        if "uv run python -m factory" in line:
+                            violations.append(f"{Path(filepath).relative_to(repo_root)}:{lineno}")
+        assert violations == [], (
+            "Found 'uv run python -m factory' — use bare 'factory' instead:\n"
+            + "\n".join(f"  {v}" for v in violations)
+        )
