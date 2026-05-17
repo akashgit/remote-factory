@@ -1578,7 +1578,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
 
 
 _FILLER_WORDS = frozenset({
-    "a", "an", "the", "that", "which", "with", "for", "and", "or", "using",
+    "a", "an", "the", "that", "which", "with", "for", "and", "or", "to", "using",
     "comprehensive", "simple", "basic", "advanced", "new", "custom", "full",
     "complete", "modern", "robust", "scalable", "lightweight", "minimal",
     "fully", "featured", "production", "ready",
