@@ -1974,7 +1974,6 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     return mode
 
 
-
 def _build_ceo_task(
     project_path: Path,
     mode: str,
