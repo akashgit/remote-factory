@@ -67,6 +67,16 @@ class TestCreateAndLoad:
         create_profile("p", {"K": "V"})
         assert d.exists()
 
+    def test_profile_file_permissions(self, profiles_dir: Path) -> None:
+        path = create_profile("work", {"ANTHROPIC_API_KEY": "sk-ant-secret"})
+        mode = path.stat().st_mode & 0o777
+        assert mode == 0o600, f"Profile file should be 0o600 (owner r/w only), got {oct(mode)}"
+
+    def test_profiles_dir_permissions(self, profiles_dir: Path) -> None:
+        create_profile("work", {"K": "v"})
+        mode = profiles_dir.stat().st_mode & 0o777
+        assert mode == 0o700, f"Profiles dir should be 0o700 (owner only), got {oct(mode)}"
+
 
 class TestApplyProfile:
     def test_apply_sets_environ(self, profiles_dir: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,6 +225,59 @@ class TestCLIProfileCommand:
         parser = build_parser()
         args = parser.parse_args(["ceo", "/some/path", "--profile", "work"])
         assert args.profile == "work"
+
+
+class TestApplyProfileHelper:
+    """Test the _apply_profile CLI helper directly."""
+
+    def test_apply_profile_returns_true_on_success(
+        self, profiles_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from argparse import Namespace
+
+        import factory.cli as cli_mod
+        from factory.cli import _apply_profile
+
+        create_profile("work", {"K": "v"})
+        monkeypatch.setattr(cli_mod, "_apply_profile", _apply_profile)
+        monkeypatch.setattr("factory.profile.PROFILES_DIR", profiles_dir)
+        args = Namespace(profile="work")
+        assert _apply_profile(args) is True
+
+    def test_apply_profile_returns_false_on_missing_profile(
+        self, profiles_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+    ) -> None:
+        from argparse import Namespace
+
+        from factory.cli import _apply_profile
+
+        monkeypatch.setattr("factory.profile.PROFILES_DIR", profiles_dir)
+        args = Namespace(profile="nonexistent")
+        result = _apply_profile(args)
+        assert result is False
+        assert "Error:" in capsys.readouterr().err
+
+    def test_apply_profile_returns_true_when_no_profile(self) -> None:
+        from argparse import Namespace
+
+        from factory.cli import _apply_profile
+
+        args = Namespace(profile=None)
+        assert _apply_profile(args) is True
+
+    def test_apply_profile_no_sys_exit_on_error(
+        self, profiles_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """_apply_profile must not call sys.exit — it returns False instead."""
+        from argparse import Namespace
+
+        from factory.cli import _apply_profile
+
+        monkeypatch.setattr("factory.profile.PROFILES_DIR", profiles_dir)
+        args = Namespace(profile="does-not-exist")
+        # This must NOT raise SystemExit
+        result = _apply_profile(args)
+        assert result is False
 
     def test_run_profile_flag_parsed(self) -> None:
         from factory.cli import build_parser

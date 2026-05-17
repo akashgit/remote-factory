@@ -40,7 +40,7 @@ def load_profile(name: str) -> dict[str, str]:
 def apply_profile(name: str) -> dict[str, str]:
     """Load a profile and apply its env vars to os.environ.
 
-    Returns the env vars that were applied (values masked for secrets).
+    Returns the raw env vars that were applied.
     """
     env_vars = load_profile(name)
     for key, value in env_vars.items():
@@ -60,10 +60,14 @@ def create_profile(name: str, env: dict[str, str]) -> Path:
 
     Returns the path to the created profile file.
     """
-    PROFILES_DIR.mkdir(parents=True, exist_ok=True)
+    PROFILES_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # Ensure existing dirs also have the right permissions
+    PROFILES_DIR.chmod(0o700)
     path = _profile_path(name)
     data = {"env": env}
     path.write_text(json.dumps(data, indent=2) + "\n")
+    # Restrict to owner read/write only — profiles may contain API keys
+    path.chmod(0o600)
     return path
 
 

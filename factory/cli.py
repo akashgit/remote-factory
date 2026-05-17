@@ -1335,7 +1335,8 @@ def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
 
-    _apply_profile(args)
+    if not _apply_profile(args):
+        return 1
     role = args.role
     task = args.task
     project_path = Path(args.project).resolve()
@@ -1394,7 +1395,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
 
-    _apply_profile(args)
+    if not _apply_profile(args):
+        return 1
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
     headless = getattr(args, "headless", False)
@@ -1601,19 +1603,23 @@ def _resolve_runner(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _apply_profile(args: argparse.Namespace) -> None:
-    """If --profile was given, load and apply it to os.environ (exits on error)."""
+def _apply_profile(args: argparse.Namespace) -> bool:
+    """If --profile was given, load and apply it to os.environ.
+
+    Returns True on success (or when no profile is specified), False on error.
+    """
     name = (getattr(args, "profile", None) or "").strip()
     if not name:
-        return
+        return True
     from factory.profile import apply_profile
     try:
         applied = apply_profile(name)
         keys = ", ".join(sorted(applied))
         print(f"Profile '{name}' loaded ({keys})", file=sys.stderr)
+        return True
     except (FileNotFoundError, ValueError) as e:
         print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
+        return False
 
 
 _PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
@@ -2281,7 +2287,8 @@ def _run_single_cycle(
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
-    _apply_profile(args)
+    if not _apply_profile(args):
+        return 1
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
     loop = getattr(args, "loop", False)
