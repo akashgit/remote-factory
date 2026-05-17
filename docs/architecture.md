@@ -18,13 +18,13 @@ A dedicated Claude Code agent that owns the full workflow. Spawned via `factory 
 - Spawns specialist agents as subprocesses
 - Makes keep/revert decisions based on eval scores
 - Ensures mandatory archival after every cycle
-- Maintains a checkpoint for crash-resilient resume
+- Runs Scrum Master standup for crash-resilient resume via event log
 
 Prompt: `factory/agents/prompts/ceo.md`
 
 ### Layer 3: Specialist Agents
 
-Eight specialist Claude Code subprocesses, each with a narrow responsibility:
+Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
@@ -36,6 +36,7 @@ Eight specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
+| **Scrum Master** | Standup: read event log + project state, produce sprint status report for CEO | `factory agent scrummaster --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
@@ -182,7 +183,7 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/strategy.py` | FEEC priority heuristic |
 | `factory/study.py` | Interaction log analysis |
 | `factory/insights.py` | Cross-project pattern analysis |
-| `factory/checkpoint.py` | CEO checkpoint save/load |
+| `factory/checkpoint.py` | CEO checkpoint save/load (legacy, debugging) |
 | `factory/analysis.py` | Experiment comparison (diff, explain) |
 | `factory/registry.py` | Global project registry (`~/.factory/registry.json`) |
 | `factory/report.py` | Performance report generation and loading |

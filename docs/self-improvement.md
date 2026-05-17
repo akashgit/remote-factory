@@ -121,7 +121,7 @@ ACE analyzes this across **all factory-managed projects** (discovered via the gl
 
 ### What ACE Produces
 
-For each of the 7 agent roles, ACE generates DO and DON'T rules backed by empirical evidence:
+For each of the agent roles, ACE generates DO and DON'T rules backed by empirical evidence:
 
 ```markdown
 ### DO
@@ -266,7 +266,7 @@ This is the factory eating its own dogfood — the same process it uses on targe
 After the improve cycle, the CEO runs ACE across all managed projects:
 
 1. **Update counters**: Load all experiment records, update `helpful`/`harmful` counters on existing playbook bullets
-2. **Reflect**: Analyze cross-project experiment data, generate candidate bullets for all 7 roles
+2. **Reflect**: Analyze cross-project experiment data, generate candidate bullets for all agent roles
 3. **Curate**: Merge candidates with existing playbooks, deduplicate (75% similarity threshold), prune net-negative rules, cap at 15 items per role
 
 ```bash
