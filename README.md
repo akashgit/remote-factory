@@ -132,7 +132,23 @@ gh issue create --title "Add contact form" --body "Simple form with email notifi
 uv run python -m factory ceo ~/factory-projects/... --prompt ~/ideas/performance-spec.md
 ```
 
-### Step 5: Run it continuously
+### Step 5: Discuss what to do next (interactive mode)
+
+Instead of letting the Strategist pick what to work on, start a conversation with the CEO:
+
+```bash
+# Study the project, discuss options, then execute
+uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive
+
+# Seed the conversation with a topic
+uv run python -m factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive --focus "auth layer"
+```
+
+The CEO studies the project — backlog, eval scores, open issues, recent experiment history — presents findings and recommendations, and iterates on your feedback. Once you agree on a direction, it transitions into Improve mode and executes.
+
+Interactive mode also works for new projects (pass an idea string instead of a path), where it enters an ideation loop to refine your idea into a buildable spec before building.
+
+### Step 6: Run it continuously
 
 For unattended operation, wrap the CEO in a heartbeat loop:
 
@@ -365,6 +381,7 @@ factory agent researcher --task "..." --project ~/my-project --profile bob
 ```bash
 # Core workflow
 factory ceo <path|url|idea>             # Launch the CEO agent
+factory ceo <path> --mode interactive   # Discuss what to work on, then execute
 factory run <path> --loop               # Continuous heartbeat mode
 factory tmux <path> --loop              # In detached tmux session
 

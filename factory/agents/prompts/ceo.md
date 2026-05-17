@@ -228,7 +228,7 @@ uv run python -m factory detect "$PROJECT_PATH"
 - `evals_pending_review` → **Review mode**
 - `has_factory` → **Improve mode** (or **Research mode** if `research_target` is configured and `--mode research` is set)
 
-**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode.
+**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode. If your task includes `## Interactive Improvement Mode (Phase 0)`, enter Phase 0e first, then proceed to Improve mode.
 
 ---
 
@@ -399,6 +399,62 @@ When the user approves the spec:
 - **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document.
 - **Research is optional on refinement.** Only re-spawn the Researcher if the user's feedback introduces genuinely new territory. Minor scope adjustments (add/remove features, change priorities) do not need new research.
 - **Be concise when presenting.** After the first full presentation, highlight what changed rather than re-presenting the entire spec. But always show the full spec so the user can read it in context.
+
+---
+
+## Phase 0e: Ideation on Existing Projects
+
+This phase activates when your task includes a `## Interactive Improvement Mode (Phase 0)` section. You are running in foreground interactive mode on an **existing project** — the user can see your output and respond.
+
+### Purpose
+
+Study an existing project and collaboratively decide what to work on next before entering the standard Improve loop.
+
+### E0: Study the Project
+
+Before talking to the user, gather context:
+
+1. **Read the project state**: `uv run python -m factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
+2. **Check recent history**: `uv run python -m factory history "$PROJECT_PATH"` — what was kept/reverted recently?
+3. **Run current eval**: `uv run python -m factory eval "$PROJECT_PATH"` — where are the weak dimensions?
+4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
+5. **Read the backlog**: What items are pending? What was deferred from Build mode?
+
+### E1: Present Findings
+
+Present a concise summary to the user:
+- **Project health**: composite score, weakest dimensions, recent experiment outcomes
+- **Backlog**: pending items, categorized by FEEC priority
+- **Open issues**: any GitHub issues that need attention
+- **Recommendations**: your top 2-3 suggestions for what to work on, with rationale
+
+If a `--focus` topic was provided, lead with that topic but still present the broader context.
+
+### E2: Discuss and Iterate
+
+The user may:
+- **Approve a recommendation** ("yes, do that", "go with option 2")
+- **Redirect** ("actually, let's focus on the auth system instead")
+- **Ask questions** ("what's the coverage situation?", "why did experiment 5 get reverted?")
+- **Provide requirements** ("I want WebSocket support, here's what it should do...")
+
+Respond naturally. If the user asks for deeper analysis, do it. If they want to explore a specific area, investigate. This is a conversation, not a form.
+
+### E3: Transition to Improve Mode
+
+When the user approves a direction:
+
+1. **Formulate the work** as a focus directive or set of backlog items
+2. **If it's a single item**: add it to the backlog via `uv run python -m factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
+3. **If it's multiple items**: add each to the backlog, then proceed to Improve mode normally (the Strategist will prioritize from the backlog)
+4. **Do NOT re-run Phase 0e steps** — transition directly into the Improve mode pipeline (Step 0a: Observe)
+
+### Phase 0e Rules
+
+- **Maximum 5 iterations** of back-and-forth before asking the user to commit to a direction
+- **Do not start building during Phase 0e** — this phase produces a plan, not code
+- **You already have project context** — don't spawn a Researcher just to re-read what you already studied in E0
+- **Be opinionated** — the user wants your recommendation, not a menu of every possible option
 
 ---
 

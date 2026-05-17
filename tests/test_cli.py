@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -127,10 +127,25 @@ class TestCmdCeoInteractive:
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
-    def test_interactive_focus_incompatible(self, capsys):
+    def test_interactive_focus_incompatible_new_idea(self, capsys):
+        """--focus + --mode interactive is rejected for new ideas (non-directory paths)."""
         result = main(["ceo", "an idea", "--mode", "interactive", "--focus", "UI"])
         assert result == 1
-        assert "mutually exclusive" in capsys.readouterr().err.lower()
+        err = capsys.readouterr().err.lower()
+        assert "new ideas" in err
+
+    def test_interactive_focus_allowed_existing_project(self, tmp_path):
+        """--focus + --mode interactive is allowed when path is an existing directory."""
+        (tmp_path / ".git").mkdir()
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", str(tmp_path), "--mode", "interactive", "--focus", "auth layer"])
+        mock_exec.assert_called_once()
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Interactive Improvement Mode (Phase 0)" in task
+        assert "auth layer" in task
 
     def test_no_path_fails(self, capsys):
         result = main(["ceo"])
@@ -148,28 +163,28 @@ class TestCmdCeoInteractive:
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
-    def test_interactive_task_has_phase_0_block(self, tmp_path):
-        """--mode interactive injects Phase 0 block into the CEO task."""
+    def test_interactive_existing_has_improvement_block(self, tmp_path):
+        """--mode interactive on an existing directory injects Improvement Mode block."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
             main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_exec.call_args[0][1]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "## Interactive Improvement Mode (Phase 0)" in task
 
-    def test_interactive_no_duplicate_context(self, tmp_path):
-        """--mode interactive does not inject the idea as both Phase 0 and Project Specification."""
+    def test_interactive_new_idea_has_ideation_block(self):
+        """--mode interactive with a non-directory path injects Ideation Mode block."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
             main(["ceo", "build a cool CLI tool", "--mode", "interactive"])
         cmd = mock_exec.call_args[0][1]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode" in task
+        assert "## Interactive Ideation Mode (Phase 0)" in task
         assert "## Project Specification" not in task
 
-    def test_interactive_task_contains_idea_text(self, tmp_path):
+    def test_interactive_task_contains_idea_text(self):
         """--mode interactive with raw idea text includes it in the Phase 0 block."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
@@ -179,11 +194,21 @@ class TestCmdCeoInteractive:
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_interactive_task_mode_is_build(self, tmp_path):
-        """--mode interactive sets Mode: build in the CEO task (not Mode: interactive)."""
+    def test_interactive_existing_mode_is_improve(self, tmp_path):
+        """--mode interactive on existing dir sets Mode: improve in the CEO task."""
         with patch("factory.cli.os.execvp") as mock_exec, \
              patch("factory.cli.os.chdir"):
             main(["ceo", str(tmp_path), "--mode", "interactive"])
+        cmd = mock_exec.call_args[0][1]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Mode: improve" in task
+
+    def test_interactive_new_idea_mode_is_build(self):
+        """--mode interactive with new idea sets Mode: build in the CEO task."""
+        with patch("factory.cli.os.execvp") as mock_exec, \
+             patch("factory.cli.os.chdir"):
+            main(["ceo", "weather CLI", "--mode", "interactive"])
         cmd = mock_exec.call_args[0][1]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
@@ -1289,3 +1314,35 @@ class TestResearchMode:
         from factory.cli import _auto_detect_mode
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
         assert mode == "improve"
+
+
+class TestBuildCeoTaskInteractive:
+    """Unit tests for _build_ceo_task interactive_existing parameter."""
+
+    def test_existing_project_emits_improvement_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
+        assert "## Interactive Improvement Mode (Phase 0)" in task
+        assert "existing project" in task
+
+    def test_existing_project_with_focus(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True, focus="auth layer")
+        assert "## Interactive Improvement Mode (Phase 0)" in task
+        assert "auth layer" in task
+        assert "Discussion topic" in task
+
+    def test_existing_project_without_focus(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
+        assert "No specific topic was provided" in task
+
+    def test_new_idea_emits_ideation_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", interactive_idea="weather CLI")
+        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "weather CLI" in task
+
+    def test_existing_does_not_emit_ideation(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
+        assert "## Interactive Ideation Mode" not in task
+
+    def test_existing_mode_is_improve(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
+        assert "Mode: improve" in task

@@ -1385,6 +1385,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     no_github = getattr(args, "no_github", False)
 
+    _interactive_is_existing = (
+        mode == "interactive"
+        and raw_path
+        and Path(raw_path).expanduser().resolve().is_dir()
+    )
+
     if mode == "interactive":
         if headless:
             print("Error: --mode interactive requires foreground mode "
@@ -1395,10 +1401,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "Interactive mode generates the spec; --prompt provides one.",
                   file=sys.stderr)
             return 1
-        if focus:
-            print("Error: --mode interactive and --focus are mutually exclusive. "
-                  "Interactive mode is for new ideas; --focus targets existing "
-                  "backlog items.", file=sys.stderr)
+        if focus and not _interactive_is_existing:
+            print("Error: --mode interactive and --focus are mutually exclusive "
+                  "for new ideas. To discuss a topic on an existing project, "
+                  "pass the project path: factory ceo /path --mode interactive --focus \"topic\"",
+                  file=sys.stderr)
             return 1
 
     if mode == "research":
@@ -1409,10 +1416,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
 
     interactive_idea: str | None = None
+    interactive_existing: bool = False
     research_ideation: str | None = None
-    if mode == "interactive":
-        # In interactive mode the positional arg is always an idea string, not a path.
-        # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
+    if mode == "interactive" and _interactive_is_existing:
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
+        interactive_existing = True
+    elif mode == "interactive":
         interactive_idea = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
         project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
@@ -1473,12 +1482,18 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode not in ("improve", "research"):
+    if focus and mode not in ("improve", "research") and not interactive_existing:
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    _print_banner("ideation" if mode in ("interactive", "research") and (interactive_idea or research_ideation) else mode)
+    if interactive_existing:
+        banner_mode = "improve"
+    elif mode in ("interactive", "research") and (interactive_idea or research_ideation):
+        banner_mode = "ideation"
+    else:
+        banner_mode = mode
+    _print_banner(banner_mode)
     _ensure_dashboard(project_path)
 
     if focus:
@@ -1490,12 +1505,18 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    ceo_mode = "build" if mode == "interactive" or research_ideation else mode
+    if interactive_existing:
+        ceo_mode = "improve"
+    elif mode == "interactive" or research_ideation:
+        ceo_mode = "build"
+    else:
+        ceo_mode = mode
     task = _build_ceo_task(
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         interactive_idea=interactive_idea,
+        interactive_existing=interactive_existing,
         research_ideation=research_ideation,
         messages=pending,
         issue_number=issue_number,
@@ -1986,6 +2007,7 @@ def _build_ceo_task(
     discover_only: bool = False,
     no_github: bool = False,
     interactive_idea: str | None = None,
+    interactive_existing: bool = False,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
     issue_number: int | None = None,
@@ -2001,7 +2023,27 @@ def _build_ceo_task(
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
 
-    if interactive_idea:
+    if interactive_existing:
+        task += (
+            f"\n\n## Interactive Improvement Mode (Phase 0)\n\n"
+            f"You are in interactive mode on an **existing project** at `{project_path}`.\n\n"
+            f"Before running any experiments, study the project and discuss with the user "
+            f"what to work on. Follow the Phase 0e: Ideation on Existing Projects protocol "
+            f"in your system prompt.\n\n"
+        )
+        if focus:
+            task += (
+                f"**Discussion topic (from --focus):** {focus}\n\n"
+                f"The user wants to discuss this specific topic. Use it to seed the "
+                f"conversation, but be open to the user redirecting.\n"
+            )
+        else:
+            task += (
+                "No specific topic was provided. Study the project broadly — "
+                "look at the backlog, eval scores, open issues, and recent history — "
+                "then present your findings and recommendations.\n"
+            )
+    elif interactive_idea:
         task += (
             f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
             f"**Raw idea from user:** {interactive_idea}\n\n"
