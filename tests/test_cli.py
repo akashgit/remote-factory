@@ -9,7 +9,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec, _has_research_target
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -1080,6 +1080,80 @@ class TestSlugify:
 
 
 
+class TestExtractProjectName:
+    def test_strips_build_verb(self):
+        assert _extract_project_name("Build a weather CLI tool") == "weather-cli-tool"
+
+    def test_strips_create_verb(self):
+        assert _extract_project_name("Create an API server") == "api-server"
+
+    def test_strips_filler_adjectives(self):
+        assert _extract_project_name("Build a comprehensive e-commerce platform with payments") == "e-commerce-platform-payments"
+
+    def test_caps_at_four_words(self):
+        result = _extract_project_name("distributed eval runner for multi-node benchmarks on GPUs")
+        assert result == "distributed-eval-runner-multi-node"
+
+    def test_no_verb_prefix(self):
+        assert _extract_project_name("weather CLI") == "weather-cli"
+
+    def test_strips_multiple_fillers(self):
+        assert _extract_project_name("Build a simple lightweight modern REST API") == "rest-api"
+
+    def test_empty_after_stripping_falls_back(self):
+        result = _extract_project_name("build a the")
+        assert result == "build-a-the"
+
+    def test_preserves_hyphenated_words(self):
+        assert _extract_project_name("real-time chat app") == "real-time-chat-app"
+
+    def test_setup_verb(self):
+        assert _extract_project_name("Set up a deployment pipeline") == "deployment-pipeline"
+
+
+class TestDedupeProjectPath:
+    def test_no_existing_dir(self, tmp_path):
+        path = tmp_path / "projects" / "my-app"
+        assert _dedupe_project_path(path, "Build a todo app") == path
+
+    def test_existing_dir_no_spec(self, tmp_path):
+        path = tmp_path / "projects" / "my-app"
+        path.mkdir(parents=True)
+        assert _dedupe_project_path(path, "Build a todo app") == path
+
+    def test_existing_dir_same_spec_reuses(self, tmp_path):
+        path = tmp_path / "projects" / "my-app"
+        spec_dir = path / ".factory" / "strategy"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "current.md").write_text("## Project Specification\n\nBuild a todo app\n")
+        assert _dedupe_project_path(path, "Build a todo app") == path
+
+    def test_existing_dir_different_spec_appends_suffix(self, tmp_path):
+        path = tmp_path / "projects" / "rest-api"
+        spec_dir = path / ".factory" / "strategy"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "current.md").write_text("## Project Specification\n\nBuild a REST API for users\n")
+        result = _dedupe_project_path(path, "Build a REST API for payments")
+        assert result == tmp_path / "projects" / "rest-api-2"
+
+    def test_multiple_collisions(self, tmp_path):
+        base = tmp_path / "projects" / "rest-api"
+        for suffix in ("", "-2", "-3"):
+            d = base.parent / f"{base.name}{suffix}" if suffix else base
+            spec_dir = d / ".factory" / "strategy"
+            spec_dir.mkdir(parents=True)
+            (spec_dir / "current.md").write_text(f"## Project Specification\n\nvariant {suffix}\n")
+        result = _dedupe_project_path(base, "yet another REST API")
+        assert result == tmp_path / "projects" / "rest-api-4"
+
+    def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
+        with patch("factory.cli._PROJECTS_DIR", tmp_path / "projects"):
+            p1, _ = _resolve_input("Build a REST API")
+            p2, _ = _resolve_input("Create a new REST API")
+        assert p1.name == "rest-api"
+        assert p2.name == "rest-api-2"
+
+
 class TestPersistSpec:
     def test_writes_spec_file(self, tmp_path):
         _persist_spec(tmp_path, "Build a todo app")
@@ -1122,6 +1196,7 @@ class TestResolveInput:
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
+        assert project_path.name == "todo-app-fastapi"
         assert (project_path / ".git").is_dir()
         assert context == "Build a todo app with FastAPI"
 

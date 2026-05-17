@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -1369,8 +1370,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # In interactive mode the positional arg is always an idea string, not a path.
         # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
         interactive_idea = raw_path
-        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
-        project_path = _PROJECTS_DIR / slug
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
@@ -1384,8 +1385,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "--focus targets existing backlog items.", file=sys.stderr)
             return 1
         research_ideation = raw_path
-        slug = _slugify(dir_name) if dir_name else _slugify(raw_path[:50])
-        project_path = _PROJECTS_DIR / slug
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     else:
@@ -1553,7 +1554,7 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     if expanded.is_file():
         idea_content = expanded.read_text()
         slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
-        project_path = _PROJECTS_DIR / slug
+        project_path = _dedupe_project_path(_PROJECTS_DIR / slug, idea_content)
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
         print(f"Idea file: {expanded.name}")
@@ -1568,18 +1569,61 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
         return Path(tmp_dir).resolve(), None
 
     # 4. Raw prompt
-    slug = _slugify(dir_name) if dir_name else _slugify(raw[:50])
-    project_path = _PROJECTS_DIR / slug
+    slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
+    project_path = _dedupe_project_path(_PROJECTS_DIR / slug, raw)
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
 
 
+_FILLER_WORDS = frozenset({
+    "a", "an", "the", "that", "which", "with", "for", "and", "or", "to", "using",
+    "comprehensive", "simple", "basic", "advanced", "new", "custom", "full",
+    "complete", "modern", "robust", "scalable", "lightweight", "minimal",
+    "fully", "featured", "production", "ready",
+})
+
+_VERB_RE = re.compile(
+    r"^(build|create|make|implement|develop|design|write|add|set\s*up|construct|craft)\b\s*"
+)
+
+
+def _extract_project_name(description: str) -> str:
+    """Extract a concise project name from a verbose description.
+
+    Strips leading imperative verbs and filler words, then takes
+    up to 4 whitespace-delimited tokens (hyphenated compounds like
+    ``real-time`` count as one token).
+    """
+    text = description.lower().strip()
+    text = _VERB_RE.sub("", text)
+    words = [w for w in re.split(r"\s+", text) if w and w not in _FILLER_WORDS]
+    name = "-".join(words[:4])
+    return _slugify(name) if name else _slugify(description[:50])
+
+
+def _dedupe_project_path(project_path: Path, new_spec: str) -> Path:
+    """Append a numeric suffix if the directory already holds a different project."""
+    spec_path = project_path / ".factory" / "strategy" / "current.md"
+    if not spec_path.exists():
+        return project_path
+    if new_spec.strip() in spec_path.read_text():
+        return project_path
+    base = project_path
+    counter = 2
+    while True:
+        candidate = base.parent / f"{base.name}-{counter}"
+        cand_spec = candidate / ".factory" / "strategy" / "current.md"
+        if not cand_spec.exists():
+            return candidate
+        if new_spec.strip() in cand_spec.read_text():
+            return candidate
+        counter += 1
+
+
 def _slugify(text: str) -> str:
     """Convert text to a filesystem-safe slug."""
-    import re
-
     text = text.lower().strip()
     text = re.sub(r"[^\w\s-]", "", text)
     text = re.sub(r"[\s_]+", "-", text)
