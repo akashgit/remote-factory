@@ -36,7 +36,7 @@ Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
-| **Scrum Master** | Standup: read event log + project state, produce sprint status report for CEO | `factory agent scrum_master --task "..."` |
+| **Scrum Master** | Standup: read event log + project state, produce sprint status report for CEO | `factory agent scrummaster --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
