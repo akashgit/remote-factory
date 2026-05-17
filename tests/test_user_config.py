@@ -11,9 +11,10 @@ import pytest
 
 @pytest.fixture()
 def config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Redirect CONFIG_PATH to a temp directory."""
+    """Redirect CONFIG_PATH to a temp directory and clear cached config."""
     cfg = tmp_path / "config.toml"
     monkeypatch.setattr("factory.user_config.CONFIG_PATH", cfg)
+    monkeypatch.setattr("factory.user_config._cached_config", None)
     return cfg
 
 
@@ -40,6 +41,16 @@ class TestResolve:
 
         result = resolve("runner", config={"defaults": {"runner": "vertex"}}, default="claude")
         assert result == "vertex"
+
+    def test_auto_loads_config_file(
+        self, config_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.user_config import resolve
+
+        config_dir.write_text('[defaults]\nrunner = "from-toml"')
+        monkeypatch.delenv("FACTORY_RUNNER", raising=False)
+        result = resolve("runner", env_var="FACTORY_RUNNER", default="fallback")
+        assert result == "from-toml"
 
     def test_default_used_when_nothing_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from factory.user_config import resolve

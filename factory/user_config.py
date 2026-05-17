@@ -21,6 +21,8 @@ _CREDENTIAL_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 _SENSITIVE_FRAGMENTS = ("key", "token", "secret", "password", "api_key")
 
+_cached_config: dict | None = None
+
 _CONFIG_TEMPLATE = """\
 # Factory configuration — ~/.factory/config.toml
 #
@@ -102,7 +104,17 @@ def load_config(profile: str | None = None) -> dict:
             os.environ.setdefault(k, str(v))
         log.info("profile_loaded", profile=profile, keys=list(creds.keys()))
 
+    global _cached_config  # noqa: PLW0603
+    _cached_config = data
     return data
+
+
+def _get_cached_config() -> dict:
+    """Return the cached config, loading from disk on first call."""
+    global _cached_config  # noqa: PLW0603
+    if _cached_config is None:
+        _cached_config = load_config()
+    return _cached_config
 
 
 def resolve(
@@ -118,7 +130,7 @@ def resolve(
     1. CLI flag (cli_value)
     2. Environment variable (env_var name looked up in os.environ)
     3. Profile credential — already injected into os.environ by load_config()
-    4. config.toml [defaults] section (config dict, key looked up)
+    4. config.toml [defaults] section (auto-loaded if config not passed)
     5. Hardcoded default
 
     Since profile credentials are injected into os.environ by load_config(),
@@ -134,13 +146,13 @@ def resolve(
         if env_val:
             return env_val
 
-    if config:
-        defaults = config.get("defaults", {})
-        toml_val = defaults.get(key)
-        if toml_val is not None:
-            v = str(toml_val).strip()
-            if v:
-                return v
+    effective_config = config if config is not None else _get_cached_config()
+    defaults = effective_config.get("defaults", {})
+    toml_val = defaults.get(key)
+    if toml_val is not None:
+        v = str(toml_val).strip()
+        if v:
+            return v
 
     return default
 
