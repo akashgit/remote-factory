@@ -1007,37 +1007,94 @@ Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .facto
 
 If Builder fails (no PR opened), see Error Recovery below.
 
-#### 2d-review: CEO Review — Builder PR
+#### 2d-review: CEO Code Quality Review — REVIEW-UNTIL-CLEAN PIPELINE
 
-**Before** spawning the Reviewer, you MUST read the PR yourself:
+**This is an iterative review loop.** The CEO reads the PR diff, performs a structured code quality review, and routes fixes back to the Builder until the code is clean or the iteration cap is reached. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` before entering the loop.
+
+**Step 1 — Read the PR:**
 
 1. Read `.factory/reviews/builder-latest.md`
 2. Find the PR: `gh pr list --state open --json number,title,headRefName`
-3. Read the PR diff: `gh pr diff <pr-number>`
-4. Quick-assess:
-   - Does the PR implement what the hypothesis asked for?
-   - Any obvious scope creep (touching files outside the issue)?
-   - Any red flags (deleted tests, credentials, massive unrelated changes)?
-5. **If the PR touches UI/frontend code** (HTML, CSS, JS, templates, dashboard endpoints):
-   - Checkout the PR branch locally (`git checkout <branch>`)
-   - Kill and restart the dev server (`lsof -ti:<port> | xargs kill`, then restart) — the running process serves stale code
-   - Use Playwright MCP to navigate to the affected page and take a screenshot
-   - Verify the change renders correctly — tests passing does NOT mean the UI works
-   - If Playwright reveals bugs, REDIRECT the Builder to fix them before proceeding
-   - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
-   - After verification, checkout the target branch again (`git checkout main`)
-6. **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
-   - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
-   - Check if those artifacts exist in the project: `ls -la <artifact paths>`
-   - If artifacts are missing or empty, REDIRECT the Builder with `--timeout 1800`: "Operational hypothesis requires execution. The issue has an Execution Step section — run those commands and produce the output artifacts listed in Execution Acceptance Criteria before proceeding."
-   - This is MANDATORY — code-only PRs for operational hypotheses are incomplete, regardless of test/eval results
-   - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
-     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
-     b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
-7. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
-8. If ABORT (garbage PR): close PR immediately, finalize as error, move to next hypothesis
-9. If REDIRECT: comment on the PR with corrections, re-invoke Builder
-10. If PROCEED: continue to 2e
+3. Read the full PR diff: `gh pr diff <pr-number>`
+
+**Step 2 — Structured code quality review.** Evaluate the diff against this checklist:
+
+| # | Category | What to check |
+|---|----------|---------------|
+| 1 | **Correctness** | Bugs, logic errors, off-by-one, null/undefined access, race conditions |
+| 2 | **Security** | Injection (SQL, XSS, command), hardcoded secrets, unsafe deserialization, path traversal |
+| 3 | **Edge cases** | Empty inputs, boundary values, error paths, timeouts, retries |
+| 4 | **Missing tests** | New code paths without test coverage, untested error branches |
+| 5 | **Style & consistency** | Naming conventions, code duplication, dead code, import organization |
+| 6 | **Scope compliance** | PR implements what the hypothesis asked — no scope creep, no unrelated changes |
+
+**Step 3 — Additional checks (apply when relevant):**
+
+- **If the PR touches UI/frontend code** (HTML, CSS, JS, templates, dashboard endpoints):
+  - Checkout the PR branch locally (`git checkout <branch>`)
+  - Kill and restart the dev server (`lsof -ti:<port> | xargs kill`, then restart) — the running process serves stale code
+  - Use Playwright MCP to navigate to the affected page and take a screenshot
+  - Verify the change renders correctly — tests passing does NOT mean the UI works
+  - If Playwright reveals bugs, add them to the issue list
+  - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
+  - After verification, checkout the target branch again (`git checkout main`)
+- **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
+  - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
+  - Check if those artifacts exist in the project: `ls -la <artifact paths>`
+  - If artifacts are missing or empty, add to the issue list: "Operational hypothesis requires execution — output artifacts missing"
+  - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
+    a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
+    b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
+
+**Step 4 — Write machine-parseable verdict** to `.factory/reviews/ceo-verdict-builder.md`:
+
+```markdown
+## CEO Code Quality Review — Iteration $REVIEW_ITERATION
+
+**Verdict:** CLEAN | ISSUES_FOUND: <N>
+
+### Issues
+1. [<category>] <file>:<line> — <description>
+2. [<category>] <file>:<line> — <description>
+...
+
+### Checklist
+- Correctness: PASS | FAIL (<details>)
+- Security: PASS | FAIL (<details>)
+- Edge cases: PASS | FAIL (<details>)
+- Missing tests: PASS | FAIL (<details>)
+- Style: PASS | FAIL (<details>)
+- Scope: PASS | FAIL (<details>)
+```
+
+**Step 5 — Act on the verdict:**
+
+- **CLEAN** → proceed to 2e (Guard Check)
+- **ABORT** (garbage PR — wrong files, massive scope creep, unrelated changes) → close PR immediately, finalize as error, move to next hypothesis
+- **ISSUES_FOUND** → apply the review-until-clean loop:
+
+**Review-Until-Clean Loop (on ISSUES_FOUND):**
+
+1. **Check iteration cap:** If `$REVIEW_ITERATION >= 3`, stop looping. Proceed to 2e with the current code — the remaining issues will be caught by the Reviewer and precheck gates, or flagged in the PR for human review.
+
+2. **Check convergence:** Compare current issue count against `$PREV_ISSUE_COUNT`.
+   - If issues >= `$PREV_ISSUE_COUNT` (plateau or increase), stop looping. The Builder is not converging — proceeding further wastes tokens. Log: "Review loop terminated: issues not decreasing ($PREV_ISSUE_COUNT → $CURRENT_ISSUE_COUNT)". Proceed to 2e.
+   - If issues < `$PREV_ISSUE_COUNT`, continue — the Builder is making progress.
+
+3. **Route fixes to Builder:** Re-invoke the Builder with the specific issue list:
+   ```bash
+   factory agent builder --task "Fix code review issues on PR #$PR_NUM in <owner>/<repo>.
+   The CEO found the following issues in iteration $REVIEW_ITERATION:
+
+   <paste numbered issue list from verdict>
+
+   Fix ALL listed issues. Do NOT introduce new functionality — only fix the flagged items.
+   Commit fixes to the existing branch. Do NOT create a new PR." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
+   ```
+
+4. **Update state:** Set `$PREV_ISSUE_COUNT = $CURRENT_ISSUE_COUNT`, increment `$REVIEW_ITERATION`.
+
+5. **Re-run review:** Loop back to Step 1 of 2d-review (read the updated diff and re-evaluate the full checklist).
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -1146,9 +1203,47 @@ The precheck runs 4 checks:
 
 **Read the JSON output.** If `"passed": false`, you MUST revert. No CEO override allowed.
 
-**If precheck PASSES → Approve (DO NOT MERGE):**
+**If precheck PASSES → proceed to 2h-final (Final Review Gate).**
+
+#### 2h-final. Final Review Gate (MANDATORY)
+
+After ALL mechanical checks pass (guard, eval, e2e, precheck), run one final holistic code review on the **complete PR diff against main**. This catches issues that only emerge when viewing the full diff — interactions between changes, overall code coherence, things that look fine incrementally but don't fit together.
 
 ```bash
+# Get the complete diff against main
+gh pr diff $PR_NUM > /tmp/factory-final-review-$PR_NUM.txt
+
+# Spawn headless Claude Code for a thorough review
+claude -p "You are a senior code reviewer. Review this complete PR diff for:
+1. Bugs, logic errors, race conditions, off-by-one errors
+2. Security vulnerabilities (injection, secrets, unsafe operations)
+3. Edge cases not handled (null/empty inputs, boundary values, error paths)
+4. Missing error handling or swallowed exceptions
+5. Code style violations or inconsistencies with codebase conventions
+6. Dead code, unnecessary complexity, or premature abstractions
+
+Output EXACTLY one of:
+- CLEAN — if no issues found
+- ISSUES_FOUND: N — followed by a numbered list of issues, each with file:line and category
+
+Be thorough but pragmatic. Only flag real problems, not style preferences." < /tmp/factory-final-review-$PR_NUM.txt
+
+rm -f /tmp/factory-final-review-$PR_NUM.txt
+```
+
+**Parse the output:**
+
+- **CLEAN** → proceed to KEEP approval below
+- **ISSUES_FOUND** → check iteration cap and convergence:
+  - If `$REVIEW_ITERATION >= 3`: stop. Post KEEP with the remaining issues noted in the review comment. The human reviewer will see them.
+  - Otherwise: route fixes to Builder (same as step 2d-review loop), increment `$REVIEW_ITERATION`, loop back to **step 2d-review** (full pipeline re-run).
+
+**On CLEAN final review → Approve (DO NOT MERGE):**
+
+```bash
+# Transition draft PR to ready for review
+gh pr ready $PR_NUM
+
 # Post structured review on the PR (this approves the PR on GitHub)
 uv run python -m factory review \
     --verdict KEEP \
@@ -1996,6 +2091,7 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 5. **Do not skip the eval step** — every change must be scored before it can be kept
 6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
+8. **Do not do another agent's job** — the CEO is an executive orchestrator. It delegates ALL technical work to specialist agents (Researcher, Builder, Reviewer, Evaluator, Archivist, etc.) and reviews their output. If an agent times out or fails, retry with adjusted parameters or abort — never take over the agent's work yourself. Reading files to review agent output is fine; doing the agent's actual task is a violation.
 
 ---
 
