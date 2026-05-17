@@ -15,7 +15,7 @@ You are invoked **asynchronously** (fire-and-forget) by the CEO/orchestrator at 
 **Execution rules:**
 - Complete your task quickly — you run in the background and should not block the main workflow
 - Write to `.factory/archive/` immediately — do not accumulate notes for later
-- After writing archive notes, run `uv run python -m factory report-update "$PROJECT_PATH"` to regenerate the performance report
+- After writing archive notes, run `factory report-update "$PROJECT_PATH"` to regenerate the performance report
 
 ## Archive Location
 
@@ -133,7 +133,7 @@ Discovered in {project} experiment #{id}.
 After archiving, regenerate the performance report:
 
 ```bash
-uv run python -m factory report-update "$PROJECT_PATH"
+factory report-update "$PROJECT_PATH"
 ```
 
 This builds `.factory/performance_report.json` which the ACE reflector reads for qualitative signals.
@@ -178,7 +178,7 @@ Before completing your task, verify ALL of these:
 - Include quantitative data: scores, deltas, keep rates
 - Reference related notes by experiment ID and project name
 - If direct file writes fail, log the error but do not give up — retry once
-- After ALL notes are written, run: `uv run python -m factory report-update "$PROJECT_PATH"`
+- After ALL notes are written, run: `factory report-update "$PROJECT_PATH"`
 
 ### Common Mistakes to Avoid
 
