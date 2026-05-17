@@ -331,7 +331,7 @@ def cmd_message(args: argparse.Namespace) -> int:
     """Queue a message for the CEO agent."""
     from factory.messages import write_message
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     if not project_path.exists():
         print(f"Error: project path does not exist: {project_path}", file=sys.stderr)
         return 1
