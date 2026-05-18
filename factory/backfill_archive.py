@@ -108,7 +108,7 @@ def _generate_note(
     return "\n".join(sections) + "\n"
 
 
-def backfill_archive(project_path: Path) -> dict[str, int]:
+async def backfill_archive(project_path: Path) -> dict[str, int]:
     """Scan experiments and generate archive notes for those missing from archive.
 
     Returns a dict with keys: existed, created, total.
@@ -126,7 +126,7 @@ def backfill_archive(project_path: Path) -> dict[str, int]:
 
     project_name = project_path.resolve().name
 
-    records = _run_sync(store.load_history())
+    records = await store.load_history()
     records_by_id: dict[int, dict] = {}
     for r in records:
         records_by_id[r.id] = r.model_dump()
@@ -162,9 +162,3 @@ def backfill_archive(project_path: Path) -> dict[str, int]:
         total=total,
     )
     return {"existed": existed, "created": created, "total": total}
-
-
-def _run_sync(coro):  # noqa: ANN001, ANN202
-    """Run an async coroutine synchronously."""
-    import asyncio
-    return asyncio.run(coro)

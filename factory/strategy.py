@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections import Counter
 from enum import IntEnum
+from typing import Any
 
 import structlog
 
@@ -196,8 +197,12 @@ def _format_tier1(record: dict) -> str:
     change_summary = record.get("change_summary", "")
 
     delta_str = f"{delta:+.4f}" if delta is not None else "n/a"
+    cost_str = f"${record.get('cost_usd'):.2f}" if record.get("cost_usd") is not None else ""
+    header = f"### Experiment {exp_id} [{verdict}] (Δ {delta_str})"
+    if cost_str:
+        header = f"### Experiment {exp_id} [{verdict}] (Δ {delta_str}, {cost_str})"
     lines = [
-        f"### Experiment {exp_id} [{verdict}] (Δ {delta_str})",
+        header,
         f"**Hypothesis:** {hypothesis}",
     ]
     if change_summary:
@@ -213,8 +218,9 @@ def _format_tier2(record: dict) -> str:
     hypothesis = record.get("hypothesis", "")
 
     delta_str = f"{delta:+.4f}" if delta is not None else "n/a"
+    cost_str = f" ${record.get('cost_usd'):.2f}" if record.get("cost_usd") is not None else ""
     hyp_title = hypothesis[:80]
-    return f"- #{exp_id} {verdict} Δ{delta_str} — {hyp_title}"
+    return f"- #{exp_id} {verdict} Δ{delta_str}{cost_str} — {hyp_title}"
 
 
 def _format_tier3(records: list[dict]) -> str:
@@ -255,7 +261,7 @@ def _format_tier3(records: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_tiered_history(records: list[dict]) -> str:
+def format_tiered_history(records: list[Any]) -> str:
     """Produce 3-tier experiment history output.
 
     - Tier 1 (last 3): full detail with hypothesis, verdict, delta, changes
@@ -316,4 +322,5 @@ def _record_to_dict(record: object) -> dict:
         "verdict": getattr(record, "verdict", "?"),
         "delta": getattr(record, "delta", None),
         "change_summary": getattr(record, "change_summary", ""),
+        "cost_usd": getattr(record, "cost_usd", None),
     }

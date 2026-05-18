@@ -88,18 +88,18 @@ def _add_experiment(
 
 
 class TestBackfillArchive:
-    def test_no_experiments_dir(self, tmp_path: Path) -> None:
+    async def test_no_experiments_dir(self, tmp_path: Path) -> None:
         project = tmp_path / "empty-project"
         project.mkdir()
         (project / ".factory").mkdir()
-        result = backfill_archive(project)
+        result = await backfill_archive(project)
         assert result == {"existed": 0, "created": 0, "total": 0}
 
-    def test_creates_notes_for_all_experiments(self, factory_project: Path) -> None:
+    async def test_creates_notes_for_all_experiments(self, factory_project: Path) -> None:
         _add_experiment(factory_project, 1, hypothesis="First experiment")
         _add_experiment(factory_project, 2, hypothesis="Second experiment")
 
-        result = backfill_archive(factory_project)
+        result = await backfill_archive(factory_project)
 
         assert result["existed"] == 0
         assert result["created"] == 2
@@ -109,7 +109,7 @@ class TestBackfillArchive:
         assert (archive_dir / "my-project-001.md").exists()
         assert (archive_dir / "my-project-002.md").exists()
 
-    def test_does_not_overwrite_existing(self, factory_project: Path) -> None:
+    async def test_does_not_overwrite_existing(self, factory_project: Path) -> None:
         _add_experiment(factory_project, 1)
 
         archive_dir = factory_project / ".factory" / "archive" / "experiments"
@@ -117,13 +117,13 @@ class TestBackfillArchive:
         existing_note = archive_dir / "my-project-001.md"
         existing_note.write_text("Hand-written note — do not overwrite")
 
-        result = backfill_archive(factory_project)
+        result = await backfill_archive(factory_project)
 
         assert result["existed"] == 1
         assert result["created"] == 0
         assert existing_note.read_text() == "Hand-written note — do not overwrite"
 
-    def test_mixed_existing_and_new(self, factory_project: Path) -> None:
+    async def test_mixed_existing_and_new(self, factory_project: Path) -> None:
         _add_experiment(factory_project, 1)
         _add_experiment(factory_project, 2)
         _add_experiment(factory_project, 3)
@@ -132,16 +132,16 @@ class TestBackfillArchive:
         archive_dir.mkdir(parents=True, exist_ok=True)
         (archive_dir / "my-project-002.md").write_text("Existing note")
 
-        result = backfill_archive(factory_project)
+        result = await backfill_archive(factory_project)
 
         assert result["existed"] == 1
         assert result["created"] == 2
         assert result["total"] == 3
 
-    def test_note_content_structure(self, factory_project: Path) -> None:
+    async def test_note_content_structure(self, factory_project: Path) -> None:
         _add_experiment(factory_project, 1, hypothesis="Improve error handling", verdict="keep")
 
-        backfill_archive(factory_project)
+        await backfill_archive(factory_project)
 
         archive_dir = factory_project / ".factory" / "archive" / "experiments"
         content = (archive_dir / "my-project-001.md").read_text()
@@ -155,22 +155,22 @@ class TestBackfillArchive:
         assert "## What Changed" in content
         assert "## Changes (diff)" in content
 
-    def test_idempotent(self, factory_project: Path) -> None:
+    async def test_idempotent(self, factory_project: Path) -> None:
         _add_experiment(factory_project, 1)
 
-        result1 = backfill_archive(factory_project)
+        result1 = await backfill_archive(factory_project)
         assert result1["created"] == 1
 
-        result2 = backfill_archive(factory_project)
+        result2 = await backfill_archive(factory_project)
         assert result2["created"] == 0
         assert result2["existed"] == 1
 
-    def test_experiment_without_all_artifacts(self, factory_project: Path) -> None:
+    async def test_experiment_without_all_artifacts(self, factory_project: Path) -> None:
         exp_dir = factory_project / ".factory" / "experiments" / "001"
         exp_dir.mkdir(parents=True)
         (exp_dir / "hypothesis.md").write_text("Partial experiment")
 
-        result = backfill_archive(factory_project)
+        result = await backfill_archive(factory_project)
 
         assert result["created"] == 1
         archive_dir = factory_project / ".factory" / "archive" / "experiments"

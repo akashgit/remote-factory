@@ -68,7 +68,7 @@ code{background:var(--border);padding:2px 6px;border-radius:4px;font-size:12px}
     </div>
   </div>
 </main>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
 <script>
 var projectName = decodeURIComponent(
   window.location.pathname.split('/').filter(Boolean).pop() || ''
@@ -105,7 +105,9 @@ function renderTable(cycles) {
     var tr = document.createElement('tr');
     var delta = c.delta != null ? (c.delta >= 0 ? '+' : '') + c.delta.toFixed(4) : '—';
     var deltaClass = c.delta != null ? (c.delta >= 0 ? 'delta-pos' : 'delta-neg') : '';
-    var statusClass = 'status-' + (c.status || 'unknown');
+    var allowedStatuses = ['completed', 'failed', 'running', 'unknown'];
+    var statusSuffix = allowedStatuses.indexOf(c.status) !== -1 ? c.status : 'unknown';
+    var statusClass = 'status-' + statusSuffix;
     var score = c.metric_value != null ? c.metric_value.toFixed(4) : '—';
     var dur = c.duration != null ? Math.round(c.duration) : '—';
     var failHtml = c.dominant_failure
