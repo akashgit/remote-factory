@@ -14,7 +14,9 @@ from factory.dashboard.app import (
     create_app,
     _load_experiment_dimensions,
     _load_latest_dimensions,
+    _load_research_runs,
     _parse_diff_stats,
+    _parse_failure_categories,
     _parse_single_verdict,
     _project_summary,
     _load_tsv,
@@ -776,3 +778,184 @@ class TestModeAwarePhaseDetail:
         """Generic phase names (backward compat) should not return 400."""
         resp = phase_client.get("/api/projects/proj-phase/phase-detail/Research")
         assert resp.status_code == 200
+
+
+# ── Research Dashboard Tests ──
+
+
+@pytest.fixture()
+def research_projects_dir(tmp_path: Path) -> Path:
+    """Create a project with .factory/research/runs/ data for research view tests."""
+    proj = tmp_path / "proj-research"
+    runs_dir = proj / ".factory" / "research" / "runs"
+
+    # Baseline cycle
+    baseline = runs_dir / "000-baseline"
+    baseline.mkdir(parents=True)
+    (baseline / "summary.json").write_text(json.dumps({
+        "metric_value": 0.45,
+        "status": "completed",
+        "duration": 120,
+    }))
+
+    # Cycle 1 — score improves
+    cycle_1 = runs_dir / "cycle-001"
+    cycle_1.mkdir()
+    (cycle_1 / "summary.json").write_text(json.dumps({
+        "metric_value": 0.52,
+        "status": "completed",
+        "duration": 95,
+    }))
+    (cycle_1 / "failure_analysis.md").write_text(
+        "- timeout: 3\n- assertion_error: 2\n"
+    )
+
+    # Cycle 2 — score dips
+    cycle_2 = runs_dir / "cycle-002"
+    cycle_2.mkdir()
+    (cycle_2 / "summary.json").write_text(json.dumps({
+        "metric_value": 0.48,
+        "status": "completed",
+        "duration": 110,
+    }))
+    (cycle_2 / "failure_analysis.md").write_text(
+        "- timeout: 1\n- connection_error: 4\n"
+    )
+
+    # Cycle 3 — score recovers to new high
+    cycle_3 = runs_dir / "cycle-003"
+    cycle_3.mkdir()
+    (cycle_3 / "summary.json").write_text(json.dumps({
+        "metric_value": 0.60,
+        "status": "completed",
+        "duration": 80,
+    }))
+
+    # Empty project (no research data)
+    empty_proj = tmp_path / "proj-empty"
+    (empty_proj / ".factory").mkdir(parents=True)
+
+    return tmp_path
+
+
+@pytest.fixture()
+def research_client(research_projects_dir: Path) -> TestClient:
+    app = create_app(research_projects_dir)
+    return TestClient(app)
+
+
+class TestParseFailureCategories:
+    def test_basic_parsing(self):
+        text = "- timeout: 3\n- assertion_error: 2\n"
+        cats = _parse_failure_categories(text)
+        assert cats == {"timeout": 3, "assertion_error": 2}
+
+    def test_bold_categories(self):
+        text = "- **timeout**: 5\n- **parse_error**: 1\n"
+        cats = _parse_failure_categories(text)
+        assert cats == {"timeout": 5, "parse_error": 1}
+
+    def test_asterisk_bullets(self):
+        text = "* timeout: 2\n* flaky: 1\n"
+        cats = _parse_failure_categories(text)
+        assert cats == {"timeout": 2, "flaky": 1}
+
+    def test_ignores_non_matching_lines(self):
+        text = "# Failure Analysis\n\nSome description.\n\n- timeout: 3\n"
+        cats = _parse_failure_categories(text)
+        assert cats == {"timeout": 3}
+
+    def test_empty_text(self):
+        assert _parse_failure_categories("") == {}
+
+
+class TestLoadResearchRuns:
+    def test_loads_all_cycles(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        assert len(data["cycles"]) == 4
+
+    def test_cycle_fields(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        baseline = data["cycles"][0]
+        assert baseline["name"] == "000-baseline"
+        assert baseline["metric_value"] == 0.45
+        assert baseline["status"] == "completed"
+        assert baseline["duration"] == 120
+        assert baseline["delta"] is None
+        assert baseline["dominant_failure"] is None
+
+    def test_delta_calculation(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        cycle_1 = data["cycles"][1]
+        assert cycle_1["delta"] == pytest.approx(0.07)
+        cycle_2 = data["cycles"][2]
+        assert cycle_2["delta"] == pytest.approx(-0.04)
+
+    def test_dominant_failure(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        assert data["cycles"][1]["dominant_failure"] == "timeout"
+        assert data["cycles"][2]["dominant_failure"] == "connection_error"
+        assert data["cycles"][3]["dominant_failure"] is None
+
+    def test_failure_distribution_aggregated(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        dist = data["failure_distribution"]
+        assert dist["timeout"] == 4
+        assert dist["assertion_error"] == 2
+        assert dist["connection_error"] == 4
+
+    def test_ratchet_monotonic(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-research" / ".factory"
+        data = _load_research_runs(factory_dir)
+        ratchet = data["ratchet"]
+        assert ratchet["labels"] == ["000-baseline", "cycle-001", "cycle-002", "cycle-003"]
+        assert ratchet["scores"] == [0.45, 0.52, 0.48, 0.60]
+        assert ratchet["best"] == [0.45, 0.52, 0.52, 0.60]
+        for i in range(1, len(ratchet["best"])):
+            assert ratchet["best"][i] >= ratchet["best"][i - 1]
+
+    def test_no_research_dir(self, research_projects_dir: Path):
+        factory_dir = research_projects_dir / "proj-empty" / ".factory"
+        data = _load_research_runs(factory_dir)
+        assert data["cycles"] == []
+        assert data["failure_distribution"] == {}
+        assert data["ratchet"] == {"labels": [], "scores": [], "best": []}
+
+    def test_skips_dirs_without_summary(self, tmp_path: Path):
+        runs_dir = tmp_path / ".factory" / "research" / "runs" / "no-summary"
+        runs_dir.mkdir(parents=True)
+        data = _load_research_runs(tmp_path / ".factory")
+        assert data["cycles"] == []
+
+
+class TestResearchDashboardAPI:
+    def test_research_runs_endpoint(self, research_client: TestClient):
+        resp = research_client.get("/api/projects/proj-research/research-runs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["cycles"]) == 4
+        assert "failure_distribution" in data
+        assert "ratchet" in data
+
+    def test_research_runs_no_data(self, research_client: TestClient):
+        resp = research_client.get("/api/projects/proj-empty/research-runs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cycles"] == []
+
+    def test_research_view_returns_html(self, research_client: TestClient):
+        resp = research_client.get("/research/proj-research")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "failure-chart" in resp.text
+        assert "ratchet-chart" in resp.text
+        assert "Chart" in resp.text
+
+    def test_research_view_invalid_name(self, research_client: TestClient):
+        resp = research_client.get("/research/../etc")
+        assert resp.status_code in (400, 404, 422)
