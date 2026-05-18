@@ -318,8 +318,9 @@ class TestCmdCeoResearchIdeation:
         """--mode research with idea string launches via subprocess.run."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
+        claude_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "claude"]
+        assert len(claude_calls) == 1
+        cmd = claude_calls[0][0][0]
         assert cmd[0] == "claude"
 
     def test_research_ideation_task_has_research_phase_0(self):
