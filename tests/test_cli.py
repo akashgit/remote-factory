@@ -35,6 +35,7 @@ def _mock_foreground():
                side_effect=lambda p, b="main": (p, "factory/run-test")), \
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
+         patch("factory.cli._read_target_branch", return_value="main"), \
          patch("factory.cli._ensure_dashboard"):
         yield mock_run
 
@@ -692,11 +693,11 @@ class TestRunWithGitHubUrl:
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
-        # git clone should have been called
         mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-abc"], check=True,
         )
@@ -708,7 +709,8 @@ class TestRunWithGitHubUrl:
         url = "git@github.com:user/repo.git"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
@@ -992,7 +994,8 @@ class TestCmdCeo:
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(

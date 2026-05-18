@@ -27,6 +27,22 @@ def _run(coro):  # noqa: ANN001, ANN202
     return asyncio.run(coro)
 
 
+def _read_target_branch(project_path: Path) -> str:
+    """Read target branch from .factory/config.json, falling back to git detection."""
+    config_path = project_path / ".factory" / "config.json"
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            tb = config.get("target_branch")
+            if tb:
+                return tb
+        except (json.JSONDecodeError, OSError):
+            pass
+    from factory.worktree import detect_default_branch
+
+    return detect_default_branch(project_path)
+
+
 # ── banner ────────────────────────────────────────────────────
 
 
@@ -1528,7 +1544,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    base_branch = branch or "main"
+    base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     if interactive_existing:
@@ -2275,7 +2291,7 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    base_branch = branch or "main"
+    base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     try:

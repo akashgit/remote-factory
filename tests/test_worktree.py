@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from factory.worktree import create_worktree, prune_stale, remove_worktree
+from factory.worktree import create_worktree, detect_default_branch, prune_stale, remove_worktree
 
 pytestmark = pytest.mark.real_worktree
 
@@ -183,6 +183,88 @@ class TestPruneStale:
             cwd=git_project, capture_output=True, text=True,
         )
         assert str(wt_path) not in result.stdout
+
+
+@pytest.fixture
+def git_project_master(tmp_path: Path) -> Path:
+    """Create a minimal git project with 'master' as the default branch."""
+    project = tmp_path / "project"
+    project.mkdir()
+
+    env = {
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@test.com",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@test.com",
+        "HOME": str(tmp_path),
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+    }
+
+    subprocess.run(["git", "init", "-b", "master"], cwd=project, capture_output=True, check=True)
+    (project / ".gitignore").write_text(".factory/\n")
+    (project / "README.md").write_text("hello")
+    subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"],
+        cwd=project, capture_output=True, check=True, env=env,
+    )
+
+    factory_dir = project / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "config.json").write_text("{}")
+    (factory_dir / "results.tsv").write_text("id\n")
+
+    return project
+
+
+class TestDetectDefaultBranch:
+    def test_detects_main(self, git_project: Path) -> None:
+        assert detect_default_branch(git_project) == "main"
+
+    def test_detects_master(self, git_project_master: Path) -> None:
+        assert detect_default_branch(git_project_master) == "master"
+
+    def test_local_only_repo_no_origin(self, git_project: Path) -> None:
+        result = detect_default_branch(git_project)
+        assert result == "main"
+
+    def test_fallback_to_current_branch(self, tmp_path: Path) -> None:
+        """Repo with neither 'main' nor 'master' falls back to current HEAD."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+
+        subprocess.run(
+            ["git", "init", "-b", "develop"],
+            cwd=project, capture_output=True, check=True,
+        )
+        (project / "README.md").write_text("hello")
+        subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial"],
+            cwd=project, capture_output=True, check=True, env=env,
+        )
+
+        assert detect_default_branch(project) == "develop"
+
+
+class TestCreateWorktreeWithMaster:
+    def test_create_worktree_on_master_repo(self, git_project_master: Path) -> None:
+        wt_path, branch = create_worktree(git_project_master, base_branch="master")
+        try:
+            assert wt_path.exists()
+            assert branch.startswith("factory/run-")
+            assert (wt_path / "README.md").exists()
+        finally:
+            remove_worktree(git_project_master, wt_path, branch)
 
 
 class TestSymlinkResolution:
