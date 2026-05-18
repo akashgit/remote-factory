@@ -34,6 +34,7 @@ _STATIC_DIR = Path(__file__).parent / "static"
 _VERDICT_RE = re.compile(r"\*\*Verdict:\*\*\s*(PROCEED|REDIRECT|ABORT)")
 _RATIONALE_RE = re.compile(r"\*\*Rationale:\*\*\s*(.+?)(?:\n|$)")
 _ISSUES_RE = re.compile(r"\*\*Issues found:\*\*\s*(.+?)(?:\n\*\*|\Z)", re.DOTALL)
+_FAILURE_CAT_RE = re.compile(r"^\s*[-*]\s*\**([^:*]+?)\**\s*:\s*(\d+)")
 
 
 def _read_text_safe(path: Path) -> str | None:
@@ -94,6 +95,86 @@ def _parse_diff_stats(diff_text: str) -> dict[str, int]:
         elif line.startswith("-") and not line.startswith("---"):
             deletions += 1
     return {"files_changed": files, "insertions": insertions, "deletions": deletions}
+
+
+def _parse_failure_categories(text: str) -> dict[str, int]:
+    """Parse failure categories and counts from failure_analysis.md content."""
+    categories: dict[str, int] = {}
+    for line in text.splitlines():
+        m = _FAILURE_CAT_RE.match(line)
+        if m:
+            cat = m.group(1).strip()
+            count = int(m.group(2))
+            categories[cat] = categories.get(cat, 0) + count
+    return categories
+
+
+def _load_research_runs(factory_dir: Path) -> dict[str, Any]:
+    """Load research run data from .factory/research/runs/ directory."""
+    empty: dict[str, Any] = {
+        "cycles": [],
+        "failure_distribution": {},
+        "ratchet": {"labels": [], "scores": [], "best": []},
+    }
+    runs_dir = factory_dir / "research" / "runs"
+    if not runs_dir.exists():
+        return empty
+
+    cycles: list[dict[str, Any]] = []
+    all_failures: dict[str, int] = {}
+
+    run_dirs = sorted(
+        (d for d in runs_dir.iterdir() if d.is_dir()),
+        key=lambda d: d.name,
+    )
+
+    prev_score: float | None = None
+    for run_dir in run_dirs:
+        summary = _read_json_safe(run_dir / "summary.json")
+        if summary is None:
+            continue
+
+        metric_value = summary.get("metric_value")
+        delta: float | None = None
+        if metric_value is not None and prev_score is not None:
+            delta = round(metric_value - prev_score, 4)
+        prev_score = metric_value
+
+        failure_cats: dict[str, int] = {}
+        failure_md = _read_text_safe(run_dir / "failure_analysis.md")
+        if failure_md:
+            failure_cats = _parse_failure_categories(failure_md)
+            for cat, count in failure_cats.items():
+                all_failures[cat] = all_failures.get(cat, 0) + count
+
+        dominant_failure: str | None = None
+        if failure_cats:
+            dominant_failure = max(failure_cats, key=failure_cats.get)  # type: ignore[arg-type]
+
+        cycles.append({
+            "name": run_dir.name,
+            "metric_value": metric_value,
+            "status": summary.get("status"),
+            "duration": summary.get("duration"),
+            "delta": delta,
+            "dominant_failure": dominant_failure,
+        })
+
+    labels = [c["name"] for c in cycles]
+    scores = [c["metric_value"] for c in cycles]
+    best: list[float | None] = []
+    current_best: float | None = None
+    for s in scores:
+        if s is not None:
+            if current_best is None or s > current_best:
+                current_best = s
+        best.append(current_best)
+
+    return {
+        "cycles": cycles,
+        "failure_distribution": all_failures,
+        "ratchet": {"labels": labels, "scores": scores, "best": best},
+    }
 
 
 def _resolve_experiment_id(
@@ -529,6 +610,26 @@ def create_app(projects_dir: Path) -> FastAPI:
         return JSONResponse(
             {"phase": phase, "status": status, "data": data, "verdict": verdict}
         )
+
+    @app.get("/api/projects/{name}/research-runs")
+    async def project_research_runs(name: str) -> dict[str, Any]:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/research-runs",
+            project=name,
+        )
+        path = projects_dir / name
+        factory_dir = path / ".factory"
+        return _load_research_runs(factory_dir)
+
+    @app.get("/research/{name}", response_class=HTMLResponse)
+    async def research_view(name: str) -> HTMLResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request", endpoint="/research/{name}", project=name
+        )
+        return HTMLResponse((_STATIC_DIR / "research.html").read_text())
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
