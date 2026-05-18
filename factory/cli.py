@@ -352,6 +352,7 @@ def cmd_message(args: argparse.Namespace) -> int:
 
 def cmd_history(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
+    from factory.strategy import format_tiered_history
 
     store = ExperimentStore(Path(args.path))
     records = _run(store.load_history())
@@ -359,14 +360,17 @@ def cmd_history(args: argparse.Namespace) -> int:
         print("No experiments recorded.")
         return 0
 
-    header = f"{'ID':>4}  {'Verdict':>7}  {'Delta':>8}  {'Cost':>8}  Hypothesis"
-    print(header)
-    print("-" * len(header))
-    for r in records:
-        delta = f"{r.delta:+.4f}" if r.delta is not None else "    n/a"
-        cost = f"${r.cost_usd:.2f}" if r.cost_usd is not None else "     n/a"
-        hyp = r.hypothesis[:60]
-        print(f"{r.id:>4}  {r.verdict:>7}  {delta:>8}  {cost:>8}  {hyp}")
+    record_dicts = [
+        {
+            "id": r.id,
+            "hypothesis": r.hypothesis,
+            "verdict": r.verdict,
+            "delta": r.delta,
+            "change_summary": r.change_summary,
+        }
+        for r in records
+    ]
+    print(format_tiered_history(record_dicts))
     return 0
 
 
