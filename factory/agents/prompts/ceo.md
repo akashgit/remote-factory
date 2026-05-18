@@ -1378,7 +1378,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1395,6 +1395,8 @@ Always include structured metadata in `--notes`:
 - `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
 - `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
 - `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
+- `review_pipeline=full|abbreviated|skipped` — whether the full 2d-review pipeline ran (`full` = all 3 components executed)
+- `review_iterations=N` — how many review-until-clean iterations were needed (1 = clean on first pass)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
@@ -1951,7 +1953,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass"
+    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **If REVERT:**
@@ -1973,7 +1975,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS"
+    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 #### R5e. Termination Conditions
@@ -2216,7 +2218,7 @@ If `factory eval` fails without producing a valid score:
 If `factory guard` reports violations:
 1. Change MUST be reverted — no exceptions
 2. Close PR, checkout main
-3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details>"`
+3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details> review_pipeline=full review_iterations=$REVIEW_ITERATION"`
 4. Record violation in `strategy/current.md` under Anti-patterns
 
 ### General Agent Failure
