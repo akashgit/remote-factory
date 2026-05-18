@@ -144,8 +144,9 @@ def detect_default_branch(project_path: Path) -> str:
     )
     if result.returncode == 0 and result.stdout.strip():
         branch = result.stdout.strip()
-        log.debug("detect_default_branch", source="current_head", branch=branch)
-        return branch
+        if branch != "HEAD":
+            log.debug("detect_default_branch", source="current_head", branch=branch)
+            return branch
 
     log.debug("detect_default_branch", source="fallback", branch="main")
     return "main"

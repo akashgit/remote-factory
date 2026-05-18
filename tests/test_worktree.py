@@ -259,10 +259,12 @@ class TestDetectDefaultBranch:
 class TestCreateWorktreeWithMaster:
     def test_create_worktree_on_master_repo(self, git_project_master: Path) -> None:
         wt_path, branch = create_worktree(git_project_master, base_branch="master")
-
-        assert wt_path.exists()
-        assert branch.startswith("factory/run-")
-        assert (wt_path / "README.md").exists()
+        try:
+            assert wt_path.exists()
+            assert branch.startswith("factory/run-")
+            assert (wt_path / "README.md").exists()
+        finally:
+            remove_worktree(git_project_master, wt_path, branch)
 
 
 class TestSymlinkResolution:
