@@ -1,12 +1,13 @@
 """Tests for factory.cli — CLI subcommand routing."""
 
 import asyncio
+import contextlib
 import json
 import signal
 import threading
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
@@ -22,6 +23,20 @@ def _mock_invoke_agent_ok():
 
 def _mock_invoke_agent_fail():
     return AsyncMock(return_value=("Error: agent failed", 1))
+
+
+@contextlib.contextmanager
+def _mock_foreground():
+    """Mock the interactive foreground path: subprocess.run inside ClaudeRunner,
+    worktree lifecycle, and dashboard.  Yields the subprocess.run mock."""
+    mock_run = MagicMock(return_value=MagicMock(returncode=0))
+    with patch("factory.runners.claude.subprocess.run", mock_run), \
+         patch("factory.worktree.create_worktree",
+               side_effect=lambda p, b="main": (p, "factory/run-test")), \
+         patch("factory.worktree.remove_worktree"), \
+         patch("factory.worktree.prune_stale", return_value=[]), \
+         patch("factory.cli._ensure_dashboard"):
+        yield mock_run
 
 
 class TestParser:
@@ -138,11 +153,10 @@ class TestCmdCeoInteractive:
     def test_interactive_focus_allowed_existing_project(self, tmp_path):
         """--focus + --mode interactive is allowed when path is an existing directory."""
         (tmp_path / ".git").mkdir()
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive", "--focus", "auth layer"])
-        mock_exec.assert_called_once()
-        cmd = mock_exec.call_args[0][1]
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Improvement Mode (Phase 0)" in task
@@ -154,32 +168,29 @@ class TestCmdCeoInteractive:
         err = capsys.readouterr().err.lower()
         assert "provide" in err or "error" in err
 
-    def test_interactive_foreground_uses_execvp(self, tmp_path):
-        """--mode interactive launches via os.execvp (foreground)."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+    def test_interactive_foreground_uses_subprocess_run(self, tmp_path):
+        """--mode interactive launches via subprocess.run (foreground)."""
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
-        mock_exec.assert_called_once()
-        cmd = mock_exec.call_args[0][1]
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
     def test_interactive_existing_has_improvement_block(self, tmp_path):
         """--mode interactive on an existing directory injects Improvement Mode block."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Improvement Mode (Phase 0)" in task
 
     def test_interactive_new_idea_has_ideation_block(self):
         """--mode interactive with a non-directory path injects Ideation Mode block."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "build a cool CLI tool", "--mode", "interactive"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Ideation Mode (Phase 0)" in task
@@ -187,30 +198,27 @@ class TestCmdCeoInteractive:
 
     def test_interactive_task_contains_idea_text(self):
         """--mode interactive with raw idea text includes it in the Phase 0 block."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "distributed eval runner", "--mode", "interactive"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
     def test_interactive_existing_mode_is_improve(self, tmp_path):
         """--mode interactive on existing dir sets Mode: improve in the CEO task."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: improve" in task
 
     def test_interactive_new_idea_mode_is_build(self):
         """--mode interactive with new idea sets Mode: build in the CEO task."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "weather CLI", "--mode", "interactive"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
@@ -274,11 +282,10 @@ class TestCmdCeoResearchIdeation:
               "target": 0.9, "run_command": "python run.py",
               "result_path": "results.json"}
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "research", "--focus", "tokenizer"])
-        mock_exec.assert_called_once()
-        cmd = mock_exec.call_args[0][1]
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Focus Directive" in task
@@ -307,21 +314,19 @@ class TestCmdCeoResearchIdeation:
         assert result == 1
         assert "research_target" in capsys.readouterr().err
 
-    def test_research_ideation_foreground_uses_execvp(self):
-        """--mode research with idea string launches via os.execvp."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+    def test_research_ideation_foreground_uses_subprocess_run(self):
+        """--mode research with idea string launches via subprocess.run."""
+        with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        mock_exec.assert_called_once()
-        cmd = mock_exec.call_args[0][1]
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
 
     def test_research_ideation_task_has_research_phase_0(self):
         """--mode research with idea injects Research Ideation Phase 0 block."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Research Ideation Mode (Phase 0)" in task
@@ -329,30 +334,27 @@ class TestCmdCeoResearchIdeation:
 
     def test_research_ideation_task_mode_is_build(self):
         """--mode research with idea sets Mode: build (not research) since it enters ideation first."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
 
     def test_research_ideation_no_interactive_block(self):
         """--mode research should NOT inject Interactive Ideation block."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Interactive Ideation Mode" not in task
 
     def test_research_ideation_mentions_research_config(self):
         """--mode research ideation task mentions research config fields."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Research Target" in task
@@ -368,10 +370,9 @@ class TestCmdCeoResearchIdeation:
               "target": 0.9, "run_command": "python run.py",
               "result_path": "results.json"}
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "research"])
-        cmd = mock_exec.call_args[0][1]
+        cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Research Ideation Mode" not in task
@@ -1005,33 +1006,29 @@ class TestCmdCeo:
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 7200.0
 
-    def test_ceo_foreground_uses_execvp(self, tmp_path):
-        """cmd_ceo (default) launches claude interactively via os.execvp."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+    def test_ceo_foreground_uses_subprocess_run(self, tmp_path):
+        """cmd_ceo (default) launches claude interactively via subprocess.run."""
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path)])
-        mock_exec.assert_called_once()
-        cmd = mock_exec.call_args[0][1]
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert "--append-system-prompt" in cmd
         assert "--dangerously-skip-permissions" in cmd
 
     def test_ceo_foreground_passes_task_as_prompt(self, tmp_path):
         """Foreground mode passes the task as the initial user message."""
-        with patch("factory.cli.os.execvp") as mock_exec, \
-             patch("factory.cli.os.chdir"):
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path)])
-        cmd = mock_exec.call_args[0][1]
-        # Last arg (before flags) should be the task string
-        # The task contains the project path
+        cmd = mock_run.call_args[0][0]
         assert any(str(tmp_path) in arg for arg in cmd)
 
-    def test_ceo_foreground_chdir_to_project(self, tmp_path):
-        """Foreground mode changes cwd to the project directory."""
-        with patch("factory.cli.os.execvp"), \
-             patch("factory.cli.os.chdir") as mock_chdir:
+    def test_ceo_foreground_cwd_is_project(self, tmp_path):
+        """Foreground mode passes cwd to subprocess.run."""
+        with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path)])
-        mock_chdir.assert_called_once_with(tmp_path)
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["cwd"] == tmp_path
 
     def test_ceo_parser_has_headless_flag(self):
         """Parser accepts --headless flag."""
