@@ -102,6 +102,55 @@ def prune_stale(project_path: Path) -> list[str]:
     return pruned
 
 
+def detect_default_branch(project_path: Path) -> str:
+    """Detect the default branch for a git repository.
+
+    Cascade: remote HEAD → probe main/master → current HEAD → fallback 'main'.
+    """
+    project_path = project_path.resolve()
+
+    # Try remote default branch
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        ref = result.stdout.strip()
+        branch = ref.removeprefix("refs/remotes/origin/")
+        if branch and branch != ref:
+            log.debug("detect_default_branch", source="remote_head", branch=branch)
+            return branch
+
+    # Probe main then master
+    for candidate in ("main", "master"):
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", candidate],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            log.debug("detect_default_branch", source="probe", branch=candidate)
+            return candidate
+
+    # Current branch
+    result = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        branch = result.stdout.strip()
+        log.debug("detect_default_branch", source="current_head", branch=branch)
+        return branch
+
+    log.debug("detect_default_branch", source="fallback", branch="main")
+    return "main"
+
+
 def _list_active_worktrees(project_path: Path) -> set[str]:
     """Return set of absolute paths for all active worktrees."""
     result = subprocess.run(
