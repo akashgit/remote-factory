@@ -1496,6 +1496,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     _print_banner(banner_mode)
     _ensure_dashboard(project_path)
 
+    from factory.worktree import create_worktree, prune_stale, remove_worktree
+    pruned = prune_stale(project_path)
+    if pruned:
+        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
+
     if focus:
         from factory.study import add_backlog_item
         add_backlog_item(project_path, focus)
@@ -1505,6 +1510,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
+    base_branch = branch or "main"
+    wt_path, wt_branch = create_worktree(project_path, base_branch)
+
     if interactive_existing:
         ceo_mode = "improve"
     elif mode == "interactive" or research_ideation:
@@ -1512,7 +1520,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     else:
         ceo_mode = mode
     task = _build_ceo_task(
-        project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
+        wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         interactive_idea=interactive_idea,
@@ -1528,43 +1536,46 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # Uses completion guard to auto-resume on premature exit
         from factory.ceo_completion import run_ceo_with_completion_guard
 
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode=mode,
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-        ))
-        print(result)
-        if code == 0:
-            if pending_ids:
-                mark_read(project_path, pending_ids)
-        if code != 0:
-            return code
-        return _chain_modes(
-            project_path, focus=focus,
-            min_growth=min_growth, max_new=max_new, branch=branch,
-            already_improved=mode in ("improve", "meta") or discover_only,
-            model=model, no_github=no_github,
-        )
+        try:
+            result, code = _run(run_ceo_with_completion_guard(
+                wt_path,
+                task,
+                mode=mode,
+                runner_name=runner_name,
+                model=model,
+                timeout=7200.0,
+            ))
+            print(result)
+            if code == 0:
+                if pending_ids:
+                    mark_read(project_path, pending_ids)
+            if code != 0:
+                return code
+            return _chain_modes(
+                project_path, focus=focus,
+                min_growth=min_growth, max_new=max_new, branch=branch,
+                already_improved=mode in ("improve", "meta") or discover_only,
+                model=model, no_github=no_github,
+            )
+        finally:
+            remove_worktree(project_path, wt_path, wt_branch)
 
-    # Interactive foreground mode: use runner's interactive_exec.
-    # Mark read before exec — interactive_exec replaces the process via os.execvp
-    # so there's no post-execution hook. If the session fails to launch, messages
-    # are lost. This is accepted: the user is at the terminal and can re-send.
-    if pending_ids:
-        print(
-            f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
-            file=sys.stderr,
+    # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
+    try:
+        if pending_ids:
+            print(
+                f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
+                file=sys.stderr,
+            )
+            mark_read(project_path, pending_ids)
+        prompt = resolve_prompt("ceo", wt_path)
+        runner = get_runner(runner_name)
+        return runner.interactive_run(
+            prompt, task, wt_path,
+            model=model, role="ceo", dangerously_skip_permissions=True
         )
-        mark_read(project_path, pending_ids)
-    prompt = resolve_prompt("ceo", project_path)
-    runner = get_runner(runner_name)
-    runner.interactive_exec(
-        prompt, task, project_path,
-        model=model, role="ceo", dangerously_skip_permissions=True
-    )
+    finally:
+        remove_worktree(project_path, wt_path, wt_branch)
 
 
 def _is_github_url(path: str) -> bool:
@@ -2235,6 +2246,7 @@ def _run_single_cycle(
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
+    from factory.worktree import create_worktree, remove_worktree
 
     if focus:
         from factory.study import add_backlog_item
@@ -2245,30 +2257,36 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    task = _build_ceo_task(
-        project_path, mode, context, focus=focus, prompt_file=prompt_file,
-        min_growth=min_growth, max_new=max_new, branch=branch,
-        discover_only=discover_only, no_github=no_github,
-        messages=pending,
-        issue_number=issue_number,
-        issue_url=issue_url,
-    )
+    base_branch = branch or "main"
+    wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    result, code = _run(invoke_agent(
-        "ceo",
-        task,
-        project_path,
-        timeout=7200.0,
-        dangerously_skip_permissions=True,
-        model=model,
-    ))
+    try:
+        task = _build_ceo_task(
+            wt_path, mode, context, focus=focus, prompt_file=prompt_file,
+            min_growth=min_growth, max_new=max_new, branch=branch,
+            discover_only=discover_only, no_github=no_github,
+            messages=pending,
+            issue_number=issue_number,
+            issue_url=issue_url,
+        )
 
-    if code == 0:
-        if pending_ids:
-            mark_read(project_path, pending_ids)
+        result, code = _run(invoke_agent(
+            "ceo",
+            task,
+            wt_path,
+            timeout=7200.0,
+            dangerously_skip_permissions=True,
+            model=model,
+        ))
 
-    print(result)
-    return code
+        if code == 0:
+            if pending_ids:
+                mark_read(project_path, pending_ids)
+
+        print(result)
+        return code
+    finally:
+        remove_worktree(project_path, wt_path, wt_branch)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -2326,6 +2344,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     _print_banner(mode)
     _ensure_dashboard(project_path)
+
+    from factory.worktree import prune_stale
+    pruned = prune_stale(project_path)
+    if pruned:
+        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
     skip_improve = mode in ("improve", "meta") or discover_only

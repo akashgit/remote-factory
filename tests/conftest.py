@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -22,6 +23,31 @@ def _isolate_registry(tmp_path: Path) -> None:
     os.environ["FACTORY_REGISTRY_DIR"] = str(tmp_path / ".factory-test-registry")
     yield  # type: ignore[misc]
     os.environ.pop("FACTORY_REGISTRY_DIR", None)
+
+
+@pytest.fixture(autouse=True)
+def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
+    """Stub worktree functions for tests that don't exercise worktree logic.
+
+    Tests in test_worktree.py opt out via the 'real_worktree' marker.
+    """
+    if "real_worktree" in {m.name for m in request.node.iter_markers()}:
+        yield  # type: ignore[misc]
+        return
+
+    def _fake_create(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
+        return project_path, "factory/run-fake0000"
+
+    def _fake_remove(project_path: Path, worktree_path: Path, branch: str) -> None:
+        pass
+
+    def _fake_prune(project_path: Path) -> list[str]:
+        return []
+
+    with patch("factory.worktree.create_worktree", side_effect=_fake_create), \
+         patch("factory.worktree.remove_worktree", side_effect=_fake_remove), \
+         patch("factory.worktree.prune_stale", side_effect=_fake_prune):
+        yield  # type: ignore[misc]
 
 
 @pytest.fixture

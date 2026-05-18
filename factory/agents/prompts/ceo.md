@@ -1053,7 +1053,7 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 1. Read the issue: gh issue view $ISSUE_NUM
 2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
-4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION (e.g. experiment/3-add-retry-logic)
+4. The worktree already has its own branch — do NOT create a new branch. Commit directly to the current branch.
 5. Implement exactly what the issue describes
 6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
 7. Run tests and evals
@@ -1090,13 +1090,12 @@ If Builder fails (no PR opened), see Error Recovery below.
 **Step 3 — Additional checks (apply when relevant):**
 
 - **If the PR touches UI/frontend code** (HTML, CSS, JS, templates, dashboard endpoints):
-  - Checkout the PR branch locally (`git checkout <branch>`)
+  - The worktree already has the PR branch checked out — no need to switch branches
   - Kill and restart the dev server (`lsof -ti:<port> | xargs kill`, then restart) — the running process serves stale code
   - Use Playwright MCP to navigate to the affected page and take a screenshot
   - Verify the change renders correctly — tests passing does NOT mean the UI works
   - If Playwright reveals bugs, add them to the issue list
   - This is MANDATORY when the Focus Directive targets UI/UX — no exceptions
-  - After verification, checkout the target branch again (`git checkout main`)
 - **If the GitHub issue has an `## Execution Step` section** (operational or mixed hypothesis):
   - Read the `## Execution Acceptance Criteria` section from the GitHub issue (`gh issue view $ISSUE_NUM`) to get the expected output artifacts
   - Check if those artifacts exist in the project: `ls -la <artifact paths>`
@@ -1363,9 +1362,8 @@ factory review \
     --hypothesis "<hypothesis>" \
     --pr $PR_NUM
 
-# Close PR and finalize
+# Close PR and finalize — worktree cleanup is handled by the CLI
 gh pr close <pr-number>
-cd "$PROJECT_PATH" && git checkout main
 factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
@@ -1799,7 +1797,7 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 1. Read the issue: gh issue view $ISSUE_NUM
 2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
 3. Read the CEO-approved strategy at .factory/reviews/ceo-verdict-strategist.md
-4. git checkout -b experiment/$EXP_ID-$SHORT_DESCRIPTION
+4. The worktree already has its own branch — do NOT create a new branch. Commit directly to the current branch.
 5. Implement exactly what the hypothesis describes
 
 ## Surface Constraints — CRITICAL
@@ -1959,9 +1957,8 @@ factory review \
     --hypothesis "$HYPOTHESIS" \
     --pr $PR_NUM
 
+# Close PR and finalize — worktree cleanup is handled by the CLI
 gh pr close $PR_NUM
-cd "$PROJECT_PATH" && git checkout $TARGET_BRANCH
-
 factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
