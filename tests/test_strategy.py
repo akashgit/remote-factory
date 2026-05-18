@@ -449,6 +449,7 @@ class TestRecordToDict:
             "verdict": "keep",
             "delta": 0.1,
             "change_summary": "Fixed it",
+            "cost_usd": None,
         }
 
     def test_missing_attrs(self):

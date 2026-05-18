@@ -367,6 +367,7 @@ def cmd_history(args: argparse.Namespace) -> int:
             "verdict": r.verdict,
             "delta": r.delta,
             "change_summary": r.change_summary,
+            "cost_usd": r.cost_usd,
         }
         for r in records
     ]
@@ -1149,7 +1150,7 @@ def cmd_backfill_archive(args: argparse.Namespace) -> int:
     from factory.backfill_archive import backfill_archive
 
     project_path = Path(args.path).resolve()
-    result = backfill_archive(project_path)
+    result = _run(backfill_archive(project_path))
     print(
         f"Archive backfill complete: {result['existed']} existed, "
         f"{result['created']} created, {result['total']} total"
