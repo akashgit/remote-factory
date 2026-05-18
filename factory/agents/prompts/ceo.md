@@ -1086,6 +1086,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 | 4 | **Missing tests** | New code paths without test coverage, untested error branches |
 | 5 | **Style & consistency** | Naming conventions, code duplication, dead code, import organization |
 | 6 | **Scope compliance** | PR implements what the hypothesis asked — no scope creep, no unrelated changes |
+| 7 | **Guardrail compliance** | Builder followed its Pre-Execution Guardrails: no file exceeds 500 lines (unless justified generated/fixture file), all modified files are within declared scope or mutable_surfaces, no dangerous commands were used (rm -rf, git push --force, git reset --hard, DROP TABLE/DATABASE, chmod 777), no fixed_surfaces files were read or modified |
 
 **Step 3 — Additional checks (apply when relevant):**
 
@@ -1123,6 +1124,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 - Missing tests: PASS | FAIL (<details>)
 - Style: PASS | FAIL (<details>)
 - Scope: PASS | FAIL (<details>)
+- Guardrails: PASS | FAIL (<details>)
 ```
 
 **Step 5 — Act on the verdict:**

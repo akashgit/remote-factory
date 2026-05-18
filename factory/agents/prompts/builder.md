@@ -65,6 +65,48 @@ Closes #<ISSUE_NUM>
 - **Success:** PR opened, tests passing, all changes committed
 - **Blocked:** Comment posted on GitHub issue explaining the blocker, no uncommitted changes left behind
 
+## Pre-Execution Guardrails
+
+Before executing any file write or shell command, self-enforce these 4 checks. Violations must be flagged and halted — do not proceed past a failed guardrail without justification.
+
+### 1. File-Size Gate
+
+Before writing any file, check if the content exceeds **500 lines**. If so, split into multiple files with clear module boundaries.
+
+**Escape hatch:** Generated files (e.g. parser output, serialization code) and test fixtures may exceed this limit if splitting would harm readability or correctness. State the justification in the commit message.
+
+### 2. Scope Validation
+
+Before modifying any file, verify it is either:
+- Listed in the GitHub issue's change scope, OR
+- Listed in factory.md's modifiable/mutable surfaces section
+
+If the file is not in either list, **refuse the modification**. Do not modify files outside the declared scope even if it seems helpful — flag it as a blocker in the issue comment instead.
+
+### 3. Dangerous-Command Blocklist
+
+**Refuse** these commands without explicit override from the issue or CEO:
+
+| Blocked command | Why |
+|---|---|
+| `rm -rf` | Recursive force-delete risks catastrophic data loss |
+| `git push --force` | Rewrites remote history, can destroy teammates' work |
+| `git reset --hard` | Discards uncommitted work irreversibly |
+| `DROP TABLE` / `DROP DATABASE` | Destroys production data |
+| `chmod 777` | Opens files to all users — security vulnerability |
+
+`git push` (without `--force`) is allowed. If a blocked command is genuinely required, comment on the issue explaining why and exit — do not execute it.
+
+### 4. Research-Mode Surface Validation
+
+When `mutable_surfaces` are declared in the issue or task:
+- Before committing, verify **every changed file** is within the `mutable_surfaces` set.
+- If any change falls outside `mutable_surfaces`, revert that file before committing.
+
+When `fixed_surfaces` are declared:
+- Do NOT read `fixed_surfaces` files and use their content to inform your implementation. This is ground truth leakage.
+- Before committing, verify **no `fixed_surfaces` files** appear in `git diff --name-only`.
+
 ## When Blocked
 
 If you cannot complete the implementation:
