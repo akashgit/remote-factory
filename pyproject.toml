@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn[standard]>=0.34",
     "mcp>=1.27.0",
     "pyyaml>=6.0",
+    "filelock>=3.0",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -27,6 +28,9 @@ Homepage = "https://github.com/akashgit/remote-factory"
 Repository = "https://github.com/akashgit/remote-factory"
 Issues = "https://github.com/akashgit/remote-factory/issues"
 
+[project.optional-dependencies]
+migrate = ["tomli_w>=1.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -39,6 +43,7 @@ factory = "factory.cli:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+markers = ["real_worktree: use real git worktree functions instead of mocks"]
 
 [tool.ruff]
 line-length = 100

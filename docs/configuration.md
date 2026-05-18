@@ -245,9 +245,82 @@ Generated at runtime by the factory. Add to `.gitignore` — do not edit manuall
 └── agents/                  # Per-project prompt overrides
 ```
 
+## User Configuration (`~/.factory/config.toml`)
+
+All `FACTORY_*` environment variables can also be set in `~/.factory/config.toml`. Env vars remain fully supported (for CI, Docker, scripting) — config.toml is additive.
+
+### Precedence (highest wins)
+
+```
+CLI flag  >  env var  >  profile credential  >  config.toml [defaults]  >  hardcoded default
+```
+
+### Example config.toml
+
+```toml
+[defaults]
+runner = "claude"                        # CLI backend: "claude" or "bob"
+model = ""                               # Claude model for agent subprocesses
+projects_dir = "~/factory-projects"      # Root for factory-managed projects
+
+[credentials.vertex]
+CLAUDE_CODE_USE_VERTEX = "1"
+ANTHROPIC_VERTEX_PROJECT_ID = "my-gcp-project"
+CLOUD_ML_REGION = "us-east5"
+
+[credentials.bob]
+FACTORY_RUNNER = "bob"
+BOBSHELL_API_KEY = "..."
+```
+
+### Commands
+
+```bash
+factory config edit                      # Open config in $EDITOR (creates template if missing)
+factory config show                      # Show resolved config (secrets masked)
+factory config show --reveal             # Show full values including secrets
+factory config migrate                   # Create starter config from current env vars
+```
+
+### Credential profiles
+
+Profiles let you switch between environments without juggling env vars:
+
+```bash
+factory ceo ~/my-project --profile vertex
+factory run ~/my-project --profile bob --loop
+factory agent researcher --task "..." --project ~/my-project --profile vertex
+```
+
+Profile credentials are injected via `os.environ.setdefault()`, so pre-existing env vars always win.
+
+### Security
+
+- Config file is created with `0o600` permissions (owner read/write only)
+- `factory config show` masks secrets by default (keys containing "key", "token", "secret", "password")
+- Profile names are validated: `[a-zA-Z0-9_-]+` only (no path traversal)
+- Credential keys must be valid shell identifiers: `[A-Z_][A-Z0-9_]*`
+
+### Available defaults keys
+
+| Key | Env var equivalent | Default |
+|-----|-------------------|---------|
+| `runner` | `FACTORY_RUNNER` | `claude` |
+| `model` | `FACTORY_MODEL` | *(Claude Code default)* |
+| `projects_dir` | `FACTORY_PROJECTS_DIR` | `~/factory-projects` |
+| `vault_path` | `FACTORY_VAULT_PATH` | *(unset)* |
+| `playbooks_dir` | `FACTORY_PLAYBOOKS_DIR` | `~/.factory/playbooks` |
+| `registry_dir` | `FACTORY_REGISTRY_DIR` | `~/.factory` |
+| `managed_dirs` | `FACTORY_MANAGED_DIRS` | *(unset)* |
+| `runner_quiet` | `FACTORY_RUNNER_QUIET` | *(unset)* |
+| `bob_dry_run` | `FACTORY_BOB_DRY_RUN` | *(unset)* |
+| `bob_max_invocations_per_cycle` | `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` | `8` |
+| `ceo_respawn_disabled` | `FACTORY_CEO_RESPAWN_DISABLED` | *(unset)* |
+| `ceo_max_respawns` | `FACTORY_CEO_MAX_RESPAWNS` | `3` |
+
 ## Environment Variables
 
-The Factory spawns Claude Code as subprocesses — it does not call the Claude API directly. No external services are required beyond Claude Code itself.
+All environment variables listed below can alternatively be set in `~/.factory/config.toml` (see above). Env vars are still supported for CI, Docker, and scripting.
 
 | Variable | Purpose | Default |
 |----------|---------|---------|

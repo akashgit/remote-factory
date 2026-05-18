@@ -43,7 +43,7 @@ curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install
 factory --help
 ```
 
-If you installed from source without `uv tool install`, prefix all commands with `uv run python -m factory` instead of `factory`.
+If running from source without `uv tool install`, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI, bare `factory` works directly.
 
 ## CEO Agent Registration
 
@@ -93,6 +93,8 @@ To add MCP servers to a target project, create a `.mcp.json` in its root. The Bu
 ## Environment Variables
 
 The factory reads these environment variables. None are required for basic usage — the defaults work out of the box.
+
+> **Tip:** All `FACTORY_*` variables below can also be set in `~/.factory/config.toml`, which supports credential profiles and secret masking. See the [Configuration Reference](configuration.md#user-configuration-factoryconfigtoml) for details. Env vars always take precedence over config.toml values.
 
 ### Claude Code Authentication
 
@@ -156,7 +158,10 @@ cd remote-factory && uv sync && uv tool install -e .
 # 4. Register CEO agent
 factory install
 
-# 5. Verify
+# 5. (Optional) Set up config file with credential profiles
+factory config edit                          # Creates ~/.factory/config.toml
+
+# 6. Verify
 factory --help
 factory detect /path/to/any/project
 ```

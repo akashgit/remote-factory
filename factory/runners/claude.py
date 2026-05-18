@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 from pathlib import Path
-from typing import NoReturn
 
 from factory.runners._stream import should_stream, stream_subprocess
 
@@ -86,7 +86,7 @@ class ClaudeRunner:
 
         return stdout, proc.returncode or 0
 
-    def interactive_exec(
+    def interactive_run(
         self,
         prompt: str,
         task: str,
@@ -95,18 +95,12 @@ class ClaudeRunner:
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
-    ) -> NoReturn:
-        """Replace process with interactive Claude Code session.
+    ) -> int:
+        """Run an interactive Claude Code session as a subprocess.
 
-        Args:
-            prompt: The system prompt to append.
-            task: The initial user message.
-            cwd: Working directory (os.chdir is called before exec).
-            model: Optional model override.
-            role: Agent role (unused by claude, but kept for API compatibility).
-            dangerously_skip_permissions: If True, skip permission prompts.
+        Returns the exit code so the caller can clean up in a finally block.
         """
-        _ = role  # unused by claude runner
+        _ = role
         cmd = [
             "claude",
             "--append-system-prompt", prompt,
@@ -118,7 +112,7 @@ class ClaudeRunner:
             cmd.extend(["--model", model])
             os.environ["FACTORY_MODEL"] = model
 
-        logger.info("ClaudeRunner interactive_exec: cwd=%s", cwd)
+        logger.info("ClaudeRunner interactive_run: cwd=%s", cwd)
 
-        os.chdir(cwd)
-        os.execvp("claude", cmd)
+        result = subprocess.run(cmd, cwd=cwd)
+        return result.returncode

@@ -13,7 +13,8 @@ from factory.ace.paths import DEFAULTS_DIR as _PLAYBOOKS_DIR
 from factory.agents.runner import _PROMPTS_DIR
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
-_PLUGIN_AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
+_PLUGIN_AGENTS_DIR_CANDIDATE = Path(__file__).resolve().parent.parent.parent / "agents"
+_PLUGIN_AGENTS_DIR: Path | None = _PLUGIN_AGENTS_DIR_CANDIDATE if _PLUGIN_AGENTS_DIR_CANDIDATE.is_dir() else None
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,8 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
     """
     if agents_dir is None:
         agents_dir = _PLUGIN_AGENTS_DIR
+    if agents_dir is None:
+        return []
 
     config = load_agent_config()
     out_of_sync: list[str] = []

@@ -28,7 +28,7 @@ Deeply understand a project and determine how to evaluate improvements to it.
 Deeply investigate the project's domain to inform the Strategist's hypotheses.
 
 ### What You Do
-1. **Run local study**: `uv run python -m factory study "$PROJECT_PATH"` for interaction logs + shallow search
+1. **Run local study**: `factory study "$PROJECT_PATH"` for interaction logs + shallow search
 2. **Read the backlog**: Read `.factory/strategy/backlog.md` and assess which items are achievable, which are blocked, and which may be already done or obsolete. Note this in your report so the Strategist can prioritize.
 3. **Read project context**: README, pyproject.toml, experiment history, current strategy
 4. **Search externally**: Use WebSearch for similar projects, best practices, relevant techniques
@@ -76,7 +76,7 @@ Activate Mode 3 when ANY of these are true:
 
 1. **Run cross-project insights first**:
    ```bash
-   uv run python -m factory insights "$PROJECT_PATH" --projects-dir "${FACTORY_PROJECTS_DIR:-~/factory-projects}"
+   factory insights "$PROJECT_PATH" --projects-dir "${FACTORY_PROJECTS_DIR:-~/factory-projects}"
    ```
    This generates `.factory/strategy/insights.md` with category success rates and patterns across all managed projects.
 

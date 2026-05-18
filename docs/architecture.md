@@ -18,7 +18,7 @@ A dedicated Claude Code agent that owns the full workflow. Spawned via `factory 
 - Spawns specialist agents as subprocesses
 - Makes keep/revert decisions based on eval scores
 - Ensures mandatory archival after every cycle
-- Maintains a checkpoint for crash-resilient resume
+- Reads event log and `.factory/` state directly for crash-resilient resume
 
 Prompt: `factory/agents/prompts/ceo.md`
 
@@ -182,7 +182,7 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/strategy.py` | FEEC priority heuristic |
 | `factory/study.py` | Interaction log analysis |
 | `factory/insights.py` | Cross-project pattern analysis |
-| `factory/checkpoint.py` | CEO checkpoint save/load |
+| `factory/checkpoint.py` | CEO checkpoint save/load (legacy, debugging) |
 | `factory/analysis.py` | Experiment comparison (diff, explain) |
 | `factory/registry.py` | Global project registry (`~/.factory/registry.json`) |
 | `factory/report.py` | Performance report generation and loading |

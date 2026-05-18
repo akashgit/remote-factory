@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
 from typing import BinaryIO
 
@@ -15,7 +14,10 @@ def should_stream() -> bool:
     - FACTORY_RUNNER_QUIET=1 is set
     - stdout is not a TTY (e.g., piped to file)
     """
-    if os.environ.get("FACTORY_RUNNER_QUIET", "").lower() in ("1", "true", "yes"):
+    from factory.user_config import resolve
+
+    quiet = resolve("runner_quiet", env_var="FACTORY_RUNNER_QUIET") or ""
+    if quiet.lower() in ("1", "true", "yes"):
         return False
     if not sys.stdout.isatty():
         return False

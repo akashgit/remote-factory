@@ -51,9 +51,9 @@ A dedicated Claude Code agent that owns the full factory workflow. Spawned via `
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 
-Nine specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
-**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Distiller (refine ideas), Scrum Master (standup/resume), CEO (orchestrate).
+**Roles:** Researcher (observe), Strategist (hypothesize), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Distiller (refine ideas), CEO (orchestrate).
 
 ### Key data flow
 
@@ -96,6 +96,30 @@ All domain models live in `factory/models.py` as strict Pydantic v2 models. Key 
 
 Requires Claude Code installed and authenticated. The factory spawns `claude` subprocesses — it does not call the API directly. Any Claude Code authentication method works (API key, Vertex AI, etc.).
 
+### Configuration (`~/.factory/config.toml`)
+
+All `FACTORY_*` environment variables can also be set in `~/.factory/config.toml`. Env vars remain supported — config.toml is additive. Five-tier precedence: CLI flag > env var > profile credential > config.toml default > hardcoded default.
+
+```toml
+[defaults]
+runner = "claude"
+model = ""
+projects_dir = "~/factory-projects"
+
+[credentials.vertex]
+FACTORY_RUNNER = "claude"
+ANTHROPIC_API_KEY = "sk-ant-..."
+```
+
+**Commands:**
+- `factory config show [--reveal]` — show resolved config with secrets masked
+- `factory config edit` — open `~/.factory/config.toml` in `$EDITOR`
+- `factory config migrate` — create starter config from current env vars (requires `tomli_w`)
+
+**Credential profiles:** Use `--profile <name>` with `factory ceo`, `factory run`, or `factory agent` to load a `[credentials.<name>]` section. Profile keys are injected into `os.environ`.
+
+**Implementation:** `factory/user_config.py` — `load_config()`, `resolve()`, `show_config()`, `migrate_env_to_config()`.
+
 ## Runners
 
 The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI), but Bob Shell (`bob` CLI) is also supported as a switchable alternative.
@@ -121,10 +145,13 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 
 ```bash
 # Build — from idea, spec file, or GitHub URL
-factory ceo "Build a weather CLI"               # Raw idea as positional arg
+factory ceo "Build a weather CLI"               # Raw idea → ~/factory-projects/weather-cli/
+factory ceo "Build a weather CLI" --dir my-app  # Explicit dir name override
 factory ceo ~/ideas/spec.md                     # Spec file → new project
 factory ceo https://github.com/user/repo        # Clone and improve
 factory ceo "distributed eval runner" --mode interactive  # Brainstorm → build
+factory ceo /path/to/project --mode interactive           # Discuss what to work on → improve
+factory ceo /path/to/project --mode interactive --focus "auth"  # Discuss a specific topic
 factory ceo "SWE-bench solver" --mode research            # Research ideation → build
 
 # Improve — point at existing codebase
@@ -160,7 +187,7 @@ factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck ga
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
 
-`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve and research modes; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode: pass a raw idea as the positional argument (e.g. `factory ceo "distributed eval runner" --mode interactive`). The CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. Incompatible with `--headless` and `--focus`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`.
+`factory run` / `factory ceo` spawn the CEO agent as a subprocess using the selected runner (`claude` by default, or `bob` with `--runner bob`). The CEO owns the full workflow: state detection, agent spawning, experiment lifecycle, and mandatory archival. The `--loop` flag adds a heartbeat wrapper with configurable interval and max cycles. `--mode meta` runs the full Improve loop on the factory itself, then ACE playbook evolution for all agent roles. `--focus` activates targeted mode: builds exactly one item and exits. Accepts backlog names (`--focus "eval reliability"`), issue numbers (`--focus 42`), issue URLs, or `owner/repo#N` shorthand. Issue refs are auto-detected and fetched via `gh`/`glab` CLI. Works in improve and research modes; mutually exclusive with `--loop`. `--mode interactive` enters ideation mode. For new ideas (e.g. `factory ceo "distributed eval runner" --mode interactive`), the CEO researches the space via the Researcher, then iteratively refines the idea with the Distiller agent through user feedback, producing an idea.md spec before building. For existing projects (e.g. `factory ceo /path/to/project --mode interactive`), the CEO studies the project (backlog, eval scores, open issues, history), presents findings, and discusses what to work on before transitioning to Improve mode. `--focus` is allowed on existing projects to seed the discussion topic. Incompatible with `--headless`. `--mode research` enters research ideation for new projects (e.g. `factory ceo "SWE-bench solver" --mode research`) — the Distiller collects research config (target metric, mutable/fixed surfaces, constraints) before building. For existing projects with `research_target` configured, runs the research improvement loop directly. Incompatible with `--headless` (for new projects) and `--prompt`.
 
 ## Observability
 

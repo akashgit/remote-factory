@@ -14,15 +14,15 @@ This skill spawns the **Factory CEO Agent** — a dedicated autonomous orchestra
 
 ```bash
 # Resolve the factory installation root
-FACTORY_HOME="$(uv run python -m factory home)"
+FACTORY_HOME="$(factory home)"
 
 # Launch the CEO agent (default: improve mode)
-uv run python -m factory ceo "$(pwd)"
+factory ceo "$(pwd)"
 
 # Or specify a mode
-uv run python -m factory ceo "$(pwd)" --mode discover   # Auto-detect evals
-uv run python -m factory ceo "$(pwd)" --mode improve    # Improvement loop (default)
-uv run python -m factory ceo "$(pwd)" --mode meta       # Self-improvement only (ACE)
+factory ceo "$(pwd)" --mode discover   # Auto-detect evals
+factory ceo "$(pwd)" --mode improve    # Improvement loop (default)
+factory ceo "$(pwd)" --mode meta       # Self-improvement only (ACE)
 ```
 
 ## What the CEO Does
@@ -37,13 +37,13 @@ uv run python -m factory ceo "$(pwd)" --mode meta       # Self-improvement only 
 
 ```bash
 # Via factory run (same thing, supports heartbeat loop mode)
-uv run python -m factory run /path/to/project --loop --interval 1800
+factory run /path/to/project --loop --interval 1800
 
 # Via factory agent (invoke any specialist directly)
-uv run python -m factory agent researcher --task "Research the project" --project /path
+factory agent researcher --task "Research the project" --project /path
 
 # In a detached tmux session
-uv run python -m factory tmux /path/to/project --loop
+factory tmux /path/to/project --loop
 ```
 
 ## Agent Roles

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import structlog
+from filelock import FileLock
 
 from factory.models import (
     CompositeScore,
@@ -155,6 +156,7 @@ class ExperimentStore:
     def __init__(self, project_path: Path) -> None:
         self.project_path = project_path
         self.factory_dir = project_path / ".factory"
+        self._lock = FileLock(self.factory_dir / ".store.lock")
 
     async def init(self, config: FactoryConfig) -> None:
         """Create .factory/ structure with config.json, results.tsv, experiments/, strategy/."""
@@ -305,14 +307,16 @@ class ExperimentStore:
         Idempotent: if the next experiment dir already exists (e.g. from a
         previous interrupted run), return its ID without crashing.
         Also registers the project in the global registry (non-blocking).
+        Uses filelock for safe concurrent ID allocation.
         """
-        exp_id = await self.next_id()
-        log.info("experiment_begin", exp_id=exp_id, hypothesis=hypothesis[:80])
-        exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
-        exp_dir.mkdir(parents=True, exist_ok=True)
-        hyp_path = exp_dir / "hypothesis.md"
-        if not hyp_path.exists():
-            hyp_path.write_text(hypothesis)
+        with self._lock:
+            exp_id = await self.next_id()
+            log.info("experiment_begin", exp_id=exp_id, hypothesis=hypothesis[:80])
+            exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
+            exp_dir.mkdir(parents=True, exist_ok=True)
+            hyp_path = exp_dir / "hypothesis.md"
+            if not hyp_path.exists():
+                hyp_path.write_text(hypothesis)
 
         try:
             from factory.registry import register_project
@@ -354,6 +358,7 @@ class ExperimentStore:
 
         Creates the experiment directory if it is missing (e.g. after git clean).
         Computes delta from score_before/score_after if not already set.
+        Uses filelock for safe concurrent TSV append.
         """
         delta = record.delta
         if delta is None and record.score_before is not None and record.score_after is not None:
@@ -365,33 +370,35 @@ class ExperimentStore:
             verdict=record.verdict,
             delta=delta,
         )
-        exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
-        exp_dir.mkdir(parents=True, exist_ok=True)
 
-        record_dump = record.model_dump()
-        record_dump["delta"] = delta
-        (exp_dir / "verdict.json").write_text(
-            json.dumps(record_dump, indent=2, default=str) + "\n"
-        )
+        with self._lock:
+            exp_dir = self.factory_dir / "experiments" / f"{exp_id:03d}"
+            exp_dir.mkdir(parents=True, exist_ok=True)
 
-        tsv_path = self.factory_dir / "results.tsv"
-        with open(tsv_path, "a", newline="") as f:
-            writer = csv.writer(f, dialect="excel-tab")
-            writer.writerow([
-                record.id,
-                record.timestamp.isoformat(),
-                record.hypothesis,
-                record.change_summary,
-                record.issue_number if record.issue_number is not None else "",
-                record.pr_number if record.pr_number is not None else "",
-                record.score_before if record.score_before is not None else "",
-                record.score_after if record.score_after is not None else "",
-                delta if delta is not None else "",
-                record.verdict,
-                record.cost_usd if record.cost_usd is not None else "",
-                record.notes,
-                "|".join(record.research_citations) if record.research_citations else "",
-            ])
+            record_dump = record.model_dump()
+            record_dump["delta"] = delta
+            (exp_dir / "verdict.json").write_text(
+                json.dumps(record_dump, indent=2, default=str) + "\n"
+            )
+
+            tsv_path = self.factory_dir / "results.tsv"
+            with open(tsv_path, "a", newline="") as f:
+                writer = csv.writer(f, dialect="excel-tab")
+                writer.writerow([
+                    record.id,
+                    record.timestamp.isoformat(),
+                    record.hypothesis,
+                    record.change_summary,
+                    record.issue_number if record.issue_number is not None else "",
+                    record.pr_number if record.pr_number is not None else "",
+                    record.score_before if record.score_before is not None else "",
+                    record.score_after if record.score_after is not None else "",
+                    delta if delta is not None else "",
+                    record.verdict,
+                    record.cost_usd if record.cost_usd is not None else "",
+                    record.notes,
+                    "|".join(record.research_citations) if record.research_citations else "",
+                ])
 
         try:
             from factory.registry import update_project_stats

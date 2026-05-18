@@ -9,7 +9,7 @@ import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import NoReturn
+import subprocess as _subprocess
 
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.usage import (
@@ -119,7 +119,10 @@ def _check_auth(start_path: Path | None = None) -> None:
 
 def is_dry_run() -> bool:
     """Return True if dry-run mode is enabled."""
-    return os.environ.get("FACTORY_BOB_DRY_RUN", "").lower() in ("1", "true", "yes")
+    from factory.user_config import resolve
+
+    val = resolve("bob_dry_run", env_var="FACTORY_BOB_DRY_RUN") or ""
+    return val.lower() in ("1", "true", "yes")
 
 
 def _get_bob_bin_dir() -> str | None:
@@ -276,7 +279,7 @@ class BobRunner:
 
         return stdout, return_code
 
-    def interactive_exec(
+    def interactive_run(
         self,
         prompt: str,
         task: str,
@@ -285,18 +288,20 @@ class BobRunner:
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
-    ) -> NoReturn:
-        """Replace process with interactive Bob Shell session."""
+    ) -> int:
+        """Run an interactive Bob Shell session as a subprocess.
+
+        Returns the exit code so the caller can clean up in a finally block.
+        """
         project_path = self._find_project_path(cwd)
 
-        # Persist key for nested subagent spawns (before dry-run check so file exists)
         _persist_key(project_path)
 
         if is_dry_run():
             yolo_flag = " --yolo" if dangerously_skip_permissions else ""
-            print(f"[DRY-RUN] Would exec: bob --chat-mode=factory-{role}{yolo_flag}")
+            print(f"[DRY-RUN] Would run: bob --chat-mode=factory-{role}{yolo_flag}")
             print(f"[DRY-RUN] Task: {task[:200]}...")
-            raise SystemExit(0)
+            return 0
 
         _check_auth(cwd)
 
@@ -304,10 +309,7 @@ class BobRunner:
             check_ceilings(project_path, self.cycle_start)
         except CeilingExceededError as e:
             print(f"ERROR: {e}")
-            raise SystemExit(1) from e
-
-        # NOTE: Custom modes are not supported in Bob Shell (unlike Claude Code).
-        # The agent role definition is injected via the prompt instead.
+            return 1
 
         chat_mode = _BOB_CHAT_MODE
         full_task = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
@@ -320,15 +322,14 @@ class BobRunner:
         if dangerously_skip_permissions:
             cmd.append("--yolo")
 
-        logger.info("BobRunner interactive_exec: cwd=%s, chat_mode=%s", cwd, chat_mode)
+        logger.info("BobRunner interactive_run: cwd=%s, chat_mode=%s", cwd, chat_mode)
 
-        # Ensure bob's bin directory is first in PATH so the correct Node is found
         bob_bin_dir = _get_bob_bin_dir()
         if bob_bin_dir and not os.environ.get("PATH", "").startswith(bob_bin_dir):
             os.environ["PATH"] = f"{bob_bin_dir}:{os.environ.get('PATH', '')}"
 
-        os.chdir(cwd)
-        os.execvp("bob", cmd)
+        result = _subprocess.run(cmd, cwd=cwd)
+        return result.returncode
 
     def _find_project_path(self, cwd: Path) -> Path:
         """Find the project root (directory containing .factory/)."""

@@ -8,7 +8,6 @@ to "wrap up" early.
 from __future__ import annotations
 
 import json
-import os
 import re
 import uuid
 from dataclasses import dataclass
@@ -407,7 +406,9 @@ async def run_ceo_with_completion_guard(
     from factory.agents.runner import invoke_agent
 
     # Check escape hatch
-    if os.environ.get("FACTORY_CEO_RESPAWN_DISABLED") == "1":
+    from factory.user_config import resolve
+
+    if resolve("ceo_respawn_disabled", env_var="FACTORY_CEO_RESPAWN_DISABLED") == "1":
         log.info("ceo_respawn_disabled", reason="FACTORY_CEO_RESPAWN_DISABLED=1")
         return await invoke_agent(
             "ceo", initial_task, project_path,
@@ -415,7 +416,10 @@ async def run_ceo_with_completion_guard(
         )
 
     if max_respawns is None:
-        max_respawns = int(os.environ.get("FACTORY_CEO_MAX_RESPAWNS", DEFAULT_MAX_RESPAWNS))
+        max_respawns = int(
+            resolve("ceo_max_respawns", env_var="FACTORY_CEO_MAX_RESPAWNS", default=str(DEFAULT_MAX_RESPAWNS))
+            or DEFAULT_MAX_RESPAWNS
+        )
 
     # Check for existing in-flight cycle (respawn scenario)
     cycle_state = read_cycle_state(project_path)

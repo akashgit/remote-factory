@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -95,8 +96,8 @@ def _print_banner(mode: str = "improve") -> None:
 
 
 def cmd_home(args: argparse.Namespace) -> int:
-    """Print the factory installation root directory."""
-    factory_home = Path(__file__).resolve().parent.parent
+    """Print the factory package root (where templates/ lives)."""
+    factory_home = Path(__file__).resolve().parent
     print(factory_home)
     return 0
 
@@ -264,7 +265,9 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     verdict = args.verdict
     notes = args.notes or ""
 
-    if verdict == "keep":
+    force = getattr(args, "force", False)
+
+    if verdict == "keep" and not force:
         config_path = project_path / ".factory" / "config.json"
         if config_path.exists():
             config = FactoryConfig(**json.loads(config_path.read_text()))
@@ -294,6 +297,12 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 })
                 print(f"Finalize gate: precheck FAILED — overriding keep to revert ({failure_detail})")
 
+    if verdict == "keep" and force:
+        _emit_cli_event(project_path, "verdict.force_kept", {
+            "exp_id": args.id,
+        })
+        print("Finalize gate: precheck SKIPPED (--force)")
+
     record = ExperimentRecord(
         id=args.id,
         timestamp=datetime.now(),
@@ -322,7 +331,7 @@ def cmd_message(args: argparse.Namespace) -> int:
     """Queue a message for the CEO agent."""
     from factory.messages import write_message
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     if not project_path.exists():
         print(f"Error: project path does not exist: {project_path}", file=sys.stderr)
         return 1
@@ -365,7 +374,7 @@ def cmd_notify(args: argparse.Namespace) -> int:
     from factory.notify.telegram import TelegramNotifier
     from factory.store import ExperimentStore
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     store = ExperimentStore(project_path)
     records = _run(store.load_history())
     notifier = TelegramNotifier()
@@ -787,7 +796,7 @@ def cmd_archive(args: argparse.Namespace) -> int:
     from factory.state import detect_state
     from factory.store import ExperimentStore
 
-    project_path = Path(args.path)
+    project_path = Path(args.path).resolve()
     store = ExperimentStore(project_path)
     records = _run(store.load_history())
 
@@ -1155,6 +1164,42 @@ def cmd_explain(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_config(args: argparse.Namespace) -> int:
+    """Manage ~/.factory/config.toml."""
+    sub = getattr(args, "config_command", None)
+    if not sub:
+        print("Usage: factory config {show,edit,migrate}")
+        return 1
+
+    if sub == "show":
+        from factory.user_config import show_config
+
+        reveal = getattr(args, "reveal", False)
+        print(show_config(reveal=reveal))
+        return 0
+
+    if sub == "edit":
+        from factory.user_config import CONFIG_PATH, ensure_config_file
+
+        ensure_config_file()
+        editor = os.environ.get("EDITOR", "vi")
+        return subprocess.call([editor, str(CONFIG_PATH)])
+
+    if sub == "migrate":
+        from factory.user_config import migrate_env_to_config
+
+        try:
+            msg = migrate_env_to_config()
+            print(msg)
+            return 0
+        except (ImportError, FileExistsError) as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+    print(f"Unknown config subcommand: {sub}", file=sys.stderr)
+    return 1
+
+
 def cmd_emit(args: argparse.Namespace) -> int:
     from factory.events import emit_event
 
@@ -1259,6 +1304,10 @@ def cmd_install(args: argparse.Namespace) -> int:
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
 
     role = args.role
     task = args.task
@@ -1317,12 +1366,17 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     """
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
 
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
     headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
+    dir_name = getattr(args, "dir", None)
 
     if not raw_path:
         print("Error: provide a project path, GitHub URL, idea file, or prompt",
@@ -1330,6 +1384,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     no_github = getattr(args, "no_github", False)
+
+    _interactive_is_existing = (
+        mode == "interactive"
+        and raw_path
+        and Path(raw_path).expanduser().resolve().is_dir()
+    )
 
     if mode == "interactive":
         if headless:
@@ -1341,10 +1401,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "Interactive mode generates the spec; --prompt provides one.",
                   file=sys.stderr)
             return 1
-        if focus:
-            print("Error: --mode interactive and --focus are mutually exclusive. "
-                  "Interactive mode is for new ideas; --focus targets existing "
-                  "backlog items.", file=sys.stderr)
+        if focus and not _interactive_is_existing:
+            print("Error: --mode interactive and --focus are mutually exclusive "
+                  "for new ideas. To discuss a topic on an existing project, "
+                  "pass the project path: factory ceo /path --mode interactive --focus \"topic\"",
+                  file=sys.stderr)
             return 1
 
     if mode == "research":
@@ -1355,13 +1416,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
 
     interactive_idea: str | None = None
+    interactive_existing: bool = False
     research_ideation: str | None = None
-    if mode == "interactive":
-        # In interactive mode the positional arg is always an idea string, not a path.
-        # Skip _resolve_input to avoid misinterpreting the idea as a file/directory.
+    if mode == "interactive" and _interactive_is_existing:
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
+        interactive_existing = True
+    elif mode == "interactive":
         interactive_idea = raw_path
-        slug = _slugify(raw_path[:50])
-        project_path = _PROJECTS_DIR / slug
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
@@ -1375,12 +1438,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "--focus targets existing backlog items.", file=sys.stderr)
             return 1
         research_ideation = raw_path
-        slug = _slugify(raw_path[:50])
-        project_path = _PROJECTS_DIR / slug
+        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
         _ensure_repo(project_path)
         context = None
     else:
-        project_path, context = _resolve_input(raw_path)
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     issue_number: int | None = None
@@ -1419,13 +1482,24 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode not in ("improve", "research"):
+    if focus and mode not in ("improve", "research") and not interactive_existing:
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    _print_banner("ideation" if mode in ("interactive", "research") and (interactive_idea or research_ideation) else mode)
+    if interactive_existing:
+        banner_mode = "improve"
+    elif mode in ("interactive", "research") and (interactive_idea or research_ideation):
+        banner_mode = "ideation"
+    else:
+        banner_mode = mode
+    _print_banner(banner_mode)
     _ensure_dashboard(project_path)
+
+    from factory.worktree import create_worktree, prune_stale, remove_worktree
+    pruned = prune_stale(project_path)
+    if pruned:
+        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     if focus:
         from factory.study import add_backlog_item
@@ -1436,64 +1510,72 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    ceo_mode = "build" if mode == "interactive" or research_ideation else mode
+    base_branch = branch or "main"
+    wt_path, wt_branch = create_worktree(project_path, base_branch)
+
+    if interactive_existing:
+        ceo_mode = "improve"
+    elif mode == "interactive" or research_ideation:
+        ceo_mode = "build"
+    else:
+        ceo_mode = mode
     task = _build_ceo_task(
-        project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
+        wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
         interactive_idea=interactive_idea,
+        interactive_existing=interactive_existing,
         research_ideation=research_ideation,
         messages=pending,
         issue_number=issue_number,
         issue_url=issue_url,
     )
 
-    standup = _run_standup(project_path, ceo_mode, model=model)
-    if standup:
-        task += f"\n\n## Sprint Standup\n\n{standup}" 
-
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
         from factory.ceo_completion import run_ceo_with_completion_guard
 
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode=mode,
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-        ))
-        print(result)
-        if code == 0:
-            if pending_ids:
-                mark_read(project_path, pending_ids)
-        if code != 0:
-            return code
-        return _chain_modes(
-            project_path, focus=focus,
-            min_growth=min_growth, max_new=max_new, branch=branch,
-            already_improved=mode in ("improve", "meta") or discover_only,
-            model=model, no_github=no_github,
-        )
+        try:
+            result, code = _run(run_ceo_with_completion_guard(
+                wt_path,
+                task,
+                mode=mode,
+                runner_name=runner_name,
+                model=model,
+                timeout=7200.0,
+            ))
+            print(result)
+            if code == 0:
+                if pending_ids:
+                    mark_read(project_path, pending_ids)
+            if code != 0:
+                return code
+            return _chain_modes(
+                project_path, focus=focus,
+                min_growth=min_growth, max_new=max_new, branch=branch,
+                already_improved=mode in ("improve", "meta") or discover_only,
+                model=model, no_github=no_github,
+            )
+        finally:
+            remove_worktree(project_path, wt_path, wt_branch)
 
-    # Interactive foreground mode: use runner's interactive_exec.
-    # Mark read before exec — interactive_exec replaces the process via os.execvp
-    # so there's no post-execution hook. If the session fails to launch, messages
-    # are lost. This is accepted: the user is at the terminal and can re-send.
-    if pending_ids:
-        print(
-            f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
-            file=sys.stderr,
+    # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
+    try:
+        if pending_ids:
+            print(
+                f"Consuming {len(pending_ids)} message(s): {', '.join(pending_ids)}",
+                file=sys.stderr,
+            )
+            mark_read(project_path, pending_ids)
+        prompt = resolve_prompt("ceo", wt_path)
+        runner = get_runner(runner_name)
+        return runner.interactive_run(
+            prompt, task, wt_path,
+            model=model, role="ceo", dangerously_skip_permissions=True
         )
-        mark_read(project_path, pending_ids)
-    prompt = resolve_prompt("ceo", project_path)
-    runner = get_runner(runner_name)
-    runner.interactive_exec(
-        prompt, task, project_path,
-        model=model, role="ceo", dangerously_skip_permissions=True
-    )
+    finally:
+        remove_worktree(project_path, wt_path, wt_branch)
 
 
 def _is_github_url(path: str) -> bool:
@@ -1505,12 +1587,11 @@ def _is_github_url(path: str) -> bool:
 
 
 def _resolve_model(args: argparse.Namespace) -> str | None:
-    """Resolve model: CLI flag > FACTORY_MODEL env var > None."""
-    flag = (getattr(args, "model", None) or "").strip()
-    if flag:
-        return flag
-    env = (os.environ.get("FACTORY_MODEL") or "").strip()
-    return env or None
+    """Resolve model: CLI flag > FACTORY_MODEL env var > config.toml > None."""
+    from factory.user_config import resolve
+
+    flag = (getattr(args, "model", None) or "").strip() or None
+    return resolve("model", cli_value=flag, env_var="FACTORY_MODEL")
 
 
 def _resolve_runner(args: argparse.Namespace) -> str | None:
@@ -1524,9 +1605,14 @@ def _resolve_runner(args: argparse.Namespace) -> str | None:
     return None
 
 
-_PROJECTS_DIR = Path(os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects")))
+def _get_projects_dir() -> Path:
+    from factory.user_config import resolve
 
-def _resolve_input(raw: str) -> tuple[Path, str | None]:
+    raw = resolve("projects_dir", env_var="FACTORY_PROJECTS_DIR", default=str(Path.home() / "factory-projects"))
+    return Path(raw).expanduser() if raw else Path.home() / "factory-projects"
+
+
+def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | None]:
     """Resolve any user input to (project_path, optional_context).
 
     Handles four input types in priority order:
@@ -1543,8 +1629,8 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
     # 2. Existing file (e.g. path to an idea/spec .md file)
     if expanded.is_file():
         idea_content = expanded.read_text()
-        slug = _slugify(expanded.stem.split("\u2014")[0].strip())
-        project_path = _PROJECTS_DIR / slug
+        slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
+        project_path = _dedupe_project_path(_get_projects_dir() / slug, idea_content)
         _ensure_repo(project_path)
         _persist_spec(project_path, idea_content)
         print(f"Idea file: {expanded.name}")
@@ -1559,18 +1645,61 @@ def _resolve_input(raw: str) -> tuple[Path, str | None]:
         return Path(tmp_dir).resolve(), None
 
     # 4. Raw prompt
-    slug = _slugify(raw[:50])
-    project_path = _PROJECTS_DIR / slug
+    slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
+    project_path = _dedupe_project_path(_get_projects_dir() / slug, raw)
     _ensure_repo(project_path)
     _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
 
 
+_FILLER_WORDS = frozenset({
+    "a", "an", "the", "that", "which", "with", "for", "and", "or", "to", "using",
+    "comprehensive", "simple", "basic", "advanced", "new", "custom", "full",
+    "complete", "modern", "robust", "scalable", "lightweight", "minimal",
+    "fully", "featured", "production", "ready",
+})
+
+_VERB_RE = re.compile(
+    r"^(build|create|make|implement|develop|design|write|add|set\s*up|construct|craft)\b\s*"
+)
+
+
+def _extract_project_name(description: str) -> str:
+    """Extract a concise project name from a verbose description.
+
+    Strips leading imperative verbs and filler words, then takes
+    up to 4 whitespace-delimited tokens (hyphenated compounds like
+    ``real-time`` count as one token).
+    """
+    text = description.lower().strip()
+    text = _VERB_RE.sub("", text)
+    words = [w for w in re.split(r"\s+", text) if w and w not in _FILLER_WORDS]
+    name = "-".join(words[:4])
+    return _slugify(name) if name else _slugify(description[:50])
+
+
+def _dedupe_project_path(project_path: Path, new_spec: str) -> Path:
+    """Append a numeric suffix if the directory already holds a different project."""
+    spec_path = project_path / ".factory" / "strategy" / "current.md"
+    if not spec_path.exists():
+        return project_path
+    if new_spec.strip() in spec_path.read_text():
+        return project_path
+    base = project_path
+    counter = 2
+    while True:
+        candidate = base.parent / f"{base.name}-{counter}"
+        cand_spec = candidate / ".factory" / "strategy" / "current.md"
+        if not cand_spec.exists():
+            return candidate
+        if new_spec.strip() in cand_spec.read_text():
+            return candidate
+        counter += 1
+
+
 def _slugify(text: str) -> str:
     """Convert text to a filesystem-safe slug."""
-    import re
-
     text = text.lower().strip()
     text = re.sub(r"[^\w\s-]", "", text)
     text = re.sub(r"[\s_]+", "-", text)
@@ -1689,21 +1818,16 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         print(f"  tmux attach -t {session}")
         return 0
 
-    # Build the factory run command
-    factory_root = Path(__file__).resolve().parent.parent
+    # Build the factory run command — propagate env vars, use bare `factory`
     run_cmd_parts = [
-        f"cd {factory_root}",
-        "source .venv/bin/activate",
-        # Ensure Vertex AI env vars are set (inherit from current env)
-        f"export CLAUDE_CODE_USE_VERTEX={os.environ.get('CLAUDE_CODE_USE_VERTEX', '1')}",
-        f"export CLOUD_ML_REGION={os.environ.get('CLOUD_ML_REGION', 'your-region')}",
-        f"export ANTHROPIC_VERTEX_PROJECT_ID={os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', '')}",
-        # Ensure gcloud SDK is on PATH
+        f"export CLAUDE_CODE_USE_VERTEX={shlex.quote(os.environ.get('CLAUDE_CODE_USE_VERTEX', '1'))}",
+        f"export CLOUD_ML_REGION={shlex.quote(os.environ.get('CLOUD_ML_REGION', ''))}",
+        f"export ANTHROPIC_VERTEX_PROJECT_ID={shlex.quote(os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', ''))}",
         'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
     ]
 
     model = _resolve_model(args)
-    run_args = f"uv run python -m factory run {project_path}"
+    run_args = f"factory run {project_path}"
     if args.mode:
         run_args += f" --mode {args.mode}"
     if args.loop:
@@ -1877,40 +2001,6 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     return mode
 
 
-def _run_standup(project_path: Path, mode: str, model: str | None = None) -> str | None:
-    """Run the scrummaster agent and return its standup report.
-
-    Returns the report text, or None if the scrummaster fails or .factory/ doesn't exist.
-    Swallows all errors so it never blocks the CEO from starting.
-    """
-    import shutil
-
-    factory_dir = project_path / ".factory"
-    if not factory_dir.is_dir():
-        return None
-    if not shutil.which("claude"):
-        return None
-
-    try:
-        from factory.agents.runner import invoke_agent
-
-        task = (
-            f"Run standup for {project_path} (mode: {mode}). "
-            f"Read .factory/events.jsonl, reviews, experiments, strategy, and results.tsv. "
-            f"Report sprint status (FRESH or RESUME), completed phases, in-progress work, "
-            f"pending work, and a specific recommendation for what to do next."
-        )
-        result, code = _run(invoke_agent(
-            "scrummaster", task, project_path,
-            timeout=120.0, dangerously_skip_permissions=True, model=model,
-        ))
-        if code != 0:
-            return None
-        return result
-    except Exception:
-        return None
-
-
 def _build_ceo_task(
     project_path: Path,
     mode: str,
@@ -1923,6 +2013,7 @@ def _build_ceo_task(
     discover_only: bool = False,
     no_github: bool = False,
     interactive_idea: str | None = None,
+    interactive_existing: bool = False,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
     issue_number: int | None = None,
@@ -1938,7 +2029,27 @@ def _build_ceo_task(
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
 
-    if interactive_idea:
+    if interactive_existing:
+        task += (
+            f"\n\n## Interactive Improvement Mode (Phase 0)\n\n"
+            f"You are in interactive mode on an **existing project** at `{project_path}`.\n\n"
+            f"Before running any experiments, study the project and discuss with the user "
+            f"what to work on. Follow the Phase 0e: Ideation on Existing Projects protocol "
+            f"in your system prompt.\n\n"
+        )
+        if focus:
+            task += (
+                f"**Discussion topic (from --focus):** {focus}\n\n"
+                f"The user wants to discuss this specific topic. Use it to seed the "
+                f"conversation, but be open to the user redirecting.\n"
+            )
+        else:
+            task += (
+                "No specific topic was provided. Study the project broadly — "
+                "look at the backlog, eval scores, open issues, and recent history — "
+                "then present your findings and recommendations.\n"
+            )
+    elif interactive_idea:
         task += (
             f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
             f"**Raw idea from user:** {interactive_idea}\n\n"
@@ -2135,6 +2246,7 @@ def _run_single_cycle(
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
+    from factory.worktree import create_worktree, remove_worktree
 
     if focus:
         from factory.study import add_backlog_item
@@ -2145,38 +2257,45 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    task = _build_ceo_task(
-        project_path, mode, context, focus=focus, prompt_file=prompt_file,
-        min_growth=min_growth, max_new=max_new, branch=branch,
-        discover_only=discover_only, no_github=no_github,
-        messages=pending,
-        issue_number=issue_number,
-        issue_url=issue_url,
-    )
+    base_branch = branch or "main"
+    wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    standup = _run_standup(project_path, mode, model=model)
-    if standup:
-        task += f"\n\n## Sprint Standup\n\n{standup}"
+    try:
+        task = _build_ceo_task(
+            wt_path, mode, context, focus=focus, prompt_file=prompt_file,
+            min_growth=min_growth, max_new=max_new, branch=branch,
+            discover_only=discover_only, no_github=no_github,
+            messages=pending,
+            issue_number=issue_number,
+            issue_url=issue_url,
+        )
 
-    result, code = _run(invoke_agent(
-        "ceo",
-        task,
-        project_path,
-        timeout=7200.0,
-        dangerously_skip_permissions=True,
-        model=model,
-    ))
+        result, code = _run(invoke_agent(
+            "ceo",
+            task,
+            wt_path,
+            timeout=7200.0,
+            dangerously_skip_permissions=True,
+            model=model,
+        ))
 
-    if code == 0:
-        if pending_ids:
-            mark_read(project_path, pending_ids)
+        if code == 0:
+            if pending_ids:
+                mark_read(project_path, pending_ids)
 
-    print(result)
-    return code
+        print(result)
+        return code
+    finally:
+        remove_worktree(project_path, wt_path, wt_branch)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run factory cycle(s) via the CEO agent. Supports single-shot and heartbeat loop."""
+    from factory.user_config import load_config
+
+    profile = getattr(args, "profile", None)
+    load_config(profile=profile)
+
     project_path, context = _resolve_input(args.path)
     prompt_file = getattr(args, "prompt", None)
     loop = getattr(args, "loop", False)
@@ -2225,6 +2344,11 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     _print_banner(mode)
     _ensure_dashboard(project_path)
+
+    from factory.worktree import prune_stale
+    pruned = prune_stale(project_path)
+    if pruned:
+        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
     skip_improve = mode in ("improve", "meta") or discover_only
@@ -2376,6 +2500,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notes", default=None, help="Additional notes")
     p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
     p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
+    p.add_argument("--force", action="store_true", default=False,
+                    help="Bypass precheck gate (for pre-existing failures)")
 
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")
@@ -2584,6 +2710,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
     p.add_argument("--host", default="0.0.0.0", help="Server host (default: 0.0.0.0)")
 
+    # config — user configuration management
+    config_parser = sub.add_parser("config", help="Manage ~/.factory/config.toml")
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    p_show = config_sub.add_parser("show", help="Show resolved config (secrets masked)")
+    p_show.add_argument("--reveal", action="store_true", default=False,
+                        help="Show full secret values instead of masking")
+    config_sub.add_parser("edit", help="Open config.toml in $EDITOR")
+    config_sub.add_parser("migrate", help="Create starter config.toml from current env vars")
+
     # emit — emit a structured event to .factory/events.jsonl
     p = sub.add_parser("emit", help="Emit a structured event to .factory/events.jsonl")
     p.add_argument("event_type", help="Event type (e.g. agent.started, agent.completed)")
@@ -2605,6 +2740,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -2631,6 +2768,11 @@ def build_parser() -> argparse.ArgumentParser:
              "Issue refs are auto-detected and fetched via gh/glab CLI",
     )
     p.add_argument(
+        "--dir", default=None,
+        help="Working directory name for the new project (overrides auto-derived name from prompt or idea file). "
+             "Ignored when pointing at an existing directory or GitHub URL.",
+    )
+    p.add_argument(
         "--headless", action="store_true", default=False,
         help="Run in pipe mode (non-interactive) instead of foreground",
     )
@@ -2652,6 +2794,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -2704,6 +2848,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", choices=["claude", "bob"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -2792,6 +2938,7 @@ def main(argv: list[str] | None = None) -> int:
         "install": cmd_install,
         "serve-mcp": cmd_serve_mcp,
         "dashboard": cmd_dashboard,
+        "config": cmd_config,
         "emit": cmd_emit,
         "agent": cmd_agent,
         "ceo": cmd_ceo,

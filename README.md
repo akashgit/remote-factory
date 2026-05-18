@@ -9,6 +9,8 @@
 
 **Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better.
 
+**Why we built this.** Existing AI coding tools like [GSD](https://github.com/gsd-build/get-shit-done) are powerful, but they often require repetitive manual steps and hand verification at every phase. The Factory was built to minimize that — agents verify their own work, and what you get back just works.
+
 ---
 
 ## Quick Start
@@ -25,14 +27,14 @@ That's it. You're ready to go. Every command runs from the **factory repo direct
 
 ```bash
 # Option A: run directly (no install needed)
-uv run python -m factory ceo "Build a personal homepage with a blog"
+uv run factory ceo "Build a personal homepage with a blog"
 
 # Option B: install as a CLI tool, then use `factory` anywhere
 uv tool install -e .
 factory ceo "Build a personal homepage with a blog"
 ```
 
-Both forms are equivalent. This README uses `uv run python -m factory` throughout so you can copy-paste without installing first. If you've installed the CLI, just replace `uv run python -m factory` with `factory`.
+If running from source without installing, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI via `uv tool install`, bare `factory` works directly. This README uses bare `factory` throughout — prepend `uv run` if you haven't installed.
 
 The factory stores all state locally — no external services required beyond Claude Code. Per-project state lives in `.factory/` (add it to `.gitignore`). Global state (project registry, evolved playbooks) lives in `~/.factory/`.
 
@@ -61,10 +63,10 @@ Here's a complete workflow — from a one-line idea to a continuously improving 
 ### Step 1: Build from an idea
 
 ```bash
-uv run python -m factory ceo "Build a personal homepage with a blog and projects section"
+factory ceo "Build a personal homepage with a blog and projects section"
 ```
 
-The Factory creates a project directory at `~/factory-projects/build-a-personal-homepage-...`, initializes a git repo, and launches Build mode. Here's what happens:
+The Factory creates a project directory at `~/factory-projects/personal-homepage-blog-projects/`, initializes a git repo, and launches Build mode. The directory name is auto-derived from your description (filler words stripped, capped at 4 words). Override it with `--dir my-site` if you prefer a specific name. Here's what happens:
 
 1. The **Researcher** surveys similar projects, tech stacks, and architecture patterns
 2. The **Strategist** creates a phased implementation plan (scaffold first, then features)
@@ -82,7 +84,7 @@ After the first build, the Factory creates a backlog — `.factory/strategy/back
 
 ```bash
 # Check what's in the backlog
-uv run python -m factory backlog-list ~/factory-projects/build-a-personal-homepage-...
+factory backlog-list ~/factory-projects/personal-homepage-blog-projects
 ```
 
 ### Step 3: Improve it
@@ -90,7 +92,7 @@ uv run python -m factory backlog-list ~/factory-projects/build-a-personal-homepa
 Point the factory at the project again. It detects the existing `.factory/` directory and enters Improve mode:
 
 ```bash
-uv run python -m factory ceo ~/factory-projects/build-a-personal-homepage-...
+factory ceo ~/factory-projects/personal-homepage-blog-projects
 ```
 
 Each improvement cycle:
@@ -112,7 +114,7 @@ Each improvement cycle:
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-uv run python -m factory ceo ~/factory-projects/build-a-personal-homepage-... --focus "add dark mode toggle"
+factory ceo ~/factory-projects/personal-homepage-blog-projects --focus "add dark mode toggle"
 ```
 
 The entire pipeline scopes to that target: the Researcher focuses its research, the Strategist generates exactly one hypothesis, and after the keep/revert decision the cycle ends.
@@ -121,30 +123,46 @@ Other ways to steer:
 
 ```bash
 # Add an item to the backlog manually
-uv run python -m factory backlog-add ~/factory-projects/... "add RSS feed for the blog"
+factory backlog-add ~/factory-projects/... "add RSS feed for the blog"
 
 # File a GitHub issue — the Strategist reads open issues
 gh issue create --title "Add contact form" --body "Simple form with email notification"
 
 # Pass a spec file to guide the next build phase
-uv run python -m factory ceo ~/factory-projects/... --prompt ~/ideas/performance-spec.md
+factory ceo ~/factory-projects/... --prompt ~/ideas/performance-spec.md
 ```
 
-### Step 5: Run it continuously
+### Step 5: Discuss what to do next (interactive mode)
+
+Instead of letting the Strategist pick what to work on, start a conversation with the CEO:
+
+```bash
+# Study the project, discuss options, then execute
+factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive
+
+# Seed the conversation with a topic
+factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactive --focus "auth layer"
+```
+
+The CEO studies the project — backlog, eval scores, open issues, recent experiment history — presents findings and recommendations, and iterates on your feedback. Once you agree on a direction, it transitions into Improve mode and executes.
+
+Interactive mode also works for new projects (pass an idea string instead of a path), where it enters an ideation loop to refine your idea into a buildable spec before building.
+
+### Step 6: Run it continuously
 
 For unattended operation, wrap the CEO in a heartbeat loop:
 
 ```bash
 # Continuous improvement — one cycle every 30 min (default)
-uv run python -m factory run ~/factory-projects/... --loop
+factory run ~/factory-projects/... --loop
 
 # Custom interval
-uv run python -m factory run ~/factory-projects/... --loop --interval 900
+factory run ~/factory-projects/... --loop --interval 900
 
 # In a detached tmux session — come back later
-uv run python -m factory tmux ~/factory-projects/... --loop
-uv run python -m factory tmux-ls                    # list active sessions
-uv run python -m factory tmux-stop --path ~/factory-projects/...  # stop a session
+factory tmux ~/factory-projects/... --loop
+factory tmux-ls                    # list active sessions
+factory tmux-stop --path ~/factory-projects/...  # stop a session
 ```
 
 Each cycle is a full observe → hypothesize → build → measure → decide pass. Failed experiments don't stop the loop — the factory learns from them and moves on.
@@ -160,7 +178,7 @@ The factory isn't just a software builder — it's a **harness creator**. Give i
 ### Step 1: Start with a research idea
 
 ```bash
-uv run python -m factory ceo "SWE-bench solver agent" --mode research
+factory ceo "SWE-bench solver agent" --mode research
 ```
 
 Research ideation works like interactive mode but collects additional configuration:
@@ -225,16 +243,16 @@ The factory itself is an outer optimization loop. It creates inner harnesses for
 
 ```bash
 # Start a new research project from an idea
-uv run python -m factory ceo "prompt optimizer for code review" --mode research
+factory ceo "prompt optimizer for code review" --mode research
 
 # Run the research loop on an existing project
-uv run python -m factory ceo ~/my-solver --mode research
+factory ceo ~/my-solver --mode research
 
 # Focus on a specific hypothesis
-uv run python -m factory ceo ~/my-solver --focus "try chain-of-thought prompting"
+factory ceo ~/my-solver --focus "try chain-of-thought prompting"
 
 # Continuous research loop
-uv run python -m factory run ~/my-solver --mode research --loop
+factory run ~/my-solver --mode research --loop
 ```
 
 See [Getting Started — Research Mode](docs/getting-started.md#research-mode-in-detail) for the full picture.
@@ -267,7 +285,7 @@ This is powered by **ACE (Autonomous Context Engineering)** — a Reflect → Cu
 
 ```bash
 # Run a full improvement cycle, then evolve all agent playbooks
-uv run python -m factory ceo ~/my-project --mode meta
+factory ceo ~/my-project --mode meta
 ```
 
 Run meta mode on a regular cadence — weekly is a good default. It needs at least 5 experiments across projects to produce meaningful playbook updates. See [ACE Self-Improvement](docs/ace.md) for details.
@@ -287,6 +305,7 @@ The factory has shipped something every day for the last 30 days — products, r
 | **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
 | **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
 | **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source Python framework for synthetic data generation — 3 agents (lead, builder, evaluator) autonomously triage issues, code, review, and merge PRs on OpenShift via Multica | Build + Improve |
 | **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
 
 Built something with the Factory? Open a PR to add it here — it helps others see what's possible.
@@ -298,7 +317,7 @@ Built something with the Factory? Open a PR to add it here — it helps others s
 Monitor factory activity in real time with `factory dashboard`:
 
 ```bash
-uv run python -m factory dashboard --projects-dir ~/factory-projects
+factory dashboard --projects-dir ~/factory-projects
 ```
 
 The dashboard (default port 8420) provides:
@@ -322,10 +341,38 @@ The factory supports multiple CLI backends. By default it uses **Claude Code** (
 export FACTORY_RUNNER=bob
 
 # Via CLI flag
-uv run python -m factory ceo ~/my-project --runner bob
+factory ceo ~/my-project --runner bob
 ```
 
 Bob Shell requires `BOBSHELL_API_KEY` and enforces per-cycle invocation ceilings (default: 8). Set `FACTORY_BOB_DRY_RUN=1` to test without API calls.
+
+### User Configuration (`~/.factory/config.toml`)
+
+All `FACTORY_*` env vars can be set in `~/.factory/config.toml` instead. Env vars still work — config.toml is additive. Precedence: CLI flag > env var > profile credential > config.toml default > hardcoded.
+
+```bash
+factory config edit                    # Open config in $EDITOR
+factory config show                    # Show resolved config (secrets masked)
+factory config show --reveal           # Show full values
+factory config migrate                 # Create starter config from current env vars
+```
+
+Credential profiles let you switch between environments:
+
+```toml
+[credentials.vertex]
+ANTHROPIC_API_KEY = "sk-ant-..."
+FACTORY_RUNNER = "claude"
+
+[credentials.bob]
+BOBSHELL_API_KEY = "..."
+FACTORY_RUNNER = "bob"
+```
+
+```bash
+factory ceo ~/my-project --profile vertex
+factory agent researcher --task "..." --project ~/my-project --profile bob
+```
 
 ---
 
@@ -334,6 +381,7 @@ Bob Shell requires `BOBSHELL_API_KEY` and enforces per-cycle invocation ceilings
 ```bash
 # Core workflow
 factory ceo <path|url|idea>             # Launch the CEO agent
+factory ceo <path> --mode interactive   # Discuss what to work on, then execute
 factory run <path> --loop               # Continuous heartbeat mode
 factory tmux <path> --loop              # In detached tmux session
 
@@ -373,11 +421,12 @@ factory dashboard                       # Live web dashboard on :8420
 factory detect <path>                   # Print project state
 factory discover <path>                 # Introspect + generate eval profile
 factory export <path>                   # Full project snapshot as JSON
-factory checkpoint <path>               # Save CEO state for crash recovery
-factory resume <path>                   # Resume from checkpoint
+factory log <path> <event> [--data JSON]  # Record milestone to event log
 ```
 
 See `factory --help` for the complete list.
+
+**Crash-resilient resume:** The factory supports automatic recovery from interrupted runs. The CEO reads the event log and `.factory/` state directly at the start of each cycle to reconstruct context and resume from where the previous run left off.
 
 ---
 

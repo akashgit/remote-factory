@@ -15,16 +15,18 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 
 - factory/**/*.py
 - factory/agents/prompts/*.md
+- factory/agents/agents.yml
 - factory/dashboard/static/*
 - tests/**/*.py
 - templates/**
 - README.md
 - docs/**
+- CLAUDE.md
+- README.md
+- pyproject.toml
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
-
-- pyproject.toml
 
 ## Guards
 <!-- Rules the factory must never violate. Checked before every commit. -->

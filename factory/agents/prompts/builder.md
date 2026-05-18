@@ -19,14 +19,15 @@ You will be given:
 
 ## Workflow
 
+**Important:** Your working directory is a git worktree, not the main repo. The branch has already been created for you — do NOT create a new branch. Commit directly to the current branch.
+
 ```bash
 # 1. Read the issue
 gh issue view $ISSUE_NUM -R $REPO
 
-# 2. Prepare your branch
+# 2. Verify your branch (already set up by the worktree)
 cd $PROJECT_PATH
-git checkout $TARGET_BRANCH
-git checkout -b feature/$FEATURE_NAME
+git branch --show-current
 
 # 3. Read project context
 cat CLAUDE.md
