@@ -1140,6 +1140,19 @@ def cmd_backfill_citations(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backfill_archive(args: argparse.Namespace) -> int:
+    """Generate archive notes for experiments missing from .factory/archive/experiments/."""
+    from factory.backfill_archive import backfill_archive
+
+    project_path = Path(args.path).resolve()
+    result = backfill_archive(project_path)
+    print(
+        f"Archive backfill complete: {result['existed']} existed, "
+        f"{result['created']} created, {result['total']} total"
+    )
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare two experiments side-by-side."""
     from factory.analysis import compare_experiments, format_comparison
@@ -2561,6 +2574,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("backfill-citations", help="Extract citations from experiment text into citations.json")
     p.add_argument("path", help="Path to the project")
 
+    # backfill-archive
+    p = sub.add_parser("backfill-archive", help="Generate archive notes for experiments missing from archive")
+    p.add_argument("path", help="Path to the project")
+
     # research
     p = sub.add_parser("research", help="Print research citation index for experiments")
     p.add_argument("path", help="Path to the project")
@@ -2915,6 +2932,7 @@ def main(argv: list[str] | None = None) -> int:
         "summary": cmd_summary,
         "research": cmd_research,
         "backfill-citations": cmd_backfill_citations,
+        "backfill-archive": cmd_backfill_archive,
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,
