@@ -424,8 +424,8 @@ Before talking to the user, gather context:
 
 If the discussion topic (from `--focus` or the user's initial question) requires **domain knowledge beyond the local codebase** — e.g., external APIs, industry standards, competitor analysis, library best practices — spawn the Researcher for targeted web research before presenting findings:
 
-```
-factory agent researcher --task "Research <topic>: gather current best practices, API docs, or prior art relevant to <focus>. Summarize findings in 2-3 paragraphs." --project "$PROJECT_PATH"
+```bash
+factory agent researcher --task "Research <topic>: gather current best practices, API docs, or prior art relevant to <focus>. Write findings to .factory/strategy/research.md. Summarize findings in 2-3 paragraphs." --project "$PROJECT_PATH" --timeout 300
 ```
 
 **Skip this step** if the topic is purely about the project's own code, backlog, or eval scores — E0 already covers those.
