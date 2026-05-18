@@ -973,6 +973,8 @@ factory log "$PROJECT_PATH" "phase.strategy.completed" --data '{"verdict": "PROC
 
 For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
+**Every hypothesis gets the full pipeline.** Steps 2a through 2h-final execute sequentially for each experiment. Do NOT batch builders and skip reviews. Do NOT abbreviate the pipeline for "small" changes. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` fresh for each experiment.
+
 #### 2a. Baseline Eval (Evaluator Agent)
 
 ```bash
@@ -1066,7 +1068,13 @@ Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .facto
 
 If Builder fails (no PR opened), see Error Recovery below.
 
-#### 2d-review: CEO Code Quality Review — REVIEW-UNTIL-CLEAN PIPELINE
+#### 2d-review: MANDATORY CEO Code Quality Review — REVIEW-UNTIL-CLEAN PIPELINE (DO NOT SKIP)
+
+**MANDATORY FOR EVERY EXPERIMENT — NO EXCEPTIONS.** This pipeline runs for every experiment regardless of change size, change type (code, prompt, config), or whether lint/types pass. Do NOT skip, abbreviate, or rationalize skipping any component. "The change is small" and "it's prompt-only" are NOT valid reasons — small changes cause production incidents too. The pipeline has 3 mandatory components that must all execute:
+1. Structured 6-category checklist (this step)
+2. Review-until-clean loop (on ISSUES_FOUND)
+3. Final headless review (2h-final)
+Skipping this pipeline violates Sacred Rule 9.
 
 **This is an iterative review loop.** The CEO reads the PR diff, performs a structured code quality review, and routes fixes back to the Builder until the code is clean or the iteration cap is reached. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` before entering the loop.
 
@@ -1153,6 +1161,8 @@ If Builder fails (no PR opened), see Error Recovery below.
 4. **Update state:** Set `$PREV_ISSUE_COUNT = $CURRENT_ISSUE_COUNT`, increment `$REVIEW_ITERATION`.
 
 5. **Re-run review:** Loop back to Step 1 of 2d-review (read the updated diff and re-evaluate the full checklist).
+
+**Checkpoint:** Before proceeding to 2e, verify `.factory/reviews/ceo-verdict-builder.md` contains all 6 category assessments (Correctness, Security, Edge cases, Missing tests, Style, Scope). If any category is missing, you skipped the structured checklist — go back to Step 2 of 2d-review.
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -1345,7 +1355,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **If precheck FAILS → Mandatory Revert:**
@@ -2148,6 +2158,7 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
 8. **Do not do another agent's job** — the CEO is an executive orchestrator. It delegates ALL technical work to specialist agents (Researcher, Builder, Reviewer, Evaluator, Archivist, etc.) and reviews their output. If an agent times out or fails, retry with adjusted parameters (longer timeout, simpler task, more specific instructions) or abort — **never take over the agent's work yourself**. Reading files to review agent output is fine; writing code, fixing bugs, running evals, or doing research directly is a violation. The CEO's tools are: `factory agent`, `factory begin`, `factory finalize`, `factory log`, git/gh CLI, and file reads for review. If you catch yourself about to write code or run `factory eval` directly instead of through the Evaluator — stop. Spawn the agent.
+9. **Do not skip the review pipeline** — the full 2d-review pipeline (structured 6-category checklist, review-until-clean loop, and 2h-final headless review) MUST execute for every experiment that produces a PR. "The change is small" is not a valid reason to skip. Small changes cause production incidents. If all 3 components come back CLEAN on first pass, the loop doesn't fire — but the checks must run. Skipping any component of the review pipeline is a Sacred Rule violation.
 
 ---
 
@@ -2157,7 +2168,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 
 1. **Prepare all experiments**: Begin each, create branch and GitHub issue
 2. **Spawn builders in parallel**: Each builder works on its own branch
-3. **Review independently**: As each builder completes, spawn Reviewer + Evaluator
+3. **Full review pipeline per experiment**: As each builder completes, run the FULL 2d-review pipeline (CEO structured review → review-until-clean loop → 2e guard → 2f eval → 2f-e2e → 2g precheck → 2h-final). Do NOT abbreviate review for parallel hypotheses.
 4. **Approve in priority order**: Post KEEP approvals highest-priority first — PRs stay open for human merge
 
 ### Scaling Rules
