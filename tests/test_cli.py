@@ -205,14 +205,14 @@ class TestCmdCeoInteractive:
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_interactive_existing_mode_is_improve(self, tmp_path):
-        """--mode interactive on existing dir sets Mode: improve in the CEO task."""
+    def test_interactive_existing_mode_is_interactive(self, tmp_path):
+        """--mode interactive on existing dir sets Mode: interactive in the CEO task."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: improve" in task
+        assert "Mode: interactive" in task
 
     def test_interactive_new_idea_mode_is_build(self):
         """--mode interactive with new idea sets Mode: build in the CEO task."""
@@ -1342,9 +1342,9 @@ class TestBuildCeoTaskInteractive:
         task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
         assert "## Interactive Ideation Mode" not in task
 
-    def test_existing_mode_is_improve(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
-        assert "Mode: improve" in task
+    def test_existing_mode_is_interactive(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "interactive", interactive_existing=True)
+        assert "Mode: interactive" in task
 
 
 class TestCmdHomeReturnsFactoryDir:

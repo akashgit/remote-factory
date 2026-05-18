@@ -420,6 +420,16 @@ Before talking to the user, gather context:
 4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
 5. **Read the backlog**: What items are pending? What was deferred from Build mode?
 
+### E0b: Optional Web Research
+
+If the discussion topic (from `--focus` or the user's initial question) requires **domain knowledge beyond the local codebase** — e.g., external APIs, industry standards, competitor analysis, library best practices — spawn the Researcher for targeted web research before presenting findings:
+
+```
+factory agent researcher --task "Research <topic>: gather current best practices, API docs, or prior art relevant to <focus>. Summarize findings in 2-3 paragraphs." --project "$PROJECT_PATH"
+```
+
+**Skip this step** if the topic is purely about the project's own code, backlog, or eval scores — E0 already covers those.
+
 ### E1: Present Findings
 
 Present a concise summary to the user:
@@ -453,7 +463,7 @@ When the user approves a direction:
 
 - **Maximum 5 iterations** of back-and-forth before asking the user to commit to a direction
 - **Do not start building during Phase 0e** — this phase produces a plan, not code
-- **You already have project context** — don't spawn a Researcher just to re-read what you already studied in E0
+- **You already have project context** — don't spawn a Researcher to re-read local code you already studied in E0, but DO use E0b to research external topics when the discussion requires domain knowledge beyond the codebase
 - **Be opinionated** — the user wants your recommendation, not a menu of every possible option
 
 ---

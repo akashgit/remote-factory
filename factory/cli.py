@@ -1506,7 +1506,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     if interactive_existing:
-        banner_mode = "improve"
+        banner_mode = "interactive"
     elif mode in ("interactive", "research") and (interactive_idea or research_ideation):
         banner_mode = "ideation"
     else:
@@ -1532,7 +1532,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     if interactive_existing:
-        ceo_mode = "improve"
+        ceo_mode = "interactive"
     elif mode == "interactive" or research_ideation:
         ceo_mode = "build"
     else:
