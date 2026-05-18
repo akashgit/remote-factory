@@ -27,6 +27,14 @@ from factory.models import (
 log = structlog.get_logger()
 
 
+def ensure_factory_dir(path: Path) -> None:
+    """Create a .factory directory, removing a broken symlink first if present."""
+    if path.is_symlink() and not path.exists():
+        log.warning("ensure_factory_dir_removing_broken_symlink", path=str(path))
+        path.unlink()
+    path.mkdir(parents=True, exist_ok=True)
+
+
 TSV_COLUMNS = [
     "id", "timestamp", "hypothesis", "change_summary", "issue_number",
     "pr_number", "score_before", "score_after", "delta", "verdict",
@@ -161,7 +169,7 @@ class ExperimentStore:
     async def init(self, config: FactoryConfig) -> None:
         """Create .factory/ structure with config.json, results.tsv, experiments/, strategy/."""
         log.info("store_init", project=str(self.project_path), goal=config.goal)
-        self.factory_dir.mkdir(exist_ok=True)
+        ensure_factory_dir(self.factory_dir)
         (self.factory_dir / "experiments").mkdir(exist_ok=True)
         (self.factory_dir / "strategy").mkdir(exist_ok=True)
         (self.factory_dir / "agents").mkdir(exist_ok=True)

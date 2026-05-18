@@ -116,7 +116,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     from factory.discovery.generate import write_eval_script
     from factory.discovery.introspect import introspect_project
     from factory.discovery.profile import build_eval_profile
-    from factory.store import ExperimentStore
+    from factory.store import ExperimentStore, ensure_factory_dir
 
     project_path = Path(args.path)
     _emit_cli_event(project_path, "discover.started", {"path": str(project_path)})
@@ -126,7 +126,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
     # Persist artifacts so detect_state can find them
     store = ExperimentStore(project_path)
-    store.factory_dir.mkdir(exist_ok=True)
+    ensure_factory_dir(store.factory_dir)
     _run(store.save_eval_profile(eval_profile))
     write_eval_script(eval_profile, project_path)
 
@@ -161,7 +161,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    from factory.store import ExperimentStore
+    from factory.store import ExperimentStore, ensure_factory_dir
 
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
@@ -172,7 +172,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     # Ensure .factory/ dir exists so reparse_config can write config.json
-    store.factory_dir.mkdir(exist_ok=True)
+    ensure_factory_dir(store.factory_dir)
     config = _run(store.reparse_config())
 
     if args.reparse:

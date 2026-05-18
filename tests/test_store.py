@@ -11,7 +11,7 @@ from factory.models import (
     EvalProfile,
     ExperimentRecord,
 )
-from factory.store import ExperimentStore
+from factory.store import ExperimentStore, ensure_factory_dir
 
 
 @pytest.fixture
@@ -392,3 +392,44 @@ class TestReparseResearchTarget:
         store.factory_dir.mkdir(exist_ok=True)
         config = await store.reparse_config()
         assert config.research_target is None
+
+
+class TestEnsureFactoryDir:
+    """Regression tests for broken symlink handling (issue #276)."""
+
+    def test_creates_directory(self, tmp_path):
+        target = tmp_path / ".factory"
+        ensure_factory_dir(target)
+        assert target.is_dir()
+
+    def test_existing_directory_is_noop(self, tmp_path):
+        target = tmp_path / ".factory"
+        target.mkdir()
+        (target / "config.json").write_text("{}")
+        ensure_factory_dir(target)
+        assert target.is_dir()
+        assert (target / "config.json").read_text() == "{}"
+
+    def test_broken_symlink_replaced_with_directory(self, tmp_path):
+        target = tmp_path / ".factory"
+        target.symlink_to("/nonexistent/path/that/does/not/exist")
+        assert target.is_symlink()
+        assert not target.exists()
+        ensure_factory_dir(target)
+        assert target.is_dir()
+        assert not target.is_symlink()
+
+    async def test_store_init_with_broken_symlink(self, tmp_path, sample_config):
+        """ExperimentStore.init handles a broken symlink at .factory/ gracefully."""
+        project = tmp_path / "project"
+        project.mkdir()
+        broken_link = project / ".factory"
+        broken_link.symlink_to("/nonexistent/absolute/path")
+        assert broken_link.is_symlink()
+        assert not broken_link.exists()
+
+        store = ExperimentStore(project)
+        await store.init(sample_config)
+        assert store.factory_dir.is_dir()
+        assert not store.factory_dir.is_symlink()
+        assert (store.factory_dir / "config.json").exists()
