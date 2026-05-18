@@ -30,8 +30,9 @@ class CheckpointState(BaseModel):
 
 def save_checkpoint(project_path: Path, state: CheckpointState) -> None:
     """Serialize checkpoint state to .factory/checkpoint.json."""
+    from factory.store import ensure_factory_dir
     factory_dir = project_path / ".factory"
-    factory_dir.mkdir(parents=True, exist_ok=True)
+    ensure_factory_dir(factory_dir)
     checkpoint_path = factory_dir / _CHECKPOINT_FILE
     checkpoint_path.write_text(state.model_dump_json(indent=2))
     log.info("checkpoint.saved", path=str(checkpoint_path))
