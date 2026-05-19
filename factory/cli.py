@@ -1456,10 +1456,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         interactive_existing = True
     elif mode == "interactive":
-        interactive_idea = raw_path
-        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
-        _ensure_repo(project_path)
+        resolved_file = Path(raw_path).expanduser()
+        if resolved_file.is_file():
+            interactive_idea = resolved_file.read_text()
+            slug = _slugify(dir_name) if dir_name else _slugify(resolved_file.stem.split("—")[0].strip())
+            project_path = _dedupe_project_path(_get_projects_dir() / slug, interactive_idea)
+            _ensure_repo(project_path)
+            _persist_spec(project_path, interactive_idea)
+            print(f"Idea file: {resolved_file.name}")
+            print(f"Project directory: {project_path}")
+        else:
+            interactive_idea = raw_path
+            slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+            project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
+            _ensure_repo(project_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
         # New research project from idea — enter research ideation
@@ -1741,10 +1751,14 @@ def _slugify(text: str) -> str:
 
 
 def _ensure_repo(project_path: Path) -> None:
-    """Create directory + git init if needed."""
+    """Create directory + git init (with initial commit) if needed."""
     project_path.mkdir(parents=True, exist_ok=True)
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "Initial commit"],
+            cwd=project_path, capture_output=True, check=True,
+        )
 
 
 def _read_prompt_file(project_path: Path, prompt_file: str) -> str:

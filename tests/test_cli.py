@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import signal
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -1496,3 +1497,70 @@ class TestSacredRule8Present:
         assert '8. **Do not do another agent\'s job**' in ceo_prompt, (
             "Sacred Rule 8 must be a numbered item (8.) in the Sacred Rules section"
         )
+
+
+class TestEnsureRepo:
+    """Tests for _ensure_repo() — verifies repos are initialized with at least one commit."""
+
+    def test_new_repo_has_commit(self, tmp_path):
+        """_ensure_repo() should create a repo with at least one commit."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert int(result.stdout.strip()) >= 1
+
+    def test_new_repo_has_valid_branch(self, tmp_path):
+        """_ensure_repo() should produce a repo with a resolvable default branch ref."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        branch = result.stdout.strip()
+        assert branch and branch != "HEAD"
+
+    def test_idempotent_on_existing_repo(self, tmp_path):
+        """Calling _ensure_repo() on an already-initialized repo should be a no-op."""
+        project = tmp_path / "existing"
+        _ensure_repo(project)
+        count_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        _ensure_repo(project)
+        count_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        assert count_before == count_after
+
+
+class TestInteractiveFileInput:
+    """Tests for interactive mode with file path input (Bug 1 fix)."""
+
+    def test_file_content_becomes_interactive_idea(self, tmp_path):
+        """When --mode interactive receives a file path, the file content should be used as the idea."""
+        spec_file = tmp_path / "my-cool-app.md"
+        spec_file.write_text("Build a weather dashboard with real-time updates")
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Build a weather dashboard with real-time updates" in task
+
+    def test_slug_derived_from_filename(self, tmp_path, capsys):
+        """The project slug should come from the file stem, not the full path."""
+        spec_file = tmp_path / "weather-dashboard.md"
+        spec_file.write_text("Build a weather dashboard")
+        with _mock_foreground():
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        output = capsys.readouterr().out
+        assert "weather-dashboard" in output
+        assert "Idea file: weather-dashboard.md" in output
