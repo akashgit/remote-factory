@@ -1757,7 +1757,8 @@ def _ensure_repo(project_path: Path) -> None:
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
         subprocess.run(
-            ["git", "commit", "--allow-empty", "-m", "Initial commit"],
+            ["git", "-c", "user.name=Factory", "-c", "user.email=factory@localhost",
+             "commit", "--allow-empty", "-m", "Initial commit"],
             cwd=project_path, capture_output=True, check=True,
         )
 
