@@ -1,11 +1,15 @@
-"""PR review formatting and posting — posts structured reviews on GitHub PRs."""
+"""PR review formatting and posting — posts structured reviews on GitHub/GitLab PRs."""
 
 from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
+from pathlib import Path
 
 import structlog
+
+from factory.forge import ForgeOps
+from factory.issue import Forge
 
 log = structlog.get_logger()
 
@@ -100,12 +104,28 @@ def post_review(
     review_body: str,
     verdict: str,
     repo: str | None = None,
+    *,
+    project_path: Path | None = None,
+    forge: Forge | None = None,
 ) -> bool:
-    """Post a review comment on a GitHub PR using gh CLI.
+    """Post a review on a GitHub PR or GitLab MR.
 
-    Uses `gh pr review` with --approve for KEEP and --request-changes for REVERT.
+    Uses ForgeOps to dispatch to the correct CLI. Falls back to GitHub
+    when neither *project_path* nor *forge* is provided.
     Returns True on success.
     """
+    log.info("post_review", pr=pr_number, verdict=verdict, repo=repo, forge=forge)
+
+    if forge or project_path:
+        resolved_forge: Forge = forge or "github"
+        ops = ForgeOps(
+            project_path or Path.cwd(),
+            forge=resolved_forge,
+            repo=repo or "",
+        )
+        return ops.post_review(pr_number, review_body, verdict)
+
+    # Legacy path: no forge info, default to gh CLI directly
     if verdict == "KEEP":
         review_flag = "--approve"
     else:
@@ -114,8 +134,6 @@ def post_review(
     cmd = ["gh", "pr", "review", str(pr_number), review_flag, "--body", review_body]
     if repo:
         cmd.extend(["--repo", repo])
-
-    log.info("post_review", pr=pr_number, verdict=verdict, repo=repo)
 
     try:
         result = subprocess.run(

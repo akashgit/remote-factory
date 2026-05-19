@@ -14,6 +14,7 @@ from factory.study import (
     _extract_messages,
     _fetch_open_issues,
     _find_log_files,
+    _get_forge_user,
     _get_github_user,
     _load_cross_project_insights,
     _migrate_legacy_backlog,
@@ -250,7 +251,7 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=[]),
-            patch("factory.study._get_github_user", return_value="owner"),
+            patch("factory.study._get_forge_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "## Hypothesis Budget" in result
@@ -268,7 +269,7 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=issues),
-            patch("factory.study._get_github_user", return_value="owner"),
+            patch("factory.study._get_forge_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "Your Issues (9)" in result
@@ -285,7 +286,7 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=issues),
-            patch("factory.study._get_github_user", return_value="owner"),
+            patch("factory.study._get_forge_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "Community Issues (9)" in result
@@ -305,7 +306,7 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=own + community),
-            patch("factory.study._get_github_user", return_value="owner"),
+            patch("factory.study._get_forge_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "Your Issues (3)" in result
@@ -321,7 +322,7 @@ class TestStudyProjectLocal:
         with (
             patch("factory.study._search_similar_projects", return_value=[]),
             patch("factory.study._fetch_open_issues", return_value=issues),
-            patch("factory.study._get_github_user", return_value="owner"),
+            patch("factory.study._get_forge_user", return_value="owner"),
         ):
             result = study_project_local(tmp_path / "myapp")
         assert "Your Issues (2)" in result
@@ -457,6 +458,9 @@ class TestExtractKeywords:
 
 
 class TestSearchSimilarProjects:
+    def _mock_run(self, stdout: str = "", returncode: int = 0):
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
+
     def test_success(self, tmp_path):
         project = tmp_path / "myapp"
         project.mkdir()
@@ -476,10 +480,10 @@ class TestSearchSimilarProjects:
                 "stargazersCount": 50,
             },
         ])
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=gh_output, stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run(gh_output)),
+        ):
             results = _search_similar_projects(project)
 
         assert len(results) == 2
@@ -494,8 +498,9 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Some Project\n")
 
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
+        with (
+            patch("factory.forge.infer_remote", side_effect=RuntimeError("no remote")),
+            patch("factory.forge.ForgeOps._run", side_effect=FileNotFoundError("gh not found")),
         ):
             results = _search_similar_projects(project)
         assert results == []
@@ -505,9 +510,12 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Some Project\n")
 
-        with patch(
-            "factory.study.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=15),
+        with (
+            patch("factory.forge.infer_remote", side_effect=RuntimeError("no remote")),
+            patch(
+                "factory.forge.ForgeOps._run",
+                side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=15),
+            ),
         ):
             results = _search_similar_projects(project)
         assert results == []
@@ -517,10 +525,10 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Some Project\n")
 
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="auth required"
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("", 1)),
+        ):
             results = _search_similar_projects(project)
         assert results == []
 
@@ -537,44 +545,54 @@ class TestSearchSimilarProjects:
         project.mkdir()
         (project / "README.md").write_text("# Some Project\n")
 
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="not json", stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("not json")),
+        ):
             results = _search_similar_projects(project)
         assert results == []
 
 
-class TestGetGithubUser:
-    def test_returns_login(self):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="akashgit\n", stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
-            assert _get_github_user() == "akashgit"
+class TestGetForgeUser:
+    def _mock_run(self, stdout: str = "", returncode: int = 0):
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
 
-    def test_returns_none_on_failure(self):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="not logged in"
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
-            assert _get_github_user() is None
-
-    def test_returns_none_on_missing_gh(self):
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
+    def test_returns_login(self, tmp_path):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("akashgit\n")),
         ):
-            assert _get_github_user() is None
+            assert _get_forge_user(tmp_path) == "akashgit"
 
-    def test_returns_none_on_empty_output(self):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="", stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
-            assert _get_github_user() is None
+    def test_returns_none_on_failure(self, tmp_path):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("", 1)),
+        ):
+            assert _get_forge_user(tmp_path) is None
+
+    def test_returns_none_on_missing_cli(self, tmp_path):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", side_effect=FileNotFoundError("gh not found")),
+        ):
+            assert _get_forge_user(tmp_path) is None
+
+    def test_returns_none_on_empty_output(self, tmp_path):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("")),
+        ):
+            assert _get_forge_user(tmp_path) is None
+
+    def test_backward_compat_alias(self):
+        assert _get_github_user is _get_forge_user
 
 
 class TestFetchOpenIssues:
+    def _mock_run(self, stdout: str = "", returncode: int = 0):
+        return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
+
     def test_success(self, tmp_path):
         gh_output = json.dumps([
             {
@@ -592,10 +610,10 @@ class TestFetchOpenIssues:
                 "author": {"login": "contributor"},
             },
         ])
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=gh_output, stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run(gh_output)),
+        ):
             issues = _fetch_open_issues(tmp_path)
 
         assert len(issues) == 2
@@ -608,30 +626,25 @@ class TestFetchOpenIssues:
         assert issues[1]["author"] == "contributor"
 
     def test_gh_not_found(self, tmp_path):
-        with patch(
-            "factory.study.subprocess.run", side_effect=FileNotFoundError("gh not found")
-        ):
+        with patch("factory.forge.infer_remote", side_effect=RuntimeError("no remote")):
             assert _fetch_open_issues(tmp_path) == []
 
     def test_gh_timeout(self, tmp_path):
-        with patch(
-            "factory.study.subprocess.run",
-            side_effect=subprocess.TimeoutExpired(cmd="gh", timeout=15),
-        ):
+        with patch("factory.forge.infer_remote", side_effect=RuntimeError("no remote")):
             assert _fetch_open_issues(tmp_path) == []
 
     def test_nonzero_exit(self, tmp_path):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=1, stdout="", stderr="not a git repo"
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("", 1)),
+        ):
             assert _fetch_open_issues(tmp_path) == []
 
     def test_invalid_json(self, tmp_path):
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout="not json", stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run("not json")),
+        ):
             assert _fetch_open_issues(tmp_path) == []
 
     def test_body_truncated_to_300(self, tmp_path):
@@ -641,10 +654,10 @@ class TestFetchOpenIssues:
             "labels": [], "body": long_body,
             "author": {"login": "someone"},
         }])
-        mock_result = subprocess.CompletedProcess(
-            args=[], returncode=0, stdout=gh_output, stderr=""
-        )
-        with patch("factory.study.subprocess.run", return_value=mock_result):
+        with (
+            patch("factory.forge.infer_remote", return_value=("github", "owner/repo")),
+            patch("factory.forge.ForgeOps._run", return_value=self._mock_run(gh_output)),
+        ):
             issues = _fetch_open_issues(tmp_path)
         assert len(issues[0]["body"]) == 300
 
