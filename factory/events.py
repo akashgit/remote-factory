@@ -29,8 +29,9 @@ def emit_event(
         "data": data or {},
     }
 
+    from factory.store import ensure_factory_dir
     events_dir = project_path / ".factory"
-    events_dir.mkdir(parents=True, exist_ok=True)
+    ensure_factory_dir(events_dir)
     events_file = events_dir / "events.jsonl"
 
     with open(events_file, "a") as f:

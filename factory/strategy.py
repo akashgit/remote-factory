@@ -1,4 +1,4 @@
-"""FEEC priority heuristic — Fix, Exploit, Explore, Combine.
+"""FEEC priority heuristic and tiered experiment history.
 
 Categorises and ranks hypotheses so the factory always addresses the
 highest-leverage category first:
@@ -6,15 +6,24 @@ highest-leverage category first:
   2. EXPLOIT — build on a recent success
   3. EXPLORE — try something new
   4. COMBINE — merge prior successful approaches
+
+Also provides 3-tier context compression for experiment history:
+  Tier 1 (last 3): full detail
+  Tier 2 (4–10 back): one-line summaries
+  Tier 3 (11+): aggregate stats only
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from enum import IntEnum
+from typing import Any
 
 import structlog
 
 log = structlog.get_logger()
+
+MAX_INLINE_HISTORY = 10
 
 # ── keywords per category (lowercase) ───────────────────────────────
 
@@ -174,3 +183,144 @@ def find_anti_patterns(
             hypothesis=hypothesis[:80],
         )
     return matches
+
+
+# ── 3-tier experiment history ───────────────────────────────────
+
+
+def _format_tier1(record: dict) -> str:
+    """Full-detail block for a single experiment (Tier 1)."""
+    exp_id = record.get("id", "?")
+    verdict = record.get("verdict", "?")
+    hypothesis = record.get("hypothesis", "")
+    delta = record.get("delta")
+    change_summary = record.get("change_summary", "")
+
+    delta_str = f"{delta:+.4f}" if delta is not None else "n/a"
+    cost_str = f"${record.get('cost_usd'):.2f}" if record.get("cost_usd") is not None else ""
+    header = f"### Experiment {exp_id} [{verdict}] (Δ {delta_str})"
+    if cost_str:
+        header = f"### Experiment {exp_id} [{verdict}] (Δ {delta_str}, {cost_str})"
+    lines = [
+        header,
+        f"**Hypothesis:** {hypothesis}",
+    ]
+    if change_summary:
+        lines.append(f"**Changes:** {change_summary[:200]}")
+    return "\n".join(lines)
+
+
+def _format_tier2(record: dict) -> str:
+    """One-line summary for a single experiment (Tier 2)."""
+    exp_id = record.get("id", "?")
+    verdict = record.get("verdict", "?")
+    delta = record.get("delta")
+    hypothesis = record.get("hypothesis", "")
+
+    delta_str = f"{delta:+.4f}" if delta is not None else "n/a"
+    cost_str = f" ${record.get('cost_usd'):.2f}" if record.get("cost_usd") is not None else ""
+    hyp_title = hypothesis[:80]
+    return f"- #{exp_id} {verdict} Δ{delta_str}{cost_str} — {hyp_title}"
+
+
+def _format_tier3(records: list[dict]) -> str:
+    """Aggregate stats for older experiments (Tier 3)."""
+    if not records:
+        return ""
+
+    total = len(records)
+    verdicts: Counter[str] = Counter()
+    categories: Counter[str] = Counter()
+    deltas: list[float] = []
+
+    for r in records:
+        verdicts[r.get("verdict", "unknown")] += 1
+        cat = categorize_hypothesis(r.get("hypothesis", ""))
+        categories[cat.name] += 1
+        d = r.get("delta")
+        if d is not None:
+            deltas.append(d)
+
+    keep_count = verdicts.get("keep", 0)
+    keep_rate = keep_count / total if total > 0 else 0.0
+
+    lines = [
+        f"**{total} older experiments** — {keep_rate:.0%} keep rate",
+    ]
+
+    if deltas:
+        trajectory = f"score Δ range [{min(deltas):+.4f}, {max(deltas):+.4f}]"
+        lines.append(f"  Score trajectory: {trajectory}")
+
+    cat_parts = [f"{name}: {cnt}" for name, cnt in categories.most_common()]
+    lines.append(f"  Categories: {', '.join(cat_parts)}")
+
+    verdict_parts = [f"{v}: {c}" for v, c in verdicts.most_common()]
+    lines.append(f"  Verdicts: {', '.join(verdict_parts)}")
+
+    return "\n".join(lines)
+
+
+def format_tiered_history(records: list[Any]) -> str:
+    """Produce 3-tier experiment history output.
+
+    - Tier 1 (last 3): full detail with hypothesis, verdict, delta, changes
+    - Tier 2 (4–10 back): one-line summaries
+    - Tier 3 (11+): aggregate stats only
+
+    *records* should be ordered oldest-first (as stored in results.tsv).
+    """
+    if not records:
+        return "No experiments recorded."
+
+    capped = records[-MAX_INLINE_HISTORY:]
+    older = records[:-MAX_INLINE_HISTORY] if len(records) > MAX_INLINE_HISTORY else []
+
+    tier1_records = capped[-3:]
+    tier2_records = capped[:-3] if len(capped) > 3 else []
+
+    sections: list[str] = []
+
+    sections.append(f"## Experiment History ({len(records)} total)\n")
+
+    if older:
+        sections.append("### Tier 3 — Older Experiments (aggregate)\n")
+        older_dicts = [_record_to_dict(r) if not isinstance(r, dict) else r for r in older]
+        sections.append(_format_tier3(older_dicts))
+        sections.append("")
+
+    if tier2_records:
+        sections.append("### Tier 2 — Recent (one-line)\n")
+        for r in tier2_records:
+            d = _record_to_dict(r) if not isinstance(r, dict) else r
+            sections.append(_format_tier2(d))
+        sections.append("")
+
+    sections.append("### Tier 1 — Latest (full detail)\n")
+    for r in tier1_records:
+        d = _record_to_dict(r) if not isinstance(r, dict) else r
+        sections.append(_format_tier1(d))
+        sections.append("")
+
+    log.info(
+        "format_tiered_history",
+        total=len(records),
+        tier1=len(tier1_records),
+        tier2=len(tier2_records),
+        tier3=len(older),
+    )
+    return "\n".join(sections).rstrip()
+
+
+def _record_to_dict(record: object) -> dict:
+    """Convert an ExperimentRecord (or any object with matching attrs) to a dict."""
+    if isinstance(record, dict):
+        return record
+    return {
+        "id": getattr(record, "id", "?"),
+        "hypothesis": getattr(record, "hypothesis", ""),
+        "verdict": getattr(record, "verdict", "?"),
+        "delta": getattr(record, "delta", None),
+        "change_summary": getattr(record, "change_summary", ""),
+        "cost_usd": getattr(record, "cost_usd", None),
+    }

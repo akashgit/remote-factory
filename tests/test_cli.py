@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import signal
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -35,6 +36,7 @@ def _mock_foreground():
                side_effect=lambda p, b="main": (p, "factory/run-test")), \
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
+         patch("factory.cli._read_target_branch", return_value="main"), \
          patch("factory.cli._ensure_dashboard"):
         yield mock_run
 
@@ -205,14 +207,14 @@ class TestCmdCeoInteractive:
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_interactive_existing_mode_is_improve(self, tmp_path):
-        """--mode interactive on existing dir sets Mode: improve in the CEO task."""
+    def test_interactive_existing_mode_is_interactive(self, tmp_path):
+        """--mode interactive on existing dir sets Mode: interactive in the CEO task."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: improve" in task
+        assert "Mode: interactive" in task
 
     def test_interactive_new_idea_mode_is_build(self):
         """--mode interactive with new idea sets Mode: build in the CEO task."""
@@ -318,8 +320,9 @@ class TestCmdCeoResearchIdeation:
         """--mode research with idea string launches via subprocess.run."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
+        claude_calls = [c for c in mock_run.call_args_list if c[0][0][0] == "claude"]
+        assert len(claude_calls) == 1
+        cmd = claude_calls[0][0][0]
         assert cmd[0] == "claude"
 
     def test_research_ideation_task_has_research_phase_0(self):
@@ -691,11 +694,11 @@ class TestRunWithGitHubUrl:
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-abc"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
-        # git clone should have been called
         mock_clone.assert_called_once_with(
             ["git", "clone", url, "/tmp/factory-abc"], check=True,
         )
@@ -707,7 +710,8 @@ class TestRunWithGitHubUrl:
         url = "git@github.com:user/repo.git"
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-xyz"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
@@ -991,7 +995,8 @@ class TestCmdCeo:
         with patch("factory.cli.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli._chain_modes", return_value=0), \
-             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"):
+             patch("factory.cli.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
+             patch("factory.cli._read_target_branch", return_value="main"):
             result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(
@@ -1341,9 +1346,9 @@ class TestBuildCeoTaskInteractive:
         task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
         assert "## Interactive Ideation Mode" not in task
 
-    def test_existing_mode_is_improve(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
-        assert "Mode: improve" in task
+    def test_existing_mode_is_interactive(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "interactive", interactive_existing=True)
+        assert "Mode: interactive" in task
 
 
 class TestCmdHomeReturnsFactoryDir:
@@ -1492,3 +1497,81 @@ class TestSacredRule8Present:
         assert '8. **Do not do another agent\'s job**' in ceo_prompt, (
             "Sacred Rule 8 must be a numbered item (8.) in the Sacred Rules section"
         )
+
+
+class TestEnsureRepo:
+    """Tests for _ensure_repo() — verifies repos are initialized with at least one commit."""
+
+    def test_new_repo_has_commit(self, tmp_path):
+        """_ensure_repo() should create a repo with at least one commit."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert int(result.stdout.strip()) >= 1
+
+    def test_new_repo_has_valid_branch(self, tmp_path):
+        """_ensure_repo() should produce a repo with a resolvable default branch ref."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        branch = result.stdout.strip()
+        assert branch and branch != "HEAD"
+
+    def test_idempotent_on_existing_repo(self, tmp_path):
+        """Calling _ensure_repo() on an already-initialized repo should be a no-op."""
+        project = tmp_path / "existing"
+        _ensure_repo(project)
+        count_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        _ensure_repo(project)
+        count_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        assert count_before == count_after
+
+
+class TestInteractiveFileInput:
+    """Tests for interactive mode with file path input (Bug 1 fix)."""
+
+    def test_file_content_becomes_interactive_idea(self, tmp_path):
+        """When --mode interactive receives a file path, the file content should be used as the idea."""
+        spec_file = tmp_path / "my-cool-app.md"
+        spec_file.write_text("Build a weather dashboard with real-time updates")
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Build a weather dashboard with real-time updates" in task
+
+    def test_slug_derived_from_filename(self, tmp_path, capsys):
+        """The project slug should come from the file stem, not the full path."""
+        spec_file = tmp_path / "weather-dashboard.md"
+        spec_file.write_text("Build a weather dashboard")
+        with _mock_foreground():
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        output = capsys.readouterr().out
+        assert "weather-dashboard" in output
+        assert "Idea file: weather-dashboard.md" in output
+
+    def test_raw_idea_persists_spec(self, tmp_path):
+        """When --mode interactive receives a raw string, the spec should be persisted."""
+        with _mock_foreground(), \
+             patch("factory.cli._get_projects_dir", return_value=tmp_path):
+            main(["ceo", "Build a CLI todo app", "--mode", "interactive"])
+        matches = [p for p in tmp_path.iterdir() if p.is_dir()]
+        assert len(matches) == 1
+        spec_path = matches[0] / ".factory" / "strategy" / "current.md"
+        assert spec_path.exists()
+        assert "Build a CLI todo app" in spec_path.read_text()

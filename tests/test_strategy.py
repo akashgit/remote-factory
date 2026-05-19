@@ -1,6 +1,17 @@
-"""Tests for factory.strategy — FEEC priority heuristic."""
+"""Tests for factory.strategy — FEEC priority heuristic and tiered history."""
 
-from factory.strategy import FEECCategory, categorize_hypothesis, detect_stuck, rank_hypotheses
+from factory.strategy import (
+    FEECCategory,
+    MAX_INLINE_HISTORY,
+    _format_tier1,
+    _format_tier2,
+    _format_tier3,
+    _record_to_dict,
+    categorize_hypothesis,
+    detect_stuck,
+    format_tiered_history,
+    rank_hypotheses,
+)
 
 
 # ── categorize_hypothesis ────────────────────────────────────────────
@@ -214,3 +225,242 @@ class TestDetectStuck:
         ]
         # All default to EXPLORE -> stuck
         assert detect_stuck(history) is True
+
+
+# ── _format_tier1 ───────────────────────────────────────────────
+
+
+def _make_record(exp_id: int, verdict: str = "keep", delta: float | None = 0.05,
+                 hypothesis: str = "Add feature", change_summary: str = "Changed foo.py") -> dict:
+    return {
+        "id": exp_id,
+        "verdict": verdict,
+        "delta": delta,
+        "hypothesis": hypothesis,
+        "change_summary": change_summary,
+    }
+
+
+class TestFormatTier1:
+    def test_full_detail_output(self):
+        r = _make_record(42, "keep", 0.05, "Add caching layer", "Modified cache.py")
+        out = _format_tier1(r)
+        assert "Experiment 42" in out
+        assert "[keep]" in out
+        assert "+0.0500" in out
+        assert "Add caching layer" in out
+        assert "Modified cache.py" in out
+
+    def test_no_delta(self):
+        r = _make_record(1, "revert", None)
+        out = _format_tier1(r)
+        assert "n/a" in out
+
+    def test_no_change_summary(self):
+        r = _make_record(1, "keep", 0.01, change_summary="")
+        out = _format_tier1(r)
+        assert "Changes:" not in out
+
+    def test_long_change_summary_truncated(self):
+        r = _make_record(1, "keep", 0.01, change_summary="x" * 300)
+        out = _format_tier1(r)
+        assert len([line for line in out.split("\n") if "Changes:" in line][0]) < 250
+
+
+# ── _format_tier2 ───────────────────────────────────────────────
+
+
+class TestFormatTier2:
+    def test_one_line_format(self):
+        r = _make_record(7, "revert", -0.03, "Improve logging")
+        out = _format_tier2(r)
+        assert out.startswith("- #7")
+        assert "revert" in out
+        assert "-0.0300" in out
+        assert "Improve logging" in out
+        assert "\n" not in out
+
+    def test_no_delta(self):
+        r = _make_record(5, "keep", None, "Some change")
+        out = _format_tier2(r)
+        assert "n/a" in out
+
+    def test_long_hypothesis_truncated(self):
+        r = _make_record(1, "keep", 0.0, hypothesis="x" * 200)
+        out = _format_tier2(r)
+        assert len(out) < 200
+
+
+# ── _format_tier3 ───────────────────────────────────────────────
+
+
+class TestFormatTier3:
+    def test_aggregate_stats(self):
+        records = [
+            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i)
+            for i in range(1, 6)
+        ]
+        out = _format_tier3(records)
+        assert "5 older experiments" in out
+        assert "keep rate" in out
+        assert "Categories:" in out
+        assert "Verdicts:" in out
+
+    def test_empty_records(self):
+        assert _format_tier3([]) == ""
+
+    def test_keep_rate_calculation(self):
+        records = [
+            _make_record(1, "keep", 0.1),
+            _make_record(2, "keep", 0.2),
+            _make_record(3, "revert", -0.1),
+            _make_record(4, "keep", 0.05),
+        ]
+        out = _format_tier3(records)
+        assert "75%" in out
+
+    def test_score_trajectory(self):
+        records = [
+            _make_record(1, "keep", -0.05),
+            _make_record(2, "keep", 0.10),
+        ]
+        out = _format_tier3(records)
+        assert "-0.0500" in out
+        assert "+0.1000" in out
+
+    def test_no_deltas(self):
+        records = [_make_record(1, "keep", None)]
+        out = _format_tier3(records)
+        assert "trajectory" not in out
+
+
+# ── format_tiered_history ───────────────────────────────────────
+
+
+class TestFormatTieredHistory:
+    def test_empty(self):
+        out = format_tiered_history([])
+        assert "No experiments" in out
+
+    def test_single_record_tier1_only(self):
+        records = [_make_record(1)]
+        out = format_tiered_history(records)
+        assert "Tier 1" in out
+        assert "Tier 2" not in out
+        assert "Tier 3" not in out
+        assert "Experiment 1" in out
+
+    def test_three_records_tier1_only(self):
+        records = [_make_record(i) for i in range(1, 4)]
+        out = format_tiered_history(records)
+        assert "Tier 1" in out
+        assert "Tier 2" not in out
+        assert "Experiment 1" in out
+        assert "Experiment 3" in out
+
+    def test_five_records_tier1_and_tier2(self):
+        records = [_make_record(i) for i in range(1, 6)]
+        out = format_tiered_history(records)
+        assert "Tier 1" in out
+        assert "Tier 2" in out
+        assert "Tier 3" not in out
+        # Tier 1 has last 3
+        assert "Experiment 3" in out
+        assert "Experiment 5" in out
+        # Tier 2 has first 2
+        assert "#1" in out
+        assert "#2" in out
+
+    def test_ten_records_tier1_and_tier2(self):
+        records = [_make_record(i) for i in range(1, 11)]
+        out = format_tiered_history(records)
+        assert "Tier 1" in out
+        assert "Tier 2" in out
+        assert "Tier 3" not in out
+        assert "10 total" in out
+
+    def test_fifteen_records_all_three_tiers(self):
+        records = [
+            _make_record(i, "keep" if i % 2 == 0 else "revert", 0.01 * i)
+            for i in range(1, 16)
+        ]
+        out = format_tiered_history(records)
+        assert "Tier 1" in out
+        assert "Tier 2" in out
+        assert "Tier 3" in out
+        assert "15 total" in out
+        # Tier 3 has the first 5 records (1-5), since capped=10 means records 6-15
+        assert "5 older experiments" in out
+        # Tier 1 has last 3 of capped (13, 14, 15)
+        assert "Experiment 13" in out
+        assert "Experiment 15" in out
+
+    def test_inline_cap_at_max(self):
+        """Only the last MAX_INLINE_HISTORY records appear in tier1+tier2."""
+        records = [_make_record(i) for i in range(1, 25)]
+        out = format_tiered_history(records)
+        # Tier 1+2 should cover records 15-24 (last 10)
+        # Records 1-14 should be in tier 3 aggregate
+        assert "14 older experiments" in out
+        # Record 15 should be in tier2 (one-line), not tier3
+        assert "#15" in out
+
+    def test_total_count_in_header(self):
+        records = [_make_record(i) for i in range(1, 8)]
+        out = format_tiered_history(records)
+        assert "7 total" in out
+
+    def test_accepts_object_records(self):
+        """Records can be objects with attrs instead of dicts."""
+        class FakeRecord:
+            def __init__(self, exp_id: int):
+                self.id = exp_id
+                self.hypothesis = "Test hypothesis"
+                self.verdict = "keep"
+                self.delta = 0.05
+                self.change_summary = "Changed test.py"
+
+        records = [FakeRecord(i) for i in range(1, 4)]
+        out = format_tiered_history(records)
+        assert "Experiment 1" in out
+        assert "Test hypothesis" in out
+
+
+# ── _record_to_dict ─────────────────────────────────────────────
+
+
+class TestRecordToDict:
+    def test_dict_passthrough(self):
+        d = {"id": 1, "hypothesis": "test"}
+        assert _record_to_dict(d) is d
+
+    def test_object_conversion(self):
+        class Obj:
+            id = 5
+            hypothesis = "Fix bug"
+            verdict = "keep"
+            delta = 0.1
+            change_summary = "Fixed it"
+
+        result = _record_to_dict(Obj())
+        assert result == {
+            "id": 5,
+            "hypothesis": "Fix bug",
+            "verdict": "keep",
+            "delta": 0.1,
+            "change_summary": "Fixed it",
+            "cost_usd": None,
+        }
+
+    def test_missing_attrs(self):
+        class Minimal:
+            pass
+
+        result = _record_to_dict(Minimal())
+        assert result["id"] == "?"
+        assert result["hypothesis"] == ""
+
+
+class TestMaxInlineHistory:
+    def test_constant_value(self):
+        assert MAX_INLINE_HISTORY == 10

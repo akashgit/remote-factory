@@ -27,6 +27,22 @@ def _run(coro):  # noqa: ANN001, ANN202
     return asyncio.run(coro)
 
 
+def _read_target_branch(project_path: Path) -> str:
+    """Read target branch from .factory/config.json, falling back to git detection."""
+    config_path = project_path / ".factory" / "config.json"
+    if config_path.exists():
+        try:
+            config = json.loads(config_path.read_text())
+            tb = config.get("target_branch")
+            if tb:
+                return tb
+        except (json.JSONDecodeError, OSError):
+            pass
+    from factory.worktree import detect_default_branch
+
+    return detect_default_branch(project_path)
+
+
 # ── banner ────────────────────────────────────────────────────
 
 
@@ -116,7 +132,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     from factory.discovery.generate import write_eval_script
     from factory.discovery.introspect import introspect_project
     from factory.discovery.profile import build_eval_profile
-    from factory.store import ExperimentStore
+    from factory.store import ExperimentStore, ensure_factory_dir
 
     project_path = Path(args.path)
     _emit_cli_event(project_path, "discover.started", {"path": str(project_path)})
@@ -126,7 +142,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
     # Persist artifacts so detect_state can find them
     store = ExperimentStore(project_path)
-    store.factory_dir.mkdir(exist_ok=True)
+    ensure_factory_dir(store.factory_dir)
     _run(store.save_eval_profile(eval_profile))
     write_eval_script(eval_profile, project_path)
 
@@ -161,7 +177,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    from factory.store import ExperimentStore
+    from factory.store import ExperimentStore, ensure_factory_dir
 
     project_path = Path(args.path)
     store = ExperimentStore(project_path)
@@ -172,7 +188,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         return 1
 
     # Ensure .factory/ dir exists so reparse_config can write config.json
-    store.factory_dir.mkdir(exist_ok=True)
+    ensure_factory_dir(store.factory_dir)
     config = _run(store.reparse_config())
 
     if args.reparse:
@@ -352,6 +368,7 @@ def cmd_message(args: argparse.Namespace) -> int:
 
 def cmd_history(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
+    from factory.strategy import format_tiered_history
 
     store = ExperimentStore(Path(args.path))
     records = _run(store.load_history())
@@ -359,14 +376,18 @@ def cmd_history(args: argparse.Namespace) -> int:
         print("No experiments recorded.")
         return 0
 
-    header = f"{'ID':>4}  {'Verdict':>7}  {'Delta':>8}  {'Cost':>8}  Hypothesis"
-    print(header)
-    print("-" * len(header))
-    for r in records:
-        delta = f"{r.delta:+.4f}" if r.delta is not None else "    n/a"
-        cost = f"${r.cost_usd:.2f}" if r.cost_usd is not None else "     n/a"
-        hyp = r.hypothesis[:60]
-        print(f"{r.id:>4}  {r.verdict:>7}  {delta:>8}  {cost:>8}  {hyp}")
+    record_dicts = [
+        {
+            "id": r.id,
+            "hypothesis": r.hypothesis,
+            "verdict": r.verdict,
+            "delta": r.delta,
+            "change_summary": r.change_summary,
+            "cost_usd": r.cost_usd,
+        }
+        for r in records
+    ]
+    print(format_tiered_history(record_dicts))
     return 0
 
 
@@ -1140,6 +1161,19 @@ def cmd_backfill_citations(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_backfill_archive(args: argparse.Namespace) -> int:
+    """Generate archive notes for experiments missing from .factory/archive/experiments/."""
+    from factory.backfill_archive import backfill_archive
+
+    project_path = Path(args.path).resolve()
+    result = _run(backfill_archive(project_path))
+    print(
+        f"Archive backfill complete: {result['existed']} existed, "
+        f"{result['created']} created, {result['total']} total"
+    )
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare two experiments side-by-side."""
     from factory.analysis import compare_experiments, format_comparison
@@ -1422,10 +1456,21 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         interactive_existing = True
     elif mode == "interactive":
-        interactive_idea = raw_path
-        slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
-        project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
-        _ensure_repo(project_path)
+        resolved_file = Path(raw_path).expanduser()
+        if resolved_file.is_file():
+            interactive_idea = resolved_file.read_text()
+            slug = _slugify(dir_name) if dir_name else _slugify(resolved_file.stem.split("—")[0].strip())
+            project_path = _dedupe_project_path(_get_projects_dir() / slug, interactive_idea)
+            _ensure_repo(project_path)
+            _persist_spec(project_path, interactive_idea)
+            print(f"Idea file: {resolved_file.name}")
+            print(f"Project directory: {project_path}")
+        else:
+            interactive_idea = raw_path
+            slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
+            project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
+            _ensure_repo(project_path)
+            _persist_spec(project_path, raw_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
         # New research project from idea — enter research ideation
@@ -1488,7 +1533,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     if interactive_existing:
-        banner_mode = "improve"
+        banner_mode = "interactive"
     elif mode in ("interactive", "research") and (interactive_idea or research_ideation):
         banner_mode = "ideation"
     else:
@@ -1510,11 +1555,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    base_branch = branch or "main"
+    base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     if interactive_existing:
-        ceo_mode = "improve"
+        ceo_mode = "interactive"
     elif mode == "interactive" or research_ideation:
         ceo_mode = "build"
     else:
@@ -1707,10 +1752,15 @@ def _slugify(text: str) -> str:
 
 
 def _ensure_repo(project_path: Path) -> None:
-    """Create directory + git init if needed."""
+    """Create directory + git init (with initial commit) if needed."""
     project_path.mkdir(parents=True, exist_ok=True)
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Factory", "-c", "user.email=factory@localhost",
+             "commit", "--allow-empty", "-m", "Initial commit"],
+            cwd=project_path, capture_output=True, check=True,
+        )
 
 
 def _read_prompt_file(project_path: Path, prompt_file: str) -> str:
@@ -2257,7 +2307,7 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    base_branch = branch or "main"
+    base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     try:
@@ -2559,6 +2609,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # backfill-citations
     p = sub.add_parser("backfill-citations", help="Extract citations from experiment text into citations.json")
+    p.add_argument("path", help="Path to the project")
+
+    # backfill-archive
+    p = sub.add_parser("backfill-archive", help="Generate archive notes for experiments missing from archive")
     p.add_argument("path", help="Path to the project")
 
     # research
@@ -2915,6 +2969,7 @@ def main(argv: list[str] | None = None) -> int:
         "summary": cmd_summary,
         "research": cmd_research,
         "backfill-citations": cmd_backfill_citations,
+        "backfill-archive": cmd_backfill_archive,
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,

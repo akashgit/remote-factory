@@ -420,6 +420,16 @@ Before talking to the user, gather context:
 4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
 5. **Read the backlog**: What items are pending? What was deferred from Build mode?
 
+### E0b: Optional Web Research
+
+If the discussion topic (from `--focus` or the user's initial question) requires **domain knowledge beyond the local codebase** — e.g., external APIs, industry standards, competitor analysis, library best practices — spawn the Researcher for targeted web research before presenting findings:
+
+```bash
+factory agent researcher --task "Research <topic>: gather current best practices, API docs, or prior art relevant to <focus>. Write findings to .factory/strategy/research.md. Summarize findings in 2-3 paragraphs." --project "$PROJECT_PATH" --timeout 300
+```
+
+**Skip this step** if the topic is purely about the project's own code, backlog, or eval scores — E0 already covers those.
+
 ### E1: Present Findings
 
 Present a concise summary to the user:
@@ -453,7 +463,7 @@ When the user approves a direction:
 
 - **Maximum 5 iterations** of back-and-forth before asking the user to commit to a direction
 - **Do not start building during Phase 0e** — this phase produces a plan, not code
-- **You already have project context** — don't spawn a Researcher just to re-read what you already studied in E0
+- **You already have project context** — don't spawn a Researcher to re-read local code you already studied in E0, but DO use E0b to research external topics when the discussion requires domain knowledge beyond the codebase
 - **Be opinionated** — the user wants your recommendation, not a menu of every possible option
 
 ---
@@ -973,6 +983,8 @@ factory log "$PROJECT_PATH" "phase.strategy.completed" --data '{"verdict": "PROC
 
 For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
+**Every hypothesis gets the full pipeline.** Steps 2a through 2h-final execute sequentially for each experiment. Do NOT batch builders and skip reviews. Do NOT abbreviate the pipeline for "small" changes. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` fresh for each experiment.
+
 #### 2a. Baseline Eval (Evaluator Agent)
 
 ```bash
@@ -1066,7 +1078,13 @@ Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .facto
 
 If Builder fails (no PR opened), see Error Recovery below.
 
-#### 2d-review: CEO Code Quality Review — REVIEW-UNTIL-CLEAN PIPELINE
+#### 2d-review: MANDATORY CEO Code Quality Review — REVIEW-UNTIL-CLEAN PIPELINE (DO NOT SKIP)
+
+**MANDATORY FOR EVERY EXPERIMENT — NO EXCEPTIONS.** This pipeline runs for every experiment regardless of change size, change type (code, prompt, config), or whether lint/types pass. Do NOT skip, abbreviate, or rationalize skipping any component. "The change is small" and "it's prompt-only" are NOT valid reasons — small changes cause production incidents too. The pipeline has 3 mandatory components that must all execute:
+1. Structured 6-category checklist (this step)
+2. Review-until-clean loop (on ISSUES_FOUND)
+3. Final headless review (2h-final)
+Skipping this pipeline violates Sacred Rule 9.
 
 **This is an iterative review loop.** The CEO reads the PR diff, performs a structured code quality review, and routes fixes back to the Builder until the code is clean or the iteration cap is reached. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` before entering the loop.
 
@@ -1086,6 +1104,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 | 4 | **Missing tests** | New code paths without test coverage, untested error branches |
 | 5 | **Style & consistency** | Naming conventions, code duplication, dead code, import organization |
 | 6 | **Scope compliance** | PR implements what the hypothesis asked — no scope creep, no unrelated changes |
+| 7 | **Guardrail compliance** | Builder followed its Pre-Execution Guardrails: no file exceeds 500 lines (unless justified generated/fixture file), all modified files are within declared scope or mutable_surfaces, no dangerous commands were used (rm -rf, git push --force, git reset --hard, DROP TABLE/DATABASE, chmod 777), no fixed_surfaces files were read or modified |
 
 **Step 3 — Additional checks (apply when relevant):**
 
@@ -1123,6 +1142,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 - Missing tests: PASS | FAIL (<details>)
 - Style: PASS | FAIL (<details>)
 - Scope: PASS | FAIL (<details>)
+- Guardrails: PASS | FAIL (<details>)
 ```
 
 **Step 5 — Act on the verdict:**
@@ -1153,6 +1173,8 @@ If Builder fails (no PR opened), see Error Recovery below.
 4. **Update state:** Set `$PREV_ISSUE_COUNT = $CURRENT_ISSUE_COUNT`, increment `$REVIEW_ITERATION`.
 
 5. **Re-run review:** Loop back to Step 1 of 2d-review (read the updated diff and re-evaluate the full checklist).
+
+**Checkpoint:** Before proceeding to 2e, verify `.factory/reviews/ceo-verdict-builder.md` contains all 6 category assessments (Correctness, Security, Edge cases, Missing tests, Style, Scope). If any category is missing, you skipped the structured checklist — go back to Step 2 of 2d-review.
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
@@ -1345,7 +1367,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **If precheck FAILS → Mandatory Revert:**
@@ -1368,7 +1390,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1385,6 +1407,8 @@ Always include structured metadata in `--notes`:
 - `execution_artifacts=present|missing|na` — whether operational artifacts were verified (`na` for code-only)
 - `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
 - `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
+- `review_pipeline=full|abbreviated|skipped` — whether the full 2d-review pipeline ran (`full` = all 3 components executed)
+- `review_iterations=N` — how many review-until-clean iterations were needed (1 = clean on first pass)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
@@ -1941,7 +1965,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass"
+    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 **If REVERT:**
@@ -1963,7 +1987,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS"
+    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
 
 #### R5e. Termination Conditions
@@ -2148,6 +2172,7 @@ These are **inviolable**. Checked by `factory guard` before any change is kept. 
 6. **Do not merge PRs** — leave them open for human review after posting the KEEP approval
 7. **Do not skip archival checkpoints** — the Archivist must fire at every checkpoint
 8. **Do not do another agent's job** — the CEO is an executive orchestrator. It delegates ALL technical work to specialist agents (Researcher, Builder, Reviewer, Evaluator, Archivist, etc.) and reviews their output. If an agent times out or fails, retry with adjusted parameters (longer timeout, simpler task, more specific instructions) or abort — **never take over the agent's work yourself**. Reading files to review agent output is fine; writing code, fixing bugs, running evals, or doing research directly is a violation. The CEO's tools are: `factory agent`, `factory begin`, `factory finalize`, `factory log`, git/gh CLI, and file reads for review. If you catch yourself about to write code or run `factory eval` directly instead of through the Evaluator — stop. Spawn the agent.
+9. **Do not skip the review pipeline** — the full 2d-review pipeline (structured 6-category checklist, review-until-clean loop, and 2h-final headless review) MUST execute for every experiment that produces a PR. "The change is small" is not a valid reason to skip. Small changes cause production incidents. If all 3 components come back CLEAN on first pass, the loop doesn't fire — but the checks must run. Skipping any component of the review pipeline is a Sacred Rule violation.
 
 ---
 
@@ -2157,7 +2182,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 
 1. **Prepare all experiments**: Begin each, create branch and GitHub issue
 2. **Spawn builders in parallel**: Each builder works on its own branch
-3. **Review independently**: As each builder completes, spawn Reviewer + Evaluator
+3. **Full review pipeline per experiment**: As each builder completes, run the FULL 2d-review pipeline (CEO structured review → review-until-clean loop → 2e guard → 2f eval → 2f-e2e → 2g precheck → 2h-final). Do NOT abbreviate review for parallel hypotheses.
 4. **Approve in priority order**: Post KEEP approvals highest-priority first — PRs stay open for human merge
 
 ### Scaling Rules
@@ -2205,7 +2230,7 @@ If `factory eval` fails without producing a valid score:
 If `factory guard` reports violations:
 1. Change MUST be reverted — no exceptions
 2. Close PR, checkout main
-3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details>"`
+3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details> review_pipeline=full review_iterations=$REVIEW_ITERATION"`
 4. Record violation in `strategy/current.md` under Anti-patterns
 
 ### General Agent Failure

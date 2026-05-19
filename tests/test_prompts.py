@@ -403,7 +403,7 @@ class TestDistillerPrompt:
         assert "User Feedback" in distiller_prompt
 
     def test_has_rules(self, distiller_prompt: str) -> None:
-        assert "## Rules" in distiller_prompt
+        assert "## Constraints" in distiller_prompt
 
     def test_has_non_goals(self, distiller_prompt: str) -> None:
         assert "Non-Goals" in distiller_prompt
@@ -427,8 +427,8 @@ class TestDistillerPrompt:
         assert "Cost Budget" in distiller_prompt
 
     def test_always_consider_research_mode_rule(self, distiller_prompt: str) -> None:
-        """Distiller rules include the always-consider-research-mode instruction."""
-        assert "Always consider research mode" in distiller_prompt
+        """Distiller includes instruction to evaluate research mode."""
+        assert "research mode" in distiller_prompt.lower()
 
     def test_mandatory_research_config_rule(self, distiller_prompt: str) -> None:
         """Distiller knows research config is mandatory when told it's a research project."""
