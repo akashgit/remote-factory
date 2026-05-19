@@ -1470,6 +1470,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
             project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
             _ensure_repo(project_path)
+            _persist_spec(project_path, raw_path)
         context = None
     elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
         # New research project from idea — enter research ideation
