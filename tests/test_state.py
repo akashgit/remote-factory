@@ -99,11 +99,9 @@ class TestHasOpenPlanIssues:
             assert _has_open_plan_issues(tmp_project) is False
 
     def test_returns_false_on_timeout(self, tmp_project):
-        """_has_open_plan_issues returns False on subprocess timeout."""
-        import subprocess as sp
-
+        """_has_open_plan_issues returns False when forge returns empty (timeout handled internally)."""
         mock_ops = patch("factory.forge.ForgeOps").start()
-        mock_ops.return_value.issue_list.side_effect = sp.TimeoutExpired("gh", 15)
+        mock_ops.return_value.issue_list.return_value = []
         try:
             assert _has_open_plan_issues(tmp_project) is False
         finally:

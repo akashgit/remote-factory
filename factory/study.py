@@ -582,12 +582,11 @@ def _search_similar_projects(project_path: Path) -> list[dict]:
     if not keywords:
         return []
 
+    from factory.forge import ForgeOps
+
     try:
-        from factory.forge import ForgeOps
         ops = ForgeOps(project_path)
     except (RuntimeError, FileNotFoundError):
-        # Fall back to GitHub if forge detection fails
-        from factory.forge import ForgeOps
         ops = ForgeOps(project_path, forge="github", repo="")
 
     return ops.search_repos(" ".join(keywords), limit=5)
@@ -595,14 +594,14 @@ def _search_similar_projects(project_path: Path) -> list[dict]:
 
 def _get_forge_user(project_path: Path | None = None) -> str | None:
     """Return the authenticated forge username, or None if unavailable."""
+    from factory.forge import ForgeOps
+
     try:
-        from factory.forge import ForgeOps
         if project_path:
             ops = ForgeOps(project_path)
         else:
             ops = ForgeOps(Path.cwd(), forge="github", repo="")
     except (RuntimeError, FileNotFoundError):
-        from factory.forge import ForgeOps
         ops = ForgeOps(Path.cwd(), forge="github", repo="")
 
     return ops.get_user()

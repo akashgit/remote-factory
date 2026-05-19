@@ -1,6 +1,5 @@
 """Project state detection — determines which mode the factory should operate in."""
 
-import subprocess
 from pathlib import Path
 
 import structlog
@@ -20,14 +19,10 @@ def _has_open_plan_issues(project_path: Path) -> bool:
         return False
 
     for label in ("plan", "implementation"):
-        try:
-            issues = ops.issue_list(state="open", labels=[label], limit=5, fields=["number"])
-            if issues:
-                log.debug("open_plan_issues_found", label=label, forge=ops.forge)
-                return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            log.debug("open_plan_issues_check_failed", label=label)
-            return False
+        issues = ops.issue_list(state="open", labels=[label], limit=5, fields=["number"])
+        if issues:
+            log.debug("open_plan_issues_found", label=label, forge=ops.forge)
+            return True
     return False
 
 

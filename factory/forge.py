@@ -130,6 +130,7 @@ class ForgeOps:
             cmd = [self._cli, "pr", "create", "--title", title, "--body", body, "--base", base]
             if draft:
                 cmd.append("--draft")
+            cmd.extend(["--json", "number,title,url"])
             cmd.extend(self._repo_args())
         else:
             cmd = [
@@ -150,7 +151,12 @@ class ForgeOps:
             log.warning("pr_create_failed", stderr=result.stderr[:200])
             return None
         parsed = self._parse_json(result.stdout)
-        return parsed if isinstance(parsed, dict) else None
+        if isinstance(parsed, dict):
+            return parsed
+        # GitLab: glab mr create may not output JSON; parse the MR URL from stdout
+        if self.forge != "github" and result.stdout.strip():
+            return {"url": result.stdout.strip().splitlines()[-1]}
+        return None
 
     def pr_list(self, *, state: str = "open", limit: int = 20) -> list[dict]:
         gl_state = "opened" if state == "open" else state
@@ -359,11 +365,11 @@ class ForgeOps:
         }
 
     @staticmethod
-    def _parse_json(text: str) -> dict | list:
+    def _parse_json(text: str) -> dict | list | None:
         try:
             return json.loads(text)
         except (json.JSONDecodeError, ValueError):
-            return {}
+            return None
 
     @staticmethod
     def _parse_diff_filenames(diff_text: str) -> list[str]:
