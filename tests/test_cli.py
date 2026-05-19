@@ -1564,3 +1564,14 @@ class TestInteractiveFileInput:
         output = capsys.readouterr().out
         assert "weather-dashboard" in output
         assert "Idea file: weather-dashboard.md" in output
+
+    def test_raw_idea_persists_spec(self, tmp_path):
+        """When --mode interactive receives a raw string, the spec should be persisted."""
+        with _mock_foreground(), \
+             patch("factory.cli._get_projects_dir", return_value=tmp_path):
+            main(["ceo", "Build a CLI todo app", "--mode", "interactive"])
+        matches = [p for p in tmp_path.iterdir() if p.is_dir()]
+        assert len(matches) == 1
+        spec_path = matches[0] / ".factory" / "strategy" / "current.md"
+        assert spec_path.exists()
+        assert "Build a CLI todo app" in spec_path.read_text()
