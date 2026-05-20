@@ -478,10 +478,26 @@ class ExperimentStore:
 
     async def read_config(self) -> FactoryConfig:
         """Read .factory/config.json and return a FactoryConfig."""
-        log.debug("read_config", path=str(self.factory_dir / "config.json"))
         config_path = self.factory_dir / "config.json"
-        data = json.loads(config_path.read_text())
-        return FactoryConfig(**data)
+        log.debug("read_config", path=str(config_path))
+        if not config_path.exists():
+            raise FileNotFoundError(
+                f"{config_path} not found. Run 'factory init' first to create it from factory.md."
+            )
+        try:
+            data = json.loads(config_path.read_text())
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"{config_path} contains invalid JSON: {exc}. "
+                "Run 'factory init --reparse' to regenerate it from factory.md."
+            ) from exc
+        try:
+            return FactoryConfig(**data)
+        except Exception as exc:
+            raise ValueError(
+                f"{config_path} failed validation: {exc}. "
+                "Run 'factory init --reparse' to regenerate it from factory.md."
+            ) from exc
 
     async def save_eval_profile(self, profile: EvalProfile) -> None:
         """Write .factory/eval_profile.json."""
