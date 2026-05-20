@@ -31,7 +31,7 @@ _CONFIG_TEMPLATE = """\
 # See: factory config show
 
 [defaults]
-# runner = "claude"                    # CLI backend: "claude" or "bob"
+# runner = "claude"                    # CLI backend: "claude", "bob", or "codex"
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 
@@ -42,6 +42,10 @@ _CONFIG_TEMPLATE = """\
 # [credentials.bob]
 # FACTORY_RUNNER = "bob"
 # BOBSHELL_API_KEY = "..."
+#
+# [credentials.codex]
+# FACTORY_RUNNER = "codex"
+# CODEX_API_KEY = "..."
 """
 
 

@@ -8,24 +8,28 @@ from typing import Literal
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
+from factory.runners.codex import CodexRunner, is_codex_dry_run
 from factory.runners.protocol import Runner
 
 __all__ = [
     "Runner",
     "ClaudeRunner",
     "BobRunner",
+    "CodexRunner",
     "get_runner",
     "RunnerName",
     "is_dry_run",
+    "is_codex_dry_run",
     "should_stream",
     "stream_subprocess",
 ]
 
-RunnerName = Literal["claude", "bob"]
+RunnerName = Literal["claude", "bob", "codex"]
 
 _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
+    "codex": CodexRunner,  # type: ignore[dict-item]
 }
 
 
@@ -38,7 +42,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     3. Default to "claude"
 
     Args:
-        name: Runner name ("claude" or "bob").
+        name: Runner name ("claude", "bob", or "codex").
         project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:
