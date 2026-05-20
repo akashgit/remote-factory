@@ -146,7 +146,15 @@ factory ceo ~/factory-projects/personal-homepage-blog-projects --mode interactiv
 
 The CEO studies the project — backlog, eval scores, open issues, recent experiment history — presents findings and recommendations, and iterates on your feedback. Once you agree on a direction, it transitions into Improve mode and executes.
 
-Interactive mode also works for new projects (pass an idea string instead of a path), where it enters an ideation loop to refine your idea into a buildable spec before building.
+Interactive mode also works for new projects — pass a raw idea string or a spec file:
+
+```bash
+# From a raw idea — enters ideation loop to refine into a buildable spec
+factory ceo "distributed task runner" --mode interactive
+
+# From a spec file — reads the file content as the idea
+factory ceo ~/ideas/my-app-spec.md --mode interactive
+```
 
 ### Step 6: Run it continuously
 
@@ -382,6 +390,7 @@ factory agent researcher --task "..." --project ~/my-project --profile bob
 # Core workflow
 factory ceo <path|url|idea>             # Launch the CEO agent
 factory ceo <path> --mode interactive   # Discuss what to work on, then execute
+factory ceo <file.md> --mode interactive  # Use spec file as idea, then discuss
 factory run <path> --loop               # Continuous heartbeat mode
 factory tmux <path> --loop              # In detached tmux session
 
