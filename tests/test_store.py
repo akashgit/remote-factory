@@ -124,6 +124,23 @@ class TestReadConfig:
         assert config.goal == sample_config.goal
         assert config.eval_threshold == sample_config.eval_threshold
 
+    async def test_read_config_missing_file(self, store):
+        store.factory_dir.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(FileNotFoundError, match="Run 'factory init'"):
+            await store.read_config()
+
+    async def test_read_config_invalid_json(self, store):
+        store.factory_dir.mkdir(parents=True, exist_ok=True)
+        (store.factory_dir / "config.json").write_text("{bad json")
+        with pytest.raises(ValueError, match="invalid JSON"):
+            await store.read_config()
+
+    async def test_read_config_invalid_schema(self, store):
+        store.factory_dir.mkdir(parents=True, exist_ok=True)
+        (store.factory_dir / "config.json").write_text('{"not_a_field": true}')
+        with pytest.raises(ValueError, match="failed validation"):
+            await store.read_config()
+
 
 class TestEvalProfile:
     async def test_save_and_read_profile(self, store, sample_config):
