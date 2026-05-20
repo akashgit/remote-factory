@@ -63,7 +63,7 @@ main
 
 ## Hypothesis Budget
 <!-- Controls how many hypotheses the Strategist generates per cycle. -->
-<!-- These are defaults — override per-run with --min-growth, --min-fix, --max-total -->
+<!-- These are defaults — override per-run with --min-growth, --max-new -->
 
 - min_growth: 2
 - max_new: 2

@@ -10,6 +10,7 @@ from typing import Literal
 
 import structlog
 from filelock import FileLock
+from pydantic import ValidationError
 
 from factory.models import (
     CompositeScore,
@@ -493,7 +494,7 @@ class ExperimentStore:
             ) from exc
         try:
             return FactoryConfig(**data)
-        except Exception as exc:
+        except (ValidationError, TypeError, KeyError) as exc:
             raise ValueError(
                 f"{config_path} failed validation: {exc}. "
                 "Run 'factory init --reparse' to regenerate it from factory.md."
