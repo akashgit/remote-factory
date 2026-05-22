@@ -40,8 +40,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | **Improve an existing project** | `uv run factory ceo /path/to/project` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
 | **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
-| **Optimize a metric (research)** | `uv run factory ceo "solver agent" --mode research` |
-| **Run continuously** | `uv run factory run /path --loop` |
+| **Optimize a metric (research)** | `uv run factory ceo "build a harness to solve HMMT Feb 2026 C7" --mode research` |
 
 ---
 
@@ -104,14 +103,6 @@ uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
 
 Other ways to steer: file GitHub issues (the Strategist reads them), add to the backlog manually, or pass a spec file with `--prompt`.
 
-For unattended operation:
-
-```bash
-uv run factory run ~/my-app --loop                   # Continuous, 30 min default
-uv run factory run ~/my-app --loop --interval 900    # Custom interval
-uv run factory tmux ~/my-app --loop                  # Detached tmux session
-```
-
 ---
 
 ## Research Mode
@@ -119,10 +110,20 @@ uv run factory tmux ~/my-app --loop                  # Detached tmux session
 Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves the system under test.
 
 ```bash
-uv run factory ceo "SWE-bench solver agent" --mode research
+uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
 ```
 
 The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
+
+Once the project is set up, wrap it in a loop for continuous optimization — each cycle is a full experiment pass:
+
+```bash
+uv run factory ceo ~/my-solver --loop
+uv run factory ceo ~/my-solver --loop --interval 900    # Custom interval
+uv run factory tmux ~/my-solver --loop                  # Detached tmux session
+```
+
+The factory auto-detects the research target in `factory.md` and enters research mode. Failed experiments don't stop the loop — the factory learns from them and moves on.
 
 | Project | Metric | What the factory optimizes |
 |---------|--------|---------------------------|
@@ -169,8 +170,8 @@ Built something with the Factory? Open a PR to add it here.
 uv run factory ceo <path|url|idea>              # Build or improve
 uv run factory ceo <path> --mode interactive    # Discuss, then execute
 uv run factory ceo <path> --focus "..."         # One target, one experiment
-uv run factory run <path> --loop                # Continuous heartbeat
-uv run factory tmux <path> --loop               # In detached tmux session
+uv run factory ceo <path> --loop                # Continuous loop (research projects)
+uv run factory tmux <path> --loop               # Loop in detached tmux session
 
 # Agents & analysis
 uv run factory agent <role> --task "..." --project <path>
