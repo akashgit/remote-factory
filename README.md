@@ -6,8 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
+[![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 
-**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — the Factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and others like [Codex](https://openai.com/index/codex/) (coming soon).
+**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — the Factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
