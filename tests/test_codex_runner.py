@@ -5,8 +5,14 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+import factory.runners.codex as codex_module
 from factory.runners import CodexRunner, get_runner, is_codex_dry_run
 from factory.runners.codex import CodexAuthError, _check_auth
+
+
+@pytest.fixture(autouse=True)
+def _reset_codex_auth() -> None:
+    codex_module._auth_checked = False
 
 
 class TestGetRunnerCodex:
@@ -76,31 +82,31 @@ class TestCodexDryRun:
 class TestCodexAuth:
     def test_auth_fails_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         with pytest.raises(CodexAuthError, match="CODEX_API_KEY"):
             _check_auth()
 
-        codex_module._auth_checked = False
-
-    def test_auth_passes_with_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auth_passes_with_codex_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
         _check_auth()
         assert codex_module._auth_checked is True
 
-        codex_module._auth_checked = False
+    def test_auth_passes_with_openai_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CODEX_API_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+        _check_auth()
+        assert codex_module._auth_checked is True
 
     async def test_headless_fails_without_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
         with pytest.raises(CodexAuthError):
@@ -111,7 +117,34 @@ class TestCodexAuth:
                 role="researcher",
             )
 
-        codex_module._auth_checked = False
+
+class TestCodexEnvMapping:
+    def test_codex_key_mapped_to_openai(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "my-codex-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+        from factory.runners.codex import _make_codex_env
+
+        env = _make_codex_env()
+        assert env["OPENAI_API_KEY"] == "my-codex-key"
+        assert "VIRTUAL_ENV" not in env
+
+    def test_openai_key_not_overridden(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "codex-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+
+        from factory.runners.codex import _make_codex_env
+
+        env = _make_codex_env()
+        assert env["OPENAI_API_KEY"] == "openai-key"
+
+    def test_virtual_env_stripped(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+
+        from factory.runners.codex import _make_codex_env
+
+        env = _make_codex_env()
+        assert "VIRTUAL_ENV" not in env
 
 
 class TestCodexHeadless:
@@ -120,8 +153,6 @@ class TestCodexHeadless:
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -158,15 +189,11 @@ class TestCodexHeadless:
                 assert "--model" in call_args
                 assert "gpt-5.4" in call_args
 
-        codex_module._auth_checked = False
-
     async def test_combines_prompt_and_task(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -189,21 +216,16 @@ class TestCodexHeadless:
                 )
 
                 call_args = mock_exec.call_args[0]
-                # Third arg (index 2) is the combined prompt+task
                 full_prompt = call_args[2]
                 assert "You are the CEO." in full_prompt
                 assert "Run the experiment" in full_prompt
                 assert "## Current Task" in full_prompt
-
-        codex_module._auth_checked = False
 
     async def test_no_sandbox_flags_when_permissions_not_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -230,15 +252,11 @@ class TestCodexHeadless:
                 assert "--sandbox" not in call_args
                 assert "--ask-for-approval" not in call_args
 
-        codex_module._auth_checked = False
-
     async def test_no_model_flag_when_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -264,8 +282,6 @@ class TestCodexHeadless:
                 call_args = mock_exec.call_args[0]
                 assert "--model" not in call_args
 
-        codex_module._auth_checked = False
-
     async def test_handles_timeout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -273,8 +289,6 @@ class TestCodexHeadless:
 
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         with patch("factory.runners.codex.asyncio.wait_for", side_effect=aio.TimeoutError):
             with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
@@ -294,15 +308,12 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "timed out" in stdout.lower()
-        codex_module._auth_checked = False
 
     async def test_handles_missing_binary(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         with patch(
             "asyncio.create_subprocess_exec",
@@ -318,16 +329,14 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "not found" in stdout.lower()
-        codex_module._auth_checked = False
 
-    async def test_strips_virtual_env(
+    async def test_passes_env_with_openai_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -351,8 +360,7 @@ class TestCodexHeadless:
 
                 call_kwargs = mock_exec.call_args.kwargs
                 assert "VIRTUAL_ENV" not in call_kwargs["env"]
-
-        codex_module._auth_checked = False
+                assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"
 
 
 class TestCodexStreaming:
@@ -362,8 +370,6 @@ class TestCodexStreaming:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
         monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -392,8 +398,6 @@ class TestCodexStreaming:
                     assert call_kwargs["stream"] is True
                     assert call_kwargs["prefix"] == "[codex:builder]"
 
-        codex_module._auth_checked = False
-
 
 class TestCodexInteractive:
     def test_interactive_run_builds_correct_command(
@@ -401,8 +405,6 @@ class TestCodexInteractive:
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -424,15 +426,11 @@ class TestCodexInteractive:
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
-        codex_module._auth_checked = False
-
     def test_interactive_run_no_sandbox_without_skip(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        import factory.runners.codex as codex_module
-        codex_module._auth_checked = False
 
         runner = CodexRunner()
 
@@ -448,4 +446,24 @@ class TestCodexInteractive:
             cmd = mock_run.call_args[0][0]
             assert "--sandbox" not in cmd
 
-        codex_module._auth_checked = False
+    def test_interactive_run_passes_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+
+        runner = CodexRunner()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            runner.interactive_run(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            )
+
+            call_kwargs = mock_run.call_args.kwargs
+            assert "VIRTUAL_ENV" not in call_kwargs["env"]
+            assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"

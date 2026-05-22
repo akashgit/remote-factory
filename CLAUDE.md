@@ -140,11 +140,12 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
 
 **Codex specifics:**
-- Requires `CODEX_API_KEY` environment variable (or set via config.toml profile)
+- Requires `CODEX_API_KEY` (or `OPENAI_API_KEY`) environment variable (or set via config.toml profile)
+- `CODEX_API_KEY` is auto-mapped to `OPENAI_API_KEY` in subprocess env if needed
 - Headless mode uses `codex exec` with `--sandbox workspace-write --ask-for-approval never`
 - Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`)
 - Progress streams to stderr, final message to stdout (matches factory capture model)
-- Install: `npm install -g @openai/codex` or `brew install --cask codex`
+- Install: `npm install -g @openai/codex`
 
 **Codex dry-run mode:** Set `FACTORY_CODEX_DRY_RUN=1` to test Codex integration without spending tokens.
 

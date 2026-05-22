@@ -16,25 +16,33 @@ _auth_checked = False
 
 
 class CodexAuthError(Exception):
-    """Raised when CODEX_API_KEY is not set."""
+    """Raised when neither CODEX_API_KEY nor OPENAI_API_KEY is set."""
 
     def __init__(self) -> None:
         super().__init__(
-            "CODEX_API_KEY environment variable is not set. "
+            "CODEX_API_KEY (or OPENAI_API_KEY) environment variable is not set. "
             "Set it directly or add it to a config.toml credential profile: "
             "[credentials.codex] CODEX_API_KEY = \"...\""
         )
 
 
 def _check_auth() -> None:
-    """Check that CODEX_API_KEY is set (once per process)."""
+    """Check that CODEX_API_KEY or OPENAI_API_KEY is set (once per process)."""
     global _auth_checked  # noqa: PLW0603
     if _auth_checked:
         return
-    if os.environ.get("CODEX_API_KEY"):
+    if os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"):
         _auth_checked = True
         return
     raise CodexAuthError()
+
+
+def _make_codex_env() -> dict[str, str]:
+    """Build subprocess env: strip VIRTUAL_ENV, ensure OPENAI_API_KEY is set."""
+    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    if "OPENAI_API_KEY" not in env and "CODEX_API_KEY" in env:
+        env["OPENAI_API_KEY"] = env["CODEX_API_KEY"]
+    return env
 
 
 def is_codex_dry_run() -> bool:
@@ -85,7 +93,7 @@ class CodexRunner:
 
         logger.info("CodexRunner headless: cwd=%s, model=%s, role=%s", cwd, model, role)
 
-        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        env = _make_codex_env()
 
         stream = should_stream()
         prefix = f"[codex:{role}]" if stream else None
@@ -154,7 +162,8 @@ class CodexRunner:
 
         logger.info("CodexRunner interactive_run: cwd=%s", cwd)
 
-        result = subprocess.run(cmd, cwd=cwd)
+        env = _make_codex_env()
+        result = subprocess.run(cmd, cwd=cwd, env=env)
         return result.returncode
 
     def _dry_run_response(self, role: str, cwd: Path, task: str) -> tuple[str, int]:
