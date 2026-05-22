@@ -122,9 +122,9 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 
 ## Runners
 
-The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI), but Bob Shell (`bob` CLI) is also supported as a switchable alternative.
+The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI). Bob Shell (`bob` CLI) and OpenAI Codex (`codex` CLI) are also supported as switchable alternatives.
 
-**Runner selection:** Set `FACTORY_RUNNER=bob` to use Bob Shell, or pass `--runner bob` to individual commands. Default is `claude`.
+**Runner selection:** Set `FACTORY_RUNNER=codex` (or `bob`) to switch backends, or pass `--runner codex` to individual commands. Default is `claude`.
 
 **Bob Shell specifics:**
 - Requires `BOBSHELL_API_KEY` environment variable to be set
@@ -138,6 +138,24 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 - All invocations are logged to `.factory/bob_usage.jsonl`
 - When ≤2 invocations remain before the ceiling, a warning is logged and emitted to `.factory/events.jsonl` (type: `bob.ceiling_warning`)
 - Ceiling violations emit events to `.factory/events.jsonl` and abort with an actionable error message
+
+**Codex specifics:**
+- Requires `CODEX_API_KEY` (or `OPENAI_API_KEY`) environment variable (or set via config.toml profile)
+- `CODEX_API_KEY` is auto-mapped to `OPENAI_API_KEY` in subprocess env if needed
+- Headless mode uses `codex exec` with `--sandbox workspace-write --ask-for-approval never`
+- Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`)
+- Progress streams to stderr, final message to stdout (matches factory capture model)
+- Install: `npm install -g @openai/codex`
+
+**Codex dry-run mode:** Set `FACTORY_CODEX_DRY_RUN=1` to test Codex integration without spending tokens.
+
+**Codex config profile example** (`~/.factory/config.toml`):
+```toml
+[credentials.codex]
+FACTORY_RUNNER = "codex"
+CODEX_API_KEY = "..."
+```
+Then run: `factory ceo /path/to/project --profile codex`
 
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
 
