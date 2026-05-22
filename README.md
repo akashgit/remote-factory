@@ -201,6 +201,35 @@ See `uv run factory --help` for the complete list. The factory supports crash-re
 
 ---
 
+## Runners
+
+The factory supports multiple CLI backends. Default is Claude Code — switch with `--runner` or `FACTORY_RUNNER`:
+
+```bash
+# Direct
+CODEX_API_KEY="..." uv run factory ceo /path --runner codex
+BOBSHELL_API_KEY="..." uv run factory ceo /path --runner bob
+
+# Via config.toml profile (persistent)
+uv run factory ceo /path --profile codex
+```
+
+Configure profiles in `~/.factory/config.toml`:
+
+```toml
+[credentials.codex]
+FACTORY_RUNNER = "codex"
+CODEX_API_KEY = "..."
+
+[credentials.bob]
+FACTORY_RUNNER = "bob"
+BOBSHELL_API_KEY = "..."
+```
+
+Run `uv run factory config show` to see resolved config, or `uv run factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
+
+---
+
 ## Plugin Agents
 
 Every factory agent is available as a standalone Claude Code subagent:
