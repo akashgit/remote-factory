@@ -7,9 +7,9 @@
 [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** A CEO agent orchestrates eight specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. See [Architecture](docs/architecture.md) for the full deep-dive.
+**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — the Factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and others like [Codex](https://openai.com/index/codex/) (coming soon).
 
-All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`.
+All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
 ---
 
