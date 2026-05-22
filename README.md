@@ -5,7 +5,11 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** A CEO agent orchestrates eight specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess.
+
+![Architecture](docs/diagrams/architecture.svg)
+
+All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
 ---
 
@@ -42,7 +46,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 
 ## Interactive Workflow
 
-Interactive mode is the default entry point for new ideas. Start a conversation with the CEO to brainstorm, refine, and then build:
+Use interactive mode when you want to brainstorm before building. Start a conversation with the CEO to refine an idea, then build:
 
 ```bash
 # From a raw idea — discuss and refine into a buildable spec
@@ -147,10 +151,13 @@ The Factory improves itself. Every keep/revert decision becomes training data �
 |---------|-------------|------|
 | **SWE-bench solver** | Autonomous agent that resolves GitHub issues, improved via failure analysis | Research |
 | **HMMT math solver** | Multi-agent team that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Natural language and sketches to executable CadQuery Python code for 3D models | Research |
 | **HLS design space explorer** | Per-function AI agents + ILP solver for HLS optimization — 92% execution time reduction | Build |
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
+| **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
+| **The Factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
 
-Built something? Open a PR to add it here.
+Built something with the Factory? Open a PR to add it here.
 
 ---
 
@@ -167,20 +174,25 @@ factory tmux <path> --loop               # In detached tmux session
 # Agents & analysis
 factory agent <role> --task "..." --project <path>
 factory eval <path>                      # Run evals
+factory precheck <path>                  # Hard precheck gate
 factory study <path>                     # Analyze code
 factory diff <path> --exp1 N --exp2 M    # Compare experiments
+factory history <path>                   # Experiment history
 
 # Backlog
 factory backlog-list <path>
 factory backlog-add <path> "..."
+factory backlog-remove <path> "..."
 
 # Operations
 factory dashboard                        # Live web dashboard on :8420
 factory discover <path>                  # Auto-detect eval profile
 factory config show                      # Show resolved config
+factory tmux-ls                          # List active tmux sessions
+factory tmux-stop --path <path>          # Stop a tmux session
 ```
 
-See `factory --help` for the complete list.
+See `factory --help` for the complete list. The factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
 
 ---
 
