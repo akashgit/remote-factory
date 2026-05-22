@@ -5,11 +5,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** A CEO agent orchestrates eight specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess.
+**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.** A CEO agent orchestrates eight specialists — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. See [Architecture](docs/architecture.md) for the full deep-dive.
 
-![Architecture](docs/diagrams/architecture.svg)
-
-All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
+All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`.
 
 ---
 
@@ -21,10 +19,13 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory
 uv sync
-uv run factory ceo "Build a personal homepage with a blog"
 ```
 
-Optionally install as a global CLI: `uv tool install -e .` — then bare `factory` works anywhere. This README uses `factory` throughout; prepend `uv run` if you haven't installed.
+Every command runs from the **factory repo directory** — you pass the target project as an argument:
+
+```bash
+uv run factory ceo "Build a personal homepage with a blog" --mode interactive
+```
 
 See the [full setup guide](docs/setup.md) for authentication and environment variables.
 
@@ -34,13 +35,13 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 
 | I want to… | Command |
 |---|---|
-| **Brainstorm or explore an idea** | `factory ceo "my idea" --mode interactive` |
-| **Build from a spec** | `factory ceo spec.md` |
-| **Improve an existing project** | `factory ceo /path/to/project` |
-| **Fix or add one thing** | `factory ceo /path --focus "add dark mode"` |
-| **Target a GitHub issue** | `factory ceo /path --focus 42` |
-| **Optimize a metric (research)** | `factory ceo "solver agent" --mode research` |
-| **Run continuously** | `factory run /path --loop` |
+| **Start from a raw idea** | `uv run factory ceo "my idea" --mode interactive` |
+| **Build from a spec or repo** | `uv run factory ceo spec.md` |
+| **Improve an existing project** | `uv run factory ceo /path/to/project` |
+| **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
+| **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
+| **Optimize a metric (research)** | `uv run factory ceo "solver agent" --mode research` |
+| **Run continuously** | `uv run factory run /path --loop` |
 
 ---
 
@@ -50,36 +51,36 @@ Use interactive mode when you want to brainstorm before building. Start a conver
 
 ```bash
 # From a raw idea — discuss and refine into a buildable spec
-factory ceo "distributed task runner" --mode interactive
+uv run factory ceo "distributed task runner" --mode interactive
 
 # From a spec file — read and discuss before building
-factory ceo ~/ideas/my-app-spec.md --mode interactive
+uv run factory ceo ~/ideas/my-app-spec.md --mode interactive
 ```
 
 Interactive mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
 
 ```bash
-factory ceo ~/factory-projects/my-app --mode interactive
+uv run factory ceo ~/factory-projects/my-app --mode interactive
 
 # Seed the conversation with a topic
-factory ceo ~/factory-projects/my-app --mode interactive --focus "auth layer"
+uv run factory ceo ~/factory-projects/my-app --mode interactive --focus "auth layer"
 ```
 
 ---
 
 ## Build Workflow
 
-When your spec is ready, hand it to the Factory and let it build:
+When you already have a spec file, a GitHub repo, or a clear description, the Factory builds directly — no interactive step needed:
 
 ```bash
-factory ceo "Build a personal homepage with a blog"
-factory ceo ~/ideas/spec.md
-factory ceo https://github.com/user/repo
+uv run factory ceo ~/ideas/spec.md
+uv run factory ceo https://github.com/user/repo
+uv run factory ceo "Build a personal homepage with a blog"
 ```
 
-The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. The input is flexible — a raw string, spec file, or GitHub URL. Override the output directory with `--dir my-site`.
+The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. Override the output directory with `--dir my-site`. (If you start with a raw idea via `--mode interactive`, the CEO refines it into a spec first, then transitions into this same build pipeline automatically.)
 
-After the first build, a backlog appears at `.factory/strategy/backlog.md` — deferred features that feed future improvement cycles. Manage it with `factory backlog-list`, `factory backlog-add`, and `factory backlog-remove`.
+After the first build, a backlog appears at `.factory/strategy/backlog.md` — deferred features that feed future improvement cycles. Manage it with `uv run factory backlog-list`, `uv run factory backlog-add`, and `uv run factory backlog-remove`.
 
 ---
 
@@ -88,7 +89,7 @@ After the first build, a backlog appears at `.factory/strategy/backlog.md` — d
 Point the Factory at an existing project and it enters Improve mode automatically:
 
 ```bash
-factory ceo ~/factory-projects/my-app
+uv run factory ceo ~/factory-projects/my-app
 ```
 
 Each cycle: **observe** → **hypothesize** → **build** → **review** → **measure** → **decide** (keep or revert) → **archive**. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
@@ -96,9 +97,9 @@ Each cycle: **observe** → **hypothesize** → **build** → **review** → **m
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-factory ceo ~/my-app --focus "add dark mode toggle"
-factory ceo ~/my-app --focus 42                       # GitHub issue
-factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
+uv run factory ceo ~/my-app --focus "add dark mode toggle"
+uv run factory ceo ~/my-app --focus 42                       # GitHub issue
+uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
 ```
 
 Other ways to steer: file GitHub issues (the Strategist reads them), add to the backlog manually, or pass a spec file with `--prompt`.
@@ -106,9 +107,9 @@ Other ways to steer: file GitHub issues (the Strategist reads them), add to the 
 For unattended operation:
 
 ```bash
-factory run ~/my-app --loop                   # Continuous, 30 min default
-factory run ~/my-app --loop --interval 900    # Custom interval
-factory tmux ~/my-app --loop                  # Detached tmux session
+uv run factory run ~/my-app --loop                   # Continuous, 30 min default
+uv run factory run ~/my-app --loop --interval 900    # Custom interval
+uv run factory tmux ~/my-app --loop                  # Detached tmux session
 ```
 
 ---
@@ -118,7 +119,7 @@ factory tmux ~/my-app --loop                  # Detached tmux session
 Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves the system under test.
 
 ```bash
-factory ceo "SWE-bench solver agent" --mode research
+uv run factory ceo "SWE-bench solver agent" --mode research
 ```
 
 The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
@@ -135,13 +136,13 @@ See [Getting Started — Research Mode](docs/getting-started.md#research-mode-in
 
 ## Eval System
 
-Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
+Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
 
 ---
 
 ## Self-Evolving Agents (ACE)
 
-The Factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
+The Factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `uv run factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
 
 ---
 
@@ -165,34 +166,34 @@ Built something with the Factory? Open a PR to add it here.
 
 ```bash
 # Core workflow
-factory ceo <path|url|idea>              # Build or improve
-factory ceo <path> --mode interactive    # Discuss, then execute
-factory ceo <path> --focus "..."         # One target, one experiment
-factory run <path> --loop                # Continuous heartbeat
-factory tmux <path> --loop               # In detached tmux session
+uv run factory ceo <path|url|idea>              # Build or improve
+uv run factory ceo <path> --mode interactive    # Discuss, then execute
+uv run factory ceo <path> --focus "..."         # One target, one experiment
+uv run factory run <path> --loop                # Continuous heartbeat
+uv run factory tmux <path> --loop               # In detached tmux session
 
 # Agents & analysis
-factory agent <role> --task "..." --project <path>
-factory eval <path>                      # Run evals
-factory precheck <path>                  # Hard precheck gate
-factory study <path>                     # Analyze code
-factory diff <path> --exp1 N --exp2 M    # Compare experiments
-factory history <path>                   # Experiment history
+uv run factory agent <role> --task "..." --project <path>
+uv run factory eval <path>                      # Run evals
+uv run factory precheck <path>                  # Hard precheck gate
+uv run factory study <path>                     # Analyze code
+uv run factory diff <path> --exp1 N --exp2 M    # Compare experiments
+uv run factory history <path>                   # Experiment history
 
 # Backlog
-factory backlog-list <path>
-factory backlog-add <path> "..."
-factory backlog-remove <path> "..."
+uv run factory backlog-list <path>
+uv run factory backlog-add <path> "..."
+uv run factory backlog-remove <path> "..."
 
 # Operations
-factory dashboard                        # Live web dashboard on :8420
-factory discover <path>                  # Auto-detect eval profile
-factory config show                      # Show resolved config
-factory tmux-ls                          # List active tmux sessions
-factory tmux-stop --path <path>          # Stop a tmux session
+uv run factory dashboard                        # Live web dashboard on :8420
+uv run factory discover <path>                  # Auto-detect eval profile
+uv run factory config show                      # Show resolved config
+uv run factory tmux-ls                          # List active tmux sessions
+uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```
 
-See `factory --help` for the complete list. The factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
+See `uv run factory --help` for the complete list. The factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
 
 ---
 
@@ -201,7 +202,7 @@ See `factory --help` for the complete list. The factory supports crash-resilient
 Every factory agent is available as a standalone Claude Code subagent:
 
 ```bash
-factory install                          # Install all 9 agents to ~/.claude/agents/
+uv run factory install                   # Install all 9 agents to ~/.claude/agents/
 claude --agent factory-ceo "improve this project"
 claude --agent factory-researcher "study the auth system"
 ```
