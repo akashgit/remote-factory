@@ -268,6 +268,8 @@ class ExperimentStore:
         rc_raw = parsed.get("research_constraints", [])
         research_constraints = list(rc_raw) if isinstance(rc_raw, list) else []
         hard_constraints = _parse_hard_constraints(parsed.get("hard_constraints", []))
+        es_raw = parsed.get("eval_spec", [])
+        eval_spec = list(es_raw) if isinstance(es_raw, list) else []
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -287,6 +289,7 @@ class ExperimentStore:
             research_constraints=research_constraints,
             cost_budget=cost_budget,
             hard_constraints=hard_constraints,
+            eval_spec=eval_spec,
         )
 
         (self.factory_dir / "config.json").write_text(

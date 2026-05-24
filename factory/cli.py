@@ -129,6 +129,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
 
 
 def cmd_discover(args: argparse.Namespace) -> int:
+    from factory.discovery.eval_spec import generate_eval_spec
     from factory.discovery.generate import write_eval_script
     from factory.discovery.introspect import introspect_project
     from factory.discovery.profile import build_eval_profile
@@ -140,22 +141,31 @@ def cmd_discover(args: argparse.Namespace) -> int:
     profile = introspect_project(project_path)
     eval_profile = build_eval_profile(profile)
 
+    eval_spec = generate_eval_spec(profile, project_path)
+
     # Persist artifacts so detect_state can find them
     store = ExperimentStore(project_path)
     ensure_factory_dir(store.factory_dir)
     _run(store.save_eval_profile(eval_profile))
     write_eval_script(eval_profile, project_path)
 
+    if eval_spec:
+        (store.factory_dir / "eval_spec.json").write_text(
+            json.dumps(eval_spec, indent=2) + "\n"
+        )
+
     dims = [d.name for d in eval_profile.dimensions]
     _emit_cli_event(project_path, "discover.completed", {
         "language": profile.language,
         "framework": profile.framework,
         "dimensions": dims,
+        "eval_spec_count": len(eval_spec),
     })
 
     output = {
         "project": profile.model_dump(),
         "eval_profile": eval_profile.model_dump(),
+        "eval_spec": eval_spec,
     }
     print(json.dumps(output, indent=2))
 
