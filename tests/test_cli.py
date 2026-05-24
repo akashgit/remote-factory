@@ -1586,3 +1586,81 @@ class TestInteractiveFileInput:
         spec_path = matches[0] / ".factory" / "strategy" / "current.md"
         assert spec_path.exists()
         assert "Build a CLI todo app" in spec_path.read_text()
+
+
+class TestRefineFlag:
+    """Tests for --refine flag parsing and mutual exclusivity."""
+
+    def test_refine_flag_parsed(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--refine", "fix the login bug"])
+        assert args.refine == "fix the login bug"
+
+    def test_refine_default_is_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.refine is None
+
+    def test_refine_exclusive_with_interactive(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "interactive"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_research(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "research"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_meta(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "meta"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_prompt(self, tmp_path, capsys):
+        prompt_file = tmp_path / "spec.md"
+        prompt_file.write_text("some spec")
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--prompt", str(prompt_file)])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_focus(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--focus", "auth"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+
+class TestBuildCeoTaskRefine:
+    """Tests for _build_ceo_task refinement mode section."""
+
+    def test_refine_request_emits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", refine_request="fix the login bug")
+        assert "## Refinement Mode" in task
+        assert "fix the login bug" in task
+        assert "Mode: Refine" in task
+
+    def test_no_refine_request_omits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build")
+        assert "## Refinement Mode" not in task
+
+    def test_refine_request_none_omits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", refine_request=None)
+        assert "## Refinement Mode" not in task
+
+
+class TestRefinerPromptExists:
+    """Verify the refiner.md prompt file exists and has key sections."""
+
+    def test_refiner_prompt_file_exists(self):
+        prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "refiner.md"
+        assert prompt_path.exists(), f"refiner.md not found at {prompt_path}"
+
+    def test_refiner_prompt_has_key_sections(self):
+        prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "refiner.md"
+        content = prompt_path.read_text()
+        assert "Tier" in content, "refiner.md should reference Tier classification"
+        assert "Builder" in content or "builder" in content, "refiner.md should reference the Builder agent"

@@ -1986,7 +1986,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     refine_request = getattr(args, "refine", None)
 
     if refine_request:
-        if mode in ("interactive", "research"):
+        if mode in ("interactive", "research", "meta"):
             print(f"Error: --refine and --mode {mode} are mutually exclusive.",
                   file=sys.stderr)
             return 1
@@ -3453,7 +3453,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--refine", default=None, metavar="REQUEST",
         help="Refinement mode: classify and implement a user-directed change. "
-             "Mutually exclusive with --mode interactive, --mode research, --loop, --prompt, --focus",
+             "Mutually exclusive with --mode interactive, --mode research, --mode meta, --prompt, --focus",
     )
 
     # run
