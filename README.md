@@ -118,13 +118,54 @@ Other ways to steer: file GitHub issues (the Strategist reads them), add to the 
 
 ## Auto-Research Mode
 
-Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves the system under test.
+Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
 
 ```bash
-uv run factory ceo "build a harness to solve SWE-bench lite problem number k" --mode research
+uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
 ```
 
 The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
+
+### Inner loop + outer loop
+
+The Factory operates at two levels, like a researcher who both runs experiments and redesigns the experimental apparatus:
+
+**Inner loop (auto-research):** Build a solver, run it, analyze failures, tweak prompts and logic, re-run. This is the [Karpathy-style](https://www.youtube.com/watch?v=hM_h0UA7upI) pattern — a fixed harness iterating toward a target metric.
+
+**Outer loop (meta-harness):** When inner-loop improvements plateau, the Factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
+
+### Example: HMMT math competition solver
+
+The Factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
+
+**Round 1 — inner loop (prompt-level fixes):**
+
+The Factory created a 5-agent pipeline (Explorer → Theorist → Computationalist → Critic → Synthesizer) with computational tools (LP-based separability checking, brute-force enumeration). The pipeline ran multiple times:
+
+- Runs 1-2: Agents spent all output tokens on thinking, returned 0 chars. Factory fixed token limits.
+- Runs 3-6: Explorer and Computationalist found 1574, but the Synthesizer "corrected" it to 1572. Classic synthesis failure — the agent added interpretation that degraded a correct upstream answer.
+- Factory experiment 001: Added a consensus override guard, competition math conventions, and mandatory verification to the Synthesizer prompt. The pipeline started producing 1574, but still hit 1572 in ~50% of runs.
+
+**Round 2 — outer loop (architectural restructuring):**
+
+Prompt-level fixes couldn't make the Synthesizer reliable. The Factory's Strategist recognized the plateau and generated an architectural hypothesis: instead of one pipeline with one prompt, create **12 distinct prompt strategies** and test them as A/B experiments.
+
+The Factory added `agents/strategies.py` (1055 lines), three new agent roles (Auditor, Debater, Judge), and modified the orchestrator to support strategy selection. Then it ran all 12 strategies:
+
+| Strategy | Answer | Result |
+|---|---|---|
+| raw-output-only | 1574 | PASS |
+| geometric-verification | 1574 | PASS |
+| problem-reformulation | 1574 | PASS |
+| counterfactual-contrast | 1574 | PASS |
+| bias-inoculation | 1572 | FAIL |
+| consistency-enforcement | 1572 | FAIL |
+| deferred-interpretation | 1572 | FAIL |
+| adversarial-debate | 1572 | FAIL |
+
+**Key discovery:** Strategies that give the Synthesizer *concrete evidence* (immutable tool output, geometric proof, reframed problem text) override the bias. Softer interventions (warnings, procedural rules, debate) don't. This is a finding about LLM behavior that emerged from the Factory's own experimentation loop — not something a human specified.
+
+### Continuous optimization
 
 Once the project is set up, wrap it in a loop for continuous optimization — each cycle is a full experiment pass:
 
@@ -139,7 +180,7 @@ The factory auto-detects the research target in `factory.md` and enters research
 | Project | Metric | What the factory optimizes |
 |---------|--------|---------------------------|
 | SWE-bench solver | resolve rate | Agent logic, prompts, localization strategies |
-| Math reasoning | solve rate | Chain-of-thought templates, tool call patterns |
+| HMMT math solver | solve rate | Agent prompts, pipeline architecture, strategy selection |
 | Text/Sketch → CAD | query accuracy | Query builder, schema mapping, entity resolution |
 
 See [Getting Started — Research Mode](docs/getting-started.md#research-mode-in-detail) for phase tables, leakage guards, and progression details.
