@@ -24,7 +24,15 @@ cd remote-factory
 uv sync
 ```
 
-Every command runs from the **factory repo directory** — you pass the target project as an argument:
+Then just run:
+
+```bash
+uv run factory
+```
+
+The **welcome wizard** launches automatically — a conversational agent that asks what you want to do, classifies your input (an idea, a file path, a GitHub URL, or a description), and presents the right command. No flags to memorize. Paste an idea and the wizard handles the rest.
+
+You can also skip the wizard and call commands directly:
 
 ```bash
 uv run factory ceo "Build a personal homepage with a blog" --mode interactive
