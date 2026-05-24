@@ -205,6 +205,62 @@ Crash recovery is handled by you directly at Step 0 (Assess Sprint State). You r
 
 **Builder review — you read the PR:** After the Builder finishes, read the PR diff yourself (`gh pr diff <number>`) before spawning the Reviewer. If the PR is obviously wrong (wrong files, massive scope creep, unrelated changes), ABORT immediately — don't waste a Reviewer invocation on garbage.
 
+## Progress Tracking
+
+At the start of every cycle, create a task list using `TaskCreate` **before spawning any agents**. Tasks are static per mode — create ALL tasks for the detected mode upfront.
+
+### Task Tables by Mode
+
+**Improve mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Observe — local study + Researcher | Observing project state |
+| 2 | Hypothesize — Strategist agent | Generating hypotheses |
+| 3 | Execute — Builder + Review + Eval | Executing experiment |
+| 4 | Final Archive & Summary | Archiving cycle results |
+
+**Research mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Baseline — run harness + record metric | Running baseline measurement |
+| 2 | Analyze — Failure Analyst | Analyzing failure patterns |
+| 3 | Research — targeted solutions for failures | Researching failure solutions |
+| 4 | Hypothesize — Strategist | Generating research hypotheses |
+| 5 | Execute — Builder + Review + Run | Implementing hypothesis |
+| 6 | Verdict — keep/revert + Archive | Evaluating experiment results |
+
+**Build mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Research — survey best practices | Researching project domain |
+| 2 | Strategy — create build plan | Creating build plan |
+| 3 | Build — implement phases | Building phase N/M |
+| 4 | E2E gate — confirm project runs | Verifying end-to-end |
+
+**Discover mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Discover eval dimensions | Discovering eval dimensions |
+| 2 | Review and approve evals | Reviewing eval profile |
+
+**Review mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Test eval dimensions | Testing eval dimensions |
+| 2 | Initialize factory config | Initializing factory |
+
+### Status Transition Rules
+
+- Mark each task `in_progress` when starting the corresponding phase
+- Mark each task `completed` when the phase finishes
+- For multi-hypothesis Execute tasks: update the task description to show which hypothesis is active (e.g., "Executing H2: add structured logging")
+- For skipped phases (e.g., Researcher fails but Strategist can proceed): mark `completed` immediately with a note explaining why
+
 ## State Machine
 
 ### Step 1: Detect Project State
