@@ -21,7 +21,7 @@ from pathlib import Path
 from factory.eval.growth import compute_growth_results
 from factory.eval.hygiene import compute_hygiene_results
 from factory.eval.scorer import compute_composite
-from factory.models import CompositeScore, EvalResult, EvalWeights, ProjectEvalDimension
+from factory.models import CompositeScore, EvalResult, EvalWeights, ProjectEvalDimension, TierWeights
 
 
 def _error_score(message: str, details: str = "") -> CompositeScore:
@@ -65,10 +65,26 @@ def _effective_weights(
 def _normalize_tier(
     results: list[EvalResult],
     target_weight: float,
+    weight_overrides: dict[str, float] | None = None,
 ) -> list[EvalResult]:
-    """Normalize a list of EvalResults so their weights sum to target_weight."""
+    """Normalize a list of EvalResults so their weights sum to target_weight.
+
+    If weight_overrides is provided, matching dimension weights are replaced
+    before normalization (sparse override).
+    """
     if not results or target_weight <= 0:
         return []
+    if weight_overrides:
+        results = [
+            EvalResult(
+                name=r.name,
+                score=r.score,
+                weight=weight_overrides.get(r.name, r.weight),
+                passed=r.passed,
+                details=r.details,
+            )
+            for r in results
+        ]
     weight_sum = sum(r.weight for r in results)
     if weight_sum <= 0:
         return results
@@ -90,15 +106,18 @@ def _merge_all(
     growth_results: list[EvalResult],
     custom_project_results: list[EvalResult] | None = None,
     eval_weights: EvalWeights | None = None,
+    hygiene_weight_overrides: dict[str, float] | None = None,
+    growth_weight_overrides: dict[str, float] | None = None,
 ) -> list[EvalResult]:
     """Merge mandatory hygiene + project additions + mandatory growth + custom project eval.
 
     Weight distribution (three tiers):
       - Hygiene (mandatory 6 + eval/score.py additions): configurable (default 50%)
-      - Growth (mandatory 5): configurable (default 50%)
+      - Growth (mandatory 5+): configurable (default 50%)
       - Project eval (user-defined in factory.md): configurable (default 0%, auto 50% when present)
 
     When custom_project_results is non-empty, weights shift to accommodate project eval.
+    Within-tier weight overrides are applied before normalization.
     """
     mandatory_names = {r.name for r in hygiene_results} | {r.name for r in growth_results}
     additional = [r for r in project_results if r.name not in mandatory_names]
@@ -108,8 +127,8 @@ def _merge_all(
     weights = eval_weights or EvalWeights()
     h_w, g_w, p_w = _effective_weights(weights, bool(custom))
 
-    normalized_hygiene = _normalize_tier(all_hygiene, h_w)
-    normalized_growth = _normalize_tier(growth_results, g_w)
+    normalized_hygiene = _normalize_tier(all_hygiene, h_w, hygiene_weight_overrides)
+    normalized_growth = _normalize_tier(growth_results, g_w, growth_weight_overrides)
     normalized_project = _normalize_tier(custom, p_w)
 
     return normalized_hygiene + normalized_growth + normalized_project
@@ -238,14 +257,18 @@ async def run_eval(
     project_eval: list[ProjectEvalDimension] | None = None,
     eval_weights: EvalWeights | None = None,
     skip_project_eval: bool = False,
+    hygiene_weights: TierWeights | None = None,
+    growth_weights: TierWeights | None = None,
+    eval_spec: list[str] | None = None,
 ) -> CompositeScore:
     """Compute mandatory dimensions + project-specific additions + custom project eval.
 
     1. Compute 6 mandatory hygiene dimensions (auto-detect project tooling)
     2. Run project's eval/score.py for additional dimensions (optional)
-    3. Compute 5 mandatory growth dimensions
+    3. Compute 6 mandatory growth dimensions
     4. Run custom project eval dimensions from factory.md (if configured)
-    5. Merge all with configurable weight split
+    4b. Auto-promote executable eval_spec items to project eval
+    5. Merge all with configurable weight split (with optional within-tier overrides)
     6. Return composite score
     """
     # Step 1: Mandatory hygiene (always runs)
@@ -264,11 +287,31 @@ async def run_eval(
     if project_eval and not skip_project_eval:
         custom_results = await _run_custom_project_eval(project_eval, project_path)
 
+    # Step 4b: Auto-promote executable eval_spec items to project eval
+    if eval_spec and not skip_project_eval:
+        from factory.discovery.eval_spec import generate_project_eval_from_spec
+        auto_promoted = generate_project_eval_from_spec(eval_spec, project_path)
+        if auto_promoted:
+            auto_results = await _run_custom_project_eval(auto_promoted, project_path)
+            custom_results.extend(auto_results)
+
+    # Convert TierWeights to sparse override dicts
+    h_overrides = (
+        {k: v for k, v in hygiene_weights.model_dump().items() if v is not None}
+        if hygiene_weights else None
+    )
+    g_overrides = (
+        {k: v for k, v in growth_weights.model_dump().items() if v is not None}
+        if growth_weights else None
+    )
+
     # Step 5: Merge all dimensions with weight split
     merged = _merge_all(
         hygiene_results, project_results, growth_results,
         custom_project_results=custom_results,
         eval_weights=eval_weights,
+        hygiene_weight_overrides=h_overrides or None,
+        growth_weight_overrides=g_overrides or None,
     )
 
     # Step 6: Compute composite

@@ -23,6 +23,7 @@ from factory.models import (
     HypothesisBudget,
     ProjectEvalDimension,
     ResearchTarget,
+    TierWeights,
 )
 
 log = structlog.get_logger()
@@ -159,6 +160,18 @@ def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstrai
     return constraints
 
 
+def _parse_tier_weights(items: str | list[str] | float) -> TierWeights | None:
+    """Parse within-tier weight overrides from factory.md."""
+    kv = _parse_kv_list(items, float)
+    if not kv:
+        return None
+    valid_fields = set(TierWeights.model_fields.keys())
+    filtered = {k: float(str(v)) for k, v in kv.items() if k in valid_fields}
+    if not filtered:
+        return None
+    return TierWeights(**filtered)
+
+
 class ExperimentStore:
     """Manages the .factory/ directory for a project."""
 
@@ -270,6 +283,8 @@ class ExperimentStore:
         hard_constraints = _parse_hard_constraints(parsed.get("hard_constraints", []))
         es_raw = parsed.get("eval_spec", [])
         eval_spec = list(es_raw) if isinstance(es_raw, list) else []
+        hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
+        growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -290,6 +305,8 @@ class ExperimentStore:
             cost_budget=cost_budget,
             hard_constraints=hard_constraints,
             eval_spec=eval_spec,
+            hygiene_weights=hygiene_tier_weights,
+            growth_weights=growth_tier_weights,
         )
 
         (self.factory_dir / "config.json").write_text(

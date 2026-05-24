@@ -56,16 +56,16 @@ class TestGrowthWeights:
         """Growth weights (before runner normalization) should sum to 1.0."""
         assert abs(sum(GROWTH_WEIGHTS.values()) - 1.0) < 1e-9
 
-    def test_five_dimensions(self):
-        assert len(GROWTH_WEIGHTS) == 5
+    def test_six_dimensions(self):
+        assert len(GROWTH_WEIGHTS) == 6
 
-    def test_compute_growth_results_returns_five(self):
+    def test_compute_growth_results_returns_six(self):
         results = compute_growth_results(PROJECT_ROOT)
-        assert len(results) == 5
+        assert len(results) == 6
         names = {r["name"] for r in results}
         assert names == {
             "capability_surface", "experiment_diversity", "observability",
-            "research_grounding", "factory_effectiveness",
+            "research_grounding", "factory_effectiveness", "spec_compliance",
         }
 
 
@@ -95,7 +95,7 @@ class TestMergeWithGrowth:
         assert abs(hygiene_weight + growth_weight - 1.0) < 1e-9
 
     def test_total_dimensions(self):
-        """Should be hygiene dims + 5 growth dims."""
+        """Should be hygiene dims + 6 growth dims."""
         hygiene_results = [
             EvalResult(name="tests", score=1.0, weight=0.5, passed=True, details=""),
             EvalResult(name="lint", score=1.0, weight=0.5, passed=True, details=""),
@@ -104,7 +104,7 @@ class TestMergeWithGrowth:
             EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
         ]
         merged = _merge_all(hygiene_results, [], growth_results)
-        assert len(merged) == 7  # 2 hygiene + 5 growth
+        assert len(merged) == 8  # 2 hygiene + 6 growth
 
     def test_project_additions_merged(self):
         """Project-specific additions are merged into the hygiene half."""
@@ -119,7 +119,7 @@ class TestMergeWithGrowth:
             EvalResult(**r) for r in compute_growth_results(PROJECT_ROOT)
         ]
         merged = _merge_all(hygiene_results, project_results, growth_results)
-        assert len(merged) == 8  # 2 hygiene + 1 project + 5 growth
+        assert len(merged) == 9  # 2 hygiene + 1 project + 6 growth
         names = {r.name for r in merged}
         assert "ui_renders" in names
 
