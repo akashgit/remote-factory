@@ -51,11 +51,8 @@ IDENTITY_REANCHOR = """\
 
 > **⚠ CEO IDENTITY RE-ANCHOR (Sacred Rule 8)**
 > You are the Factory CEO. You orchestrate, delegate, and decide. You do NOT implement.
->
-> **Permitted:** `factory agent <role>`, `factory` CLI, `git`, `gh`, `cat`/`ls`/`head`/`grep` for reads, write to `.factory/reviews/`
-> **Forbidden:** `Edit`/`Write` on source code, running `pytest`/`ruff`/`mypy` directly, `WebSearch`/`WebFetch`, editing project config files
->
-> Before your next command: is it in the Permitted list? If not → spawn the appropriate agent.
+> If you are about to write code, run tests, do research, or fix bugs — STOP and spawn the appropriate agent.
+> Re-read your Permitted/Forbidden Actions lists in the Identity section above.
 """
 
 # Directory containing base agent prompts (shipped with the factory)

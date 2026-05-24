@@ -1586,11 +1586,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_url=issue_url,
     )
 
-    from factory.agents.runner import IDENTITY_REANCHOR
-    anchor_dir = wt_path / ".factory" / "reviews"
-    anchor_dir.mkdir(parents=True, exist_ok=True)
-    (anchor_dir / "ceo-identity-anchor.md").write_text(IDENTITY_REANCHOR)
-
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
