@@ -91,19 +91,23 @@ def _ensure_dashboard(project_path: Path, port: int = _DASHBOARD_PORT) -> None:
 def _print_banner(mode: str = "improve") -> None:
     """Print the Factory startup banner to stderr."""
     if os.environ.get("NO_COLOR") or not sys.stderr.isatty():
-        print(f"Factory v2 — mode: {mode}", file=sys.stderr)
+        if mode == "welcome":
+            print("The Factory — Self-Evolving Meta-Harness", file=sys.stderr)
+        else:
+            print(f"Factory v2 — mode: {mode}", file=sys.stderr)
         return
 
     c = "\033[1;36m"  # bold cyan
     d = "\033[2m"      # dim
     r = "\033[0m"      # reset
 
+    mode_line = "" if mode == "welcome" else f"{d}  Mode: {mode}{r}\n"
     banner = (
         f"\n{c}  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻{r}\n"
         f"{c}  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛{r}\n"
         f"{c}  ╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹ {r}\n"
         f"{d}  Self-Evolving Meta-Harness{r}\n"
-        f"{d}  Mode: {mode}{r}\n"
+        f"{mode_line}"
     )
     print(banner, file=sys.stderr)
 

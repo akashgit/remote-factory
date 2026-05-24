@@ -465,5 +465,5 @@ class TestBannerUpdate:
             mock_stderr.isatty.return_value = False
             _print_banner("welcome")
 
-        # The no-color branch just prints "Factory v2 — mode: welcome"
-        # (tagline only appears in the ANSI branch)
+        # The no-color branch prints the tagline without mode for welcome
+        mock_stderr.write.assert_any_call("The Factory — Self-Evolving Meta-Harness")
