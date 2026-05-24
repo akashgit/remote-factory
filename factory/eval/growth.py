@@ -456,7 +456,7 @@ def eval_spec_compliance(project_path: Path) -> dict:
                 "details": "No spec checks recorded — neutral score",
             }
 
-        score = min(passed / total, 1.0)
+        score = max(0.0, min(passed / total, 1.0))
         return {
             "name": "spec_compliance",
             "score": round(score, 4),
