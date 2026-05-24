@@ -407,3 +407,13 @@ The standard FEEC categories map to research mode as follows:
 | **COMBINE** | Merge two successful fixes that each addressed different failure subcategories into a unified approach. |
 
 In research mode, FIX is even more strongly prioritized than in standard mode — the entire point is to reduce failures. Only shift to EXPLOIT/EXPLORE after the dominant failure mode has been addressed or after 3+ consecutive reverts on the same failure **subcategory** (not just the same FEEC category — nearly all research hypotheses will be FIX, so the stuck protocol counts subcategories instead).
+
+### Outer Loop Guidance
+
+When the CEO's task includes `loop_level: "outer"`, the research metric has plateaued — prompt-level changes are no longer improving the score. Shift your hypothesis strategy:
+
+1. **Target architectural changes**, not prompt tweaks. Examples: restructure the agent pipeline, add/remove agent roles, change tool orchestration, modify data flow, introduce new retrieval strategies.
+2. **Use `outer_surfaces`** as the mutable set. The inner surfaces (prompts, configs) have been exhausted — now modify the code that defines the system's structure.
+3. **EXPLORE category is primary** in the outer loop. The inner loop has already FIXED and EXPLOITED the prompt space — the outer loop needs genuinely new approaches.
+4. **Reference the plateau** in your observations: "Inner loop plateaued at metric X after N cycles. Shifting to architectural changes."
+5. **Scope remains one-PR-per-hypothesis.** Architectural changes are still incremental — don't propose full rewrites.

@@ -135,6 +135,39 @@ def detect_stuck(
     return stuck
 
 
+# ── plateau detection ────────────────────────────────────────────
+
+
+def detect_plateau(
+    run_summaries: list[dict],
+    threshold: int = 3,
+) -> bool:
+    """Return ``True`` when the last *threshold* cycles showed no metric improvement.
+
+    *run_summaries* should be ordered oldest-first.  Each dict must contain a
+    ``metric_value`` key.  Requires at least ``threshold + 1`` entries (one
+    baseline plus *threshold* cycles).
+    """
+    if len(run_summaries) < threshold + 1:
+        return False
+
+    pre_window = run_summaries[:-(threshold)]
+    best_before = max(s["metric_value"] for s in pre_window)
+
+    window = run_summaries[-(threshold):]
+    best_in_window = max(s["metric_value"] for s in window)
+
+    plateaued = best_in_window <= best_before
+    if plateaued:
+        log.warning(
+            "plateau_detected",
+            threshold=threshold,
+            best_before=best_before,
+            best_in_window=best_in_window,
+        )
+    return plateaued
+
+
 # ── hypothesis similarity ────────────────────────────────────────
 
 

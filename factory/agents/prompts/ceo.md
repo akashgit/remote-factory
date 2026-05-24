@@ -1604,9 +1604,11 @@ Establish the starting point by running the system and recording the baseline me
    9. Report: metric name, metric value, run status, duration." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
    ```
 
-4. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+4. **Multi-run baseline (when inner_loop is configured).** If `.factory/config.json` contains an `inner_loop` object with `runs_per_cycle > 1`, run the baseline command N times instead of once. Each sub-run gets its own directory: `.factory/research/runs/000-baseline-runI`. Write `.factory/research/runs/000-baseline/summary.json` with the aggregated metric (using the configured `aggregate` method: mean, median, max, or all_pass), plus a `runs` array with per-run details and an `aggregate` field naming the method.
 
-5. **Check for prior runs:**
+5. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+
+6. **Check for prior runs:**
    ```bash
    ls "$PROJECT_PATH/.factory/research/runs/"
    ```
@@ -1885,6 +1887,8 @@ echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJE
 
 Execute the `run_command` again on the modified code (PR branch) and compare against baseline.
 
+**Single-run mode (default):**
+
 ```bash
 factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
 
@@ -1899,6 +1903,15 @@ factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
 8. Compare against baseline: $BASELINE_METRIC and previous best: $PREVIOUS_BEST
 9. Report: metric before, metric after, delta, whether target is met." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
 ```
+
+**Multi-run mode (when inner_loop is configured with runs_per_cycle > 1):**
+
+When `.factory/config.json` has `inner_loop.runs_per_cycle > 1`, run the command N times. Each sub-run goes to `.factory/research/runs/$CYCLE_ID-runI/`. Write the aggregated summary to `.factory/research/runs/$CYCLE_ID/summary.json` with format:
+```json
+{"status": "PASS", "metric": "$METRIC", "metric_value": <aggregate>, "aggregate": "<method>", "runs": [{"run_id": 1, "metric_value": ..., "duration_seconds": ..., "status": "PASS"}, ...], "duration_seconds": <total>, "command": "$RUN_COMMAND"}
+```
+
+Aggregation methods: `mean` = arithmetic mean, `median` = middle value, `max` = best-of-N, `all_pass` = min(values).
 
 Save the new metric value as `$METRIC_AFTER`.
 
@@ -2000,6 +2013,23 @@ factory finalize "$PROJECT_PATH" \
     --issue $ISSUE_NUM \
     --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
+
+#### R5d.5. Plateau Check
+
+If `inner_loop.plateau_threshold` is configured in `.factory/config.json`, check whether the research metric has plateaued:
+
+1. Read all `.factory/research/runs/*/summary.json` files, ordered by cycle name
+2. If the last `plateau_threshold` consecutive cycles showed no improvement over the previous best metric:
+   - Log an `outer_loop.triggered` event to `.factory/events.jsonl`
+   - Update the checkpoint with `loop_level: "outer"` and increment `plateau_count`
+   - If `outer_loop.outer_surfaces` is configured, expand `mutable_surfaces` to include them for the next cycle
+   - Shift the Strategist to architectural hypotheses in the next cycle (the Strategist will receive `loop_level: "outer"` and generate structural changes instead of prompt-level changes)
+
+If no plateau is detected, continue normally.
+
+**Surface scoping by loop level:**
+- **Inner loop** (`loop_level: "inner"`): If `outer_loop.inner_surfaces` is configured, restrict `mutable_surfaces` to only those files. This narrows the Builder's scope to prompt-level changes.
+- **Outer loop** (`loop_level: "outer"`): If `outer_loop.outer_surfaces` is configured, expand `mutable_surfaces` to include those files. This allows the Builder to make architectural changes.
 
 #### R5e. Termination Conditions
 

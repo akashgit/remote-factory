@@ -139,6 +139,28 @@ curl -sf http://localhost:8000/health
 - Each experiment must complete within 30 minutes
 -->
 
+## Inner Loop
+<!-- Multi-run configuration for research mode. Runs the harness N times per cycle -->
+<!-- and aggregates the metric. Useful for stochastic pipelines. -->
+<!-- Example:
+- runs_per_cycle: 5
+- aggregate: mean
+- plateau_threshold: 3
+- max_inner_runs_per_cycle: 10
+-->
+
+## Outer Loop Surfaces
+<!-- Surface scoping for inner/outer loop transitions. -->
+<!-- When the inner loop plateaus, the factory expands to outer surfaces. -->
+<!-- Prefix each entry with 'inner:' or 'outer:' to declare which loop it belongs to. -->
+<!-- Example:
+- max_outer_cycles: 5
+- inner: prompts/*.md
+- inner: config/*.yaml
+- outer: src/**/*.py
+- outer: agents/**/*.md
+-->
+
 ## Cost Budget
 <!-- Per-cycle or total budget constraints for research experiments. -->
 <!-- Example: $5/cycle, $50 total -->

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 import structlog
 from pydantic import BaseModel, ConfigDict
@@ -26,6 +27,8 @@ class CheckpointState(BaseModel):
     current_hypothesis: str | None
     completed_hypotheses: list[int] = []
     timestamp: str
+    plateau_count: int = 0
+    loop_level: Literal["inner", "outer"] = "inner"
 
 
 def save_checkpoint(project_path: Path, state: CheckpointState) -> None:

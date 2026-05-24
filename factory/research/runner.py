@@ -12,7 +12,7 @@ from pathlib import Path
 
 import structlog
 
-from factory.models import ResearchTarget, ResultParseError, RunResult, RunStatus
+from factory.models import AggregateMethod, InnerLoopConfig, ResearchTarget, ResultParseError, RunResult, RunStatus
 
 log = structlog.get_logger()
 
@@ -294,3 +294,84 @@ def _save_artifacts(run_dir: Path, result: RunResult, config: ResearchTarget) ->
         "duration_seconds": result.duration_seconds,
         "command": config.run_command,
     })
+
+
+# ── multi-run aggregation ──────────────────────────────────────
+
+
+def aggregate_metric(values: list[float], method: AggregateMethod) -> float:
+    """Compute a single aggregate value from multiple run metrics."""
+    if not values:
+        return 0.0
+    if method == AggregateMethod.MEAN:
+        return sum(values) / len(values)
+    if method == AggregateMethod.MEDIAN:
+        s = sorted(values)
+        mid = len(s) // 2
+        if len(s) % 2 == 0:
+            return (s[mid - 1] + s[mid]) / 2
+        return s[mid]
+    if method == AggregateMethod.MAX:
+        return max(values)
+    # ALL_PASS: worst run determines the aggregate
+    return min(values)
+
+
+async def execute_multi_run(
+    project_path: Path,
+    config: ResearchTarget,
+    cycle_id: str,
+    inner_loop: InnerLoopConfig,
+) -> dict:
+    """Execute the run_command N times, aggregate metrics, return extended summary.
+
+    Returns a dict with top-level ``metric_value`` (aggregate), ``aggregate``
+    method name, and a ``runs`` array with per-run details.
+    """
+    n = inner_loop.runs_per_cycle
+    if inner_loop.max_inner_runs_per_cycle is not None:
+        n = min(n, inner_loop.max_inner_runs_per_cycle)
+
+    runs: list[dict] = []
+    values: list[float] = []
+    total_duration = 0.0
+
+    for i in range(1, n + 1):
+        sub_cycle = f"{cycle_id}-run{i}"
+        log.info("multi_run_start", run=i, total=n, sub_cycle=sub_cycle)
+        result = await execute_run(project_path, config, sub_cycle)
+        run_entry = {
+            "run_id": i,
+            "metric_value": result.metric_value,
+            "duration_seconds": result.duration_seconds,
+            "status": result.status.value,
+        }
+        runs.append(run_entry)
+        total_duration += result.duration_seconds
+        if result.status == RunStatus.PASS:
+            values.append(result.metric_value)
+
+    agg_value = aggregate_metric(values, inner_loop.aggregate) if values else 0.0
+
+    summary = {
+        "status": "PASS" if values else "FAIL",
+        "metric": config.metric,
+        "metric_value": agg_value,
+        "aggregate": inner_loop.aggregate.value,
+        "runs": runs,
+        "duration_seconds": total_duration,
+        "command": config.run_command,
+    }
+
+    run_dir = create_run_dir(project_path, cycle_id)
+    save_run_summary(run_dir, summary)
+
+    log.info(
+        "multi_run_complete",
+        cycle_id=cycle_id,
+        runs_total=n,
+        runs_passed=len(values),
+        aggregate=inner_loop.aggregate.value,
+        metric_value=agg_value,
+    )
+    return summary

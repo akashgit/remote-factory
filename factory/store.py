@@ -13,6 +13,7 @@ from filelock import FileLock
 from pydantic import ValidationError
 
 from factory.models import (
+    AggregateMethod,
     CompositeScore,
     CostBudgetConfig,
     EvalProfile,
@@ -21,6 +22,8 @@ from factory.models import (
     FactoryConfig,
     HardConstraint,
     HypothesisBudget,
+    InnerLoopConfig,
+    OuterLoopConfig,
     ProjectEvalDimension,
     ResearchTarget,
 )
@@ -129,6 +132,61 @@ def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | Non
     )
     log.debug("cost_budget_parsed", max_per_cycle=budget.max_per_cycle, max_total=budget.max_total)
     return budget
+
+
+def _parse_inner_loop(items: str | list[str] | float) -> InnerLoopConfig | None:
+    """Parse inner loop key-value block from factory.md."""
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+    config = InnerLoopConfig(
+        runs_per_cycle=int(str(kv.get("runs_per_cycle", "1"))),
+        aggregate=AggregateMethod(str(kv.get("aggregate", "mean"))),
+        plateau_threshold=int(str(kv.get("plateau_threshold", "3"))),
+        max_inner_runs_per_cycle=(
+            int(str(kv["max_inner_runs_per_cycle"]))
+            if "max_inner_runs_per_cycle" in kv
+            else None
+        ),
+    )
+    log.debug("inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate.value)
+    return config
+
+
+def _parse_outer_loop(items: str | list[str] | float) -> OuterLoopConfig | None:
+    """Parse outer loop surfaces key-value block from factory.md.
+
+    Supports both key-value pairs (max_outer_cycles) and plain list items
+    prefixed with 'inner:' or 'outer:' for surface declarations.
+    """
+    if not isinstance(items, list):
+        return None
+    max_outer_cycles: int | None = None
+    inner_surfaces: list[str] = []
+    outer_surfaces: list[str] = []
+    for item in items:
+        s = str(item).strip()
+        if s.startswith("max_outer_cycles:"):
+            val = s.split(":", 1)[1].strip()
+            max_outer_cycles = int(val) if val else None
+        elif s.startswith("inner:"):
+            inner_surfaces.append(s.split(":", 1)[1].strip())
+        elif s.startswith("outer:"):
+            outer_surfaces.append(s.split(":", 1)[1].strip())
+    if not inner_surfaces and not outer_surfaces and max_outer_cycles is None:
+        return None
+    config = OuterLoopConfig(
+        max_outer_cycles=max_outer_cycles,
+        inner_surfaces=inner_surfaces,
+        outer_surfaces=outer_surfaces,
+    )
+    log.debug(
+        "outer_loop_parsed",
+        max_outer_cycles=config.max_outer_cycles,
+        inner_count=len(config.inner_surfaces),
+        outer_count=len(config.outer_surfaces),
+    )
+    return config
 
 
 def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstraint]:
@@ -259,6 +317,8 @@ class ExperimentStore:
         smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
 
         research_target = _parse_research_target(parsed.get("research_target", []))
+        inner_loop = _parse_inner_loop(parsed.get("inner_loop", []))
+        outer_loop = _parse_outer_loop(parsed.get("outer_loop_surfaces", []))
         cost_budget = _parse_cost_budget(parsed.get("cost_budget", []))
 
         mutable_raw = parsed.get("mutable_surfaces", [])
@@ -284,6 +344,8 @@ class ExperimentStore:
             project_eval=project_eval_dims,
             eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
             research_target=research_target,
+            inner_loop=inner_loop,
+            outer_loop=outer_loop,
             mutable_surfaces=mutable_surfaces,
             fixed_surfaces=fixed_surfaces,
             research_constraints=research_constraints,
