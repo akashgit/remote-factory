@@ -57,6 +57,9 @@ def generate_eval_spec(profile: ProjectProfile, project_path: Path) -> list[str]
         fw_specs = _FRAMEWORK_SPECS.get(profile.framework, [])
         items.extend(fw_specs)
 
+    if (project_path / "Dockerfile").exists() or (project_path / "docker-compose.yml").exists():
+        items.append("Build and start Docker containers and verify services are healthy")
+
     if not items:
         items.append("Build and run the project's primary entry point without errors")
 

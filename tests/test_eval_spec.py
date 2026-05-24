@@ -154,3 +154,8 @@ class TestGenerateEvalSpec:
     def test_nextjs_framework(self, tmp_path):
         items = generate_eval_spec(self._profile("web_app", "next.js"), tmp_path)
         assert any("next" in i.lower() for i in items)
+
+    def test_docker_detection(self, tmp_path):
+        (tmp_path / "Dockerfile").write_text("FROM python:3.12")
+        items = generate_eval_spec(self._profile("cli_tool"), tmp_path)
+        assert any("docker" in i.lower() for i in items)
