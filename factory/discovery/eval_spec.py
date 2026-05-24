@@ -164,8 +164,6 @@ def _generate_command(item: str, project_path: Path) -> str | None:
 
     if "manage.py" in lower:
         if (project_path / "manage.py").exists():
-            if "check" in lower:
-                return "python manage.py check"
             return "python manage.py check"
         return None
 
@@ -186,6 +184,8 @@ def generate_project_eval_from_spec(
     """Generate ProjectEvalDimension entries for executable eval_spec items."""
     dims: list[ProjectEvalDimension] = []
 
+    used_slugs: dict[str, int] = {}
+
     for item in eval_spec:
         if classify_eval_spec_item(item) != "executable":
             continue
@@ -194,7 +194,13 @@ def generate_project_eval_from_spec(
         if not command:
             continue
 
-        name = f"spec_{_slugify(item)}"
+        base = f"spec_{_slugify(item)}"
+        if base in used_slugs:
+            used_slugs[base] += 1
+            name = f"{base}_{used_slugs[base]}"
+        else:
+            used_slugs[base] = 1
+            name = base
         dims.append(ProjectEvalDimension(
             name=name,
             command=command,
