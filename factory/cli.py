@@ -1559,7 +1559,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
     if interactive_existing:
-        ceo_mode = "interactive"
+        ceo_mode = "build"
     elif mode == "interactive" or research_ideation:
         ceo_mode = "build"
     else:
@@ -2081,17 +2081,19 @@ def _build_ceo_task(
 
     if interactive_existing:
         task += (
-            f"\n\n## Interactive Improvement Mode (Phase 0)\n\n"
-            f"You are in interactive mode on an **existing project** at `{project_path}`.\n\n"
-            f"Before running any experiments, study the project and discuss with the user "
-            f"what to work on. Follow the Phase 0e: Ideation on Existing Projects protocol "
-            f"in your system prompt.\n\n"
+            f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
+            f"**existing_project: true**\n\n"
+            f"You are in interactive ideation mode on an **existing project** at `{project_path}`.\n\n"
+            f"Before running any experiments, research the project (local study + external "
+            f"best practices), distill an improvement spec through user feedback, then "
+            f"transition to Improve mode. Follow the Phase 0: Ideation protocol in your "
+            f"system prompt — the existing-project conditionals in I0, I1, and I4 apply.\n\n"
         )
         if focus:
             task += (
-                f"**Discussion topic (from --focus):** {focus}\n\n"
+                f"**Focus topic (from --focus):** {focus}\n\n"
                 f"The user wants to discuss this specific topic. Use it to seed the "
-                f"conversation, but be open to the user redirecting.\n"
+                f"research and spec, but be open to the user redirecting.\n"
             )
         else:
             task += (

@@ -228,23 +228,26 @@ factory detect "$PROJECT_PATH"
 - `evals_pending_review` → **Review mode**
 - `has_factory` → **Improve mode** (or **Research mode** if `research_target` is configured and `--mode research` is set)
 
-**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode. If your task includes `## Interactive Improvement Mode (Phase 0)`, enter Phase 0e first, then proceed to Improve mode.
+**Exception:** If your task includes `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)`, enter Phase 0 first regardless of project state. After Phase 0 completes, proceed to Build mode (for new ideas) or Improve mode (for existing projects).
 
 ---
 
 ## Phase 0: Ideation (Interactive Mode)
 
-This phase activates when your task includes a `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)` section. You are running in foreground interactive mode — the user can see your output and respond.
+This phase activates when your task includes a `## Interactive Ideation Mode (Phase 0)` or `## Research Ideation Mode (Phase 0)` section. You are running in foreground interactive mode — the user can see your output and respond. This phase handles both **new ideas** and **existing projects**.
 
 **Research ideation** works identically to regular ideation, except the Distiller MUST produce a Research Configuration section in its output. See the I1 step below for how to instruct the Distiller.
 
 ### Purpose
 
-Transform a vague idea into a research-grounded, buildable project specification (idea.md) through iterative refinement with the user.
+- **New ideas:** Transform a vague idea into a research-grounded, buildable project specification (idea.md) through iterative refinement with the user.
+- **Existing projects:** Study the project and collaboratively decide what to improve next, producing an improvement spec through research and user feedback.
 
 ### I0: Research the Space (Researcher Agent)
 
-Tell the user you're researching the space, then spawn the Researcher:
+Tell the user you're researching the space, then spawn the Researcher.
+
+**For new ideas:**
 
 ```bash
 factory agent researcher --task "Mode 2 research for a new project idea.
@@ -267,6 +270,39 @@ Write a thorough research report to .factory/strategy/research.md covering:
 " --project "$PROJECT_PATH" --timeout 300
 ```
 
+**For existing projects** (task includes `existing_project: true`):
+
+First, gather local project context before spawning the Researcher:
+
+1. Read the project state: `factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
+2. Check recent history: `factory history "$PROJECT_PATH"` — what was kept/reverted recently?
+3. Run current eval: `factory eval "$PROJECT_PATH"` — where are the weak dimensions?
+4. Check open issues: `gh issue list --state open --json number,title,labels` (if GitHub is available)
+
+Then spawn the Researcher with combined local + external research:
+
+```bash
+factory agent researcher --task "Mode 2 research for an existing project improvement.
+
+Project: $PROJECT_PATH
+<If focus topic provided: Focus topic: <FOCUS_TOPIC>>
+
+The project already exists and has a factory setup. Research:
+1. Study the local project: run 'factory study $PROJECT_PATH', read backlog at .factory/strategy/backlog.md, read eval scores, read recent experiment history via 'factory history $PROJECT_PATH'
+2. Analyze the codebase for weak areas and improvement opportunities
+3. Search the web for best practices related to the project's weak dimensions
+4. Check .factory/archive/ for prior knowledge and recurring patterns
+5. If a focus topic was provided, do deep research on that specific area
+
+Write a thorough research report to .factory/strategy/research.md covering:
+- Project health summary (eval scores, recent outcomes)
+- Weak dimensions and improvement opportunities
+- External best practices relevant to weak areas
+- Backlog items with context and prioritization advice
+- Recommendations for what to work on next
+" --project "$PROJECT_PATH" --timeout 300
+```
+
 ### I0r: CEO Review — Research
 
 Apply the standard CEO Review Gate:
@@ -280,7 +316,7 @@ Apply the standard CEO Review Gate:
 
 Spawn the Distiller to synthesize the research into a structured spec.
 
-**For regular ideation** (`## Interactive Ideation Mode`):
+**For regular ideation on new ideas** (`## Interactive Ideation Mode` without `existing_project: true`):
 
 ```bash
 factory agent distiller --task "Distill a project specification from research and a raw idea.
@@ -290,6 +326,35 @@ Raw idea: <RAW_IDEA>
 Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
 
 Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
+```
+
+**For existing projects** (`## Interactive Ideation Mode` with `existing_project: true`):
+
+```bash
+factory agent distiller --task "Distill an improvement specification for an existing project.
+
+Project: $PROJECT_PATH
+<If focus topic provided: Focus topic: <FOCUS_TOPIC>>
+
+Read the research report at .factory/strategy/research.md for project context, weak areas, and external best practices.
+
+This is an EXISTING project, not a new idea. Produce an improvement spec with these sections:
+
+## Improvement Goal
+<What we're trying to achieve — one clear sentence>
+
+## Current State
+<Summary of where the project stands — eval scores, recent experiments, known issues>
+
+## Proposed Changes
+<Specific changes to implement, scoped to one PR's worth of work each>
+
+## Success Criteria
+<How to verify the improvement worked — eval dimension targets, behavioral checks>
+
+## Scope Boundaries
+<What is in scope and what is explicitly out of scope for this improvement>
+" --project "$PROJECT_PATH" --timeout 300
 ```
 
 **For research ideation** (`## Research Ideation Mode`):
@@ -389,82 +454,24 @@ When the user approves the spec:
    Read .factory/strategy/research.md (the research).
    Write project inception notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
    ```
-4. **Transition to Build mode**: The spec is now persisted. Continue with **Mode: Build** starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
+4. **Transition — route by project type:**
 
-**Important:** Do not skip Build mode's Research and Strategy steps just because Phase 0 did research. Phase 0 research is broad and exploratory (what should we build?). Build mode research is implementation-focused (how do we build it?).
+   **For new ideas** (no `existing_project: true` flag): Transition to **Build mode**. The spec is now persisted. Continue with Mode: Build starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
+
+   **Important:** Do not skip Build mode's Research and Strategy steps just because Phase 0 did research. Phase 0 research is broad and exploratory (what should we build?). Build mode research is implementation-focused (how do we build it?).
+
+   **For existing projects** (`existing_project: true`): Transition to **Improve mode** with the approved spec as the focus:
+   1. Persist the improvement spec to `.factory/strategy/current.md`
+   2. Add the improvement goal to the backlog: `factory backlog-add "$PROJECT_PATH" "<improvement goal from spec>"`
+   3. Proceed to **Improve mode** (Step 0a: Observe) with the improvement spec as the `--focus` directive. Do NOT re-run Phase 0 steps — transition directly into the Improve pipeline.
 
 ### Ideation Rules
 
 - **Maximum 5 iterations.** If the user has not approved after 5 rounds of feedback, summarize the current state and ask them to either approve the latest draft or provide a final definitive direction.
-- **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document.
+- **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document (or improvement spec for existing projects).
 - **Research is optional on refinement.** Only re-spawn the Researcher if the user's feedback introduces genuinely new territory. Minor scope adjustments (add/remove features, change priorities) do not need new research.
 - **Be concise when presenting.** After the first full presentation, highlight what changed rather than re-presenting the entire spec. But always show the full spec so the user can read it in context.
-
----
-
-## Phase 0e: Ideation on Existing Projects
-
-This phase activates when your task includes a `## Interactive Improvement Mode (Phase 0)` section. You are running in foreground interactive mode on an **existing project** — the user can see your output and respond.
-
-### Purpose
-
-Study an existing project and collaboratively decide what to work on next before entering the standard Improve loop.
-
-### E0: Study the Project
-
-Before talking to the user, gather context:
-
-1. **Read the project state**: `factory detect "$PROJECT_PATH"`, read `factory.md`, `.factory/strategy/backlog.md`, `.factory/strategy/current.md`
-2. **Check recent history**: `factory history "$PROJECT_PATH"` — what was kept/reverted recently?
-3. **Run current eval**: `factory eval "$PROJECT_PATH"` — where are the weak dimensions?
-4. **Check open issues**: `gh issue list --state open --json number,title,labels` (if GitHub is available)
-5. **Read the backlog**: What items are pending? What was deferred from Build mode?
-
-### E0b: Optional Web Research
-
-If the discussion topic (from `--focus` or the user's initial question) requires **domain knowledge beyond the local codebase** — e.g., external APIs, industry standards, competitor analysis, library best practices — spawn the Researcher for targeted web research before presenting findings:
-
-```bash
-factory agent researcher --task "Research <topic>: gather current best practices, API docs, or prior art relevant to <focus>. Write findings to .factory/strategy/research.md. Summarize findings in 2-3 paragraphs." --project "$PROJECT_PATH" --timeout 300
-```
-
-**Skip this step** if the topic is purely about the project's own code, backlog, or eval scores — E0 already covers those.
-
-### E1: Present Findings
-
-Present a concise summary to the user:
-- **Project health**: composite score, weakest dimensions, recent experiment outcomes
-- **Backlog**: pending items, categorized by FEEC priority
-- **Open issues**: any GitHub issues that need attention
-- **Recommendations**: your top 2-3 suggestions for what to work on, with rationale
-
-If a `--focus` topic was provided, lead with that topic but still present the broader context.
-
-### E2: Discuss and Iterate
-
-The user may:
-- **Approve a recommendation** ("yes, do that", "go with option 2")
-- **Redirect** ("actually, let's focus on the auth system instead")
-- **Ask questions** ("what's the coverage situation?", "why did experiment 5 get reverted?")
-- **Provide requirements** ("I want WebSocket support, here's what it should do...")
-
-Respond naturally. If the user asks for deeper analysis, do it. If they want to explore a specific area, investigate. This is a conversation, not a form.
-
-### E3: Transition to Improve Mode
-
-When the user approves a direction:
-
-1. **Formulate the work** as a focus directive or set of backlog items
-2. **If it's a single item**: add it to the backlog via `factory backlog-add "$PROJECT_PATH" "<item>"`, then proceed to Improve mode with that as the focus
-3. **If it's multiple items**: add each to the backlog, then proceed to Improve mode normally (the Strategist will prioritize from the backlog)
-4. **Do NOT re-run Phase 0e steps** — transition directly into the Improve mode pipeline (Step 0a: Observe)
-
-### Phase 0e Rules
-
-- **Maximum 5 iterations** of back-and-forth before asking the user to commit to a direction
-- **Do not start building during Phase 0e** — this phase produces a plan, not code
-- **You already have project context** — don't spawn a Researcher to re-read local code you already studied in E0, but DO use E0b to research external topics when the discussion requires domain knowledge beyond the codebase
-- **Be opinionated** — the user wants your recommendation, not a menu of every possible option
+- **Be opinionated for existing projects.** The user wants your recommendation, not a menu of every possible option. Lead with your top suggestion based on the data.
 
 ---
 
