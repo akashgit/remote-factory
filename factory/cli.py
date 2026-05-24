@@ -220,7 +220,7 @@ Return ONLY a JSON object (no markdown, no explanation):
       "key": "path",
       "question": "Path to your project",
       "type": "path",
-      "hint": "e.g. ~/cursor-projects/my-app",
+      "hint": "e.g. ~/projects/my-app",
       "optional": false
     },
     {
