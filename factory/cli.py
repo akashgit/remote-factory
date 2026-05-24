@@ -883,6 +883,7 @@ def cmd_precheck(args: argparse.Namespace) -> int:
             "hypothesis": r.hypothesis,
             "verdict": r.verdict,
             "delta": r.delta,
+            "notes": r.notes,
         }
         for r in records
     ]
