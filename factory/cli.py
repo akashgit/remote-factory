@@ -102,10 +102,281 @@ def _print_banner(mode: str = "improve") -> None:
         f"\n{c}  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻{r}\n"
         f"{c}  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛{r}\n"
         f"{c}  ╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹ {r}\n"
-        f"{d}  Multi-Agent Software Evolution{r}\n"
+        f"{d}  Self-Evolving Meta-Harness{r}\n"
         f"{d}  Mode: {mode}{r}\n"
     )
     print(banner, file=sys.stderr)
+
+
+# ── welcome wizard ─────────────────────────────────────────────
+
+
+_BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+
+
+def _show_spinner(stop_event: threading.Event) -> None:
+    """Braille spinner on stderr. Respects NO_COLOR."""
+    use_color = not os.environ.get("NO_COLOR") and sys.stderr.isatty()
+    idx = 0
+    while not stop_event.is_set():
+        frame = _BRAILLE_FRAMES[idx % len(_BRAILLE_FRAMES)]
+        if use_color:
+            sys.stderr.write(f"\r\033[2m  Thinking... {frame}\033[0m")
+        else:
+            sys.stderr.write(f"\r  Thinking... {frame}")
+        sys.stderr.flush()
+        idx += 1
+        stop_event.wait(0.1)
+    sys.stderr.write("\r\033[2K")
+    sys.stderr.flush()
+
+
+def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
+    """Deterministic fast path for paths, files, and URLs. Returns None if LLM needed."""
+    stripped = user_input.strip()
+
+    expanded = Path(stripped).expanduser()
+    if expanded.is_dir():
+        factory_dir = expanded / ".factory"
+        label_improve = "Improve this project"
+        label_interactive = "Discuss what to work on first"
+        cmd_improve = f'factory ceo "{stripped}"'
+        cmd_interactive = f'factory ceo "{stripped}" --mode interactive'
+        if factory_dir.is_dir():
+            return [
+                {"label": label_improve, "explanation": "Run the improve loop on this project.", "command": cmd_improve},
+                {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
+            ]
+        return [
+            {"label": "Set up and improve this project", "explanation": "Initialize factory and start improving.", "command": cmd_improve},
+            {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
+        ]
+
+    if expanded.is_file():
+        return [
+            {"label": "Build from this spec file", "explanation": "Use the file as a project specification.", "command": f'factory ceo "{stripped}"'},
+        ]
+
+    if _is_github_url(stripped):
+        return [
+            {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo "{stripped}"'},
+            {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo "{stripped}" --mode interactive'},
+        ]
+
+    return None
+
+
+_CLASSIFICATION_PROMPT = """\
+You are a CLI router for Factory, a multi-agent software evolution tool.
+
+Given the user's input, suggest 2-3 ranked factory commands. Return ONLY a JSON array.
+
+Factory command vocabulary:
+- `factory ceo "<idea>" --mode interactive` — brainstorm and refine the idea before building (recommended for vague ideas)
+- `factory ceo "<idea>"` — build the project directly (good for clear, specific descriptions)
+- `factory ceo "<idea>" --mode research` — research-driven optimization (for metric-focused projects)
+- `factory ceo <path>` — improve an existing project at the given path
+- `factory ceo <path> --focus "<item>"` — fix or add one specific thing in an existing project
+- `factory ceo <path> --focus <N>` — target a specific GitHub issue number
+
+Rules:
+1. The user's EXACT input must appear VERBATIM in the command field — never summarize or shorten it
+2. Return 2-3 suggestions as a JSON array
+3. Each element: {"label": "short title", "explanation": "one sentence why", "command": "factory ceo ..."}
+4. First suggestion should be the most likely intent
+5. You may add a "tip" field on the first element with brief advice
+
+User input: """
+
+
+def _classify_with_llm(user_input: str) -> list[dict[str, str]]:
+    """Classify user input via headless runner call. Falls back to defaults on failure."""
+    from factory.runners import get_runner
+
+    default_suggestions = [
+        {"label": "Brainstorm and refine the idea first (recommended)", "explanation": "Research the space, refine the spec, then build.", "command": f'factory ceo "{user_input}" --mode interactive'},
+        {"label": "Build the project directly", "explanation": "Skip brainstorming and start building immediately.", "command": f'factory ceo "{user_input}"'},
+    ]
+
+    try:
+        runner = get_runner()
+    except Exception:
+        return default_suggestions
+
+    prompt = _CLASSIFICATION_PROMPT + json.dumps(user_input)
+    task = "Respond with ONLY a JSON array. No markdown, no explanation."
+
+    try:
+        stop_event = threading.Event()
+        spinner = threading.Thread(target=_show_spinner, args=(stop_event,), daemon=True)
+        spinner.start()
+
+        result, code = _run(runner.headless(
+            prompt, task, Path.cwd(),
+            timeout=30.0,
+            dangerously_skip_permissions=True,
+            role="wizard",
+        ))
+
+        stop_event.set()
+        spinner.join(timeout=2.0)
+
+        if code != 0:
+            return default_suggestions
+
+        text = result.strip()
+        start = text.find("[")
+        end = text.rfind("]")
+        if start == -1 or end == -1:
+            return default_suggestions
+        parsed = json.loads(text[start:end + 1])
+        if not isinstance(parsed, list) or len(parsed) == 0:
+            return default_suggestions
+        for item in parsed:
+            if not isinstance(item, dict) or "command" not in item or "label" not in item:
+                return default_suggestions
+        return parsed[:3]
+    except Exception:
+        stop_event.set()
+        return default_suggestions
+
+
+_EXAMPLES_BLOCK = """\
+  Examples:
+    factory ceo "weather CLI in Python"          Build a new project
+    factory ceo ~/projects/my-app                Improve an existing project
+    factory ceo https://github.com/user/repo     Clone and improve
+    factory ceo spec.md                          Build from a spec file
+    factory ceo ~/projects/my-app --focus "auth"   Fix one thing\
+"""
+
+
+def _welcome_wizard() -> int:
+    """Interactive welcome: banner -> input -> classify -> present -> dispatch."""
+    no_color = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
+
+    _print_banner("welcome")
+
+    if no_color:
+        print("\n  What do you want to do?", file=sys.stderr)
+        print("  Paste an idea, a file path, a GitHub URL, or describe what you need.\n", file=sys.stderr)
+    else:
+        d = "\033[2m"
+        r = "\033[0m"
+        print("\n  What do you want to do?", file=sys.stderr)
+        print(f"  {d}Paste an idea, a file path, a GitHub URL, or describe what you need.{r}\n", file=sys.stderr)
+
+    try:
+        user_input = input("  > ").strip()
+    except EOFError:
+        return 0
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
+    if not user_input:
+        print(file=sys.stderr)
+        print(_EXAMPLES_BLOCK, file=sys.stderr)
+        print(file=sys.stderr)
+        try:
+            user_input = input("  > ").strip()
+        except EOFError:
+            return 0
+        except KeyboardInterrupt:
+            print(file=sys.stderr)
+            return 130
+        if not user_input:
+            return 0
+
+    suggestions = _quick_classify(user_input)
+    if suggestions is None:
+        suggestions = _classify_with_llm(user_input)
+
+    if not suggestions:
+        print("\n  Could not classify input. Try:", file=sys.stderr)
+        print(_EXAMPLES_BLOCK, file=sys.stderr)
+        return 1
+
+    print(file=sys.stderr)
+
+    tip = None
+    for i, s in enumerate(suggestions, 1):
+        label = s.get("label", "Option")
+        explanation = s.get("explanation", "")
+        command = s.get("command", "")
+        if no_color:
+            print(f"  [{i}] {label}", file=sys.stderr)
+            if explanation:
+                print(f"      {explanation}", file=sys.stderr)
+            print(f"      {command}", file=sys.stderr)
+        else:
+            b = "\033[1m"
+            d = "\033[2m"
+            r = "\033[0m"
+            print(f"  {b}[{i}]{r} {label}", file=sys.stderr)
+            if explanation:
+                print(f"      {d}{explanation}{r}", file=sys.stderr)
+            print(f"      {command}", file=sys.stderr)
+        if i == 1 and "tip" in s:
+            tip = s["tip"]
+        print(file=sys.stderr)
+
+    if tip:
+        if no_color:
+            print(f"  Tip: {tip}", file=sys.stderr)
+        else:
+            print(f"  {d}Tip: {tip}{r}", file=sys.stderr)
+        print(file=sys.stderr)
+
+    prompt_text = f"  Pick [1-{len(suggestions)}], or Enter for [1]: "
+    try:
+        choice_raw = input(prompt_text).strip()
+    except EOFError:
+        return 0
+    except KeyboardInterrupt:
+        print(file=sys.stderr)
+        return 130
+
+    if not choice_raw:
+        choice_idx = 0
+    else:
+        try:
+            choice_idx = int(choice_raw) - 1
+        except ValueError:
+            print(f"\n  Invalid choice: {choice_raw}", file=sys.stderr)
+            return 1
+
+    if choice_idx < 0 or choice_idx >= len(suggestions):
+        print(f"\n  Invalid choice: {choice_raw}", file=sys.stderr)
+        return 1
+
+    selected = suggestions[choice_idx]
+    command = selected.get("command", "")
+
+    print(f"\n  Running: {command}\n", file=sys.stderr)
+
+    # Parse the selected command and dispatch to cmd_ceo
+    parser = build_parser()
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        print(f"  Error: could not parse command: {command}", file=sys.stderr)
+        return 1
+
+    if parts and parts[0] == "factory":
+        parts = parts[1:]
+
+    try:
+        ns = parser.parse_args(parts)
+    except SystemExit:
+        print(f"  Error: invalid command: {command}", file=sys.stderr)
+        return 1
+
+    if ns.command == "ceo":
+        return cmd_ceo(ns)
+
+    print(f"  Error: unexpected command type: {ns.command}", file=sys.stderr)
+    return 1
 
 
 # ── subcommand handlers ────────────────────────────────────────
@@ -2945,6 +3216,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.command:
+        if sys.stdin.isatty() and sys.stderr.isatty():
+            return _welcome_wizard()
         parser.print_help()
         return 1
 
