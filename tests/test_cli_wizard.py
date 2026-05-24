@@ -311,6 +311,21 @@ class TestWizardDispatch:
         (tmp_path / ".factory").mkdir()
         with patch("builtins.input", side_effect=[str(tmp_path), ""]), \
              patch("sys.stderr") as mock_stderr, \
+             patch("factory.cli.cmd_ceo", return_value=0), \
+             patch("os.environ", {}):
+            mock_stderr.isatty.return_value = True
+            code = _welcome_wizard()
+
+        assert code == 0
+
+    def test_path_placeholder_prompts_for_path(self, tmp_path: Path) -> None:
+        suggestions = [
+            {"label": "Fix it", "explanation": "Go.", "command": 'factory ceo <path> --focus "fix bug"'},
+        ]
+        with patch("builtins.input", side_effect=["fix a bug", "", str(tmp_path)]), \
+             patch("sys.stderr") as mock_stderr, \
+             patch("factory.cli._quick_classify", return_value=None), \
+             patch("factory.cli._classify_with_llm", return_value=suggestions), \
              patch("factory.cli.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -318,6 +333,50 @@ class TestWizardDispatch:
 
         assert code == 0
         mock_ceo.assert_called_once()
+        ns = mock_ceo.call_args[0][0]
+        assert str(tmp_path.resolve()) == ns.path
+
+    def test_path_placeholder_empty_returns_error(self) -> None:
+        suggestions = [
+            {"label": "Fix it", "explanation": "Go.", "command": 'factory ceo <path> --focus "fix bug"'},
+        ]
+        with patch("builtins.input", side_effect=["fix a bug", "", ""]), \
+             patch("sys.stderr") as mock_stderr, \
+             patch("factory.cli._quick_classify", return_value=None), \
+             patch("factory.cli._classify_with_llm", return_value=suggestions), \
+             patch("os.environ", {}):
+            mock_stderr.isatty.return_value = True
+            code = _welcome_wizard()
+
+        assert code == 1
+
+    def test_path_placeholder_nonexistent_returns_error(self) -> None:
+        suggestions = [
+            {"label": "Fix it", "explanation": "Go.", "command": 'factory ceo <path> --focus "fix bug"'},
+        ]
+        with patch("builtins.input", side_effect=["fix a bug", "", "/nonexistent/path/xyz"]), \
+             patch("sys.stderr") as mock_stderr, \
+             patch("factory.cli._quick_classify", return_value=None), \
+             patch("factory.cli._classify_with_llm", return_value=suggestions), \
+             patch("os.environ", {}):
+            mock_stderr.isatty.return_value = True
+            code = _welcome_wizard()
+
+        assert code == 1
+
+    def test_path_placeholder_eof_exits_cleanly(self) -> None:
+        suggestions = [
+            {"label": "Fix it", "explanation": "Go.", "command": 'factory ceo <path> --focus "fix bug"'},
+        ]
+        with patch("builtins.input", side_effect=["fix a bug", "", EOFError]), \
+             patch("sys.stderr") as mock_stderr, \
+             patch("factory.cli._quick_classify", return_value=None), \
+             patch("factory.cli._classify_with_llm", return_value=suggestions), \
+             patch("os.environ", {}):
+            mock_stderr.isatty.return_value = True
+            code = _welcome_wizard()
+
+        assert code == 0
 
 
 # ── edge cases ─────────────────────────────────────────────────

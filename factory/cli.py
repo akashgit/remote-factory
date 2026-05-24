@@ -371,6 +371,22 @@ def _welcome_wizard() -> int:
     selected = suggestions[choice_idx]
     command = selected.get("command", "")
 
+    if "<path>" in command:
+        print(file=sys.stderr)
+        try:
+            path_input = input("  Path to project: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print(file=sys.stderr)
+            return 0
+        if not path_input:
+            print("  No path provided.", file=sys.stderr)
+            return 1
+        resolved = str(Path(path_input).expanduser().resolve())
+        if not Path(resolved).is_dir():
+            print(f"  Not a directory: {resolved}", file=sys.stderr)
+            return 1
+        command = command.replace("<path>", shlex.quote(resolved))
+
     print(f"\n  Running: {command}\n", file=sys.stderr)
 
     # Parse the selected command and dispatch to cmd_ceo
@@ -390,8 +406,10 @@ def _welcome_wizard() -> int:
         print(f"  Error: invalid command: {command}", file=sys.stderr)
         return 1
 
-    if ns.command == "ceo":
-        return cmd_ceo(ns)
+    if ns.command in ("ceo", "study"):
+        handler = cmd_ceo if ns.command == "ceo" else globals().get("cmd_study")
+        if handler:
+            return handler(ns)
 
     print(f"  Error: unexpected command type: {ns.command}", file=sys.stderr)
     return 1
