@@ -6,9 +6,11 @@ from factory.strategy import (
     _format_tier1,
     _format_tier2,
     _format_tier3,
+    _is_infra_revert,
     _record_to_dict,
     categorize_hypothesis,
     detect_stuck,
+    find_anti_patterns,
     format_tiered_history,
     rank_hypotheses,
 )
@@ -464,3 +466,134 @@ class TestRecordToDict:
 class TestMaxInlineHistory:
     def test_constant_value(self):
         assert MAX_INLINE_HISTORY == 10
+
+
+# ── _is_infra_revert ──────────────────────────────────────────────
+
+
+class TestIsInfraRevert:
+    def test_empty_notes(self):
+        assert _is_infra_revert("") is False
+
+    def test_none_like_empty(self):
+        # Caller passes empty string for None notes
+        assert _is_infra_revert("") is False
+
+    def test_precheck_failed_marker(self):
+        assert _is_infra_revert("reason=precheck_failed") is True
+
+    def test_precheck_false_positive_marker(self):
+        assert _is_infra_revert("Reverted due to precheck_false_positive in scope check") is True
+
+    def test_precheck_bugs_marker(self):
+        assert _is_infra_revert("precheck_bugs caused failure") is True
+
+    def test_infrastructure_reason(self):
+        assert _is_infra_revert("reason=infrastructure") is True
+
+    def test_case_insensitive(self):
+        assert _is_infra_revert("Reason=Precheck_Failed") is True
+        assert _is_infra_revert("REASON=INFRASTRUCTURE") is True
+
+    def test_normal_revert_notes(self):
+        assert _is_infra_revert("Score regressed from 0.85 to 0.70") is False
+
+    def test_unrelated_notes(self):
+        assert _is_infra_revert("Approach was fundamentally wrong") is False
+
+
+# ── find_anti_patterns: infra-revert exclusion ────────────────────
+
+
+class TestFindAntiPatternsInfraExclusion:
+    def test_skips_infra_revert(self):
+        """Experiments reverted for infra reasons should not trigger anti-pattern."""
+        history = [
+            {
+                "id": 1,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+                "notes": "reason=precheck_failed",
+            },
+        ]
+        matches = find_anti_patterns(
+            "add structured logging to eval runner",
+            history,
+            similarity_threshold=0.4,
+        )
+        assert matches == []
+
+    def test_still_catches_real_revert(self):
+        """Experiments reverted for code reasons should still trigger anti-pattern."""
+        history = [
+            {
+                "id": 1,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+                "notes": "Score regressed significantly",
+            },
+        ]
+        matches = find_anti_patterns(
+            "add structured logging to eval runner",
+            history,
+            similarity_threshold=0.4,
+        )
+        assert len(matches) == 1
+        assert matches[0]["id"] == 1
+
+    def test_mixed_infra_and_real_reverts(self):
+        """Only real reverts should be matched; infra reverts skipped."""
+        history = [
+            {
+                "id": 1,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+                "notes": "precheck_false_positive",
+            },
+            {
+                "id": 2,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+                "notes": "Approach caused regression",
+            },
+        ]
+        matches = find_anti_patterns(
+            "add structured logging to eval runner",
+            history,
+            similarity_threshold=0.4,
+        )
+        assert len(matches) == 1
+        assert matches[0]["id"] == 2
+
+    def test_no_notes_field_treated_as_real_revert(self):
+        """Entries without notes field should be treated as real reverts."""
+        history = [
+            {
+                "id": 1,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+            },
+        ]
+        matches = find_anti_patterns(
+            "add structured logging to eval runner",
+            history,
+            similarity_threshold=0.4,
+        )
+        assert len(matches) == 1
+
+    def test_empty_notes_treated_as_real_revert(self):
+        """Entries with empty notes should be treated as real reverts."""
+        history = [
+            {
+                "id": 1,
+                "hypothesis": "add structured logging to eval runner",
+                "verdict": "revert",
+                "notes": "",
+            },
+        ]
+        matches = find_anti_patterns(
+            "add structured logging to eval runner",
+            history,
+            similarity_threshold=0.4,
+        )
+        assert len(matches) == 1
