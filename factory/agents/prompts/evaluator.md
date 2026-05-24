@@ -76,4 +76,19 @@ If the CEO includes an `## Eval Spec` block in your task, follow each instructio
 
 **Important:** Spec checks are advisory only. They do NOT affect the composite score. A failing spec check does not change the PASS/FAIL status of the eval. The CEO uses spec compliance as an additional signal when making keep/revert decisions.
 
+**Structured spec results:** After running spec checks, write a JSON file at `.factory/spec_results.json` with this exact format:
+
+```json
+{
+  "results": [
+    {"name": "spec item text", "passed": true},
+    {"name": "spec item text", "passed": false}
+  ],
+  "total": 2,
+  "passed": 1
+}
+```
+
+This file is consumed by the `spec_compliance` growth dimension. Always overwrite it after each eval run that includes spec checks. If no spec checks are defined, do not create or modify this file.
+
 **Exit condition:** Eval results printed to stdout with all sections populated, or error message printed if the eval command failed.

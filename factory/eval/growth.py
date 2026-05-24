@@ -9,18 +9,21 @@ All functions take a project_path and return an EvalResult-compatible dict.
 
 import ast
 import csv
+import json
 import re
+import time
 from collections import Counter
 from pathlib import Path
 
 # Relative weights within the growth category (sum to 1.0).
 # The runner normalizes these so that growth gets 50% of the composite.
 GROWTH_WEIGHTS = {
-    "capability_surface": 0.28,
-    "experiment_diversity": 0.22,
-    "observability": 0.20,
-    "research_grounding": 0.16,
-    "factory_effectiveness": 0.14,
+    "capability_surface": 0.25,
+    "experiment_diversity": 0.20,
+    "observability": 0.18,
+    "research_grounding": 0.14,
+    "factory_effectiveness": 0.13,
+    "spec_compliance": 0.10,
 }
 
 
@@ -412,6 +415,65 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
         }
 
 
+def eval_spec_compliance(project_path: Path) -> dict:
+    """Measure eval spec compliance from .factory/spec_results.json.
+
+    Score = passed/total. Returns neutral 0.5 if file is missing or stale (>24h).
+    """
+    spec_path = project_path / ".factory" / "spec_results.json"
+    weight = GROWTH_WEIGHTS["spec_compliance"]
+
+    if not spec_path.exists():
+        return {
+            "name": "spec_compliance",
+            "score": 0.5,
+            "weight": weight,
+            "passed": True,
+            "details": "spec_results.json not found — neutral score",
+        }
+
+    try:
+        mtime = spec_path.stat().st_mtime
+        if time.time() - mtime > 86400:
+            return {
+                "name": "spec_compliance",
+                "score": 0.5,
+                "weight": weight,
+                "passed": True,
+                "details": "spec_results.json is stale (>24h) — neutral score",
+            }
+
+        data = json.loads(spec_path.read_text())
+        total = int(data.get("total", 0))
+        passed = int(data.get("passed", 0))
+
+        if total == 0:
+            return {
+                "name": "spec_compliance",
+                "score": 0.5,
+                "weight": weight,
+                "passed": True,
+                "details": "No spec checks recorded — neutral score",
+            }
+
+        score = max(0.0, min(passed / total, 1.0))
+        return {
+            "name": "spec_compliance",
+            "score": round(score, 4),
+            "weight": weight,
+            "passed": score >= 0.5,
+            "details": f"{passed}/{total} spec checks passed",
+        }
+    except Exception as exc:
+        return {
+            "name": "spec_compliance",
+            "score": 0.5,
+            "weight": weight,
+            "passed": True,
+            "details": f"Error reading spec_results.json: {exc} — neutral score",
+        }
+
+
 def compute_growth_results(project_path: Path) -> list[dict]:
     """Compute all growth dimensions for a project. Returns list of result dicts."""
     return [
@@ -420,6 +482,7 @@ def compute_growth_results(project_path: Path) -> list[dict]:
         eval_observability(project_path),
         eval_research_grounding(project_path),
         eval_factory_effectiveness(project_path),
+        eval_spec_compliance(project_path),
     ]
 
 

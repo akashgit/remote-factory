@@ -411,6 +411,119 @@ class TestReparseResearchTarget:
         assert config.research_target is None
 
 
+class TestTierWeightsParsing:
+    """Tests for parsing ## Hygiene Weights and ## Growth Weights from factory.md."""
+
+    async def test_parse_hygiene_weights(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nTest project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n\n"
+            "## Hygiene Weights\n"
+            "- tests: 0.40\n"
+            "- coverage: 0.30\n"
+            "- lint: 0.10\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.hygiene_weights is not None
+        assert config.hygiene_weights.tests == 0.40
+        assert config.hygiene_weights.coverage == 0.30
+        assert config.hygiene_weights.lint == 0.10
+        assert config.hygiene_weights.type_check is None
+
+    async def test_parse_growth_weights(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nTest project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Growth Weights\n"
+            "- capability_surface: 0.30\n"
+            "- spec_compliance: 0.20\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.growth_weights is not None
+        assert config.growth_weights.capability_surface == 0.30
+        assert config.growth_weights.spec_compliance == 0.20
+        assert config.growth_weights.observability is None
+
+    async def test_both_tier_weights(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nTest\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Hygiene Weights\n"
+            "- tests: 0.50\n\n"
+            "## Growth Weights\n"
+            "- factory_effectiveness: 0.25\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.hygiene_weights is not None
+        assert config.hygiene_weights.tests == 0.50
+        assert config.growth_weights is not None
+        assert config.growth_weights.factory_effectiveness == 0.25
+
+    async def test_no_tier_weights_backward_compat(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.hygiene_weights is None
+        assert config.growth_weights is None
+
+    async def test_invalid_dim_name_ignored(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nTest\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Hygiene Weights\n"
+            "- tests: 0.40\n"
+            "- nonexistent_dim: 0.99\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.hygiene_weights is not None
+        assert config.hygiene_weights.tests == 0.40
+
+    async def test_tier_weights_roundtrip_config_json(self, store, sample_config):
+        """TierWeights should survive write → read via config.json."""
+        from factory.models import TierWeights
+        config = sample_config.model_copy(update={
+            "hygiene_weights": TierWeights(tests=0.40, lint=0.20),
+        })
+        await store.init(config)
+        loaded = await store.read_config()
+        assert loaded.hygiene_weights is not None
+        assert loaded.hygiene_weights.tests == 0.40
+        assert loaded.hygiene_weights.lint == 0.20
+        assert loaded.hygiene_weights.coverage is None
+
+
 class TestEnsureFactoryDir:
     """Regression tests for broken symlink handling (issue #276)."""
 
