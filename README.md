@@ -116,12 +116,12 @@ Other ways to steer: file GitHub issues (the Strategist reads them), add to the 
 
 ---
 
-## Research Mode
+## Auto-Research Mode
 
-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves the system under test.
+Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves the system under test.
 
 ```bash
-uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
+uv run factory ceo "build a harness to solve SWE-bench lite problem number k" --mode research
 ```
 
 The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
