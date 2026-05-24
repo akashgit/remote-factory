@@ -149,6 +149,11 @@ def cmd_discover(args: argparse.Namespace) -> int:
     _run(store.save_eval_profile(eval_profile))
     write_eval_script(eval_profile, project_path)
 
+    if eval_spec:
+        (store.factory_dir / "eval_spec.json").write_text(
+            json.dumps(eval_spec, indent=2) + "\n"
+        )
+
     dims = [d.name for d in eval_profile.dimensions]
     _emit_cli_event(project_path, "discover.completed", {
         "language": profile.language,

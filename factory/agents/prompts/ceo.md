@@ -786,7 +786,7 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    FACTORY_HOME="$(factory home)"
    cp "$FACTORY_HOME/templates/factory_config.md" "$PROJECT_PATH/factory.md"
    ```
-   Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`).
+   Fill in: Goal, Scope, Guards, Eval command, Threshold, and **Smoke Test** (the shell command that verifies the project runs E2E — e.g., `curl -sf http://localhost:8000/health` or `python main.py --self-test`). If `.factory/eval_spec.json` exists (auto-generated during discovery), read it and populate the `## Eval Spec` section in `factory.md` with the generated items.
 
 4b. **If `.factory/strategy/current.md` contains a `## Research Configuration` section:**
    Populate the research sections in `factory.md` from the approved spec:
