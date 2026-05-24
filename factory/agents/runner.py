@@ -45,7 +45,7 @@ def reset_failure_counter() -> None:
     global _consecutive_failures
     _consecutive_failures = 0
 
-_IDENTITY_REANCHOR = """\
+IDENTITY_REANCHOR = """\
 
 ---
 
@@ -229,7 +229,7 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
         header = f"# {role.title()} Agent Output\n\n- **timestamp:** {ts}\n- **exit_code:** {return_code}\n\n---\n\n"
         content = header + output
         if role != "ceo":
-            content += _IDENTITY_REANCHOR
+            content += IDENTITY_REANCHOR
         review_path.write_text(content)
         logger.debug("Saved review output for %s to %s", role, review_path)
     except Exception:

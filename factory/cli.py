@@ -1586,10 +1586,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_url=issue_url,
     )
 
-    from factory.agents.runner import _IDENTITY_REANCHOR
+    from factory.agents.runner import IDENTITY_REANCHOR
     anchor_dir = wt_path / ".factory" / "reviews"
     anchor_dir.mkdir(parents=True, exist_ok=True)
-    (anchor_dir / "ceo-identity-anchor.md").write_text(_IDENTITY_REANCHOR)
+    (anchor_dir / "ceo-identity-anchor.md").write_text(IDENTITY_REANCHOR)
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
