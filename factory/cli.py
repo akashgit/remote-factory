@@ -138,35 +138,50 @@ def _show_spinner(stop_event: threading.Event) -> None:
     sys.stderr.flush()
 
 
+def _safe_is_dir(p: Path) -> bool:
+    try:
+        return p.is_dir()
+    except (OSError, ValueError):
+        return False
+
+
+def _safe_is_file(p: Path) -> bool:
+    try:
+        return p.is_file()
+    except (OSError, ValueError):
+        return False
+
+
 def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
     """Deterministic fast path for paths, files, and URLs. Returns None if LLM needed."""
     stripped = user_input.strip()
 
     expanded = Path(stripped).expanduser()
-    if expanded.is_dir():
+    if _safe_is_dir(expanded):
         factory_dir = expanded / ".factory"
         label_improve = "Improve this project"
         label_interactive = "Discuss what to work on first"
-        cmd_improve = f'factory ceo {shlex.quote(stripped)}'
         cmd_interactive = f'factory ceo {shlex.quote(stripped)} --mode interactive'
-        if factory_dir.is_dir():
+        if _safe_is_dir(factory_dir):
+            cmd_improve = f'factory ceo {shlex.quote(stripped)} --mode improve'
             return [
                 {"label": label_improve, "explanation": "Run the improve loop on this project.", "command": cmd_improve},
                 {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
             ]
+        cmd_improve = f'factory ceo {shlex.quote(stripped)}'
         return [
             {"label": "Set up and improve this project", "explanation": "Initialize factory and start improving.", "command": cmd_improve},
             {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
         ]
 
-    if expanded.is_file():
+    if _safe_is_file(expanded):
         return [
-            {"label": "Build from this spec file", "explanation": "Use the file as a project specification.", "command": f'factory ceo {shlex.quote(stripped)}'},
+            {"label": "Build from this spec file", "explanation": "Use the file as a project specification.", "command": f'factory ceo {shlex.quote(stripped)} --mode build'},
         ]
 
     if _is_github_url(stripped):
         return [
-            {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo {shlex.quote(stripped)}'},
+            {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo {shlex.quote(stripped)} --mode improve'},
             {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive'},
         ]
 
@@ -186,9 +201,9 @@ Given the user's input, return a JSON object with two keys: "follow_ups" and "su
 | `factory ceo "<idea>" --mode interactive` | Brainstorm and refine before building (vague ideas) |
 | `factory ceo "<idea>"` | Build directly (clear, specific descriptions) |
 | `factory ceo "<idea>" --mode research` | Research-driven optimization (metric-focused projects) |
-| `factory ceo {path}` | Improve an existing project at a known path |
-| `factory ceo {path} --focus "{issue}"` | Fix or add one specific thing in an existing project |
-| `factory ceo {path} --focus {issue}` | Target a specific GitHub issue number |
+| `factory ceo {path} --mode improve` | Improve an existing project at a known path |
+| `factory ceo {path} --mode improve --focus "{issue}"` | Fix or add one specific thing in an existing project |
+| `factory ceo {path} --mode improve --focus {issue}` | Target a specific GitHub issue number |
 | `factory ceo {path} --mode interactive` | Discuss what to work on in an existing project |
 | `factory ceo {path} --mode meta` | Self-improve the factory's own agents |
 
@@ -235,7 +250,7 @@ Return ONLY a JSON object (no markdown, no explanation):
     {
       "label": "Fix specific issue",
       "explanation": "Target a known issue in the project",
-      "command": "factory ceo {path} --focus {issue}"
+      "command": "factory ceo {path} --mode improve --focus {issue}"
     },
     {
       "label": "Discuss first",
@@ -265,6 +280,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 6. For new ideas, commands should use the literal user text in quotes — no placeholders
 7. For existing projects, use {path} placeholder and add a path follow-up
 8. If the user mentions fixing/improving an EXISTING project, do NOT wrap input as a new idea
+9. Every generated command MUST include an explicit `--mode` flag (improve, interactive, research, meta, or build)
 
 User input: """
 
@@ -365,8 +381,8 @@ _CLI_REF = """\
     factory ceo "a system that solves IMO geometry problems using lean4 proofs" --mode research
 
   Work on an existing project:
-    factory ceo ~/projects/my-app --focus "add OAuth2 login with Google and GitHub providers"
-    factory ceo ~/projects/my-app --focus 42
+    factory ceo ~/projects/my-app --mode improve --focus "add OAuth2 login with Google and GitHub providers"
+    factory ceo ~/projects/my-app --mode improve --focus 42
     factory ceo ~/projects/my-app --mode interactive
 
   Self-improve the factory:
@@ -1971,7 +1987,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     _interactive_is_existing = (
         mode == "interactive"
         and raw_path
-        and Path(raw_path).expanduser().resolve().is_dir()
+        and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "interactive":
@@ -2021,7 +2037,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             _ensure_repo(project_path)
             _persist_spec(project_path, raw_path)
         context = None
-    elif mode == "research" and not (resolved := Path(raw_path).expanduser()).is_dir() and not resolved.is_file():
+    elif mode == "research" and not _safe_is_dir(resolved := Path(raw_path).expanduser()) and not _safe_is_file(resolved):
         # New research project from idea — enter research ideation
         if headless:
             print("Error: --mode research for new projects requires foreground mode "
@@ -2217,11 +2233,11 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     """
     # 1. Existing directory
     expanded = Path(raw).expanduser()
-    if expanded.is_dir():
+    if _safe_is_dir(expanded):
         return expanded.resolve(), None
 
     # 2. Existing file (e.g. path to an idea/spec .md file)
-    if expanded.is_file():
+    if _safe_is_file(expanded):
         idea_content = expanded.read_text()
         slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
         project_path = _dedupe_project_path(_get_projects_dir() / slug, idea_content)

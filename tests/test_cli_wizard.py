@@ -9,9 +9,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from factory.cli import (
+    _CLI_REF,
     _ask_follow_ups,
     _classify_with_llm,
     _quick_classify,
+    _safe_is_dir,
+    _safe_is_file,
     _show_spinner,
     _substitute_answers,
     _welcome_wizard,
@@ -113,6 +116,20 @@ class TestQuickClassify:
         assert result is not None
         for s in result:
             assert user_input in s["command"]
+
+    def test_long_input_does_not_crash(self) -> None:
+        long_input = "a" * 500
+        result = _quick_classify(long_input)
+        assert result is None
+
+    def test_explicit_mode_in_quick_classify(self, tmp_path: Path) -> None:
+        (tmp_path / ".factory").mkdir()
+        result = _quick_classify(str(tmp_path))
+        assert result is not None
+        assert "--mode improve" in result[0]["command"]
+
+    def test_explicit_mode_in_cli_ref(self) -> None:
+        assert "--mode improve --focus" in _CLI_REF
 
 
 # -- _classify_with_llm ---------------------------------------------------
