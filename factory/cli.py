@@ -253,36 +253,20 @@ def _classify_with_llm(user_input: str) -> list[dict[str, str]] | None:
         return None
 
 
-_EXAMPLES_BLOCK = """\
-  Examples:
-    factory ceo "weather CLI in Python"            Build a new project
-    factory ceo ~/projects/my-app                  Improve an existing project
-    factory ceo https://github.com/user/repo       Clone and improve
-    factory ceo spec.md                            Build from a spec file
-    factory ceo ~/projects/my-app --focus "auth"   Fix one thing
-    factory ceo ~/projects/my-app --focus 42       Target a GitHub issue\
-"""
-
 _CLI_REF = """\
-  Classification failed — here's a quick reference:
-
   Build something new:
-    factory ceo "your idea here"                   Build directly
-    factory ceo "your idea" --mode interactive      Brainstorm first, then build
-    factory ceo "your idea" --mode research         Research-driven (metric-focused)
-    factory ceo spec.md                            Build from a spec file
+    factory ceo "weather CLI in Python"                    Build directly
+    factory ceo "weather CLI" --mode interactive            Brainstorm first, then build
+    factory ceo "SWE-bench solver" --mode research          Research-driven (metric-focused)
 
   Work on an existing project:
-    factory ceo /path/to/project                   Run one improvement cycle
-    factory ceo /path/to/project --focus "feature"   Build one specific thing
-    factory ceo /path/to/project --focus 42          Target GitHub issue #42
-    factory ceo /path/to/project --mode interactive  Discuss what to work on
+    factory ceo ~/projects/my-app                          Run one improvement cycle
+    factory ceo ~/projects/my-app --focus "auth"             Fix one specific thing
+    factory ceo ~/projects/my-app --focus 42                 Target GitHub issue #42
+    factory ceo ~/projects/my-app --mode interactive         Discuss what to work on
 
-  Clone and improve:
-    factory ceo https://github.com/user/repo       Clone, then improve
-
-  Continuous:
-    factory run /path/to/project --loop            Heartbeat loop\
+  Self-improve the factory:
+    factory ceo /path/to/factory --mode meta                Improve + evolve agent playbooks\
 """
 
 
@@ -311,7 +295,7 @@ def _welcome_wizard() -> int:
 
     if not user_input:
         print(file=sys.stderr)
-        print(_EXAMPLES_BLOCK, file=sys.stderr)
+        print(_CLI_REF, file=sys.stderr)
         print(file=sys.stderr)
         try:
             user_input = input("  > ").strip()
