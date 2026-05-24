@@ -60,4 +60,20 @@ For "before" evals, note the baseline and any dimensions at risk.>
 <How do these scores compare to the last 3 experiments? Improving/stable/declining?>
 ```
 
+### Eval Spec Checks
+<!-- Only include this section if an ## Eval Spec block was provided in your task -->
+| Check | Result | Notes |
+|-------|--------|-------|
+| <spec item 1> | PASS/FAIL | <what you observed> |
+| <spec item 2> | PASS/FAIL | <what you observed> |
+
+### Spec Compliance: N/M checks passed
+```
+
+## Eval Spec Handling
+
+If the CEO includes an `## Eval Spec` block in your task, follow each instruction and report results in the `### Eval Spec Checks` table above. These are qualitative, manual checks — run the commands, observe the behavior, and report honestly.
+
+**Important:** Spec checks are advisory only. They do NOT affect the composite score. A failing spec check does not change the PASS/FAIL status of the eval. The CEO uses spec compliance as an additional signal when making keep/revert decisions.
+
 **Exit condition:** Eval results printed to stdout with all sections populated, or error message printed if the eval command failed.

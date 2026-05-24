@@ -991,6 +991,8 @@ For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 factory agent evaluator --task "Run baseline eval for $PROJECT_PATH. Execute: factory eval $PROJECT_PATH. Parse and report composite score and per-dimension breakdown." --project "$PROJECT_PATH"
 ```
 
+**Eval Spec injection:** Before spawning the Evaluator, read `.factory/config.json` and check if `eval_spec` is non-empty. If so, append an `## Eval Spec` block to the Evaluator's `--task` string listing each spec item. The Evaluator will run these as qualitative checks alongside the quantitative eval.
+
 Save the output as `score_before`. If eval crashes, see Error Recovery below.
 
 #### 2b. Begin Experiment
@@ -1230,6 +1232,8 @@ Report composite score and per-dimension breakdown.
 Compare against baseline score: $SCORE_BEFORE
 State whether the hypothesis was validated." --project "$PROJECT_PATH"
 ```
+
+**Eval Spec injection:** Same as step 2a — read `.factory/config.json`, and if `eval_spec` is non-empty, append an `## Eval Spec` block to the Evaluator's `--task` string. For post-change evals, spec compliance results inform the CEO's verdict review as an advisory signal (does NOT override quantitative scores).
 
 Save output as `score_after`.
 
@@ -2204,6 +2208,7 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
    - Documented (clear commit messages, PR description)
    - Maintainable (clean code, no hacks)
 5. **When stuck**: Pick the simpler option, record reasoning in .factory/archive/, move on.
+6. **Eval Spec compliance** (advisory): If the Evaluator reported `### Spec Compliance` results, review them. Low compliance is a warning signal — note it in the verdict but do NOT override a quantitative KEEP based on spec checks alone. Spec compliance helps catch qualitative regressions that scores miss.
 
 ---
 

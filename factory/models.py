@@ -143,6 +143,7 @@ class FactoryConfig(BaseModel):
     research_constraints: list[str] = []
     cost_budget: CostBudgetConfig | None = None
     hard_constraints: list[HardConstraint] = []
+    eval_spec: list[str] = []
 
 
 # ── eval ──────────────────────────────────────────────────────────

@@ -85,6 +85,16 @@ curl -sf http://localhost:8000/health
 ```
 -->
 
+## Eval Spec
+<!-- Testing instructions injected into the Evaluator's context. -->
+<!-- Each item describes a qualitative check the Evaluator should perform. -->
+<!-- Spec compliance is advisory — it does NOT affect the composite score. -->
+<!-- Example:
+- Run the CLI with --help and verify it prints usage info
+- Start the dev server and confirm the landing page loads
+- Verify the API returns JSON with the expected schema
+-->
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 
