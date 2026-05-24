@@ -214,12 +214,20 @@ def _classify_with_llm(user_input: str) -> list[dict[str, str]] | None:
         spinner = threading.Thread(target=_show_spinner, args=(stop_event,), daemon=True)
         spinner.start()
 
-        result, code = _run(runner.headless(
-            prompt, task, Path.cwd(),
-            timeout=60.0,
-            dangerously_skip_permissions=True,
-            role="wizard",
-        ))
+        old_quiet = os.environ.get("FACTORY_RUNNER_QUIET")
+        os.environ["FACTORY_RUNNER_QUIET"] = "1"
+        try:
+            result, code = _run(runner.headless(
+                prompt, task, Path.cwd(),
+                timeout=60.0,
+                dangerously_skip_permissions=True,
+                role="wizard",
+            ))
+        finally:
+            if old_quiet is None:
+                os.environ.pop("FACTORY_RUNNER_QUIET", None)
+            else:
+                os.environ["FACTORY_RUNNER_QUIET"] = old_quiet
 
         stop_event.set()
         spinner.join(timeout=2.0)
