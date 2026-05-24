@@ -254,6 +254,24 @@ At the start of every cycle, create a task list using `TaskCreate` **before spaw
 | 1 | Test eval dimensions | Testing eval dimensions |
 | 2 | Initialize factory config | Initializing factory |
 
+**Interactive mode (Phase 0):**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Research the space | Researching the domain |
+| 2 | Distill specification | Distilling project spec |
+| 3 | Review with user | Presenting spec for review |
+
+**Meta mode:**
+
+| # | Subject | activeForm |
+|---|---------|------------|
+| 1 | Observe — local study + Researcher | Observing project state |
+| 2 | Hypothesize — Strategist agent | Generating hypotheses |
+| 3 | Execute — Builder + Review + Eval | Executing experiment |
+| 4 | Final Archive & Summary | Archiving cycle results |
+| 5 | Evolve playbooks — ACE | Evolving agent playbooks |
+
 ### Status Transition Rules
 
 - Mark each task `in_progress` when starting the corresponding phase
