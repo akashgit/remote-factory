@@ -160,6 +160,7 @@ The Factory improves itself. Every keep/revert decision becomes training data �
 | **HLS design space explorer** | Per-function AI agents + ILP solver for HLS optimization — 92% execution time reduction | Build |
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
 | **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
+| **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Interactive + Improve |
 | **The Factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
 
 Built something with the Factory? Open a PR to add it here.
