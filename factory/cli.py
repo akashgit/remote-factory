@@ -255,18 +255,17 @@ def _classify_with_llm(user_input: str) -> list[dict[str, str]] | None:
 
 _CLI_REF = """\
   Build something new:
-    factory ceo "weather CLI in Python"                    Build directly
-    factory ceo "weather CLI" --mode interactive            Brainstorm first, then build
-    factory ceo "SWE-bench solver" --mode research          Research-driven (metric-focused)
+    factory ceo "a fasta CLI that converts protein sequences to embeddings using ESM2" --mode interactive
+    factory ceo "an autograd engine in pure numpy with a pytorch-like API" --mode interactive
+    factory ceo "a system that solves IMO geometry problems using lean4 proofs" --mode research
 
   Work on an existing project:
-    factory ceo ~/projects/my-app                          Run one improvement cycle
-    factory ceo ~/projects/my-app --focus "auth"             Fix one specific thing
-    factory ceo ~/projects/my-app --focus 42                 Target GitHub issue #42
-    factory ceo ~/projects/my-app --mode interactive         Discuss what to work on
+    factory ceo ~/projects/my-app --focus "add OAuth2 login with Google and GitHub providers"
+    factory ceo ~/projects/my-app --focus 42
+    factory ceo ~/projects/my-app --mode interactive
 
   Self-improve the factory:
-    factory ceo /path/to/factory --mode meta                Improve + evolve agent playbooks\
+    factory ceo /path/to/factory --mode meta\
 """
 
 
