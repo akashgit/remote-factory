@@ -75,24 +75,6 @@ main
 - project: 0.50
 -->
 
-## Hygiene Weights
-<!-- Within-tier weight overrides for hygiene dimensions. -->
-<!-- Only specify dimensions you want to change — unset dimensions keep defaults. -->
-<!-- Weights are normalized within the tier, so they don't need to sum to 1.0. -->
-<!-- Example:
-- tests: 0.40
-- coverage: 0.30
-- lint: 0.10
--->
-
-## Growth Weights
-<!-- Within-tier weight overrides for growth dimensions. -->
-<!-- Only specify dimensions you want to change — unset dimensions keep defaults. -->
-<!-- Example:
-- capability_surface: 0.30
-- spec_compliance: 0.20
--->
-
 ## Smoke Test
 <!-- Optional shell command that must pass before any change is kept. -->
 <!-- If configured, this runs as part of `factory precheck` — failure = mandatory revert. -->
