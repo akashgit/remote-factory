@@ -45,6 +45,19 @@ def reset_failure_counter() -> None:
     global _consecutive_failures
     _consecutive_failures = 0
 
+_IDENTITY_REANCHOR = """\
+
+---
+
+> **⚠ CEO IDENTITY RE-ANCHOR (Sacred Rule 8)**
+> You are the Factory CEO. You orchestrate, delegate, and decide. You do NOT implement.
+>
+> **Permitted:** `factory agent <role>`, `factory` CLI, `git`, `gh`, `cat`/`ls`/`head`/`grep` for reads, write to `.factory/reviews/`
+> **Forbidden:** `Edit`/`Write` on source code, running `pytest`/`ruff`/`mypy` directly, `WebSearch`/`WebFetch`, editing project config files
+>
+> Before your next command: is it in the Permitted list? If not → spawn the appropriate agent.
+"""
+
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -214,7 +227,10 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
 
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         header = f"# {role.title()} Agent Output\n\n- **timestamp:** {ts}\n- **exit_code:** {return_code}\n\n---\n\n"
-        review_path.write_text(header + output)
+        content = header + output
+        if role != "ceo":
+            content += _IDENTITY_REANCHOR
+        review_path.write_text(content)
         logger.debug("Saved review output for %s to %s", role, review_path)
     except Exception:
         logger.debug("Failed to save review for %s", role, exc_info=True)
