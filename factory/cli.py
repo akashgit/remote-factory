@@ -1983,6 +1983,21 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     no_github = getattr(args, "no_github", False)
+    refine_request = getattr(args, "refine", None)
+
+    if refine_request:
+        if mode in ("interactive", "research"):
+            print(f"Error: --refine and --mode {mode} are mutually exclusive.",
+                  file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --refine and --prompt are mutually exclusive.",
+                  file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --refine and --focus are mutually exclusive.",
+                  file=sys.stderr)
+            return 1
 
     _interactive_is_existing = (
         mode == "interactive"
@@ -2139,6 +2154,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         messages=pending,
         issue_number=issue_number,
         issue_url=issue_url,
+        refine_request=refine_request,
     )
 
     if headless:
@@ -2633,6 +2649,7 @@ def _build_ceo_task(
     messages: list[Message] | None = None,
     issue_number: int | None = None,
     issue_url: str | None = None,
+    refine_request: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -2798,6 +2815,22 @@ def _build_ceo_task(
             "- Clone from GitHub URLs\n\n"
             "Work locally only. When a GitHub operation would normally occur, "
             "skip it and note what was skipped in the experiment log."
+        )
+
+    if refine_request:
+        task += (
+            f"\n\n## Refinement Mode\n\n"
+            f"**User's refinement request:** {refine_request}\n\n"
+            f"You are in Refinement mode. Follow the `Mode: Refine` section in your "
+            f"system prompt. The pipeline is:\n\n"
+            f"1. Spawn the Refiner agent to classify and scope the request\n"
+            f"2. If Tier 3 → exit, tell user to use full Improve mode\n"
+            f"3. Begin experiment, create GitHub issue from Refiner's scoped task\n"
+            f"4. Spawn Builder with the Refiner's task description\n"
+            f"5. Run the FULL review pipeline (2d-review through 2h-final) — identical to Improve mode\n"
+            f"6. Keep/revert verdict + finalize\n"
+            f"7. Archivist (single batch)\n\n"
+            f"Do NOT skip the review pipeline. Do NOT abbreviate any step.\n"
         )
 
     return task
@@ -3351,7 +3384,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
                                      "evaluator", "archivist", "distiller", "ceo",
-                                     "failure_analyst"],
+                                     "failure_analyst", "refiner"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
@@ -3417,6 +3450,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--refine", default=None, metavar="REQUEST",
+        help="Refinement mode: classify and implement a user-directed change. "
+             "Mutually exclusive with --mode interactive, --mode research, --loop, --prompt, --focus",
+    )
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")

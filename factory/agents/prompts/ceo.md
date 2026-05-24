@@ -2217,6 +2217,272 @@ Meta mode is powerful but has diminishing returns if run too frequently or too e
 
 ---
 
+## Mode: Refine (`has_factory` + `--refine`)
+
+A lightweight pipeline for user-directed refinements. The user knows what they want changed — the factory classifies, scopes, implements, and reviews the change with the full review pipeline but without the overhead of research, strategy, and multi-hypothesis cycles.
+
+**When to enter:** Your task includes a `## Refinement Mode` section with the user's request.
+
+**Key differences from Improve mode:**
+- No Researcher, no Strategist — the user IS the strategist
+- Refiner agent classifies and scopes the change before the Builder starts
+- Tier 3 requests exit immediately — they need full Improve mode
+- Single experiment per invocation — no hypothesis batching
+- Archivist runs once at the end (single batch), not after every agent
+- The full review pipeline (2d-review through 2h-final) runs identically to Improve mode — no shortcuts
+
+### R0: Classify (Refiner Agent)
+
+Read the user's refinement request from the `## Refinement Mode` section in your task. Spawn the Refiner agent to classify and scope the change.
+
+```bash
+factory agent refiner --task "Classify and scope a refinement request for $PROJECT_PATH.
+
+User's request: <REFINE_REQUEST>
+
+Read CLAUDE.md and factory.md. Analyze the codebase to identify which files need to change,
+estimate scope, and classify the request as Tier 1, 2, or 3.
+Produce the structured classification output with a Builder task description." --project "$PROJECT_PATH" --timeout 300
+```
+
+**R0-review: CEO Review — Refiner Classification**
+
+1. Read `.factory/reviews/refiner-latest.md`
+2. Check: Is the tier classification reasonable? Are the identified files correct? Is the Builder task description specific enough?
+3. Write verdict to `.factory/reviews/ceo-verdict-refiner.md`
+4. If REDIRECT: re-invoke the Refiner with corrections
+5. If PROCEED: continue based on the tier
+
+### R1: Tier Gate
+
+Read the Refiner's classification output:
+
+- **Tier 1 or Tier 2** → proceed to R2
+- **Tier 3** → exit with a message to the user:
+  ```
+  This refinement request is too large for --refine mode (Tier 3: <rationale>).
+  Use the full Improve mode instead: factory ceo $PROJECT_PATH --focus "<request>"
+  ```
+  Log the exit:
+  ```bash
+  factory log "$PROJECT_PATH" "refine.tier3_exit" --data '{"request": "<request>", "rationale": "<rationale>"}'
+  ```
+  Then stop — do not proceed further.
+
+### R2: Begin Experiment
+
+```bash
+factory begin "$PROJECT_PATH" --hypothesis "Refine: <user's request summary>"
+```
+
+Save the printed experiment ID as `$EXP_ID`.
+
+### R3: Create GitHub Issue
+
+Create a GitHub issue from the Refiner's scoped task:
+
+```bash
+gh issue create \
+    --title "Refine: <short title from request>" \
+    --label "refinement" \
+    --body "Factory refinement experiment $EXP_ID.
+
+## What to Build
+<paste the Refiner's Builder Task Description verbatim>
+
+## Acceptance Criteria
+- [ ] Change implements the user's request
+- [ ] Tests pass
+- [ ] Lint clean
+- [ ] Eval score does not regress
+
+## Constraints
+- Read CLAUDE.md before starting
+- Do NOT touch files outside declared scope
+- Do NOT modify eval/score.py or .factory/"
+```
+
+Save issue number as `$ISSUE_NUM`.
+
+### R4: Implement (Builder Agent)
+
+Spawn the Builder with the Refiner's task description:
+
+```bash
+factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<repo>.
+1. Read the issue: gh issue view $ISSUE_NUM
+2. cd $PROJECT_PATH, read CLAUDE.md and factory.md
+3. The worktree already has its own branch — do NOT create a new branch. Commit directly to the current branch.
+4. Implement exactly what the issue describes
+5. Run tests after implementation
+6. Commit and open a DRAFT PR targeting main. Use idempotency:
+   - First check: gh pr list --head <branch> --json number,title
+   - If a PR already exists for this branch, skip creation and use the existing PR number
+   - If no PR exists: gh pr create --draft --base main
+Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
+```
+
+If Builder fails (no PR opened), see Improve mode Error Recovery.
+
+### R5–R10: Full Review Pipeline (IDENTICAL to Improve Mode)
+
+**CRITICAL: The review pipeline is NOT abbreviated for refinements.** Run every step exactly as specified in Improve mode. The steps are:
+
+#### R5: CEO Code Quality Review (= Improve 2d-review)
+
+Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999`.
+
+1. Read `.factory/reviews/builder-latest.md`
+2. Find the PR: `gh pr list --state open --json number,title,headRefName`
+3. Read the full PR diff: `gh pr diff <pr-number>`
+4. Perform the structured 6-category code quality review (Correctness, Security, Edge cases, Missing tests, Style, Scope compliance, Guardrail compliance)
+5. Write verdict to `.factory/reviews/ceo-verdict-builder.md`
+6. If ISSUES_FOUND: apply the review-until-clean loop (max 3 iterations, convergence check)
+7. If CLEAN: proceed to R6
+
+This is **mandatory** — the full structured checklist, review-until-clean loop, and convergence checks all apply.
+
+#### R6: Guard Check (= Improve 2e)
+
+```bash
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+factory agent reviewer --task "Review the Builder's changes for refinement experiment $EXP_ID.
+Read the CEO's preliminary review at .factory/reviews/ceo-verdict-builder.md.
+1. Run guard check: factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-scope
+2. Read the PR diff: gh pr diff <pr-number>
+3. Assess code quality against acceptance criteria
+4. Print verdict: PASS or FAIL with details" --project "$PROJECT_PATH"
+```
+
+Validate the Reviewer's output (= Improve 2e-review). If FAIL → revert.
+
+#### R7: Post-change Eval (= Improve 2f)
+
+```bash
+factory agent evaluator --task "Run post-change eval for $PROJECT_PATH on the PR branch.
+Execute: factory eval $PROJECT_PATH
+Report composite score and per-dimension breakdown.
+Compare against baseline score: $SCORE_BEFORE
+State whether the refinement preserved eval scores." --project "$PROJECT_PATH"
+```
+
+Save output as `score_after`.
+
+#### R8: E2E Verification (= Improve 2f-e2e)
+
+Read `## Smoke Test` from `factory.md` and run it. If not configured, run a manual check. Write result to `.factory/reviews/ceo-verdict-e2e.md`.
+
+#### R9: Hard Precheck Gate (= Improve 2g)
+
+```bash
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+factory precheck "$PROJECT_PATH" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --hypothesis "Refine: <request summary>" \
+    --baseline $BASELINE_SHA
+```
+
+If `"passed": false` → mandatory revert. No CEO override.
+
+#### R10: Final Review Gate (= Improve 2h-final)
+
+Run the final holistic code review on the complete PR diff against main:
+
+```bash
+gh pr diff $PR_NUM > /tmp/factory-final-review-$PR_NUM.txt
+
+claude -p "You are a senior code reviewer. Review this complete PR diff for:
+1. Bugs, logic errors, race conditions, off-by-one errors
+2. Security vulnerabilities (injection, secrets, unsafe operations)
+3. Edge cases not handled (null/empty inputs, boundary values, error paths)
+4. Missing error handling or swallowed exceptions
+5. Code style violations or inconsistencies with codebase conventions
+6. Dead code, unnecessary complexity, or premature abstractions
+
+Output EXACTLY one of:
+- CLEAN — if no issues found
+- ISSUES_FOUND: N — followed by a numbered list of issues, each with file:line and category
+
+Be thorough but pragmatic. Only flag real problems, not style preferences." < /tmp/factory-final-review-$PR_NUM.txt
+
+rm -f /tmp/factory-final-review-$PR_NUM.txt
+```
+
+If CLEAN → proceed to R11 (KEEP). If ISSUES_FOUND and `$REVIEW_ITERATION < 3` → route fixes to Builder and loop back to R5. If `$REVIEW_ITERATION >= 3` → proceed to R11 with remaining issues noted.
+
+### R11: Keep/Revert Verdict + Finalize
+
+**On KEEP (all checks pass):**
+
+```bash
+gh pr ready $PR_NUM
+
+factory review \
+    --verdict KEEP \
+    --reason "Refinement: <one-sentence summary>" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --guards "scope:PASS,eval_immutable:PASS" \
+    --experiment-id $EXP_ID \
+    --hypothesis "Refine: <request summary>" \
+    --pr $PR_NUM
+
+factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict keep --force \
+    --hypothesis "Refine: <request summary>" --summary "<changes>" \
+    --issue $ISSUE_NUM --pr $PR_NUM \
+    --notes "ceo:keep mode=refine score_delta=+X.XXXX precheck=passed e2e=pass review_pipeline=full review_iterations=$REVIEW_ITERATION"
+```
+
+**On REVERT (precheck fails or mandatory revert triggered):**
+
+```bash
+factory review \
+    --verdict REVERT \
+    --reason "<which check failed>" \
+    --score-before $SCORE_BEFORE \
+    --score-after $SCORE_AFTER \
+    --threshold $THRESHOLD \
+    --experiment-id $EXP_ID \
+    --hypothesis "Refine: <request summary>" \
+    --pr $PR_NUM
+
+gh pr close $PR_NUM
+factory finalize "$PROJECT_PATH" \
+    --id $EXP_ID --verdict revert \
+    --hypothesis "Refine: <request summary>" --summary "<changes — reverted>" \
+    --issue $ISSUE_NUM \
+    --notes "ceo:revert mode=refine reason=<failure> score_delta=-X.XXXX review_pipeline=full review_iterations=$REVIEW_ITERATION"
+```
+
+### R12: Archivist (Single Batch)
+
+Spawn the Archivist once to record the entire refinement cycle:
+
+```bash
+factory agent archivist --task "Record refinement experiment $EXP_ID outcome (verdict: $VERDICT).
+1. Read experiment history: factory history $PROJECT_PATH
+2. Read .factory/reviews/ceo-verdict-refiner.md for the classification
+3. Read .factory/reviews/ceo-verdict-builder.md for the code review
+4. Write experiment note to .factory/archive/experiments/ with decision rationale
+5. Update the project dashboard at .factory/archive/
+6. Run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+```
+
+Then write checkpoint:
+```bash
+echo "- [x] archivist after refinement experiment $EXP_ID ($VERDICT) — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJECT_PATH/.factory/reviews/archivist-checkpoints.md"
+```
+
+Log sprint completion:
+```bash
+factory log "$PROJECT_PATH" "refine.completed" --data "{\"exp_id\": $EXP_ID, \"verdict\": \"$VERDICT\", \"tier\": $TIER}"
+```
+
+---
+
 ## CEO Self-Learning Protocol
 
 You learn from your own decisions. Every keep/revert decision and every agent failure is data that feeds your own playbook evolution.
