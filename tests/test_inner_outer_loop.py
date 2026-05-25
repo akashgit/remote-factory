@@ -559,3 +559,153 @@ class TestFactoryMdRoundTrip:
 
         assert config.inner_loop is None
         assert config.outer_loop is None
+
+
+# ── Distiller format E2E round-trip ────────────────────────────
+
+
+class TestDistillerFormatRoundTrip:
+    """Prove that factory.md written in the Distiller's template format
+    parses correctly through reparse_config() and round-trips via JSON."""
+
+    @pytest.fixture()
+    def math_benchmark_project(self, tmp_path: Path) -> Path:
+        project = tmp_path / "math-bench"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        (project / "prompts").mkdir()
+        (project / "prompts" / "solve.md").write_text(
+            "Solve the following math problem step by step.\n"
+        )
+        (project / "config").mkdir()
+        (project / "config" / "model.yaml").write_text(
+            "model: llama-3.3-70b\ntemperature: 0.7\nmax_tokens: 1024\n"
+        )
+        (project / "src").mkdir()
+        (project / "src" / "solver.py").write_text(
+            "def solve(problem: str) -> str:\n    return 'answer'\n"
+        )
+        (project / "eval.py").write_text(
+            "import json, random\n"
+            "print(json.dumps({'score': round(random.uniform(0.3, 0.9), 2)}))\n"
+        )
+
+        (project / "factory.md").write_text(
+            "## Goal\nImprove accuracy of math benchmark solver\n\n"
+            "## Scope\n### Modifiable\n- prompts/*.md\n- config/*.yaml\n- src/solver.py\n\n"
+            "## Guards\n- no secrets\n- preserve existing test coverage\n\n"
+            "## Eval\n### Command\n```bash\npython eval.py\n```\n\n"
+            "### Threshold\n0.85\n\n"
+            "## Constraints\n- keep inference under 30s\n\n"
+            "### Multi-Run\n"
+            "- Runs Per Cycle: 5\n"
+            "- Aggregate: median\n"
+            "- max_inner_runs_per_cycle: 10\n"
+            "- plateau_threshold: 3\n\n"
+            "### Surface Scoping\n"
+            "- max_outer_cycles: 4\n"
+            "- inner: prompts/*.md\n"
+            "- inner: config/*.yaml\n"
+            "- outer: src/**/*.py\n"
+        )
+        return project
+
+    def test_project_files_exist(self, math_benchmark_project: Path) -> None:
+        project = math_benchmark_project
+        assert (project / "prompts" / "solve.md").exists()
+        assert (project / "config" / "model.yaml").exists()
+        assert (project / "src" / "solver.py").exists()
+        assert (project / "eval.py").exists()
+        assert (project / "factory.md").exists()
+        assert (project / ".factory").is_dir()
+
+    async def test_distiller_format_parses_inner_loop(
+        self, math_benchmark_project: Path
+    ) -> None:
+        store = ExperimentStore(math_benchmark_project)
+        config = await store.reparse_config()
+
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 5
+        assert config.inner_loop.aggregate == AggregateMethod.median
+        assert config.inner_loop.max_inner_runs_per_cycle == 10
+        assert config.inner_loop.plateau_threshold == 3
+
+    async def test_distiller_format_parses_outer_loop(
+        self, math_benchmark_project: Path
+    ) -> None:
+        store = ExperimentStore(math_benchmark_project)
+        config = await store.reparse_config()
+
+        assert config.outer_loop is not None
+        assert config.outer_loop.max_outer_cycles == 4
+        assert config.outer_loop.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
+        assert config.outer_loop.outer_surfaces == ["src/**/*.py"]
+
+    def test_multi_run_aggregation(self, math_benchmark_project: Path) -> None:
+        scores = [0.72, 0.85, 0.64, 0.91, 0.78]
+        result = aggregate_metric(scores, AggregateMethod.median)
+        assert result == pytest.approx(0.78)
+
+    def test_plateau_detection_at_threshold(
+        self, math_benchmark_project: Path
+    ) -> None:
+        summaries = [
+            {"metric_value": 0.65},
+            {"metric_value": 0.65},
+            {"metric_value": 0.65},
+            {"metric_value": 0.65},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is True
+
+        improving = [
+            {"metric_value": 0.60},
+            {"metric_value": 0.65},
+            {"metric_value": 0.70},
+        ]
+        assert detect_research_plateau(improving, threshold=3) is False
+
+    async def test_surface_expansion_after_plateau(
+        self, math_benchmark_project: Path
+    ) -> None:
+        store = ExperimentStore(math_benchmark_project)
+        config = await store.reparse_config()
+
+        assert config.outer_loop is not None
+        inner = config.outer_loop.inner_surfaces
+        outer = config.outer_loop.outer_surfaces
+
+        assert inner == ["prompts/*.md", "config/*.yaml"]
+        assert outer == ["src/**/*.py"]
+
+        stagnant = [{"metric_value": 0.7}] * 4
+        assert config.inner_loop is not None
+        plateau = detect_research_plateau(
+            stagnant, threshold=config.inner_loop.plateau_threshold
+        )
+        assert plateau is True
+        expanded = inner + outer
+        assert expanded == ["prompts/*.md", "config/*.yaml", "src/**/*.py"]
+
+    async def test_config_json_roundtrip(
+        self, math_benchmark_project: Path
+    ) -> None:
+        store = ExperimentStore(math_benchmark_project)
+        config = await store.reparse_config()
+
+        config_json = json.loads(
+            (math_benchmark_project / ".factory" / "config.json").read_text()
+        )
+        restored = FactoryConfig(**config_json)
+
+        assert restored.inner_loop is not None
+        assert restored.inner_loop.runs_per_cycle == 5
+        assert restored.inner_loop.aggregate == AggregateMethod.median
+        assert restored.inner_loop.max_inner_runs_per_cycle == 10
+        assert restored.inner_loop.plateau_threshold == 3
+
+        assert restored.outer_loop is not None
+        assert restored.outer_loop.max_outer_cycles == 4
+        assert restored.outer_loop.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
+        assert restored.outer_loop.outer_surfaces == ["src/**/*.py"]

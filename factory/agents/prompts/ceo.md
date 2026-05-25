@@ -931,8 +931,8 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    - Copy Fixed Surfaces patterns to `## Fixed Surfaces`
    - Copy Research Constraints to `## Research Constraints`
    - Copy Cost Budget to `## Cost Budget`
-   - If the spec includes a `### Multi-Run` section, copy its fields (runs_per_cycle, aggregate, max_runs_per_cycle) to `## Multi-Run` in `factory.md`
-   - If the spec includes a `### Surface Scoping` section, copy its fields (plateau_threshold, max_escalation_cycles, inner_surfaces, outer_surfaces) to `## Surface Scoping` in `factory.md`
+   - If the spec includes a `### Multi-Run` section, copy its fields (runs_per_cycle, aggregate, max_inner_runs_per_cycle, plateau_threshold) to `## Inner Loop` in `factory.md`
+   - If the spec includes a `### Surface Scoping` section, copy its fields (max_outer_cycles, inner: <glob>, outer: <glob>) to `## Outer Loop Surfaces` in `factory.md`
    After `factory init`, the config parser will read these sections and populate `config.json` with `research_target`, `mutable_surfaces`, `fixed_surfaces`, etc. If Multi-Run or Surface Scoping sections are present, they will be parsed into the corresponding config fields when the Python infrastructure supports them.
 
 5. Initialize the factory store:

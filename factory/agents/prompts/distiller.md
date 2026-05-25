@@ -129,13 +129,13 @@ These are fingerprinted for leakage detection.>
 ### Multi-Run (optional — for stochastic harnesses)
 - **Runs Per Cycle**: <N>
 - **Aggregate**: <mean|median|max|all_pass>
-- **Max Runs Per Cycle**: <optional cap>
+- **max_inner_runs_per_cycle**: <optional cap>
+- **plateau_threshold**: <consecutive cycles with no improvement before expanding, e.g. 3>
 
 ### Surface Scoping (optional — for automatic scope escalation)
-- **Plateau Threshold**: <consecutive cycles with no improvement before expanding, e.g. 3>
-- **Max Escalation Cycles**: <optional cap>
-- **Inner Surfaces**: <narrow mutable surfaces — one glob per line>
-- **Outer Surfaces**: <additional surfaces unlocked after plateau — one glob per line>
+- **max_outer_cycles**: <optional cap>
+- **inner**: <narrow mutable surfaces — one glob per line>
+- **outer**: <additional surfaces unlocked after plateau — one glob per line>
 ```
 
 **Conditional inclusion guidance:**
