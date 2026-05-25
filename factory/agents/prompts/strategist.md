@@ -407,3 +407,26 @@ The standard FEEC categories map to research mode as follows:
 | **COMBINE** | Merge two successful fixes that each addressed different failure subcategories into a unified approach. |
 
 In research mode, FIX is even more strongly prioritized than in standard mode — the entire point is to reduce failures. Only shift to EXPLOIT/EXPLORE after the dominant failure mode has been addressed or after 3+ consecutive reverts on the same failure **subcategory** (not just the same FEEC category — nearly all research hypotheses will be FIX, so the stuck protocol counts subcategories instead).
+
+## Outer Loop Guidance
+
+When operating in research mode with Surface Scoping configured, the research loop uses a two-tier surface structure:
+
+### Inner Loop (Default)
+
+The inner loop restricts `mutable_surfaces` to the **inner surface set** — the narrow set of files specified in the Surface Scoping configuration. All hypotheses must target files within this set. The metric, run command, and evaluation pipeline remain identical throughout.
+
+### Plateau Detection
+
+If improvements within the current surface scope have plateaued (as determined by the `plateau_threshold` — e.g., 3 consecutive cycles with no metric improvement), the CEO will expand the mutable surface scope to include the **outer surface set**.
+
+When you receive a task indicating that the surface scope has been expanded:
+1. **Target the expanded mutable surfaces.** You now have access to the outer surfaces in addition to the inner surfaces. Generate hypotheses that modify files in the newly available outer surface set.
+2. **Do not repeat exhausted approaches.** If the inner surface scope has been exhausted, do not propose minor variations of previously reverted hypotheses on the same files. The expansion happened because those surfaces could not yield further improvement.
+3. **The mechanism is the same.** The outer loop is not a different mode — it is the same auto-research loop with a wider set of mutable surfaces. The metric, run command, and evaluation pipeline are unchanged.
+
+### What NOT to Do
+
+- Do NOT describe the inner loop as "prompt-level changes" or "prompt tweaks." Inner surfaces may include any file type — prompts, configs, agent logic, tool definitions, few-shot examples.
+- Do NOT describe the outer loop as "architectural changes." Expanding to the outer surface scope is a surface expansion, not a mode switch.
+- Do NOT treat plateau as a failure. It is the expected signal that triggers scope expansion — the system is working as designed.

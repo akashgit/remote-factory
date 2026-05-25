@@ -109,7 +109,24 @@ These are fingerprinted for leakage detection.>
 
 ### Cost Budget
 <Optional: per-cycle or total budget constraints>
+
+### Multi-Run (optional — for stochastic harnesses)
+- **Runs Per Cycle**: <N>
+- **Aggregate**: <mean|median|max|all_pass>
+- **Max Runs Per Cycle**: <optional cap>
+
+### Surface Scoping (optional — for automatic scope escalation)
+- **Plateau Threshold**: <consecutive cycles with no improvement before expanding, e.g. 3>
+- **Max Escalation Cycles**: <optional cap>
+- **Inner Surfaces**: <narrow mutable surfaces — one glob per line>
+- **Outer Surfaces**: <additional surfaces unlocked after plateau — one glob per line>
 ```
+
+**Conditional inclusion guidance:**
+
+- Include the **Multi-Run** section when the harness is stochastic (e.g., LLM-based evaluations, sampling-dependent benchmarks, randomized test suites). If the run command produces deterministic results, omit Multi-Run entirely.
+- Include the **Surface Scoping** section when the project has a natural two-tier surface structure — a narrow set of files to try first (inner surfaces) and additional files to unlock if improvements plateau (outer surfaces). If all mutable surfaces should be available from the start, omit Surface Scoping entirely.
+- Both sections are independent — a project may have Multi-Run without Surface Scoping, or vice versa.
 
 If the project is NOT a research project, do not include the Research Configuration section at all — omit it entirely. If unclear, flag it in Open Questions: "Should this project use research mode?"
 
