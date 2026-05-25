@@ -6,8 +6,13 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import structlog
+from pydantic import ValidationError
+
 from factory.agents.runner import IDENTITY_REANCHOR
 from factory.models import RefinementEntry, RefinementState
+
+log = structlog.get_logger()
 
 _STATE_DIR = "state"
 _STATE_FILE = "refinements.json"
@@ -18,12 +23,16 @@ def _state_path(project_path: Path) -> Path:
 
 
 def read_state(project_path: Path) -> RefinementState:
-    """Read refinement state from disk. Returns empty state if file missing."""
+    """Read refinement state from disk. Returns empty state if file missing or corrupted."""
     path = _state_path(project_path)
     if not path.exists():
         return RefinementState()
-    data = json.loads(path.read_text())
-    return RefinementState(**data)
+    try:
+        data = json.loads(path.read_text())
+        return RefinementState(**data)
+    except (json.JSONDecodeError, ValidationError) as exc:
+        log.warning("corrupted_refinement_state", path=str(path), error=str(exc))
+        return RefinementState()
 
 
 def begin_refinement(project_path: Path, request: str) -> RefinementEntry:
@@ -48,6 +57,9 @@ def complete_refinement(project_path: Path, verdict: str) -> None:
     if not state.entries:
         return
     last = state.entries[-1]
+    if last.verdict is not None:
+        log.warning("refinement_already_completed", sequence=last.sequence, existing_verdict=last.verdict)
+        return
     last.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     last.verdict = verdict
     path = _state_path(project_path)
