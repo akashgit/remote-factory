@@ -12,6 +12,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -685,6 +686,34 @@ class TestDistillerFormatRoundTrip:
         assert plateau is True
         expanded = inner + outer
         assert expanded == ["prompts/*.md", "config/*.yaml", "src/**/*.py"]
+
+    async def test_eval_harness_multi_run(
+        self, math_benchmark_project: Path
+    ) -> None:
+        store = ExperimentStore(math_benchmark_project)
+        config = await store.reparse_config()
+
+        assert config.inner_loop is not None
+        runs = config.inner_loop.runs_per_cycle
+        assert runs == 5
+
+        scores: list[float] = []
+        for _ in range(runs):
+            result = subprocess.run(
+                ["python", "eval.py"],
+                cwd=math_benchmark_project,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            output = json.loads(result.stdout)
+            scores.append(output["score"])
+
+        assert len(scores) == runs
+
+        aggregated = aggregate_metric(scores, config.inner_loop.aggregate)
+        assert isinstance(aggregated, float)
+        assert 0 < aggregated < 1
 
     async def test_config_json_roundtrip(
         self, math_benchmark_project: Path
