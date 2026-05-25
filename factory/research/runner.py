@@ -12,7 +12,14 @@ from pathlib import Path
 
 import structlog
 
-from factory.models import ResearchTarget, ResultParseError, RunResult, RunStatus
+from factory.models import (
+    AggregateMethod,
+    InnerLoopConfig,
+    ResearchTarget,
+    ResultParseError,
+    RunResult,
+    RunStatus,
+)
 
 log = structlog.get_logger()
 
@@ -294,3 +301,87 @@ def _save_artifacts(run_dir: Path, result: RunResult, config: ResearchTarget) ->
         "duration_seconds": result.duration_seconds,
         "command": config.run_command,
     })
+
+
+# ── multi-run execution ────────────────────────────────────────
+
+
+async def execute_multi_run(
+    run_cmd: str,
+    config: InnerLoopConfig,
+    *,
+    cwd: Path | None = None,
+) -> float:
+    """Run *run_cmd* ``config.runs_per_cycle`` times and aggregate the scores.
+
+    Each invocation must exit 0 and print a single float to stdout (the score).
+    Non-zero exits are treated as score 0.0 for ``mean``/``median``/``max`` and
+    as a failure for ``all_pass``.
+
+    Aggregation methods:
+    - **mean**: arithmetic mean of all scores
+    - **median**: median of all scores
+    - **max**: maximum score
+    - **all_pass**: 1.0 if every run exited 0 with score > 0, else 0.0
+
+    Returns the aggregated score as a float.
+    """
+    import statistics
+    import subprocess as sp
+
+    n = config.runs_per_cycle
+    scores: list[float] = []
+    all_ok = True
+
+    log.info("multi_run_start", command=run_cmd, runs=n, aggregate=config.aggregate.value)
+
+    for i in range(n):
+        try:
+            result = sp.run(
+                run_cmd,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=3600,
+                cwd=cwd,
+            )
+        except sp.TimeoutExpired:
+            log.warning("multi_run_timeout", run=i + 1)
+            scores.append(0.0)
+            all_ok = False
+            continue
+
+        if result.returncode != 0:
+            log.warning("multi_run_nonzero_exit", run=i + 1, returncode=result.returncode)
+            scores.append(0.0)
+            all_ok = False
+            continue
+
+        stdout = result.stdout.strip()
+        try:
+            score = float(stdout)
+        except ValueError:
+            log.warning("multi_run_parse_error", run=i + 1, stdout=stdout[:200])
+            scores.append(0.0)
+            all_ok = False
+            continue
+
+        scores.append(score)
+        log.debug("multi_run_result", run=i + 1, score=score)
+
+    if not scores:
+        return 0.0
+
+    if config.aggregate == AggregateMethod.mean:
+        agg = statistics.mean(scores)
+    elif config.aggregate == AggregateMethod.median:
+        agg = statistics.median(scores)
+    elif config.aggregate == AggregateMethod.max:
+        agg = max(scores)
+    elif config.aggregate == AggregateMethod.all_pass:
+        agg = 1.0 if all_ok and all(s > 0 for s in scores) else 0.0
+    else:  # pragma: no cover
+        agg = statistics.mean(scores)
+
+    log.info("multi_run_complete", aggregate=config.aggregate.value, result=agg, runs=n)
+    return agg

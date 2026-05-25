@@ -21,6 +21,8 @@ from typing import Any
 
 import structlog
 
+from factory.models import ExperimentRecord
+
 log = structlog.get_logger()
 
 MAX_INLINE_HISTORY = 10
@@ -133,6 +135,50 @@ def detect_stuck(
             consecutive=len(tail),
         )
     return stuck
+
+
+# ── plateau detection ────────────────────────────────────────────
+
+
+def detect_plateau(
+    history: list[ExperimentRecord],
+    threshold: int = 3,
+) -> bool:
+    """Return ``True`` if the last *threshold* consecutive experiments showed no metric improvement.
+
+    "No improvement" means the ``score_after`` did not exceed the running best
+    score at that point in the history.  Experiments without a ``score_after``
+    are skipped (not counted toward the streak).
+
+    Returns ``False`` if there are fewer than *threshold* scored experiments.
+    """
+    scored = [r for r in history if r.score_after is not None]
+    if len(scored) < threshold:
+        return False
+
+    # Walk the scored history and compute whether each experiment improved
+    # over the previous best.
+    best = scored[0].score_after
+    assert best is not None  # guaranteed by filter above
+    no_improvement_streak = 0
+
+    for record in scored[1:]:
+        assert record.score_after is not None
+        if record.score_after > best:
+            best = record.score_after
+            no_improvement_streak = 0
+        else:
+            no_improvement_streak += 1
+
+    plateau = no_improvement_streak >= threshold
+    if plateau:
+        log.warning(
+            "plateau_detected",
+            streak=no_improvement_streak,
+            threshold=threshold,
+            best_score=best,
+        )
+    return plateau
 
 
 # ── hypothesis similarity ────────────────────────────────────────
