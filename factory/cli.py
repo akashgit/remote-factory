@@ -2141,6 +2141,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_url=issue_url,
     )
 
+    session_name = f"factory: {project_path.resolve().name}"
+
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
@@ -2154,6 +2156,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 runner_name=runner_name,
                 model=model,
                 timeout=7200.0,
+                session_name=session_name,
             ))
             print(result)
             if code == 0:
@@ -2182,7 +2185,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         runner = get_runner(runner_name)
         return runner.interactive_run(
             prompt, task, wt_path,
-            model=model, role="ceo", dangerously_skip_permissions=True
+            model=model, role="ceo", dangerously_skip_permissions=True,
+            session_name=session_name,
         )
     finally:
         remove_worktree(project_path, wt_path, wt_branch)

@@ -68,6 +68,7 @@ class CodexRunner:
         model: str | None = None,
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
+        session_name: str | None = None,
     ) -> tuple[str, int]:
         """Run a headless Codex CLI invocation via ``codex exec``.
 
@@ -76,6 +77,7 @@ class CodexRunner:
 
         Returns (stdout, return_code).
         """
+        _ = session_name
         if is_codex_dry_run():
             return self._dry_run_response(role, cwd, task)
 
@@ -136,12 +138,13 @@ class CodexRunner:
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
+        session_name: str | None = None,
     ) -> int:
         """Run an interactive Codex CLI session as a subprocess.
 
         Returns the exit code so the caller can clean up in a finally block.
         """
-        _ = role
+        _ = role, session_name
 
         if is_codex_dry_run():
             print("[DRY-RUN] Would exec: codex (interactive)")

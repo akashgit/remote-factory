@@ -21,6 +21,7 @@ class Runner(Protocol):
         model: str | None = None,
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
+        session_name: str | None = None,
     ) -> tuple[str, int]:
         """Run a headless (non-interactive) agent invocation.
 
@@ -32,6 +33,7 @@ class Runner(Protocol):
             model: Optional model override.
             dangerously_skip_permissions: If True, skip permission prompts.
             role: Agent role name (used for logging and output prefixing).
+            session_name: Optional session name for identification in /resume.
 
         Returns:
             (stdout, return_code) tuple.
@@ -47,6 +49,7 @@ class Runner(Protocol):
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
+        session_name: str | None = None,
     ) -> int:
         """Run an interactive CLI session as a subprocess (returns on exit).
 
@@ -60,6 +63,7 @@ class Runner(Protocol):
             model: Optional model override.
             role: Agent role name (used for logging and output prefixing).
             dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
+            session_name: Optional session name for identification in /resume.
 
         Returns:
             The subprocess exit code.

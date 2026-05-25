@@ -101,6 +101,7 @@ async def invoke_agent(
     model: str | None = None,
     runner_name: str | None = None,
     _track_failures: bool = True,
+    session_name: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -114,6 +115,8 @@ async def invoke_agent(
         runner_name: CLI backend to use ("claude" or "bob"). Defaults to FACTORY_RUNNER env var.
         _track_failures: If True (default), track consecutive failures globally.
             Set to False when called from invoke_agents_parallel to avoid race conditions.
+        session_name: Optional session name for /resume identification.
+            If not provided, defaults to "factory: {project_name}/{role}".
 
     Returns (stdout, return_code).
 
@@ -131,6 +134,8 @@ async def invoke_agent(
 
     runner = get_runner(runner_name, project_path=project_path)
 
+    agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
+
     try:
         stdout, return_code = await runner.headless(
             prompt=prompt,
@@ -140,6 +145,7 @@ async def invoke_agent(
             model=model,
             dangerously_skip_permissions=dangerously_skip_permissions,
             role=role,
+            session_name=agent_session_name,
         )
     except Exception as e:
         logger.error("%s agent failed: %s", role, e)

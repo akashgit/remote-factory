@@ -385,6 +385,7 @@ async def run_ceo_with_completion_guard(
     model: str | None = None,
     timeout: float = 3600.0,
     max_respawns: int | None = None,
+    session_name: str | None = None,
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
@@ -399,6 +400,7 @@ async def run_ceo_with_completion_guard(
         model: Optional model override.
         timeout: Timeout per CEO spawn in seconds.
         max_respawns: Max re-spawns (default from env or 5).
+        session_name: Optional session name for /resume identification.
 
     Returns:
         (final_output, exit_code)
@@ -413,6 +415,7 @@ async def run_ceo_with_completion_guard(
         return await invoke_agent(
             "ceo", initial_task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
+            session_name=session_name,
         )
 
     if max_respawns is None:
@@ -451,6 +454,7 @@ async def run_ceo_with_completion_guard(
         result, code = await invoke_agent(
             "ceo", task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
+            session_name=session_name,
         )
         final_output = result
 

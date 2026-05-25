@@ -198,6 +198,7 @@ class BobRunner:
         model: str | None = None,
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
+        session_name: str | None = None,
     ) -> tuple[str, int]:
         """Run a headless Bob Shell invocation.
 
@@ -208,6 +209,7 @@ class BobRunner:
         "Argument list too long" errors, consider reducing prompt size or using a
         file-based approach for prompt injection.
         """
+        _ = session_name
         self._role = role
         project_path = self._find_project_path(cwd)
 
@@ -288,11 +290,13 @@ class BobRunner:
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
+        session_name: str | None = None,
     ) -> int:
         """Run an interactive Bob Shell session as a subprocess.
 
         Returns the exit code so the caller can clean up in a finally block.
         """
+        _ = session_name
         project_path = self._find_project_path(cwd)
 
         _persist_key(project_path)

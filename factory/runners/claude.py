@@ -28,6 +28,7 @@ class ClaudeRunner:
         model: str | None = None,
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
+        session_name: str | None = None,
     ) -> tuple[str, int]:
         """Run a headless Claude Code invocation.
 
@@ -39,6 +40,7 @@ class ClaudeRunner:
             model: Optional model override.
             dangerously_skip_permissions: If True, skip permission prompts.
             role: Agent role (used for streaming prefix).
+            session_name: Optional session name for identification in /resume.
 
         Returns (stdout, return_code).
         """
@@ -47,6 +49,8 @@ class ClaudeRunner:
             cmd.append("--dangerously-skip-permissions")
         if model:
             cmd.extend(["--model", model])
+        if session_name:
+            cmd.extend(["--name", session_name])
 
         logger.info("ClaudeRunner headless: cwd=%s, model=%s", cwd, model)
 
@@ -95,6 +99,7 @@ class ClaudeRunner:
         model: str | None = None,
         role: str = "ceo",
         dangerously_skip_permissions: bool = False,
+        session_name: str | None = None,
     ) -> int:
         """Run an interactive Claude Code session as a subprocess.
 
@@ -111,6 +116,8 @@ class ClaudeRunner:
         if model:
             cmd.extend(["--model", model])
             os.environ["FACTORY_MODEL"] = model
+        if session_name:
+            cmd.extend(["--name", session_name])
 
         logger.info("ClaudeRunner interactive_run: cwd=%s", cwd)
 
