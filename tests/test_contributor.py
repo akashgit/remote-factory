@@ -2,8 +2,6 @@
 
 from datetime import datetime
 
-import pytest
-
 from factory.ace.contributor import (
     ClassifiedItem,
     ContributionReport,

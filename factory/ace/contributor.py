@@ -8,7 +8,6 @@ can submit PRs to the factory repo.
 from __future__ import annotations
 
 import difflib
-import json
 import re
 import subprocess
 from datetime import datetime, timezone
