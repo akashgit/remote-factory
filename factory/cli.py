@@ -1115,6 +1115,16 @@ def cmd_summary(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_handoff(args: argparse.Namespace) -> int:
+    """Print a structured handoff brief for cross-session resume."""
+    from factory.handoff import generate_handoff
+
+    project_path = Path(args.path).resolve()
+    brief = generate_handoff(project_path)
+    print(brief)
+    return 0
+
+
 def cmd_export(args: argparse.Namespace) -> int:
     """Export a complete project snapshot as JSON to stdout."""
     from factory.store import ExperimentStore
@@ -3566,6 +3576,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("export", help="Export complete project snapshot as JSON to stdout")
     p.add_argument("path", help="Path to the project")
 
+    # handoff
+    p = sub.add_parser("handoff", help="Print a structured handoff brief for cross-session resume")
+    p.add_argument("path", help="Path to the project")
+
     # insights
     p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
     p.add_argument("path", help="Path to the project (insights.md written here)")
@@ -3960,6 +3974,7 @@ def main(argv: list[str] | None = None) -> int:
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,
+        "handoff": cmd_handoff,
         "insights": cmd_insights,
         "report-update": cmd_report_update,
         "registry-list": cmd_registry_list,
