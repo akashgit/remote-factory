@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _quick_classify, _welcome_wizard
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -1137,7 +1137,8 @@ class TestDedupeProjectPath:
 
     def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
         with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
-            p1, _ = _resolve_input("Build a REST API")
+            p1, ctx1 = _resolve_input("Build a REST API")
+            _materialize_project(p1, ctx1)
             p2, _ = _resolve_input("Create a new REST API")
         assert p1.name == "rest-api"
         assert p2.name == "rest-api-2"
@@ -1176,7 +1177,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context is not None
         assert "Build something cool" in context
 
@@ -1186,7 +1187,7 @@ class TestResolveInput:
 
         assert project_path.parent == tmp_path / "projects"
         assert project_path.name == "todo-app-fastapi"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context == "Build a todo app with FastAPI"
 
     def test_non_md_file(self, tmp_path):
@@ -1197,7 +1198,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(py_file))
 
         assert project_path.name == "script"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context == "print('hello')"
 
     def test_binary_file_raises(self, tmp_path):
@@ -1227,7 +1228,7 @@ class TestResolveInput:
             project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
 
         assert project_path.name == "my-todo"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
 
     def test_dir_overrides_slug_for_idea_file(self, tmp_path):
         idea_file = tmp_path / "Long Idea Name — Details.md"
@@ -1237,7 +1238,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
 
         assert project_path.name == "custom-name"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
 
     def test_dir_ignored_for_existing_directory(self, tmp_path):
         project_path, context = _resolve_input(str(tmp_path), dir_name="ignored-name")
@@ -1889,3 +1890,113 @@ class TestQuickClassifyWizardFile:
         result = _quick_classify("~/.factory/wizard_input.md")
         assert result is not None
         assert len(result) == 2
+
+
+class TestMaterializeProject:
+    """Tests for _materialize_project — deferred directory creation."""
+
+    def test_creates_repo(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project)
+        assert (project / ".git").is_dir()
+
+    def test_creates_repo_and_persists_spec(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project, "Build a todo app")
+        assert (project / ".git").is_dir()
+        spec = (project / ".factory" / "strategy" / "current.md").read_text()
+        assert "Build a todo app" in spec
+
+    def test_no_spec_skips_persist(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project, None)
+        assert (project / ".git").is_dir()
+        assert not (project / ".factory" / "strategy" / "current.md").exists()
+
+    def test_idempotent_on_existing_repo(self, tmp_path):
+        project = tmp_path / "existing"
+        _materialize_project(project, "first spec")
+        count_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        _materialize_project(project, "second spec")
+        count_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        assert count_before == count_after
+
+
+class TestIsScaffoldOnly:
+    """Tests for _is_scaffold_only — cleanup heuristic."""
+
+    def test_scaffold_project(self, tmp_path):
+        project = tmp_path / "scaffold"
+        _materialize_project(project, "some idea")
+        assert _is_scaffold_only(project) is True
+
+    def test_scaffold_without_spec(self, tmp_path):
+        project = tmp_path / "scaffold"
+        _materialize_project(project)
+        assert _is_scaffold_only(project) is True
+
+    def test_not_scaffold_with_extra_file(self, tmp_path):
+        project = tmp_path / "real"
+        _materialize_project(project, "some idea")
+        (project / "README.md").write_text("# Hello")
+        assert _is_scaffold_only(project) is False
+
+    def test_not_scaffold_with_extra_commit(self, tmp_path):
+        project = tmp_path / "real"
+        _materialize_project(project, "some idea")
+        (project / "README.md").write_text("# Hello")
+        subprocess.run(["git", "add", "README.md"], cwd=project, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=t@t",
+             "commit", "-m", "second"],
+            cwd=project, capture_output=True,
+        )
+        assert _is_scaffold_only(project) is False
+
+    def test_nonexistent_dir(self, tmp_path):
+        assert _is_scaffold_only(tmp_path / "nope") is False
+
+    def test_no_git(self, tmp_path):
+        project = tmp_path / "nogit"
+        project.mkdir()
+        assert _is_scaffold_only(project) is False
+
+
+class TestDeferredCreationFlow:
+    """Integration tests: _resolve_input defers creation, _materialize_project creates."""
+
+    def test_resolve_then_materialize_file(self, tmp_path):
+        idea_file = tmp_path / "my-app.md"
+        idea_file.write_text("Build something cool")
+
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
+            project_path, context = _resolve_input(str(idea_file))
+
+        assert not project_path.exists()
+        _materialize_project(project_path, context)
+        assert (project_path / ".git").is_dir()
+        assert (project_path / ".factory" / "strategy" / "current.md").exists()
+
+    def test_resolve_then_materialize_raw_prompt(self, tmp_path):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
+            project_path, context = _resolve_input("Build a weather CLI")
+
+        assert not project_path.exists()
+        _materialize_project(project_path, context)
+        assert (project_path / ".git").is_dir()
+        assert "Build a weather CLI" in (
+            project_path / ".factory" / "strategy" / "current.md"
+        ).read_text()
+
+    def test_existing_dir_not_affected(self, tmp_path):
+        """_resolve_input on existing dir returns it unchanged, _materialize_project is no-op."""
+        (tmp_path / ".git").mkdir()
+        project_path, context = _resolve_input(str(tmp_path))
+        assert project_path == tmp_path
+        assert context is None
