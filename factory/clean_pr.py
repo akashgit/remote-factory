@@ -152,6 +152,7 @@ def strip_pr_artifacts(
             ["git", "cat-file", "-e", f"{base_branch}:{f}"],
             cwd=project_path,
             capture_output=True,
+            text=True,
             timeout=10,
         )
         if exists_on_base.returncode == 0:
@@ -159,6 +160,7 @@ def strip_pr_artifacts(
                 ["git", "checkout", base_branch, "--", f],
                 cwd=project_path,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
         else:
@@ -166,6 +168,7 @@ def strip_pr_artifacts(
                 ["git", "rm", "-f", "--", f],
                 cwd=project_path,
                 capture_output=True,
+                text=True,
                 timeout=10,
             )
         if res.returncode != 0:
@@ -173,7 +176,7 @@ def strip_pr_artifacts(
                 "strip_pr_artifacts_file_failed",
                 file=f,
                 returncode=res.returncode,
-                stderr=res.stderr.decode().strip() if isinstance(res.stderr, bytes) else res.stderr.strip(),
+                stderr=res.stderr.strip(),
             )
             continue
         staged_files.append(f)
@@ -183,14 +186,23 @@ def strip_pr_artifacts(
             ["git", "add", "--"] + staged_files,
             cwd=project_path,
             capture_output=True,
+            text=True,
             timeout=10,
         )
-        subprocess.run(
+        commit_result = subprocess.run(
             ["git", "commit", "-m", "factory: clean PR artifacts"],
             cwd=project_path,
             capture_output=True,
+            text=True,
             timeout=30,
         )
+        if commit_result.returncode != 0:
+            log.warning(
+                "strip_pr_artifacts_commit_failed",
+                returncode=commit_result.returncode,
+                stderr=commit_result.stderr.strip(),
+            )
+            return keep, []
 
     log.info(
         "strip_pr_artifacts_complete",
