@@ -1835,9 +1835,11 @@ Establish the starting point by running the system and recording the baseline me
    9. Report: metric name, metric value, run status, duration." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
    ```
 
-4. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+5. **Multi-run baseline (when inner_loop is configured).** If `.factory/config.json` contains an `inner_loop` object with `runs_per_cycle > 1`, run the baseline command N times instead of once. Each sub-run gets its own directory: `.factory/research/runs/000-baseline-runI`. Write `.factory/research/runs/000-baseline/summary.json` with the aggregated metric (using the configured `aggregate` method: mean, median, max, or all_pass), plus a `runs` array with per-run details and an `aggregate` field naming the method.
 
-5. **Check for prior runs:**
+6. **Record baseline metric.** Save the metric value as `$BASELINE_METRIC`. If this is not the first cycle, read previous best from `.factory/research/runs/` summaries and set `$PREVIOUS_BEST`.
+
+7. **Check for prior runs:**
    ```bash
    ls "$PROJECT_PATH/.factory/research/runs/"
    ```
@@ -2116,6 +2118,8 @@ echo "- [x] archivist after build — $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$PROJE
 
 Execute the `run_command` again on the modified code (PR branch) and compare against baseline.
 
+**Single-run mode (default):**
+
 ```bash
 factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
 
@@ -2130,6 +2134,15 @@ factory agent evaluator --task "Run research post-change eval for $PROJECT_PATH.
 8. Compare against baseline: $BASELINE_METRIC and previous best: $PREVIOUS_BEST
 9. Report: metric before, metric after, delta, whether target is met." --project "$PROJECT_PATH" --timeout $RUN_TIMEOUT
 ```
+
+**Multi-run mode (when inner_loop is configured with runs_per_cycle > 1):**
+
+When `.factory/config.json` has `inner_loop.runs_per_cycle > 1`, run the command N times. Each sub-run goes to `.factory/research/runs/$CYCLE_ID-runI/`. Write the aggregated summary to `.factory/research/runs/$CYCLE_ID/summary.json` with format:
+```json
+{"status": "PASS", "metric": "$METRIC", "metric_value": <aggregate>, "aggregate": "<method>", "runs": [{"run_id": 1, "metric_value": ..., "duration_seconds": ..., "status": "PASS"}, ...], "duration_seconds": <total>, "command": "$RUN_COMMAND"}
+```
+
+Aggregation methods: `mean` = arithmetic mean, `median` = middle value, `max` = best-of-N, `all_pass` = min(values).
 
 Save the new metric value as `$METRIC_AFTER`.
 
@@ -2232,21 +2245,23 @@ factory finalize "$PROJECT_PATH" \
     --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"
 ```
 
-#### R5d.5. Plateau Detection and Surface Scope Expansion
+#### R5d.5. Plateau Check
 
-If Surface Scoping is configured in the research config (`.factory/config.json` contains `surface_scoping` with `inner_surfaces`, `outer_surfaces`, and `plateau_threshold`), check for plateau after each verdict:
+If `inner_loop.plateau_threshold` is configured in `.factory/config.json`, check whether the research metric has plateaued:
 
-1. **Count consecutive non-improving cycles.** Read the last N experiment verdicts from `.factory/research/runs/*/summary.json` (where N = `plateau_threshold`). A cycle is "non-improving" if the metric did not increase compared to the previous best.
+1. Read all `.factory/research/runs/*/summary.json` files, ordered by cycle name
+2. If the last `plateau_threshold` consecutive cycles showed no improvement over the previous best metric:
+   - Log an `outer_loop.triggered` event to `.factory/events.jsonl`
+   - Update the checkpoint with `loop_level: "outer"` and increment `plateau_count`
+   - If `outer_loop.outer_surfaces` is configured, expand `mutable_surfaces` to include them for the next cycle
+   - Shift the Strategist to architectural hypotheses in the next cycle (the Strategist will receive `loop_level: "outer"` and generate structural changes instead of prompt-level changes)
 
-2. **If consecutive non-improving cycles >= `plateau_threshold`:**
-   - The inner surface scope has been exhausted. Expand the Strategist's mutable surface scope to include both inner and outer surfaces.
-   - Update `$MUTABLE_SURFACES` to include the outer surface patterns in addition to the inner surface patterns.
-   - Log: `factory log "$PROJECT_PATH" "research.plateau_detected" --data '{"consecutive_no_improvement": N, "expanding_surfaces": true}'`
-   - On the next Strategist invocation, pass the expanded surface set and note: "The mutable surface scope has been expanded. Improvements within the inner surface scope have plateaued after N consecutive cycles. You now have access to the outer surfaces in addition to the inner surfaces. Target the expanded mutable surfaces."
+If no plateau is detected, continue normally.
 
-3. **If `max_escalation_cycles` is configured** and the number of cycles since surface expansion exceeds the cap, proceed to termination — the expanded surface scope has also been exhausted.
+**Surface scoping by loop level:**
+- **Inner loop** (`loop_level: "inner"`): If `outer_loop.inner_surfaces` is configured, restrict `mutable_surfaces` to only those files. This narrows the Builder's scope to prompt-level changes.
+- **Outer loop** (`loop_level: "outer"`): If `outer_loop.outer_surfaces` is configured, expand `mutable_surfaces` to include those files. This allows the Builder to make architectural changes.
 
-4. **If Surface Scoping is NOT configured**, skip this step entirely — the standard mutable surfaces apply throughout.
 
 #### R5e. Termination Conditions
 

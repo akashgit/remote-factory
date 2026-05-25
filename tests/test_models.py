@@ -344,17 +344,17 @@ class TestInnerLoopConfig:
         c = InnerLoopConfig()
         assert c.runs_per_cycle == 1
         assert c.aggregate == AggregateMethod.mean
-        assert c.max_runs_per_cycle is None
+        assert c.max_inner_runs_per_cycle is None
 
     def test_custom_values(self):
         c = InnerLoopConfig(
             runs_per_cycle=5,
             aggregate=AggregateMethod.median,
-            max_runs_per_cycle=10,
+            max_inner_runs_per_cycle=10,
         )
         assert c.runs_per_cycle == 5
         assert c.aggregate == AggregateMethod.median
-        assert c.max_runs_per_cycle == 10
+        assert c.max_inner_runs_per_cycle == 10
 
     def test_rejects_extra_fields(self):
         with pytest.raises(Exception):
@@ -385,44 +385,27 @@ class TestInnerLoopConfig:
 class TestOuterLoopConfig:
     def test_defaults(self):
         c = OuterLoopConfig()
-        assert c.plateau_threshold == 3
-        assert c.max_escalation_cycles is None
+        assert c.max_outer_cycles is None
         assert c.inner_surfaces == []
         assert c.outer_surfaces == []
 
     def test_custom_values(self):
         c = OuterLoopConfig(
-            plateau_threshold=5,
-            max_escalation_cycles=10,
+            max_outer_cycles=10,
             inner_surfaces=["src/*.py"],
             outer_surfaces=["config/*.yaml"],
         )
-        assert c.plateau_threshold == 5
-        assert c.max_escalation_cycles == 10
+        assert c.max_outer_cycles == 10
         assert c.inner_surfaces == ["src/*.py"]
         assert c.outer_surfaces == ["config/*.yaml"]
 
     def test_rejects_extra_fields(self):
         with pytest.raises(Exception):
-            OuterLoopConfig(plateau_threshold=3, extra="bad")
-
-    def test_strict_mode(self):
-        with pytest.raises(Exception):
-            OuterLoopConfig(plateau_threshold="not_an_int")  # type: ignore[arg-type]
-
-    def test_rejects_zero_plateau_threshold(self):
-        """plateau_threshold must be >= 1."""
-        with pytest.raises(Exception):
-            OuterLoopConfig(plateau_threshold=0)
-
-    def test_rejects_negative_plateau_threshold(self):
-        """plateau_threshold must be >= 1."""
-        with pytest.raises(Exception):
-            OuterLoopConfig(plateau_threshold=-1)
+            OuterLoopConfig(extra="bad")  # type: ignore[call-arg]
 
     def test_roundtrip_json(self):
         c = OuterLoopConfig(
-            plateau_threshold=4,
+            max_outer_cycles=4,
             inner_surfaces=["a.py", "b.py"],
             outer_surfaces=["c.py"],
         )
@@ -452,7 +435,7 @@ class TestFactoryConfigInnerOuterLoop:
 
     def test_with_outer_loop(self):
         ol = OuterLoopConfig(
-            plateau_threshold=5,
+            max_outer_cycles=5,
             inner_surfaces=["src/"],
             outer_surfaces=["config/"],
         )
@@ -461,13 +444,12 @@ class TestFactoryConfigInnerOuterLoop:
             eval_threshold=0.8, constraints=[], outer_loop=ol,
         )
         assert config.outer_loop is not None
-        assert config.outer_loop.plateau_threshold == 5
+        assert config.outer_loop.max_outer_cycles == 5
 
     def test_roundtrip_json_with_loops(self):
         il = InnerLoopConfig(runs_per_cycle=5, aggregate=AggregateMethod.all_pass)
         ol = OuterLoopConfig(
-            plateau_threshold=4,
-            max_escalation_cycles=8,
+            max_outer_cycles=8,
             inner_surfaces=["src/model.py"],
             outer_surfaces=["config/"],
         )
@@ -481,7 +463,7 @@ class TestFactoryConfigInnerOuterLoop:
         assert restored.inner_loop is not None
         assert restored.inner_loop.aggregate == AggregateMethod.all_pass
         assert restored.outer_loop is not None
-        assert restored.outer_loop.max_escalation_cycles == 8
+        assert restored.outer_loop.max_outer_cycles == 8
 
 
 class TestCycleStateResearchMode:

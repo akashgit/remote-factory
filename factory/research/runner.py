@@ -303,96 +303,88 @@ def _save_artifacts(run_dir: Path, result: RunResult, config: ResearchTarget) ->
     })
 
 
-# ── multi-run execution ────────────────────────────────────────
+# ── multi-run aggregation ──────────────────────────────────────
+
+
+def aggregate_metric(values: list[float], method: AggregateMethod) -> float:
+    """Compute a single aggregate value from multiple run metrics."""
+    if not values:
+        return 0.0
+    if method == AggregateMethod.mean:
+        return sum(values) / len(values)
+    if method == AggregateMethod.median:
+        s = sorted(values)
+        mid = len(s) // 2
+        if len(s) % 2 == 0:
+            return (s[mid - 1] + s[mid]) / 2
+        return s[mid]
+    if method == AggregateMethod.max:
+        return max(values)
+    # ALL_PASS: worst run determines the aggregate
+    return min(values)
 
 
 async def execute_multi_run(
-    run_cmd: str,
-    config: InnerLoopConfig,
-    *,
-    cwd: Path | None = None,
-) -> float:
-    """Run *run_cmd* ``config.runs_per_cycle`` times and aggregate the scores.
+    project_path: Path,
+    config: ResearchTarget,
+    cycle_id: str,
+    inner_loop: InnerLoopConfig,
+) -> dict:
+    """Execute the run_command N times, aggregate metrics, return extended summary.
 
-    Each invocation must exit 0 and print a single float to stdout (the score).
-    Non-zero exits are treated as score 0.0 for ``mean``/``median``/``max`` and
-    as a failure for ``all_pass``.
-
-    Aggregation methods:
-    - **mean**: arithmetic mean of all scores
-    - **median**: median of all scores
-    - **max**: maximum score
-    - **all_pass**: 1.0 if every run exited 0 with score > 0, else 0.0
-
-    Returns the aggregated score as a float.
+    Returns a dict with top-level ``metric_value`` (aggregate), ``aggregate``
+    method name, and a ``runs`` array with per-run details.
     """
-    import statistics
+    n = inner_loop.runs_per_cycle
+    if inner_loop.max_inner_runs_per_cycle is not None:
+        n = min(n, inner_loop.max_inner_runs_per_cycle)
 
-    n = config.runs_per_cycle
-    scores: list[float] = []
-    all_ok = True
+    runs: list[dict] = []
+    values: list[float] = []
+    total_duration = 0.0
 
-    log.info("multi_run_start", command=run_cmd, runs=n, aggregate=config.aggregate.value)
+    for i in range(1, n + 1):
+        sub_cycle = f"{cycle_id}-run{i}"
+        log.info("multi_run_start", run=i, total=n, sub_cycle=sub_cycle)
+        result = await execute_run(project_path, config, sub_cycle)
+        run_entry = {
+            "run_id": i,
+            "metric_value": result.metric_value,
+            "duration_seconds": result.duration_seconds,
+            "status": result.status.value,
+        }
+        runs.append(run_entry)
+        total_duration += result.duration_seconds
+        if result.status == RunStatus.PASS:
+            values.append(result.metric_value)
 
-    for i in range(n):
-        try:
-            proc = await asyncio.create_subprocess_shell(
-                run_cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
-            stdout_bytes, _ = await asyncio.wait_for(
-                proc.communicate(), timeout=3600
-            )
-        except asyncio.TimeoutError:
-            log.warning("multi_run_timeout", run=i + 1)
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, OSError):
-                proc.kill()
-            await proc.wait()
-            scores.append(0.0)
-            all_ok = False
-            continue
-        except OSError:
-            log.warning("multi_run_os_error", run=i + 1)
-            scores.append(0.0)
-            all_ok = False
-            continue
+    agg_value = aggregate_metric(values, inner_loop.aggregate) if values else 0.0
 
-        if proc.returncode != 0:
-            log.warning("multi_run_nonzero_exit", run=i + 1, returncode=proc.returncode)
-            scores.append(0.0)
-            all_ok = False
-            continue
+    if inner_loop.aggregate == AggregateMethod.all_pass:
+        status = "PASS" if len(values) == n else "FAIL"
+    else:
+        status = "PASS" if values else "FAIL"
 
-        stdout = stdout_bytes.decode(errors="replace").strip()
-        try:
-            score = float(stdout)
-        except ValueError:
-            log.warning("multi_run_parse_error", run=i + 1, stdout=stdout[:200])
-            scores.append(0.0)
-            all_ok = False
-            continue
+    summary = {
+        "status": status,
+        "metric": config.metric,
+        "metric_value": agg_value,
+        "aggregate": inner_loop.aggregate.value,
+        "runs": runs,
+        "duration_seconds": total_duration,
+        "command": config.run_command,
+    }
 
-        scores.append(score)
-        log.debug("multi_run_result", run=i + 1, score=score)
+    run_dir = create_run_dir(project_path, cycle_id)
+    save_run_summary(run_dir, summary)
 
-    if not scores:
-        return 0.0
+    log.info(
+        "multi_run_complete",
+        cycle_id=cycle_id,
+        runs_total=n,
+        runs_passed=len(values),
+        aggregate=inner_loop.aggregate.value,
+        metric_value=agg_value,
+    )
+    return summary
 
-    if config.aggregate == AggregateMethod.mean:
-        agg = statistics.mean(scores)
-    elif config.aggregate == AggregateMethod.median:
-        agg = statistics.median(scores)
-    elif config.aggregate == AggregateMethod.max:
-        agg = max(scores)
-    elif config.aggregate == AggregateMethod.all_pass:
-        agg = 1.0 if all_ok and all(s > 0 for s in scores) else 0.0
-    else:  # pragma: no cover
-        agg = statistics.mean(scores)
-
-    log.info("multi_run_complete", aggregate=config.aggregate.value, result=agg, runs=n)
-    return agg

@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── project state ─────────────────────────────────────────────────
@@ -86,6 +86,43 @@ class ResearchTarget(BaseModel):
     timeout: int = 3600
 
 
+class AggregateMethod(str, Enum):
+    """How to aggregate multiple run metrics into a single value."""
+
+    mean = "mean"
+    median = "median"
+    max = "max"
+    all_pass = "all_pass"
+
+
+class InnerLoopConfig(BaseModel):
+    """Inner loop configuration — controls multi-run execution per cycle."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    runs_per_cycle: int = Field(ge=1, default=1)
+    aggregate: AggregateMethod = AggregateMethod.mean
+    plateau_threshold: int = 3
+    max_inner_runs_per_cycle: int | None = None
+
+    @field_validator("aggregate", mode="before")
+    @classmethod
+    def _coerce_aggregate(cls, v: object) -> AggregateMethod:
+        if isinstance(v, str):
+            return AggregateMethod(v)
+        return v  # type: ignore[return-value]
+
+
+class OuterLoopConfig(BaseModel):
+    """Outer loop configuration — controls what happens when inner loop plateaus."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    max_outer_cycles: int | None = None
+    inner_surfaces: list[str] = []
+    outer_surfaces: list[str] = []
+
+
 class CostBudgetConfig(BaseModel):
     """Per-project cost budget limits for research mode."""
 
@@ -143,36 +180,6 @@ class TierWeights(BaseModel):
     spec_compliance: float | None = None
 
 
-class AggregateMethod(str, Enum):
-    """Aggregation strategy for multi-run inner loop results."""
-
-    mean = "mean"
-    median = "median"
-    max = "max"
-    all_pass = "all_pass"
-
-
-class InnerLoopConfig(BaseModel):
-    """Inner loop (multi-run) configuration for research mode."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    runs_per_cycle: int = Field(default=1, ge=1)
-    aggregate: AggregateMethod = AggregateMethod.mean
-    max_runs_per_cycle: int | None = None
-
-
-class OuterLoopConfig(BaseModel):
-    """Outer loop (escalation) configuration for research mode."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-
-    plateau_threshold: int = Field(default=3, ge=1)
-    max_escalation_cycles: int | None = None
-    inner_surfaces: list[str] = []
-    outer_surfaces: list[str] = []
-
-
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -190,6 +197,8 @@ class FactoryConfig(BaseModel):
     project_eval: list[ProjectEvalDimension] = []
     eval_weights: EvalWeights = EvalWeights()
     research_target: ResearchTarget | None = None
+    inner_loop: InnerLoopConfig | None = None
+    outer_loop: OuterLoopConfig | None = None
     mutable_surfaces: list[str] = []
     fixed_surfaces: list[str] = []
     research_constraints: list[str] = []
@@ -198,8 +207,6 @@ class FactoryConfig(BaseModel):
     eval_spec: list[str] = []
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
-    inner_loop: InnerLoopConfig | None = None
-    outer_loop: OuterLoopConfig | None = None
 
 
 # ── eval ──────────────────────────────────────────────────────────

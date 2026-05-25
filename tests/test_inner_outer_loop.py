@@ -5,12 +5,13 @@ Covers:
 - execute_multi_run() with deterministic commands and all aggregation methods
 - detect_plateau() with various history shapes
 - CheckpointState with new plateau_count and loop_level fields
+- Model validation for InnerLoopConfig, OuterLoopConfig, FactoryConfig
+- Parser tests for _parse_inner_loop, _parse_outer_loop
 """
 
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -23,285 +24,328 @@ from factory.checkpoint import (
 )
 from factory.models import (
     AggregateMethod,
-    ExperimentRecord,
+    FactoryConfig,
     InnerLoopConfig,
+    OuterLoopConfig,
+    ResearchTarget,
 )
-from factory.research.runner import execute_multi_run
-from factory.store import ExperimentStore
-from factory.strategy import detect_plateau
+from factory.research.runner import aggregate_metric, execute_multi_run
+from factory.store import ExperimentStore, _parse_inner_loop, _parse_outer_loop
+from factory.strategy import detect_plateau, detect_research_plateau
 
 
-# ── helpers ─────────────────────────────────────────────────────
+# ── Model validation ────────────────────────────────────────────
 
 
-def _make_record(
-    exp_id: int,
-    score_after: float | None,
-    verdict: str = "keep",
-) -> ExperimentRecord:
-    """Create a minimal ExperimentRecord for plateau detection tests."""
-    return ExperimentRecord(
-        id=exp_id,
-        timestamp=datetime(2026, 1, 1, 0, 0, 0),
-        hypothesis=f"H{exp_id}",
-        change_summary="",
-        issue_number=None,
-        pr_number=None,
-        score_before=None,
-        score_after=score_after,
-        delta=None,
-        verdict=verdict,
-        cost_usd=None,
-        notes="",
-    )
+class TestInnerLoopConfig:
+    def test_defaults(self) -> None:
+        config = InnerLoopConfig()
+        assert config.runs_per_cycle == 1
+        assert config.aggregate == AggregateMethod.mean
+        assert config.plateau_threshold == 3
+        assert config.max_inner_runs_per_cycle is None
 
-
-# ── config round-trip ───────────────────────────────────────────
-
-
-class TestConfigRoundTrip:
-    """factory.md -> reparse_config -> config.json -> read_config round-trip."""
-
-    @pytest.fixture
-    def store(self, tmp_path: Path) -> ExperimentStore:
-        project = tmp_path / "project"
-        project.mkdir()
-        return ExperimentStore(project)
-
-    async def test_roundtrip_with_multi_run_and_surface_scoping(self, store):
-        factory_md = store.project_path / "factory.md"
-        factory_md.write_text(
-            "# Factory\n\n## Goal\nResearch loop test\n\n"
-            "## Scope\n- src/\n\n"
-            "## Guards\n- no deletes\n\n"
-            "## Eval\n```\npython eval.py\n```\n\n"
-            "## Threshold\n0.8\n\n"
-            "## Constraints\n- small changes\n\n"
-            "## Multi-Run\n"
-            "- Runs per cycle: 5\n"
-            "- Aggregate: median\n"
-            "- Max runs per cycle: 10\n\n"
-            "## Surface Scoping\n"
-            "- Plateau threshold: 4\n"
-            "- Max escalation cycles: 8\n"
-            "- Inner surfaces: src/model.py, src/train.py\n"
-            "- Outer surfaces: config/arch.yaml\n"
+    def test_custom_values(self) -> None:
+        config = InnerLoopConfig(
+            runs_per_cycle=5,
+            aggregate=AggregateMethod.median,
+            plateau_threshold=5,
+            max_inner_runs_per_cycle=10,
         )
-        store.factory_dir.mkdir(exist_ok=True)
+        assert config.runs_per_cycle == 5
+        assert config.aggregate == AggregateMethod.median
+        assert config.plateau_threshold == 5
+        assert config.max_inner_runs_per_cycle == 10
 
-        # Step 1: Parse factory.md -> config.json
-        config = await store.reparse_config()
+    def test_extra_fields_forbidden(self) -> None:
+        with pytest.raises(Exception):
+            InnerLoopConfig(runs_per_cycle=1, unknown_field="x")  # type: ignore[call-arg]
 
-        # Step 2: Verify inner_loop
-        assert config.inner_loop is not None
-        assert config.inner_loop.runs_per_cycle == 5
-        assert config.inner_loop.aggregate == AggregateMethod.median
-        assert config.inner_loop.max_runs_per_cycle == 10
+    def test_all_aggregate_methods(self) -> None:
+        for method in AggregateMethod:
+            config = InnerLoopConfig(aggregate=method)
+            assert config.aggregate == method
 
-        # Step 3: Verify outer_loop
-        assert config.outer_loop is not None
-        assert config.outer_loop.plateau_threshold == 4
-        assert config.outer_loop.max_escalation_cycles == 8
-        assert config.outer_loop.inner_surfaces == ["src/model.py", "src/train.py"]
-        assert config.outer_loop.outer_surfaces == ["config/arch.yaml"]
 
-        # Step 4: Read back from config.json
-        loaded = await store.read_config()
-        assert loaded == config
-        assert loaded.inner_loop is not None
-        assert loaded.inner_loop.aggregate == AggregateMethod.median
-        assert loaded.outer_loop is not None
-        assert loaded.outer_loop.plateau_threshold == 4
+class TestOuterLoopConfig:
+    def test_defaults(self) -> None:
+        config = OuterLoopConfig()
+        assert config.max_outer_cycles is None
+        assert config.inner_surfaces == []
+        assert config.outer_surfaces == []
 
-    async def test_roundtrip_without_loops_backward_compat(self, store):
-        factory_md = store.project_path / "factory.md"
-        factory_md.write_text(
-            "# Factory\n\n## Goal\nNormal project\n\n"
-            "## Scope\n- src/\n\n"
-            "## Guards\n\n"
-            "## Eval\n```\npython eval.py\n```\n\n"
-            "## Threshold\n0.8\n\n"
-            "## Constraints\n\n"
+    def test_custom_values(self) -> None:
+        config = OuterLoopConfig(
+            max_outer_cycles=5,
+            inner_surfaces=["prompts/*.md"],
+            outer_surfaces=["src/**/*.py"],
         )
-        store.factory_dir.mkdir(exist_ok=True)
+        assert config.max_outer_cycles == 5
+        assert config.inner_surfaces == ["prompts/*.md"]
+        assert config.outer_surfaces == ["src/**/*.py"]
 
-        config = await store.reparse_config()
+    def test_extra_fields_forbidden(self) -> None:
+        with pytest.raises(Exception):
+            OuterLoopConfig(bad="field")  # type: ignore[call-arg]
+
+
+class TestFactoryConfigWithLoops:
+    def test_inner_loop_none_by_default(self) -> None:
+        config = FactoryConfig(
+            goal="test",
+            scope=[],
+            guards=[],
+            eval_command="echo ok",
+            eval_threshold=0.8,
+            constraints=[],
+        )
         assert config.inner_loop is None
         assert config.outer_loop is None
 
-        loaded = await store.read_config()
-        assert loaded.inner_loop is None
-        assert loaded.outer_loop is None
-
-    async def test_config_json_contains_loop_fields(self, store):
-        factory_md = store.project_path / "factory.md"
-        factory_md.write_text(
-            "# Factory\n\n## Goal\nTest\n\n"
-            "## Scope\n- src/\n\n"
-            "## Guards\n\n"
-            "## Eval\n```\npython eval.py\n```\n\n"
-            "## Threshold\n0.8\n\n"
-            "## Constraints\n\n"
-            "## Multi-Run\n"
-            "- Runs per cycle: 3\n"
-            "- Aggregate: all_pass\n"
+    def test_with_inner_loop(self) -> None:
+        config = FactoryConfig(
+            goal="test",
+            scope=[],
+            guards=[],
+            eval_command="echo ok",
+            eval_threshold=0.8,
+            constraints=[],
+            inner_loop=InnerLoopConfig(runs_per_cycle=3),
         )
-        store.factory_dir.mkdir(exist_ok=True)
-        await store.reparse_config()
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 3
 
-        raw = json.loads((store.factory_dir / "config.json").read_text())
-        assert "inner_loop" in raw
-        assert raw["inner_loop"]["runs_per_cycle"] == 3
-        assert raw["inner_loop"]["aggregate"] == "all_pass"
-        assert raw["outer_loop"] is None
+    def test_with_outer_loop(self) -> None:
+        config = FactoryConfig(
+            goal="test",
+            scope=[],
+            guards=[],
+            eval_command="echo ok",
+            eval_threshold=0.8,
+            constraints=[],
+            outer_loop=OuterLoopConfig(inner_surfaces=["a.md"], outer_surfaces=["b.py"]),
+        )
+        assert config.outer_loop is not None
+        assert config.outer_loop.inner_surfaces == ["a.md"]
 
 
-# ── execute_multi_run ───────────────────────────────────────────
+# ── Parser tests ────────────────────────────────────────────────
+
+
+class TestParseInnerLoop:
+    def test_empty_returns_none(self) -> None:
+        assert _parse_inner_loop([]) is None
+        assert _parse_inner_loop("") is None
+        assert _parse_inner_loop(0.0) is None
+
+    def test_basic_parsing(self) -> None:
+        items = ["runs_per_cycle: 5", "aggregate: median", "plateau_threshold: 4"]
+        result = _parse_inner_loop(items)
+        assert result is not None
+        assert result.runs_per_cycle == 5
+        assert result.aggregate == AggregateMethod.median
+        assert result.plateau_threshold == 4
+        assert result.max_inner_runs_per_cycle is None
+
+    def test_with_max_inner_runs(self) -> None:
+        items = ["runs_per_cycle: 3", "aggregate: max", "max_inner_runs_per_cycle: 10"]
+        result = _parse_inner_loop(items)
+        assert result is not None
+        assert result.runs_per_cycle == 3
+        assert result.aggregate == AggregateMethod.max
+        assert result.max_inner_runs_per_cycle == 10
+
+    def test_defaults_when_partial(self) -> None:
+        items = ["runs_per_cycle: 2"]
+        result = _parse_inner_loop(items)
+        assert result is not None
+        assert result.runs_per_cycle == 2
+        assert result.aggregate == AggregateMethod.mean
+        assert result.plateau_threshold == 3
+
+
+class TestParseOuterLoop:
+    def test_empty_returns_none(self) -> None:
+        assert _parse_outer_loop([]) is None
+        assert _parse_outer_loop("") is None
+        assert _parse_outer_loop(0.0) is None
+
+    def test_basic_parsing(self) -> None:
+        items = [
+            "max_outer_cycles: 5",
+            "inner: prompts/*.md",
+            "inner: config/*.yaml",
+            "outer: src/**/*.py",
+        ]
+        result = _parse_outer_loop(items)
+        assert result is not None
+        assert result.max_outer_cycles == 5
+        assert result.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
+        assert result.outer_surfaces == ["src/**/*.py"]
+
+    def test_surfaces_only(self) -> None:
+        items = ["inner: a.md", "outer: b.py"]
+        result = _parse_outer_loop(items)
+        assert result is not None
+        assert result.max_outer_cycles is None
+        assert result.inner_surfaces == ["a.md"]
+        assert result.outer_surfaces == ["b.py"]
+
+    def test_no_relevant_items_returns_none(self) -> None:
+        items = ["something: else", "random text"]
+        result = _parse_outer_loop(items)
+        assert result is None
+
+
+# ── Aggregation tests ───────────────────────────────────────────
+
+
+class TestAggregateMetric:
+    def test_mean(self) -> None:
+        assert aggregate_metric([0.2, 0.4, 0.6], AggregateMethod.mean) == pytest.approx(0.4)
+
+    def test_median_odd(self) -> None:
+        assert aggregate_metric([0.1, 0.5, 0.9], AggregateMethod.median) == pytest.approx(0.5)
+
+    def test_median_even(self) -> None:
+        assert aggregate_metric([0.2, 0.4, 0.6, 0.8], AggregateMethod.median) == pytest.approx(0.5)
+
+    def test_max(self) -> None:
+        assert aggregate_metric([0.1, 0.3, 0.9], AggregateMethod.max) == pytest.approx(0.9)
+
+    def test_all_pass(self) -> None:
+        assert aggregate_metric([0.5, 0.3, 0.7], AggregateMethod.all_pass) == pytest.approx(0.3)
+
+    def test_empty_returns_zero(self) -> None:
+        assert aggregate_metric([], AggregateMethod.mean) == 0.0
+
+    def test_single_value(self) -> None:
+        for method in AggregateMethod:
+            assert aggregate_metric([0.42], method) == pytest.approx(0.42)
+
+
+# ── Multi-run execution tests ──────────────────────────────────
 
 
 class TestExecuteMultiRun:
-    async def test_mean_aggregation(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.mean)
-        # echo scores: 0.8, 0.8, 0.8 -> mean = 0.8
-        score = await execute_multi_run("echo 0.8", config)
-        assert score == pytest.approx(0.8)
+    async def test_multi_run_aggregates(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory" / "research" / "runs").mkdir(parents=True)
 
-    async def test_median_aggregation(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.median)
-        score = await execute_multi_run("echo 0.5", config)
-        assert score == pytest.approx(0.5)
+        result_file = project / "result.json"
+        result_file.write_text(json.dumps({"score": 0.5}))
 
-    async def test_max_aggregation(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.max)
-        score = await execute_multi_run("echo 0.9", config)
-        assert score == pytest.approx(0.9)
+        script = project / "run.sh"
+        script.write_text("#!/bin/bash\necho '{\"score\": 0.5}' > result.json\n")
+        script.chmod(0o755)
 
-    async def test_all_pass_success(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.all_pass)
-        score = await execute_multi_run("echo 1.0", config)
-        assert score == 1.0
+        config = ResearchTarget(
+            objective="test",
+            metric="score",
+            target=1.0,
+            run_command=f"bash {script}",
+            result_path="result.json",
+            timeout=30,
+        )
+        inner = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.mean)
 
-    async def test_all_pass_failure(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.all_pass)
-        score = await execute_multi_run("exit 1", config)
-        assert score == 0.0
+        summary = await execute_multi_run(project, config, "cycle-001", inner)
 
-    async def test_single_run(self) -> None:
-        config = InnerLoopConfig(runs_per_cycle=1, aggregate=AggregateMethod.mean)
-        score = await execute_multi_run("echo 0.95", config)
-        assert score == pytest.approx(0.95)
+        assert summary["aggregate"] == "mean"
+        assert len(summary["runs"]) == 3
+        assert "metric_value" in summary
+        assert summary["duration_seconds"] > 0
 
-    async def test_nonzero_exit_contributes_zero(self) -> None:
-        """Non-zero exits produce 0.0 scores for mean/median/max."""
-        config = InnerLoopConfig(runs_per_cycle=1, aggregate=AggregateMethod.mean)
-        score = await execute_multi_run("exit 1", config)
-        assert score == 0.0
+    async def test_multi_run_respects_max_cap(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory" / "research" / "runs").mkdir(parents=True)
 
-    async def test_unparseable_output(self) -> None:
-        """Non-numeric stdout produces 0.0 score."""
-        config = InnerLoopConfig(runs_per_cycle=1, aggregate=AggregateMethod.mean)
-        score = await execute_multi_run("echo not_a_number", config)
-        assert score == 0.0
+        result_file = project / "result.json"
+        result_file.write_text(json.dumps({"score": 0.5}))
 
-    async def test_all_pass_zero_score(self) -> None:
-        """all_pass fails when a run outputs 0 (score not > 0)."""
-        config = InnerLoopConfig(runs_per_cycle=2, aggregate=AggregateMethod.all_pass)
-        score = await execute_multi_run("echo 0", config)
-        assert score == 0.0
+        script = project / "run.sh"
+        script.write_text("#!/bin/bash\necho '{\"score\": 0.5}' > result.json\n")
+        script.chmod(0o755)
 
-    async def test_cwd_parameter(self, tmp_path: Path) -> None:
-        """cwd parameter is passed to subprocess."""
-        config = InnerLoopConfig(runs_per_cycle=1, aggregate=AggregateMethod.mean)
-        score = await execute_multi_run("echo 0.75", config, cwd=tmp_path)
-        assert score == pytest.approx(0.75)
+        config = ResearchTarget(
+            objective="test",
+            metric="score",
+            target=1.0,
+            run_command=f"bash {script}",
+            result_path="result.json",
+            timeout=30,
+        )
+        inner = InnerLoopConfig(
+            runs_per_cycle=10,
+            aggregate=AggregateMethod.max,
+            max_inner_runs_per_cycle=2,
+        )
+
+        summary = await execute_multi_run(project, config, "cycle-002", inner)
+        assert len(summary["runs"]) == 2
 
 
-# ── detect_plateau ──────────────────────────────────────────────
+# ── Plateau detection tests ────────────────────────────────────
 
 
-class TestDetectPlateau:
-    def test_empty_history(self) -> None:
-        assert detect_plateau([], threshold=3) is False
+class TestDetectResearchPlateau:
+    def test_not_enough_data(self) -> None:
+        summaries = [{"metric_value": 0.5}, {"metric_value": 0.5}]
+        assert detect_research_plateau(summaries, threshold=3) is False
 
-    def test_below_threshold(self) -> None:
-        history = [_make_record(1, 0.5), _make_record(2, 0.5)]
-        assert detect_plateau(history, threshold=3) is False
-
-    def test_at_threshold_no_plateau(self) -> None:
-        """Three experiments with continuous improvement = no plateau."""
-        history = [
-            _make_record(1, 0.5),
-            _make_record(2, 0.6),
-            _make_record(3, 0.7),
+    def test_plateau_detected(self) -> None:
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
         ]
-        assert detect_plateau(history, threshold=3) is False
+        assert detect_research_plateau(summaries, threshold=3) is True
 
-    def test_at_threshold_with_plateau(self) -> None:
-        """Three experiments where last 3 show no improvement."""
-        history = [
-            _make_record(1, 0.8),
-            _make_record(2, 0.7),
-            _make_record(3, 0.75),
-            _make_record(4, 0.78),
+    def test_no_plateau_with_improvement(self) -> None:
+        summaries = [
+            {"metric_value": 0.3},
+            {"metric_value": 0.4},
+            {"metric_value": 0.5},
+            {"metric_value": 0.6},
         ]
-        # After record 1 (best=0.8), records 2, 3, 4 never exceed 0.8
-        # streak = 3 >= threshold=3
-        assert detect_plateau(history, threshold=3) is True
+        assert detect_research_plateau(summaries, threshold=3) is False
 
-    def test_above_threshold(self) -> None:
-        """Five flat experiments with threshold=3 => plateau."""
-        history = [
-            _make_record(1, 0.5),
-            _make_record(2, 0.5),
-            _make_record(3, 0.5),
-            _make_record(4, 0.5),
-            _make_record(5, 0.5),
+    def test_plateau_with_stagnation_after_improvement(self) -> None:
+        summaries = [
+            {"metric_value": 0.3},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
         ]
-        assert detect_plateau(history, threshold=3) is True
-
-    def test_improvement_resets_streak(self) -> None:
-        """A late improvement resets the no-improvement streak."""
-        history = [
-            _make_record(1, 0.5),
-            _make_record(2, 0.5),  # no improvement
-            _make_record(3, 0.5),  # no improvement
-            _make_record(4, 0.6),  # improvement! resets streak
-            _make_record(5, 0.55),  # no improvement (streak=1)
-        ]
-        assert detect_plateau(history, threshold=3) is False
-
-    def test_none_scores_skipped(self) -> None:
-        """Records with score_after=None are excluded from plateau analysis."""
-        history = [
-            _make_record(1, 0.5),
-            _make_record(2, None),
-            _make_record(3, 0.5),
-            _make_record(4, None),
-            _make_record(5, 0.5),
-        ]
-        # Only 3 scored records: [0.5, 0.5, 0.5]
-        # After first (best=0.5), two non-improvements -> streak=2 < threshold=3
-        assert detect_plateau(history, threshold=3) is False
+        assert detect_research_plateau(summaries, threshold=3) is True
 
     def test_custom_threshold(self) -> None:
-        """Plateau detected with custom threshold=2."""
-        history = [
-            _make_record(1, 0.5),
-            _make_record(2, 0.5),
-            _make_record(3, 0.5),
+        summaries = [
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
+            {"metric_value": 0.5},
         ]
-        assert detect_plateau(history, threshold=2) is True
+        assert detect_research_plateau(summaries, threshold=2) is True
 
-    def test_single_record(self) -> None:
-        """Single record is never a plateau."""
-        assert detect_plateau([_make_record(1, 0.5)], threshold=1) is False
+    def test_improvement_in_window_breaks_plateau(self) -> None:
+        summaries = [
+            {"metric_value": 0.3},
+            {"metric_value": 0.3},
+            {"metric_value": 0.3},
+            {"metric_value": 0.4},
+        ]
+        assert detect_research_plateau(summaries, threshold=3) is False
 
 
-# ── checkpoint extensions ───────────────────────────────────────
+# ── Checkpoint extension tests ──────────────────────────────────
 
 
-class TestCheckpointExtensions:
-    def test_new_fields_defaults(self) -> None:
+class TestCheckpointStateExtension:
+    def test_default_values(self) -> None:
         state = CheckpointState(
             mode="research",
             active_experiment_id=None,
@@ -309,25 +353,46 @@ class TestCheckpointExtensions:
             pending_agents=[],
             last_eval_scores={},
             current_hypothesis=None,
-            timestamp="2026-05-24T00:00:00",
+            timestamp="2026-01-01T00:00:00Z",
         )
         assert state.plateau_count == 0
         assert state.loop_level == "inner"
 
-    def test_new_fields_custom(self) -> None:
+    def test_custom_values(self) -> None:
         state = CheckpointState(
             mode="research",
-            active_experiment_id=5,
-            completed_agents=["researcher"],
+            active_experiment_id=1,
+            completed_agents=["baseline"],
             pending_agents=["builder"],
-            last_eval_scores={"accuracy": 0.85},
-            current_hypothesis="Try larger model",
+            last_eval_scores={"score": 0.5},
+            current_hypothesis="test",
+            timestamp="2026-01-01T00:00:00Z",
+            plateau_count=2,
+            loop_level="outer",
+        )
+        assert state.plateau_count == 2
+        assert state.loop_level == "outer"
+
+    def test_serialization_roundtrip(self) -> None:
+        state = CheckpointState(
+            mode="research",
+            active_experiment_id=None,
+            completed_agents=[],
+            pending_agents=[],
+            last_eval_scores={},
+            current_hypothesis=None,
+            timestamp="2026-01-01T00:00:00Z",
             plateau_count=3,
             loop_level="outer",
-            timestamp="2026-05-24T12:00:00",
         )
-        assert state.plateau_count == 3
-        assert state.loop_level == "outer"
+        data = json.loads(state.model_dump_json())
+        restored = CheckpointState.model_validate(data)
+        assert restored.plateau_count == 3
+        assert restored.loop_level == "outer"
+
+
+class TestCheckpointSaveLoadFormat:
+    """Tests for save/load roundtrip, backward compat, and format_checkpoint."""
 
     def test_save_load_roundtrip_with_new_fields(self, tmp_path: Path) -> None:
         project = tmp_path / "project"
@@ -421,3 +486,76 @@ class TestCheckpointExtensions:
                 loop_level="invalid",
                 timestamp="2026-05-24T00:00:00",
             )
+
+
+# ── Integration: factory.md -> config.json -> FactoryConfig ──────
+
+
+class TestFactoryMdRoundTrip:
+    async def test_inner_loop_roundtrip(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        factory_md = project / "factory.md"
+        factory_md.write_text(
+            "## Goal\nTest project\n\n"
+            "## Scope\n### Modifiable\n- src/*.py\n\n"
+            "## Guards\n- no secrets\n\n"
+            "## Eval\n### Command\n```bash\necho ok\n```\n\n"
+            "### Threshold\n0.8\n\n"
+            "## Constraints\n- be careful\n\n"
+            "## Inner Loop\n"
+            "- runs_per_cycle: 5\n"
+            "- aggregate: median\n"
+            "- plateau_threshold: 4\n\n"
+            "## Outer Loop Surfaces\n"
+            "- max_outer_cycles: 3\n"
+            "- inner: prompts/*.md\n"
+            "- outer: src/**/*.py\n"
+            "- outer: agents/**/*.md\n"
+        )
+
+        store = ExperimentStore(project)
+        config = await store.reparse_config()
+
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 5
+        assert config.inner_loop.aggregate == AggregateMethod.median
+        assert config.inner_loop.plateau_threshold == 4
+
+        assert config.outer_loop is not None
+        assert config.outer_loop.max_outer_cycles == 3
+        assert config.outer_loop.inner_surfaces == ["prompts/*.md"]
+        assert config.outer_loop.outer_surfaces == ["src/**/*.py", "agents/**/*.md"]
+
+        config_json = json.loads((project / ".factory" / "config.json").read_text())
+        assert config_json["inner_loop"]["runs_per_cycle"] == 5
+        assert config_json["outer_loop"]["outer_surfaces"] == ["src/**/*.py", "agents/**/*.md"]
+
+        restored = FactoryConfig(**config_json)
+        assert restored.inner_loop is not None
+        assert restored.inner_loop.aggregate == AggregateMethod.median
+        assert restored.outer_loop is not None
+        assert restored.outer_loop.max_outer_cycles == 3
+
+    async def test_no_loop_config_roundtrip(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        factory_md = project / "factory.md"
+        factory_md.write_text(
+            "## Goal\nTest project\n\n"
+            "## Scope\n### Modifiable\n- src/*.py\n\n"
+            "## Guards\n- no secrets\n\n"
+            "## Eval\n### Command\n```bash\necho ok\n```\n\n"
+            "### Threshold\n0.8\n\n"
+            "## Constraints\n- be careful\n"
+        )
+
+        store = ExperimentStore(project)
+        config = await store.reparse_config()
+
+        assert config.inner_loop is None
+        assert config.outer_loop is None

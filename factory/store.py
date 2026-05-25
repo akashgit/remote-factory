@@ -136,6 +136,61 @@ def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | Non
     return budget
 
 
+def _parse_inner_loop(items: str | list[str] | float) -> InnerLoopConfig | None:
+    """Parse inner loop key-value block from factory.md."""
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+    config = InnerLoopConfig(
+        runs_per_cycle=int(str(kv.get("runs_per_cycle", "1"))),
+        aggregate=AggregateMethod(str(kv.get("aggregate", "mean"))),
+        plateau_threshold=int(str(kv.get("plateau_threshold", "3"))),
+        max_inner_runs_per_cycle=(
+            int(str(kv["max_inner_runs_per_cycle"]))
+            if "max_inner_runs_per_cycle" in kv
+            else None
+        ),
+    )
+    log.debug("inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate.value)
+    return config
+
+
+def _parse_outer_loop(items: str | list[str] | float) -> OuterLoopConfig | None:
+    """Parse outer loop surfaces key-value block from factory.md.
+
+    Supports both key-value pairs (max_outer_cycles) and plain list items
+    prefixed with 'inner:' or 'outer:' for surface declarations.
+    """
+    if not isinstance(items, list):
+        return None
+    max_outer_cycles: int | None = None
+    inner_surfaces: list[str] = []
+    outer_surfaces: list[str] = []
+    for item in items:
+        s = str(item).strip()
+        if s.startswith("max_outer_cycles:"):
+            val = s.split(":", 1)[1].strip()
+            max_outer_cycles = int(val) if val else None
+        elif s.startswith("inner:"):
+            inner_surfaces.append(s.split(":", 1)[1].strip())
+        elif s.startswith("outer:"):
+            outer_surfaces.append(s.split(":", 1)[1].strip())
+    if not inner_surfaces and not outer_surfaces and max_outer_cycles is None:
+        return None
+    config = OuterLoopConfig(
+        max_outer_cycles=max_outer_cycles,
+        inner_surfaces=inner_surfaces,
+        outer_surfaces=outer_surfaces,
+    )
+    log.debug(
+        "outer_loop_parsed",
+        max_outer_cycles=config.max_outer_cycles,
+        inner_count=len(config.inner_surfaces),
+        outer_count=len(config.outer_surfaces),
+    )
+    return config
+
+
 def _parse_hard_constraints(items: str | list[str] | float) -> list[HardConstraint]:
     """Parse hard constraint entries from factory.md.
 
@@ -174,102 +229,6 @@ def _parse_tier_weights(items: str | list[str] | float) -> TierWeights | None:
     if not filtered:
         return None
     return TierWeights(**filtered)
-
-
-def _parse_inner_loop(text: str) -> InnerLoopConfig | None:
-    """Parse ``## Multi-Run`` section from factory.md into an InnerLoopConfig.
-
-    Expected list items: ``runs_per_cycle``, ``aggregate``, ``max_runs_per_cycle``.
-    Returns None when the section is absent or contains no recognised keys.
-    """
-    # Extract the ## Multi-Run section from the full factory.md text
-    match = re.search(
-        r"^##\s+Multi[_\s-]?Run\b(.*?)(?=^##\s|\Z)",
-        text,
-        re.MULTILINE | re.DOTALL | re.IGNORECASE,
-    )
-    if not match:
-        return None
-
-    section = match.group(1)
-    items: list[str] = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            items.append(stripped[2:].strip())
-
-    kv = _parse_kv_list(items, str)
-    if not kv:
-        return None
-
-    kwargs: dict[str, object] = {}
-    if "runs_per_cycle" in kv:
-        kwargs["runs_per_cycle"] = int(str(kv["runs_per_cycle"]))
-    if "aggregate" in kv:
-        agg_val = str(kv["aggregate"]).strip().lower()
-        kwargs["aggregate"] = AggregateMethod(agg_val)
-    if "max_runs_per_cycle" in kv:
-        kwargs["max_runs_per_cycle"] = int(str(kv["max_runs_per_cycle"]))
-
-    if not kwargs:
-        return None
-
-    config = InnerLoopConfig(**kwargs)  # type: ignore[arg-type]
-    log.debug("inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate)
-    return config
-
-
-def _parse_outer_loop(text: str) -> OuterLoopConfig | None:
-    """Parse ``## Surface Scoping`` section from factory.md into an OuterLoopConfig.
-
-    Expected list items: ``plateau_threshold``, ``max_escalation_cycles``,
-    ``inner_surfaces``, ``outer_surfaces``.
-    Returns None when the section is absent or contains no recognised keys.
-    """
-    match = re.search(
-        r"^##\s+Surface[_\s-]?Scoping\b(.*?)(?=^##\s|\Z)",
-        text,
-        re.MULTILINE | re.DOTALL | re.IGNORECASE,
-    )
-    if not match:
-        return None
-
-    section = match.group(1)
-    items: list[str] = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("- "):
-            items.append(stripped[2:].strip())
-
-    kv = _parse_kv_list(items, str)
-    if not kv:
-        return None
-
-    kwargs: dict[str, object] = {}
-    if "plateau_threshold" in kv:
-        kwargs["plateau_threshold"] = int(str(kv["plateau_threshold"]))
-    if "max_escalation_cycles" in kv:
-        kwargs["max_escalation_cycles"] = int(str(kv["max_escalation_cycles"]))
-
-    # inner_surfaces and outer_surfaces are comma-separated lists
-    if "inner_surfaces" in kv:
-        raw = str(kv["inner_surfaces"])
-        kwargs["inner_surfaces"] = [s.strip() for s in raw.split(",") if s.strip()]
-    if "outer_surfaces" in kv:
-        raw = str(kv["outer_surfaces"])
-        kwargs["outer_surfaces"] = [s.strip() for s in raw.split(",") if s.strip()]
-
-    if not kwargs:
-        return None
-
-    config = OuterLoopConfig(**kwargs)  # type: ignore[arg-type]
-    log.debug(
-        "outer_loop_parsed",
-        plateau_threshold=config.plateau_threshold,
-        inner_count=len(config.inner_surfaces),
-        outer_count=len(config.outer_surfaces),
-    )
-    return config
 
 
 class ExperimentStore:
@@ -318,6 +277,9 @@ class ExperimentStore:
             "threshold": "eval_threshold",
             "modifiable": "scope",
             "read_only": "read_only",
+            "multi-run": "inner_loop",
+            "multi_run": "inner_loop",
+            "surface_scoping": "outer_loop_surfaces",
         }
 
         def _flush_list() -> None:
@@ -372,6 +334,8 @@ class ExperimentStore:
         smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
 
         research_target = _parse_research_target(parsed.get("research_target", []))
+        inner_loop = _parse_inner_loop(parsed.get("inner_loop", []))
+        outer_loop = _parse_outer_loop(parsed.get("outer_loop_surfaces", []))
         cost_budget = _parse_cost_budget(parsed.get("cost_budget", []))
 
         mutable_raw = parsed.get("mutable_surfaces", [])
@@ -385,8 +349,6 @@ class ExperimentStore:
         eval_spec = list(es_raw) if isinstance(es_raw, list) else []
         hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
         growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
-        inner_loop = _parse_inner_loop(text)
-        outer_loop = _parse_outer_loop(text)
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -401,6 +363,8 @@ class ExperimentStore:
             project_eval=project_eval_dims,
             eval_weights=EvalWeights(**weights_kwargs) if weights_kwargs else EvalWeights(),  # type: ignore[arg-type]
             research_target=research_target,
+            inner_loop=inner_loop,
+            outer_loop=outer_loop,
             mutable_surfaces=mutable_surfaces,
             fixed_surfaces=fixed_surfaces,
             research_constraints=research_constraints,
@@ -409,8 +373,6 @@ class ExperimentStore:
             eval_spec=eval_spec,
             hygiene_weights=hygiene_tier_weights,
             growth_weights=growth_tier_weights,
-            inner_loop=inner_loop,
-            outer_loop=outer_loop,
         )
 
         (self.factory_dir / "config.json").write_text(

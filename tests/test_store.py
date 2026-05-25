@@ -539,14 +539,14 @@ class TestParseInnerLoop:
             "## Multi-Run\n"
             "- Runs per cycle: 5\n"
             "- Aggregate: median\n"
-            "- Max runs per cycle: 10\n"
+            "- Max inner runs per cycle: 10\n"
         )
         store.factory_dir.mkdir(exist_ok=True)
         config = await store.reparse_config()
         assert config.inner_loop is not None
         assert config.inner_loop.runs_per_cycle == 5
         assert config.inner_loop.aggregate.value == "median"
-        assert config.inner_loop.max_runs_per_cycle == 10
+        assert config.inner_loop.max_inner_runs_per_cycle == 10
 
     async def test_parse_inner_loop_defaults(self, store):
         factory_md = store.project_path / "factory.md"
@@ -565,7 +565,7 @@ class TestParseInnerLoop:
         assert config.inner_loop is not None
         assert config.inner_loop.runs_per_cycle == 3
         assert config.inner_loop.aggregate.value == "mean"  # default
-        assert config.inner_loop.max_runs_per_cycle is None  # default
+        assert config.inner_loop.max_inner_runs_per_cycle is None  # default
 
     async def test_no_inner_loop_section(self, store):
         factory_md = store.project_path / "factory.md"
@@ -601,7 +601,7 @@ class TestParseInnerLoop:
 
 
 class TestParseOuterLoop:
-    """Tests for parsing ## Surface Scoping section from factory.md."""
+    """Tests for parsing ## Outer Loop Surfaces / ## Surface Scoping section from factory.md."""
 
     async def test_parse_outer_loop(self, store):
         factory_md = store.project_path / "factory.md"
@@ -612,17 +612,17 @@ class TestParseOuterLoop:
             "## Eval\n```\npython eval.py\n```\n\n"
             "## Threshold\n0.8\n\n"
             "## Constraints\n\n"
-            "## Surface Scoping\n"
-            "- Plateau threshold: 5\n"
-            "- Max escalation cycles: 10\n"
-            "- Inner surfaces: src/model.py, src/train.py\n"
-            "- Outer surfaces: config/hyperparams.yaml, config/arch.yaml\n"
+            "## Outer Loop Surfaces\n"
+            "- max_outer_cycles: 10\n"
+            "- inner: src/model.py\n"
+            "- inner: src/train.py\n"
+            "- outer: config/hyperparams.yaml\n"
+            "- outer: config/arch.yaml\n"
         )
         store.factory_dir.mkdir(exist_ok=True)
         config = await store.reparse_config()
         assert config.outer_loop is not None
-        assert config.outer_loop.plateau_threshold == 5
-        assert config.outer_loop.max_escalation_cycles == 10
+        assert config.outer_loop.max_outer_cycles == 10
         assert config.outer_loop.inner_surfaces == ["src/model.py", "src/train.py"]
         assert config.outer_loop.outer_surfaces == ["config/hyperparams.yaml", "config/arch.yaml"]
 
@@ -649,16 +649,35 @@ class TestParseOuterLoop:
             "## Eval\n```\npython eval.py\n```\n\n"
             "## Threshold\n0.8\n\n"
             "## Constraints\n\n"
-            "## Surface Scoping\n"
-            "- Plateau threshold: 4\n"
+            "## Outer Loop Surfaces\n"
+            "- max_outer_cycles: 4\n"
         )
         store.factory_dir.mkdir(exist_ok=True)
         config = await store.reparse_config()
         assert config.outer_loop is not None
-        assert config.outer_loop.plateau_threshold == 4
-        assert config.outer_loop.max_escalation_cycles is None
+        assert config.outer_loop.max_outer_cycles == 4
         assert config.outer_loop.inner_surfaces == []
         assert config.outer_loop.outer_surfaces == []
+
+    async def test_surface_scoping_alias(self, store):
+        """## Surface Scoping is an alias for ## Outer Loop Surfaces."""
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Surface Scoping\n"
+            "- inner: src/model.py\n"
+            "- outer: config/\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.outer_loop is not None
+        assert config.outer_loop.inner_surfaces == ["src/model.py"]
+        assert config.outer_loop.outer_surfaces == ["config/"]
 
     async def test_both_loops_together(self, store):
         factory_md = store.project_path / "factory.md"
@@ -669,20 +688,20 @@ class TestParseOuterLoop:
             "## Eval\n```\npython eval.py\n```\n\n"
             "## Threshold\n0.8\n\n"
             "## Constraints\n\n"
-            "## Multi-Run\n"
-            "- Runs per cycle: 3\n"
-            "- Aggregate: mean\n\n"
-            "## Surface Scoping\n"
-            "- Plateau threshold: 5\n"
-            "- Inner surfaces: src/model.py\n"
-            "- Outer surfaces: config/\n"
+            "## Inner Loop\n"
+            "- runs_per_cycle: 3\n"
+            "- aggregate: mean\n\n"
+            "## Outer Loop Surfaces\n"
+            "- max_outer_cycles: 5\n"
+            "- inner: src/model.py\n"
+            "- outer: config/\n"
         )
         store.factory_dir.mkdir(exist_ok=True)
         config = await store.reparse_config()
         assert config.inner_loop is not None
         assert config.inner_loop.runs_per_cycle == 3
         assert config.outer_loop is not None
-        assert config.outer_loop.plateau_threshold == 5
+        assert config.outer_loop.max_outer_cycles == 5
 
 
 class TestEnsureFactoryDir:
