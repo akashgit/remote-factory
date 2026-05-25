@@ -10,6 +10,7 @@ import re
 import shlex
 import signal
 import subprocess
+import structlog
 import sys
 import tempfile
 import threading
@@ -565,8 +566,6 @@ def _welcome_wizard() -> int:
         and not _safe_is_file(_expanded_check)
         and not _is_github_url(user_input)
     ):
-        import structlog
-
         log = structlog.get_logger()
         wizard_file = Path("~/.factory/wizard_input.md").expanduser()
         wizard_file.parent.mkdir(parents=True, exist_ok=True)
