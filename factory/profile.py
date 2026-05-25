@@ -41,14 +41,26 @@ def _read_events_jsonl(project_path: Path) -> str:
         return ""
 
 
-def _read_auto_memory() -> str:
+def _read_auto_memory(project_paths: list[Path] | None = None) -> str:
     memory_base = Path.home() / ".claude" / "projects"
     if not memory_base.is_dir():
         return ""
+
+    allowed_prefixes: set[str] | None = None
+    if project_paths:
+        allowed_prefixes = set()
+        for pp in project_paths:
+            encoded = "-" + str(pp.resolve()).replace("/", "-")
+            allowed_prefixes.add(encoded)
+
     chunks: list[str] = []
     total = 0
     try:
         for memory_dir in sorted(memory_base.iterdir()):
+            if allowed_prefixes is not None and not any(
+                memory_dir.name.startswith(prefix) for prefix in allowed_prefixes
+            ):
+                continue
             mem_sub = memory_dir / "memory"
             if not mem_sub.is_dir():
                 continue
@@ -125,7 +137,7 @@ def collect_evidence(project_paths: list[Path]) -> dict[str, str]:
     return {
         "experiment_history": _truncate("\n\n".join(experiment_parts)),
         "ceo_verdicts": _truncate("\n\n".join(verdict_parts)),
-        "auto_memory": _read_auto_memory(),
+        "auto_memory": _read_auto_memory(project_paths),
         "strategy_observations": _truncate("\n\n".join(strategy_parts)),
         "ace_playbooks": _read_ace_playbooks(),
     }

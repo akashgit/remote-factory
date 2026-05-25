@@ -36,10 +36,10 @@ class TestResolvePromptWithProfile:
         with patch("factory.profile._PROFILE_PATH", profile_path), \
              patch("factory.ace.injector.load_playbook", return_value="DO: write tests"):
             prompt = resolve_prompt("ceo", use_profile=True)
-        if "Behavioral Playbook" in prompt:
-            playbook_idx = prompt.index("Behavioral Playbook")
-            profile_idx = prompt.index("User Profile")
-            assert profile_idx > playbook_idx
+        assert "Behavioral Playbook" in prompt
+        playbook_idx = prompt.index("Behavioral Playbook")
+        profile_idx = prompt.index("User Profile")
+        assert profile_idx > playbook_idx
 
 
 class TestSaveReview:

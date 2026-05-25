@@ -1965,6 +1965,9 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
         runner_name = _resolve_runner(args)
         profile_text = _run(synthesize_profile(evidence, runner_name))
+        if profile_text.startswith("Profile synthesis failed"):
+            print(profile_text, file=sys.stderr)
+            return 1
         source_names = [p.name for p in project_paths]
         path = save_profile(profile_text, source_names, runner_name or "claude")
         print(f"Profile written to {path}")
@@ -3436,7 +3439,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Project paths to collect evidence from (default: all registered)")
     p_build.add_argument("--dry-run", action="store_true", default=False,
                          help="Print collected evidence without running LLM synthesis")
-    p_build.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p_build.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
                          help="CLI backend to use for synthesis")
     profile_sub.add_parser("show", help="Print the current user profile")
 
