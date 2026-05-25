@@ -1143,7 +1143,19 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2c. Create GitHub Issue
 
-For **code-only** hypotheses (`**Type:** code` or no Type field):
+**Pre-check: Reuse existing issues before creating new ones.**
+
+Before creating a new issue, check if the hypothesis text or the backlog item tag references an existing issue number (patterns: `#NNN`, `issue #NNN`, `Addresses: #NNN`, `Addresses #NNN`).
+
+1. Parse the hypothesis text and the `**Backlog item:**` tag (if present) for issue references matching `#[0-9]+`
+2. If a reference is found, verify the issue is open:
+   ```bash
+   gh issue view <number> --json state --jq '.state'
+   ```
+3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number and **skip issue creation entirely**
+4. Only create a new issue if no existing open reference is found
+
+For **code-only** hypotheses (`**Type:** code` or no Type field), when no existing issue is found:
 
 ```bash
 gh issue create \
@@ -1164,7 +1176,7 @@ gh issue create \
 - Do NOT touch files outside declared scope"
 ```
 
-For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), add execution sections:
+For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), when no existing issue is found, add execution sections:
 
 ```bash
 gh issue create \
@@ -2058,6 +2070,20 @@ factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 Save the printed experiment ID as `$EXP_ID`.
+
+**Pre-check: Reuse existing issues before creating new ones.**
+
+Before creating a new issue, check if the hypothesis text references an existing issue number (patterns: `#NNN`, `issue #NNN`, `Addresses: #NNN`, `Addresses #NNN`).
+
+1. Parse the hypothesis text for issue references matching `#[0-9]+`
+2. If a reference is found, verify the issue is open:
+   ```bash
+   gh issue view <number> --json state --jq '.state'
+   ```
+3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number and **skip issue creation entirely**
+4. Only create a new issue if no existing open reference is found
+
+When no existing issue is found:
 
 ```bash
 gh issue create \
