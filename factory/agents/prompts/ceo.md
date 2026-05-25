@@ -456,7 +456,10 @@ Raw idea: <RAW_IDEA>
 
 This is a research project. You MUST include the Research Configuration section
 in your output with all fields filled (Research Target, Mutable Surfaces, Fixed
-Surfaces, Research Constraints, Cost Budget).
+Surfaces, Research Constraints, Cost Budget). If the harness is stochastic,
+include the Multi-Run section. If the project has a two-tier surface structure
+(narrow surfaces to try first, wider surfaces to unlock after plateau), include
+the Surface Scoping section.
 
 Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
 
@@ -472,6 +475,28 @@ Read `.factory/reviews/distiller-latest.md` and assess the draft:
 - Are features specific enough for a Builder agent?
 
 Write your review to `.factory/reviews/ceo-verdict-distiller.md`.
+
+### I1v: Research Config Validation (Research Ideation Only)
+
+If this is research ideation (`## Research Ideation Mode`), programmatically validate the Research Configuration from the Distiller's output before presenting to the user:
+
+1. **Run command check:** Verify the `Run Command` field specifies an executable command. If the project directory already exists, check that the command's entry point is present (e.g., the script file exists). Flag as ERROR if the run command is empty or references a clearly non-existent path.
+
+2. **Surface pattern validation:** For each glob pattern in Mutable Surfaces and Fixed Surfaces (and Inner/Outer Surfaces if Surface Scoping is included), check that the patterns match actual files in the project directory (if it exists). Flag as WARNING if a pattern matches zero files — it may be intentional for a new project, but the user should confirm.
+
+3. **Surface overlap check:** Verify there is no overlap between `Mutable Surfaces` and `Fixed Surfaces`. If Surface Scoping is configured, also verify no overlap between `Inner Surfaces` and `Outer Surfaces`. Flag as ERROR if any file would appear in both sets — the constraint system requires unambiguous classification.
+
+4. **Present validation results alongside the spec:** When presenting to the user (step I2), include any validation errors or warnings:
+   ```
+   RESEARCH CONFIG VALIDATION:
+   - [ERROR] Run command 'python benchmark.py' — file not found (will be created during build)
+   - [WARNING] Mutable surface 'prompts/*.md' matches 0 files (new project — expected)
+   - [OK] No overlap between mutable and fixed surfaces
+   ```
+
+5. **Re-validate after each Distiller iteration.** When the Distiller produces an updated draft (step I3), re-run this validation on the new output before returning to I2.
+
+If validation finds ERRORs, do NOT block — present them to the user as warnings. The project may not exist yet, so missing files are expected. The user decides whether to fix them or proceed.
 
 ### I2: Present to User
 
@@ -526,7 +551,7 @@ Read the full research report at .factory/strategy/research.md for context.
 Produce a complete updated specification." --project "$PROJECT_PATH" --timeout 300
 ```
 
-Read the Distiller's output and return to **I2** (present the updated draft to the user).
+Read the Distiller's output and return to **I1v** (re-validate the research config if in research ideation mode, then present the updated draft to the user at I2).
 
 ### I4: Finalize and Transition
 
@@ -892,7 +917,9 @@ Eval dimensions have been auto-discovered. Verify they work and mark as reviewed
    - Copy Fixed Surfaces patterns to `## Fixed Surfaces`
    - Copy Research Constraints to `## Research Constraints`
    - Copy Cost Budget to `## Cost Budget`
-   After `factory init`, the config parser will read these sections and populate `config.json` with `research_target`, `mutable_surfaces`, `fixed_surfaces`, etc.
+   - If the spec includes a `### Multi-Run` section, copy its fields (runs_per_cycle, aggregate, max_runs_per_cycle) to `## Multi-Run` in `factory.md`
+   - If the spec includes a `### Surface Scoping` section, copy its fields (plateau_threshold, max_escalation_cycles, inner_surfaces, outer_surfaces) to `## Surface Scoping` in `factory.md`
+   After `factory init`, the config parser will read these sections and populate `config.json` with `research_target`, `mutable_surfaces`, `fixed_surfaces`, etc. If Multi-Run or Surface Scoping sections are present, they will be parsed into the corresponding config fields when the Python infrastructure supports them.
 
 5. Initialize the factory store:
    ```bash
@@ -2090,6 +2117,22 @@ factory finalize "$PROJECT_PATH" \
     --issue $ISSUE_NUM \
     --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION"
 ```
+
+#### R5d.5. Plateau Detection and Surface Scope Expansion
+
+If Surface Scoping is configured in the research config (`.factory/config.json` contains `surface_scoping` with `inner_surfaces`, `outer_surfaces`, and `plateau_threshold`), check for plateau after each verdict:
+
+1. **Count consecutive non-improving cycles.** Read the last N experiment verdicts from `.factory/research/runs/*/summary.json` (where N = `plateau_threshold`). A cycle is "non-improving" if the metric did not increase compared to the previous best.
+
+2. **If consecutive non-improving cycles >= `plateau_threshold`:**
+   - The inner surface scope has been exhausted. Expand the Strategist's mutable surface scope to include both inner and outer surfaces.
+   - Update `$MUTABLE_SURFACES` to include the outer surface patterns in addition to the inner surface patterns.
+   - Log: `factory log "$PROJECT_PATH" "research.plateau_detected" --data '{"consecutive_no_improvement": N, "expanding_surfaces": true}'`
+   - On the next Strategist invocation, pass the expanded surface set and note: "The mutable surface scope has been expanded. Improvements within the inner surface scope have plateaued after N consecutive cycles. You now have access to the outer surfaces in addition to the inner surfaces. Target the expanded mutable surfaces."
+
+3. **If `max_escalation_cycles` is configured** and the number of cycles since surface expansion exceeds the cap, proceed to termination — the expanded surface scope has also been exhausted.
+
+4. **If Surface Scoping is NOT configured**, skip this step entirely — the standard mutable surfaces apply throughout.
 
 #### R5e. Termination Conditions
 

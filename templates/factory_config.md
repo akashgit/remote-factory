@@ -160,3 +160,27 @@ curl -sf http://localhost:8000/health
 ## Cost Budget
 <!-- Per-cycle or total budget constraints for research experiments. -->
 <!-- Example: $5/cycle, $50 total -->
+
+## Multi-Run
+<!-- For stochastic harnesses where results vary between runs. -->
+<!-- Only used in research mode. Omit for deterministic benchmarks. -->
+<!-- Example:
+- runs_per_cycle: 3
+- aggregate: mean
+- max_runs_per_cycle: 5
+-->
+
+## Surface Scoping
+<!-- Two-tier surface structure for automatic scope escalation. -->
+<!-- Only used in research mode. Omit if all mutable surfaces should be available from the start. -->
+<!-- Inner surfaces are tried first; outer surfaces are unlocked after plateau. -->
+<!-- Example:
+- plateau_threshold: 3
+- max_escalation_cycles: 10
+- inner_surfaces:
+  - prompts/*.md
+  - config/*.yaml
+- outer_surfaces:
+  - src/agents/*.py
+  - src/orchestration/*.py
+-->
