@@ -10,6 +10,7 @@ import re
 import shlex
 import signal
 import subprocess
+import structlog
 import sys
 import tempfile
 import threading
@@ -17,6 +18,9 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+log = structlog.get_logger()
+_WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
 if TYPE_CHECKING:
     from factory.messages import Message
@@ -175,6 +179,11 @@ def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
         ]
 
     if _safe_is_file(expanded):
+        if expanded == _WIZARD_INPUT_PATH.expanduser():
+            return [
+                {"label": "Build from this idea", "explanation": "Build the project directly.", "command": f'factory ceo {shlex.quote(stripped)} --mode build'},
+                {"label": "Brainstorm and refine first", "explanation": "Discuss and refine the idea interactively.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive'},
+            ]
         return [
             {"label": "Build from this spec file", "explanation": "Use the file as a project specification.", "command": f'factory ceo {shlex.quote(stripped)} --mode build'},
         ]
@@ -551,6 +560,20 @@ def _welcome_wizard() -> int:
             return 130
         if not user_input:
             return 0
+
+    # -- long-input redirect -----------------------------------------------
+    _expanded_check = Path(user_input).expanduser()
+    if (
+        len(user_input) > 200
+        and not _safe_is_dir(_expanded_check)
+        and not _safe_is_file(_expanded_check)
+        and not _is_github_url(user_input)
+    ):
+        wizard_file = _WIZARD_INPUT_PATH.expanduser()
+        wizard_file.parent.mkdir(parents=True, exist_ok=True)
+        wizard_file.write_text(user_input)
+        log.info("wizard.long_input_redirect", file=str(wizard_file), length=len(user_input))
+        user_input = str(wizard_file)
 
     # -- classification ---------------------------------------------------
     follow_ups: list[dict[str, object]] = []
