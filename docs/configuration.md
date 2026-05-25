@@ -202,6 +202,46 @@ Additional rules for the research loop. Only used in research mode.
 - Each experiment must complete within 30 minutes
 ```
 
+### `## Inner Loop`
+
+Multi-run configuration for research mode. Runs the evaluation harness multiple times per cycle and aggregates the metric. Useful for stochastic pipelines where a single run doesn't give a reliable signal. Only used in research mode.
+
+```markdown
+## Inner Loop
+- runs_per_cycle: 5
+- aggregate: mean
+- plateau_threshold: 3
+- max_inner_runs_per_cycle: 10
+```
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `runs_per_cycle` | Number of times to run the harness per cycle | `1` |
+| `aggregate` | How to combine scores: `mean`, `median`, `max`, `all_pass` | `mean` |
+| `plateau_threshold` | Consecutive non-improving cycles before triggering outer loop | `3` |
+| `max_inner_runs_per_cycle` | Optional cap on runs per cycle | None |
+
+### `## Outer Loop Surfaces`
+
+Surface scoping for inner/outer loop transitions. When inner loop improvements plateau, the factory expands the Builder's scope to include outer surfaces for architectural changes. Only used in research mode.
+
+```markdown
+## Outer Loop Surfaces
+- max_outer_cycles: 5
+- inner: prompts/*.md
+- inner: config/*.yaml
+- outer: src/**/*.py
+- outer: agents/**/*.md
+```
+
+| Field | Purpose |
+|-------|---------|
+| `max_outer_cycles` | Maximum outer loop expansions before stopping |
+| `inner: <glob>` | Narrow surfaces used during inner loop (one per line) |
+| `outer: <glob>` | Additional surfaces unlocked after plateau (one per line) |
+
+Entries use prefix format — `inner:` and `outer:` followed by a glob pattern. Multiple entries per type are allowed.
+
 ### `## Cost Budget`
 
 Per-cycle or total budget constraints for research experiments.

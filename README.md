@@ -134,6 +134,23 @@ The Factory operates at two levels, like a researcher who both runs experiments 
 
 **Outer loop (meta-harness):** When inner-loop improvements plateau, the Factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
 
+Configure these in `factory.md` to control automatic loop transitions:
+
+```markdown
+## Inner Loop
+- runs_per_cycle: 5
+- aggregate: mean
+- plateau_threshold: 3
+- max_inner_runs_per_cycle: 10
+
+## Outer Loop Surfaces
+- max_outer_cycles: 5
+- inner: prompts/*.md
+- outer: src/**/*.py
+```
+
+The factory runs the harness N times per cycle, aggregates scores, and when improvements plateau for the configured threshold, automatically expands the scope to outer surfaces. See the [Configuration Reference](docs/configuration.md#inner-loop) for field details.
+
 ### Example: HMMT math competition solver
 
 The Factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
