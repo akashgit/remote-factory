@@ -5,6 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import NoReturn, Protocol
 
+import structlog
+
+log = structlog.get_logger()
+
 
 class Runner(Protocol):
     """Protocol for CLI backend implementations (claude, bob, etc.)."""
