@@ -245,9 +245,22 @@ The research target is configured in `factory.md`:
 - eval/
 - data/ground_truth.json
 - tests/
+
+## Inner Loop
+- runs_per_cycle: 5
+- aggregate: mean
+- plateau_threshold: 3
+- max_inner_runs_per_cycle: 10
+
+## Outer Loop Surfaces
+- max_outer_cycles: 5
+- inner: prompts/*.md
+- outer: src/**/*.py
 ```
 
 **Mutable surfaces** are files the Builder can change. **Fixed surfaces** are ground truth data and eval infrastructure that must never be modified. Fixed surfaces are fingerprinted for leakage detection.
+
+**Inner Loop** is for stochastic harnesses — it runs the eval N times per cycle, aggregates via `mean`/`median`/`max`/`all_pass`, and detects plateau after N consecutive non-improving cycles. **Outer Loop Surfaces** defines narrow (inner) and wide (outer) scopes — when the inner loop plateaus, the factory expands mutable surfaces to include outer surfaces for architectural changes. Both sections are optional and independent.
 
 ### The research cycle
 
