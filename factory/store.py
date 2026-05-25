@@ -3,7 +3,6 @@
 import csv
 import io
 import json
-import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
