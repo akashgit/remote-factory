@@ -1572,8 +1572,8 @@ def cmd_refine_begin(args: argparse.Namespace) -> int:
     from factory.refine_state import begin_refinement, format_begin
 
     project_path = Path(args.path).resolve()
-    request = args.request
-    if not request or not request.strip():
+    request = (args.request or "").strip()
+    if not request:
         print("Error: --request must not be empty.", file=sys.stderr)
         return 1
     entry = begin_refinement(project_path, request)
@@ -2049,8 +2049,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             print("Error: --refine and --focus are mutually exclusive.",
                   file=sys.stderr)
             return 1
-        refine_path = Path(raw_path).expanduser().resolve()
-        if not refine_path.is_dir():
+        if not Path(raw_path).expanduser().resolve().is_dir():
             print("Error: --refine requires an existing project directory, not a URL or idea.",
                   file=sys.stderr)
             return 1

@@ -202,7 +202,7 @@ class TestFormatStatus:
             ]
         )
         output = format_status(state)
-        assert "Session refinements: 2" in output
+        assert "Refinements recorded: 2" in output
         assert '"fix typo" → KEEP' in output
         assert '"add flag" → IN PROGRESS' in output
         assert "REMINDER" in output

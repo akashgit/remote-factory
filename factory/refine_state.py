@@ -84,7 +84,7 @@ def format_status(state: RefinementState) -> str:
         lines.append("No refinements recorded yet. Entering post-cycle refinement loop.")
         lines.append("Route ALL change requests through Refiner → Builder (Sacred Rule 8).")
     else:
-        lines.append(f"Session refinements: {len(state.entries)}")
+        lines.append(f"Refinements recorded: {len(state.entries)}")
         for e in state.entries:
             if e.verdict:
                 lines.append(f'  #{e.sequence}: "{e.request}" → {e.verdict.upper()}')
