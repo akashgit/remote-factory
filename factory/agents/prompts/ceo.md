@@ -2006,6 +2006,30 @@ If the Builder doesn't produce a PR:
    ```
 4. Move to next hypothesis — do not retry the same failure more than once
 
+### Builder Failure Recovery Protocol
+
+Before re-spawning a Builder after a failure notification, the CEO MUST verify whether the Builder actually completed its work despite the error. Rate limits, timeouts, and network errors on the final notification can present as generic failures even when commits and PRs were successfully created.
+
+**Mandatory pre-respawn checks:**
+
+1. **Check for commits on the experiment branch:**
+   ```bash
+   cd "$PROJECT_PATH" && git log --oneline -5
+   ```
+   Look for commits related to the current hypothesis on the experiment branch.
+
+2. **Check for an open PR:**
+   ```bash
+   gh pr list --state open --json number,title,headRefName
+   ```
+   Look for a PR whose `headRefName` matches the experiment branch.
+
+3. **Decision logic:**
+   - **Commits exist AND/OR PR is open for this branch:** The Builder likely succeeded despite the error notification. Do NOT re-spawn. Skip directly to **2d-review** (CEO Review of the Builder PR) and continue the review pipeline using the existing PR.
+   - **No new commits AND no PR for the experiment branch:** The Builder genuinely failed. Proceed with the standard Builder Failure protocol above (read issue comments, finalize as error, or re-invoke once).
+
+**Why this matters:** Without these checks, a rate-limit or timeout on the Builder's last token presents as a generic failure, causing the CEO to spawn a duplicate Builder session. The second Builder creates redundant commits, conflicting PRs, and wastes an entire agent invocation. This was observed in issue #294.
+
 ### Eval Crash
 If `factory eval` fails without producing a valid score:
 1. Check eval script: `cat "$PROJECT_PATH/eval/score.py"`
