@@ -10,7 +10,7 @@ from unittest.mock import patch, AsyncMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _resolve_input, _persist_spec, _has_research_target
+from factory.cli import main, build_parser, _build_ceo_task, _is_github_url, _slugify, _resolve_input, _persist_spec, _has_research_target
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -1186,3 +1186,52 @@ class TestResearchMode:
         from factory.cli import _auto_detect_mode
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
         assert mode == "improve"
+
+
+class TestBudgetConscious:
+    def test_parser_ceo_accepts_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--budget-conscious"])
+        assert args.budget_conscious is True
+
+    def test_parser_ceo_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.budget_conscious is False
+
+    def test_parser_run_accepts_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--budget-conscious"])
+        assert args.budget_conscious is True
+
+    def test_parser_run_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.budget_conscious is False
+
+    def test_build_ceo_task_injects_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", budget_conscious=True)
+        assert "## Budget-Conscious Mode" in task
+        assert "Skip Reviewer agent" in task
+        assert "Cap REDIRECT iterations at 1" in task
+        assert "Defer operational execution" in task
+
+    def test_build_ceo_task_omits_section_when_false(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", budget_conscious=False)
+        assert "## Budget-Conscious Mode" not in task
+
+    def test_ceo_headless_passes_flag(self, tmp_path):
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless", "--budget-conscious"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## Budget-Conscious Mode" in task
+
+    def test_run_passes_flag(self, tmp_path):
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["run", str(tmp_path), "--budget-conscious"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## Budget-Conscious Mode" in task

@@ -1371,6 +1371,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         mode = _auto_detect_mode(project_path, has_prompt=bool(prompt_file or context), force_fresh=force_fresh)
     discover_only = getattr(args, "discover_only", False)
     no_github = getattr(args, "no_github", False)
+    budget_conscious = getattr(args, "budget_conscious", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
@@ -1410,6 +1411,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         project_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
+        budget_conscious=budget_conscious,
         interactive_idea=interactive_idea,
         research_ideation=research_ideation,
         messages=pending,
@@ -1859,6 +1861,7 @@ def _build_ceo_task(
     branch: str | None = None,
     discover_only: bool = False,
     no_github: bool = False,
+    budget_conscious: bool = False,
     interactive_idea: str | None = None,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
@@ -1993,6 +1996,23 @@ def _build_ceo_task(
             "skip it and note what was skipped in the experiment log."
         )
 
+    if budget_conscious:
+        task += (
+            "\n\n## Budget-Conscious Mode\n\n"
+            "The user has passed --budget-conscious. Apply these three throttles:\n\n"
+            "1. **Skip Reviewer agent for small diffs.** If the diff is under 50 lines "
+            "AND your own 2d-review verdict is CLEAN or PROCEED, skip the separate "
+            "Reviewer agent invocation (step 2e). You still perform your own structured "
+            "code review in step 2d.\n\n"
+            "2. **Cap REDIRECT iterations at 1 per agent.** If the first redirect does "
+            "not resolve the issue, finalize the experiment as error rather than spending "
+            "another agent session.\n\n"
+            "3. **Defer operational execution.** For operational or mixed hypotheses, "
+            "produce code-only PRs with execution instructions in the PR description. "
+            "Do NOT run the execution within the Builder session. The user will run "
+            "execution between PRs."
+        )
+
     return task
 
 
@@ -2050,6 +2070,7 @@ def _run_single_cycle(
     branch: str | None = None,
     discover_only: bool = False,
     no_github: bool = False,
+    budget_conscious: bool = False,
     model: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
@@ -2068,6 +2089,7 @@ def _run_single_cycle(
         project_path, mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
+        budget_conscious=budget_conscious,
         messages=pending,
     )
 
@@ -2106,6 +2128,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
     no_github = getattr(args, "no_github", False)
+    budget_conscious = getattr(args, "budget_conscious", False)
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
@@ -2133,7 +2156,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if not loop:
         code = _run_single_cycle(
             project_path, mode, context, focus=focus, prompt_file=prompt_file,
-            discover_only=discover_only, no_github=no_github, model=model,
+            discover_only=discover_only, no_github=no_github,
+            budget_conscious=budget_conscious, model=model,
             **budget_kwargs,
         )
         if code != 0:
@@ -2167,7 +2191,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             _run_single_cycle(
                 project_path, mode, context, focus=focus, prompt_file=prompt_file,
-                discover_only=discover_only, no_github=no_github, model=model,
+                discover_only=discover_only, no_github=no_github,
+                budget_conscious=budget_conscious, model=model,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -2530,6 +2555,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-github", action="store_true", default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
     )
+    p.add_argument(
+        "--budget-conscious", action="store_true", default=False,
+        help="Enable budget-conscious mode: skip Reviewer for small diffs, cap redirects, defer execution",
+    )
     p.add_argument("--min-growth", type=int, default=None,
                     help="Minimum guaranteed growth hypotheses (default: 2)")
     p.add_argument("--max-new", type=int, default=None,
@@ -2567,6 +2596,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-github", action="store_true", default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
+    )
+    p.add_argument(
+        "--budget-conscious", action="store_true", default=False,
+        help="Enable budget-conscious mode: skip Reviewer for small diffs, cap redirects, defer execution",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,

@@ -1949,6 +1949,20 @@ These are NOT optional. Skipping archival is a Sacred Rule 7 violation, equivale
 
 ---
 
+## Budget-Conscious Mode
+
+When your task string contains a `## Budget-Conscious Mode` section, apply the following three throttles to reduce session cost:
+
+1. **Skip Reviewer agent for small diffs.** After Step 2d (your own structured code review), check the diff size. If the diff is under 50 lines AND your 2d-review verdict is CLEAN or PROCEED, skip the separate Reviewer agent invocation in Step 2e. You still perform your own code review; this only skips the dedicated Reviewer agent session.
+
+2. **Cap REDIRECT iterations at 1 per agent.** Normally you may redirect an agent up to 2 times. In budget-conscious mode, cap at 1. If the first redirect does not resolve the issue, finalize the experiment as `error` with a note explaining why, rather than spending another agent session.
+
+3. **Defer operational execution.** For operational or mixed hypotheses (ones that require running commands, deploying, or executing scripts beyond tests), produce code-only PRs. Include execution instructions in the PR description under a `## Execution Steps` heading. Do NOT run the execution within the Builder session. The user will run execution between PRs.
+
+These throttles are additive to all other rules. Sacred Rules, guard checks, and eval requirements still apply in full.
+
+---
+
 ## Sacred Rules
 
 These are **inviolable**. Checked by `factory guard` before any change is kept. A violation means the change is reverted, no exceptions.
