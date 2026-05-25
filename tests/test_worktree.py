@@ -5,7 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from factory.worktree import create_worktree, detect_default_branch, prune_stale, remove_worktree
+from factory.worktree import (
+    _classify_prefix,
+    _slugify,
+    create_worktree,
+    detect_default_branch,
+    prune_stale,
+    remove_worktree,
+)
 
 pytestmark = pytest.mark.real_worktree
 
@@ -48,7 +55,7 @@ class TestCreateWorktree:
 
         assert wt_path.exists()
         assert wt_path.is_dir()
-        assert branch.startswith("factory/run-")
+        assert branch.startswith("factory/")
         assert wt_path.parent == git_project / ".factory" / "worktrees"
 
     def test_worktree_has_factory_symlink(self, git_project: Path) -> None:
@@ -108,6 +115,129 @@ class TestCreateWorktree:
         assert br1 != br2
         assert wt1.exists()
         assert wt2.exists()
+
+
+class TestSlugify:
+    def test_basic_text(self) -> None:
+        assert _slugify("dashboard UI") == "dashboard-ui"
+
+    def test_unicode(self) -> None:
+        assert _slugify("café résumé") == "cafe-resume"
+
+    def test_empty_string(self) -> None:
+        assert _slugify("") == "unnamed"
+
+    def test_only_special_chars(self) -> None:
+        assert _slugify("!!!") == "unnamed"
+
+    def test_long_text_truncated(self) -> None:
+        result = _slugify("a" * 100, max_length=20)
+        assert len(result) <= 20
+
+    def test_no_trailing_hyphen_after_truncation(self) -> None:
+        result = _slugify("hello-world-this-is-long", max_length=11)
+        assert not result.endswith("-")
+
+    def test_mixed_case_and_symbols(self) -> None:
+        assert _slugify("Fix Login Crash!!") == "fix-login-crash"
+
+
+class TestClassifyPrefix:
+    def test_fix_keywords(self) -> None:
+        assert _classify_prefix("fix login crash") == "fix"
+        assert _classify_prefix("bug in parser") == "fix"
+        assert _classify_prefix("error handling") == "fix"
+
+    def test_docs_keywords(self) -> None:
+        assert _classify_prefix("update documentation") == "docs"
+        assert _classify_prefix("add README section") == "docs"
+
+    def test_refactor_keywords(self) -> None:
+        assert _classify_prefix("refactor auth module") == "refactor"
+        assert _classify_prefix("cleanup old code") == "refactor"
+
+    def test_test_keywords(self) -> None:
+        assert _classify_prefix("add test coverage") == "test"
+
+    def test_chore_keywords(self) -> None:
+        assert _classify_prefix("update CI config") == "chore"
+        assert _classify_prefix("bump dependency versions") == "chore"
+
+    def test_chore_from_mode(self) -> None:
+        assert _classify_prefix("something random", mode="discover") == "chore"
+        assert _classify_prefix("something random", mode="meta") == "chore"
+
+    def test_default_feat(self) -> None:
+        assert _classify_prefix("dashboard UI") == "feat"
+        assert _classify_prefix("add new endpoint") == "feat"
+
+    def test_fix_takes_priority(self) -> None:
+        assert _classify_prefix("fix the test") == "fix"
+
+
+class TestSemanticBranchNaming:
+    def test_semantic_with_hint(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project, hint="dashboard UI", mode="improve")
+
+        assert branch.startswith("factory/feat/dashboard-ui-")
+        assert wt_path.exists()
+        assert (wt_path / ".factory_branch").read_text() == branch
+
+    def test_fix_hint(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project, hint="fix login crash", mode="improve")
+
+        assert branch.startswith("factory/fix/")
+        assert "login-crash" in branch
+
+    def test_fallback_without_hint(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+
+        assert branch.startswith("factory/run-")
+        assert (wt_path / ".factory_branch").read_text() == branch
+
+    def test_factory_branch_marker_exists(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project, hint="add feature")
+
+        marker = wt_path / ".factory_branch"
+        assert marker.is_file()
+        assert marker.read_text() == branch
+
+
+class TestPruneWithMarker:
+    def test_prune_reads_factory_branch_marker(self, git_project: Path) -> None:
+        wt_dir = git_project / ".factory" / "worktrees"
+        wt_dir.mkdir(parents=True, exist_ok=True)
+
+        orphan = wt_dir / "feat-dashboard-ui-abcd"
+        orphan.mkdir()
+        (orphan / ".factory_branch").write_text("factory/feat/dashboard-ui-abcd")
+        (orphan / "some_file.txt").write_text("stale")
+
+        subprocess.run(
+            ["git", "branch", "factory/feat/dashboard-ui-abcd"],
+            cwd=git_project, capture_output=True, check=True,
+        )
+
+        pruned = prune_stale(git_project)
+        assert len(pruned) >= 1
+        assert not orphan.exists()
+
+        result = subprocess.run(
+            ["git", "branch", "--list", "factory/feat/dashboard-ui-abcd"],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert "factory/feat/dashboard-ui-abcd" not in result.stdout
+
+    def test_prune_falls_back_for_legacy_dirs(self, git_project: Path) -> None:
+        wt_dir = git_project / ".factory" / "worktrees"
+        wt_dir.mkdir(parents=True, exist_ok=True)
+        orphan = wt_dir / "run-deadbeef"
+        orphan.mkdir()
+        (orphan / "some_file.txt").write_text("stale")
+
+        pruned = prune_stale(git_project)
+        assert len(pruned) >= 1
+        assert not orphan.exists()
 
 
 class TestRemoveWorktree:
@@ -261,7 +391,7 @@ class TestCreateWorktreeWithMaster:
         wt_path, branch = create_worktree(git_project_master, base_branch="master")
         try:
             assert wt_path.exists()
-            assert branch.startswith("factory/run-")
+            assert branch.startswith("factory/")
             assert (wt_path / "README.md").exists()
         finally:
             remove_worktree(git_project_master, wt_path, branch)

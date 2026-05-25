@@ -1,8 +1,10 @@
 """Git worktree lifecycle management for experiment isolation."""
 
+import re
 import secrets
 import shutil
 import subprocess
+import unicodedata
 from pathlib import Path
 
 import structlog
@@ -10,16 +12,69 @@ import structlog
 log = structlog.get_logger()
 
 
-def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
+def _slugify(text: str, max_length: int = 40) -> str:
+    """Convert arbitrary text to a kebab-case slug suitable for branch names."""
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = text.strip("-")
+    if len(text) > max_length:
+        text = text[:max_length].rstrip("-")
+    return text or "unnamed"
+
+
+_FIX_KEYWORDS = frozenset({"bug", "crash", "error", "broken", "fail", "fix"})
+_DOCS_KEYWORDS = frozenset({"doc", "readme", "documentation", "docs"})
+_REFACTOR_KEYWORDS = frozenset({
+    "refactor", "cleanup", "rename", "reorganize", "restructure",
+})
+_TEST_KEYWORDS = frozenset({"test", "coverage", "spec"})
+_CHORE_KEYWORDS = frozenset({"chore", "ci", "infra", "config", "dependency", "deps"})
+_CHORE_MODES = frozenset({"discover", "meta"})
+
+
+def _classify_prefix(hint: str, mode: str = "improve") -> str:
+    """Keyword-match hint text to a conventional branch prefix."""
+    words = set(re.findall(r"[a-z]+", hint.lower()))
+    if words & _FIX_KEYWORDS:
+        return "fix"
+    if words & _DOCS_KEYWORDS:
+        return "docs"
+    if words & _REFACTOR_KEYWORDS:
+        return "refactor"
+    if words & _TEST_KEYWORDS:
+        return "test"
+    if words & _CHORE_KEYWORDS or mode in _CHORE_MODES:
+        return "chore"
+    return "feat"
+
+
+def create_worktree(
+    project_path: Path,
+    base_branch: str = "main",
+    *,
+    hint: str | None = None,
+    mode: str = "improve",
+) -> tuple[Path, str]:
     """Create an isolated worktree for a factory run.
 
     Returns (worktree_path, branch_name).
     """
     project_path = project_path.resolve()
-    run_id = secrets.token_hex(4)
-    branch = f"factory/run-{run_id}"
+    hex4 = secrets.token_hex(2)
     factory_dir = project_path / ".factory"
-    wt_dir = factory_dir / "worktrees" / f"run-{run_id}"
+
+    if hint:
+        prefix = _classify_prefix(hint, mode)
+        slug = _slugify(hint)
+        branch = f"factory/{prefix}/{slug}-{hex4}"
+        dir_name = f"{prefix}-{slug}-{hex4}"
+    else:
+        run_id = secrets.token_hex(4)
+        branch = f"factory/run-{run_id}"
+        dir_name = f"run-{run_id}"
+
+    wt_dir = factory_dir / "worktrees" / dir_name
 
     log.info("worktree_create", branch=branch, path=str(wt_dir))
 
@@ -41,6 +96,8 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
         else:
             wt_factory.unlink()
     wt_factory.symlink_to(factory_dir)
+
+    (wt_dir / ".factory_branch").write_text(branch)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
     return wt_dir, branch
@@ -85,11 +142,15 @@ def prune_stale(project_path: Path) -> list[str]:
         active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
-                run_id = d.name.removeprefix("run-")
+                marker = d / ".factory_branch"
+                if marker.is_file():
+                    branch = marker.read_text().strip()
+                else:
+                    run_id = d.name.removeprefix("run-")
+                    branch = f"factory/run-{run_id}"
                 shutil.rmtree(d)
                 pruned.append(f"Removed orphaned directory: {d.name}")
                 log.info("worktree_pruned_orphan", name=d.name)
-                branch = f"factory/run-{run_id}"
                 subprocess.run(
                     ["git", "branch", "-D", branch],
                     cwd=project_path,

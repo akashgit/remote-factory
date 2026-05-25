@@ -1557,7 +1557,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending_ids = [m.id for m in pending]
 
     base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch)
+    wt_path, wt_branch = create_worktree(
+        project_path, base_branch,
+        hint=focus or interactive_idea or research_ideation or context,
+        mode=mode,
+    )
 
     if interactive_existing:
         ceo_mode = "interactive"
@@ -2309,7 +2313,11 @@ def _run_single_cycle(
     pending_ids = [m.id for m in pending]
 
     base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch)
+    wt_path, wt_branch = create_worktree(
+        project_path, base_branch,
+        hint=focus or context,
+        mode=mode,
+    )
 
     try:
         task = _build_ceo_task(
