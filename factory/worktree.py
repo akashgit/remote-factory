@@ -97,7 +97,9 @@ def create_worktree(
             wt_factory.unlink()
     wt_factory.symlink_to(factory_dir)
 
-    (wt_dir / ".factory_branch").write_text(branch)
+    # Store branch marker as a sibling file (not inside the worktree) so it
+    # doesn't appear as untracked in the worktree's git status.
+    (wt_dir.parent / (dir_name + ".branch")).write_text(branch)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
     return wt_dir, branch
@@ -109,6 +111,10 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
 
     if worktree_path.exists():
         shutil.rmtree(worktree_path)
+
+    marker = worktree_path.parent / (worktree_path.name + ".branch")
+    if marker.is_file():
+        marker.unlink()
 
     subprocess.run(
         ["git", "worktree", "prune"],
@@ -142,13 +148,15 @@ def prune_stale(project_path: Path) -> list[str]:
         active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
-                marker = d / ".factory_branch"
+                marker = wt_parent / (d.name + ".branch")
                 if marker.is_file():
                     branch = marker.read_text().strip()
                 else:
                     run_id = d.name.removeprefix("run-")
                     branch = f"factory/run-{run_id}"
                 shutil.rmtree(d)
+                if marker.is_file():
+                    marker.unlink()
                 pruned.append(f"Removed orphaned directory: {d.name}")
                 log.info("worktree_pruned_orphan", name=d.name)
                 subprocess.run(

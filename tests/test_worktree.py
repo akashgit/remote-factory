@@ -181,7 +181,9 @@ class TestSemanticBranchNaming:
 
         assert branch.startswith("factory/feat/dashboard-ui-")
         assert wt_path.exists()
-        assert (wt_path / ".factory_branch").read_text() == branch
+        marker = wt_path.parent / (wt_path.name + ".branch")
+        assert marker.read_text() == branch
+        assert not (wt_path / ".factory_branch").exists()
 
     def test_fix_hint(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project, hint="fix login crash", mode="improve")
@@ -193,14 +195,17 @@ class TestSemanticBranchNaming:
         wt_path, branch = create_worktree(git_project)
 
         assert branch.startswith("factory/run-")
-        assert (wt_path / ".factory_branch").read_text() == branch
+        marker = wt_path.parent / (wt_path.name + ".branch")
+        assert marker.read_text() == branch
+        assert not (wt_path / ".factory_branch").exists()
 
     def test_factory_branch_marker_exists(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project, hint="add feature")
 
-        marker = wt_path / ".factory_branch"
+        marker = wt_path.parent / (wt_path.name + ".branch")
         assert marker.is_file()
         assert marker.read_text() == branch
+        assert not (wt_path / ".factory_branch").exists()
 
 
 class TestPruneWithMarker:
@@ -210,7 +215,7 @@ class TestPruneWithMarker:
 
         orphan = wt_dir / "feat-dashboard-ui-abcd"
         orphan.mkdir()
-        (orphan / ".factory_branch").write_text("factory/feat/dashboard-ui-abcd")
+        (wt_dir / "feat-dashboard-ui-abcd.branch").write_text("factory/feat/dashboard-ui-abcd")
         (orphan / "some_file.txt").write_text("stale")
 
         subprocess.run(
@@ -221,6 +226,7 @@ class TestPruneWithMarker:
         pruned = prune_stale(git_project)
         assert len(pruned) >= 1
         assert not orphan.exists()
+        assert not (wt_dir / "feat-dashboard-ui-abcd.branch").exists()
 
         result = subprocess.run(
             ["git", "branch", "--list", "factory/feat/dashboard-ui-abcd"],
