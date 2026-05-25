@@ -1631,6 +1631,39 @@ def cmd_refine_complete(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_clean_pr(args: argparse.Namespace) -> int:
+    """Strip non-essential artifacts from a PR diff."""
+    from factory.clean_pr import strip_pr_artifacts
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    config = _run(store.read_config())
+
+    base_branch = config.target_branch or "main"
+    exp_id = getattr(args, "exp", None)
+
+    include = config.clean_pr_include or None
+    exclude = config.clean_pr_exclude or None
+
+    keep, stripped = strip_pr_artifacts(
+        project_path,
+        include=include,
+        exclude=exclude,
+        base_branch=base_branch,
+        exp_id=exp_id,
+    )
+
+    if not stripped:
+        print("Nothing to strip — all files are essential.")
+        return 0
+
+    print(f"Kept {len(keep)} files, stripped {len(stripped)} files:")
+    for f in stripped:
+        print(f"  - {f}")
+    return 0
+
+
 def cmd_review(args: argparse.Namespace) -> int:
     """Format and optionally post a review on a GitHub PR."""
     from factory.review import ReviewPayload, format_review, post_review
@@ -2230,6 +2263,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
+    clean_pr_flag = getattr(args, "clean_pr", None)
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
         print("Error: --mode research requires research_target in factory.md. "
@@ -2279,6 +2313,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         ceo_mode = "build"
     else:
         ceo_mode = mode
+    if clean_pr_flag is not None:
+        clean_pr_resolved = clean_pr_flag
+    else:
+        config_path = project_path / ".factory" / "config.json"
+        if config_path.exists():
+            try:
+                _cfg = json.loads(config_path.read_text())
+                clean_pr_resolved = bool(_cfg.get("clean_pr", False))
+            except (json.JSONDecodeError, OSError):
+                clean_pr_resolved = False
+        else:
+            clean_pr_resolved = False
+
     task = _build_ceo_task(
         wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
@@ -2290,6 +2337,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_number=issue_number,
         issue_url=issue_url,
         refine_request=refine_request,
+        clean_pr=clean_pr_resolved,
     )
 
     session_name = _derive_session_name(
@@ -2849,6 +2897,7 @@ def _build_ceo_task(
     issue_number: int | None = None,
     issue_url: str | None = None,
     refine_request: str | None = None,
+    clean_pr: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -3030,6 +3079,19 @@ def _build_ceo_task(
             f"6. Keep/revert verdict + finalize\n"
             f"7. Archivist (single batch)\n\n"
             f"Do NOT skip the review pipeline. Do NOT abbreviate any step.\n"
+        )
+
+    if clean_pr:
+        task += (
+            "\n\n## Clean PR Mode\n\n"
+            "Clean PR mode is ACTIVE. After the final review gate (2h-final), "
+            "run step 2i-clean before marking the PR ready:\n\n"
+            "```bash\n"
+            "factory clean-pr $PROJECT_PATH --exp $EXP_ID\n"
+            "```\n\n"
+            "This strips non-essential artifacts (eval scripts, benchmarks, .factory files) "
+            "from the PR while preserving the full diff in the experiment archive. "
+            "If stripping breaks tests, fall back to the full diff.\n"
         )
 
     return task
@@ -3488,6 +3550,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--similarity-threshold", type=float, default=0.6,
                     help="Similarity threshold for anti-pattern detection (default: 0.6)")
 
+    # clean-pr
+    p = sub.add_parser("clean-pr", help="Strip non-essential artifacts from a PR diff")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--exp", type=int, default=None, help="Experiment ID (archives full diff before stripping)")
+
     # refine-status
     p = sub.add_parser("refine-status", help="Print refinement state and regrounding output")
     p.add_argument("path", help="Path to the project")
@@ -3691,6 +3758,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    clean_pr_group = p.add_mutually_exclusive_group()
+    clean_pr_group.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
+                                help="Enable clean PR mode: strip non-essential artifacts before PR")
+    clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
+                                help="Disable clean PR mode")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -3747,6 +3819,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Credential profile from ~/.factory/config.toml")
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    run_clean_pr_group = p.add_mutually_exclusive_group()
+    run_clean_pr_group.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
+                                    help="Enable clean PR mode: strip non-essential artifacts before PR")
+    run_clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
+                                    help="Disable clean PR mode")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -3826,6 +3903,7 @@ def main(argv: list[str] | None = None) -> int:
         "digest": cmd_digest,
         "archive": cmd_archive,
         "precheck": cmd_precheck,
+        "clean-pr": cmd_clean_pr,
         "leakage-check": cmd_leakage_check,
         "validate-research": cmd_validate_research,
         "refine-status": cmd_refine_status,

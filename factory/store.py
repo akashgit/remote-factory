@@ -350,6 +350,13 @@ class ExperimentStore:
         hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
         growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
 
+        clean_pr_raw = parsed.get("clean_pr", "")
+        clean_pr = str(clean_pr_raw).strip().lower() in ("true", "yes", "1") if clean_pr_raw else False
+        clean_pr_include_raw = parsed.get("clean_pr_include", [])
+        clean_pr_include = list(clean_pr_include_raw) if isinstance(clean_pr_include_raw, list) else []
+        clean_pr_exclude_raw = parsed.get("clean_pr_exclude", [])
+        clean_pr_exclude = list(clean_pr_exclude_raw) if isinstance(clean_pr_exclude_raw, list) else []
+
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
             scope=list(parsed.get("scope", [])),  # type: ignore[arg-type]
@@ -373,6 +380,9 @@ class ExperimentStore:
             eval_spec=eval_spec,
             hygiene_weights=hygiene_tier_weights,
             growth_weights=growth_tier_weights,
+            clean_pr=clean_pr,
+            clean_pr_include=clean_pr_include,
+            clean_pr_exclude=clean_pr_exclude,
         )
 
         (self.factory_dir / "config.json").write_text(
