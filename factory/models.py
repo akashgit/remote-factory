@@ -207,6 +207,9 @@ class FactoryConfig(BaseModel):
     eval_spec: list[str] = []
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
+    clean_pr: bool = False
+    clean_pr_include: list[str] = []
+    clean_pr_exclude: list[str] = []
 
 
 # ── eval ──────────────────────────────────────────────────────────

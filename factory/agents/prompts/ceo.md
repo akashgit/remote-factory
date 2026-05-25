@@ -1460,7 +1460,29 @@ rm -f /tmp/factory-final-review-$PR_NUM.txt
   - If `$FINAL_REVIEW_ITERATION >= 3`: stop. Post KEEP with the remaining issues noted in the review comment. The human reviewer will see them.
   - Otherwise: route fixes to Builder (same as step 2d-review loop), increment `$FINAL_REVIEW_ITERATION`, re-run **step 2h-final** — the structured review already passed, only the headless review needs to re-run.
 
-**On CLEAN final review → Approve (DO NOT MERGE):**
+**On CLEAN final review → proceed to 2i-clean (if active) or Approve.**
+
+#### 2i-clean. Clean PR (conditional)
+
+**Only runs when Clean PR mode is active** (the task section `## Clean PR Mode` is present). If not present, skip to KEEP approval.
+
+```bash
+# Strip non-essential artifacts from the PR
+factory clean-pr $PROJECT_PATH --exp $EXP_ID
+
+# Verify tests still pass with stripped files
+factory eval $PROJECT_PATH
+```
+
+- If eval passes → proceed to KEEP approval below.
+- If eval fails → revert the stripping and proceed with the full diff:
+  ```bash
+  git checkout HEAD -- .
+  ```
+
+The full experiment diff is always preserved in `.factory/experiments/$EXP_ID/changes_full.diff` before any stripping.
+
+**Approve (DO NOT MERGE):**
 
 ```bash
 # Transition draft PR to ready for review
