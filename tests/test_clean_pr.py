@@ -111,9 +111,10 @@ class TestStripPrArtifacts:
         repo = tmp_path / "repo"
         repo.mkdir()
         subprocess.run(["git", "init"], cwd=repo, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, capture_output=True, check=True)
+        subprocess.run(["git", "config", "user.email", "test@test"], cwd=repo, capture_output=True, check=True)
         subprocess.run(
-            ["git", "-c", "user.name=Test", "-c", "user.email=test@test",
-             "commit", "--allow-empty", "-m", "init"],
+            ["git", "commit", "--allow-empty", "-m", "init"],
             cwd=repo, capture_output=True, check=True,
         )
         subprocess.run(["git", "branch", "-M", "main"], cwd=repo, capture_output=True, check=True)

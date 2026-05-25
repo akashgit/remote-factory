@@ -184,13 +184,16 @@ class TestResolveInputWithoutVault:
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
         import factory.cli as cli_mod
-        from factory.cli import _resolve_input
+        from factory.cli import _materialize_project, _resolve_input
 
         monkeypatch.setattr(cli_mod, "_get_projects_dir", lambda: tmp_path)
         path, ctx = _resolve_input("build a weather dashboard")
         assert path.parent == tmp_path
-        assert path.exists()
+        assert not path.exists()
         assert ctx == "build a weather dashboard"
+
+        _materialize_project(path, ctx)
+        assert path.exists()
 
     def test_idea_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,

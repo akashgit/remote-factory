@@ -32,7 +32,7 @@ from factory.models import (
 )
 from factory.research.runner import aggregate_metric, execute_multi_run
 from factory.store import ExperimentStore, _parse_inner_loop, _parse_outer_loop
-from factory.strategy import detect_plateau, detect_research_plateau
+from factory.strategy import detect_research_plateau
 
 
 # ── Model validation ────────────────────────────────────────────

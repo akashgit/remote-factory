@@ -2200,6 +2200,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     interactive_idea: str | None = None
     interactive_existing: bool = False
     research_ideation: str | None = None
+    deferred_spec: str | None = None
+    needs_materialize = False
     if mode == "interactive" and _interactive_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         interactive_existing = True
@@ -2209,16 +2211,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             interactive_idea = resolved_file.read_text()
             slug = _slugify(dir_name) if dir_name else _slugify(resolved_file.stem.split("—")[0].strip())
             project_path = _dedupe_project_path(_get_projects_dir() / slug, interactive_idea)
-            _ensure_repo(project_path)
-            _persist_spec(project_path, interactive_idea)
+            deferred_spec = interactive_idea
+            needs_materialize = True
             print(f"Idea file: {resolved_file.name}")
             print(f"Project directory: {project_path}")
         else:
             interactive_idea = raw_path
             slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
             project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
-            _ensure_repo(project_path)
-            _persist_spec(project_path, raw_path)
+            deferred_spec = raw_path
+            needs_materialize = True
         context = None
     elif mode == "research" and not _safe_is_dir(resolved := Path(raw_path).expanduser()) and not _safe_is_file(resolved):
         # New research project from idea — enter research ideation
@@ -2233,10 +2235,13 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         research_ideation = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
         project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
-        _ensure_repo(project_path)
+        needs_materialize = True
         context = None
     else:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
+        if context is not None and not (project_path / ".git").is_dir():
+            deferred_spec = context
+            needs_materialize = True
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
     issue_number: int | None = None
@@ -2305,6 +2310,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
+    if needs_materialize:
+        _materialize_project(project_path, deferred_spec)
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
@@ -2380,6 +2387,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             )
         finally:
             remove_worktree(project_path, wt_path, wt_branch)
+            if needs_materialize and _is_scaffold_only(project_path):
+                import shutil
+                shutil.rmtree(project_path, ignore_errors=True)
 
     # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
     try:
@@ -2398,6 +2408,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         )
     finally:
         remove_worktree(project_path, wt_path, wt_branch)
+        if needs_materialize and _is_scaffold_only(project_path):
+            import shutil
+            shutil.rmtree(project_path, ignore_errors=True)
 
 
 def _is_github_url(path: str) -> bool:
@@ -2453,8 +2466,6 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
         idea_content = expanded.read_text()
         slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
         project_path = _dedupe_project_path(_get_projects_dir() / slug, idea_content)
-        _ensure_repo(project_path)
-        _persist_spec(project_path, idea_content)
         print(f"Idea file: {expanded.name}")
         print(f"Project directory: {project_path}")
         return project_path, idea_content
@@ -2469,8 +2480,6 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     # 4. Raw prompt
     slug = _slugify(dir_name) if dir_name else _extract_project_name(raw)
     project_path = _dedupe_project_path(_get_projects_dir() / slug, raw)
-    _ensure_repo(project_path)
-    _persist_spec(project_path, raw)
     print(f"New project from prompt: {project_path}")
     return project_path, raw
 
@@ -2640,6 +2649,39 @@ def _resolve_focus_issue(
         file=sys.stderr,
     )
     return issue_spec.title, context, issue_spec.number, issue_spec.url
+
+
+def _materialize_project(project_path: Path, spec: str | None = None) -> None:
+    """Create git repo and optionally persist spec. Single choke point for deferred creation."""
+    _ensure_repo(project_path)
+    if spec:
+        _persist_spec(project_path, spec)
+
+
+def _is_scaffold_only(project_path: Path) -> bool:
+    """Return True if project_path is empty scaffolding that can be safely removed.
+
+    A project is considered scaffold-only when it has exactly 1 git commit
+    (the initial empty commit from _ensure_repo) and the only non-.git content
+    is .factory/strategy/current.md.
+    """
+    if not project_path.is_dir():
+        return False
+    git_dir = project_path / ".git"
+    if not git_dir.is_dir():
+        return False
+    result = subprocess.run(
+        ["git", "rev-list", "--count", "HEAD"],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    if result.returncode != 0 or result.stdout.strip() != "1":
+        return False
+    non_git = [
+        p for p in project_path.rglob("*")
+        if p.is_file() and ".git" not in p.parts
+    ]
+    allowed = {project_path / ".factory" / "strategy" / "current.md"}
+    return all(p in allowed for p in non_git)
 
 
 def _persist_spec(project_path: Path, spec: str) -> None:
@@ -3277,10 +3319,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
+    if context is not None and not (project_path / ".git").is_dir():
+        _materialize_project(project_path, context)
+
     from factory.worktree import prune_stale
-    pruned = prune_stale(project_path)
-    if pruned:
-        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
+    if project_path.is_dir():
+        pruned = prune_stale(project_path)
+        if pruned:
+            print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
     skip_improve = mode in ("improve", "meta") or discover_only
