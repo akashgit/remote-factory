@@ -3156,6 +3156,7 @@ def _run_single_cycle(
     issue_number: int | None = None,
     issue_url: str | None = None,
     use_profile: bool = False,
+    clean_pr: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3181,6 +3182,7 @@ def _run_single_cycle(
             messages=pending,
             issue_number=issue_number,
             issue_url=issue_url,
+            clean_pr=clean_pr,
         )
 
         result, code = _run(invoke_agent(
@@ -3257,6 +3259,20 @@ def cmd_run(args: argparse.Namespace) -> int:
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
+    clean_pr_flag = getattr(args, "clean_pr", None)
+    if clean_pr_flag is not None:
+        clean_pr_resolved = clean_pr_flag
+    else:
+        config_path = project_path / ".factory" / "config.json"
+        if config_path.exists():
+            try:
+                _cfg = json.loads(config_path.read_text())
+                clean_pr_resolved = bool(_cfg.get("clean_pr", False))
+            except (json.JSONDecodeError, OSError):
+                clean_pr_resolved = False
+        else:
+            clean_pr_resolved = False
+
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
@@ -3275,6 +3291,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             issue_number=issue_number,
             issue_url=issue_url,
             use_profile=use_profile_flag,
+            clean_pr=clean_pr_resolved,
             **budget_kwargs,
         )
         if code != 0:
@@ -3312,6 +3329,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 issue_number=issue_number,
                 issue_url=issue_url,
                 use_profile=use_profile_flag,
+                clean_pr=clean_pr_resolved,
                 **budget_kwargs,
             )
             _chain_modes(

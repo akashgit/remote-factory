@@ -103,6 +103,13 @@ def strip_pr_artifacts(
         text=True,
         timeout=30,
     )
+    if result.returncode != 0:
+        log.warning(
+            "strip_pr_artifacts_diff_failed",
+            returncode=result.returncode,
+            stderr=result.stderr.strip(),
+        )
+        return [], []
     changed_files = [f for f in result.stdout.strip().splitlines() if f]
 
     if not changed_files:
@@ -128,22 +135,37 @@ def strip_pr_artifacts(
         log.info("strip_pr_artifacts_nothing_to_strip")
         return keep, []
 
+    staged_files: list[str] = []
     for f in stripped:
-        filepath = project_path / f
-        if filepath.exists():
+        exists_on_base = subprocess.run(
+            ["git", "cat-file", "-e", f"{base_branch}:{f}"],
+            cwd=project_path,
+            capture_output=True,
+            timeout=10,
+        )
+        if exists_on_base.returncode == 0:
             subprocess.run(
                 ["git", "checkout", base_branch, "--", f],
                 cwd=project_path,
                 capture_output=True,
                 timeout=10,
             )
+        else:
+            subprocess.run(
+                ["git", "rm", "-f", "--", f],
+                cwd=project_path,
+                capture_output=True,
+                timeout=10,
+            )
+        staged_files.append(f)
 
-    subprocess.run(
-        ["git", "add", "-A"],
-        cwd=project_path,
-        capture_output=True,
-        timeout=10,
-    )
+    if staged_files:
+        subprocess.run(
+            ["git", "add", "--"] + staged_files,
+            cwd=project_path,
+            capture_output=True,
+            timeout=10,
+        )
 
     log.info(
         "strip_pr_artifacts_complete",
