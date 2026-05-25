@@ -1107,7 +1107,7 @@ factory log "$PROJECT_PATH" "phase.strategy.completed" --data '{"verdict": "PROC
 
 For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
-**Every hypothesis gets the full pipeline.** Steps 2a through 2h-final execute sequentially for each experiment. Do NOT batch builders and skip reviews. Do NOT abbreviate the pipeline for "small" changes. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` fresh for each experiment.
+**Every hypothesis gets the full pipeline.** Steps 2a through 2h-final execute sequentially for each experiment. Do NOT batch builders and skip reviews. Do NOT abbreviate the pipeline for "small" changes. Initialize `$REVIEW_ITERATION=1`, `$FINAL_REVIEW_ITERATION=1`, and `$PREV_ISSUE_COUNT=999` fresh for each experiment.
 
 #### 2a. Baseline Eval (Evaluator Agent)
 
@@ -1212,7 +1212,7 @@ If Builder fails (no PR opened), see Error Recovery below.
 3. Final headless review (2h-final)
 Skipping this pipeline violates Sacred Rule 9.
 
-**This is an iterative review loop.** The CEO reads the PR diff, performs a structured code quality review, and routes fixes back to the Builder until the code is clean or the iteration cap is reached. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` before entering the loop.
+**This is an iterative review loop.** The CEO reads the PR diff, performs a structured code quality review, and routes fixes back to the Builder until the code is clean or the iteration cap is reached. Initialize `$REVIEW_ITERATION=1` and `$PREV_ISSUE_COUNT=999` before entering the loop. Note: `$REVIEW_ITERATION` is scoped to this structured review only; the separate `$FINAL_REVIEW_ITERATION` counter (initialized at Step 2 preamble) tracks iterations of the 2h-final headless review.
 
 **Step 1 — Read the PR:**
 
@@ -1443,8 +1443,8 @@ rm -f /tmp/factory-final-review-$PR_NUM.txt
 
 - **CLEAN** → proceed to KEEP approval below
 - **ISSUES_FOUND** → check iteration cap and convergence:
-  - If `$REVIEW_ITERATION >= 3`: stop. Post KEEP with the remaining issues noted in the review comment. The human reviewer will see them.
-  - Otherwise: route fixes to Builder (same as step 2d-review loop), increment `$REVIEW_ITERATION`, loop back to **step 2d-review** (full pipeline re-run).
+  - If `$FINAL_REVIEW_ITERATION >= 3`: stop. Post KEEP with the remaining issues noted in the review comment. The human reviewer will see them.
+  - Otherwise: route fixes to Builder (same as step 2d-review loop), increment `$FINAL_REVIEW_ITERATION`, re-run **step 2h-final** — the structured review already passed, only the headless review needs to re-run.
 
 **On CLEAN final review → Approve (DO NOT MERGE):**
 
@@ -1495,7 +1495,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "<hypothesis>" --summary "<changes>" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED review_pipeline=full review_iterations=$REVIEW_ITERATION"
+    --notes "ceo:keep score_delta=+X.XXXX precheck=passed agents_spawned=R,S,B,R,E pr_status=open_for_review hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=$BACKLOG_CLEARED review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"
 ```
 
 **If precheck FAILS → Mandatory Revert:**
@@ -1518,7 +1518,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "<hypothesis>" --summary "<changes — reverted>" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na review_pipeline=full review_iterations=$REVIEW_ITERATION"
+    --notes "ceo:revert reason=precheck_failed failures=<list> score_delta=-X.XXXX hypothesis_type=code execution_artifacts=na e2e=pass backlog_cleared=na review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"
 ```
 
 **IMPORTANT — Notes field convention for CEO self-learning:**
@@ -1536,7 +1536,8 @@ Always include structured metadata in `--notes`:
 - `e2e=pass|fail|blocked|skipped` — E2E verification result from step 2f-e2e
 - `backlog_cleared=yes|no|partial|na` — whether the backlog item was verified as solved (`na` if hypothesis had no backlog tag)
 - `review_pipeline=full|abbreviated|skipped` — whether the full 2d-review pipeline ran (`full` = all 3 components executed)
-- `review_iterations=N` — how many review-until-clean iterations were needed (1 = clean on first pass)
+- `review_iterations=N` — how many 2d-review structured review iterations were needed (1 = clean on first pass)
+- `final_review_iterations=N` — how many 2h-final headless review iterations were needed (1 = clean on first pass)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
 
@@ -2093,7 +2094,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict keep --force \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES" \
     --issue $ISSUE_NUM --pr $PR_NUM \
-    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass review_pipeline=full review_iterations=$REVIEW_ITERATION"
+    --notes "ceo:keep mode=research metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER target=$TARGET score_delta=+$DELTA precheck=passed hygiene=pass monotonic=pass review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"
 ```
 
 **If REVERT:**
@@ -2115,7 +2116,7 @@ factory finalize "$PROJECT_PATH" \
     --id $EXP_ID --verdict revert \
     --hypothesis "$HYPOTHESIS" --summary "$CHANGES — reverted" \
     --issue $ISSUE_NUM \
-    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION"
+    --notes "ceo:revert mode=research reason=$REVERT_REASON metric=$METRIC before=$BASELINE_METRIC after=$METRIC_AFTER hygiene=$HYGIENE_STATUS monotonic=$MONOTONIC_STATUS review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"
 ```
 
 #### R5d.5. Plateau Detection and Surface Scope Expansion
@@ -2375,7 +2376,7 @@ If `factory eval` fails without producing a valid score:
 If `factory guard` reports violations:
 1. Change MUST be reverted — no exceptions
 2. Close PR, checkout main
-3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details> review_pipeline=full review_iterations=$REVIEW_ITERATION"`
+3. Finalize as revert with `--notes "ceo:revert reviewer_failed=true violation=<details> review_pipeline=full review_iterations=$REVIEW_ITERATION final_review_iterations=$FINAL_REVIEW_ITERATION"`
 4. Record violation in `strategy/current.md` under Anti-patterns
 
 ### General Agent Failure
