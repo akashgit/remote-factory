@@ -127,8 +127,8 @@ These are fingerprinted for leakage detection.>
 <Optional: per-cycle or total budget constraints>
 
 ### Multi-Run (optional — for stochastic harnesses)
-- **Runs Per Cycle**: <N>
-- **Aggregate**: <mean|median|max|all_pass>
+- **runs_per_cycle**: <N>
+- **aggregate**: <mean|median|max|all_pass>
 - **max_inner_runs_per_cycle**: <optional cap>
 - **plateau_threshold**: <consecutive cycles with no improvement before expanding, e.g. 3>
 

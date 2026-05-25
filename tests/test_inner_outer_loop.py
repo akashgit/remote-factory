@@ -643,14 +643,12 @@ class TestDistillerFormatRoundTrip:
         assert config.outer_loop.inner_surfaces == ["prompts/*.md", "config/*.yaml"]
         assert config.outer_loop.outer_surfaces == ["src/**/*.py"]
 
-    def test_multi_run_aggregation(self, math_benchmark_project: Path) -> None:
+    def test_multi_run_aggregation(self) -> None:
         scores = [0.72, 0.85, 0.64, 0.91, 0.78]
         result = aggregate_metric(scores, AggregateMethod.median)
         assert result == pytest.approx(0.78)
 
-    def test_plateau_detection_at_threshold(
-        self, math_benchmark_project: Path
-    ) -> None:
+    def test_plateau_detection_at_threshold(self) -> None:
         summaries = [
             {"metric_value": 0.65},
             {"metric_value": 0.65},
