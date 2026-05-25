@@ -1,6 +1,6 @@
 # ACE Self-Improvement
 
-ACE (Autonomous Context Engineering) is the Factory's self-improvement loop. It evolves the agent playbooks — behavioral rules that guide each specialist agent — based on real experiment outcomes.
+ACE (Autonomous Context Engineering) is re:factory's self-improvement loop. It evolves the agent playbooks — behavioral rules that guide each specialist agent — based on real experiment outcomes.
 
 ## How It Works
 
@@ -34,7 +34,7 @@ At runtime, when an agent is spawned, evolved playbooks are automatically append
 
 ## Playbook Format
 
-Factory ships clean default playbooks in `factory/agents/playbooks/<role>.md`. When ACE evolves playbooks from your experiment data, it writes to `~/.factory/playbooks/<role>.md` (user-local). The injector checks user-local first, then falls back to factory defaults. Your evolved playbooks are never committed to the factory repo — they're personal to your experiment history.
+re:factory ships clean default playbooks in `factory/agents/playbooks/<role>.md`. When ACE evolves playbooks from your experiment data, it writes to `~/.factory/playbooks/<role>.md` (user-local). The injector checks user-local first, then falls back to factory defaults. Your evolved playbooks are never committed to re:factory repo — they're personal to your experiment history.
 
 Example format:
 

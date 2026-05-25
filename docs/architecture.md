@@ -1,6 +1,6 @@
 # Architecture
 
-The Factory is a three-layer system with strict separation between tooling, orchestration, and execution.
+re:factory is a three-layer system with strict separation between tooling, orchestration, and execution.
 
 ## Three Layers
 
@@ -40,7 +40,7 @@ Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
 1. Project-specific override: `<project>/.factory/agents/<role>.md`
-2. Factory default: `factory/agents/prompts/<role>.md`
+2. re:factory default: `factory/agents/prompts/<role>.md`
 
 Evolved playbooks from ACE are auto-injected at runtime.
 
@@ -63,7 +63,7 @@ The CEO detects project state and routes to the appropriate mode:
 | `--focus "item"` | **Targeted** | Pins one backlog item, one hypothesis, one experiment, then exits |
 | `--mode interactive` | **Interactive** | Research → Distiller spec → user feedback loop → build |
 | `--mode research` | **Research** | Failure analysis → targeted research → hypothesis → build → metric evaluation with leakage guards and monotonic improvement |
-| `--mode meta` | **Meta** | Full Improve loop on the factory itself, then ACE playbook evolution |
+| `--mode meta` | **Meta** | Full Improve loop on re:factory itself, then ACE playbook evolution |
 | `--refine "request"` | **Refine** | Refiner scopes → Builder implements → full review pipeline → keep/revert |
 
 State detection logic lives in `factory/state.py`.

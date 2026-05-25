@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Each Factory-managed project uses a `factory.md` file at its root. The CEO auto-generates this during discovery mode, but you can edit it manually.
+Each re:factory-managed project uses a `factory.md` file at its root. The CEO auto-generates this during discovery mode, but you can edit it manually.
 
 ## Minimal Configuration
 
@@ -33,7 +33,7 @@ What the project should achieve. One sentence that guides the Strategist's hypot
 
 ### `## Scope / Modifiable` (required)
 
-Glob patterns defining which files the factory may edit. Anything outside scope triggers a guard violation.
+Glob patterns defining which files re:factory may edit. Anything outside scope triggers a guard violation.
 
 ```markdown
 ## Scope
@@ -244,7 +244,7 @@ Multi-run configuration for research mode. Runs the evaluation harness multiple 
 
 ### `## Outer Loop Surfaces`
 
-Surface scoping for inner/outer loop transitions. When inner loop improvements plateau, the factory expands the Builder's scope to include outer surfaces for architectural changes. Only used in research mode.
+Surface scoping for inner/outer loop transitions. When inner loop improvements plateau, re:factory expands the Builder's scope to include outer surfaces for architectural changes. Only used in research mode.
 
 ```markdown
 ## Outer Loop Surfaces
@@ -274,7 +274,7 @@ $5/cycle, $50 total
 
 ## `.factory/` Directory
 
-Generated at runtime by the factory. Add to `.gitignore` — do not edit manually:
+Generated at runtime by re:factory. Add to `.gitignore` — do not edit manually:
 
 ```
 .factory/
