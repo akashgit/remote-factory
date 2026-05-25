@@ -4,6 +4,7 @@ import pytest
 from datetime import datetime
 
 from factory.models import (
+    AggregateMethod,
     CostBudget,
     CostBudgetConfig,
     CompositeScore,
@@ -14,6 +15,8 @@ from factory.models import (
     ExperimentRecord,
     FactoryConfig,
     Hypothesis,
+    InnerLoopConfig,
+    OuterLoopConfig,
     ProjectProfile,
     ProjectState,
     ResearchTarget,
@@ -315,6 +318,150 @@ class TestFactoryConfigResearchFields:
         assert restored.research_target is not None
         assert restored.research_target.objective == "Minimize loss"
         assert restored == config
+
+
+class TestAggregateMethod:
+    def test_all_values(self):
+        assert AggregateMethod.mean.value == "mean"
+        assert AggregateMethod.median.value == "median"
+        assert AggregateMethod.max.value == "max"
+        assert AggregateMethod.all_pass.value == "all_pass"
+
+    def test_count(self):
+        assert len(AggregateMethod) == 4
+
+    def test_string_coercion(self):
+        assert AggregateMethod("mean") == AggregateMethod.mean
+        assert AggregateMethod("all_pass") == AggregateMethod.all_pass
+
+    def test_invalid_value(self):
+        with pytest.raises(ValueError):
+            AggregateMethod("invalid")
+
+
+class TestInnerLoopConfig:
+    def test_defaults(self):
+        c = InnerLoopConfig()
+        assert c.runs_per_cycle == 1
+        assert c.aggregate == AggregateMethod.mean
+        assert c.max_runs_per_cycle is None
+
+    def test_custom_values(self):
+        c = InnerLoopConfig(
+            runs_per_cycle=5,
+            aggregate=AggregateMethod.median,
+            max_runs_per_cycle=10,
+        )
+        assert c.runs_per_cycle == 5
+        assert c.aggregate == AggregateMethod.median
+        assert c.max_runs_per_cycle == 10
+
+    def test_rejects_extra_fields(self):
+        with pytest.raises(Exception):
+            InnerLoopConfig(runs_per_cycle=1, extra="bad")
+
+    def test_strict_mode(self):
+        """Strict mode rejects string where int is expected."""
+        with pytest.raises(Exception):
+            InnerLoopConfig(runs_per_cycle="not_an_int")  # type: ignore[arg-type]
+
+    def test_roundtrip_json(self):
+        c = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.max)
+        data = c.model_dump()
+        restored = InnerLoopConfig(**data)
+        assert restored == c
+
+
+class TestOuterLoopConfig:
+    def test_defaults(self):
+        c = OuterLoopConfig()
+        assert c.plateau_threshold == 3
+        assert c.max_escalation_cycles is None
+        assert c.inner_surfaces == []
+        assert c.outer_surfaces == []
+
+    def test_custom_values(self):
+        c = OuterLoopConfig(
+            plateau_threshold=5,
+            max_escalation_cycles=10,
+            inner_surfaces=["src/*.py"],
+            outer_surfaces=["config/*.yaml"],
+        )
+        assert c.plateau_threshold == 5
+        assert c.max_escalation_cycles == 10
+        assert c.inner_surfaces == ["src/*.py"]
+        assert c.outer_surfaces == ["config/*.yaml"]
+
+    def test_rejects_extra_fields(self):
+        with pytest.raises(Exception):
+            OuterLoopConfig(plateau_threshold=3, extra="bad")
+
+    def test_strict_mode(self):
+        with pytest.raises(Exception):
+            OuterLoopConfig(plateau_threshold="not_an_int")  # type: ignore[arg-type]
+
+    def test_roundtrip_json(self):
+        c = OuterLoopConfig(
+            plateau_threshold=4,
+            inner_surfaces=["a.py", "b.py"],
+            outer_surfaces=["c.py"],
+        )
+        data = c.model_dump()
+        restored = OuterLoopConfig(**data)
+        assert restored == c
+
+
+class TestFactoryConfigInnerOuterLoop:
+    def test_defaults_none(self):
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[],
+        )
+        assert config.inner_loop is None
+        assert config.outer_loop is None
+
+    def test_with_inner_loop(self):
+        il = InnerLoopConfig(runs_per_cycle=3, aggregate=AggregateMethod.median)
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], inner_loop=il,
+        )
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 3
+        assert config.inner_loop.aggregate == AggregateMethod.median
+
+    def test_with_outer_loop(self):
+        ol = OuterLoopConfig(
+            plateau_threshold=5,
+            inner_surfaces=["src/"],
+            outer_surfaces=["config/"],
+        )
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], outer_loop=ol,
+        )
+        assert config.outer_loop is not None
+        assert config.outer_loop.plateau_threshold == 5
+
+    def test_roundtrip_json_with_loops(self):
+        il = InnerLoopConfig(runs_per_cycle=5, aggregate=AggregateMethod.all_pass)
+        ol = OuterLoopConfig(
+            plateau_threshold=4,
+            max_escalation_cycles=8,
+            inner_surfaces=["src/model.py"],
+            outer_surfaces=["config/"],
+        )
+        config = FactoryConfig(
+            goal="Research", scope=["src/"], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], inner_loop=il, outer_loop=ol,
+        )
+        data = config.model_dump()
+        restored = FactoryConfig(**data)
+        assert restored == config
+        assert restored.inner_loop is not None
+        assert restored.inner_loop.aggregate == AggregateMethod.all_pass
+        assert restored.outer_loop is not None
+        assert restored.outer_loop.max_escalation_cycles == 8
 
 
 class TestCycleStateResearchMode:

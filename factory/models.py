@@ -143,6 +143,36 @@ class TierWeights(BaseModel):
     spec_compliance: float | None = None
 
 
+class AggregateMethod(str, Enum):
+    """Aggregation strategy for multi-run inner loop results."""
+
+    mean = "mean"
+    median = "median"
+    max = "max"
+    all_pass = "all_pass"
+
+
+class InnerLoopConfig(BaseModel):
+    """Inner loop (multi-run) configuration for research mode."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    runs_per_cycle: int = 1
+    aggregate: AggregateMethod = AggregateMethod.mean
+    max_runs_per_cycle: int | None = None
+
+
+class OuterLoopConfig(BaseModel):
+    """Outer loop (escalation) configuration for research mode."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    plateau_threshold: int = 3
+    max_escalation_cycles: int | None = None
+    inner_surfaces: list[str] = []
+    outer_surfaces: list[str] = []
+
+
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -168,6 +198,8 @@ class FactoryConfig(BaseModel):
     eval_spec: list[str] = []
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
+    inner_loop: InnerLoopConfig | None = None
+    outer_loop: OuterLoopConfig | None = None
 
 
 # ── eval ──────────────────────────────────────────────────────────

@@ -13,6 +13,7 @@ from filelock import FileLock
 from pydantic import ValidationError
 
 from factory.models import (
+    AggregateMethod,
     CompositeScore,
     CostBudgetConfig,
     EvalProfile,
@@ -21,6 +22,8 @@ from factory.models import (
     FactoryConfig,
     HardConstraint,
     HypothesisBudget,
+    InnerLoopConfig,
+    OuterLoopConfig,
     ProjectEvalDimension,
     ResearchTarget,
     TierWeights,
@@ -172,6 +175,106 @@ def _parse_tier_weights(items: str | list[str] | float) -> TierWeights | None:
     return TierWeights(**filtered)
 
 
+def _parse_inner_loop(text: str) -> InnerLoopConfig | None:
+    """Parse ``## Multi-Run`` section from factory.md into an InnerLoopConfig.
+
+    Expected list items: ``runs_per_cycle``, ``aggregate``, ``max_runs_per_cycle``.
+    Returns None when the section is absent or contains no recognised keys.
+    """
+    # Extract the ## Multi-Run section from the full factory.md text
+    import re
+
+    match = re.search(
+        r"^##\s+Multi[_\s-]?Run\b(.*?)(?=^##\s|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    section = match.group(1)
+    items: list[str] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            items.append(stripped[2:].strip())
+
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+
+    kwargs: dict[str, object] = {}
+    if "runs_per_cycle" in kv:
+        kwargs["runs_per_cycle"] = int(str(kv["runs_per_cycle"]))
+    if "aggregate" in kv:
+        agg_val = str(kv["aggregate"]).strip().lower()
+        kwargs["aggregate"] = AggregateMethod(agg_val)
+    if "max_runs_per_cycle" in kv:
+        kwargs["max_runs_per_cycle"] = int(str(kv["max_runs_per_cycle"]))
+
+    if not kwargs:
+        return None
+
+    config = InnerLoopConfig(**kwargs)  # type: ignore[arg-type]
+    log.debug("inner_loop_parsed", runs_per_cycle=config.runs_per_cycle, aggregate=config.aggregate)
+    return config
+
+
+def _parse_outer_loop(text: str) -> OuterLoopConfig | None:
+    """Parse ``## Surface Scoping`` section from factory.md into an OuterLoopConfig.
+
+    Expected list items: ``plateau_threshold``, ``max_escalation_cycles``,
+    ``inner_surfaces``, ``outer_surfaces``.
+    Returns None when the section is absent or contains no recognised keys.
+    """
+    import re
+
+    match = re.search(
+        r"^##\s+Surface[_\s-]?Scoping\b(.*?)(?=^##\s|\Z)",
+        text,
+        re.MULTILINE | re.DOTALL | re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    section = match.group(1)
+    items: list[str] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            items.append(stripped[2:].strip())
+
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+
+    kwargs: dict[str, object] = {}
+    if "plateau_threshold" in kv:
+        kwargs["plateau_threshold"] = int(str(kv["plateau_threshold"]))
+    if "max_escalation_cycles" in kv:
+        kwargs["max_escalation_cycles"] = int(str(kv["max_escalation_cycles"]))
+
+    # inner_surfaces and outer_surfaces are comma-separated lists
+    if "inner_surfaces" in kv:
+        raw = str(kv["inner_surfaces"])
+        kwargs["inner_surfaces"] = [s.strip() for s in raw.split(",") if s.strip()]
+    if "outer_surfaces" in kv:
+        raw = str(kv["outer_surfaces"])
+        kwargs["outer_surfaces"] = [s.strip() for s in raw.split(",") if s.strip()]
+
+    if not kwargs:
+        return None
+
+    config = OuterLoopConfig(**kwargs)  # type: ignore[arg-type]
+    log.debug(
+        "outer_loop_parsed",
+        plateau_threshold=config.plateau_threshold,
+        inner_count=len(config.inner_surfaces),
+        outer_count=len(config.outer_surfaces),
+    )
+    return config
+
+
 class ExperimentStore:
     """Manages the .factory/ directory for a project."""
 
@@ -285,6 +388,8 @@ class ExperimentStore:
         eval_spec = list(es_raw) if isinstance(es_raw, list) else []
         hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
         growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
+        inner_loop = _parse_inner_loop(text)
+        outer_loop = _parse_outer_loop(text)
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
@@ -307,6 +412,8 @@ class ExperimentStore:
             eval_spec=eval_spec,
             hygiene_weights=hygiene_tier_weights,
             growth_weights=growth_tier_weights,
+            inner_loop=inner_loop,
+            outer_loop=outer_loop,
         )
 
         (self.factory_dir / "config.json").write_text(
@@ -513,7 +620,7 @@ class ExperimentStore:
                 "Run 'factory init --reparse' to regenerate it from factory.md."
             ) from exc
         try:
-            return FactoryConfig(**data)
+            return FactoryConfig.model_validate(data, strict=False)
         except (ValidationError, TypeError, KeyError) as exc:
             raise ValueError(
                 f"{config_path} failed validation: {exc}. "

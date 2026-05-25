@@ -524,6 +524,167 @@ class TestTierWeightsParsing:
         assert loaded.hygiene_weights.coverage is None
 
 
+class TestParseInnerLoop:
+    """Tests for parsing ## Multi-Run section from factory.md."""
+
+    async def test_parse_inner_loop(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Multi-Run\n"
+            "- Runs per cycle: 5\n"
+            "- Aggregate: median\n"
+            "- Max runs per cycle: 10\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 5
+        assert config.inner_loop.aggregate.value == "median"
+        assert config.inner_loop.max_runs_per_cycle == 10
+
+    async def test_parse_inner_loop_defaults(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Multi-Run\n"
+            "- Runs per cycle: 3\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 3
+        assert config.inner_loop.aggregate.value == "mean"  # default
+        assert config.inner_loop.max_runs_per_cycle is None  # default
+
+    async def test_no_inner_loop_section(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.inner_loop is None
+
+    async def test_inner_loop_all_pass(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Multi-Run\n"
+            "- Runs per cycle: 3\n"
+            "- Aggregate: all_pass\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.inner_loop is not None
+        assert config.inner_loop.aggregate.value == "all_pass"
+
+
+class TestParseOuterLoop:
+    """Tests for parsing ## Surface Scoping section from factory.md."""
+
+    async def test_parse_outer_loop(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Surface Scoping\n"
+            "- Plateau threshold: 5\n"
+            "- Max escalation cycles: 10\n"
+            "- Inner surfaces: src/model.py, src/train.py\n"
+            "- Outer surfaces: config/hyperparams.yaml, config/arch.yaml\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.outer_loop is not None
+        assert config.outer_loop.plateau_threshold == 5
+        assert config.outer_loop.max_escalation_cycles == 10
+        assert config.outer_loop.inner_surfaces == ["src/model.py", "src/train.py"]
+        assert config.outer_loop.outer_surfaces == ["config/hyperparams.yaml", "config/arch.yaml"]
+
+    async def test_no_outer_loop_section(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.outer_loop is None
+
+    async def test_outer_loop_defaults(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Surface Scoping\n"
+            "- Plateau threshold: 4\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.outer_loop is not None
+        assert config.outer_loop.plateau_threshold == 4
+        assert config.outer_loop.max_escalation_cycles is None
+        assert config.outer_loop.inner_surfaces == []
+        assert config.outer_loop.outer_surfaces == []
+
+    async def test_both_loops_together(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nResearch\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Multi-Run\n"
+            "- Runs per cycle: 3\n"
+            "- Aggregate: mean\n\n"
+            "## Surface Scoping\n"
+            "- Plateau threshold: 5\n"
+            "- Inner surfaces: src/model.py\n"
+            "- Outer surfaces: config/\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.inner_loop is not None
+        assert config.inner_loop.runs_per_cycle == 3
+        assert config.outer_loop is not None
+        assert config.outer_loop.plateau_threshold == 5
+
+
 class TestEnsureFactoryDir:
     """Regression tests for broken symlink handling (issue #276)."""
 
