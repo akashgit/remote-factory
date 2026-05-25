@@ -1333,6 +1333,86 @@ def cmd_ace_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_contribute(args: argparse.Namespace) -> int:
+    """Classify evolved playbooks and contribute general improvements upstream."""
+    project_path = Path(args.path).resolve()
+    projects_dir_raw = getattr(args, "projects_dir", None)
+    if projects_dir_raw:
+        projects_dir = Path(projects_dir_raw).expanduser().resolve()
+    else:
+        from factory.registry import get_project_paths
+        reg_paths = get_project_paths()
+        if reg_paths:
+            projects_dir = reg_paths[0].parent
+        else:
+            projects_dir = project_path.parent
+
+    if args.submit:
+        from factory.ace.contributor import (
+            execute_contribution,
+            load_candidates,
+            prepare_contribution,
+        )
+
+        report = load_candidates(project_path)
+        if report is None:
+            print("No contribution candidates found. Run 'factory contribute --classify' first.")
+            return 1
+
+        general = report.general_items
+        if not general:
+            print("No general items to contribute.")
+            return 0
+
+        factory_home = subprocess.run(
+            ["factory", "home"], capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        factory_repo_path = Path(factory_home).parent
+
+        from factory.insights import discover_projects, load_all_histories
+        project_paths = discover_projects(projects_dir)
+        cross_project_data = load_all_histories(project_paths) if project_paths else {}
+        spec = prepare_contribution(general, factory_repo_path, cross_project_data)
+
+        dry_run = getattr(args, "dry_run", False)
+        if dry_run:
+            print(spec)
+            return 0
+
+        result = execute_contribution(spec, factory_repo_path)
+        print(f"Contribution submitted: {result}")
+        _emit_cli_event(project_path, "contribute.submit_complete", {
+            "items": len(general),
+        })
+        return 0
+
+    if args.status:
+        from factory.ace.contributor import load_candidates
+
+        report = load_candidates(project_path)
+        if report is None:
+            print("No pending contributions.")
+            return 0
+
+        print(f"Pending: {len(report.general_items)} general, {len(report.specific_items)} specific, {len(report.uncertain_items)} uncertain")
+        return 0
+
+    # Default: --classify
+    from factory.ace.contributor import (
+        classify_evolved_playbooks,
+        render_summary,
+        save_candidates,
+    )
+
+    report = classify_evolved_playbooks(project_path)
+    print(render_summary(report))
+    save_candidates(report, project_path)
+    _emit_cli_event(project_path, "contribute.classify_complete", {
+        "total": len(report.general_items) + len(report.specific_items) + len(report.uncertain_items),
+    })
+    return 0
+
+
 def cmd_digest(args: argparse.Namespace) -> int:
     from factory.digest import format_digest, scan_vault
 
@@ -3469,6 +3549,16 @@ def build_parser() -> argparse.ArgumentParser:
     # ace-stats
     sub.add_parser("ace-stats", help="Print playbook item counters for all roles")
 
+    # contribute
+    p = sub.add_parser("contribute", help="Classify evolved playbooks and contribute general improvements upstream")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--classify", action="store_true", help="Classify evolved items and show summary")
+    p.add_argument("--submit", action="store_true", help="Create PR with approved general items")
+    p.add_argument("--status", action="store_true", help="Show pending contribution candidates")
+    p.add_argument("--all", action="store_true", help="Submit all general items without selection")
+    p.add_argument("--projects-dir", default=None, help="Directory containing factory-managed projects")
+    p.add_argument("--dry-run", action="store_true", default=False, help="Show what would be done without writing")
+
     # digest
     p = sub.add_parser("digest", help="Summarize recent factory activity across projects")
     p.add_argument("--date", default=None, help="Show activity for a specific date (YYYY-MM-DD)")
@@ -3823,6 +3913,7 @@ def main(argv: list[str] | None = None) -> int:
         "registry-list": cmd_registry_list,
         "ace": cmd_ace,
         "ace-stats": cmd_ace_stats,
+        "contribute": cmd_contribute,
         "digest": cmd_digest,
         "archive": cmd_archive,
         "precheck": cmd_precheck,
