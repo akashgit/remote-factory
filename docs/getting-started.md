@@ -184,6 +184,25 @@ Add items directly to the backlog for the next cycle to pick up:
 factory backlog-add ~/my-project "add structured logging"
 ```
 
+### `--refine` — targeted post-cycle changes
+
+After a cycle completes (or anytime on an existing project), request a single refinement:
+
+```bash
+factory ceo ~/my-project --refine "add rate limiting to the API"
+```
+
+This routes through the **Refiner** agent (scopes the change) → **Builder** (implements) → full review pipeline → keep/revert verdict. Mutually exclusive with `--mode`, `--prompt`, and `--focus`.
+
+### Post-cycle refinement loop
+
+In foreground mode, the CEO doesn't exit after a cycle — it stays active and waits for follow-up requests. Just type what you want changed:
+
+> "Fix the typo in the header"
+> "Add error handling to the upload endpoint"
+
+Each request is a tracked experiment with its own PR, review pipeline, and keep/revert verdict. There's no cap on refinements — advisory warnings appear at 5 and 10 to flag context growth, but you decide when to stop. Say "done" or "looks good" to exit.
+
 ---
 
 ## 6. Continuous Loop

@@ -116,6 +116,26 @@ Other ways to steer: file GitHub issues (the Strategist reads them), add to the 
 
 ---
 
+## Post-Cycle Refinement
+
+After a build or improve cycle finishes in foreground mode, the CEO stays active — it doesn't exit. Ask for changes directly:
+
+> "Fix the typo in the header"
+> "Add error handling to the upload endpoint"
+> "Make the tests more thorough"
+
+Each request runs through the full experiment pipeline: the **Refiner** scopes it → **Builder** implements → review + eval + E2E gate → keep/revert verdict. No shortcuts — every refinement is a tracked experiment with its own PR.
+
+You can also invoke refinements directly with `--refine`:
+
+```bash
+uv run factory ceo ~/my-app --refine "add rate limiting to the API"
+```
+
+There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag context growth, but the user decides when to stop.
+
+---
+
 ## Auto-Research Mode
 
 Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
@@ -240,6 +260,7 @@ Built something with the Factory? Open a PR to add it here.
 uv run factory ceo <path|url|idea>              # Build or improve
 uv run factory ceo <path> --mode interactive    # Discuss, then execute
 uv run factory ceo <path> --focus "..."         # One target, one experiment
+uv run factory ceo <path> --refine "..."        # Single targeted refinement
 uv run factory ceo <path> --loop                # Continuous loop (research projects)
 uv run factory tmux <path> --loop               # Loop in detached tmux session
 
@@ -260,6 +281,7 @@ uv run factory backlog-remove <path> "..."
 uv run factory dashboard                        # Live web dashboard on :8420
 uv run factory discover <path>                  # Auto-detect eval profile
 uv run factory config show                      # Show resolved config
+uv run factory refine-status <path>              # Refinement state + regrounding
 uv run factory tmux-ls                          # List active tmux sessions
 uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```

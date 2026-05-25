@@ -24,7 +24,7 @@ Prompt: `factory/agents/prompts/ceo.md`
 
 ### Layer 3: Specialist Agents
 
-Eight specialist Claude Code subprocesses, each with a narrow responsibility:
+Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 
 | Agent | Role | Invoked via |
 |-------|------|------------|
@@ -35,6 +35,7 @@ Eight specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Evaluator** | Run evals, compare before/after scores | `factory agent evaluator --task "..."` |
 | **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
 | **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
+| **Refiner** | Classify and scope post-cycle refinement requests (T1/T2/T3 tiers) | `factory agent refiner --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
 
 Agent prompts are resolved via two-tier lookup in `factory/agents/runner.py`:
@@ -63,6 +64,7 @@ The CEO detects project state and routes to the appropriate mode:
 | `--mode interactive` | **Interactive** | Research → Distiller spec → user feedback loop → build |
 | `--mode research` | **Research** | Failure analysis → targeted research → hypothesis → build → metric evaluation with leakage guards and monotonic improvement |
 | `--mode meta` | **Meta** | Full Improve loop on the factory itself, then ACE playbook evolution |
+| `--refine "request"` | **Refine** | Refiner scopes → Builder implements → full review pipeline → keep/revert |
 
 State detection logic lives in `factory/state.py`.
 
