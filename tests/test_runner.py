@@ -1,10 +1,45 @@
-"""Tests for agent runner — output capture and review file saving."""
+"""Tests for agent runner — output capture, review file saving, and profile injection."""
 
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import patch
 
-from factory.agents.runner import _save_review
+from factory.agents.runner import _save_review, resolve_prompt
+
+
+class TestResolvePromptWithProfile:
+    def test_default_no_profile_injection(self) -> None:
+        prompt = resolve_prompt("ceo")
+        assert "## User Profile" not in prompt
+
+    def test_use_profile_false_no_injection(self) -> None:
+        prompt = resolve_prompt("ceo", use_profile=False)
+        assert "## User Profile" not in prompt
+
+    def test_use_profile_true_with_profile_file(self, tmp_path: Path) -> None:
+        profile_path = tmp_path / "profile.md"
+        profile_path.write_text("---\ngenerated: 2024-01-01\n---\n\nThe user is an expert.")
+        with patch("factory.profile._PROFILE_PATH", profile_path):
+            prompt = resolve_prompt("ceo", use_profile=True)
+        assert "## User Profile" in prompt
+        assert "The user is an expert." in prompt
+
+    def test_use_profile_true_without_profile_file(self) -> None:
+        with patch("factory.profile._PROFILE_PATH", Path("/nonexistent/profile.md")):
+            prompt = resolve_prompt("ceo", use_profile=True)
+        assert "## User Profile" not in prompt
+
+    def test_profile_after_playbook(self, tmp_path: Path) -> None:
+        profile_path = tmp_path / "profile.md"
+        profile_path.write_text("The user prefers small PRs.")
+        with patch("factory.profile._PROFILE_PATH", profile_path), \
+             patch("factory.ace.injector.load_playbook", return_value="DO: write tests"):
+            prompt = resolve_prompt("ceo", use_profile=True)
+        assert "Behavioral Playbook" in prompt
+        playbook_idx = prompt.index("Behavioral Playbook")
+        profile_idx = prompt.index("User Profile")
+        assert profile_idx > playbook_idx
 
 
 class TestSaveReview:

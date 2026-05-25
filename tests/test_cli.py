@@ -1362,6 +1362,83 @@ class TestBuildCeoTaskInteractive:
         assert "Mode: build" in task
 
 
+class TestProfileParser:
+    def test_profile_build_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build"])
+        assert args.command == "profile"
+        assert args.profile_command == "build"
+
+    def test_profile_build_with_paths(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build", "/path/a", "/path/b"])
+        assert args.paths == ["/path/a", "/path/b"]
+
+    def test_profile_build_dry_run(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build", "--dry-run"])
+        assert args.dry_run is True
+
+    def test_profile_show_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "show"])
+        assert args.profile_command == "show"
+
+    def test_use_profile_flag_on_ceo(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/path", "--use-profile"])
+        assert args.use_profile is True
+
+    def test_use_profile_flag_default_false_ceo(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/path"])
+        assert args.use_profile is False
+
+    def test_use_profile_flag_on_run(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/path", "--use-profile"])
+        assert args.use_profile is True
+
+    def test_use_profile_flag_on_agent(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "agent", "researcher", "--task", "test", "--project", "/p", "--use-profile",
+        ])
+        assert args.use_profile is True
+
+
+class TestCmdProfile:
+    def test_profile_show_no_file(self, capsys):
+        with patch("factory.profile._PROFILE_PATH", Path("/nonexistent/profile.md")):
+            result = main(["profile", "show"])
+        assert result == 1
+        assert "No profile found" in capsys.readouterr().out
+
+    def test_profile_show_with_file(self, tmp_path, capsys):
+        profile_path = tmp_path / "profile.md"
+        profile_path.write_text("---\ngenerated: 2024\n---\n\nTest profile")
+        with patch("factory.profile._PROFILE_PATH", profile_path):
+            result = main(["profile", "show"])
+        assert result == 0
+        assert "Test profile" in capsys.readouterr().out
+
+    def test_profile_no_subcommand(self, capsys):
+        result = main(["profile"])
+        assert result == 1
+
+    def test_profile_build_dry_run(self, tmp_path, capsys):
+        proj = tmp_path / "myproj"
+        factory_dir = proj / ".factory"
+        factory_dir.mkdir(parents=True)
+        (factory_dir / "results.tsv").write_text("id\thyp\tverdict\n1\ttest-hyp\tkeep\n")
+        result = main(["profile", "build", "--dry-run", str(proj)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "experiment_history" in out
+        assert "test-hyp" in out
+        assert "ceo_verdicts" in out
+
+
 class TestCmdHomeReturnsFactoryDir:
     def test_cmd_home_returns_package_root(self, capsys):
         from factory.cli import cmd_home
