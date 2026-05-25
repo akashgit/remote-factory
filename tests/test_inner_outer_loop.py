@@ -692,7 +692,7 @@ class TestDistillerFormatRoundTrip:
         self, math_benchmark_project: Path
     ) -> None:
         store = ExperimentStore(math_benchmark_project)
-        config = await store.reparse_config()
+        await store.reparse_config()
 
         config_json = json.loads(
             (math_benchmark_project / ".factory" / "config.json").read_text()
