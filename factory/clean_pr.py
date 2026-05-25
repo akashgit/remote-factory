@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import subprocess
-from pathlib import Path, PurePath
+from pathlib import Path
 
 import structlog
 
@@ -37,7 +37,11 @@ def _glob_match(filepath: str, pattern: str) -> bool:
             )
         return True
 
-    return PurePath(filepath).match(pattern)
+    fp_parts = filepath.split("/")
+    pat_parts = pattern.split("/")
+    if len(fp_parts) != len(pat_parts):
+        return False
+    return all(fnmatch.fnmatch(fp, pat) for fp, pat in zip(fp_parts, pat_parts))
 
 
 def filter_pr_diff(
@@ -126,8 +130,15 @@ def strip_pr_artifacts(
                 text=True,
                 timeout=30,
             )
-            (exp_dir / "changes_full.diff").write_text(full_diff.stdout)
-            log.info("strip_pr_artifacts_archived_full_diff", exp_id=exp_id)
+            if full_diff.returncode != 0:
+                log.warning(
+                    "strip_pr_artifacts_archive_diff_failed",
+                    returncode=full_diff.returncode,
+                    stderr=full_diff.stderr.strip(),
+                )
+            else:
+                (exp_dir / "changes_full.diff").write_text(full_diff.stdout)
+                log.info("strip_pr_artifacts_archived_full_diff", exp_id=exp_id)
 
     keep, stripped = filter_pr_diff(changed_files, include=include, exclude=exclude)
 
@@ -144,19 +155,27 @@ def strip_pr_artifacts(
             timeout=10,
         )
         if exists_on_base.returncode == 0:
-            subprocess.run(
+            res = subprocess.run(
                 ["git", "checkout", base_branch, "--", f],
                 cwd=project_path,
                 capture_output=True,
                 timeout=10,
             )
         else:
-            subprocess.run(
+            res = subprocess.run(
                 ["git", "rm", "-f", "--", f],
                 cwd=project_path,
                 capture_output=True,
                 timeout=10,
             )
+        if res.returncode != 0:
+            log.warning(
+                "strip_pr_artifacts_file_failed",
+                file=f,
+                returncode=res.returncode,
+                stderr=res.stderr.decode().strip() if isinstance(res.stderr, bytes) else res.stderr.strip(),
+            )
+            continue
         staged_files.append(f)
 
     if staged_files:
@@ -166,11 +185,17 @@ def strip_pr_artifacts(
             capture_output=True,
             timeout=10,
         )
+        subprocess.run(
+            ["git", "commit", "-m", "factory: clean PR artifacts"],
+            cwd=project_path,
+            capture_output=True,
+            timeout=30,
+        )
 
     log.info(
         "strip_pr_artifacts_complete",
         kept=len(keep),
         stripped=len(stripped),
-        stripped_files=stripped,
+        staged=len(staged_files),
     )
     return keep, stripped
