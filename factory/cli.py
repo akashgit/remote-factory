@@ -2292,7 +2292,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         refine_request=refine_request,
     )
 
-    session_name = f"factory: {project_path.resolve().name}"
+    session_name = _derive_session_name(
+        focus=focus,
+        interactive_idea=interactive_idea,
+        research_ideation=research_ideation,
+        raw_path=raw_path,
+        project_path=project_path,
+        mode=banner_mode,
+    )
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -2443,6 +2450,58 @@ def _extract_project_name(description: str) -> str:
     words = [w for w in re.split(r"\s+", text) if w and w not in _FILLER_WORDS]
     name = "-".join(words[:4])
     return _slugify(name) if name else _slugify(description[:50])
+
+
+def _extract_short_description(text: str, max_words: int = 6) -> str:
+    """Extract a short lowercase phrase from idea text for session naming.
+
+    Like ``_extract_project_name`` but keeps spaces and allows more words.
+    """
+    lowered = text.lower().strip()
+    lowered = _VERB_RE.sub("", lowered)
+    words = [w for w in re.split(r"\s+", lowered) if w and w not in _FILLER_WORDS]
+    return " ".join(words[:max_words])
+
+
+def _derive_session_name(
+    *,
+    focus: str | None = None,
+    interactive_idea: str | None = None,
+    research_ideation: str | None = None,
+    raw_path: str | None = None,
+    project_path: Path,
+    mode: str = "improve",
+) -> str:
+    """Derive a human-readable session name from the best available context.
+
+    Priority:
+    1. Focus directive (most specific)
+    2. Interactive idea / research ideation (new project from idea)
+    3. Raw idea text (new project from raw prompt, not a path/URL)
+    4. Fallback: mode + project directory name
+    """
+    prefix = "factory: "
+    max_len = 60
+
+    if focus:
+        label = focus.lower()[:max_len - len(prefix)]
+        return f"{prefix}{label}"
+
+    idea = interactive_idea or research_ideation
+    if idea:
+        desc = _extract_short_description(idea)
+        if desc:
+            return f"{prefix}{desc}"[:max_len]
+
+    if raw_path and not _safe_is_dir(Path(raw_path).expanduser()) \
+            and not _safe_is_file(Path(raw_path).expanduser()) \
+            and not _is_github_url(raw_path):
+        desc = _extract_short_description(raw_path)
+        if desc:
+            return f"{prefix}{desc}"[:max_len]
+
+    proj_name = project_path.resolve().name
+    return f"{prefix}{mode} {proj_name}"[:max_len]
 
 
 def _dedupe_project_path(project_path: Path, new_spec: str) -> Path:
