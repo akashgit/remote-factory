@@ -13,8 +13,6 @@ from factory.cli import (
     _ask_follow_ups,
     _classify_with_llm,
     _quick_classify,
-    _safe_is_dir,
-    _safe_is_file,
     _show_spinner,
     _substitute_answers,
     _welcome_wizard,
