@@ -29,8 +29,6 @@ class CheckpointState(BaseModel):
     plateau_count: int = 0
     loop_level: Literal["inner", "outer"] = "inner"
     timestamp: str
-    plateau_count: int = 0
-    loop_level: Literal["inner", "outer"] = "inner"
 
 
 def save_checkpoint(project_path: Path, state: CheckpointState) -> None:
