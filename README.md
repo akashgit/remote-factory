@@ -51,6 +51,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | **Improve an existing project** | `uv run factory ceo /path/to/project` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
 | **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
+| **Contribute to an upstream repo** | `uv run factory ceo https://github.com/user/repo --clean-pr` |
 | **Optimize a metric (research)** | `uv run factory ceo "build a harness to solve HMMT Feb 2026 C7" --mode research` |
 
 ---
@@ -133,6 +134,31 @@ uv run factory ceo ~/my-app --refine "add rate limiting to the API"
 ```
 
 There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag context growth, but the user decides when to stop.
+
+---
+
+## Clean PR Mode
+
+When contributing factory-managed code to an upstream repository, you typically don't want eval scripts, benchmarks, `.factory/` data, or eval test files in the PR. Clean PR Mode strips these non-essential artifacts from the commit before pushing, keeping only the production code.
+
+```bash
+# Enable via CLI flag
+uv run factory ceo https://github.com/user/repo --clean-pr
+
+# Strip artifacts from an existing experiment
+uv run factory clean-pr ~/my-project --exp 3
+```
+
+Configure in `factory.md` for persistent use:
+
+```markdown
+## Clean PR
+- clean_pr: true
+- clean_pr_include: ["src/**", "lib/**"]
+- clean_pr_exclude: ["src/internal/**"]
+```
+
+Default excludes: `eval/score.py`, `benchmarks/**`, `tests/eval_*`, `.factory/**`. Resolution precedence: CLI flag > `config.json` > default (`false`). The welcome wizard auto-suggests `--clean-pr` when the input is a GitHub URL.
 
 ---
 
@@ -282,6 +308,7 @@ uv run factory dashboard                        # Live web dashboard on :8420
 uv run factory discover <path>                  # Auto-detect eval profile
 uv run factory config show                      # Show resolved config
 uv run factory refine-status <path>              # Refinement state + regrounding
+uv run factory clean-pr <path> --exp N          # Strip artifacts from experiment PR
 uv run factory tmux-ls                          # List active tmux sessions
 uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```

@@ -194,6 +194,15 @@ factory ceo ~/my-project --refine "add rate limiting to the API"
 
 This routes through the **Refiner** agent (scopes the change) → **Builder** (implements) → full review pipeline → keep/revert verdict. Mutually exclusive with `--mode`, `--prompt`, and `--focus`.
 
+### `--clean-pr` — strip artifacts for upstream
+
+When contributing factory-managed code to an external repository, use `--clean-pr` to strip eval scripts, benchmarks, `.factory/` data, and eval test files from the PR before pushing. The welcome wizard auto-suggests this flag when the input is a GitHub URL.
+
+```bash
+factory ceo https://github.com/user/repo --clean-pr
+factory clean-pr ~/my-project --exp 3
+```
+
 ### Post-cycle refinement loop
 
 In foreground mode, the CEO doesn't exit after a cycle — it stays active and waits for follow-up requests. Just type what you want changed:

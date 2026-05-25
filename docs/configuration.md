@@ -136,6 +136,27 @@ curl -sf http://localhost:8000/health
 
 Good smoke tests are fast (under 30s), test the core user flow, and catch integration issues that unit tests miss.
 
+### `## Clean PR`
+
+Strips non-essential artifacts (eval scripts, benchmarks, `.factory/` data, eval test files) from PRs before pushing to external repositories. Useful when contributing factory-managed code to upstream repos that don't want factory infrastructure.
+
+```markdown
+## Clean PR
+- clean_pr: true
+- clean_pr_include: ["src/**", "lib/**"]
+- clean_pr_exclude: ["src/internal/**"]
+```
+
+| Field | Purpose | Default |
+|-------|---------|---------|
+| `clean_pr` | Enable clean PR mode | `false` |
+| `clean_pr_include` | Include-only glob patterns — if set, only matching files survive | `[]` |
+| `clean_pr_exclude` | Additional exclude patterns beyond defaults | `[]` |
+
+Default excludes (always applied): `eval/score.py`, `benchmarks/**`, `tests/eval_*`, `.factory/**`. A file matched by both include and exclude is excluded (exclude wins).
+
+Resolution precedence: CLI flag (`--clean-pr` / `--no-clean-pr`) > `config.json` > default (`false`).
+
 ### `## Constraints`
 
 Soft rules that guide behavior but don't block merges:

@@ -43,7 +43,7 @@ The factory is a **three-layer system** with a dedicated CEO agent as the orches
 
 ### Layer 1: Python CLI (`factory/`)
 
-Pure tools that don't make decisions. Entry point is `factory/cli.py` → `factory.cli:main` (registered as `factory` script in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict.
+Pure tools that don't make decisions. Entry point is `factory/cli.py` → `factory.cli:main` (registered as `factory` script in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict. Key modules include `factory/clean_pr.py` (Clean PR Mode — strips non-essential artifacts from PRs before pushing to external repos).
 
 ### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
 
@@ -90,7 +90,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 
 ### Models
 
-All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`. The `Notifier` protocol defines the async notification interface.
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos.
 
 ## Environment
 
