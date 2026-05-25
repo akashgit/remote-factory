@@ -532,7 +532,7 @@ factory agent distiller --task "Refine the project specification based on user f
 
 Raw idea: <RAW_IDEA>
 
-<If research ideation: add 'This is a research project. You MUST include the Research Configuration section in your output with all fields filled.'>
+<If research ideation: add 'This is a research project. You MUST include the Research Configuration section in your output with all fields filled (Research Target, Mutable Surfaces, Fixed Surfaces, Research Constraints, Cost Budget). If the harness is stochastic, include the Multi-Run section. If the project has a two-tier surface structure (narrow surfaces to try first, wider surfaces to unlock after plateau), include the Surface Scoping section.'>
 
 ## Prior Draft
 
