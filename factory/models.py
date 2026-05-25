@@ -479,3 +479,26 @@ class Notifier(Protocol):
         records: list[ExperimentRecord],
         composite: CompositeScore | None,
     ) -> None: ...
+
+
+# ── refinement state ─────────────────────────────────────────────
+
+
+class RefinementEntry(BaseModel):
+    """One refinement in a post-cycle refinement session."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    sequence: int
+    request: str
+    started_at: str
+    completed_at: str | None = None
+    verdict: str | None = None
+
+
+class RefinementState(BaseModel):
+    """Tracks refinements within a single post-cycle session."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    entries: list[RefinementEntry] = []

@@ -1557,6 +1557,54 @@ def cmd_validate_research(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_refine_status(args: argparse.Namespace) -> int:
+    """Print refinement state and regrounding output."""
+    from factory.refine_state import format_status, read_state
+
+    project_path = Path(args.path).resolve()
+    state = read_state(project_path)
+    print(format_status(state))
+    return 0
+
+
+def cmd_refine_begin(args: argparse.Namespace) -> int:
+    """Record a new refinement entry and emit regrounding output."""
+    from factory.refine_state import begin_refinement, format_begin
+
+    project_path = Path(args.path).resolve()
+    request = args.request
+    if not request or not request.strip():
+        print("Error: --request must not be empty.", file=sys.stderr)
+        return 1
+    entry = begin_refinement(project_path, request)
+    _emit_cli_event(project_path, "refine.begin", {
+        "sequence": entry.sequence,
+        "request": request[:200],
+    })
+    print(format_begin(entry))
+    return 0
+
+
+def cmd_refine_complete(args: argparse.Namespace) -> int:
+    """Update the last refinement entry with a verdict."""
+    from factory.refine_state import complete_refinement, read_state
+
+    project_path = Path(args.path).resolve()
+    verdict = args.verdict
+    state = read_state(project_path)
+    if not state.entries:
+        print("Warning: no refinement entries found — nothing to complete.", file=sys.stderr)
+        return 1
+    last = state.entries[-1]
+    complete_refinement(project_path, verdict)
+    _emit_cli_event(project_path, "refine.complete", {
+        "sequence": last.sequence,
+        "verdict": verdict,
+    })
+    print(f"Refinement #{last.sequence} completed — verdict: {verdict}")
+    return 0
+
+
 def cmd_review(args: argparse.Namespace) -> int:
     """Format and optionally post a review on a GitHub PR."""
     from factory.review import ReviewPayload, format_review, post_review
@@ -3288,6 +3336,21 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--similarity-threshold", type=float, default=0.6,
                     help="Similarity threshold for anti-pattern detection (default: 0.6)")
 
+    # refine-status
+    p = sub.add_parser("refine-status", help="Print refinement state and regrounding output")
+    p.add_argument("path", help="Path to the project")
+
+    # refine-begin
+    p = sub.add_parser("refine-begin", help="Record a new refinement and emit regrounding output")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--request", required=True, help="Summary of the user's refinement request")
+
+    # refine-complete
+    p = sub.add_parser("refine-complete", help="Complete the current refinement with a verdict")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--verdict", required=True, choices=["keep", "revert", "error", "tier3_exit"],
+                    help="Refinement verdict")
+
     # review
     p = sub.add_parser("review", help="Format and post a structured review on a GitHub PR")
     p.add_argument("--verdict", required=True, choices=["keep", "revert", "KEEP", "REVERT"],
@@ -3595,6 +3658,9 @@ def main(argv: list[str] | None = None) -> int:
         "precheck": cmd_precheck,
         "leakage-check": cmd_leakage_check,
         "validate-research": cmd_validate_research,
+        "refine-status": cmd_refine_status,
+        "refine-begin": cmd_refine_begin,
+        "refine-complete": cmd_refine_complete,
         "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
