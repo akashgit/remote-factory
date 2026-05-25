@@ -1596,7 +1596,10 @@ def cmd_refine_complete(args: argparse.Namespace) -> int:
         print("Warning: no refinement entries found — nothing to complete.", file=sys.stderr)
         return 1
     last = state.entries[-1]
-    complete_refinement(project_path, verdict)
+    mutated = complete_refinement(project_path, verdict)
+    if not mutated:
+        print(f"Warning: refinement #{last.sequence} is already completed.", file=sys.stderr)
+        return 1
     _emit_cli_event(project_path, "refine.complete", {
         "sequence": last.sequence,
         "verdict": verdict,
@@ -2034,7 +2037,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     refine_request = getattr(args, "refine", None)
 
     if refine_request:
-        if mode in ("interactive", "research", "meta"):
+        if mode and mode != "auto":
             print(f"Error: --refine and --mode {mode} are mutually exclusive.",
                   file=sys.stderr)
             return 1

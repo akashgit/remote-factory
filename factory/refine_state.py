@@ -51,19 +51,23 @@ def begin_refinement(project_path: Path, request: str) -> RefinementEntry:
     return entry
 
 
-def complete_refinement(project_path: Path, verdict: str) -> None:
-    """Update the last refinement entry with verdict and completion timestamp."""
+def complete_refinement(project_path: Path, verdict: str) -> bool:
+    """Update the last refinement entry with verdict and completion timestamp.
+
+    Returns True if state was mutated, False if already completed or no entries.
+    """
     state = read_state(project_path)
     if not state.entries:
-        return
+        return False
     last = state.entries[-1]
     if last.verdict is not None:
         log.warning("refinement_already_completed", sequence=last.sequence, existing_verdict=last.verdict)
-        return
+        return False
     last.completed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     last.verdict = verdict
     path = _state_path(project_path)
     path.write_text(json.dumps(state.model_dump(), indent=2) + "\n")
+    return True
 
 
 def format_status(state: RefinementState) -> str:
