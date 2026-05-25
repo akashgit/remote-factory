@@ -170,7 +170,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         log.warning("mcp.unknown_tool", tool=name)
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
-    log.info("mcp.tool_call", tool=name, arguments=arguments)
+    log.debug("mcp.tool_call", tool=name, arguments=arguments)
     try:
         result_text = await handler(arguments)
     except Exception:

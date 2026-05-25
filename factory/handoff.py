@@ -7,6 +7,10 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import structlog
+
+log = structlog.get_logger()
+
 
 def generate_handoff(project_path: Path) -> str:
     """Read 9 data sources and synthesize a structured markdown handoff brief."""
@@ -47,7 +51,7 @@ def _section_project(project_path: Path) -> str:
             if config.get("goal"):
                 lines.append(f"\n**Goal:** {config['goal']}")
         except (json.JSONDecodeError, KeyError):
-            pass
+            log.debug("handoff.parse_error", section="project_config")
 
     return "\n".join(lines)
 
@@ -83,7 +87,7 @@ def _section_current_state(factory_dir: Path) -> str:
             if cycle.get("respawns"):
                 lines.append(f"- **Respawns:** {cycle['respawns']}")
         except (json.JSONDecodeError, KeyError):
-            pass
+            log.debug("handoff.parse_error", section="cycle_state")
 
     if len(lines) == 1:
         lines.append("- No state data available")
@@ -132,7 +136,7 @@ def _section_score_trajectory(factory_dir: Path) -> str:
                 try:
                     scores.append(float(cols[score_after_idx]))
                 except (ValueError, IndexError):
-                    pass
+                    log.debug("handoff.parse_error", section="score_trajectory")
 
         lines.append(f"- **Total experiments:** {len(data_rows)}")
         lines.append(f"- **Kept:** {kept}, **Reverted:** {reverted}")
@@ -168,7 +172,8 @@ def _section_in_progress(factory_dir: Path) -> str:
         content = strategy_path.read_text().strip()
         if content:
             preview = content[:200].replace("\n", " ")
-            lines.append(f"- **Active strategy:** {preview}...")
+            suffix = "..." if len(content) > 200 else ""
+            lines.append(f"- **Active strategy:** {preview}{suffix}")
 
     return "\n".join(lines)
 
@@ -275,5 +280,5 @@ def _git(project_path: Path, *args: str) -> str | None:
         if result.returncode == 0:
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError):
-        pass
+        log.debug("handoff.parse_error", section="git_command")
     return None
