@@ -7,6 +7,10 @@ import os
 import sys
 from typing import BinaryIO
 
+import structlog
+
+log = structlog.get_logger()
+
 
 def should_stream() -> bool:
     """Determine if we should stream subprocess output to the terminal.
@@ -67,6 +71,8 @@ async def stream_subprocess(
     Returns:
         (stdout_bytes, stderr_bytes) tuple with all collected output.
     """
+    log.debug("stream.start", pid=proc.pid, streaming=stream, prefix=prefix)
+
     stdout_buf: list[bytes] = []
     stderr_buf: list[bytes] = []
 
@@ -94,4 +100,13 @@ async def stream_subprocess(
 
     await proc.wait()
 
-    return b"".join(stdout_buf), b"".join(stderr_buf)
+    stdout_bytes = b"".join(stdout_buf)
+    stderr_bytes = b"".join(stderr_buf)
+    log.debug(
+        "stream.end",
+        pid=proc.pid,
+        returncode=proc.returncode,
+        stdout_len=len(stdout_bytes),
+        stderr_len=len(stderr_bytes),
+    )
+    return stdout_bytes, stderr_bytes

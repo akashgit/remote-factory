@@ -6,10 +6,14 @@ import os
 from pathlib import Path
 from typing import Literal
 
+import structlog
+
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.protocol import Runner
+
+log = structlog.get_logger()
 
 __all__ = [
     "Runner",
@@ -47,16 +51,21 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     """
     resolved = name or os.environ.get("FACTORY_RUNNER", "claude")
     resolved = resolved.lower().strip()
+    log.debug("runner.resolving", requested=name, resolved=resolved)
 
     if resolved not in _RUNNERS:
         available = ", ".join(_RUNNERS.keys())
+        log.error("runner.unknown", runner=resolved, available=list(_RUNNERS.keys()))
         raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
 
     if resolved == "bob":
+        log.info("runner.selected", runner="bob", project_path=str(project_path))
         return BobRunner(project_path=project_path)
+    log.info("runner.selected", runner=resolved)
     return _RUNNERS[resolved]()
 
 
 def register_runner(name: str, runner_class: type[Runner]) -> None:
     """Register a runner implementation (used by bob module on import)."""
+    log.debug("runner.registered", name=name, cls=runner_class.__name__)
     _RUNNERS[name] = runner_class

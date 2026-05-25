@@ -167,14 +167,21 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     handler = handlers.get(name)
     if handler is None:
+        log.warning("mcp.unknown_tool", tool=name)
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
-    result_text = await handler(arguments)
+    log.info("mcp.tool_call", tool=name, arguments=arguments)
+    try:
+        result_text = await handler(arguments)
+    except Exception:
+        log.exception("mcp.tool_error", tool=name)
+        raise
     return [TextContent(type="text", text=result_text)]
 
 
 async def run_server() -> None:
     """Start the MCP stdio server."""
+    log.info("mcp.server_starting")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,

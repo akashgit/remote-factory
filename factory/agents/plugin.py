@@ -6,9 +6,12 @@ import functools
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
 import yaml
 
 from factory.agents.runner import _PROMPTS_DIR
+
+log = structlog.get_logger()
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
 _PLUGIN_AGENTS_DIR = Path(__file__).resolve().parent.parent.parent / "agents"
@@ -31,12 +34,14 @@ def load_agent_config() -> dict[str, AgentMeta]:
     config: dict[str, AgentMeta] = {}
     for role, entry in raw.items():
         if not (_PROMPTS_DIR / f"{role}.md").exists():
+            log.debug("plugin.skipped", role=role, reason="no_prompt_file")
             continue
         config[role] = AgentMeta(
             description=entry.get("description", ""),
             model=entry["model"],
             tools=entry.get("tools", []),
         )
+    log.info("plugin.config_loaded", roles=list(config.keys()), count=len(config))
     return config
 
 
@@ -48,6 +53,7 @@ def generate_agent_content(role: str) -> str:
     """
     config = load_agent_config()
     if role not in config:
+        log.error("plugin.unknown_role", role=role, available=list(config.keys()))
         raise ValueError(f"Unknown agent role: {role!r}")
 
     meta = config[role]
