@@ -413,7 +413,9 @@ factory agent distiller --task "Distill a project specification from research an
 
 Raw idea: <RAW_IDEA>
 
-Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
+MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+
+Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
 Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
 ```
@@ -426,7 +428,9 @@ factory agent distiller --task "Distill an improvement specification for an exis
 Project: $PROJECT_PATH
 <If focus topic provided: Focus topic: <FOCUS_TOPIC>>
 
-Read the research report at .factory/strategy/research.md for project context, weak areas, and external best practices.
+MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+
+Every Core Feature or Proposed Change MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
 This is an EXISTING project, not a new idea. Produce an improvement spec with these sections:
 
@@ -461,7 +465,9 @@ include the Multi-Run section. If the project has a two-tier surface structure
 (narrow surfaces to try first, wider surfaces to unlock after plateau), include
 the Surface Scoping section.
 
-Read the research report at .factory/strategy/research.md for domain context, technology recommendations, and prior art.
+MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+
+Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
 Produce a complete idea.md specification with research configuration." --project "$PROJECT_PATH" --timeout 300
 ```
@@ -473,6 +479,14 @@ Read `.factory/reviews/distiller-latest.md` and assess the draft:
 - Are the technology choices well-justified by research?
 - Is the scope achievable?
 - Are features specific enough for a Builder agent?
+
+**Quantitative depth checks (MANDATORY — REDIRECT if any fail):**
+
+1. **Depth check:** Read each Core Feature entry. Every feature MUST have 3+ sentences across its What/How/Why sub-fields. If any feature is a one-liner without the structured sub-fields, REDIRECT with: "Feature '<name>' is a one-liner — expand to What/How/Why with 3+ sentences total."
+
+2. **Research grounding check:** Architecture decisions and feature rationale must reference specific findings from `.factory/strategy/research.md`. If the spec contains no citations or rationale grounded in research, REDIRECT with: "No research grounding found — architecture decisions must cite findings from research.md."
+
+3. **Buildability check:** For each Core Feature, ask: could a Builder agent implement this feature from the spec alone, without asking clarifying questions? If any feature is too vague to implement (missing key details like data format, API shape, error handling approach), REDIRECT with: "Feature '<name>' is not buildable — a Builder would need to ask clarifying questions. Add implementation details."
 
 Write your review to `.factory/reviews/ceo-verdict-distiller.md`.
 

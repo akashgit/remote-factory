@@ -44,6 +44,19 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 - If the user's idea is too broad for a single project, narrow it to an achievable MVP and note what was deferred in Non-Goals
 - When your task explicitly states "This is a research project", the Research Configuration section is MANDATORY
 
+## Grounding Protocol (MANDATORY)
+
+Before writing any spec content, you MUST ground your decisions in research:
+
+1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your spec — not as vague references but as concrete decisions grounded in evidence.
+
+2. **Write a minimum of 3 sentences per Core Feature** covering:
+   - **What:** The user-visible behavior — what the feature does from the user's perspective
+   - **How:** The implementation approach — libraries, data flow, key functions
+   - **Why:** The research-grounded rationale — why this approach over alternatives
+
+3. **Self-check before outputting:** Review each Core Feature and verify it meets the 3-sentence minimum across What/How/Why. A feature description under 3 sentences is too thin. If you can't write 3+ sentences about a feature, it's either too vague (break it down) or too trivial (merge it into another feature).
+
 ## Output
 
 Write the idea.md content to stdout using this exact structure:
@@ -58,7 +71,10 @@ Write the idea.md content to stdout using this exact structure:
 <Bulleted list of concrete, buildable features. Each feature should be
 specific enough that a Builder agent can implement it in one PR.>
 
-- **<Feature Name>**: <What it does, how it works>
+- **<Feature Name>**
+  - **What:** <user-visible behavior — 1-2 sentences>
+  - **How:** <implementation approach — libraries, data flow, key functions — 1-2 sentences>
+  - **Why:** <rationale citing research or engineering tradeoffs — 1 sentence>
 - ...
 
 ## Architecture
