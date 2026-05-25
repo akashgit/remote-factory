@@ -260,7 +260,7 @@ Built something with the Factory? Open a PR to add it here.
 uv run factory ceo <path|url|idea>              # Build or improve
 uv run factory ceo <path> --mode interactive    # Discuss, then execute
 uv run factory ceo <path> --focus "..."         # One target, one experiment
-uv run factory ceo <path> --refine "..."         # Single targeted refinement
+uv run factory ceo <path> --refine "..."        # Single targeted refinement
 uv run factory ceo <path> --loop                # Continuous loop (research projects)
 uv run factory tmux <path> --loop               # Loop in detached tmux session
 
@@ -281,7 +281,7 @@ uv run factory backlog-remove <path> "..."
 uv run factory dashboard                        # Live web dashboard on :8420
 uv run factory discover <path>                  # Auto-detect eval profile
 uv run factory config show                      # Show resolved config
-uv run factory refine-status <path>               # Refinement state + regrounding
+uv run factory refine-status <path>              # Refinement state + regrounding
 uv run factory tmux-ls                          # List active tmux sessions
 uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```
