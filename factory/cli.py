@@ -3246,9 +3246,6 @@ def _run_single_cycle(
         return code
     finally:
         remove_worktree(project_path, wt_path, wt_branch)
-        if _is_scaffold_only(project_path):
-            import shutil
-            shutil.rmtree(project_path, ignore_errors=True)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -3322,13 +3319,14 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_banner(mode)
     _ensure_dashboard(project_path)
 
-    from factory.worktree import prune_stale
-    pruned = prune_stale(project_path)
-    if pruned:
-        print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
-
     if context is not None and not (project_path / ".git").is_dir():
         _materialize_project(project_path, context)
+
+    from factory.worktree import prune_stale
+    if project_path.is_dir():
+        pruned = prune_stale(project_path)
+        if pruned:
+            print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     budget_kwargs = dict(min_growth=min_growth, max_new=max_new, branch=branch)
     skip_improve = mode in ("improve", "meta") or discover_only
