@@ -188,7 +188,7 @@ class TestEvalTestsMultiLang:
         with patch("factory.eval.hygiene._run_cmd") as mock:
             mock.return_value = (0, "ok  \texample/pkg\t0.5s\nok  \texample/cmd\t0.3s\n", "")
             result = eval_tests(tmp_path)
-        assert result["score"] > 0.0
+        assert result["score"] == 1.0
         assert result["passed"] is True
         assert "go" in result["details"]
 
@@ -197,6 +197,7 @@ class TestEvalTestsMultiLang:
         with patch("factory.eval.hygiene._run_cmd") as mock:
             mock.return_value = (1, "FAIL\texample/pkg\t0.5s\n", "")
             result = eval_tests(tmp_path)
+        assert result["score"] == 0.0
         assert result["passed"] is False
         assert "go" in result["details"]
 
@@ -214,6 +215,7 @@ class TestEvalTestsMultiLang:
         with patch("factory.eval.hygiene._run_cmd", side_effect=mock_run_cmd):
             result = eval_tests(tmp_path)
         assert result["score"] == round(5 / 6, 4)
+        assert result["passed"] is False
 
 
 class TestEvalTestsScoring:
@@ -249,8 +251,9 @@ class TestEvalLintMultiLang:
         with patch("factory.eval.hygiene._run_cmd") as mock:
             mock.return_value = (1, "Error - foo\nError - bar\nError - baz\n", "")
             result = eval_lint(tmp_path)
+        assert result["score"] == 0.7
         assert result["passed"] is False
-        assert "3" in result["details"]
+        assert "3 errors" in result["details"]
 
     def test_rust_lint_clean(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\n")
@@ -265,8 +268,9 @@ class TestEvalLintMultiLang:
         with patch("factory.eval.hygiene._run_cmd") as mock:
             mock.return_value = (1, "", "error[E0308]: mismatch\nerror[E0599]: no method\n")
             result = eval_lint(tmp_path)
+        assert result["score"] == 0.8
         assert result["passed"] is False
-        assert "2" in result["details"]
+        assert "2 errors" in result["details"]
 
 
 class TestEvalLintScoring:
@@ -306,5 +310,6 @@ class TestEvalTypeCheckMultiLang:
                 "",
             )
             result = eval_type_check(tmp_path)
+        assert result["score"] == 0.9
         assert result["passed"] is False
-        assert "2" in result["details"]
+        assert "2 errors" in result["details"]
