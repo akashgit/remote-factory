@@ -1235,3 +1235,61 @@ class TestBudgetConscious:
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "## Budget-Conscious Mode" in task
+
+
+class TestCmdHandoff:
+    def test_handoff_parser(self):
+        parser = build_parser()
+        args = parser.parse_args(["handoff", "/some/path"])
+        assert args.command == "handoff"
+        assert args.path == "/some/path"
+
+    def test_handoff_minimal_factory(self, tmp_project, capsys, sample_config):
+        """Handoff works with a minimal .factory/ directory (just config.json)."""
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+        result = main(["handoff", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "# Factory Handoff" in out
+        assert "**Mode:**" in out
+        assert "**Phase:**" in out
+        assert "**Branch:**" in out
+        assert "**Open PRs:**" in out
+        assert "## Last Successful Artifact" in out
+        assert "## Recommended Next Steps" in out
+        assert "## Key Files" in out
+        assert "## Pending Work" in out
+
+    def test_handoff_with_full_state(self, tmp_project, capsys, sample_config):
+        """Handoff includes data from reviews and backlog when present."""
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(sample_config))
+
+        # Create review file
+        reviews_dir = tmp_project / ".factory" / "reviews"
+        reviews_dir.mkdir(parents=True, exist_ok=True)
+        (reviews_dir / "builder-latest.md").write_text("Builder output here.")
+
+        # Create backlog
+        strategy_dir = tmp_project / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True, exist_ok=True)
+        (strategy_dir / "backlog.md").write_text("- Add caching layer\n- Fix auth bug\n")
+
+        result = main(["handoff", str(tmp_project)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "builder-latest.md" in out
+        assert "Add caching layer" in out
+        assert "Fix auth bug" in out
+
+    def test_handoff_missing_files(self, tmp_path, capsys):
+        """Handoff does not crash when .factory/ directory is absent."""
+        (tmp_path / ".git").mkdir()
+        result = main(["handoff", str(tmp_path)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "# Factory Handoff" in out
+        assert "no checkpoint" in out
+        assert "No review artifacts found" in out
+        assert "No backlog file found" in out

@@ -477,6 +477,148 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_handoff(args: argparse.Namespace) -> int:
+    """Synthesize current .factory/ state into a single actionable handoff brief."""
+    from factory.ceo_completion import read_cycle_state
+    from factory.checkpoint import load_checkpoint
+
+    project_path = Path(args.path).resolve()
+    factory_dir = project_path / ".factory"
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines: list[str] = [f"# Factory Handoff — {project_path.name} @ {now}", ""]
+
+    # Mode and phase from cycle state
+    cycle = read_cycle_state(project_path) if factory_dir.is_dir() else None
+    mode = cycle.mode if cycle else "unknown"
+    lines.append(f"**Mode:** {mode}")
+
+    # Phase from checkpoint
+    ckpt = load_checkpoint(project_path) if factory_dir.is_dir() else None
+    if ckpt:
+        completed = ", ".join(ckpt.completed_agents) or "none"
+        pending = ", ".join(ckpt.pending_agents) or "none"
+        lines.append(f"**Phase:** completed=[{completed}], pending=[{pending}]")
+    else:
+        lines.append("**Phase:** no checkpoint")
+
+    # Git branch
+    try:
+        branch_result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=project_path, capture_output=True, text=True, timeout=5,
+        )
+        branch = branch_result.stdout.strip() or "detached HEAD"
+    except Exception:
+        branch = "unknown"
+    lines.append(f"**Branch:** {branch}")
+
+    # Open PRs
+    try:
+        pr_result = subprocess.run(
+            ["gh", "pr", "list", "--state", "open", "--limit", "10"],
+            cwd=project_path, capture_output=True, text=True, timeout=10,
+        )
+        prs = pr_result.stdout.strip() if pr_result.returncode == 0 else None
+    except Exception:
+        prs = None
+    lines.append(f"**Open PRs:** {prs or 'none'}")
+
+    # Focus from cycle state
+    if cycle and cycle.initial_prompt:
+        for line in cycle.initial_prompt.splitlines():
+            if "Target:" in line:
+                lines.append(f"**Focus:** {line.split('Target:', 1)[1].strip()}")
+                break
+
+    lines.append("")
+
+    # Last successful artifact
+    lines.append("## Last Successful Artifact")
+    latest_review = _find_latest_review(factory_dir)
+    if latest_review:
+        lines.append(f"{latest_review}")
+    else:
+        lines.append("No review artifacts found.")
+    lines.append("")
+
+    # Recommended next steps
+    lines.append("## Recommended Next Steps")
+    steps = _recommend_next_steps(mode, ckpt, factory_dir)
+    for i, step in enumerate(steps, 1):
+        lines.append(f"{i}. {step}")
+    lines.append("")
+
+    # Key files
+    lines.append("## Key Files")
+    lines.append("- Strategy: .factory/strategy/current.md")
+    lines.append("- Research: .factory/strategy/research.md")
+    lines.append("- Backlog: .factory/strategy/backlog.md")
+    lines.append("- Reviews: .factory/reviews/")
+    lines.append("")
+
+    # Pending work from backlog
+    lines.append("## Pending Work")
+    backlog_path = factory_dir / "strategy" / "backlog.md"
+    if backlog_path.is_file():
+        backlog = backlog_path.read_text().strip()
+        lines.append(backlog if backlog else "No pending items.")
+    else:
+        lines.append("No backlog file found.")
+
+    print("\n".join(lines))
+    return 0
+
+
+def _find_latest_review(factory_dir: Path) -> str | None:
+    """Find the most recently modified review file."""
+    reviews_dir = factory_dir / "reviews"
+    if not reviews_dir.is_dir():
+        return None
+    review_files = list(reviews_dir.glob("*-latest.md"))
+    if not review_files:
+        return None
+    latest = max(review_files, key=lambda f: f.stat().st_mtime)
+    return f"{latest.relative_to(factory_dir.parent)} (modified {datetime.fromtimestamp(latest.stat().st_mtime).strftime('%Y-%m-%d %H:%M')})"
+
+
+def _recommend_next_steps(mode: str, ckpt: object | None, factory_dir: Path) -> list[str]:
+    """Generate recommended next steps based on current state."""
+    from factory.checkpoint import CheckpointState
+
+    if isinstance(ckpt, CheckpointState) and ckpt.pending_agents:
+        return [
+            f"Resume pending agents: {', '.join(ckpt.pending_agents)}",
+            f"Run: factory ceo <path> --headless (mode will auto-detect to {mode})",
+        ]
+
+    strategy_path = factory_dir / "strategy" / "current.md"
+    has_strategy = strategy_path.is_file() and strategy_path.stat().st_size > 0
+
+    if mode == "build":
+        return ["Continue building the project", "Run: factory ceo <path>"]
+    elif mode == "discover":
+        return ["Run discovery to set up eval harness", "Run: factory ceo <path> --mode discover"]
+    elif mode == "research":
+        return [
+            "Continue research optimization loop",
+            "Run: factory ceo <path> --mode research --headless",
+        ]
+    elif mode == "improve" and has_strategy:
+        return [
+            "Execute next hypothesis from strategy",
+            "Run: factory ceo <path> --headless",
+        ]
+    elif mode == "improve":
+        return [
+            "Run study to generate observations and strategy",
+            "Run: factory ceo <path>",
+        ]
+    return [
+        "Review .factory/ state and decide next action",
+        "Run: factory status <path>",
+    ]
+
+
 def cmd_summary(args: argparse.Namespace) -> int:
     """Generate an end-of-session summary report."""
     from factory.summary import format_summary, generate_summary, save_summary
@@ -2337,6 +2479,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("status", help="Print project status summary")
     p.add_argument("path", help="Path to the project")
 
+    # handoff
+    p = sub.add_parser("handoff", help="Print a structured handoff brief for cross-session resume")
+    p.add_argument("path", help="Path to the project")
+
     # summary
     p = sub.add_parser("summary", help="Generate end-of-session summary report")
     p.add_argument("path", help="Path to the project")
@@ -2685,6 +2831,7 @@ def main(argv: list[str] | None = None) -> int:
         "deferred-list": cmd_backlog_list,
         "backlog-add": cmd_backlog_add,
         "status": cmd_status,
+        "handoff": cmd_handoff,
         "summary": cmd_summary,
         "research": cmd_research,
         "backfill-citations": cmd_backfill_citations,
