@@ -190,8 +190,8 @@ def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
 
     if _is_github_url(stripped):
         return [
-            {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo {shlex.quote(stripped)} --mode improve'},
-            {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive'},
+            {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo {shlex.quote(stripped)} --mode improve --clean-pr'},
+            {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive --clean-pr'},
         ]
 
     return None
@@ -290,6 +290,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 7. For existing projects, use {path} placeholder and add a path follow-up
 8. If the user mentions fixing/improving an EXISTING project, do NOT wrap input as a new idea
 9. Every generated command MUST include an explicit `--mode` flag (improve, interactive, research, meta, or build)
+10. When the input is a GitHub URL (clone scenario), always append `--clean-pr` to the generated command
 
 User input: """
 
