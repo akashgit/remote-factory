@@ -35,6 +35,9 @@ _CONFIG_TEMPLATE = """\
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 
+# miro_token = ""                     # Miro API token (or set FACTORY_MIRO_TOKEN)
+# miro_team_id = ""                   # Miro team ID for board creation
+
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"
 # ANTHROPIC_API_KEY = "sk-ant-..."

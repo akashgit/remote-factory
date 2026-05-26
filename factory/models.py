@@ -207,6 +207,7 @@ class FactoryConfig(BaseModel):
     eval_spec: list[str] = []
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
+    miro_board_id: str = ""
 
 
 # ── eval ──────────────────────────────────────────────────────────
