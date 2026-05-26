@@ -1077,6 +1077,35 @@ class TestAnsiSanitization:
         # Buffer keeps BOTH lines raw
         assert buffer == [b"\x1b[32mok\n", b"\x1b[2J\x1b[H\n"]
 
+    async def test_tee_stream_sanitize_preserves_genuine_blank_line(self) -> None:
+        """sanitize=True preserves a genuine blank line (no escapes) — only
+        redraw-only lines (empty *because* escapes were stripped) are dropped."""
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        reader = MockReader([b"hello\n", b"\n", b"world\n"])
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream(reader, dest, buffer, stream=True, sanitize=True)  # type: ignore[arg-type]
+
+        # The bare blank line is unchanged by strip_ansi, so out == line and it is
+        # NOT dropped — all three lines reach dest.
+        assert dest.getvalue() == b"hello\n\nworld\n"
+        # Buffer keeps all three lines raw.
+        assert buffer == [b"hello\n", b"\n", b"world\n"]
+
     async def test_tee_stream_sanitize_false_byte_identical(self) -> None:
         """sanitize=False (default) writes the raw bytes unchanged."""
         from io import BytesIO

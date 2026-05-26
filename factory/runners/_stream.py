@@ -22,6 +22,12 @@ from typing import BinaryIO
 # The 8-bit C1 ST (\x9C) is intentionally NOT matched: on a raw byte stream that
 # is later UTF-8 decoded, 0x9C is a valid continuation byte and matching it could
 # clip a multibyte character. A lone trailing \x1b is left as-is.
+# Known limitation: stripping is stateless and line-oriented (operates on one
+# readline() chunk). An UNTERMINATED string/OSC sequence, or a sequence split
+# across a readline() boundary, may leak its payload as visible text. This is
+# low-probability for Bob (escape sequences normally arrive intact within one
+# line) and fixing it would require stateful cross-line parsing — intentionally
+# out of scope.
 _ANSI_ESCAPE_RE = re.compile(
     rb"\x1B(?:"
     rb"\[[0-?]*[ -/]*[@-~]"              # CSI ... <final>
@@ -74,9 +80,10 @@ async def tee_stream(
         prefix: Optional prefix to prepend to each line (e.g., b"[bob:researcher] ").
         sanitize: If True, strip ANSI/VT escape sequences from the bytes written to
             dest. The buffer always receives the raw line, never sanitized. Lines
-            that are empty after stripping (modulo \\r/\\n) are skipped entirely,
-            including the prefix, so redraw-only TUI output does not flood the
-            terminal with bare prefixes.
+            that contained ONLY escape sequences (empty after stripping, modulo
+            \\r/\\n) are skipped entirely, including the prefix, so redraw-only TUI
+            frames do not flood the terminal with bare prefixes. Genuine blank
+            lines (no escapes) are preserved.
     """
     while True:
         line = await src.readline()
@@ -85,7 +92,7 @@ async def tee_stream(
         buffer.append(line)  # ALWAYS raw — the captured buffer is never sanitized
         if stream:
             out = strip_ansi(line) if sanitize else line
-            if sanitize and not out.strip(b"\r\n"):
+            if sanitize and out != line and not out.strip(b"\r\n"):
                 continue  # drop redraw-only lines (avoids empty prefixed lines)
             if prefix:
                 dest.write(prefix)
