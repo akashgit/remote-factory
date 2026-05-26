@@ -2256,6 +2256,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         if issue_resolved:
             title, context, issue_number, issue_url = issue_resolved
             focus = f"{title} (issue #{issue_number})"
+
+    # Factory-managed repos commit factory.md but gitignore .factory/. Bootstrap
+    # config.json from factory.md so detection sees a built project and routes to
+    # improve (where --focus is valid) instead of misclassifying it (issue #378).
+    _ensure_factory_config(project_path)
+
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
@@ -2876,6 +2882,40 @@ def _has_research_target(project_path: Path) -> bool:
         return False
 
 
+def _ensure_factory_config(project_path: Path) -> None:
+    """Bootstrap ``.factory/config.json`` from a committed ``factory.md`` if needed.
+
+    Factory-managed repos commit ``factory.md`` but gitignore ``.factory/``, so a
+    fresh checkout has no ``config.json``. Without it, state detection can't tell
+    the repo is factory-managed (it falls through to the open-issue heuristic) and
+    improve/``--focus`` runs are rejected. When ``factory.md`` exists and
+    ``config.json`` does not — and we're not mid-discovery (no ``eval_profile.json``)
+    — parse ``factory.md`` into ``config.json``, exactly as ``factory init`` does.
+    Non-destructive: reads ``factory.md`` and writes ``config.json``/scaffolding only.
+    """
+    factory_md = project_path / "factory.md"
+    config_json = project_path / ".factory" / "config.json"
+    eval_profile = project_path / ".factory" / "eval_profile.json"
+    if config_json.exists() or not factory_md.exists() or eval_profile.exists():
+        return
+    try:
+        from factory.store import ExperimentStore, ensure_factory_dir
+
+        store = ExperimentStore(project_path)
+        ensure_factory_dir(store.factory_dir)
+        config = _run(store.reparse_config())
+        _run(store.init(config))
+        print(
+            f"  Bootstrapped .factory/config.json from factory.md (goal={config.goal!r})",
+            file=sys.stderr,
+        )
+    except Exception as e:  # noqa: BLE001 — best-effort bootstrap, never block the run
+        print(
+            f"  Warning: could not bootstrap config from factory.md: {e}",
+            file=sys.stderr,
+        )
+
+
 def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
     """Detect the right mode based on project state.
 
@@ -3282,6 +3322,11 @@ def cmd_run(args: argparse.Namespace) -> int:
             title, context, issue_number, issue_url = issue_resolved
             focus = f"{title} (issue #{issue_number})"
     mode = getattr(args, "mode", "auto")
+
+    # Bootstrap config.json from a committed factory.md (see _ensure_factory_config)
+    # so factory-managed repos route to improve instead of being misclassified (#378).
+    _ensure_factory_config(project_path)
+
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
