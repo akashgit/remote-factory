@@ -199,6 +199,7 @@ class BobRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
+        tmux_persist: bool = False,
     ) -> tuple[str, int]:
         """Run a headless Bob Shell invocation.
 
@@ -210,6 +211,8 @@ class BobRunner:
         file-based approach for prompt injection.
         """
         _ = session_name
+        if tmux_persist:
+            logger.warning("tmux_persist not supported with bob runner (no session resume)")
         self._role = role
         project_path = self._find_project_path(cwd)
 

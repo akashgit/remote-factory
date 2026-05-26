@@ -34,6 +34,7 @@ _CONFIG_TEMPLATE = """\
 # runner = "claude"                    # CLI backend: "claude", "bob", or "codex"
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
+# tmux_persist = false                 # Launch agents in tmux windows
 
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"

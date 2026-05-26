@@ -387,6 +387,7 @@ async def run_ceo_with_completion_guard(
     max_respawns: int | None = None,
     session_name: str | None = None,
     use_profile: bool = False,
+    tmux_persist: bool = False,
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
@@ -402,6 +403,7 @@ async def run_ceo_with_completion_guard(
         timeout: Timeout per CEO spawn in seconds.
         max_respawns: Max re-spawns (default from env or 5).
         session_name: Optional session name for /resume identification.
+        tmux_persist: If True, run agents interactively in tmux windows instead of headless.
         use_profile: If True, inject user profile into the CEO prompt.
 
     Returns:
@@ -419,6 +421,7 @@ async def run_ceo_with_completion_guard(
             timeout=timeout, model=model, runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
+            tmux_persist=tmux_persist,
         )
 
     if max_respawns is None:
@@ -459,6 +462,7 @@ async def run_ceo_with_completion_guard(
             timeout=timeout, model=model, runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
+            tmux_persist=tmux_persist,
         )
         final_output = result
 

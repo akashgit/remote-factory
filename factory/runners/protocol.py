@@ -22,6 +22,7 @@ class Runner(Protocol):
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
+        tmux_persist: bool = False,
     ) -> tuple[str, int]:
         """Run a headless (non-interactive) agent invocation.
 
@@ -34,6 +35,7 @@ class Runner(Protocol):
             dangerously_skip_permissions: If True, skip permission prompts.
             role: Agent role name (used for logging and output prefixing).
             session_name: Optional session name for identification in /resume.
+            tmux_persist: If True, run the agent interactively in a tmux window instead of a headless subprocess.
 
         Returns:
             (stdout, return_code) tuple.

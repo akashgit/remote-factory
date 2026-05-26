@@ -29,6 +29,7 @@ class ClaudeRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
+        tmux_persist: bool = False,
     ) -> tuple[str, int]:
         """Run a headless Claude Code invocation.
 
@@ -41,9 +42,21 @@ class ClaudeRunner:
             dangerously_skip_permissions: If True, skip permission prompts.
             role: Agent role (used for streaming prefix).
             session_name: Optional session name for identification in /resume.
+            tmux_persist: If True, run the agent interactively in a tmux window instead of a headless subprocess.
 
         Returns (stdout, return_code).
         """
+        if tmux_persist:
+            from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
+
+            if tmux_available():
+                return await run_in_tmux(
+                    prompt, task, cwd, role, find_project_path(cwd),
+                    timeout=timeout, model=model,
+                    dangerously_skip_permissions=dangerously_skip_permissions,
+                )
+            logger.warning("tmux not available; falling back to headless")
+
         cmd = ["claude", "--append-system-prompt", prompt, "-p", task]
         if dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
