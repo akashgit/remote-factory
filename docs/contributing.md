@@ -87,7 +87,7 @@ factory ceo ~/remote-factory --focus "shell completions for re:factory CLI"
 | **Multi-backend support** | Extend re:factory to work with other AI code agents — [Codex](https://openai.com/index/codex/), [Jules](https://jules.google.com/), [Amp](https://ampcode.com/), or any agent that accepts a prompt and produces code changes |
 | **Distributed execution** | Run specialist agents across multiple machines with a message queue (Redis, NATS) instead of local subprocesses |
 | **Learning-to-search** | Use experiment history to train a lightweight model that predicts which hypothesis categories will succeed for a given project state |
-| **Multi-project orchestration** | A meta-CEO that manages a portfolio of projects, allocating factory cycles based on expected improvement |
+| **Multi-project orchestration** | A meta-CEO that manages a portfolio of projects, allocating re:factory cycles based on expected improvement |
 | **Formal verification integration** | Add eval dimensions that use property-based testing (Hypothesis) or formal methods to verify invariants |
 
 If you're interested in any of these, open an issue to discuss the approach before starting.

@@ -7,6 +7,8 @@ hide:
   <img src="assets/refactory_logo.png" alt="re:factory" width="480">
 </p>
 
+# re:factory
+
 **Describe what you want. re:factory builds it, tests it, and keeps improving it — autonomously.**
 
 You give it a spec file, a rough idea, or an existing codebase. re:factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.

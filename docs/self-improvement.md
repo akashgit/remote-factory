@@ -117,7 +117,7 @@ Each experiment record contains:
 - The score delta (how much the composite score changed)
 - CEO decision notes (structured metadata about what agents were spawned, what failed)
 
-ACE analyzes this across **all factory-managed projects** (discovered via the global registry) — not just the current one.
+ACE analyzes this across **all re:factory-managed projects** (discovered via the global registry) — not just the current one.
 
 ### What ACE Produces
 
@@ -153,7 +153,7 @@ This is where re:factory's knowledge compounds. Instead of treating each project
 
 ### How Insights Are Generated
 
-`factory/insights.py` discovers all factory-managed projects (via the global registry, with directory scanning as fallback), loads their experiment histories, and computes:
+`factory/insights.py` discovers all re:factory-managed projects (via the global registry, with directory scanning as fallback), loads their experiment histories, and computes:
 
 - **Category success rates**: Which types of hypotheses (bugfix, testing, feature, observability, etc.) get kept vs reverted across all projects
 - **Winning categories**: Keep rate >= 80% with 3+ experiments (reliable bets)
@@ -195,7 +195,7 @@ The Researcher reads prior knowledge from `.factory/archive/sources/` before doi
 
 ### Global Project Registry
 
-re:factory maintains a global registry at `~/.factory/registry.json` that tracks all factory-managed projects. Projects are auto-registered when experiments begin (`factory begin`) and stats are updated on finalize. This replaces the previous approach of scanning a `--projects-dir` directory.
+re:factory maintains a global registry at `~/.factory/registry.json` that tracks all re:factory-managed projects. Projects are auto-registered when experiments begin (`factory begin`) and stats are updated on finalize. This replaces the previous approach of scanning a `--projects-dir` directory.
 
 The registry enables:
 - **ACE without `--projects-dir`**: The reflector discovers projects via the registry, falling back to directory scanning for backward compatibility
@@ -305,7 +305,7 @@ Meta mode is re:factory's most powerful self-improvement mechanism, but it has d
 - **When the last meta run was recent and few new experiments have run.** If you ran meta mode yesterday and only 2 new experiments have completed since, skip it.
 - **During a focused improvement sprint.** If you're using `--focus` to target a specific area, finish the focused work first. Meta mode's broad playbook evolution can dilute focus-specific learnings.
 
-**Automation:** For long-running factory deployments, schedule meta mode on a regular cadence:
+**Automation:** For long-running re:factory deployments, schedule meta mode on a regular cadence:
 
 ```bash
 # Weekly meta mode via cron, Sunday night
