@@ -52,11 +52,11 @@ uv run mypy factory/              # Type check
 
 We welcome contributions at all levels. Here are some ideas to get started.
 
-**Use the factory to build your contribution.** Write your idea as a `factory.md` goal, point the factory at the repo, and let it do the implementation work. Every idea below can be expressed as a one-line goal — the factory will hypothesize, build, test, and iterate:
+**Use re:factory to build your contribution.** Write your idea as a `factory.md` goal, point re:factory at the repo, and let it do the implementation work. Every idea below can be expressed as a one-line goal — re:factory will hypothesize, build, test, and iterate:
 
 ```bash
 # Fork the repo, then:
-factory ceo ~/remote-factory --focus "shell completions for the factory CLI"
+factory ceo ~/remote-factory --focus "shell completions for re:factory CLI"
 ```
 
 ### Good First Issues
@@ -76,7 +76,7 @@ factory ceo ~/remote-factory --focus "shell completions for the factory CLI"
 | **GSD mode** | A "Get Shit Done" workflow that skips or streamlines the Researcher phase — go straight from observations to Builder for speed-focused iterations |
 | **Notifications (Telegram, Slack, etc.)** | Real-time push notifications on keep/revert decisions, cycle completions, and score regressions. A basic `TelegramNotifier` skeleton exists in `factory/notify/telegram.py` but isn't wired into the CEO loop — needs proper integration and multi-provider support |
 | **Parallel experiments** | Run multiple hypotheses concurrently on separate branches, evaluate in parallel |
-| **GitHub Actions integration** | Run the factory as a GitHub Action on push/PR events |
+| **GitHub Actions integration** | Run re:factory as a GitHub Action on push/PR events |
 | **Custom agent roles** | Allow users to define new specialist agents beyond the built-in roles |
 | **Dashboard auth** | Add basic authentication to the live dashboard for shared deployments |
 
@@ -84,10 +84,10 @@ factory ceo ~/remote-factory --focus "shell completions for the factory CLI"
 
 | Idea | Description |
 |------|-------------|
-| **Multi-backend support** | Extend the factory to work with other AI code agents — [Codex](https://openai.com/index/codex/), [Jules](https://jules.google.com/), [Amp](https://ampcode.com/), or any agent that accepts a prompt and produces code changes |
+| **Multi-backend support** | Extend re:factory to work with other AI code agents — [Codex](https://openai.com/index/codex/), [Jules](https://jules.google.com/), [Amp](https://ampcode.com/), or any agent that accepts a prompt and produces code changes |
 | **Distributed execution** | Run specialist agents across multiple machines with a message queue (Redis, NATS) instead of local subprocesses |
 | **Learning-to-search** | Use experiment history to train a lightweight model that predicts which hypothesis categories will succeed for a given project state |
-| **Multi-project orchestration** | A meta-CEO that manages a portfolio of projects, allocating factory cycles based on expected improvement |
+| **Multi-project orchestration** | A meta-CEO that manages a portfolio of projects, allocating re:factory cycles based on expected improvement |
 | **Formal verification integration** | Add eval dimensions that use property-based testing (Hypothesis) or formal methods to verify invariants |
 
 If you're interested in any of these, open an issue to discuss the approach before starting.

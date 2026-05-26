@@ -1,6 +1,6 @@
 # Eval System
 
-The Factory uses a three-tier composite scoring system to measure every change objectively. No change is kept without a measured improvement.
+re:factory uses a three-tier composite scoring system to measure every change objectively. No change is kept without a measured improvement.
 
 ## Three Tiers
 
@@ -21,7 +21,7 @@ Implementation: `factory/eval/hygiene.py`
 
 ### Tier 2: Growth (5 dimensions)
 
-Computed by the factory itself. These measure whether the project is actually evolving:
+Computed by re:factory itself. These measure whether the project is actually evolving:
 
 | Dimension | What it measures | Weight |
 |-----------|-----------------|--------|

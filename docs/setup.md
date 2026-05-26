@@ -10,13 +10,13 @@
 | [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (for dev install) |
 | tmux | Any | `brew install tmux` (optional, for long-running sessions) |
 
-**Claude Code must be installed and authenticated.** The Factory spawns `claude` as subprocesses — it does not call the Claude API directly. However you've authenticated Claude Code (API key, Vertex AI, etc.) is how the Factory will access Claude.
+**Claude Code must be installed and authenticated.** re:factory spawns `claude` as subprocesses — it does not call the Claude API directly. However you've authenticated Claude Code (API key, Vertex AI, etc.) is how re:factory will access Claude.
 
 ## Installation
 
 ### Option A: From source (recommended)
 
-The factory evolves fast — installing from source lets you `git pull` to stay current.
+re:factory evolves fast — installing from source lets you `git pull` to stay current.
 
 ```bash
 git clone https://github.com/akashgit/remote-factory.git
@@ -47,7 +47,7 @@ If running from source without `uv tool install`, prefix commands with `uv run` 
 
 ## CEO Agent Registration
 
-Register the Factory CEO as a Claude Code agent so you can launch it from anywhere:
+Register re:factory CEO as a Claude Code agent so you can launch it from anywhere:
 
 ```bash
 factory install
@@ -63,11 +63,11 @@ factory ceo ~/my-project
 claude --agent factory-ceo
 ```
 
-Re-run `factory install` after updating the factory to pick up prompt changes.
+Re-run `factory install` after updating re:factory to pick up prompt changes.
 
 ## MCP Servers
 
-The factory uses [MCP](https://modelcontextprotocol.io/) for extended capabilities. Configuration lives in `.mcp.json` at the project root:
+re:factory uses [MCP](https://modelcontextprotocol.io/) for extended capabilities. Configuration lives in `.mcp.json` at the project root:
 
 ```json
 {
@@ -86,19 +86,19 @@ To add MCP servers to a target project, create a `.mcp.json` in its root. The Bu
 
 ## What You Don't Need
 
-- **No Obsidian.** The factory stores all state locally in `.factory/` inside each project and `~/.factory/` globally. Earlier versions used an Obsidian vault — that dependency has been removed entirely.
+- **No Obsidian.** re:factory stores all state locally in `.factory/` inside each project and `~/.factory/` globally. Earlier versions used an Obsidian vault — that dependency has been removed entirely.
 - **No external database.** Everything is flat files: TSV for experiment history, JSON for config and reports, markdown for strategy and archive notes.
-- **No API keys for the factory itself.** The factory spawns Claude Code subprocesses — however you've authenticated Claude Code is how the factory accesses Claude. No separate Anthropic API key is needed.
+- **No API keys for re:factory itself.** re:factory spawns Claude Code subprocesses — however you've authenticated Claude Code is how re:factory accesses Claude. No separate Anthropic API key is needed.
 
 ## Environment Variables
 
-The factory reads these environment variables. None are required for basic usage — the defaults work out of the box.
+re:factory reads these environment variables. None are required for basic usage — the defaults work out of the box.
 
 > **Tip:** All `FACTORY_*` variables below can also be set in `~/.factory/config.toml`, which supports credential profiles and secret masking. See the [Configuration Reference](configuration.md#user-configuration-factoryconfigtoml) for details. Env vars always take precedence over config.toml values.
 
 ### Claude Code Authentication
 
-The factory inherits Claude Code's authentication. Configure whichever method you use:
+re:factory inherits Claude Code's authentication. Configure whichever method you use:
 
 | Variable | Purpose |
 |----------|---------|
@@ -107,7 +107,7 @@ The factory inherits Claude Code's authentication. Configure whichever method yo
 | `ANTHROPIC_VERTEX_PROJECT_ID` | Vertex AI project ID |
 | `CLOUD_ML_REGION` | Vertex AI region (e.g., `us-east5`) |
 
-### Factory Configuration
+### re:factory Configuration
 
 | Variable | Purpose | Default |
 |----------|---------|---------|
@@ -151,7 +151,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh  # uv (optional, for dev install
 # 2. Authenticate Claude Code (if not already done)
 claude  # follow the prompts
 
-# 3. Install the factory
+# 3. Install re:factory
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory && uv sync && uv tool install -e .
 

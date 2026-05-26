@@ -1,6 +1,6 @@
 # Self-Improvement Loop
 
-The Factory is a fully autonomous self-improvement system. Once pointed at a project, it runs measured experiments, learns from the outcomes, and gets sharper over time — no human intervention required. This document explains how the loop works end-to-end: how the CEO tracks agents, how playbooks evolve, how cross-project learning feeds back, and how the CEO improves itself.
+re:factory is a fully autonomous self-improvement system. Once pointed at a project, it runs measured experiments, learns from the outcomes, and gets sharper over time — no human intervention required. This document explains how the loop works end-to-end: how the CEO tracks agents, how playbooks evolve, how cross-project learning feeds back, and how the CEO improves itself.
 
 ## The Loop at a Glance
 
@@ -117,7 +117,7 @@ Each experiment record contains:
 - The score delta (how much the composite score changed)
 - CEO decision notes (structured metadata about what agents were spawned, what failed)
 
-ACE analyzes this across **all factory-managed projects** (discovered via the global registry) — not just the current one.
+ACE analyzes this across **all re:factory-managed projects** (discovered via the global registry) — not just the current one.
 
 ### What ACE Produces
 
@@ -149,11 +149,11 @@ The agent sees its evolved rules as part of its instructions. No explicit "follo
 
 ## Cross-Project Learning
 
-This is where the factory's knowledge compounds. Instead of treating each project as isolated, the factory learns patterns that transfer across projects.
+This is where re:factory's knowledge compounds. Instead of treating each project as isolated, re:factory learns patterns that transfer across projects.
 
 ### How Insights Are Generated
 
-`factory/insights.py` discovers all factory-managed projects (via the global registry, with directory scanning as fallback), loads their experiment histories, and computes:
+`factory/insights.py` discovers all re:factory-managed projects (via the global registry, with directory scanning as fallback), loads their experiment histories, and computes:
 
 - **Category success rates**: Which types of hypotheses (bugfix, testing, feature, observability, etc.) get kept vs reverted across all projects
 - **Winning categories**: Keep rate >= 80% with 3+ experiments (reliable bets)
@@ -166,7 +166,7 @@ The output is a `CrossProjectInsights` object with evidence-backed patterns and 
 
 Cross-project insights flow into the system at three points:
 
-**1. Researcher observations** — When the Researcher agent runs in Meta mode (improving the factory itself), it reads `.factory/strategy/insights.md` and uses category success rates to inform what areas to investigate.
+**1. Researcher observations** — When the Researcher agent runs in Meta mode (improving re:factory itself), it reads `.factory/strategy/insights.md` and uses category success rates to inform what areas to investigate.
 
 **2. Strategist hypothesis ranking** — The FEEC priority system (Fix > Exploit > Explore > Combine) uses category success rates to rank hypotheses. A hypothesis in a winning category gets a boost; one in a losing category gets deprioritized.
 
@@ -191,11 +191,11 @@ The Archivist writes structured notes to `.factory/archive/` inside each project
 
 After writing notes, the Archivist runs `factory report-update` to regenerate `.factory/performance_report.json` — a consolidated report that merges experiment records, CEO verdicts, and observations into a single file. This report is what the ACE reflector reads for qualitative signals (verdict patterns, observation coverage).
 
-The Researcher reads prior knowledge from `.factory/archive/sources/` before doing web searches — if a topic is already covered by source notes, it skips the web search and uses the archived knowledge. This means the factory gets faster and more targeted as its archive grows.
+The Researcher reads prior knowledge from `.factory/archive/sources/` before doing web searches — if a topic is already covered by source notes, it skips the web search and uses the archived knowledge. This means re:factory gets faster and more targeted as its archive grows.
 
 ### Global Project Registry
 
-The factory maintains a global registry at `~/.factory/registry.json` that tracks all factory-managed projects. Projects are auto-registered when experiments begin (`factory begin`) and stats are updated on finalize. This replaces the previous approach of scanning a `--projects-dir` directory.
+re:factory maintains a global registry at `~/.factory/registry.json` that tracks all re:factory-managed projects. Projects are auto-registered when experiments begin (`factory begin`) and stats are updated on finalize. This replaces the previous approach of scanning a `--projects-dir` directory.
 
 The registry enables:
 - **ACE without `--projects-dir`**: The reflector discovers projects via the registry, falling back to directory scanning for backward compatibility
@@ -246,20 +246,20 @@ CEO makes keep/revert decisions
 
 ## Meta Mode: Full Self-Improvement
 
-Meta mode (`factory ceo --mode meta`) is the factory improving itself. It runs in two phases:
+Meta mode (`factory ceo --mode meta`) is re:factory improving itself. It runs in two phases:
 
-### Phase 1: Improve the Factory
+### Phase 1: Improve re:factory
 
-The CEO runs the full experiment loop on the factory's own codebase:
+The CEO runs the full experiment loop on re:factory's own codebase:
 
-1. Researcher observes the factory code + reads cross-project insights
-2. Strategist generates hypotheses for improving the factory (e.g., "add stuck detection to FEEC," "improve eval reliability")
+1. Researcher observes re:factory code + reads cross-project insights
+2. Strategist generates hypotheses for improving re:factory (e.g., "add stuck detection to FEEC," "improve eval reliability")
 3. Builder implements on an experiment branch
 4. Evaluator scores before and after
 5. CEO decides keep or revert
 6. Archivist records everything
 
-This is the factory eating its own dogfood — the same process it uses on target projects, applied to itself.
+This is re:factory eating its own dogfood — the same process it uses on target projects, applied to itself.
 
 ### Phase 2: Evolve All Playbooks
 
@@ -279,7 +279,7 @@ factory ace ~/remote-factory
 
 ### When to Run Meta Mode
 
-Meta mode is the factory's most powerful self-improvement mechanism, but it has diminishing returns if run too frequently or too early. ACE needs a critical mass of experiment data to generate meaningful playbook updates. Running it too early produces noisy rules from small samples; running it too often churns playbooks without enough new evidence between runs.
+Meta mode is re:factory's most powerful self-improvement mechanism, but it has diminishing returns if run too frequently or too early. ACE needs a critical mass of experiment data to generate meaningful playbook updates. Running it too early produces noisy rules from small samples; running it too often churns playbooks without enough new evidence between runs.
 
 **Recommended cadence:**
 
@@ -291,27 +291,27 @@ Meta mode is the factory's most powerful self-improvement mechanism, but it has 
 
 **Prerequisites — run meta mode only when:**
 - At least **5 experiments** have been recorded across your managed projects since the last meta run (10+ preferred for stronger signal). ACE analyzes cross-project data; with fewer than 5 experiments, it lacks the sample size to distinguish signal from noise.
-- The factory has been through at least one full Build-Discover-Improve cycle on at least one project. Running meta mode on a brand-new factory with no experiment history is a no-op.
+- re:factory has been through at least one full Build-Discover-Improve cycle on at least one project. Running meta mode on a brand-new factory with no experiment history is a no-op.
 
 **Signs it's time to run meta mode:**
 - **Stale playbooks**: Agents keep making the same mistakes that get reverted — the playbooks haven't learned to avoid those patterns yet.
 - **Consistent revert patterns**: You see 3+ reverts in the same category across projects, but the Strategist keeps proposing that category.
-- **New project types**: You started managing a project in a language or domain the factory hasn't seen before. Meta mode can generate domain-specific playbook rules from the new experiment data.
+- **New project types**: You started managing a project in a language or domain re:factory hasn't seen before. Meta mode can generate domain-specific playbook rules from the new experiment data.
 - **Playbook counters are outdated**: Check `~/.factory/playbooks/*.md` — if the `helpful`/`harmful` counters are far behind the actual experiment count in `results.tsv`, ACE needs to catch up.
 
 **When NOT to run meta mode:**
-- **Right after initial build.** The factory just scaffolded a project and has zero or one experiment. ACE has nothing to learn from yet. Wait until the project has been through several improve cycles.
+- **Right after initial build.** re:factory just scaffolded a project and has zero or one experiment. ACE has nothing to learn from yet. Wait until the project has been through several improve cycles.
 - **After every improve loop.** This is the most common mistake. Each improve cycle produces 1-5 experiments — not enough new data to meaningfully change playbooks. The result is noisy churn: rules get added and removed in rapid succession without converging.
 - **When the last meta run was recent and few new experiments have run.** If you ran meta mode yesterday and only 2 new experiments have completed since, skip it.
 - **During a focused improvement sprint.** If you're using `--focus` to target a specific area, finish the focused work first. Meta mode's broad playbook evolution can dilute focus-specific learnings.
 
-**Automation:** For long-running factory deployments, schedule meta mode on a regular cadence:
+**Automation:** For long-running re:factory deployments, schedule meta mode on a regular cadence:
 
 ```bash
 # Weekly meta mode via cron, Sunday night
 0 2 * * 0 cd ~/remote-factory && factory ceo ~/remote-factory --mode meta
 
-# Or use the factory's own tmux loop for nightly runs
+# Or use re:factory's own tmux loop for nightly runs
 # Note: --mode is forwarded through tmux → run → ceo
 factory tmux ~/remote-factory --loop --interval 86400 --mode meta
 ```
@@ -333,7 +333,7 @@ The loop is autonomous but not unconstrained. These guardrails cannot be overrid
 
 The system is fully autonomous for Improve and Meta modes. Human intervention is only needed in edge cases:
 
-- **External credentials**: If the target project needs API keys, database access, or test accounts that the factory can't provision itself, the CEO pauses and lists what it needs.
-- **First-time eval review**: When the factory discovers a new project and generates eval dimensions, it pauses for human review of the eval profile before running experiments.
+- **External credentials**: If the target project needs API keys, database access, or test accounts that re:factory can't provision itself, the CEO pauses and lists what it needs.
+- **First-time eval review**: When re:factory discovers a new project and generates eval dimensions, it pauses for human review of the eval profile before running experiments.
 
 Everything else — hypothesis generation, implementation, scoring, keep/revert decisions, archival, playbook evolution, cross-project learning — runs without human input.

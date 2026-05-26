@@ -1,4 +1,8 @@
-# The Factory
+<p align="center">
+  <img src="docs/assets/refactory_logo.png" alt="re:factory" width="480">
+</p>
+
+# re:factory
 
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
@@ -8,7 +12,7 @@
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 
-**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — the Factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
+**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — re:factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
@@ -81,7 +85,7 @@ uv run factory ceo ~/factory-projects/my-app --mode interactive --focus "auth la
 
 ## Build Workflow
 
-When you already have a spec file, a GitHub repo, or a clear description, the Factory builds directly — no interactive step needed:
+When you already have a spec file, a GitHub repo, or a clear description, re:factory builds directly — no interactive step needed:
 
 ```bash
 uv run factory ceo ~/ideas/spec.md
@@ -97,7 +101,7 @@ After the first build, a backlog appears at `.factory/strategy/backlog.md` — d
 
 ## Improve + Focus Workflow
 
-Point the Factory at an existing project and it enters Improve mode automatically:
+Point re:factory at an existing project and it enters Improve mode automatically:
 
 ```bash
 uv run factory ceo ~/factory-projects/my-app
@@ -164,7 +168,7 @@ Default excludes: `eval/score.py`, `benchmarks/**`, `tests/eval_*`, `.factory/**
 
 ## Auto-Research Mode
 
-Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. The Factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
+Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. re:factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
 
 ```bash
 uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
@@ -174,11 +178,11 @@ The CEO collects your research target (metric, run command), mutable surfaces (f
 
 ### Inner loop + outer loop
 
-The Factory operates at two levels, like a researcher who both runs experiments and redesigns the experimental apparatus:
+re:factory operates at two levels, like a researcher who both runs experiments and redesigns the experimental apparatus:
 
 **Inner loop (auto-research):** Build a solver, run it, analyze failures, tweak prompts and logic, re-run. This is the [Karpathy-style](https://www.youtube.com/watch?v=hM_h0UA7upI) pattern — a fixed harness iterating toward a target metric.
 
-**Outer loop (meta-harness):** When inner-loop improvements plateau, the Factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
+**Outer loop (meta-harness):** When inner-loop improvements plateau, re:factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
 
 Configure these in `factory.md` to control automatic loop transitions:
 
@@ -195,25 +199,25 @@ Configure these in `factory.md` to control automatic loop transitions:
 - outer: src/**/*.py
 ```
 
-The factory runs the harness N times per cycle, aggregates scores, and when improvements plateau for the configured threshold, automatically expands the scope to outer surfaces. See the [Configuration Reference](docs/configuration.md#inner-loop) for field details.
+re:factory runs the harness N times per cycle, aggregates scores, and when improvements plateau for the configured threshold, automatically expands the scope to outer surfaces. See the [Configuration Reference](docs/configuration.md#inner-loop) for field details.
 
 ### Example: HMMT math competition solver
 
-The Factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
+re:factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
 
 **Round 1 — inner loop (prompt-level fixes):**
 
-The Factory created a 5-agent pipeline (Explorer → Theorist → Computationalist → Critic → Synthesizer) with computational tools (LP-based separability checking, brute-force enumeration). The pipeline ran multiple times:
+re:factory created a 5-agent pipeline (Explorer → Theorist → Computationalist → Critic → Synthesizer) with computational tools (LP-based separability checking, brute-force enumeration). The pipeline ran multiple times:
 
-- Runs 1-2: Agents spent all output tokens on thinking, returned 0 chars. Factory fixed token limits.
+- Runs 1-2: Agents spent all output tokens on thinking, returned 0 chars. re:factory fixed token limits.
 - Runs 3-6: Explorer and Computationalist found 1574, but the Synthesizer "corrected" it to 1572. Classic synthesis failure — the agent added interpretation that degraded a correct upstream answer.
-- Factory experiment 001: Added a consensus override guard, competition math conventions, and mandatory verification to the Synthesizer prompt. The pipeline started producing 1574, but still hit 1572 in ~50% of runs.
+- re:factory experiment 001: Added a consensus override guard, competition math conventions, and mandatory verification to the Synthesizer prompt. The pipeline started producing 1574, but still hit 1572 in ~50% of runs.
 
 **Round 2 — outer loop (architectural restructuring):**
 
-Prompt-level fixes couldn't make the Synthesizer reliable. The Factory's Strategist recognized the plateau and generated an architectural hypothesis: instead of one pipeline with one prompt, create **12 distinct prompt strategies** and test them as A/B experiments.
+Prompt-level fixes couldn't make the Synthesizer reliable. re:factory's Strategist recognized the plateau and generated an architectural hypothesis: instead of one pipeline with one prompt, create **12 distinct prompt strategies** and test them as A/B experiments.
 
-The Factory added `agents/strategies.py` (1055 lines), three new agent roles (Auditor, Debater, Judge), and modified the orchestrator to support strategy selection. Then it ran all 12 strategies:
+re:factory added `agents/strategies.py` (1055 lines), three new agent roles (Auditor, Debater, Judge), and modified the orchestrator to support strategy selection. Then it ran all 12 strategies:
 
 | Strategy | Answer | Result |
 |---|---|---|
@@ -226,7 +230,7 @@ The Factory added `agents/strategies.py` (1055 lines), three new agent roles (Au
 | deferred-interpretation | 1572 | FAIL |
 | adversarial-debate | 1572 | FAIL |
 
-**Key discovery:** Strategies that give the Synthesizer *concrete evidence* (immutable tool output, geometric proof, reframed problem text) override the bias. Softer interventions (warnings, procedural rules, debate) don't. This is a finding about LLM behavior that emerged from the Factory's own experimentation loop — not something a human specified.
+**Key discovery:** Strategies that give the Synthesizer *concrete evidence* (immutable tool output, geometric proof, reframed problem text) override the bias. Softer interventions (warnings, procedural rules, debate) don't. This is a finding about LLM behavior that emerged from re:factory's own experimentation loop — not something a human specified.
 
 ### Continuous optimization
 
@@ -238,9 +242,9 @@ uv run factory ceo ~/my-solver --loop --interval 900    # Custom interval
 uv run factory tmux ~/my-solver --loop                  # Detached tmux session
 ```
 
-The factory auto-detects the research target in `factory.md` and enters research mode. Failed experiments don't stop the loop — the factory learns from them and moves on.
+re:factory auto-detects the research target in `factory.md` and enters research mode. Failed experiments don't stop the loop — re:factory learns from them and moves on.
 
-| Project | Metric | What the factory optimizes |
+| Project | Metric | What re:factory optimizes |
 |---------|--------|---------------------------|
 | SWE-bench solver | resolve rate | Agent logic, prompts, localization strategies |
 | HMMT math solver | solve rate | Agent prompts, pipeline architecture, strategy selection |
@@ -258,11 +262,11 @@ Every change is measured by an 11-dimension composite score across three tiers: 
 
 ## Self-Evolving Agents (ACE)
 
-The Factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `uv run factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
+re:factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `uv run factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
 
 ---
 
-## Built with the Factory
+## Built with re:factory
 
 | Project | What it does | Mode |
 |---------|-------------|------|
@@ -273,9 +277,9 @@ The Factory improves itself. Every keep/revert decision becomes training data �
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
 | **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
 | **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Interactive + Improve |
-| **The Factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
+| **re:factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
 
-Built something with the Factory? Open a PR to add it here.
+Built something with re:factory? Open a PR to add it here.
 
 ---
 
@@ -313,13 +317,13 @@ uv run factory tmux-ls                          # List active tmux sessions
 uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```
 
-See `uv run factory --help` for the complete list. The factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
+See `uv run factory --help` for the complete list. re:factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
 
 ---
 
 ## Runners
 
-The factory supports multiple CLI backends. Default is Claude Code — switch with `--runner` or `FACTORY_RUNNER`:
+re:factory supports multiple CLI backends. Default is Claude Code — switch with `--runner` or `FACTORY_RUNNER`:
 
 ```bash
 # Direct
@@ -367,7 +371,7 @@ claude --agent factory-researcher "study the auth system"
 | [Architecture](docs/architecture.md) | Three-layer system, agent roles, state machine, data flow |
 | [Eval System](docs/eval.md) | Hygiene/growth/project tiers, scoring, guards, precheck |
 | [Configuration](docs/configuration.md) | `factory.md` reference — all sections and options |
-| [ACE Self-Improvement](docs/ace.md) | How the factory evolves its own agent playbooks |
+| [ACE Self-Improvement](docs/ace.md) | How re:factory evolves its own agent playbooks |
 | [Contributing](docs/contributing.md) | Dev setup, code style, testing, PR workflow |
 
 ## Development

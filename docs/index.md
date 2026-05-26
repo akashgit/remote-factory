@@ -3,11 +3,15 @@ hide:
   - navigation
 ---
 
-# The Factory
+<p align="center">
+  <img src="assets/refactory_logo.png" alt="re:factory" width="480">
+</p>
 
-**Describe what you want. The Factory builds it, tests it, and keeps improving it — autonomously.**
+# re:factory
 
-You give it a spec file, a rough idea, or an existing codebase. The Factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
+**Describe what you want. re:factory builds it, tests it, and keeps improving it — autonomously.**
+
+You give it a spec file, a rough idea, or an existing codebase. re:factory researches best practices, scaffolds the project, sets up evaluation, and runs a continuous improvement loop — measuring every change and keeping only what makes things better. The agents that do this work learn from every experiment and get sharper over time.
 
 ```bash
 # Build — have a fleshed-out idea? Pass the file.
@@ -16,7 +20,7 @@ factory ceo ~/ideas/weather-dashboard.md
 # Interactive — just starting to think about it? Brainstorm first.
 factory ceo "distributed eval runner" --mode interactive
 
-# Research — have a metric to optimize? The factory runs experiments.
+# Research — have a metric to optimize? re:factory runs experiments.
 factory ceo "SWE-bench solver agent" --mode research
 
 # Improve — point it at any codebase
@@ -58,7 +62,7 @@ factory ceo ~/ideas/weather-dashboard.md
 factory ceo https://github.com/user/repo
 ```
 
-Give the Factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
+Give re:factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
 
 ### Improve — make an existing codebase better
 
@@ -109,12 +113,12 @@ factory run ~/my-project --loop
 factory tmux ~/my-project --loop
 ```
 
-`--headless` disables the interactive session. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine with `factory tmux` to leave the Factory running on an always-on machine. See [Getting Started](getting-started.md) for full details.
+`--headless` disables the interactive session. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine with `factory tmux` to leave re:factory running on an always-on machine. See [Getting Started](getting-started.md) for full details.
 
 ## Quick Start
 
 ```bash
-# Install from source (recommended — the factory evolves fast)
+# Install from source (recommended — re:factory evolves fast)
 git clone https://github.com/akashgit/remote-factory.git
 cd remote-factory && uv sync && uv tool install -e .
 
@@ -122,13 +126,13 @@ cd remote-factory && uv sync && uv tool install -e .
 factory install
 ```
 
-**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — the factory stores all state locally.
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — re:factory stores all state locally.
 
 Per-project state lives in `.factory/` (experiment history, strategy, archive notes). Global state lives in `~/.factory/` (project registry, evolved playbooks). Projects are auto-registered when experiments begin — no manual setup needed. See [Setup Guide](setup.md) for environment variables and authentication options.
 
 ## Self-Evolving Agents
 
-The factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
+re:factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
 
 This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
 
@@ -209,9 +213,9 @@ graph LR
 | **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability |
 | **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
 
-## Built with the Factory
+## Built with re:factory
 
-The factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
+re:factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
 
 | Project | What it does | Mode |
 |---------|-------------|------|
@@ -222,9 +226,9 @@ The factory has shipped something every day for the last 30 days — products, r
 | **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
 | **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
 | **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
-| **The Factory itself** | The factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+| **re:factory itself** | re:factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
 
-Built something with the Factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
+Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
 
 ## License
 
