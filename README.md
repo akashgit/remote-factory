@@ -2,7 +2,6 @@
   <img src="docs/assets/refactory_logo.png" alt="re:factory" width="480">
 </p>
 
-# re:factory
 
 [![CI](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml/badge.svg)](https://github.com/akashgit/remote-factory/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/akashgit/remote-factory/graph/badge.svg)](https://codecov.io/gh/akashgit/remote-factory)
