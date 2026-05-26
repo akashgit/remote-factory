@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard, _ensure_factory_config
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -2000,3 +2000,84 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+# Minimal valid factory.md with a ## Goal section (modeled on templates/factory_config.md).
+_MINIMAL_FACTORY_MD = (
+    "# Factory Configuration\n\n"
+    "## Goal\nBuild a test widget\n\n"
+    "## Scope\n\n### Modifiable\n- src/**/*.py\n\n"
+    "## Guards\n- Do not delete tests\n\n"
+    "## Eval\n\n### Command\n```bash\npython eval/score.py\n```\n\n"
+    "### Threshold\n0.8\n\n"
+    "## Constraints\n- Prefer small changes\n"
+)
+
+
+class TestEnsureFactoryConfig:
+    """Tests for _ensure_factory_config — bootstrap config.json from committed factory.md."""
+
+    def test_ensure_factory_config_bootstraps_from_factory_md(self, tmp_path):
+        """factory.md present, no config.json, no eval_profile.json -> config.json created."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "factory.md").write_text(_MINIMAL_FACTORY_MD)
+        config_json = project / ".factory" / "config.json"
+        assert not config_json.exists()
+
+        _ensure_factory_config(project)
+
+        assert config_json.exists()
+        config = json.loads(config_json.read_text())
+        assert config["goal"] == "Build a test widget"
+
+    def test_ensure_factory_config_noop_when_config_exists(self, tmp_path):
+        """Existing config.json is left untouched (no overwrite, no raise)."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "factory.md").write_text(_MINIMAL_FACTORY_MD)
+        factory_dir = project / ".factory"
+        factory_dir.mkdir()
+        config_json = factory_dir / "config.json"
+        sentinel = '{"goal": "pre-existing"}\n'
+        config_json.write_text(sentinel)
+
+        _ensure_factory_config(project)
+
+        assert config_json.read_text() == sentinel
+
+    def test_ensure_factory_config_noop_when_factory_md_absent(self, tmp_path):
+        """No factory.md -> no config.json created, no raise."""
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        _ensure_factory_config(project)
+
+        assert not (project / ".factory" / "config.json").exists()
+
+    def test_ensure_factory_config_noop_when_mid_discovery(self, tmp_path):
+        """eval_profile.json present (mid-discovery) -> bootstrap skipped, no config.json."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / "factory.md").write_text(_MINIMAL_FACTORY_MD)
+        factory_dir = project / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "eval_profile.json").write_text("{}")
+
+        _ensure_factory_config(project)
+
+        assert not (factory_dir / "config.json").exists()
+
+    def test_ensure_factory_config_malformed_does_not_raise(self, tmp_path):
+        """Unparseable factory.md is best-effort — exception is caught, no raise, no config.json."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        # A non-numeric threshold makes reparse_config raise ValueError while parsing.
+        (project / "factory.md").write_text(
+            "# Factory\n\n## Goal\nBroken\n\n## Threshold\nnot-a-number\n"
+        )
+
+        # Should swallow the parse error rather than propagate it.
+        _ensure_factory_config(project)
+
+        assert not (project / ".factory" / "config.json").exists()
