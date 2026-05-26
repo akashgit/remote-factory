@@ -3237,6 +3237,55 @@ def _emit_cli_event(project_path: Path, event_type: str, data: dict) -> None:
         pass
 
 
+def cmd_miro_init(args: argparse.Namespace) -> int:
+    """Create a Miro board for a project."""
+    from factory.user_config import resolve
+
+    token = resolve("miro_token", env_var="FACTORY_MIRO_TOKEN")
+    if not token:
+        print("Miro token not found. To set up:", file=sys.stderr)
+        print("  1. Go to https://miro.com/app/settings/user-profile/apps", file=sys.stderr)
+        print("  2. Create a new app and generate an access token", file=sys.stderr)
+        print("  3. export FACTORY_MIRO_TOKEN=<your-token>", file=sys.stderr)
+        print('     Or add to ~/.factory/config.toml:', file=sys.stderr)
+        print("     [defaults]", file=sys.stderr)
+        print('     miro_token = "<your-token>"', file=sys.stderr)
+        return 1
+    from factory.miro.sync import sync_board
+
+    result = _run(sync_board(Path(args.path)))
+    if result:
+        print(f'Board synced: {result.get("item_count", 0)} items, {result.get("drift_count", 0)} drift findings')
+    return 0
+
+
+def cmd_miro_link(args: argparse.Namespace) -> int:
+    """Link an existing Miro board to a project."""
+    project_path = Path(args.path)
+    config_path = project_path / ".factory" / "config.json"
+    if not config_path.exists():
+        print("Error: No .factory/config.json found. Run factory init first.", file=sys.stderr)
+        return 1
+    data = json.loads(config_path.read_text())
+    data["miro_board_id"] = args.board_id
+    config_path.write_text(json.dumps(data, indent=2) + "\n")
+    print(f"Linked Miro board {args.board_id} to {project_path}")
+    return 0
+
+
+def cmd_miro_sync(args: argparse.Namespace) -> int:
+    """Sync project state to Miro board."""
+    from factory.miro.sync import sync_board
+
+    result = _run(sync_board(Path(args.path)))
+    if result:
+        print(f'Synced: {result.get("item_count", 0)} items, {result.get("connector_count", 0)} connectors,'
+              f' {result.get("drift_count", 0)} drift')
+    else:
+        print("Sync skipped (no board configured or no token)", file=sys.stderr)
+    return 0
+
+
 # ── parser construction ────────────────────────────────────────
 
 
@@ -3721,6 +3770,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
 
+    # miro-init — create a Miro board for a project
+    p = sub.add_parser("miro-init", help="Create a Miro board for a project")
+    p.add_argument("path", help="Path to the project")
+
+    # miro-link — link an existing Miro board
+    p = sub.add_parser("miro-link", help="Link an existing Miro board")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--board-id", required=True, help="Miro board ID")
+
+    # miro-sync — sync project state to Miro board
+    p = sub.add_parser("miro-sync", help="Sync project state to Miro board")
+    p.add_argument("path", help="Path to the project")
+
     return parser
 
 
@@ -3791,6 +3853,9 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
+        "miro-init": cmd_miro_init,
+        "miro-link": cmd_miro_link,
+        "miro-sync": cmd_miro_sync,
     }
 
     try:
