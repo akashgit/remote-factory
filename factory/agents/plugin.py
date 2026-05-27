@@ -1,4 +1,4 @@
-"""Plugin agent generation — produce Claude Code subagent files from source prompts."""
+"""Plugin agent generation — produce Claude Code and Codex CLI agent files from source prompts."""
 
 from __future__ import annotations
 
@@ -83,6 +83,85 @@ def generate_agent_content(role: str) -> str:
         f"\n"
         f"{prompt}"
     )
+
+
+_READ_ONLY_ROLES = frozenset({"researcher", "reviewer", "evaluator", "strategist", "failure_analyst"})
+_WORKSPACE_WRITE_ROLES = frozenset({"builder", "archivist", "distiller", "refiner", "ceo"})
+
+
+def _sandbox_mode(role: str) -> str:
+    """Map agent role to Codex sandbox mode."""
+    if role in _READ_ONLY_ROLES:
+        return "read-only"
+    return "workspace-write"
+
+
+def _escape_toml_multiline(text: str) -> str:
+    """Escape text for a TOML multiline basic string (triple-quoted)."""
+    return text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+
+
+def generate_codex_agent_toml(role: str) -> str:
+    """Generate a TOML agent file for Codex CLI.
+
+    Reads the same agents.yml + prompts/*.md sources as generate_agent_content
+    but emits TOML with fields: name, description, developer_instructions, sandbox_mode.
+    """
+    config = load_agent_config()
+    if role not in config:
+        raise ValueError(f"Unknown agent role: {role!r}")
+
+    meta = config[role]
+    prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
+    playbook_path = _PLAYBOOKS_DIR / f"{role}.md"
+    if playbook_path.exists():
+        playbook = playbook_path.read_text().strip()
+        if playbook:
+            prompt = inject_playbook(prompt, playbook)
+
+    sandbox = _sandbox_mode(role)
+    escaped_desc = meta.description.replace('"', '\\"')
+    escaped_prompt = _escape_toml_multiline(prompt)
+
+    return (
+        f'# GENERATED FILE — do not edit directly.\n'
+        f'# Source: factory/agents/prompts/{role}.md\n'
+        f'# Run: python scripts/sync_agents.py\n'
+        f'\n'
+        f'name = "factory-{role}"\n'
+        f'description = "{escaped_desc}"\n'
+        f'sandbox_mode = "{sandbox}"\n'
+        f'\n'
+        f'developer_instructions = """\n'
+        f'> **Prerequisite:** The `factory` CLI must be on PATH.\n'
+        f'> Install: `uv tool install remote-factory`\n'
+        f'\n'
+        f'{escaped_prompt}"""\n'
+    )
+
+
+def check_codex_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
+    """Compare generated Codex TOML agent files against what's on disk.
+
+    Returns a list of role names that are out of sync (empty = all good).
+    """
+    if agents_dir is None:
+        return []
+
+    config = load_agent_config()
+    out_of_sync: list[str] = []
+    for role in config:
+        expected = generate_codex_agent_toml(role)
+        agent_path = agents_dir / f"{role}.toml"
+
+        if not agent_path.exists():
+            out_of_sync.append(role)
+            continue
+
+        if agent_path.read_text() != expected:
+            out_of_sync.append(role)
+
+    return out_of_sync
 
 
 def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:

@@ -5,8 +5,13 @@ import yaml
 
 from factory.agents.plugin import (
     AgentMeta,
+    _READ_ONLY_ROLES,
+    _WORKSPACE_WRITE_ROLES,
+    _sandbox_mode,
     check_agents_in_sync,
+    check_codex_agents_in_sync,
     generate_agent_content,
+    generate_codex_agent_toml,
     load_agent_config,
 )
 from factory.agents.runner import AgentRole, _PROMPTS_DIR
@@ -144,7 +149,7 @@ class TestCmdInstall:
 
         from factory.cli import cmd_install
 
-        rc = cmd_install(Namespace(role=None))
+        rc = cmd_install(Namespace(role=None, runner="claude"))
         assert rc == 0
         agents_dir = tmp_path / ".claude" / "agents"
         for role in ALL_ROLES:
@@ -159,7 +164,7 @@ class TestCmdInstall:
 
         from factory.cli import cmd_install
 
-        rc = cmd_install(Namespace(role="builder"))
+        rc = cmd_install(Namespace(role="builder", runner="claude"))
         assert rc == 0
         agents_dir = tmp_path / ".claude" / "agents"
         assert (agents_dir / "factory-builder.md").exists()
@@ -171,5 +176,146 @@ class TestCmdInstall:
 
         from factory.cli import cmd_install
 
-        rc = cmd_install(Namespace(role="nonexistent"))
+        rc = cmd_install(Namespace(role="nonexistent", runner="claude"))
+        assert rc == 1
+
+
+class TestSandboxMode:
+    def test_read_only_roles(self):
+        for role in _READ_ONLY_ROLES:
+            assert _sandbox_mode(role) == "read-only"
+
+    def test_workspace_write_roles(self):
+        for role in _WORKSPACE_WRITE_ROLES:
+            assert _sandbox_mode(role) == "workspace-write"
+
+    def test_all_known_roles_covered(self):
+        config = load_agent_config()
+        for role in config:
+            mode = _sandbox_mode(role)
+            assert mode in ("read-only", "workspace-write"), (
+                f"{role} has unexpected sandbox mode: {mode}"
+            )
+
+    def test_researcher_is_read_only(self):
+        assert _sandbox_mode("researcher") == "read-only"
+
+    def test_builder_is_workspace_write(self):
+        assert _sandbox_mode("builder") == "workspace-write"
+
+    def test_ceo_is_workspace_write(self):
+        assert _sandbox_mode("ceo") == "workspace-write"
+
+
+class TestGenerateCodexAgentToml:
+    def test_generates_valid_toml_structure(self):
+        content = generate_codex_agent_toml("researcher")
+        assert 'name = "factory-researcher"' in content
+        assert "sandbox_mode" in content
+        assert "developer_instructions" in content
+
+    def test_has_generated_comment(self):
+        content = generate_codex_agent_toml("builder")
+        assert "GENERATED FILE" in content
+        assert "factory/agents/prompts/builder.md" in content
+
+    def test_sandbox_mode_matches_role(self):
+        for role in ALL_ROLES:
+            content = generate_codex_agent_toml(role)
+            expected_mode = _sandbox_mode(role)
+            assert f'sandbox_mode = "{expected_mode}"' in content, (
+                f"{role}: expected sandbox_mode={expected_mode}"
+            )
+
+    def test_name_prefixed_with_factory(self):
+        for role in ALL_ROLES:
+            content = generate_codex_agent_toml(role)
+            assert f'name = "factory-{role}"' in content
+
+    def test_contains_prompt_heading(self):
+        for role in ALL_ROLES:
+            source = (_PROMPTS_DIR / f"{role}.md").read_text()
+            first_line = source.strip().splitlines()[0]
+            generated = generate_codex_agent_toml(role)
+            assert first_line in generated, (
+                f"{role}: generated TOML does not include first line of source prompt"
+            )
+
+    def test_has_prerequisite_note(self):
+        content = generate_codex_agent_toml("builder")
+        assert "uv tool install" in content
+
+    def test_unknown_role_raises(self):
+        with pytest.raises(ValueError, match="Unknown agent role"):
+            generate_codex_agent_toml("nonexistent")
+
+    def test_description_present(self):
+        for role in ALL_ROLES:
+            content = generate_codex_agent_toml(role)
+            assert 'description = "' in content
+
+    def test_multiline_instructions(self):
+        content = generate_codex_agent_toml("ceo")
+        assert 'developer_instructions = """' in content
+        assert content.rstrip().endswith('"""')
+
+
+class TestCheckCodexAgentsInSync:
+    def test_passes_when_all_generated(self, tmp_path):
+        config = load_agent_config()
+        for role in config:
+            (tmp_path / f"{role}.toml").write_text(generate_codex_agent_toml(role))
+        assert check_codex_agents_in_sync(tmp_path) == []
+
+    def test_detects_missing_file(self, tmp_path):
+        out_of_sync = check_codex_agents_in_sync(tmp_path)
+        assert len(out_of_sync) == len(load_agent_config())
+
+    def test_detects_stale_file(self, tmp_path):
+        config = load_agent_config()
+        for role in config:
+            (tmp_path / f"{role}.toml").write_text(generate_codex_agent_toml(role))
+        (tmp_path / "builder.toml").write_text("stale content")
+        out_of_sync = check_codex_agents_in_sync(tmp_path)
+        assert out_of_sync == ["builder"]
+
+    def test_none_dir_returns_empty(self):
+        assert check_codex_agents_in_sync(None) == []
+
+
+class TestCmdInstallCodex:
+    def test_installs_codex_agents(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role=None, runner="codex"))
+        assert rc == 0
+        agents_dir = tmp_path / ".codex" / "agents"
+        for role in ALL_ROLES:
+            agent_file = agents_dir / f"factory-{role}.toml"
+            assert agent_file.exists(), f"Missing TOML agent file for {role}"
+            content = agent_file.read_text()
+            assert f'name = "factory-{role}"' in content
+
+    def test_installs_single_codex_role(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role="builder", runner="codex"))
+        assert rc == 0
+        agents_dir = tmp_path / ".codex" / "agents"
+        assert (agents_dir / "factory-builder.toml").exists()
+        assert not (agents_dir / "factory-ceo.toml").exists()
+
+    def test_rejects_invalid_codex_role(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path)
+        from argparse import Namespace
+
+        from factory.cli import cmd_install
+
+        rc = cmd_install(Namespace(role="nonexistent", runner="codex"))
         assert rc == 1
