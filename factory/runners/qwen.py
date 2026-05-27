@@ -20,9 +20,10 @@ def _warn_auth() -> None:
     global _auth_warned  # noqa: PLW0603
     if _auth_warned:
         return
-    _auth_warned = True
     if os.environ.get("DASHSCOPE_API_KEY") or os.environ.get("QWEN_API_KEY"):
+        _auth_warned = True
         return
+    _auth_warned = True
     logger.warning(
         "Neither DASHSCOPE_API_KEY nor QWEN_API_KEY is set. "
         "Qwen Code may fail to authenticate. "

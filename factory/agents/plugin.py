@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -107,7 +108,7 @@ def _escape_toml_multiline_literal(text: str) -> str:
     so triple single-quotes cannot appear inside them at all. We lossy-replace
     ''' with '' (virtually never appears in agent prompts).
     """
-    return text.replace("'''", "''")
+    return re.sub(r"'{3,}", "''", text)
 
 
 def generate_codex_agent_toml(role: str) -> str:
