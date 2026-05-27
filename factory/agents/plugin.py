@@ -103,11 +103,11 @@ def _sandbox_mode(role: str) -> str:
 def _escape_toml_multiline_literal(text: str) -> str:
     """Escape text for a TOML multiline literal string (triple single-quoted).
 
-    Literal strings have no escape processing. The only sequence that must be
-    avoided is three consecutive single quotes, which we break with a closing
-    and reopening delimiter.
+    TOML literal strings have no escape sequences and no concatenation operator,
+    so triple single-quotes cannot appear inside them at all. We lossy-replace
+    ''' with '' (virtually never appears in agent prompts).
     """
-    return text.replace("'''", "''' + '''")
+    return text.replace("'''", "''")
 
 
 def generate_codex_agent_toml(role: str) -> str:
@@ -129,7 +129,10 @@ def generate_codex_agent_toml(role: str) -> str:
             prompt = inject_playbook(prompt, playbook)
 
     sandbox = _sandbox_mode(role)
-    escaped_desc = meta.description.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_desc = (
+        meta.description.replace("\\", "\\\\").replace('"', '\\"')
+        .replace("\n", " ").replace("\t", " ")
+    )
     escaped_prompt = _escape_toml_multiline_literal(prompt)
 
     return (
