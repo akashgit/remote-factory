@@ -23,6 +23,10 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - CLAUDE.md
 - README.md
 - pyproject.toml
+- .agents/**
+- .codex-plugin/**
+- AGENTS.md
+- scripts/**
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
