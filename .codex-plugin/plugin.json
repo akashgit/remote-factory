@@ -8,7 +8,7 @@
   "homepage": "https://github.com/akashgit/remote-factory",
   "repository": "https://github.com/akashgit/remote-factory",
   "license": "MIT",
-  "skills": "./skills/",
+  "skills": "../.agents/skills/",
   "mcpServers": {
     "factory": {
       "command": "factory",
