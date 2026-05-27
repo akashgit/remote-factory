@@ -93,12 +93,21 @@ def _sandbox_mode(role: str) -> str:
     """Map agent role to Codex sandbox mode."""
     if role in _READ_ONLY_ROLES:
         return "read-only"
-    return "workspace-write"
+    if role in _WORKSPACE_WRITE_ROLES:
+        return "workspace-write"
+    raise ValueError(
+        f"Unknown role {role!r}: not in _READ_ONLY_ROLES or _WORKSPACE_WRITE_ROLES"
+    )
 
 
-def _escape_toml_multiline(text: str) -> str:
-    """Escape text for a TOML multiline basic string (triple-quoted)."""
-    return text.replace("\\", "\\\\").replace('"""', '\\"\\"\\"')
+def _escape_toml_multiline_literal(text: str) -> str:
+    """Escape text for a TOML multiline literal string (triple single-quoted).
+
+    Literal strings have no escape processing. The only sequence that must be
+    avoided is three consecutive single quotes, which we break with a closing
+    and reopening delimiter.
+    """
+    return text.replace("'''", "''' + '''")
 
 
 def generate_codex_agent_toml(role: str) -> str:
@@ -120,8 +129,8 @@ def generate_codex_agent_toml(role: str) -> str:
             prompt = inject_playbook(prompt, playbook)
 
     sandbox = _sandbox_mode(role)
-    escaped_desc = meta.description.replace('"', '\\"')
-    escaped_prompt = _escape_toml_multiline(prompt)
+    escaped_desc = meta.description.replace("\\", "\\\\").replace('"', '\\"')
+    escaped_prompt = _escape_toml_multiline_literal(prompt)
 
     return (
         f'# GENERATED FILE — do not edit directly.\n'
@@ -132,11 +141,11 @@ def generate_codex_agent_toml(role: str) -> str:
         f'description = "{escaped_desc}"\n'
         f'sandbox_mode = "{sandbox}"\n'
         f'\n'
-        f'developer_instructions = """\n'
+        f"developer_instructions = '''\n"
         f'> **Prerequisite:** The `factory` CLI must be on PATH.\n'
         f'> Install: `uv tool install remote-factory`\n'
         f'\n'
-        f'{escaped_prompt}"""\n'
+        f"{escaped_prompt}'''\n"
     )
 
 

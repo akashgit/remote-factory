@@ -192,10 +192,16 @@ class TestSandboxMode:
     def test_all_known_roles_covered(self):
         config = load_agent_config()
         for role in config:
-            mode = _sandbox_mode(role)
-            assert mode in ("read-only", "workspace-write"), (
-                f"{role} has unexpected sandbox mode: {mode}"
+            assert role in _READ_ONLY_ROLES or role in _WORKSPACE_WRITE_ROLES, (
+                f"{role} is not in _READ_ONLY_ROLES or _WORKSPACE_WRITE_ROLES"
             )
+            assert not (role in _READ_ONLY_ROLES and role in _WORKSPACE_WRITE_ROLES), (
+                f"{role} is in both _READ_ONLY_ROLES and _WORKSPACE_WRITE_ROLES"
+            )
+
+    def test_unknown_role_raises(self):
+        with pytest.raises(ValueError, match="Unknown role"):
+            _sandbox_mode("nonexistent_role")
 
     def test_researcher_is_read_only(self):
         assert _sandbox_mode("researcher") == "read-only"
@@ -256,8 +262,8 @@ class TestGenerateCodexAgentToml:
 
     def test_multiline_instructions(self):
         content = generate_codex_agent_toml("ceo")
-        assert 'developer_instructions = """' in content
-        assert content.rstrip().endswith('"""')
+        assert "developer_instructions = '''" in content
+        assert content.rstrip().endswith("'''")
 
 
 class TestCheckCodexAgentsInSync:
