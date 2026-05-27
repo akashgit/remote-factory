@@ -10,26 +10,30 @@ from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
 from factory.runners.protocol import Runner
+from factory.runners.qwen import QwenRunner, is_qwen_dry_run
 
 __all__ = [
     "Runner",
     "ClaudeRunner",
     "BobRunner",
     "CodexRunner",
+    "QwenRunner",
     "get_runner",
     "RunnerName",
     "is_dry_run",
     "is_codex_dry_run",
+    "is_qwen_dry_run",
     "should_stream",
     "stream_subprocess",
 ]
 
-RunnerName = Literal["claude", "bob", "codex"]
+RunnerName = Literal["claude", "bob", "codex", "qwen"]
 
 _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
+    "qwen": QwenRunner,  # type: ignore[dict-item]
 }
 
 
@@ -42,7 +46,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     3. Default to "claude"
 
     Args:
-        name: Runner name ("claude", "bob", or "codex").
+        name: Runner name ("claude", "bob", "codex", or "qwen").
         project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:
