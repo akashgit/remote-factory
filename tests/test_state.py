@@ -91,45 +91,58 @@ class TestDetectState:
 
 class TestHasOpenPlanIssues:
     def test_returns_false_when_gh_not_found(self, tmp_project):
-        """_has_open_plan_issues returns False when gh CLI is not available."""
+        """_has_open_plan_issues returns False when forge detection fails."""
         with patch(
-            "factory.state.subprocess.run",
-            side_effect=FileNotFoundError,
+            "factory.forge.ForgeOps",
+            side_effect=RuntimeError("no remote"),
         ):
             assert _has_open_plan_issues(tmp_project) is False
 
     def test_returns_false_on_timeout(self, tmp_project):
-        """_has_open_plan_issues returns False on subprocess timeout."""
-        import subprocess as sp
-
-        with patch(
-            "factory.state.subprocess.run",
-            side_effect=sp.TimeoutExpired("gh", 15),
-        ):
+        """_has_open_plan_issues returns False when forge returns empty (timeout handled internally)."""
+        mock_ops = patch("factory.forge.ForgeOps").start()
+        mock_ops.return_value.issue_list.return_value = []
+        try:
             assert _has_open_plan_issues(tmp_project) is False
+        finally:
+            patch.stopall()
 
     def test_returns_false_on_empty_response(self, tmp_project):
-        """_has_open_plan_issues returns False when gh returns empty list."""
-        mock_result = type("R", (), {"returncode": 0, "stdout": "[]"})()
-        with patch("factory.state.subprocess.run", return_value=mock_result):
+        """_has_open_plan_issues returns False when forge returns empty list."""
+        mock_ops = patch("factory.forge.ForgeOps").start()
+        mock_ops.return_value.issue_list.return_value = []
+        try:
             assert _has_open_plan_issues(tmp_project) is False
+        finally:
+            patch.stopall()
 
     def test_returns_true_on_open_issues(self, tmp_project):
-        """_has_open_plan_issues returns True when gh returns issues."""
-        mock_result = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
-        with patch("factory.state.subprocess.run", return_value=mock_result):
+        """_has_open_plan_issues returns True when forge returns issues."""
+        mock_ops = patch("factory.forge.ForgeOps").start()
+        mock_ops.return_value.issue_list.return_value = [{"number": 1}]
+        mock_ops.return_value.forge = "github"
+        try:
             assert _has_open_plan_issues(tmp_project) is True
+        finally:
+            patch.stopall()
 
     def test_returns_false_on_nonzero_returncode(self, tmp_project):
-        """_has_open_plan_issues returns False when gh returns non-zero."""
-        mock_result = type("R", (), {"returncode": 1, "stdout": ""})()
-        with patch("factory.state.subprocess.run", return_value=mock_result):
+        """_has_open_plan_issues returns False when forge returns empty list."""
+        mock_ops = patch("factory.forge.ForgeOps").start()
+        mock_ops.return_value.issue_list.return_value = []
+        try:
             assert _has_open_plan_issues(tmp_project) is False
+        finally:
+            patch.stopall()
 
 
 class TestDetectStateWithIssues:
     def test_repo_incomplete_with_open_issues(self, tmp_project):
         """detect_state returns REPO_INCOMPLETE when plan issues exist."""
-        mock_result = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
-        with patch("factory.state.subprocess.run", return_value=mock_result):
+        mock_ops = patch("factory.forge.ForgeOps").start()
+        mock_ops.return_value.issue_list.return_value = [{"number": 1}]
+        mock_ops.return_value.forge = "github"
+        try:
             assert detect_state(tmp_project) == ProjectState.REPO_INCOMPLETE
+        finally:
+            patch.stopall()

@@ -6,7 +6,6 @@ import ast
 import json
 import logging
 import re
-import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -574,109 +573,62 @@ def _extract_keywords(project_path: Path) -> list[str]:
 
 
 def _search_similar_projects(project_path: Path) -> list[dict]:
-    """Search GitHub for similar projects using `gh search repos`.
+    """Search for similar projects using the forge CLI.
 
     Returns top 5 results as dicts with keys: name, url, description, stars.
-    Gracefully returns empty list if gh is not available or search fails.
+    Gracefully returns empty list if CLI is not available or search fails.
     """
     keywords = _extract_keywords(project_path)
     if not keywords:
         return []
 
-    query = " ".join(keywords)
-    try:
-        result = subprocess.run(
-            [
-                "gh", "search", "repos", query,
-                "--limit", "5",
-                "--json", "fullName,url,description,stargazersCount",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        logger.debug("gh CLI not available or search timed out")
-        return []
-
-    if result.returncode != 0:
-        logger.debug("gh search repos failed: %s", result.stderr)
-        return []
+    from factory.forge import ForgeOps
 
     try:
-        repos = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
+        ops = ForgeOps(project_path)
+    except (RuntimeError, FileNotFoundError):
+        ops = ForgeOps(project_path, forge="github", repo="")
 
-    return [
-        {
-            "name": r.get("fullName", ""),
-            "url": r.get("url", ""),
-            "description": (r.get("description") or "")[:200],
-            "stars": r.get("stargazersCount", 0),
-        }
-        for r in repos[:5]
-    ]
+    return ops.search_repos(" ".join(keywords), limit=5)
 
 
-def _get_github_user() -> str | None:
-    """Return the authenticated GitHub username, or None if unavailable."""
+def _get_forge_user(project_path: Path | None = None) -> str | None:
+    """Return the authenticated forge username, or None if unavailable."""
+    from factory.forge import ForgeOps
+
     try:
-        result = subprocess.run(
-            ["gh", "api", "user", "--jq", ".login"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip() or None
+        if project_path:
+            ops = ForgeOps(project_path)
+        else:
+            ops = ForgeOps(Path.cwd(), forge="github", repo="")
+    except (RuntimeError, FileNotFoundError):
+        ops = ForgeOps(Path.cwd(), forge="github", repo="")
+
+    return ops.get_user()
+
+
+# Backward compat alias
+_get_github_user = _get_forge_user
 
 
 def _fetch_open_issues(project_path: Path) -> list[dict]:
-    """Fetch open GitHub issues for the project's repo.
+    """Fetch open issues for the project's repo.
 
     Returns a list of dicts with keys: number, title, labels, body (truncated), author.
-    Gracefully returns empty list if gh is unavailable, not a GitHub repo, or fetch fails.
+    Gracefully returns empty list if CLI is unavailable, not a forge repo, or fetch fails.
     """
     try:
-        result = subprocess.run(
-            [
-                "gh", "issue", "list",
-                "--state", "open",
-                "--limit", "20",
-                "--json", "number,title,labels,body,author",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            cwd=project_path,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        logger.debug("gh CLI not available or issue list timed out")
+        from factory.forge import ForgeOps
+        ops = ForgeOps(project_path)
+    except (RuntimeError, FileNotFoundError):
+        logger.debug("forge detection failed for issue fetch")
         return []
 
-    if result.returncode != 0:
-        logger.debug("gh issue list failed: %s", result.stderr)
-        return []
-
-    try:
-        issues = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return []
-
-    return [
-        {
-            "number": i.get("number", 0),
-            "title": i.get("title", ""),
-            "labels": [lb.get("name", "") for lb in (i.get("labels") or [])],
-            "body": (i.get("body") or "")[:300],
-            "author": (i.get("author") or {}).get("login", ""),
-        }
-        for i in issues
-    ]
+    return ops.issue_list(
+        state="open",
+        limit=20,
+        fields=["number", "title", "labels", "body", "author"],
+    )
 
 
 def _read_obsidian_notes(project_name: str) -> list[str]:
@@ -885,7 +837,7 @@ def study_project_local(
 
     # Open GitHub issues — split by ownership
     open_issues = _fetch_open_issues(project_path)
-    gh_user = _get_github_user()
+    gh_user = _get_forge_user(project_path)
 
     own_issues = [i for i in open_issues if gh_user and i["author"] == gh_user]
     community_issues = [i for i in open_issues if not gh_user or i["author"] != gh_user]

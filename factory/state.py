@@ -1,6 +1,5 @@
 """Project state detection — determines which mode the factory should operate in."""
 
-import subprocess
 from pathlib import Path
 
 import structlog
@@ -11,22 +10,19 @@ log = structlog.get_logger()
 
 
 def _has_open_plan_issues(project_path: Path) -> bool:
-    """Check GitHub for open issues with 'plan' or 'implementation' labels."""
+    """Check GitHub/GitLab for open issues with 'plan' or 'implementation' labels."""
+    try:
+        from factory.forge import ForgeOps
+        ops = ForgeOps(project_path)
+    except (RuntimeError, FileNotFoundError):
+        log.debug("open_plan_issues_forge_detection_failed")
+        return False
+
     for label in ("plan", "implementation"):
-        try:
-            result = subprocess.run(
-                ["gh", "issue", "list", "--label", label, "--state", "open", "--json", "number"],
-                cwd=project_path,
-                capture_output=True,
-                text=True,
-                timeout=15,
-            )
-            if result.returncode == 0 and result.stdout.strip() not in ("", "[]"):
-                log.debug("open_plan_issues_found", label=label)
-                return True
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            log.debug("open_plan_issues_check_failed", label=label)
-            return False
+        issues = ops.issue_list(state="open", labels=[label], limit=5, fields=["number"])
+        if issues:
+            log.debug("open_plan_issues_found", label=label, forge=ops.forge)
+            return True
     return False
 
 
