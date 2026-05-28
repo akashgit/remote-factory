@@ -2769,6 +2769,69 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 
 ---
 
+## Lite Mode
+
+When your task includes a `## Lite Mode` section, apply these 7 optimizations to reduce agent invocations while preserving correctness. The target is 5 agents per single-hypothesis cycle (Researcher, Strategist, Builder, Evaluator, Archivist) with a cap of 7 total invocations.
+
+### 1. Lite Researcher (archive-only, no web search)
+
+Skip web search. Invoke the Researcher with an explicit directive:
+
+```bash
+factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Do NOT perform web searches. Read only from .factory/archive/ and .factory/strategy/observations.md. Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 180
+```
+
+### 2. Skip baseline eval
+
+Read `.factory/last_eval.json` as `score_before` instead of spawning an Evaluator agent for step 2a. Parse the `total` field from the JSON. Fall back to spawning the Evaluator if the file is missing, unreadable, or older than the current experiment branch's base commit.
+
+### 3. Review pipeline reduction
+
+Skip the Reviewer agent (step 2e) and the headless final review (step 2h-final). Replace the Reviewer invocation with a bare CLI guard check:
+
+```bash
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+factory guard "$PROJECT_PATH" --baseline $BASELINE_SHA --check-scope
+```
+
+The CEO structured review (step 2d-review) still runs in full. The precheck gate (step 2g) remains mandatory and unchanged.
+
+### 4. Archivist consolidation
+
+Replace all per-phase Archivist invocations (steps 0c, 1-arch, 2d-arch, 2h) with a single batch Archivist at cycle end (Step 3). The batch Archivist receives all phase outputs:
+
+```bash
+factory agent archivist --task "Batch archival for $PROJECT_PATH.
+Read all phase outputs:
+- .factory/reviews/researcher-latest.md
+- .factory/reviews/strategist-latest.md
+- .factory/reviews/builder-latest.md
+- .factory/reviews/ceo-verdict-*.md
+Write consolidated notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+```
+
+### 5. Strategist context compression
+
+Use `$(factory brief $PROJECT_PATH)` instead of catting full observation/research/strategy files when building the Strategist's task string. This provides the same key signals (current score, threshold, weakest dimensions, recent verdicts, backlog count) in a compact format.
+
+### 6. Single hypothesis per cycle
+
+The invocation budget naturally constrains to 1 hypothesis per cycle. After the single experiment completes (keep or revert), proceed directly to Step 3 (Final Archive). Do not loop back for additional hypotheses.
+
+### 7. Invocation budget
+
+Cap at 7 agent invocations per cycle. Track invocations as you spawn agents. When 2 invocations remain before the ceiling, log a warning:
+
+```bash
+factory log "$PROJECT_PATH" "lite.ceiling_warning" --data '{"remaining": 2}'
+```
+
+If the ceiling would be exceeded, skip the remaining agent and proceed to finalization.
+
+**Invariant:** These optimizations are additive to all other rules. Sacred Rules, guard checks, and eval requirements still apply in full. The precheck gate (step 2g) remains mandatory and unchanged.
+
+---
+
 ## Error Recovery
 
 ### Builder Failure
