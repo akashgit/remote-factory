@@ -122,9 +122,9 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 
 ## Runners
 
-The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI). Bob Shell (`bob` CLI), OpenAI Codex (`codex` CLI), and Qwen Code (`qwen` CLI) are also supported as switchable alternatives.
+The factory supports multiple CLI backends via the runner abstraction (`factory/runners/`). By default, it uses Claude Code (`claude` CLI). Bob Shell (`bob` CLI), OpenAI Codex (`codex` CLI), and OpenCode (`opencode` CLI) are also supported as switchable alternatives.
 
-**Runner selection:** Set `FACTORY_RUNNER=codex` (or `bob`, `qwen`) to switch backends, or pass `--runner codex` to individual commands. Default is `claude`.
+**Runner selection:** Set `FACTORY_RUNNER=codex` (or `bob`, `opencode`) to switch backends, or pass `--runner codex` to individual commands. Default is `claude`.
 
 **Bob Shell specifics:**
 - Requires `BOBSHELL_API_KEY` environment variable to be set
@@ -157,22 +157,21 @@ CODEX_API_KEY = "..."
 ```
 Then run: `factory ceo /path/to/project --profile codex`
 
-**Qwen Code specifics:**
-- Auth via `DASHSCOPE_API_KEY` or `QWEN_API_KEY` environment variable (or set via config.toml profile). Warns if missing.
-- CLI flags mirror Claude Code: `--append-system-prompt`, `-p`, `--model`
-- Headless mode uses `--yolo` for auto-approve and `--output-format text`
-- Model selection via `--model` flag (e.g., `qwen3-coder`)
-- Install: `npm install -g @qwen-code/qwen-code`
+**OpenCode specifics:**
+- Auth handled by OpenCode's own provider system (`opencode auth login` or provider-specific env vars)
+- Uses `opencode run <message>` subcommand pattern; system prompt is prepended to the task message (no `--append-system-prompt`)
+- Headless mode uses `--dangerously-skip-permissions` (gated on parameter) and `--format default`
+- Model selection via `--model` flag (e.g., `anthropic/claude-sonnet-4-20250514`)
+- Install: `curl -fsSL https://opencode.ai/install | bash`
 
-**Qwen dry-run mode:** Set `FACTORY_QWEN_DRY_RUN=1` to test Qwen integration without spending tokens.
+**OpenCode dry-run mode:** Set `FACTORY_OPENCODE_DRY_RUN=1` to test OpenCode integration without spending tokens.
 
-**Qwen config profile example** (`~/.factory/config.toml`):
+**OpenCode config profile example** (`~/.factory/config.toml`):
 ```toml
-[credentials.qwen]
-FACTORY_RUNNER = "qwen"
-DASHSCOPE_API_KEY = "sk-..."
+[credentials.opencode]
+FACTORY_RUNNER = "opencode"
 ```
-Then run: `factory ceo /path/to/project --profile qwen`
+Then run: `factory ceo /path/to/project --profile opencode`
 
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
 
