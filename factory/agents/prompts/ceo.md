@@ -1145,14 +1145,32 @@ Save the printed experiment ID as `$EXP_ID`.
 
 **Pre-check: Reuse existing issues before creating new ones.**
 
-Before creating a new issue, check if the hypothesis text or the backlog item tag references an existing issue number (patterns: `#NNN`, `issue #NNN`, `Addresses: #NNN`, `Addresses #NNN`).
+Before creating a new issue, check if the hypothesis text or the backlog item tag references an existing issue number.
 
-1. Parse the hypothesis text and the `**Backlog item:**` tag (if present) for issue references matching `#[0-9]+`
+1. Parse the hypothesis text and the `**Backlog item:**` tag (if present) for issue references. Prefer matches in this order:
+   a. Explicit references: `Addresses:? #NNN`, `**Backlog item:** #NNN`, or `issue #NNN`
+   b. If no explicit match and exactly one bare `#NNN` is present, fall back to it
+   c. If multiple bare `#NNN` references remain ambiguous, skip reuse and create a new issue (link the others in the body)
 2. If a reference is found, verify the issue is open:
    ```bash
-   gh issue view <number> --json state --jq '.state'
+   (cd "$PROJECT_PATH" && gh issue view <number> --json state --jq '.state') 2>/dev/null
    ```
-3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number and **skip issue creation entirely**
+   If the command fails or returns anything other than `OPEN`, treat as no existing issue and proceed to create a new one.
+3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number, post an update comment with the current experiment context, and **skip issue creation**:
+   ```bash
+   gh issue comment "$ISSUE_NUM" --body "**Updated for experiment $EXP_ID**
+
+   ## Current hypothesis
+   <hypothesis text>
+
+   ## What to build (this cycle)
+   <specific changes>
+
+   ## Acceptance criteria (this cycle)
+   - [ ] <outcomes>
+   - [ ] Tests pass
+   - [ ] Eval score does not regress"
+   ```
 4. Only create a new issue if no existing open reference is found
 
 For **code-only** hypotheses (`**Type:** code` or no Type field), when no existing issue is found:
@@ -2073,14 +2091,32 @@ Save the printed experiment ID as `$EXP_ID`.
 
 **Pre-check: Reuse existing issues before creating new ones.**
 
-Before creating a new issue, check if the hypothesis text references an existing issue number (patterns: `#NNN`, `issue #NNN`, `Addresses: #NNN`, `Addresses #NNN`).
+Before creating a new issue, check if the hypothesis text references an existing issue number.
 
-1. Parse the hypothesis text for issue references matching `#[0-9]+`
+1. Parse the hypothesis text and the `**Backlog item:**` tag (if present) for issue references. Prefer matches in this order:
+   a. Explicit references: `Addresses:? #NNN`, `**Backlog item:** #NNN`, or `issue #NNN`
+   b. If no explicit match and exactly one bare `#NNN` is present, fall back to it
+   c. If multiple bare `#NNN` references remain ambiguous, skip reuse and create a new issue (link the others in the body)
 2. If a reference is found, verify the issue is open:
    ```bash
-   gh issue view <number> --json state --jq '.state'
+   (cd "$PROJECT_PATH" && gh issue view <number> --json state --jq '.state') 2>/dev/null
    ```
-3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number and **skip issue creation entirely**
+   If the command fails or returns anything other than `OPEN`, treat as no existing issue and proceed to create a new one.
+3. If the issue is open, reuse it: set `$ISSUE_NUM` to that number, post an update comment with the current experiment context, and **skip issue creation**:
+   ```bash
+   gh issue comment "$ISSUE_NUM" --body "**Updated for experiment $EXP_ID**
+
+   ## Current hypothesis
+   <hypothesis text>
+
+   ## What to build (this cycle)
+   <specific changes>
+
+   ## Acceptance criteria (this cycle)
+   - [ ] <outcomes>
+   - [ ] Tests pass
+   - [ ] Eval score does not regress"
+   ```
 4. Only create a new issue if no existing open reference is found
 
 When no existing issue is found:
