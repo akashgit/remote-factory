@@ -254,7 +254,10 @@ class BobRunner:
                 env=env,
             )
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                stream_subprocess(proc, stream=stream, prefix=prefix),
+                # sanitize=True: Bob is a TUI emitting cursor/clear/alt-screen
+                # escapes — strip them from the live terminal write (the captured
+                # buffer stays raw). See issue #379.
+                stream_subprocess(proc, stream=stream, prefix=prefix, sanitize=True),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:

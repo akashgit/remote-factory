@@ -398,6 +398,39 @@ class TestCodexStreaming:
                     assert call_kwargs["stream"] is True
                     assert call_kwargs["prefix"] == "[codex:builder]"
 
+    async def test_codex_runner_does_not_sanitize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """CodexRunner.headless() does not sanitize (default False) — issue #379."""
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+        monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
+
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex.should_stream", return_value=True):
+            with patch(
+                "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            ) as mock_stream:
+                mock_stream.return_value = (b"output\n", b"")
+
+                with patch(
+                    "asyncio.create_subprocess_exec", new_callable=AsyncMock
+                ) as mock_exec:
+                    mock_proc = AsyncMock()
+                    mock_proc.returncode = 0
+                    mock_exec.return_value = mock_proc
+
+                    await runner.headless(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                        role="builder",
+                    )
+
+                    mock_stream.assert_called_once()
+                    assert mock_stream.call_args.kwargs.get("sanitize", False) is False
+
 
 class TestCodexInteractive:
     def test_interactive_run_builds_correct_command(

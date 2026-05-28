@@ -961,6 +961,283 @@ class TestStreamingOutput:
                 assert "Line 3" in content
 
 
+class TestAnsiSanitization:
+    """Tests for strip_ansi + sanitize on the live-terminal write path (issue #379)."""
+
+    def test_strip_ansi_removes_csi_color_and_cursor(self) -> None:
+        """CSI color/cursor/clear sequences are removed; text survives."""
+        from factory.runners._stream import strip_ansi
+
+        assert strip_ansi(b"\x1b[1;36mhi\x1b[0m") == b"hi"
+        # colon-delimited truecolor SGR (covered by [0-?] param class)
+        assert strip_ansi(b"\x1b[38:2:255:0:0mred\x1b[0m") == b"red"
+        # clear-screen + cursor-home leaves nothing
+        assert strip_ansi(b"\x1b[2J\x1b[H") == b""
+
+    def test_strip_ansi_removes_alt_screen_and_cursor_toggle(self) -> None:
+        """DEC private alt-screen / cursor-visibility toggles (the issue's culprits)."""
+        from factory.runners._stream import strip_ansi
+
+        assert strip_ansi(b"\x1b[?1049h") == b""
+        assert strip_ansi(b"\x1b[?1049l") == b""
+        assert strip_ansi(b"\x1b[?25l") == b""
+        assert strip_ansi(b"\x1b[?25h") == b""
+
+    def test_strip_ansi_removes_osc_window_title(self) -> None:
+        """OSC sequences (BEL- and ST-terminated) are removed, payload survives."""
+        from factory.runners._stream import strip_ansi
+
+        # BEL-terminated
+        assert strip_ansi(b"\x1b]0;title\x07rest") == b"rest"
+        # ST (ESC \\)-terminated
+        assert strip_ansi(b"\x1b]0;title\x1b\\rest") == b"rest"
+
+    def test_strip_ansi_removes_string_sequences(self) -> None:
+        """DCS/SOS/PM/APC introducer + ST-terminated payload are fully removed."""
+        from factory.runners._stream import strip_ansi
+
+        assert strip_ansi(b"\x1bP1$r0m\x1b\\after") == b"after"  # DCS
+        assert strip_ansi(b"\x1b_payload\x1b\\after") == b"after"  # APC
+        assert strip_ansi(b"\x1b^foo\x1b\\after") == b"after"  # PM
+        assert strip_ansi(b"\x1bXsos\x1b\\after") == b"after"  # SOS
+
+    def test_strip_ansi_removes_decsc_decrc_ri(self) -> None:
+        """Fp save/restore cursor and Fe reverse-line-feed are removed."""
+        from factory.runners._stream import strip_ansi
+
+        assert strip_ansi(b"\x1b7save\x1b8") == b"save"  # DECSC / DECRC
+        assert strip_ansi(b"\x1bMup") == b"up"  # RI (reverse line feed)
+
+    def test_strip_ansi_preserves_plaintext_and_newlines(self) -> None:
+        r"""Plain text, \r, \n and UTF-8 multibyte content are left intact."""
+        from factory.runners._stream import strip_ansi
+
+        assert strip_ansi(b"plain text\n") == b"plain text\n"
+        assert strip_ansi(b"a\rb\n") == b"a\rb\n"
+        # UTF-8 multibyte must not be clipped (guards the \x9C omission)
+        utf8 = "café — 日本語".encode()
+        assert strip_ansi(utf8) == utf8
+
+    async def test_tee_stream_sanitize_strips_dest_keeps_buffer_raw(self) -> None:
+        """sanitize=True strips dest writes but the buffer keeps the raw line."""
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        reader = MockReader([b"\x1b[2J\x1b[Hhello\n"])
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream(reader, dest, buffer, stream=True, sanitize=True)  # type: ignore[arg-type]
+
+        assert dest.getvalue() == b"hello\n"
+        assert buffer == [b"\x1b[2J\x1b[Hhello\n"]  # raw, never sanitized
+
+    async def test_tee_stream_sanitize_skips_redraw_only_lines(self) -> None:
+        """sanitize=True skips empty-after-strip lines so prefixes don't flood."""
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        reader = MockReader([b"\x1b[32mok\n", b"\x1b[2J\x1b[H\n"])
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream(
+            reader,  # type: ignore[arg-type]
+            dest,
+            buffer,
+            stream=True,
+            prefix=b"[bob] ",
+            sanitize=True,
+        )
+
+        # Only the real line reaches dest (with prefix); redraw-only line dropped
+        assert dest.getvalue() == b"[bob] ok\n"
+        # Buffer keeps BOTH lines raw
+        assert buffer == [b"\x1b[32mok\n", b"\x1b[2J\x1b[H\n"]
+
+    async def test_tee_stream_sanitize_preserves_genuine_blank_line(self) -> None:
+        """sanitize=True preserves a genuine blank line (no escapes) — only
+        redraw-only lines (empty *because* escapes were stripped) are dropped."""
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        reader = MockReader([b"hello\n", b"\n", b"world\n"])
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream(reader, dest, buffer, stream=True, sanitize=True)  # type: ignore[arg-type]
+
+        # The bare blank line is unchanged by strip_ansi, so out == line and it is
+        # NOT dropped — all three lines reach dest.
+        assert dest.getvalue() == b"hello\n\nworld\n"
+        # Buffer keeps all three lines raw.
+        assert buffer == [b"hello\n", b"\n", b"world\n"]
+
+    async def test_tee_stream_sanitize_false_byte_identical(self) -> None:
+        """sanitize=False (default) writes the raw bytes unchanged."""
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        raw = b"\x1b[2J\x1b[Hhello\n"
+        reader = MockReader([raw])
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream(reader, dest, buffer, stream=True)  # type: ignore[arg-type]
+
+        assert dest.getvalue() == raw
+        assert buffer == [raw]
+
+    async def test_stream_subprocess_threads_sanitize_to_both(self) -> None:
+        """stream_subprocess threads sanitize=True to BOTH tee_stream calls."""
+        from factory.runners._stream import stream_subprocess
+
+        class MockReader:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = iter(lines)
+
+            async def readline(self) -> bytes:
+                try:
+                    return next(self.lines)
+                except StopIteration:
+                    return b""
+
+        class MockProc:
+            def __init__(self) -> None:
+                self.stdout = MockReader([b"out\n"])
+                self.stderr = MockReader([b"err\n"])
+
+            async def wait(self) -> int:
+                return 0
+
+        proc = MockProc()
+
+        with patch(
+            "factory.runners._stream.tee_stream", new_callable=AsyncMock
+        ) as mock_tee:
+            await stream_subprocess(proc, stream=False, sanitize=True)  # type: ignore[arg-type]
+
+            assert mock_tee.call_count == 2
+            for call in mock_tee.call_args_list:
+                assert call.kwargs["sanitize"] is True
+
+    async def test_bob_runner_passes_sanitize_true(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """BobRunner.headless() passes sanitize=True to stream_subprocess."""
+        monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
+        monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+
+        (tmp_path / ".factory").mkdir()
+
+        import factory.runners.bob as bob_module
+
+        bob_module._auth_checked = False
+
+        runner = BobRunner()
+
+        with patch("factory.runners.bob.should_stream", return_value=True):
+            with patch(
+                "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+            ) as mock_stream:
+                mock_stream.return_value = (b"output\n", b"")
+
+                with patch(
+                    "asyncio.create_subprocess_exec", new_callable=AsyncMock
+                ) as mock_exec:
+                    mock_proc = AsyncMock()
+                    mock_proc.returncode = 0
+                    mock_exec.return_value = mock_proc
+
+                    await runner.headless(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                        role="builder",
+                    )
+
+                    mock_stream.assert_called_once()
+                    assert mock_stream.call_args.kwargs["sanitize"] is True
+
+        bob_module._auth_checked = False
+
+    async def test_claude_runner_does_not_sanitize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """ClaudeRunner.headless() does not sanitize (default False)."""
+        monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
+
+        runner = ClaudeRunner()
+
+        with patch("factory.runners.claude.should_stream", return_value=True):
+            with patch(
+                "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            ) as mock_stream:
+                mock_stream.return_value = (b"output\n", b"")
+
+                with patch(
+                    "asyncio.create_subprocess_exec", new_callable=AsyncMock
+                ) as mock_exec:
+                    mock_proc = AsyncMock()
+                    mock_proc.returncode = 0
+                    mock_exec.return_value = mock_proc
+
+                    await runner.headless(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                        role="researcher",
+                    )
+
+                    mock_stream.assert_called_once()
+                    assert mock_stream.call_args.kwargs.get("sanitize", False) is False
+
+
 class TestCeilingAccumulationAcrossInvocations:
     """Tests that per-cycle ceiling accumulates across invoke_agent calls."""
 
