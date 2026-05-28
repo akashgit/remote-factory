@@ -133,3 +133,19 @@ class TestDetectStateWithIssues:
         mock_result = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
         with patch("factory.state.subprocess.run", return_value=mock_result):
             assert detect_state(tmp_project) == ProjectState.REPO_INCOMPLETE
+
+    def test_implementation_only_issues_not_repo_incomplete(self, tmp_project):
+        """Regression (#378): an open 'implementation' issue must NOT flag an unbuilt repo.
+
+        'implementation' is the factory's OWN backlog label, created on already-built
+        repos. Only the external 'plan' label signals a genuinely unbuilt scaffold, so a
+        repo with only 'implementation' issues open must resolve to NO_FACTORY, not
+        REPO_INCOMPLETE.
+        """
+        def fake_run(args, **kwargs):
+            label = args[args.index("--label") + 1] if "--label" in args else ""
+            stdout = '[{"number": 1}]' if label == "implementation" else "[]"
+            return type("R", (), {"returncode": 0, "stdout": stdout})()
+
+        with patch("factory.state.subprocess.run", side_effect=fake_run):
+            assert detect_state(tmp_project) == ProjectState.NO_FACTORY

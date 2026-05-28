@@ -11,8 +11,12 @@ log = structlog.get_logger()
 
 
 def _has_open_plan_issues(project_path: Path) -> bool:
-    """Check GitHub for open issues with 'plan' or 'implementation' labels."""
-    for label in ("plan", "implementation"):
+    """Check GitHub for open issues with the 'plan' label."""
+    # NOTE: only 'plan' (an external scaffold convention) signals a genuinely
+    # unbuilt repo. Do NOT add 'implementation' — that is the factory's OWN
+    # backlog label, created by the CEO on already-built repos during Improve
+    # mode, so an open 'implementation' issue means the opposite of "unbuilt".
+    for label in ("plan",):
         try:
             result = subprocess.run(
                 ["gh", "issue", "list", "--label", label, "--state", "open", "--json", "number"],
@@ -60,7 +64,7 @@ def detect_state(project_path: Path) -> ProjectState:
       1. Path doesn't exist or has no .git -> NO_REPO
       2. eval_profile.json exists with human_reviewed=False -> EVALS_PENDING_REVIEW
       3. .factory/config.json exists -> HAS_FACTORY
-      4. Has .git, open plan/implementation GitHub issues -> REPO_INCOMPLETE
+      4. Has .git, open 'plan' GitHub issues -> REPO_INCOMPLETE
       5. Has .git, no open issues -> NO_FACTORY
     """
     log.debug("detect_state_start", project=str(project_path))
