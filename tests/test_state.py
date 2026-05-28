@@ -129,7 +129,53 @@ class TestHasOpenPlanIssues:
 
 class TestDetectStateWithIssues:
     def test_repo_incomplete_with_open_issues(self, tmp_project):
-        """detect_state returns REPO_INCOMPLETE when plan issues exist."""
+        """detect_state returns REPO_INCOMPLETE when plan issues exist on an unbuilt repo."""
         mock_result = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
         with patch("factory.state.subprocess.run", return_value=mock_result):
             assert detect_state(tmp_project) == ProjectState.REPO_INCOMPLETE
+
+    def test_built_repo_not_incomplete_despite_open_issues(self, python_project):
+        """A built repo (manifest + source) is NOT REPO_INCOMPLETE even with open issues.
+
+        Regression test for #378: the open-issue heuristic keys off the factory's own
+        'implementation' backlog label, so a mature repo must not be misclassified.
+        """
+        import subprocess as _sp
+
+        _sp.run(["git", "init"], cwd=python_project, capture_output=True, check=True)
+        # gh is never even called for a built repo — but mock it to prove the point.
+        open_issues = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
+        with patch("factory.state.subprocess.run", return_value=open_issues):
+            assert detect_state(python_project) == ProjectState.NO_FACTORY
+
+    def test_factory_md_repo_not_incomplete_despite_open_issues(self, tmp_project):
+        """A repo with a committed factory.md is factory-managed → never REPO_INCOMPLETE."""
+        (tmp_project / "factory.md").write_text("# Factory Configuration\n## Goal\nx\n")
+        open_issues = type("R", (), {"returncode": 0, "stdout": '[{"number": 1}]'})()
+        with patch("factory.state.subprocess.run", return_value=open_issues):
+            assert detect_state(tmp_project) == ProjectState.NO_FACTORY
+
+
+class TestIsBuiltProject:
+    def test_bare_repo_not_built(self, tmp_project):
+        from factory.state import _is_built_project
+
+        assert _is_built_project(tmp_project) is False
+
+    def test_factory_md_is_built(self, tmp_project):
+        from factory.state import _is_built_project
+
+        (tmp_project / "factory.md").write_text("# Factory Configuration\n")
+        assert _is_built_project(tmp_project) is True
+
+    def test_manifest_plus_source_is_built(self, python_project):
+        from factory.state import _is_built_project
+
+        assert _is_built_project(python_project) is True
+
+    def test_manifest_without_source_not_built(self, tmp_project):
+        """A manifest alone (empty source tree) is not enough — it's a scaffold."""
+        from factory.state import _is_built_project
+
+        (tmp_project / "pyproject.toml").write_text('[project]\nname = "x"\n')
+        assert _is_built_project(tmp_project) is False
