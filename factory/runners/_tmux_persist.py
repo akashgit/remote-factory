@@ -37,11 +37,14 @@ def tmux_available() -> bool:
         return False
 
 
+_ANSI_RE = re.compile(r"\x1b(\[[0-?]*[ -/]*[@-~]|\][^\x07]*\x07|[78=>])")
+
+
 def _strip_ansi(text: str) -> str:
-    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
+    return _ANSI_RE.sub("", text)
 
 
-def _ensure_session(session: str) -> bool:
+def _session_exists(session: str) -> bool:
     return subprocess.run(
         ["tmux", "has-session", "-t", session],
         capture_output=True,
@@ -102,7 +105,7 @@ async def run_in_tmux(
     )
     wrapper_script.chmod(0o755)
 
-    has_session = _ensure_session(session)
+    has_session = _session_exists(session)
     if has_session:
         result = subprocess.run(
             ["tmux", "new-window", "-t", session, "-n", window, str(wrapper_script)],

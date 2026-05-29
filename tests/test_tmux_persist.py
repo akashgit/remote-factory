@@ -46,6 +46,15 @@ class TestStripAnsi:
     def test_handles_empty_string(self) -> None:
         assert _strip_ansi("") == ""
 
+    def test_strips_osc_title_sequences(self) -> None:
+        assert _strip_ansi("\x1b]0;Window Title\x07hello") == "hello"
+
+    def test_strips_dec_private_mode(self) -> None:
+        assert _strip_ansi("\x1b[?25lhidden cursor\x1b[?25h") == "hidden cursor"
+
+    def test_strips_save_restore_cursor(self) -> None:
+        assert _strip_ansi("\x1b7saved\x1b8") == "saved"
+
 
 class TestRunInTmux:
     async def test_creates_new_session_when_none_exists(self, tmp_path: Path) -> None:
