@@ -1472,6 +1472,7 @@ def cmd_precheck(args: argparse.Namespace) -> int:
             "hypothesis": r.hypothesis,
             "verdict": r.verdict,
             "delta": r.delta,
+            "notes": r.notes,
         }
         for r in records
     ]
@@ -2716,6 +2717,20 @@ def _persist_spec(project_path: Path, spec: str) -> None:
 
 _TMUX_SESSION_PREFIX = "factory-"
 
+_TMUX_PROPAGATE_VARS: tuple[str, ...] = (
+    "SSH_AUTH_SOCK",
+    "SSH_AGENT_PID",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLOUD_ML_REGION",
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "ANTHROPIC_API_KEY",
+    "FACTORY_RUNNER",
+    "FACTORY_MODEL",
+    "BOBSHELL_API_KEY",
+    "CODEX_API_KEY",
+    "OPENAI_API_KEY",
+)
+
 
 def _tmux_session_name(project_path: Path) -> str:
     """Derive a tmux session name from a project path."""
@@ -2755,11 +2770,11 @@ def cmd_tmux(args: argparse.Namespace) -> int:
 
     # Build the factory run command — propagate env vars, use bare `factory`
     run_cmd_parts = [
-        f"export CLAUDE_CODE_USE_VERTEX={shlex.quote(os.environ.get('CLAUDE_CODE_USE_VERTEX', '1'))}",
-        f"export CLOUD_ML_REGION={shlex.quote(os.environ.get('CLOUD_ML_REGION', ''))}",
-        f"export ANTHROPIC_VERTEX_PROJECT_ID={shlex.quote(os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', ''))}",
-        'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
+        f"export {var}={shlex.quote(os.environ[var])}"
+        for var in _TMUX_PROPAGATE_VARS
+        if var in os.environ
     ]
+    run_cmd_parts.append('export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"')
 
     model = _resolve_model(args)
     run_args = f"factory run {project_path}"

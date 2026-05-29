@@ -166,6 +166,9 @@ async def invoke_agent(
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
+    if role == "builder":
+        _check_ssh_for_builder(project_path)
+
     _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
 
     runner = get_runner(runner_name, project_path=project_path)
@@ -263,6 +266,27 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
         logger.debug("Saved review output for %s to %s", role, review_path)
     except Exception:
         logger.debug("Failed to save review for %s", role, exc_info=True)
+
+
+def _check_ssh_for_builder(project_path: Path) -> None:
+    """Run SSH connectivity check before spawning the builder agent."""
+    try:
+        from factory.ssh import check_ssh_agent
+
+        result = check_ssh_agent(project_path)
+        if result.needs_warning:
+            _emit_safe(
+                project_path,
+                "ssh.warning",
+                agent="builder",
+                data={
+                    "has_ssh_remotes": result.has_ssh_remotes,
+                    "agent_socket_set": result.agent_socket_set,
+                    "agent_socket_exists": result.agent_socket_exists,
+                },
+            )
+    except Exception:
+        logger.debug("SSH check failed (non-blocking)", exc_info=True)
 
 
 async def invoke_agents_parallel(
