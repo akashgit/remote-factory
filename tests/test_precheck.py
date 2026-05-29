@@ -183,6 +183,42 @@ class TestCheckScope:
         assert not r.passed
         assert "not found" in r.detail.lower()
 
+    @patch("factory.precheck.subprocess.run")
+    def test_nonzero_exit_no_violations_passes(self, mock_run):
+        """Non-zero exit with no VIOLATION lines should pass (not a scope issue)."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout='{"event": "guard_check", "dirty": true}\n',
+            stderr="",
+        )
+        r = check_scope(Path("/tmp/test"), "abc123")
+        assert r.passed
+        assert "no scope violations found" in r.detail.lower()
+
+    @patch("factory.precheck.subprocess.run")
+    def test_nonzero_exit_with_violations_fails(self, mock_run):
+        """Non-zero exit WITH VIOLATION lines should still fail."""
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="VIOLATION: modified eval/score.py\n",
+            stderr="",
+        )
+        r = check_scope(Path("/tmp/test"), "abc123")
+        assert not r.passed
+        assert "modified eval/score.py" in r.detail
+
+    @patch("factory.precheck.subprocess.run")
+    def test_nonzero_exit_stderr_only_passes(self, mock_run):
+        """Non-zero exit with only stderr output (no VIOLATION lines) should pass."""
+        mock_run.return_value = MagicMock(
+            returncode=2,
+            stdout="",
+            stderr="ImportError: No module named 'foo'",
+        )
+        r = check_scope(Path("/tmp/test"), "abc123")
+        assert r.passed
+        assert "rc=2" in r.detail
+
 
 # ── precheck: check_anti_pattern ──────────────────────────────
 
