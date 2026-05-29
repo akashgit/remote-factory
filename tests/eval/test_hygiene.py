@@ -1,8 +1,12 @@
 """Tests for factory.eval.hygiene — universal hygiene dimensions."""
 
+import subprocess
+from unittest.mock import patch
+
 from factory.eval.hygiene import (
     HYGIENE_WEIGHTS,
     _find_sub_projects,
+    _run_cmd,
     compute_hygiene_results,
     eval_config_parser,
     eval_coverage,
@@ -139,3 +143,173 @@ class TestComputeHygieneResults:
             assert "weight" in r
             assert "passed" in r
             assert "details" in r
+
+
+class TestRunCmd:
+    def test_timeout_returns_error(self, tmp_path):
+        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(["cmd"], 120)):
+            rc, stdout, stderr = _run_cmd(["cmd"], tmp_path)
+        assert rc == 1
+        assert "Timed out" in stderr
+
+    def test_command_not_found(self, tmp_path):
+        with patch("subprocess.run", side_effect=FileNotFoundError):
+            rc, stdout, stderr = _run_cmd(["nonexistent"], tmp_path)
+        assert rc == 1
+        assert "Command not found" in stderr
+
+    def test_generic_exception(self, tmp_path):
+        with patch("subprocess.run", side_effect=RuntimeError("boom")):
+            rc, stdout, stderr = _run_cmd(["cmd"], tmp_path)
+        assert rc == 1
+        assert "boom" in stderr
+
+
+class TestEvalTestsMultiLang:
+    def test_node_project_with_tests(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "Tests: 5 passed, 0 failed", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "js" in result["details"]
+
+    def test_rust_project_with_tests(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "test result: ok. 12 passed; 0 failed", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert "rs" in result["details"]
+
+    def test_go_project_passing(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "ok  \texample/pkg\t0.5s\nok  \texample/cmd\t0.3s\n", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "go" in result["details"]
+
+    def test_go_project_failing(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "FAIL\texample/pkg\t0.5s\n", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+        assert "go" in result["details"]
+
+    def test_mixed_project_aggregates(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        (tmp_path / "package.json").write_text("{}\n")
+
+        def mock_run_cmd(cmd, cwd, timeout=120):
+            if "pytest" in cmd:
+                return (0, "3 passed", "")
+            if "npm" in cmd:
+                return (0, "Tests: 2 passed, 1 failed", "")
+            return (1, "", "")
+
+        with patch("factory.eval.hygiene._run_cmd", side_effect=mock_run_cmd):
+            result = eval_tests(tmp_path)
+        assert result["score"] == round(5 / 6, 4)
+        assert result["passed"] is False
+
+
+class TestEvalTestsScoring:
+    def test_all_tests_fail(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "Tests: 0 passed, 5 failed", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 0.0
+        assert result["passed"] is False
+
+    def test_partial_pass(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "Tests: 3 passed, 1 failed", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] == 0.75
+        assert result["passed"] is False
+
+
+class TestEvalLintMultiLang:
+    def test_node_lint_clean(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "", "")
+            result = eval_lint(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "js" in result["details"]
+
+    def test_node_lint_errors(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "Error - foo\nError - bar\nError - baz\n", "")
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.7
+        assert result["passed"] is False
+        assert "3 errors" in result["details"]
+
+    def test_rust_lint_clean(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "", "")
+            result = eval_lint(tmp_path)
+        assert result["score"] == 1.0
+        assert "rs" in result["details"]
+
+    def test_rust_lint_errors(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "", "error[E0308]: mismatch\nerror[E0599]: no method\n")
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.8
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+
+class TestEvalLintScoring:
+    def test_partial_credit(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, "Error - a\nError - b\nError - c\n", "")
+            result = eval_lint(tmp_path)
+        assert result["score"] == round(1.0 - 3 * 0.1, 4)
+
+    def test_score_floor_at_zero(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        errors = "\n".join(f"Error - e{i}" for i in range(15))
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (1, errors, "")
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.0
+
+
+class TestEvalTypeCheckMultiLang:
+    def test_node_typecheck_clean(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (0, "", "")
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "ts" in result["details"]
+
+    def test_node_typecheck_errors(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        with patch("factory.eval.hygiene._run_cmd") as mock:
+            mock.return_value = (
+                1,
+                "src/index.ts(1,1): error TS2304: Cannot find name\n"
+                "src/index.ts(5,3): error TS7006: Parameter implicitly has 'any' type\n",
+                "",
+            )
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 0.9
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
