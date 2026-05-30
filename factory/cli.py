@@ -910,8 +910,14 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
     cost = args.cost
     if cost is None:
-        from factory.events import sum_agent_costs
-        cost = sum_agent_costs(project_path) or None
+        from factory.events import load_events, sum_agent_costs
+        exp_events = load_events(project_path)
+        exp_start = None
+        for ev in reversed(exp_events):
+            if ev.get("type") == "experiment.begin":
+                exp_start = datetime.fromisoformat(ev["timestamp"])
+                break
+        cost = sum_agent_costs(project_path, since=exp_start) or None
 
     record = ExperimentRecord(
         id=args.id,
@@ -2113,7 +2119,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
         if s["calls"] > 0:
             s["avg_cost"] = s["total_cost_usd"] / s["calls"]
 
-    use_json = getattr(args, "json", False)
+    use_json = args.json
 
     if use_json:
         print(json.dumps(agent_stats, indent=2))

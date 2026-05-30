@@ -120,7 +120,8 @@ class ClaudeRunner:
         try:
             data = json.loads(raw_stdout)
             if isinstance(data, dict):
-                result_text = data.get("result", raw_stdout)
+                result_value = data.get("result", raw_stdout)
+                result_text = result_value if isinstance(result_value, str) else raw_stdout
                 usage = _parse_usage(data)
         except (json.JSONDecodeError, ValueError):
             logger.debug("Could not parse JSON output, returning raw stdout")
