@@ -53,7 +53,7 @@ class TestClaudeRunner:
         with patch(
             "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
-            mock_stream.return_value = (b"output", b"")
+            mock_stream.return_value = (b'{"result":"output","usage":{},"cost_usd":0,"duration_ms":0,"num_turns":1,"model":"claude-opus-4-7"}', b"")
 
             with patch(
                 "asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -62,7 +62,7 @@ class TestClaudeRunner:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                stdout, code = await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="You are a test agent.",
                     task="Say hello",
                     cwd=tmp_path,
@@ -72,6 +72,7 @@ class TestClaudeRunner:
 
                 assert code == 0
                 assert stdout == "output"
+                assert usage is not None
 
                 call_args = mock_exec.call_args
                 cmd = call_args[0]
@@ -81,6 +82,8 @@ class TestClaudeRunner:
                 assert "--dangerously-skip-permissions" in cmd
                 assert "--model" in cmd
                 assert "claude-opus-4-7" in cmd
+                assert "--output-format" in cmd
+                assert "json" in cmd
 
     async def test_headless_separates_prompt_and_task(self, tmp_path: Path) -> None:
         """headless() passes prompt via --append-system-prompt and task via -p as separate args."""
@@ -89,7 +92,7 @@ class TestClaudeRunner:
         with patch(
             "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
-            mock_stream.return_value = (b"ok", b"")
+            mock_stream.return_value = (b'{"result":"ok"}', b"")
 
             with patch(
                 "asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -179,7 +182,7 @@ class TestBobRunner:
                 mock_exec.return_value = mock_proc
 
                 runner = BobRunner()
-                stdout, code = await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="Test",
                     task="Test",
                     cwd=tmp_path,
@@ -189,6 +192,7 @@ class TestBobRunner:
 
         assert code == 1
         assert "timed out" in stdout.lower()
+        assert usage is None
         bob_module._auth_checked = False
 
     def test_count_cycle_invocations_with_datetime(self, tmp_path: Path) -> None:
@@ -242,7 +246,7 @@ class TestBobRunner:
         # Log entry AFTER cycle_start so it counts
         log_usage(tmp_path, "a", tmp_path, 1.0, 0, dry_run=False)
 
-        stdout, code = await runner.headless(
+        stdout, code, usage = await runner.headless(
             prompt="Test",
             task="Test",
             cwd=tmp_path,
@@ -251,6 +255,7 @@ class TestBobRunner:
 
         assert code == 1
         assert "ceiling" in stdout.lower() or "exceeded" in stdout.lower()
+        assert usage is None
         bob_module._auth_checked = False
 
     async def test_dry_run_returns_stub(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,7 +265,7 @@ class TestBobRunner:
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
-        stdout, code = await runner.headless(
+        stdout, code, usage = await runner.headless(
             prompt="You are a test agent.",
             task="Say hello",
             cwd=tmp_path,
@@ -270,6 +275,7 @@ class TestBobRunner:
         assert code == 0
         assert "[DRY-RUN]" in stdout
         assert "researcher" in stdout
+        assert usage is None
 
     async def test_dry_run_logs_usage(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
@@ -278,7 +284,7 @@ class TestBobRunner:
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
-        await runner.headless(
+        _stdout, _code, _usage = await runner.headless(
             prompt="Test prompt",
             task="Test task",
             cwd=tmp_path,
@@ -491,7 +497,7 @@ class TestBobAuthPreflight:
                 mock_exec.return_value = mock_proc
 
                 runner = BobRunner()
-                stdout, code = await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="Test",
                     task="Test",
                     cwd=tmp_path,
@@ -499,6 +505,7 @@ class TestBobAuthPreflight:
                 )
 
                 assert code == 0
+                assert usage is None
 
 
 class TestKeyPersistence:
@@ -640,7 +647,7 @@ class TestKeyPersistence:
                 mock_exec.return_value = mock_proc
 
                 runner = BobRunner()
-                await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="Test",
                     task="Test",
                     cwd=tmp_path,
@@ -651,6 +658,7 @@ class TestKeyPersistence:
                 call_kwargs = mock_exec.call_args.kwargs
                 assert "env" in call_kwargs
                 assert call_kwargs["env"].get("BOBSHELL_API_KEY") == "subprocess-test-key"
+                assert usage is None
 
         monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
         bob_module._auth_checked = False
@@ -818,7 +826,7 @@ class TestStreamingOutput:
             with patch(
                 "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
-                mock_stream.return_value = (b"output\n", b"")
+                mock_stream.return_value = (b'{"result":"output"}', b"")
 
                 with patch(
                     "asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -827,7 +835,7 @@ class TestStreamingOutput:
                     mock_proc.returncode = 0
                     mock_exec.return_value = mock_proc
 
-                    stdout, code = await runner.headless(
+                    stdout, code, usage = await runner.headless(
                         prompt="Test",
                         task="Test",
                         cwd=tmp_path,
@@ -871,7 +879,7 @@ class TestStreamingOutput:
                     mock_proc.returncode = 0
                     mock_exec.return_value = mock_proc
 
-                    stdout, code = await runner.headless(
+                    stdout, code, usage = await runner.headless(
                         prompt="Test",
                         task="Test",
                         cwd=tmp_path,
@@ -883,6 +891,7 @@ class TestStreamingOutput:
                     call_kwargs = mock_stream.call_args.kwargs
                     assert call_kwargs["stream"] is True
                     assert call_kwargs["prefix"] == "[bob:builder]"
+                    assert usage is None
 
         bob_module._auth_checked = False
 
@@ -897,7 +906,7 @@ class TestStreamingOutput:
         with patch(
             "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
-            mock_stream.return_value = (b"output\n", b"")
+            mock_stream.return_value = (b'{"result":"output"}', b"")
 
             with patch(
                 "asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -929,12 +938,12 @@ class TestStreamingOutput:
         # Import invoke_agent which saves the review
         from factory.agents.runner import invoke_agent
 
-        expected_output = "Line 1\nLine 2\nLine 3\n"
+        json_output = json.dumps({"result": "Line 1\nLine 2\nLine 3\n", "usage": {}, "cost_usd": 0.01})
 
         with patch(
             "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
-            mock_stream.return_value = (expected_output.encode(), b"")
+            mock_stream.return_value = (json_output.encode(), b"")
 
             with patch(
                 "asyncio.create_subprocess_exec", new_callable=AsyncMock
@@ -950,7 +959,7 @@ class TestStreamingOutput:
                     runner_name="claude",
                 )
 
-                assert expected_output in stdout
+                assert "Line 1" in stdout
 
                 # Check the saved review file
                 review_file = tmp_path / ".factory" / "reviews" / "researcher-latest.md"
@@ -1206,6 +1215,8 @@ class TestAnsiSanitization:
 
         bob_module._auth_checked = False
 
+
+
     async def test_claude_runner_does_not_sanitize(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1218,7 +1229,7 @@ class TestAnsiSanitization:
             with patch(
                 "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
-                mock_stream.return_value = (b"output\n", b"")
+                mock_stream.return_value = (b'{"result":"output"}', b"")
 
                 with patch(
                     "asyncio.create_subprocess_exec", new_callable=AsyncMock

@@ -199,15 +199,10 @@ class BobRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, None]:
         """Run a headless Bob Shell invocation.
 
-        Returns (stdout, return_code).
-
-        Note: The prompt+task are passed as a CLI argument via `-p`. Very large prompts
-        may hit the OS ARG_MAX limit (typically 128-256KB on Linux). If you encounter
-        "Argument list too long" errors, consider reducing prompt size or using a
-        file-based approach for prompt injection.
+        Returns (stdout, return_code, None). Bob has no token telemetry.
         """
         _ = session_name
         self._role = role
@@ -217,7 +212,8 @@ class BobRunner:
         _persist_key(project_path)
 
         if is_dry_run():
-            return self._dry_run_response(role, cwd, task)
+            stdout, code = self._dry_run_response(role, cwd, task)
+            return stdout, code, None
 
         _check_auth(cwd)
 
@@ -225,7 +221,7 @@ class BobRunner:
             check_ceilings(project_path, self.cycle_start)
         except CeilingExceededError as e:
             self._emit_ceiling_event(project_path, e)
-            return str(e), 1
+            return str(e), 1, None
 
         # NOTE: Custom modes are not supported in Bob Shell (unlike Claude Code).
         # The agent role definition is injected via the prompt instead.
@@ -266,10 +262,10 @@ class BobRunner:
             duration = time.monotonic() - start_time
             log_usage(project_path, role, cwd, duration, 1, dry_run=False)
             logger.error("BobRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1
+            return f"Agent timed out after {timeout}s", 1, None
         except FileNotFoundError:
             logger.error("'bob' CLI not found on PATH")
-            return "Error: 'bob' CLI not found on PATH", 1
+            return "Error: 'bob' CLI not found on PATH", 1, None
 
         duration = time.monotonic() - start_time
         return_code = proc.returncode or 0
@@ -282,7 +278,7 @@ class BobRunner:
         if return_code != 0:
             logger.warning("BobRunner exited with code %d: %s", return_code, stderr[:200])
 
-        return stdout, return_code
+        return stdout, return_code, None
 
     def interactive_run(
         self,

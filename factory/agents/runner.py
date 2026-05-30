@@ -173,7 +173,7 @@ async def invoke_agent(
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
 
     try:
-        stdout, return_code = await runner.headless(
+        stdout, return_code, usage = await runner.headless(
             prompt=prompt,
             task=task,
             cwd=project_path,
@@ -201,12 +201,21 @@ async def invoke_agent(
             _consecutive_failures += 1
             _check_failure_threshold(project_path, role)
     else:
+        completed_data: dict[str, object] = {"return_code": 0}
+        if usage is not None:
+            completed_data.update({
+                "input_tokens": usage.input_tokens,
+                "output_tokens": usage.output_tokens,
+                "cache_read_tokens": usage.cache_read_tokens,
+                "total_cost_usd": usage.total_cost_usd,
+                "duration_ms": usage.duration_ms,
+                "num_turns": usage.num_turns,
+            })
         _emit_safe(
             project_path, "agent.completed", agent=role,
-            data={"return_code": 0},
+            data=completed_data,
         )
         if _track_failures:
-            # Reset counter on success
             _consecutive_failures = 0
 
     _save_review(project_path, role, stdout, return_code)

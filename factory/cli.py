@@ -320,7 +320,7 @@ def _classify_with_llm(
         old_quiet = os.environ.get("FACTORY_RUNNER_QUIET")
         os.environ["FACTORY_RUNNER_QUIET"] = "1"
         try:
-            result, code = _run(runner.headless(
+            result, code, _usage = _run(runner.headless(
                 prompt, task, Path.cwd(),
                 timeout=60.0,
                 dangerously_skip_permissions=True,
@@ -908,6 +908,11 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         })
         print("Finalize gate: precheck SKIPPED (--force)")
 
+    cost = args.cost
+    if cost is None:
+        from factory.events import sum_agent_costs
+        cost = sum_agent_costs(project_path) or None
+
     record = ExperimentRecord(
         id=args.id,
         timestamp=datetime.now(),
@@ -919,7 +924,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         score_after=score_after,
         delta=None,
         verdict=verdict,
-        cost_usd=args.cost,
+        cost_usd=cost,
         notes=notes,
     )
     _run(store.finalize(args.id, record))
@@ -2074,6 +2079,79 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
     print(f"Unknown profile subcommand: {sub}", file=sys.stderr)
     return 1
+
+
+def cmd_usage(args: argparse.Namespace) -> int:
+    """Print per-agent token usage breakdown from events.jsonl."""
+    from factory.events import load_events
+
+    project_path = Path(args.path).resolve()
+    events = load_events(project_path)
+
+    agent_stats: dict[str, dict[str, float]] = {}
+    for ev in events:
+        if ev.get("type") != "agent.completed":
+            continue
+        data = ev.get("data", {})
+        if "input_tokens" not in data:
+            continue
+        agent = ev.get("agent", "unknown") or "unknown"
+        if agent not in agent_stats:
+            agent_stats[agent] = {
+                "input_tokens": 0, "output_tokens": 0,
+                "cache_read_tokens": 0, "total_cost_usd": 0.0,
+                "calls": 0, "avg_cost": 0.0,
+            }
+        s = agent_stats[agent]
+        s["input_tokens"] += data.get("input_tokens", 0)
+        s["output_tokens"] += data.get("output_tokens", 0)
+        s["cache_read_tokens"] += data.get("cache_read_tokens", 0)
+        s["total_cost_usd"] += data.get("total_cost_usd", 0.0)
+        s["calls"] += 1
+
+    for s in agent_stats.values():
+        if s["calls"] > 0:
+            s["avg_cost"] = s["total_cost_usd"] / s["calls"]
+
+    use_json = getattr(args, "json", False)
+
+    if use_json:
+        print(json.dumps(agent_stats, indent=2))
+        return 0
+
+    if not agent_stats:
+        print("No agent usage data found.")
+        return 0
+
+    header = f"{'Agent':<16} {'Input':>10} {'Output':>10} {'Cache Read':>12} {'Cost':>10} {'Calls':>6} {'Avg Cost':>10}"
+    print(header)
+    print("-" * len(header))
+
+    total_input = 0
+    total_output = 0
+    total_cache = 0
+    total_cost = 0.0
+    total_calls = 0
+
+    for agent, s in sorted(agent_stats.items()):
+        inp = int(s["input_tokens"])
+        out = int(s["output_tokens"])
+        cache = int(s["cache_read_tokens"])
+        cost = s["total_cost_usd"]
+        calls = int(s["calls"])
+        avg = s["avg_cost"]
+        print(f"{agent:<16} {inp:>10,} {out:>10,} {cache:>12,} ${cost:>9.4f} {calls:>6} ${avg:>9.4f}")
+        total_input += inp
+        total_output += out
+        total_cache += cache
+        total_cost += cost
+        total_calls += calls
+
+    print("-" * len(header))
+    total_avg = total_cost / total_calls if total_calls > 0 else 0.0
+    print(f"{'TOTAL':<16} {total_input:>10,} {total_output:>10,} {total_cache:>12,} ${total_cost:>9.4f} {total_calls:>6} ${total_avg:>9.4f}")
+
+    return 0
 
 
 def cmd_agent(args: argparse.Namespace) -> int:
@@ -3724,6 +3802,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Target CLI: claude writes Markdown to ~/.claude/agents/, codex writes TOML to ~/.codex/agents/ (default: claude)",
     )
 
+    # usage — token usage breakdown
+    p = sub.add_parser("usage", help="Show per-agent token usage and cost breakdown")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--json", action="store_true", default=False,
+                    help="Output as JSON instead of table")
+
     # serve-mcp — MCP stdio server
     sub.add_parser("serve-mcp", help="Start the Factory MCP stdio server")
 
@@ -4007,6 +4091,7 @@ def main(argv: list[str] | None = None) -> int:
         "config": cmd_config,
         "profile": cmd_profile,
         "emit": cmd_emit,
+        "usage": cmd_usage,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,

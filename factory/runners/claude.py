@@ -3,14 +3,36 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from factory.runners._stream import should_stream, stream_subprocess
 
+if TYPE_CHECKING:
+    from factory.models import AgentUsage
+
 logger = logging.getLogger(__name__)
+
+
+def _parse_usage(data: dict) -> "AgentUsage":
+    """Extract AgentUsage from Claude Code JSON output."""
+    from factory.models import AgentUsage
+
+    usage_block = data.get("usage", {})
+    return AgentUsage(
+        input_tokens=usage_block.get("input_tokens", 0),
+        output_tokens=usage_block.get("output_tokens", 0),
+        cache_read_tokens=usage_block.get("cache_read_input_tokens", 0),
+        cache_creation_tokens=usage_block.get("cache_creation_input_tokens", 0),
+        total_cost_usd=data.get("cost_usd", 0.0) or 0.0,
+        duration_ms=data.get("duration_ms", 0.0) or 0.0,
+        num_turns=data.get("num_turns", 0) or 0,
+        model=data.get("model", ""),
+    )
 
 
 class ClaudeRunner:
@@ -29,7 +51,7 @@ class ClaudeRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, "AgentUsage | None"]:
         """Run a headless Claude Code invocation.
 
         Args:
@@ -42,9 +64,13 @@ class ClaudeRunner:
             role: Agent role (used for streaming prefix).
             session_name: Optional session name for identification in /resume.
 
-        Returns (stdout, return_code).
+        Returns (stdout, return_code, usage).
         """
-        cmd = ["claude", "--append-system-prompt", prompt, "-p", task]
+        cmd = [
+            "claude", "--append-system-prompt", prompt,
+            "-p", task,
+            "--output-format", "json",
+        ]
         if dangerously_skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if model:
@@ -77,18 +103,29 @@ class ClaudeRunner:
             proc.kill()  # type: ignore[union-attr]
             await proc.wait()  # type: ignore[union-attr]
             logger.error("ClaudeRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1
+            return f"Agent timed out after {timeout}s", 1, None
         except FileNotFoundError:
             logger.error("'claude' CLI not found on PATH")
-            return "Error: 'claude' CLI not found on PATH", 1
+            return "Error: 'claude' CLI not found on PATH", 1, None
 
-        stdout = stdout_bytes.decode()
+        raw_stdout = stdout_bytes.decode()
         stderr = stderr_bytes.decode()
+        return_code = proc.returncode or 0
 
-        if proc.returncode != 0:
-            logger.warning("ClaudeRunner exited with code %d: %s", proc.returncode, stderr[:200])
+        if return_code != 0:
+            logger.warning("ClaudeRunner exited with code %d: %s", return_code, stderr[:200])
 
-        return stdout, proc.returncode or 0
+        usage = None
+        result_text = raw_stdout
+        try:
+            data = json.loads(raw_stdout)
+            if isinstance(data, dict):
+                result_text = data.get("result", raw_stdout)
+                usage = _parse_usage(data)
+        except (json.JSONDecodeError, ValueError):
+            logger.debug("Could not parse JSON output, returning raw stdout")
+
+        return result_text, return_code, usage
 
     def interactive_run(
         self,

@@ -188,7 +188,7 @@ async def synthesize_profile(
     task = _build_synthesis_task(evidence)
 
     runner = get_runner(runner_name)
-    result, code = await runner.headless(
+    result, code, _usage = await runner.headless(
         prompt=prompt,
         task=task,
         cwd=Path.cwd(),

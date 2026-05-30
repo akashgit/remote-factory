@@ -69,17 +69,18 @@ class CodexRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, None]:
         """Run a headless Codex CLI invocation via ``codex exec``.
 
         Codex exec streams progress to stderr and writes only the final
         agent message to stdout, which aligns with the factory's capture model.
 
-        Returns (stdout, return_code).
+        Returns (stdout, return_code, None). Codex has no token telemetry.
         """
         _ = session_name
         if is_codex_dry_run():
-            return self._dry_run_response(role, cwd, task)
+            stdout, code = self._dry_run_response(role, cwd, task)
+            return stdout, code, None
 
         _check_auth()
 
@@ -116,10 +117,10 @@ class CodexRunner:
             proc.kill()  # type: ignore[union-attr]
             await proc.wait()  # type: ignore[union-attr]
             logger.error("CodexRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1
+            return f"Agent timed out after {timeout}s", 1, None
         except FileNotFoundError:
             logger.error("'codex' CLI not found on PATH")
-            return "Error: 'codex' CLI not found on PATH", 1
+            return "Error: 'codex' CLI not found on PATH", 1, None
 
         stdout = stdout_bytes.decode()
         stderr = stderr_bytes.decode()
@@ -127,7 +128,7 @@ class CodexRunner:
         if proc.returncode != 0:
             logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr[:200])
 
-        return stdout, proc.returncode or 0
+        return stdout, proc.returncode or 0, None
 
     def interactive_run(
         self,

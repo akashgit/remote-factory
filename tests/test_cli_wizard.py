@@ -147,7 +147,7 @@ class TestClassifyWithLLM:
             ],
         }
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("fix a bug in my project")
@@ -168,7 +168,7 @@ class TestClassifyWithLLM:
             ],
         }
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("weather CLI")
@@ -186,7 +186,7 @@ class TestClassifyWithLLM:
             {"label": "Build directly", "explanation": "Start building.", "command": 'factory ceo "weather CLI"'},
         ]
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(suggestions), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(suggestions), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("weather CLI")
@@ -199,7 +199,7 @@ class TestClassifyWithLLM:
     def test_json_with_markdown_wrapper(self) -> None:
         raw = '```json\n{"follow_ups": [], "suggestions": [{"label": "Build it", "explanation": "Go.", "command": "factory ceo \\"test\\""}]}\n```'
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(raw, 0))
+        mock_runner.headless = AsyncMock(return_value=(raw, 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("test")
@@ -211,7 +211,7 @@ class TestClassifyWithLLM:
 
     def test_invalid_json_returns_none(self) -> None:
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=("not valid json at all", 0))
+        mock_runner.headless = AsyncMock(return_value=("not valid json at all", 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("weather CLI")
@@ -220,7 +220,7 @@ class TestClassifyWithLLM:
 
     def test_runner_failure_returns_none(self) -> None:
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=("Error", 1))
+        mock_runner.headless = AsyncMock(return_value=("Error", 1, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("weather CLI")
@@ -236,7 +236,7 @@ class TestClassifyWithLLM:
     def test_empty_suggestions_returns_none(self) -> None:
         response = {"follow_ups": [], "suggestions": []}
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("test idea")
@@ -246,7 +246,7 @@ class TestClassifyWithLLM:
     def test_missing_required_fields_returns_none(self) -> None:
         response = {"follow_ups": [], "suggestions": [{"label": "Test"}]}  # missing command
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("test idea")
@@ -262,7 +262,7 @@ class TestClassifyWithLLM:
             ],
         }
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("test")

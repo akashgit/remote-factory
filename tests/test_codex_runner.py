@@ -50,7 +50,7 @@ class TestCodexDryRun:
         monkeypatch.setenv("FACTORY_CODEX_DRY_RUN", "1")
 
         runner = CodexRunner()
-        stdout, code = await runner.headless(
+        stdout, code, usage = await runner.headless(
             prompt="You are a test agent.",
             task="Say hello",
             cwd=tmp_path,
@@ -60,6 +60,7 @@ class TestCodexDryRun:
         assert code == 0
         assert "[DRY-RUN]" in stdout
         assert "researcher" in stdout
+        assert usage is None
 
     def test_interactive_run_dry_run(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
@@ -168,7 +169,7 @@ class TestCodexHeadless:
                 mock_proc.returncode = 0
                 mock_exec.return_value = mock_proc
 
-                stdout, code = await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="You are a test agent.",
                     task="Say hello",
                     cwd=tmp_path,
@@ -178,6 +179,7 @@ class TestCodexHeadless:
 
                 assert code == 0
                 assert stdout == "output"
+                assert usage is None
 
                 call_args = mock_exec.call_args[0]
                 assert call_args[0] == "codex"
@@ -298,7 +300,7 @@ class TestCodexHeadless:
                 mock_exec.return_value = mock_proc
 
                 runner = CodexRunner()
-                stdout, code = await runner.headless(
+                stdout, code, usage = await runner.headless(
                     prompt="Test",
                     task="Test",
                     cwd=tmp_path,
@@ -308,6 +310,7 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "timed out" in stdout.lower()
+        assert usage is None
 
     async def test_handles_missing_binary(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -321,7 +324,7 @@ class TestCodexHeadless:
             side_effect=FileNotFoundError,
         ):
             runner = CodexRunner()
-            stdout, code = await runner.headless(
+            stdout, code, usage = await runner.headless(
                 prompt="Test",
                 task="Test",
                 cwd=tmp_path,
@@ -329,6 +332,7 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "not found" in stdout.lower()
+        assert usage is None
 
     async def test_passes_env_with_openai_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

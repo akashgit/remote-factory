@@ -66,6 +66,21 @@ def load_events(
     return events
 
 
+def sum_agent_costs(
+    project_path: Path,
+    *,
+    since: datetime | None = None,
+) -> float:
+    """Sum total_cost_usd from agent.completed events, optionally since a timestamp."""
+    events = load_events(project_path, since=since)
+    total = 0.0
+    for ev in events:
+        if ev.get("type") != "agent.completed":
+            continue
+        total += ev.get("data", {}).get("total_cost_usd", 0.0)
+    return total
+
+
 def discover_factory_projects(projects_dir: Path, *, max_depth: int = 3) -> list[Path]:
     """Find all subdirectories with .factory/ directories, up to max_depth levels."""
     if not projects_dir.exists():
