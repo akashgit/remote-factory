@@ -297,7 +297,7 @@ class TestConsecutiveFailureAbort:
         class MockRunner:
             name = "claude"
             async def headless(self, *args, **kwargs):
-                return ("success", 0)
+                return ("success", 0, None)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -320,7 +320,7 @@ class TestConsecutiveFailureAbort:
         class MockRunner:
             name = "claude"
             async def headless(self, *args, **kwargs):
-                return ("error output", 1)  # non-zero exit code
+                return ("error output", 1, None)  # non-zero exit code
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -343,7 +343,7 @@ class TestConsecutiveFailureAbort:
         class MockRunner:
             name = "claude"
             async def headless(self, *args, **kwargs):
-                return ("error", 1)
+                return ("error", 1, None)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -371,7 +371,7 @@ class TestConsecutiveFailureAbort:
         class MockRunner:
             name = "claude"
             async def headless(self, *args, **kwargs):
-                return ("error", 1)
+                return ("error", 1, None)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 

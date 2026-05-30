@@ -272,7 +272,7 @@ class TestSynthesizeProfile:
         from factory.profile import synthesize_profile
 
         mock_runner = AsyncMock()
-        mock_runner.headless = AsyncMock(return_value=("Synthesized profile text", 0))
+        mock_runner.headless = AsyncMock(return_value=("Synthesized profile text", 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner), \
              patch("factory.agents.runner.resolve_prompt", return_value="profiler prompt"):
@@ -284,7 +284,7 @@ class TestSynthesizeProfile:
         from factory.profile import synthesize_profile
 
         mock_runner = AsyncMock()
-        mock_runner.headless = AsyncMock(return_value=("Error output", 1))
+        mock_runner.headless = AsyncMock(return_value=("Error output", 1, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner), \
              patch("factory.agents.runner.resolve_prompt", return_value="prompt"):

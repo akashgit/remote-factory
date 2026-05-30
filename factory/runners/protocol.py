@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from factory.models import AgentUsage
 
 
 class Runner(Protocol):
@@ -22,7 +25,7 @@ class Runner(Protocol):
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, int, AgentUsage | None]:
         """Run a headless (non-interactive) agent invocation.
 
         Args:
@@ -36,7 +39,8 @@ class Runner(Protocol):
             session_name: Optional session name for identification in /resume.
 
         Returns:
-            (stdout, return_code) tuple.
+            (stdout, return_code, usage) tuple. usage is None for runners
+            without token telemetry (bob, codex).
         """
         ...
 
