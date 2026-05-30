@@ -1,0 +1,115 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: Factory State Machine
+  near: top-center
+  shape: text
+  style: { font-size: 20; bold: true; font-color: "#0D1B2A" }
+}
+
+detect: {
+  label: "factory detect"
+  shape: hexagon
+  style: { fill: "#BBDEFB"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 14; bold: true }
+}
+
+states: {
+  label: Project States
+  style: { fill: "#F5F5F5"; stroke: "#9E9E9E"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+
+  no_repo: {
+    label: no_repo
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  incomplete: {
+    label: incomplete
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  no_factory: {
+    label: no_factory
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  evals_pending: {
+    label: evals_pending_review
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  has_factory: {
+    label: has_factory
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+}
+
+modes: {
+  label: Modes
+  style: { fill: "#FAFAFA"; stroke: "#BDBDBD"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+  grid-rows: 2
+
+  build: {
+    label: Build
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  discover: {
+    label: Discover
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  review: {
+    label: Review
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  improve: {
+    label: Improve
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  research: {
+    label: Research
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  interactive: {
+    label: Interactive
+    style: { fill: "#B39DDB"; stroke: "#4527A0"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  meta: {
+    label: Meta
+    style: { fill: "#FFAB91"; stroke: "#BF360C"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+  targeted: {
+    label: "Targeted (--focus)"
+    style: { fill: "#81D4FA"; stroke: "#0277BD"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
+  }
+}
+
+detect -> states: "checks git, .factory/" {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
+states.no_repo -> modes.build {
+  style: { stroke: "#1565C0"; stroke-width: 2 }
+}
+states.incomplete -> modes.build {
+  style: { stroke: "#1565C0"; stroke-width: 2 }
+}
+states.no_factory -> modes.discover {
+  style: { stroke: "#7B1FA2"; stroke-width: 2 }
+}
+states.evals_pending -> modes.review {
+  style: { stroke: "#EF6C00"; stroke-width: 2 }
+}
+states.has_factory -> modes.improve {
+  style: { stroke: "#2E7D32"; stroke-width: 2 }
+}
+
+note: {
+  label: |md
+    Explicit flags override auto-detection:
+    `--mode interactive` · `--mode research` · `--mode meta` · `--focus "item"`
+    All modes return to **has_factory** on completion.
+  |
+  shape: text
+  near: bottom-center
+  style: { font-size: 12; font-color: "#0D1B2A"; italic: true }
+}
