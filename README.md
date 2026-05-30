@@ -306,6 +306,10 @@ uv run factory backlog-list <path>
 uv run factory backlog-add <path> "..."
 uv run factory backlog-remove <path> "..."
 
+# Token usage & cost
+uv run factory usage <path>                     # Per-agent token breakdown
+uv run factory usage <path> --json              # Machine-readable output
+
 # Operations
 uv run factory dashboard                        # Live web dashboard on :8420
 uv run factory discover <path>                  # Auto-detect eval profile
