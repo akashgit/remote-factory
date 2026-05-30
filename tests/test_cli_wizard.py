@@ -874,3 +874,115 @@ class TestBannerUpdate:
 
         # The no-color branch prints the tagline without mode for welcome
         mock_stderr.write.assert_any_call("The Factory — Self-Evolving Meta-Harness")
+
+
+# -- wizard file LLM classification ----------------------------------------
+
+
+class TestClassifyWithLLMWizardFile:
+    """_classify_with_llm reads wizard file content instead of passing the path."""
+
+    def test_wizard_file_prompt_contains_file_content(self, tmp_path, monkeypatch):
+        """When input is wizard_input.md, the LLM prompt contains the file's content."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+        wizard_file.parent.mkdir(parents=True)
+        idea_text = "Build a distributed key-value store with Raft consensus"
+        wizard_file.write_text(idea_text)
+
+        captured_prompt = {}
+        response = {
+            "follow_ups": [],
+            "suggestions": [
+                {"label": "Build it", "explanation": "Go.", "command": f'factory ceo {str(wizard_file)} --mode build'},
+            ],
+        }
+        mock_runner = MagicMock()
+
+        async def capture_headless(prompt, task, cwd, **kwargs):
+            captured_prompt["value"] = prompt
+            return (json.dumps(response), 0)
+
+        mock_runner.headless = capture_headless
+
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            result = _classify_with_llm(str(wizard_file))
+
+        assert result is not None
+        assert idea_text in captured_prompt["value"]
+        assert "wizard_input.md" not in captured_prompt["value"].split("Note:")[0]
+
+    def test_wizard_file_prompt_injects_path_note(self, tmp_path, monkeypatch):
+        """The LLM prompt tells it to use the file path in generated commands."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+        wizard_file.parent.mkdir(parents=True)
+        wizard_file.write_text("some idea")
+
+        captured_prompt = {}
+        response = {
+            "follow_ups": [],
+            "suggestions": [
+                {"label": "Build", "explanation": "Go.", "command": 'factory ceo "test"'},
+            ],
+        }
+        mock_runner = MagicMock()
+
+        async def capture_headless(prompt, task, cwd, **kwargs):
+            captured_prompt["value"] = prompt
+            return (json.dumps(response), 0)
+
+        mock_runner.headless = capture_headless
+
+        wizard_path_str = str(wizard_file)
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            _classify_with_llm(wizard_path_str)
+
+        assert "Use this file path" in captured_prompt["value"]
+
+    def test_wizard_file_missing_falls_back_gracefully(self, tmp_path, monkeypatch):
+        """If wizard_input.md doesn't exist when _classify_with_llm reads it, falls back."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        response = {
+            "follow_ups": [],
+            "suggestions": [
+                {"label": "Build", "explanation": "Go.", "command": 'factory ceo "test"'},
+            ],
+        }
+        mock_runner = MagicMock()
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            result = _classify_with_llm("~/.factory/wizard_input.md")
+
+        assert result is not None
+
+    def test_non_wizard_file_uses_input_directly(self):
+        """For non-wizard inputs, the prompt just contains the user input string."""
+        captured_prompt = {}
+        response = {
+            "follow_ups": [],
+            "suggestions": [
+                {"label": "Build", "explanation": "Go.", "command": 'factory ceo "weather CLI"'},
+            ],
+        }
+        mock_runner = MagicMock()
+
+        async def capture_headless(prompt, task, cwd, **kwargs):
+            captured_prompt["value"] = prompt
+            return (json.dumps(response), 0)
+
+        mock_runner.headless = capture_headless
+
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            _classify_with_llm("build a weather CLI")
+
+        assert "build a weather CLI" in captured_prompt["value"]
+        assert "Use this file path" not in captured_prompt["value"]
