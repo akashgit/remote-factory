@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import signal
+import subprocess
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -11,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -160,7 +161,7 @@ class TestCmdCeoInteractive:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Improvement Mode (Phase 0)" in task
+        assert "## Interactive Ideation Mode (Phase 0)" in task
         assert "auth layer" in task
 
     def test_no_path_fails(self, capsys):
@@ -178,14 +179,15 @@ class TestCmdCeoInteractive:
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
-    def test_interactive_existing_has_improvement_block(self, tmp_path):
-        """--mode interactive on an existing directory injects Improvement Mode block."""
+    def test_interactive_existing_has_ideation_block(self, tmp_path):
+        """--mode interactive on an existing directory injects Ideation Mode block."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Improvement Mode (Phase 0)" in task
+        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "existing_project: true" in task
 
     def test_interactive_new_idea_has_ideation_block(self):
         """--mode interactive with a non-directory path injects Ideation Mode block."""
@@ -206,14 +208,14 @@ class TestCmdCeoInteractive:
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_interactive_existing_mode_is_interactive(self, tmp_path):
-        """--mode interactive on existing dir sets Mode: interactive in the CEO task."""
+    def test_interactive_existing_mode_is_build(self, tmp_path):
+        """--mode interactive on existing dir sets Mode: build in the CEO task."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "interactive"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: interactive" in task
+        assert "Mode: build" in task
 
     def test_interactive_new_idea_mode_is_build(self):
         """--mode interactive with new idea sets Mode: build in the CEO task."""
@@ -1017,7 +1019,7 @@ class TestCmdCeo:
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
-        assert "--append-system-prompt" in cmd
+        assert "--append-system-prompt-file" in cmd
         assert "--dangerously-skip-permissions" in cmd
 
     def test_ceo_foreground_passes_task_as_prompt(self, tmp_path):
@@ -1135,7 +1137,8 @@ class TestDedupeProjectPath:
 
     def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
         with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
-            p1, _ = _resolve_input("Build a REST API")
+            p1, ctx1 = _resolve_input("Build a REST API")
+            _materialize_project(p1, ctx1)
             p2, _ = _resolve_input("Create a new REST API")
         assert p1.name == "rest-api"
         assert p2.name == "rest-api-2"
@@ -1174,7 +1177,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context is not None
         assert "Build something cool" in context
 
@@ -1184,7 +1187,7 @@ class TestResolveInput:
 
         assert project_path.parent == tmp_path / "projects"
         assert project_path.name == "todo-app-fastapi"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context == "Build a todo app with FastAPI"
 
     def test_non_md_file(self, tmp_path):
@@ -1195,7 +1198,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(py_file))
 
         assert project_path.name == "script"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
         assert context == "print('hello')"
 
     def test_binary_file_raises(self, tmp_path):
@@ -1225,7 +1228,7 @@ class TestResolveInput:
             project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
 
         assert project_path.name == "my-todo"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
 
     def test_dir_overrides_slug_for_idea_file(self, tmp_path):
         idea_file = tmp_path / "Long Idea Name — Details.md"
@@ -1235,7 +1238,7 @@ class TestResolveInput:
             project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
 
         assert project_path.name == "custom-name"
-        assert (project_path / ".git").is_dir()
+        assert not (project_path / ".git").is_dir()
 
     def test_dir_ignored_for_existing_directory(self, tmp_path):
         project_path, context = _resolve_input(str(tmp_path), dir_name="ignored-name")
@@ -1321,19 +1324,20 @@ class TestResearchMode:
 class TestBuildCeoTaskInteractive:
     """Unit tests for _build_ceo_task interactive_existing parameter."""
 
-    def test_existing_project_emits_improvement_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
-        assert "## Interactive Improvement Mode (Phase 0)" in task
+    def test_existing_project_emits_ideation_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "existing_project: true" in task
         assert "existing project" in task
 
     def test_existing_project_with_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True, focus="auth layer")
-        assert "## Interactive Improvement Mode (Phase 0)" in task
+        task = _build_ceo_task(tmp_path, "build", interactive_existing=True, focus="auth layer")
+        assert "## Interactive Ideation Mode (Phase 0)" in task
         assert "auth layer" in task
-        assert "Discussion topic" in task
+        assert "Focus topic" in task
 
     def test_existing_project_without_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
+        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
         assert "No specific topic was provided" in task
 
     def test_new_idea_emits_ideation_section(self, tmp_path):
@@ -1341,13 +1345,99 @@ class TestBuildCeoTaskInteractive:
         assert "## Interactive Ideation Mode (Phase 0)" in task
         assert "weather CLI" in task
 
-    def test_existing_does_not_emit_ideation(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "improve", interactive_existing=True)
-        assert "## Interactive Ideation Mode" not in task
+    def test_existing_uses_same_header_as_new_idea(self, tmp_path):
+        """Both new ideas and existing projects use the same Phase 0 header."""
+        existing_task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        new_task = _build_ceo_task(tmp_path, "build", interactive_idea="weather CLI")
+        assert "## Interactive Ideation Mode (Phase 0)" in existing_task
+        assert "## Interactive Ideation Mode (Phase 0)" in new_task
 
-    def test_existing_mode_is_interactive(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "interactive", interactive_existing=True)
-        assert "Mode: interactive" in task
+    def test_existing_project_has_existing_flag(self, tmp_path):
+        """Existing project task includes the existing_project flag for CEO conditionals."""
+        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        assert "existing_project: true" in task
+
+    def test_existing_mode_is_build(self, tmp_path):
+        """When ceo_mode is build (as set by cli.py), task shows Mode: build."""
+        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        assert "Mode: build" in task
+
+
+class TestProfileParser:
+    def test_profile_build_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build"])
+        assert args.command == "profile"
+        assert args.profile_command == "build"
+
+    def test_profile_build_with_paths(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build", "/path/a", "/path/b"])
+        assert args.paths == ["/path/a", "/path/b"]
+
+    def test_profile_build_dry_run(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "build", "--dry-run"])
+        assert args.dry_run is True
+
+    def test_profile_show_subcommand(self):
+        parser = build_parser()
+        args = parser.parse_args(["profile", "show"])
+        assert args.profile_command == "show"
+
+    def test_use_profile_flag_on_ceo(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/path", "--use-profile"])
+        assert args.use_profile is True
+
+    def test_use_profile_flag_default_false_ceo(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/path"])
+        assert args.use_profile is False
+
+    def test_use_profile_flag_on_run(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/path", "--use-profile"])
+        assert args.use_profile is True
+
+    def test_use_profile_flag_on_agent(self):
+        parser = build_parser()
+        args = parser.parse_args([
+            "agent", "researcher", "--task", "test", "--project", "/p", "--use-profile",
+        ])
+        assert args.use_profile is True
+
+
+class TestCmdProfile:
+    def test_profile_show_no_file(self, capsys):
+        with patch("factory.profile._PROFILE_PATH", Path("/nonexistent/profile.md")):
+            result = main(["profile", "show"])
+        assert result == 1
+        assert "No profile found" in capsys.readouterr().out
+
+    def test_profile_show_with_file(self, tmp_path, capsys):
+        profile_path = tmp_path / "profile.md"
+        profile_path.write_text("---\ngenerated: 2024\n---\n\nTest profile")
+        with patch("factory.profile._PROFILE_PATH", profile_path):
+            result = main(["profile", "show"])
+        assert result == 0
+        assert "Test profile" in capsys.readouterr().out
+
+    def test_profile_no_subcommand(self, capsys):
+        result = main(["profile"])
+        assert result == 1
+
+    def test_profile_build_dry_run(self, tmp_path, capsys):
+        proj = tmp_path / "myproj"
+        factory_dir = proj / ".factory"
+        factory_dir.mkdir(parents=True)
+        (factory_dir / "results.tsv").write_text("id\thyp\tverdict\n1\ttest-hyp\tkeep\n")
+        result = main(["profile", "build", "--dry-run", str(proj)])
+        assert result == 0
+        out = capsys.readouterr().out
+        assert "experiment_history" in out
+        assert "test-hyp" in out
+        assert "ceo_verdicts" in out
 
 
 class TestCmdHomeReturnsFactoryDir:
@@ -1496,3 +1586,417 @@ class TestSacredRule8Present:
         assert '8. **Do not do another agent\'s job**' in ceo_prompt, (
             "Sacred Rule 8 must be a numbered item (8.) in the Sacred Rules section"
         )
+
+
+class TestEnsureRepo:
+    """Tests for _ensure_repo() — verifies repos are initialized with at least one commit."""
+
+    def test_new_repo_has_commit(self, tmp_path):
+        """_ensure_repo() should create a repo with at least one commit."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        assert int(result.stdout.strip()) >= 1
+
+    def test_new_repo_has_valid_branch(self, tmp_path):
+        """_ensure_repo() should produce a repo with a resolvable default branch ref."""
+        project = tmp_path / "new-project"
+        _ensure_repo(project)
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+        branch = result.stdout.strip()
+        assert branch and branch != "HEAD"
+
+    def test_idempotent_on_existing_repo(self, tmp_path):
+        """Calling _ensure_repo() on an already-initialized repo should be a no-op."""
+        project = tmp_path / "existing"
+        _ensure_repo(project)
+        count_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        _ensure_repo(project)
+        count_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        assert count_before == count_after
+
+
+class TestInteractiveFileInput:
+    """Tests for interactive mode with file path input (Bug 1 fix)."""
+
+    def test_file_content_becomes_interactive_idea(self, tmp_path):
+        """When --mode interactive receives a file path, the file content should be used as the idea."""
+        spec_file = tmp_path / "my-cool-app.md"
+        spec_file.write_text("Build a weather dashboard with real-time updates")
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Build a weather dashboard with real-time updates" in task
+
+    def test_slug_derived_from_filename(self, tmp_path, capsys):
+        """The project slug should come from the file stem, not the full path."""
+        spec_file = tmp_path / "weather-dashboard.md"
+        spec_file.write_text("Build a weather dashboard")
+        with _mock_foreground():
+            main(["ceo", str(spec_file), "--mode", "interactive"])
+        output = capsys.readouterr().out
+        assert "weather-dashboard" in output
+        assert "Idea file: weather-dashboard.md" in output
+
+    def test_raw_idea_persists_spec(self, tmp_path):
+        """When --mode interactive receives a raw string, the spec should be persisted."""
+        with _mock_foreground(), \
+             patch("factory.cli._get_projects_dir", return_value=tmp_path):
+            main(["ceo", "Build a CLI todo app", "--mode", "interactive"])
+        matches = [p for p in tmp_path.iterdir() if p.is_dir()]
+        assert len(matches) == 1
+        spec_path = matches[0] / ".factory" / "strategy" / "current.md"
+        assert spec_path.exists()
+        assert "Build a CLI todo app" in spec_path.read_text()
+
+
+class TestRefineFlag:
+    """Tests for --refine flag parsing and mutual exclusivity."""
+
+    def test_refine_flag_parsed(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--refine", "fix the login bug"])
+        assert args.refine == "fix the login bug"
+
+    def test_refine_default_is_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.refine is None
+
+    def test_refine_exclusive_with_interactive(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "interactive"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_research(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "research"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_meta(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--mode", "meta"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_prompt(self, tmp_path, capsys):
+        prompt_file = tmp_path / "spec.md"
+        prompt_file.write_text("some spec")
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--prompt", str(prompt_file)])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_exclusive_with_focus(self, tmp_path, capsys):
+        with _mock_foreground():
+            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--focus", "auth"])
+        assert result == 1
+        assert "mutually exclusive" in capsys.readouterr().err
+
+    def test_refine_requires_existing_directory(self, capsys):
+        with _mock_foreground():
+            result = main(["ceo", "/nonexistent/path", "--refine", "fix bug"])
+        assert result == 1
+        assert "existing project directory" in capsys.readouterr().err
+
+    def test_refine_rejects_url(self, capsys):
+        with _mock_foreground():
+            result = main(["ceo", "https://github.com/user/repo", "--refine", "fix bug"])
+        assert result == 1
+        assert "existing project directory" in capsys.readouterr().err
+
+
+class TestBuildCeoTaskRefine:
+    """Tests for _build_ceo_task refinement mode section."""
+
+    def test_refine_request_emits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", refine_request="fix the login bug")
+        assert "## Refinement Mode" in task
+        assert "fix the login bug" in task
+        assert "Mode: Refine" in task
+
+    def test_no_refine_request_omits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build")
+        assert "## Refinement Mode" not in task
+
+    def test_refine_request_none_omits_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build", refine_request=None)
+        assert "## Refinement Mode" not in task
+
+
+class TestRefinerPromptExists:
+    """Verify the refiner.md prompt file exists and has key sections."""
+
+    def test_refiner_prompt_file_exists(self):
+        prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "refiner.md"
+        assert prompt_path.exists(), f"refiner.md not found at {prompt_path}"
+
+    def test_refiner_prompt_has_key_sections(self):
+        prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "refiner.md"
+        content = prompt_path.read_text()
+        assert "Tier" in content, "refiner.md should reference Tier classification"
+        assert "Builder" in content or "builder" in content, "refiner.md should reference the Builder agent"
+class TestWizardLongInputRedirect:
+    """Tests for wizard long-input redirect to ~/.factory/wizard_input.md."""
+
+    def _make_input_fn(self, first_response):
+        """Return an input() replacement that returns first_response then raises EOFError."""
+        call_count = 0
+
+        def _input(prompt=""):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return first_response
+            raise EOFError
+
+        return _input
+
+    def test_long_input_triggers_file_write(self, tmp_path, monkeypatch):
+        """Input >200 chars is written to ~/.factory/wizard_input.md with matching content."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+
+        long_input = "a" * 250
+        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
+
+        _welcome_wizard()
+
+        assert wizard_file.exists()
+        assert wizard_file.read_text() == long_input
+
+    def test_short_input_no_file_written(self, tmp_path, monkeypatch):
+        """Input <=200 chars does NOT write a file."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+
+        short_input = "Build a weather CLI"
+        monkeypatch.setattr("builtins.input", self._make_input_fn(short_input))
+
+        with patch("factory.cli._classify_with_llm", return_value=([], [
+            {"label": "Build", "explanation": "Build it.", "command": "factory ceo 'Build a weather CLI' --mode build"},
+        ])):
+            _welcome_wizard()
+
+        assert not wizard_file.exists()
+
+    def test_long_path_not_redirected(self, tmp_path, monkeypatch):
+        """A long string that is an existing directory is NOT redirected."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+
+        long_dir = tmp_path / ("a" * 210)
+        long_dir.mkdir()
+
+        monkeypatch.setattr("builtins.input", self._make_input_fn(str(long_dir)))
+
+        _welcome_wizard()
+
+        assert not wizard_file.exists()
+
+    def test_long_url_not_redirected(self, tmp_path, monkeypatch):
+        """A long GitHub URL is NOT redirected."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+
+        long_url = "https://github.com/user/" + "r" * 200
+        monkeypatch.setattr("builtins.input", self._make_input_fn(long_url))
+
+        _welcome_wizard()
+
+        assert not wizard_file.exists()
+
+    def test_wizard_file_inside_factory_dir(self, tmp_path, monkeypatch):
+        """The written file is inside ~/.factory/."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+
+        long_input = "x" * 250
+        monkeypatch.setattr("builtins.input", self._make_input_fn(long_input))
+
+        _welcome_wizard()
+
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+        assert wizard_file.exists()
+        assert wizard_file.parent == fake_home / ".factory"
+
+
+class TestQuickClassifyWizardFile:
+    """Tests for _quick_classify returning two options for wizard-generated files."""
+
+    def test_wizard_file_returns_two_options(self, tmp_path, monkeypatch):
+        """_quick_classify returns build and interactive options for wizard_input.md."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+        wizard_file.parent.mkdir(parents=True)
+        wizard_file.write_text("some long idea text")
+
+        result = _quick_classify(str(wizard_file))
+        assert result is not None
+        assert len(result) == 2
+        assert result[0]["label"] == "Build from this idea"
+        assert "--mode build" in result[0]["command"]
+        assert result[1]["label"] == "Brainstorm and refine first"
+        assert "--mode interactive" in result[1]["command"]
+
+    def test_regular_file_returns_one_option(self, tmp_path):
+        """_quick_classify returns one option for a regular spec file."""
+        spec_file = tmp_path / "spec.md"
+        spec_file.write_text("# My project spec")
+
+        result = _quick_classify(str(spec_file))
+        assert result is not None
+        assert len(result) == 1
+        assert result[0]["label"] == "Build from this spec file"
+
+    def test_wizard_file_with_tilde_path(self, tmp_path, monkeypatch):
+        """_quick_classify handles ~/. factory/wizard_input.md with tilde expansion."""
+        fake_home = tmp_path / "home"
+        fake_home.mkdir()
+        monkeypatch.setenv("HOME", str(fake_home))
+        wizard_file = fake_home / ".factory" / "wizard_input.md"
+        wizard_file.parent.mkdir(parents=True)
+        wizard_file.write_text("idea content")
+
+        result = _quick_classify("~/.factory/wizard_input.md")
+        assert result is not None
+        assert len(result) == 2
+
+
+class TestMaterializeProject:
+    """Tests for _materialize_project — deferred directory creation."""
+
+    def test_creates_repo(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project)
+        assert (project / ".git").is_dir()
+
+    def test_creates_repo_and_persists_spec(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project, "Build a todo app")
+        assert (project / ".git").is_dir()
+        spec = (project / ".factory" / "strategy" / "current.md").read_text()
+        assert "Build a todo app" in spec
+
+    def test_no_spec_skips_persist(self, tmp_path):
+        project = tmp_path / "new-project"
+        _materialize_project(project, None)
+        assert (project / ".git").is_dir()
+        assert not (project / ".factory" / "strategy" / "current.md").exists()
+
+    def test_idempotent_on_existing_repo(self, tmp_path):
+        project = tmp_path / "existing"
+        _materialize_project(project, "first spec")
+        count_before = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        _materialize_project(project, "second spec")
+        count_after = subprocess.run(
+            ["git", "rev-list", "--count", "HEAD"],
+            cwd=project, capture_output=True, text=True,
+        ).stdout.strip()
+        assert count_before == count_after
+
+
+class TestIsScaffoldOnly:
+    """Tests for _is_scaffold_only — cleanup heuristic."""
+
+    def test_scaffold_project(self, tmp_path):
+        project = tmp_path / "scaffold"
+        _materialize_project(project, "some idea")
+        assert _is_scaffold_only(project) is True
+
+    def test_scaffold_without_spec(self, tmp_path):
+        project = tmp_path / "scaffold"
+        _materialize_project(project)
+        assert _is_scaffold_only(project) is True
+
+    def test_not_scaffold_with_extra_file(self, tmp_path):
+        project = tmp_path / "real"
+        _materialize_project(project, "some idea")
+        (project / "README.md").write_text("# Hello")
+        assert _is_scaffold_only(project) is False
+
+    def test_not_scaffold_with_extra_commit(self, tmp_path):
+        project = tmp_path / "real"
+        _materialize_project(project, "some idea")
+        (project / "README.md").write_text("# Hello")
+        subprocess.run(["git", "add", "README.md"], cwd=project, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=t@t",
+             "commit", "-m", "second"],
+            cwd=project, capture_output=True,
+        )
+        assert _is_scaffold_only(project) is False
+
+    def test_nonexistent_dir(self, tmp_path):
+        assert _is_scaffold_only(tmp_path / "nope") is False
+
+    def test_no_git(self, tmp_path):
+        project = tmp_path / "nogit"
+        project.mkdir()
+        assert _is_scaffold_only(project) is False
+
+
+class TestDeferredCreationFlow:
+    """Integration tests: _resolve_input defers creation, _materialize_project creates."""
+
+    def test_resolve_then_materialize_file(self, tmp_path):
+        idea_file = tmp_path / "my-app.md"
+        idea_file.write_text("Build something cool")
+
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
+            project_path, context = _resolve_input(str(idea_file))
+
+        assert not project_path.exists()
+        _materialize_project(project_path, context)
+        assert (project_path / ".git").is_dir()
+        assert (project_path / ".factory" / "strategy" / "current.md").exists()
+
+    def test_resolve_then_materialize_raw_prompt(self, tmp_path):
+        with patch("factory.cli._get_projects_dir", return_value=tmp_path / "projects"):
+            project_path, context = _resolve_input("Build a weather CLI")
+
+        assert not project_path.exists()
+        _materialize_project(project_path, context)
+        assert (project_path / ".git").is_dir()
+        assert "Build a weather CLI" in (
+            project_path / ".factory" / "strategy" / "current.md"
+        ).read_text()
+
+    def test_existing_dir_not_affected(self, tmp_path):
+        """_resolve_input on existing dir returns it unchanged, _materialize_project is no-op."""
+        (tmp_path / ".git").mkdir()
+        project_path, context = _resolve_input(str(tmp_path))
+        assert project_path == tmp_path
+        assert context is None
