@@ -915,8 +915,10 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         exp_start = None
         for ev in reversed(exp_events):
             if ev.get("type") == "experiment.begin":
-                exp_start = datetime.fromisoformat(ev["timestamp"])
-                break
+                ts_str = ev.get("timestamp")
+                if ts_str:
+                    exp_start = datetime.fromisoformat(ts_str)
+                    break
         cost = sum_agent_costs(project_path, since=exp_start) or None
 
     record = ExperimentRecord(
