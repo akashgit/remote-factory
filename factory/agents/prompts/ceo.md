@@ -357,7 +357,7 @@ Write a thorough research report to .factory/strategy/research.md covering:
 - Architecture patterns that fit
 - Potential pitfalls to avoid
 - MVP scope recommendation
-" --project "$PROJECT_PATH" --timeout 300
+" --project "$PROJECT_PATH" --timeout 600
 ```
 
 **For existing projects** (task includes `existing_project: true`):
@@ -390,7 +390,7 @@ Write a thorough research report to .factory/strategy/research.md covering:
 - External best practices relevant to weak areas
 - Backlog items with context and prioritization advice
 - Recommendations for what to work on next
-" --project "$PROJECT_PATH" --timeout 300
+" --project "$PROJECT_PATH" --timeout 600
 ```
 
 ### I0r: CEO Review — Research
@@ -668,7 +668,7 @@ The project is new or incomplete. Research:
 5. Write a research report to .factory/strategy/research.md covering: similar projects found, recommended tech stack, architecture patterns, potential pitfalls, and MVP scope
 
 The project specification is saved at $PROJECT_PATH/.factory/strategy/current.md — read it for full details.
-" --project "$PROJECT_PATH" --timeout 300
+" --project "$PROJECT_PATH" --timeout 600
 ```
 
 ### B0r: CEO Review — Research
@@ -1944,7 +1944,7 @@ $RESEARCH_CONSTRAINTS
 Check .factory/archive/ for prior knowledge on these failure patterns.
 
 Search the web for solutions, workarounds, and best practices for the dominant failure modes.
-Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
+Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
 If the Researcher crashes (non-zero exit), retry once. If it fails again, proceed to R2 — but log the failure. Do NOT preemptively skip the Researcher.
