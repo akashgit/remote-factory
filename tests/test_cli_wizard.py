@@ -903,7 +903,7 @@ class TestClassifyWithLLMWizardFile:
 
         async def capture_headless(prompt, task, cwd, **kwargs):
             captured_prompt["value"] = prompt
-            return (json.dumps(response), 0)
+            return (json.dumps(response), 0, None)
 
         mock_runner.headless = capture_headless
 
@@ -934,7 +934,7 @@ class TestClassifyWithLLMWizardFile:
 
         async def capture_headless(prompt, task, cwd, **kwargs):
             captured_prompt["value"] = prompt
-            return (json.dumps(response), 0)
+            return (json.dumps(response), 0, None)
 
         mock_runner.headless = capture_headless
 
@@ -957,7 +957,7 @@ class TestClassifyWithLLMWizardFile:
             ],
         }
         mock_runner = MagicMock()
-        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0))
+        mock_runner.headless = AsyncMock(return_value=(json.dumps(response), 0, None))
 
         with patch("factory.runners.get_runner", return_value=mock_runner):
             result = _classify_with_llm("~/.factory/wizard_input.md")
@@ -977,7 +977,7 @@ class TestClassifyWithLLMWizardFile:
 
         async def capture_headless(prompt, task, cwd, **kwargs):
             captured_prompt["value"] = prompt
-            return (json.dumps(response), 0)
+            return (json.dumps(response), 0, None)
 
         mock_runner.headless = capture_headless
 
