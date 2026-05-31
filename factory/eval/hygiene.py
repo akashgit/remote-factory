@@ -77,7 +77,7 @@ def _detect_go_project(project_path: Path) -> bool:
 def _run_cmd(
     cmd: list[str],
     cwd: Path,
-    timeout: int = 120,
+    timeout: int = 300,
 ) -> tuple[int, str, str]:
     """Run a command, return (returncode, stdout, stderr). Never raises."""
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}

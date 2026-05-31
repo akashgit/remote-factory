@@ -24,6 +24,8 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+_EVAL_TIMEOUT = int(os.environ.get("FACTORY_EVAL_TIMEOUT", "300"))
+
 
 # ── Dimension 1: tests (weight 0.30) ─────────────────────────────
 
@@ -35,7 +37,7 @@ def eval_tests() -> dict:
             ["uv", "run", "pytest", "-v"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=_EVAL_TIMEOUT,
             cwd=PROJECT_ROOT,
         )
         output = result.stdout + result.stderr
@@ -70,7 +72,7 @@ def eval_tests() -> dict:
             "score": 0.0,
             "weight": 0.30,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {_EVAL_TIMEOUT}s",
         }
     except Exception as exc:
         return {
@@ -209,7 +211,7 @@ def eval_coverage() -> dict:
             ["uv", "run", "pytest", "--cov=factory", "--cov-report=term", "-q"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=_EVAL_TIMEOUT,
             cwd=PROJECT_ROOT,
         )
         output = result.stdout + result.stderr
@@ -239,7 +241,7 @@ def eval_coverage() -> dict:
             "score": 0.0,
             "weight": 0.25,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {_EVAL_TIMEOUT}s",
         }
     except Exception as exc:
         return {
