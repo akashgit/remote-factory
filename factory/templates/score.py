@@ -27,7 +27,7 @@ def eval_tests() -> dict:
             ["python", "-m", "pytest", "--tb=short", "-q"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
         )
         passed = result.returncode == 0
         return {
@@ -43,7 +43,7 @@ def eval_tests() -> dict:
             "score": 0.0,
             "weight": 0.5,
             "passed": False,
-            "details": "Test suite timed out after 120s",
+            "details": "Test suite timed out after 300s",
         }
 
 

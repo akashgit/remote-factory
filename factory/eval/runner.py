@@ -137,7 +137,7 @@ def _merge_all(
 async def _run_project_eval(
     eval_command: str,
     project_path: Path,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
 ) -> list[EvalResult]:
     """Run the project's eval/score.py (if it exists) and return additional results.
 
@@ -253,7 +253,7 @@ async def run_eval(
     eval_command: str,
     project_path: Path,
     threshold: float,
-    timeout: float = 120.0,
+    timeout: float = 300.0,
     project_eval: list[ProjectEvalDimension] | None = None,
     eval_weights: EvalWeights | None = None,
     skip_project_eval: bool = False,

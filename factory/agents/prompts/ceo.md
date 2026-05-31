@@ -88,7 +88,7 @@ factory agent <role> --task "<task description>" --project /path/to/project [--t
 
 **Correct pattern:**
 ```bash
-factory agent researcher --task "..." --project "$PROJECT_PATH" --timeout 300
+factory agent researcher --task "..." --project "$PROJECT_PATH" --timeout 600
 # Command blocks until Researcher completes
 cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"  # Read the output
 ```
@@ -1006,7 +1006,7 @@ Writes observations to `$PROJECT_PATH/.factory/strategy/observations.md`. Includ
 **0b. Deep Research (Researcher Agent)**
 
 ```bash
-factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Check .factory/archive/ for prior knowledge. Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 300
+factory agent researcher --task "Mode 2 research for $PROJECT_PATH. Read observations at .factory/strategy/observations.md. Search the web for relevant resources, best practices, and similar projects. Check .factory/archive/ for prior knowledge. Write research report to .factory/strategy/research.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
 If the Researcher fails, proceed — the Strategist can work from local observations alone.
