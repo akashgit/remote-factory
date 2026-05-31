@@ -27,6 +27,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - .codex-plugin/**
 - AGENTS.md
 - scripts/**
+- eval/**
 
 ### Read-only
 <!-- Files the factory may read but must never modify. -->
