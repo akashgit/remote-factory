@@ -443,7 +443,7 @@ class TestFormatReview:
         assert "❌" in body
         assert "FAIL" in body
 
-    def test_no_scores(self):
+    def test_no_scores_omits_score_section(self):
         payload = ReviewPayload(
             verdict="REVERT",
             reason="Missing scores",
@@ -455,6 +455,21 @@ class TestFormatReview:
             code_notes=[],
         )
         body = format_review(payload)
+        assert "Score Comparison" not in body
+
+    def test_one_score_present_shows_section(self):
+        payload = ReviewPayload(
+            verdict="KEEP",
+            reason="Partial scores",
+            score_before=0.8,
+            score_after=None,
+            threshold=0.8,
+            guard_results={},
+            precheck_summary="",
+            code_notes=[],
+        )
+        body = format_review(payload)
+        assert "Score Comparison" in body
         assert "n/a" in body
 
     def test_minimal_payload(self):
