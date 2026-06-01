@@ -108,9 +108,8 @@ class TestClaudeRunner:
                 )
 
                 cmd = mock_exec.call_args[0]
-                asp_idx = cmd.index("--append-system-prompt-file")
+                assert "--append-system-prompt-file" in cmd
                 p_idx = cmd.index("-p")
-                # The prompt file is cleaned up after execution, so just check task arg
                 assert cmd[p_idx + 1] == "Run the experiment"
 
     async def test_interactive_run_uses_append_system_prompt_file(self, tmp_path: Path) -> None:
