@@ -287,6 +287,7 @@ At the start of every cycle, create a task list using `TaskCreate` **before spaw
 | 3 | Execute — Builder + Review + Eval | Executing experiment |
 | 4 | Final Archive & Summary | Archiving cycle results |
 | 5 | Evolve playbooks — ACE | Evolving agent playbooks |
+| 6 | Classify & Contribute | Classifying evolved items |
 
 ### Status Transition Rules
 
@@ -2385,6 +2386,53 @@ factory agent archivist --task "Record ACE playbook evolution.
 ```
 
 Note: Evolved playbooks are stored in `~/.factory/playbooks/` (user-local), NOT in the factory source tree. They are never committed to the factory repo — they are personal to each user's experiment history.
+
+### Phase 3: Classify and Contribute (after ACE evolution)
+
+After ACE evolution completes, classify evolved playbook items and present the user with upstream contribution options.
+
+#### M4: Classify Evolved Items
+
+```bash
+factory contribute --classify "$PROJECT_PATH"
+```
+
+This scores each evolved playbook item on the general-vs-specific spectrum using:
+- Cross-project prevalence (40%): does this pattern appear across multiple projects?
+- Domain independence (25%): does it reference factory internals or project-specific patterns?
+- Evidence strength (20%): how many observations support it?
+- Category signal (15%): is the hypothesis category inherently general?
+
+Items scoring >= 0.65 are flagged as general (upstream candidates). Items scoring <= 0.35 stay local (project-specific). Items between 0.35 and 0.65 are marked uncertain (need more data).
+
+#### M5: Present Summary to User
+
+The classification summary is printed automatically by M4. It shows:
+- **General improvements** with generality scores, cross-project evidence, and keep rates — these are candidates for upstream contribution
+- **Project-specific improvements** with "Why local" explanations — these stay in the user's local playbooks
+- **Uncertain items** with "Needs" explanations — these need more cross-project data to classify
+
+Present the summary to the user and explain what it means. The user decides what happens next.
+
+#### M6: User-Approved Contribution (optional)
+
+If the user wants to contribute general items upstream:
+
+```bash
+factory contribute --submit "$PROJECT_PATH" --all
+```
+
+This creates a PR against the remote-factory repo with:
+- Updated default playbook files with the general items merged in
+- Evidence package (cross-project stats, experiment examples)
+- Clear PR description explaining the classification methodology
+
+**Important**: Never auto-submit contributions. Always present the summary (M5) and wait for explicit user approval. The user may choose to:
+- Contribute all general items (`--all`)
+- Skip contribution entirely
+- Ask questions about specific items before deciding
+
+If the user skips contribution, that is fine — the local playbooks already have all the evolved items. Contribution is about improving the factory defaults for all users.
 
 ### Meta Mode Cadence
 
