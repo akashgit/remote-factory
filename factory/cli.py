@@ -885,41 +885,59 @@ def cmd_finalize(args: argparse.Namespace) -> int:
 
     force = getattr(args, "force", False)
 
-    if verdict == "keep" and not force:
+    if verdict == "keep":
         config_path = project_path / ".factory" / "config.json"
         if config_path.exists():
             config = FactoryConfig(**json.loads(config_path.read_text()))
-            history = _run(store.load_history())
-            history_dicts = [r.model_dump() for r in history]
 
-            precheck_result = run_precheck(
-                score_before=score_before,
-                score_after=score_after,
-                threshold=config.eval_threshold,
-                hypothesis=args.hypothesis or "",
-                history=history_dicts,
-                project_path=project_path,
-                smoke_test_command=config.smoke_test,
-                hard_constraints=config.hard_constraints,
-            )
+            if config.hard_constraints:
+                from factory.precheck import check_hard_constraints
+                hc_results = check_hard_constraints(config.hard_constraints, project_path)
+                hc_failures = [c.name for c in hc_results if not c.passed]
+                if hc_failures:
+                    verdict = "revert"
+                    failure_detail = "; ".join(hc_failures)
+                    notes = f"[OVERRIDDEN by finalize gate] hard constraint failed: {failure_detail}. {notes}"
+                    _emit_cli_event(project_path, "verdict.overridden", {
+                        "exp_id": args.id,
+                        "original_verdict": "keep",
+                        "new_verdict": "revert",
+                        "reason": failure_detail,
+                    })
+                    print(f"Finalize gate: hard constraint FAILED — overriding keep to revert ({failure_detail})")
 
-            if not precheck_result.passed:
-                verdict = "revert"
-                failure_detail = "; ".join(precheck_result.blocking_failures)
-                notes = f"[OVERRIDDEN by finalize gate] precheck failed: {failure_detail}. {notes}"
-                _emit_cli_event(project_path, "verdict.overridden", {
+            if verdict == "keep" and not force:
+                history = _run(store.load_history())
+                history_dicts = [r.model_dump() for r in history]
+
+                precheck_result = run_precheck(
+                    score_before=score_before,
+                    score_after=score_after,
+                    threshold=config.eval_threshold,
+                    hypothesis=args.hypothesis or "",
+                    history=history_dicts,
+                    project_path=project_path,
+                    smoke_test_command=config.smoke_test,
+                    hard_constraints=None,
+                )
+
+                if not precheck_result.passed:
+                    verdict = "revert"
+                    failure_detail = "; ".join(precheck_result.blocking_failures)
+                    notes = f"[OVERRIDDEN by finalize gate] precheck failed: {failure_detail}. {notes}"
+                    _emit_cli_event(project_path, "verdict.overridden", {
+                        "exp_id": args.id,
+                        "original_verdict": "keep",
+                        "new_verdict": "revert",
+                        "reason": failure_detail,
+                    })
+                    print(f"Finalize gate: precheck FAILED — overriding keep to revert ({failure_detail})")
+
+            if verdict == "keep" and force:
+                _emit_cli_event(project_path, "verdict.force_kept", {
                     "exp_id": args.id,
-                    "original_verdict": "keep",
-                    "new_verdict": "revert",
-                    "reason": failure_detail,
                 })
-                print(f"Finalize gate: precheck FAILED — overriding keep to revert ({failure_detail})")
-
-    if verdict == "keep" and force:
-        _emit_cli_event(project_path, "verdict.force_kept", {
-            "exp_id": args.id,
-        })
-        print("Finalize gate: precheck SKIPPED (--force)")
+                print("Finalize gate: precheck SKIPPED (--force), hard constraints PASSED")
 
     cost = args.cost
     if cost is None:
@@ -3721,7 +3739,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
     p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
     p.add_argument("--force", action="store_true", default=False,
-                    help="Bypass precheck gate (for pre-existing failures)")
+                    help="Bypass precheck gate (for pre-existing failures). Hard constraints are always enforced.")
 
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")

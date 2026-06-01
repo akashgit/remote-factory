@@ -190,7 +190,7 @@ def _make_project_with_config(tmp_path: Path, hard_constraints: list[dict] | Non
 
 
 class TestForceFlag:
-    def test_force_flag_bypasses_precheck(self, tmp_path: Path) -> None:
+    def test_force_flag_does_not_bypass_hard_constraints(self, tmp_path: Path) -> None:
         from factory.cli import cmd_finalize
 
         project = _make_project_with_config(tmp_path, [
@@ -201,6 +201,24 @@ class TestForceFlag:
             hypothesis="test hyp", summary="test", notes="",
             issue=None, pr=None, cost=None,
             score_before=0.5, score_after=0.9,
+            force=True,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "revert" in tsv
+        assert "hard constraint failed" in tsv
+
+    def test_force_flag_bypasses_non_constraint_precheck(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_pass", "check": "true", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=None, score_after=None,
             force=True,
         )
         cmd_finalize(args)
