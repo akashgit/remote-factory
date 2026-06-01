@@ -69,6 +69,7 @@ class CodexRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
+        tmux_persist: bool = False,
     ) -> tuple[str, int, None]:
         """Run a headless Codex CLI invocation via ``codex exec``.
 
@@ -78,6 +79,8 @@ class CodexRunner:
         Returns (stdout, return_code, None). Codex has no token telemetry.
         """
         _ = session_name
+        if tmux_persist:
+            logger.warning("tmux_persist not supported with codex runner")
         if is_codex_dry_run():
             stdout, code = self._dry_run_response(role, cwd, task)
             return stdout, code, None

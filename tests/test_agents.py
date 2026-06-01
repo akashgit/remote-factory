@@ -112,7 +112,7 @@ class TestInvokeAgentsParallel:
 
         call_count = 0
 
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True):
+        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False):
             nonlocal call_count
             call_count += 1
             return (f"output-{role}", 0)
@@ -132,7 +132,7 @@ class TestInvokeAgentsParallel:
         """invoke_agents_parallel returns results from all agents."""
         from factory.agents.runner import invoke_agents_parallel
 
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True):
+        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False):
             return (f"output-{role}", 0)
 
         monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
@@ -153,7 +153,7 @@ class TestInvokeAgentsParallel:
 
         captured_models: list[str | None] = []
 
-        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True):
+        async def mock_invoke(role, task, path, *, timeout=600.0, dangerously_skip_permissions=True, model=None, runner_name=None, _track_failures=True, tmux_persist=False):
             captured_models.append(model)
             return (f"output-{role}", 0)
 
