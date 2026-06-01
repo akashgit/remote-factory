@@ -353,15 +353,42 @@ Run `uv run factory config show` to see resolved config, or `uv run factory conf
 
 ---
 
+## Install as a Claude Code Plugin
+
+re:factory is also distributed as a fully-bundled [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins) — agents, skills, and slash commands packaged together. A GitHub Actions workflow rebuilds the `plugins` branch of this repo on every push to `main`, so it always tracks the latest generated artifacts.
+
+From inside Claude Code:
+
+```text
+/plugin marketplace add akashgit/remote-factory#plugins
+/plugin install factory@remote-factory
+/reload-plugins
+```
+
+Once installed, the plugin exposes:
+
+- The `/factory:implement` slash command (entry point for the multi-agent pipeline).
+- Namespaced subagents — invoke with `factory:ceo`, `factory:researcher`, `factory:builder`, etc.
+- The bundled skills under `.agents/skills/` (e.g. `pipeline-subagents`, `implement`).
+
+The plugin still shells out to the `factory` CLI for the heavy lifting, so you'll need `uv` and the `factory` package installed locally as described in [Quick Start](#quick-start).
+
+To update later: `/plugin marketplace update remote-factory`. To remove: `/plugin uninstall factory@remote-factory`.
+
+---
+
 ## Plugin Agents
 
-Every factory agent is available as a standalone Claude Code subagent:
+If you'd rather skip the marketplace and just register the specialist agents as standalone Claude Code (or Codex) subagents, use the built-in installer:
 
 ```bash
 uv run factory install                   # Install all 9 agents to ~/.claude/agents/
+uv run factory install --runner codex    # Or install Codex TOML agents to ~/.codex/agents/
 claude --agent factory-ceo "improve this project"
 claude --agent factory-researcher "study the auth system"
 ```
+
+This path only ships the agent prompts (no skills, no slash commands) and is independent of the plugin marketplace install above.
 
 ---
 
