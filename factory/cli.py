@@ -3879,7 +3879,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timeout in seconds (default: 600)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -3935,7 +3935,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4001,7 +4001,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4034,7 +4034,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # tmux-ls — list factory tmux sessions
