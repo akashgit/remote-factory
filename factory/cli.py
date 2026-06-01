@@ -2280,6 +2280,62 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    # ── review mode early exit ────────────────────────────────
+    if mode == "review":
+        pr_number = getattr(args, "pr", None)
+        if pr_number is None:
+            print("Error: --mode review requires --pr <number>", file=sys.stderr)
+            return 1
+
+        repo = getattr(args, "repo", None)
+        model = _resolve_model(args)
+        runner_name = _resolve_runner(args)
+
+        project_path = Path(raw_path).expanduser().resolve()
+        if not project_path.is_dir():
+            print(f"Error: project path must be an existing directory for review mode: {raw_path}",
+                  file=sys.stderr)
+            return 1
+
+        _print_banner("review")
+
+        repo_clause = f" in repo `{repo}`" if repo else ""
+        task = (
+            f"Project: {project_path}\nMode: review\n\n"
+            f"## PR Review Directive\n\n"
+            f"Review PR #{pr_number}{repo_clause}.\n\n"
+            f"1. Read the PR diff: `gh pr diff {pr_number}"
+            f"{' --repo ' + repo if repo else ''}`\n"
+            f"2. Read the PR description: `gh pr view {pr_number}"
+            f"{' --repo ' + repo if repo else ''}`\n"
+            f"3. Run the project's test suite and lint checks\n"
+            f"4. Spawn the Reviewer agent for a structured code review\n"
+            f"5. Post your review verdict on the PR using "
+            f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
+            f"{' --repo ' + repo if repo else ''}`\n"
+        )
+
+        if not headless:
+            prompt = resolve_prompt("ceo", project_path)
+            runner = get_runner(runner_name)
+            return runner.interactive_run(
+                prompt, task, project_path,
+                model=model, role="ceo", dangerously_skip_permissions=True,
+            )
+
+        from factory.ceo_completion import run_ceo_with_completion_guard
+        result, code = _run(run_ceo_with_completion_guard(
+            project_path,
+            task,
+            mode="review",
+            runner_name=runner_name,
+            model=model,
+            timeout=7200.0,
+            max_respawns=1,
+        ))
+        print(result)
+        return code
+
     _interactive_is_existing = (
         mode == "interactive"
         and raw_path
@@ -3924,11 +3980,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research", "review"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, interactive (research + brainstorm → spec → build), "
-             "or research (autonomous research optimization)",
+             "research (autonomous research optimization), or review (on-demand PR review)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -3979,6 +4035,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="Disable clean PR mode")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--pr", type=int, default=None,
+                    help="PR number for --mode review (required when mode=review)")
+    p.add_argument("--repo", default=None,
+                    help="Repository (owner/repo) for --mode review (optional, defaults to current repo)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")

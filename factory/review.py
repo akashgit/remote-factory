@@ -43,23 +43,24 @@ def format_review(payload: ReviewPayload) -> str:
         lines.append(f"**Hypothesis:** {payload.hypothesis}")
     lines.append("")
 
-    # Score comparison
-    lines.append("### Score Comparison")
-    lines.append("")
-    before = f"{payload.score_before:.4f}" if payload.score_before is not None else "n/a"
-    after = f"{payload.score_after:.4f}" if payload.score_after is not None else "n/a"
-    if payload.score_before is not None and payload.score_after is not None:
-        delta = payload.score_after - payload.score_before
-        delta_str = f"{delta:+.4f}"
-    else:
-        delta_str = "n/a"
-    lines.append("| Metric | Value |")
-    lines.append("|--------|-------|")
-    lines.append(f"| Before | {before} |")
-    lines.append(f"| After | {after} |")
-    lines.append(f"| Delta | {delta_str} |")
-    lines.append(f"| Threshold | {payload.threshold:.4f} |")
-    lines.append("")
+    # Score comparison (skip when both scores are absent, e.g. standalone PR reviews)
+    if payload.score_before is not None or payload.score_after is not None:
+        lines.append("### Score Comparison")
+        lines.append("")
+        before = f"{payload.score_before:.4f}" if payload.score_before is not None else "n/a"
+        after = f"{payload.score_after:.4f}" if payload.score_after is not None else "n/a"
+        if payload.score_before is not None and payload.score_after is not None:
+            delta = payload.score_after - payload.score_before
+            delta_str = f"{delta:+.4f}"
+        else:
+            delta_str = "n/a"
+        lines.append("| Metric | Value |")
+        lines.append("|--------|-------|")
+        lines.append(f"| Before | {before} |")
+        lines.append(f"| After | {after} |")
+        lines.append(f"| Delta | {delta_str} |")
+        lines.append(f"| Threshold | {payload.threshold:.4f} |")
+        lines.append("")
 
     # Guard check table
     if payload.guard_results:
