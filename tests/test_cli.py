@@ -2000,3 +2000,67 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+class TestLiteMode:
+    """Tests for --lite flag: parsing, default, task injection, propagation."""
+
+    def test_parser_ceo_accepts_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--lite"])
+        assert args.lite is True
+
+    def test_parser_ceo_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.lite is False
+
+    def test_parser_run_accepts_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--lite"])
+        assert args.lite is True
+
+    def test_parser_run_default_false(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path"])
+        assert args.lite is False
+
+    def test_build_ceo_task_injects_section(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", lite=True)
+        assert "## Lite Mode" in task
+        assert "archive-only, no web search" in task
+        assert "Skip baseline eval" in task
+        assert "Review pipeline reduction" in task
+        assert "Archivist consolidation" in task
+        assert "Strategist context compression" in task
+        assert "Single hypothesis per cycle" in task
+        assert "Invocation budget" in task
+        assert "Sacred Rules" in task
+
+    def test_build_ceo_task_omits_section_when_false(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "improve", lite=False)
+        assert "## Lite Mode" not in task
+
+    def test_ceo_headless_passes_flag(self, tmp_path):
+        """--lite flag propagates through cmd_ceo --headless."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0):
+            result = main(["ceo", str(tmp_path), "--headless", "--lite"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## Lite Mode" in task
+
+    def test_run_passes_flag(self, tmp_path):
+        """--lite flag propagates through cmd_run."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
+             patch("factory.cli._chain_modes", return_value=0), \
+             patch("factory.worktree.create_worktree",
+                   side_effect=lambda p, b="main": (p, "factory/run-test")), \
+             patch("factory.worktree.remove_worktree"), \
+             patch("factory.worktree.prune_stale", return_value=[]), \
+             patch("factory.cli._read_target_branch", return_value="main"), \
+             patch("factory.cli._ensure_dashboard"):
+            result = main(["run", str(tmp_path), "--lite"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "## Lite Mode" in task

@@ -2434,6 +2434,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         else:
             clean_pr_resolved = False
 
+    lite_flag = getattr(args, "lite", False)
+
     task = _build_ceo_task(
         wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
@@ -2446,6 +2448,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_url=issue_url,
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
+        lite=lite_flag,
     )
 
     session_name = _derive_session_name(
@@ -3041,6 +3044,7 @@ def _build_ceo_task(
     issue_url: str | None = None,
     refine_request: str | None = None,
     clean_pr: bool = False,
+    lite: bool = False,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     task = f"Project: {project_path}\nMode: {mode}"
@@ -3237,6 +3241,32 @@ def _build_ceo_task(
             "If stripping breaks tests, fall back to the full diff.\n"
         )
 
+    if lite:
+        task += (
+            "\n\n## Lite Mode\n\n"
+            "Lite Mode is ACTIVE. Apply these 7 optimizations to reduce agent invocations "
+            "while preserving correctness:\n\n"
+            "1. **Lite Researcher (archive-only, no web search):** Skip web search. Invoke "
+            "Researcher with explicit directive: \"Do NOT perform web searches. Read only from "
+            ".factory/archive/ and observations.\"\n"
+            "2. **Skip baseline eval:** Read `.factory/last_eval.json` as score_before instead "
+            "of spawning an Evaluator agent. Fall back to spawning Evaluator if file is missing "
+            "or stale.\n"
+            "3. **Review pipeline reduction:** Skip Reviewer agent (step 2e) and headless final "
+            "review (step 2h-final). Run `factory guard` as CLI instead. CEO structured review "
+            "(step 2d-review) still runs.\n"
+            "4. **Archivist consolidation:** Replace per-cycle Archivist invocations with 1 batch "
+            "at cycle end (Step 3).\n"
+            "5. **Strategist context compression:** Use `$(factory brief $PROJECT_PATH)` instead "
+            "of catting full observation/research/strategy files.\n"
+            "6. **Single hypothesis per cycle:** The invocation budget naturally constrains to "
+            "1 hypothesis.\n"
+            "7. **Invocation budget:** Cap at 7 agent invocations. Warn at 2 remaining.\n\n"
+            "These optimizations are additive to all other rules. Sacred Rules, guard checks, "
+            "and eval requirements still apply in full. The precheck gate (step 2g) remains "
+            "mandatory and unchanged.\n"
+        )
+
     return task
 
 
@@ -3300,6 +3330,7 @@ def _run_single_cycle(
     issue_url: str | None = None,
     use_profile: bool = False,
     clean_pr: bool = False,
+    lite: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3326,6 +3357,7 @@ def _run_single_cycle(
             issue_number=issue_number,
             issue_url=issue_url,
             clean_pr=clean_pr,
+            lite=lite,
         )
 
         result, code = _run(invoke_agent(
@@ -3366,6 +3398,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     use_profile_flag = getattr(args, "use_profile", False)
+    lite_flag = getattr(args, "lite", False)
 
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
@@ -3439,6 +3472,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             issue_url=issue_url,
             use_profile=use_profile_flag,
             clean_pr=clean_pr_resolved,
+            lite=lite_flag,
             **budget_kwargs,
         )
         if code != 0:
@@ -3477,6 +3511,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 issue_url=issue_url,
                 use_profile=use_profile_flag,
                 clean_pr=clean_pr_resolved,
+                lite=lite_flag,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -3916,6 +3951,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-github", action="store_true", default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
     )
+    p.add_argument(
+        "--lite", action="store_true", default=False,
+        help="Enable lite mode: reduced agent invocations for subscription users",
+    )
     p.add_argument("--min-growth", type=int, default=None,
                     help="Minimum guaranteed growth hypotheses (default: 2)")
     p.add_argument("--max-new", type=int, default=None,
@@ -3969,6 +4008,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--no-github", action="store_true", default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
+    )
+    p.add_argument(
+        "--lite", action="store_true", default=False,
+        help="Enable lite mode: reduced agent invocations for subscription users",
     )
     p.add_argument(
         "--loop", action="store_true", default=False,
