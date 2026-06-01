@@ -316,7 +316,7 @@ def _classify_with_llm(
         prompt = (
             _WIZARD_PROMPT
             + json.dumps(file_content)
-            + f"\n\nNote: The user's input was saved to the file {user_input}. "
+            + f"\n\nNote: The user's input was saved to the file {wizard_path}. "
             "Use this file path (not the raw text) in all generated factory commands."
         )
     else:
