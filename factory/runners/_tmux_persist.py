@@ -83,7 +83,10 @@ async def run_in_tmux(
     exitcode_file = tmpdir / "exitcode"
     wrapper_script = tmpdir / "wrapper.sh"
 
-    cmd = ["claude", "--append-system-prompt", prompt]
+    prompt_file = tmpdir / "prompt.md"
+    prompt_file.write_text(prompt)
+
+    cmd = ["claude", "--append-system-prompt-file", str(prompt_file)]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
     if model:

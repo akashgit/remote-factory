@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -79,67 +80,76 @@ class ClaudeRunner:
                 )
             logger.warning("tmux not available; falling back to headless")
 
-        cmd = [
-            "claude", "--append-system-prompt", prompt,
-            "-p", task,
-            "--output-format", "json",
-        ]
-        if dangerously_skip_permissions:
-            cmd.append("--dangerously-skip-permissions")
-        if model:
-            cmd.extend(["--model", model])
-        if session_name:
-            cmd.extend(["--name", session_name])
-
-        logger.info("ClaudeRunner headless: cwd=%s, model=%s", cwd, model)
-
-        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        if model:
-            env["FACTORY_MODEL"] = model
-
-        stream = should_stream()
-        prefix = f"[claude:{role}]" if stream else None
-
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+        )
         try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                stream_subprocess(proc, stream=stream, prefix=prefix),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()  # type: ignore[union-attr]
-            await proc.wait()  # type: ignore[union-attr]
-            logger.error("ClaudeRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1, None
-        except FileNotFoundError:
-            logger.error("'claude' CLI not found on PATH")
-            return "Error: 'claude' CLI not found on PATH", 1, None
+            prompt_file.write(prompt)
+            prompt_file.close()
 
-        raw_stdout = stdout_bytes.decode()
-        stderr = stderr_bytes.decode()
-        return_code = proc.returncode or 0
+            cmd = [
+                "claude", "--append-system-prompt-file", prompt_file.name,
+                "-p", task,
+                "--output-format", "json",
+            ]
+            if dangerously_skip_permissions:
+                cmd.append("--dangerously-skip-permissions")
+            if model:
+                cmd.extend(["--model", model])
+            if session_name:
+                cmd.extend(["--name", session_name])
 
-        if return_code != 0:
-            logger.warning("ClaudeRunner exited with code %d: %s", return_code, stderr[:200])
+            logger.info("ClaudeRunner headless: cwd=%s, model=%s", cwd, model)
 
-        usage = None
-        result_text = raw_stdout
-        try:
-            data = json.loads(raw_stdout)
-            if isinstance(data, dict):
-                result_value = data.get("result", raw_stdout)
-                result_text = result_value if isinstance(result_value, str) else raw_stdout
-                usage = _parse_usage(data)
-        except (json.JSONDecodeError, ValueError):
-            logger.debug("Could not parse JSON output, returning raw stdout")
+            env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+            if model:
+                env["FACTORY_MODEL"] = model
 
-        return result_text, return_code, usage
+            stream = should_stream()
+            prefix = f"[claude:{role}]" if stream else None
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                    env=env,
+                )
+                stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                    stream_subprocess(proc, stream=stream, prefix=prefix),
+                    timeout=timeout,
+                )
+            except asyncio.TimeoutError:
+                proc.kill()  # type: ignore[union-attr]
+                await proc.wait()  # type: ignore[union-attr]
+                logger.error("ClaudeRunner timed out after %ss", timeout)
+                return f"Agent timed out after {timeout}s", 1, None
+            except FileNotFoundError:
+                logger.error("'claude' CLI not found on PATH")
+                return "Error: 'claude' CLI not found on PATH", 1, None
+
+            raw_stdout = stdout_bytes.decode()
+            stderr = stderr_bytes.decode()
+            return_code = proc.returncode or 0
+
+            if return_code != 0:
+                logger.warning("ClaudeRunner exited with code %d: %s", return_code, stderr[:200])
+
+            usage = None
+            result_text = raw_stdout
+            try:
+                data = json.loads(raw_stdout)
+                if isinstance(data, dict):
+                    result_value = data.get("result", raw_stdout)
+                    result_text = result_value if isinstance(result_value, str) else raw_stdout
+                    usage = _parse_usage(data)
+            except (json.JSONDecodeError, ValueError):
+                logger.debug("Could not parse JSON output, returning raw stdout")
+
+            return result_text, return_code, usage
+        finally:
+            Path(prompt_file.name).unlink(missing_ok=True)
 
     def interactive_run(
         self,
@@ -157,20 +167,29 @@ class ClaudeRunner:
         Returns the exit code so the caller can clean up in a finally block.
         """
         _ = role
-        cmd = [
-            "claude",
-            "--append-system-prompt", prompt,
-        ]
-        if dangerously_skip_permissions:
-            cmd.append("--dangerously-skip-permissions")
-        cmd.append(task)
-        if model:
-            cmd.extend(["--model", model])
-            os.environ["FACTORY_MODEL"] = model
-        if session_name:
-            cmd.extend(["--name", session_name])
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+        )
+        try:
+            prompt_file.write(prompt)
+            prompt_file.close()
 
-        logger.info("ClaudeRunner interactive_run: cwd=%s", cwd)
+            cmd = [
+                "claude",
+                "--append-system-prompt-file", prompt_file.name,
+            ]
+            if dangerously_skip_permissions:
+                cmd.append("--dangerously-skip-permissions")
+            cmd.append(task)
+            if model:
+                cmd.extend(["--model", model])
+                os.environ["FACTORY_MODEL"] = model
+            if session_name:
+                cmd.extend(["--name", session_name])
 
-        result = subprocess.run(cmd, cwd=cwd)
-        return result.returncode
+            logger.info("ClaudeRunner interactive_run: cwd=%s", cwd)
+
+            result = subprocess.run(cmd, cwd=cwd)
+            return result.returncode
+        finally:
+            Path(prompt_file.name).unlink(missing_ok=True)
