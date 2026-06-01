@@ -61,6 +61,7 @@ jobs:
 
       - name: Run CEO review
         env:
+          CLAUDE_CODE_USE_VERTEX: "1"
           ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
           CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
         run: |
