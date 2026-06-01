@@ -199,12 +199,15 @@ class BobRunner:
         dangerously_skip_permissions: bool = True,
         role: str = "unknown",
         session_name: str | None = None,
+        tmux_persist: bool = False,
     ) -> tuple[str, int, None]:
         """Run a headless Bob Shell invocation.
 
         Returns (stdout, return_code, None). Bob has no token telemetry.
         """
         _ = session_name
+        if tmux_persist:
+            logger.warning("tmux_persist not supported with bob runner")
         self._role = role
         project_path = self._find_project_path(cwd)
 

@@ -2188,6 +2188,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     model = _resolve_model(args)
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
+    tmux_persist = _resolve_tmux_persist(args)
 
     result, code = _run(invoke_agent(
         role,
@@ -2198,6 +2199,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         model=model,
         runner_name=runner,
         use_profile=use_profile,
+        tmux_persist=tmux_persist,
     ))
     print(result)
     return code
@@ -2380,6 +2382,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
+    tmux_persist = _resolve_tmux_persist(args)
     clean_pr_flag = getattr(args, "clean_pr", None)
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
@@ -2483,6 +2486,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 timeout=7200.0,
                 session_name=session_name,
                 use_profile=use_profile,
+                tmux_persist=tmux_persist,
             ))
             print(result)
             if code == 0:
@@ -2495,6 +2499,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 min_growth=min_growth, max_new=max_new, branch=branch,
                 already_improved=mode in ("improve", "meta") or discover_only,
                 model=model, no_github=no_github, use_profile=use_profile,
+                tmux_persist=tmux_persist,
             )
         finally:
             remove_worktree(project_path, wt_path, wt_branch)
@@ -2538,6 +2543,16 @@ def _resolve_model(args: argparse.Namespace) -> str | None:
 
     flag = (getattr(args, "model", None) or "").strip() or None
     return resolve("model", cli_value=flag, env_var="FACTORY_MODEL")
+
+
+def _resolve_tmux_persist(args: argparse.Namespace) -> bool:
+    """Resolve tmux_persist: CLI flag > FACTORY_TMUX_PERSIST env var > config.toml > False."""
+    from factory.user_config import resolve
+
+    cli_flag = getattr(args, "tmux_persist", False)
+    cli_value = "true" if cli_flag else None
+    val = resolve("tmux_persist", cli_value=cli_value, env_var="FACTORY_TMUX_PERSIST", default="false")
+    return bool(val and val.lower() in ("1", "true", "yes"))
 
 
 def _resolve_runner(args: argparse.Namespace) -> str | None:
@@ -3262,6 +3277,7 @@ def _chain_modes(
     model: str | None = None,
     no_github: bool = False,
     use_profile: bool = False,
+    tmux_persist: bool = False,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -3289,6 +3305,7 @@ def _chain_modes(
             project_path, next_mode, focus=focus,
             min_growth=min_growth, max_new=max_new, branch=branch,
             no_github=no_github, model=model, use_profile=use_profile,
+            tmux_persist=tmux_persist,
         )
         if code != 0:
             return code
@@ -3311,6 +3328,7 @@ def _run_single_cycle(
     issue_url: str | None = None,
     use_profile: bool = False,
     clean_pr: bool = False,
+    tmux_persist: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3347,6 +3365,7 @@ def _run_single_cycle(
             dangerously_skip_permissions=True,
             model=model,
             use_profile=use_profile,
+            tmux_persist=tmux_persist,
         ))
 
         if code == 0:
@@ -3377,6 +3396,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     use_profile_flag = getattr(args, "use_profile", False)
+    tmux_persist = _resolve_tmux_persist(args)
 
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
@@ -3450,6 +3470,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             issue_url=issue_url,
             use_profile=use_profile_flag,
             clean_pr=clean_pr_resolved,
+            tmux_persist=tmux_persist,
             **budget_kwargs,
         )
         if code != 0:
@@ -3458,6 +3479,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             project_path, focus=focus, already_improved=skip_improve,
             min_growth=min_growth, max_new=max_new, branch=branch,
             model=model, no_github=no_github, use_profile=use_profile_flag,
+            tmux_persist=tmux_persist,
         )
 
     # Heartbeat loop mode
@@ -3488,12 +3510,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 issue_url=issue_url,
                 use_profile=use_profile_flag,
                 clean_pr=clean_pr_resolved,
+                tmux_persist=tmux_persist,
                 **budget_kwargs,
             )
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, max_new=max_new, branch=branch,
                 model=model, no_github=no_github, use_profile=use_profile_flag,
+                tmux_persist=tmux_persist,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -3885,6 +3909,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Credential profile from ~/.factory/config.toml")
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into the agent prompt")
+    p.add_argument("--tmux-persist", action="store_true", default=False,
+                    help="Run agent interactively in a tmux window instead of headless (claude only)")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -3951,6 +3977,8 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="Enable clean PR mode: strip non-essential artifacts before PR")
     clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
                                 help="Disable clean PR mode")
+    p.add_argument("--tmux-persist", action="store_true", default=False,
+                    help="Run agent interactively in a tmux window instead of headless (claude only)")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -4012,6 +4040,8 @@ def build_parser() -> argparse.ArgumentParser:
                                     help="Enable clean PR mode: strip non-essential artifacts before PR")
     run_clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
                                     help="Disable clean PR mode")
+    p.add_argument("--tmux-persist", action="store_true", default=False,
+                    help="Run agent interactively in a tmux window instead of headless (claude only)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
