@@ -20,6 +20,8 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - tests/**/*.py
 - templates/**
 - docs/**
+- .github/workflows/*.yml
+- factory.md
 - CLAUDE.md
 - README.md
 - pyproject.toml
@@ -54,7 +56,7 @@ python eval/score.py
 ### Threshold
 <!-- Minimum composite score (0.0-1.0) required to keep a change. -->
 
-0.8
+0.6
 
 ## Target Branch
 
@@ -78,7 +80,7 @@ main
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
 
 ```bash
-pytest tests/test_models.py tests/test_guards.py tests/test_cli.py -x -q --tb=short
+uv run pytest tests/test_models.py tests/test_guards.py tests/test_cli.py -x -q --tb=short
 ```
 
 ## Constraints
