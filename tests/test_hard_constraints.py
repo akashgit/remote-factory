@@ -280,6 +280,23 @@ class TestFinalizeGate:
         assert "keep" in tsv
         assert "OVERRIDDEN" not in tsv
 
+    def test_keep_overridden_by_soft_precheck_without_force(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [
+            {"name": "always_pass", "check": "true", "description": ""},
+        ])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=0.9, score_after=0.1,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "revert" in tsv
+        assert "precheck failed" in tsv
+
     def test_revert_verdict_skips_precheck(self, tmp_path: Path) -> None:
         from factory.cli import cmd_finalize
 
