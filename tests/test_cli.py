@@ -1849,10 +1849,10 @@ class TestWizardLongInputRedirect:
 
 
 class TestQuickClassifyWizardFile:
-    """Tests for _quick_classify returning two options for wizard-generated files."""
+    """Tests for _quick_classify returning None for wizard-generated files (LLM fallthrough)."""
 
-    def test_wizard_file_returns_two_options(self, tmp_path, monkeypatch):
-        """_quick_classify returns build and interactive options for wizard_input.md."""
+    def test_wizard_file_returns_none(self, tmp_path, monkeypatch):
+        """_quick_classify returns None for wizard_input.md so LLM classifies the content."""
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
@@ -1861,12 +1861,7 @@ class TestQuickClassifyWizardFile:
         wizard_file.write_text("some long idea text")
 
         result = _quick_classify(str(wizard_file))
-        assert result is not None
-        assert len(result) == 2
-        assert result[0]["label"] == "Build from this idea"
-        assert "--mode build" in result[0]["command"]
-        assert result[1]["label"] == "Brainstorm and refine first"
-        assert "--mode interactive" in result[1]["command"]
+        assert result is None
 
     def test_regular_file_returns_one_option(self, tmp_path):
         """_quick_classify returns one option for a regular spec file."""
@@ -1878,8 +1873,8 @@ class TestQuickClassifyWizardFile:
         assert len(result) == 1
         assert result[0]["label"] == "Build from this spec file"
 
-    def test_wizard_file_with_tilde_path(self, tmp_path, monkeypatch):
-        """_quick_classify handles ~/. factory/wizard_input.md with tilde expansion."""
+    def test_wizard_file_with_tilde_path_returns_none(self, tmp_path, monkeypatch):
+        """_quick_classify returns None for ~/.factory/wizard_input.md with tilde expansion."""
         fake_home = tmp_path / "home"
         fake_home.mkdir()
         monkeypatch.setenv("HOME", str(fake_home))
@@ -1888,8 +1883,7 @@ class TestQuickClassifyWizardFile:
         wizard_file.write_text("idea content")
 
         result = _quick_classify("~/.factory/wizard_input.md")
-        assert result is not None
-        assert len(result) == 2
+        assert result is None
 
 
 class TestMaterializeProject:

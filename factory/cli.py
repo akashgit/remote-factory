@@ -180,10 +180,7 @@ def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
 
     if _safe_is_file(expanded):
         if expanded == _WIZARD_INPUT_PATH.expanduser():
-            return [
-                {"label": "Build from this idea", "explanation": "Build the project directly.", "command": f'factory ceo {shlex.quote(stripped)} --mode build'},
-                {"label": "Brainstorm and refine first", "explanation": "Discuss and refine the idea interactively.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive'},
-            ]
+            return None
         return [
             {"label": "Build from this spec file", "explanation": "Use the file as a project specification.", "command": f'factory ceo {shlex.quote(stripped)} --mode build'},
         ]
@@ -309,7 +306,21 @@ def _classify_with_llm(
     except Exception:
         return None
 
-    prompt = _WIZARD_PROMPT + json.dumps(user_input)
+    wizard_path = _WIZARD_INPUT_PATH.expanduser()
+    input_path = Path(user_input.strip()).expanduser()
+    if input_path == wizard_path:
+        try:
+            file_content = wizard_path.read_text()
+        except OSError:
+            file_content = user_input
+        prompt = (
+            _WIZARD_PROMPT
+            + json.dumps(file_content)
+            + f"\n\nNote: The user's input was saved to the file {wizard_path}. "
+            "Use this file path (not the raw text) in all generated factory commands."
+        )
+    else:
+        prompt = _WIZARD_PROMPT + json.dumps(user_input)
     task = "Respond with ONLY a JSON object. No markdown, no explanation."
 
     try:
