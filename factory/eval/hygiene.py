@@ -15,7 +15,12 @@ If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
+
+import structlog
+
+log = structlog.get_logger()
 
 # Relative weights within the hygiene category (sum to 1.0).
 # The runner normalizes these so that hygiene gets 50% of the composite.
@@ -90,6 +95,14 @@ def _run_cmd(
             cwd=cwd,
             env=env,
         )
+        if result.returncode != 0:
+            log.debug(
+                "subprocess_failed",
+                cmd=cmd,
+                cwd=str(cwd),
+                returncode=result.returncode,
+                stderr=result.stderr[:200] if result.stderr else "",
+            )
         return result.returncode, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
         return 1, "", f"Timed out after {timeout}s"
@@ -124,7 +137,7 @@ def eval_tests(project_path: Path) -> dict:
     for sp in sub_projects:
         if _detect_python_project(sp):
             # Try pytest
-            rc, stdout, stderr = _run_cmd(["python", "-m", "pytest", "-v", "--tb=no", "-q"], sp)
+            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "pytest", "-v", "--tb=no", "-q"], sp)
             output = stdout + stderr
             p_match = re.search(r"(\d+)\s+passed", output)
             f_match = re.search(r"(\d+)\s+failed", output)
@@ -204,7 +217,7 @@ def eval_lint(project_path: Path) -> dict:
 
     for sp in sub_projects:
         if _detect_python_project(sp):
-            rc, stdout, stderr = _run_cmd(["python", "-m", "ruff", "check", "."], sp)
+            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "ruff", "check", "."], sp)
             output = stdout + stderr
             if rc == 0:
                 ran_any = True
@@ -270,7 +283,7 @@ def eval_type_check(project_path: Path) -> dict:
                 if child.is_dir() and (child / "__init__.py").exists():
                     src_dirs.append(child.name)
             target = src_dirs[0] if src_dirs else "."
-            rc, stdout, stderr = _run_cmd(["python", "-m", "mypy", target], sp)
+            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "mypy", target], sp)
             output = stdout + stderr
             if rc == 0:
                 ran_any = True
@@ -325,7 +338,7 @@ def eval_coverage(project_path: Path) -> dict:
             ]
             cov_target = src_dirs[0] if src_dirs else "."
             rc, stdout, stderr = _run_cmd(
-                ["python", "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
+                [sys.executable, "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
                 sp,
             )
             output = stdout + stderr
