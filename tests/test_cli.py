@@ -1019,7 +1019,7 @@ class TestCmdCeo:
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
-        assert "--append-system-prompt" in cmd
+        assert "--append-system-prompt-file" in cmd
         assert "--dangerously-skip-permissions" in cmd
 
     def test_ceo_foreground_passes_task_as_prompt(self, tmp_path):

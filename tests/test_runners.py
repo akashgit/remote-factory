@@ -77,7 +77,7 @@ class TestClaudeRunner:
                 call_args = mock_exec.call_args
                 cmd = call_args[0]
                 assert cmd[0] == "claude"
-                assert "--append-system-prompt" in cmd
+                assert "--append-system-prompt-file" in cmd
                 assert "-p" in cmd
                 assert "--dangerously-skip-permissions" in cmd
                 assert "--model" in cmd
@@ -86,7 +86,7 @@ class TestClaudeRunner:
                 assert "json" in cmd
 
     async def test_headless_separates_prompt_and_task(self, tmp_path: Path) -> None:
-        """headless() passes prompt via --append-system-prompt and task via -p as separate args."""
+        """headless() writes prompt to a temp file via --append-system-prompt-file and task via -p."""
         runner = ClaudeRunner()
 
         with patch(
@@ -108,13 +108,12 @@ class TestClaudeRunner:
                 )
 
                 cmd = mock_exec.call_args[0]
-                asp_idx = cmd.index("--append-system-prompt")
+                assert "--append-system-prompt-file" in cmd
                 p_idx = cmd.index("-p")
-                assert cmd[asp_idx + 1] == "You are the CEO."
                 assert cmd[p_idx + 1] == "Run the experiment"
 
-    async def test_interactive_run_uses_append_system_prompt(self, tmp_path: Path) -> None:
-        """interactive_run() uses --append-system-prompt (not --system-prompt)."""
+    async def test_interactive_run_uses_append_system_prompt_file(self, tmp_path: Path) -> None:
+        """interactive_run() uses --append-system-prompt-file (not inline --append-system-prompt)."""
         runner = ClaudeRunner()
 
         with patch("subprocess.run") as mock_run:
@@ -126,8 +125,8 @@ class TestClaudeRunner:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert "--append-system-prompt" in cmd
-            assert "--system-prompt" not in cmd
+            assert "--append-system-prompt-file" in cmd
+            assert "--append-system-prompt" not in [c for c in cmd if c != "--append-system-prompt-file"]
 
 
 class TestBobRunner:
