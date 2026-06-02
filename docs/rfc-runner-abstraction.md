@@ -328,11 +328,41 @@ pyproject.toml           # UPDATE: add optional acp dependency
 ### Dependency
 
 ```toml
-[project.optional-dependencies]
-acp = ["agent-client-protocol>=0.10.0"]
+[project.dependencies]
+agent-client-protocol = ">=0.10.0"
 ```
 
-The factory works without ACP installed (Claude + Bob via direct CLI). Installing `factory[acp]` enables Codex/OpenCode/Qwen via the ACP adapter. The ACP adapter raises a clear error at import time if the SDK is missing.
+ACP is a **required** dependency, not optional. The ACP adapter is a core part of the runner abstraction — it's how the factory supports 2 of 3 v1 runners (Codex, OpenCode) and every future runner that speaks ACP. Making it optional would mean the factory's multi-runner story is broken by default. The SDK is lightweight (pure Python, no native extensions, ~18M downloads/month).
+
+### Why the ACP Adapter Is Needed
+
+The factory needs to run its specialist agents (Builder, Researcher, Evaluator, etc.) on different coding agent backends. Each backend has a different CLI interface:
+
+- Claude Code: `claude -p "task" --output-format stream-json`
+- Codex: `codex exec --json "task"`
+- OpenCode: `opencode run --format json "task"`
+- Qwen Code: `qwen -p "task"`
+- Goose: `goose -t "task" --output json`
+
+Without ACP, we'd write a **bespoke adapter for each one** — different CLI flags, different JSONL schemas, different event types, different ways to extract tool calls and usage data. That's N adapters for N agents, each 200-400 lines.
+
+With ACP, we write **one adapter** (~250 lines) that speaks JSON-RPC over stdio to any agent that implements the ACP protocol. The adapter:
+
+1. Spawns the agent's ACP server (e.g., `codex acp`, `opencode acp`, `qwen acp`)
+2. Sends prompts via `session/prompt`
+3. Collects execution traces via `session/update` callbacks — tool calls (with `ToolKind`, file locations, diffs), reasoning blocks, and usage data arrive in a standard format
+4. Auto-approves permission requests (the factory is headless)
+5. Returns a structured `RunnerResponse` with full `ExecutionTrace`
+
+This is the same pattern that made MCP successful for tool integration — a standard protocol replaces N custom integrations. ACP does the same for agent backends. Adding a new ACP-compatible runner is a one-liner:
+
+```python
+class QwenRunner(ACPAdapter):
+    def __init__(self):
+        super().__init__(command=["qwen", "acp"], name="qwen", display_name="Qwen Code")
+```
+
+**Claude Code is the exception** — it doesn't expose an ACP server yet, so it gets a direct CLI adapter that parses its proprietary `stream-json` format. When Claude adds ACP support, the Claude adapter can switch to ACPAdapter with zero behavioral change.
 
 ## Implementation Plan
 
