@@ -7,12 +7,14 @@ from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
+from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
 from factory.runners.protocol import Runner
 
 __all__ = [
     "Runner",
+    "CLIAdapter",
     "ClaudeRunner",
     "BobRunner",
     "CodexRunner",
