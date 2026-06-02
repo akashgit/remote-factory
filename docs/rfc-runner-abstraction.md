@@ -312,7 +312,7 @@ factory/runners/
 ├── opencode.py          # NEW: thin wrapper — ACPAdapter("opencode", "acp") + health check
 ├── bob.py               # UNCHANGED in v1: migrated post-v1 after new protocol is stable
 ├── _stream.py           # UPDATE: add JSONL event parsing alongside raw streaming
-├── telemetry.py         # NEW: unified usage ledger
+├── usage_ledger.py      # NEW: unified usage log (.factory/usage.jsonl)
 └── __init__.py          # UPDATE: use RunnerRegistry, register all adapters
 ```
 
@@ -396,11 +396,11 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
   - `factory runners check [name]` — health-check one or all runners
 - Update `factory agent` and `factory ceo` to use new registry
 
-### Phase 5: Telemetry + Trace Persistence
+### Phase 5: Usage Logging + Trace Persistence
 
-**Files:** `factory/runners/telemetry.py` (new), `factory/store.py` (update), `factory/cli.py` (update)
+**Files:** `factory/runners/usage_ledger.py` (new), `factory/store.py` (update), `factory/cli.py` (update)
 
-- `UsageLedger`: append `UsageStats` from every invocation to `.factory/usage.jsonl`
+- `log_usage()`: append `UsageStats` from every invocation to `.factory/usage.jsonl` (~50 lines). Replaces the Bob-specific `bob_usage.jsonl` with a unified log across all runners. No external platforms — purely local.
 - Wire into `agents/runner.py`: after each agent completes, log usage + save trace
 - Save traces to `.factory/experiments/NNN/trace.json`
 - CLI command: `factory trace <project> --exp N` — print trace summary
