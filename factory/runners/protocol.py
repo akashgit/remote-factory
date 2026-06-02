@@ -1,77 +1,50 @@
-"""Runner protocol — interface for CLI backend implementations."""
+"""Runner protocol — interface for CLI backend implementations (v2)."""
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol, runtime_checkable
 
-if TYPE_CHECKING:
-    from factory.models import AgentUsage
+from factory.runners.types import RunnerInfo, RunnerRequest, RunnerResponse
 
 
+@runtime_checkable
 class Runner(Protocol):
-    """Protocol for CLI backend implementations (claude, bob, etc.)."""
+    """Protocol for CLI backend implementations.
 
-    name: str
+    v2 protocol with structured request/response, capability negotiation,
+    and health checks. Replaces the v1 tuple-return protocol.
+    """
 
-    async def headless(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        timeout: float = 600.0,
-        model: str | None = None,
-        dangerously_skip_permissions: bool = True,
-        role: str = "unknown",
-        session_name: str | None = None,
-        tmux_persist: bool = False,
-    ) -> tuple[str, int, AgentUsage | None]:
-        """Run a headless (non-interactive) agent invocation.
+    @property
+    def info(self) -> RunnerInfo: ...
 
-        Args:
-            prompt: The system prompt / agent role definition.
-            task: The task to execute.
-            cwd: Working directory for the subprocess.
-            timeout: Maximum execution time in seconds.
-            model: Optional model override.
-            dangerously_skip_permissions: If True, skip permission prompts.
-            role: Agent role name (used for logging and output prefixing).
-            session_name: Optional session name for identification in /resume.
-            tmux_persist: If True, run the agent interactively in a tmux window.
+    async def check_health(self) -> tuple[bool, str]:
+        """Check if the runner is installed and authenticated.
 
         Returns:
-            (stdout, return_code, usage) tuple. usage is None for runners
-            without token telemetry (bob, codex).
+            (healthy, message) — message describes the status or error.
         """
         ...
 
-    def interactive_run(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        model: str | None = None,
-        role: str = "ceo",
-        dangerously_skip_permissions: bool = False,
-        session_name: str | None = None,
-    ) -> int:
-        """Run an interactive CLI session as a subprocess (returns on exit).
-
-        Unlike interactive_exec, this uses subprocess.run so the caller regains
-        control after the session finishes — enabling cleanup in finally blocks.
+    async def headless(self, request: RunnerRequest) -> RunnerResponse:
+        """Run a headless (non-interactive) agent invocation.
 
         Args:
-            prompt: The system prompt to append.
-            task: The initial user message.
-            cwd: Working directory for the subprocess.
-            model: Optional model override.
-            role: Agent role name (used for logging and output prefixing).
-            dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
-            session_name: Optional session name for identification in /resume.
+            request: Fully assembled runner request.
 
         Returns:
-            The subprocess exit code.
+            Structured response with output, exit code, optional usage and trace.
+        """
+        ...
+
+    def interactive(self, request: RunnerRequest) -> RunnerResponse:
+        """Run an interactive CLI session.
+
+        Args:
+            request: Runner request (prompt used as system prompt, skip_permissions
+                     typically False for interactive mode).
+
+        Returns:
+            Structured response (trace is typically None for interactive sessions).
         """
         ...

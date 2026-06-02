@@ -59,6 +59,26 @@ IDENTITY_REANCHOR = """\
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
+def assemble_prompt(
+    system_prompt: str,
+    playbook: str | None,
+    user_profile: str | None,
+    task: str,
+) -> str:
+    """Assemble a complete prompt from system prompt, playbook, profile, and task.
+
+    Centralizes prompt assembly that was previously duplicated across runners.
+    Runners receive the result as a single pre-assembled string via RunnerRequest.prompt.
+    """
+    parts = [system_prompt]
+    if playbook:
+        parts.append(f"---\n\nBehavioral Playbook (auto-evolved)\n\n{playbook}")
+    if user_profile:
+        parts.append(f"---\n\nUser Profile\n\n{user_profile}")
+    parts.append(f"---\n\n## Current Task\n\n{task}")
+    return "\n\n".join(parts)
+
+
 def resolve_prompt(
     role: AgentRole,
     project_path: Path | None = None,
