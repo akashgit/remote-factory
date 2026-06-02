@@ -6,7 +6,10 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from factory.runners.types import ExecutionTrace
 
 import structlog
 from filelock import FileLock
@@ -615,6 +618,24 @@ class ExperimentStore:
         data = json.loads(profile_path.read_text())
         log.debug("read_eval_profile_loaded", dimension_count=len(data.get("dimensions", [])))
         return EvalProfile(**data)
+
+    def _exp_dir(self, experiment_id: int) -> Path:
+        """Return the directory for a given experiment ID."""
+        return self.factory_dir / "experiments" / f"{experiment_id:03d}"
+
+    async def save_trace(self, experiment_id: int, trace: 'ExecutionTrace') -> Path:
+        import dataclasses
+        exp_dir = self._exp_dir(experiment_id)
+        trace_path = exp_dir / "trace.json"
+        trace_data = dataclasses.asdict(trace)
+        trace_path.write_text(json.dumps(trace_data, indent=2, default=str))
+        return trace_path
+
+    def read_trace(self, experiment_id: int) -> dict | None:
+        trace_path = self._exp_dir(experiment_id) / "trace.json"
+        if not trace_path.exists():
+            return None
+        return json.loads(trace_path.read_text())
 
     async def read_strategy(self) -> str | None:
         """Read strategy/current.md, return None if missing."""
