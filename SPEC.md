@@ -1,150 +1,533 @@
 # re:factory Meta-Harness Specification
 
-This document defines the long-term abstraction for re:factory as a
-component-based SDLC meta-harness. It is intentionally written as an internal
-design guide: current behavior remains the compatibility baseline, especially
-the `factory` CLI.
+Status: Draft v1 (language-agnostic)
 
-## North Star
+Purpose: Define a meta-harness that orchestrates coding agents through bounded,
+measurable, reversible SDLC cycles.
 
-re:factory turns software work into bounded, measurable, reversible SDLC
-cycles:
+## Normative Language
+
+The key words `MUST`, `MUST NOT`, `REQUIRED`, `SHOULD`, `SHOULD NOT`,
+`RECOMMENDED`, `MAY`, and `OPTIONAL` in this document are to be interpreted as
+described in RFC 2119.
+
+`Implementation-defined` means the behavior is part of the implementation
+contract, but this specification does not prescribe one universal policy.
+Implementations MUST document the selected behavior.
+
+## 1. Problem Statement
+
+re:factory is a meta-harness for agentic software evolution. It accepts software
+work, binds that work to a project context, dispatches coding agents under an
+execution contract, validates the result through guardrails, records evidence,
+and converts the outcome into an explicit decision and durable memory.
+
+The system solves six operational problems:
+
+- It turns agentic coding into a repeatable SDLC lifecycle instead of ad hoc
+  prompts or scripts.
+- It separates project scope from repository checkouts, runtime execution, and
+  distribution packaging.
+- It makes each change measurable and reversible through evidence, guardrails,
+  and explicit decisions.
+- It keeps project state durable enough to support resume, review, learning, and
+  future multi-user reconciliation.
+- It allows the same lifecycle semantics to be exposed through different
+  distribution bundles, with the CLI-local bundle as the primary distribution.
+- It creates a vocabulary for future local, plugin-native, hybrid, and managed
+  implementations without changing the meaning of a project cycle.
+
+Important boundary:
+
+- re:factory is a meta-harness, not a general-purpose workflow engine.
+- A distribution is a bundle of component implementations, not a separate
+  implementation of the domain model.
+- Agent execution MAY end at a handoff state; a successful run does not
+  necessarily mean code was merged or released.
+- Trust, approval, sandboxing, and external write policies are
+  implementation-defined and MUST be documented by each distribution.
+
+## 2. Goals and Non-Goals
+
+### 2.1 Goals
+
+- Represent software work as normalized work items.
+- Bind work items to a durable project context.
+- Support projects that contain one repository or multiple repository bindings.
+- Dispatch agents through explicit execution contracts.
+- Preserve evidence for diffs, logs, evals, reviews, reports, and artifacts.
+- Validate outcomes through guardrails before a decision is accepted.
+- Record decisions as first-class lifecycle outputs.
+- Maintain durable memory for project learning and future planning.
+- Support state backends that can reconcile records from multiple users or
+  external systems.
+- Treat the CLI-local distribution as the primary compatibility surface.
+- Allow other distributions to bundle different runtimes, state backends,
+  guardrails, and emitters while preserving common lifecycle semantics.
+
+### 2.2 Non-Goals
+
+- Prescribing a specific source-code layout or module structure.
+- Requiring a managed service or hosted control plane.
+- Requiring Jira, Linear, GitHub, GitLab, or any specific tracker.
+- Requiring a rich web UI or dashboard.
+- Mandating one sandbox, approval, or operator-confirmation policy.
+- Mandating that agents perform ticket writes, PR creation, or merge actions.
+- Replacing human review, CI policy, or repository governance.
+
+## 3. System Overview
+
+### 3.1 Main Components
+
+1. `Distribution Bundle`
+   - Names a product surface and selected component implementations.
+   - Declares runtime, state backend, guardrails, emitters, and policy sources.
+   - Does not redefine the core domain model.
+2. `Project Resolver`
+   - Converts user input or configuration into a project context.
+   - Binds one or more repositories to the project.
+   - Binds one or more state locations to the project.
+3. `Work Item Source`
+   - Reads work from prompts, backlog entries, issues, tickets, or research
+     targets.
+   - Normalizes external payloads into stable work-item records.
+4. `Contract Builder`
+   - Converts project policy and work-item scope into an execution contract.
+   - Identifies mutable surfaces, fixed surfaces, required checks, budgets, and
+     expected evidence.
+5. `Lifecycle Coordinator`
+   - Owns the lifecycle transition from intake through learning.
+   - Decides when to dispatch, validate, retry, park, or escalate work.
+   - Converts worker and guardrail outcomes into decision records.
+6. `Worker Runtime`
+   - Runs a coding agent or worker against an execution contract.
+   - Returns output, status, logs, and implementation-defined telemetry.
+7. `Guardrail Provider`
+   - Evaluates tests, lint, type checks, eval metrics, CI state, review policy,
+     scope rules, leakage rules, security policy, or other checks.
+8. `State Backend`
+   - Persists project records, evidence references, decisions, memory, and
+     conflicts.
+   - MAY mirror or reconcile state with external systems.
+9. `Memory System`
+   - Preserves durable learnings, observations, playbook evidence, reports, and
+     handoff records.
+10. `Distribution Emitter`
+    - Produces distribution artifacts such as agent files, plugin manifests, or
+      managed-runtime descriptors.
+
+### 3.2 Abstraction Levels
+
+re:factory is easiest to port when kept in these layers:
+
+1. `Policy Layer`
+   - Project goal, scope, constraints, prompts, and validation policy.
+2. `Distribution Layer`
+   - User-facing surfaces and component bundles.
+3. `Coordination Layer`
+   - Lifecycle transitions, dispatch, validation ordering, decisions, retry, and
+     resume.
+4. `Execution Layer`
+   - Worker runtime, repository checkout/worktree behavior, and agent protocol.
+5. `State Layer`
+   - Project records, event streams, materialized views, external bindings, and
+     conflict records.
+6. `Guardrail and Evidence Layer`
+   - Checks, artifacts, logs, scores, reviews, and reports.
+7. `Memory and Observability Layer`
+   - Human/operator-visible status, archives, summaries, and learned rules.
+
+### 3.3 External Dependencies
+
+Depending on the selected distribution, implementations MAY depend on:
+
+- Local filesystem state.
+- Git repositories and worktrees.
+- Coding-agent executables or managed agent services.
+- Issue trackers, ticket systems, or PR systems.
+- CI, review, or security-scanning systems.
+- Host authentication for agent runtimes and external state backends.
+
+## 4. Core Domain Model
+
+### 4.1 Project
+
+A `Project` is the durable SDLC boundary for work, evidence, decisions, and
+memory.
+
+Logical fields:
+
+- `project_id`: stable project identifier.
+- `name`: human-readable project name.
+- `goal`: project objective or mission statement.
+- `repo_bindings`: list of repositories bound to the project.
+- `state_bindings`: list of state substrates bound to the project.
+- `policy_refs`: references to project policy/configuration.
+- `memory_refs`: references to durable project memory.
+
+Rules:
+
+- A project MAY bind one repository or multiple repositories.
+- Work items, decisions, and memory belong to the project.
+- Diffs, branches, and checkouts belong to repository bindings.
+- Runtime and distribution are not project-owned.
+
+### 4.2 Repo Binding
+
+A `RepoBinding` identifies a repository or worktree participating in a project.
+
+Logical fields:
+
+- `repo_id`: stable identifier within the project.
+- `path`: local path, if available.
+- `remote`: remote repository identifier or URL, if available.
+- `role`: implementation-defined role such as `primary`, `api`, or `docs`.
+- `default_branch`: default integration branch, if known.
+- `checkout`: checkout or worktree metadata, if applicable.
+
+### 4.3 State Binding
+
+A `StateBinding` identifies a state substrate associated with a project.
+
+Examples:
+
+- local project state
+- GitHub issue or PR state
+- GitLab issue or merge-request state
+- Jira ticket state
+- Linear issue state
+- managed service state
+
+State bindings MUST NOT imply that runtime execution happens in that state
+system.
+
+### 4.4 Work Item
+
+A `WorkItem` is a unit of work entering the lifecycle.
+
+Sources MAY include:
+
+- direct CLI prompt
+- focus request
+- backlog item
+- issue
+- ticket
+- research target
+
+Logical fields:
+
+- `work_item_id`
+- `kind`
+- `title`
+- `body`
+- `labels`
+- `repo_ids`
+- `external_refs`
+- `metadata`
+
+Implementations SHOULD preserve both the normalized work item and enough source
+metadata to trace it back to its origin.
+
+### 4.5 Execution Contract
+
+An `ExecutionContract` defines the scope and policy for one execution attempt or
+cycle.
+
+Logical fields:
+
+- `contract_id`
+- `project_id`
+- `work_item_id`
+- `scope`
+- `mutable_surfaces`
+- `fixed_surfaces`
+- `required_checks`
+- `budget`
+- `expected_evidence`
+- `report_schema`
+
+Worker runtimes MUST receive enough contract information to respect scope,
+surface, and reporting requirements.
+
+### 4.6 Worker Runtime
+
+A `WorkerRuntime` executes agent work under an execution contract.
+
+Examples:
+
+- local subprocess agent
+- interactive terminal or tmux-backed agent
+- plugin asset worker
+- managed remote agent
+
+Runtime selection is distribution-defined. Runtime behavior MUST NOT change the
+meaning of project, work-item, evidence, or decision records.
+
+### 4.7 Guardrail
+
+A `Guardrail` is a validation or policy check whose result contributes to a
+decision.
+
+Examples:
+
+- tests
+- lint
+- type checks
+- eval metrics
+- CI status
+- code review
+- security review
+- scope or immutability checks
+- leakage checks
+
+Guardrail outcomes SHOULD be recorded as evidence.
+
+### 4.8 Evidence
+
+`Evidence` is immutable or append-only support for a lifecycle decision.
+
+Examples:
+
+- diffs
+- logs
+- eval results
+- review findings
+- CI status
+- generated reports
+- artifacts
+
+Evidence SHOULD include project identity and MAY include repository identity,
+work-item identity, runtime identity, and external references.
+
+### 4.9 Decision
+
+A `Decision` is the lifecycle outcome accepted from evidence and guardrail
+results.
+
+Decision kinds include:
+
+- `keep`
+- `revert`
+- `merge`
+- `park`
+- `retry`
+- `escalate`
+- `error`
+
+Decisions MUST include rationale and SHOULD reference supporting evidence.
+
+### 4.10 Memory
+
+`Memory` is durable knowledge used by future cycles.
+
+Examples:
+
+- experiment archives
+- observations
+- playbook rules
+- reinforced or contradicted lessons
+- handoff snapshots
+- performance reports
+
+Memory records SHOULD distinguish durable learnings from reconstructable runtime
+state.
+
+### 4.11 Distribution Bundle
+
+A `DistributionBundle` is a named assembly of component implementations.
+
+Logical fields:
+
+- `name`
+- `surface`
+- `runtime`
+- `state_backend`
+- `guardrails`
+- `emitters`
+- `policy_sources`
+
+The `cli-local` distribution is the primary distribution for this specification.
+Other distributions MAY expose different surfaces, but SHOULD preserve
+CLI-compatible lifecycle semantics.
+
+### 4.12 State Record and Conflict
+
+A `StateRecord` is a merge-ready representation of project state.
+
+Logical fields:
+
+- `id`
+- `kind`
+- `project_id`
+- `repo_id` (OPTIONAL)
+- `source`
+- `actor`
+- `revision`
+- `parent_ids`
+- `created_at`
+- `updated_at`
+- `payload`
+
+A `StateConflict` records an unresolved state merge problem. Important state
+MUST NOT be silently overwritten when conflicting edits are detected.
+
+## 5. Lifecycle Specification
+
+The lifecycle is:
 
 ```text
 Intake → Scope → Dispatch → Execute → Validate → Decide → Publish → Learn → Resume
 ```
 
-The current implementation already does this through the CLI, local agent
-subprocesses, `.factory` state, evals, reviews, and archives. The abstraction
-below makes those concepts explicit so the system can grow into native plugins,
-external state systems, multi-repo projects, multi-user operation, and managed
-agents without redesigning the product surface.
+### 5.1 Intake
 
-## Distribution Model
+The system accepts work from one or more work-item sources and normalizes it into
+a work item.
 
-A distribution is a named bundle of component implementations plus packaging
-conventions. It is not a separate implementation of the harness core.
+### 5.2 Scope
 
-The current primary distribution is `cli-local`:
+The system binds the work item to a project context and derives an execution
+contract.
 
-- surface: `factory` CLI commands
-- runtime: local agent subprocesses via runner backends
-- state: `.factory`, event logs, registry, reports, archive
-- guardrails: local evals, precheck, hard constraints, leakage checks, clean PR
-- emitters: Claude Code and Codex agent files installed by the CLI
+### 5.3 Dispatch
 
-Future distributions should preserve CLI-compatible semantics where possible:
+The system selects a worker runtime and starts an execution attempt.
+Dispatch MUST preserve enough state to support observability and recovery.
 
-- `plugin-native`: Claude Code/Codex/plugin assets generated from native specs
-- `hybrid`: local execution plus external issue/PR/ticket state bindings
-- `managed`: hosted runtime/state while preserving CLI visibility and control
+### 5.4 Execute
 
-## Component Contracts
+The worker runtime performs the scoped work. It SHOULD emit logs, status, and
+artifacts sufficient for validation and review.
 
-The harness is described by component contracts. Each distribution selects
-implementations for these contracts.
+### 5.5 Validate
 
-### Project Context
+Guardrails evaluate the produced state, artifacts, or external checks.
+Validation failures MUST be visible to the decision step.
 
-`ProjectContext` is the durable SDLC boundary. A project may bind one repository
-today and multiple repositories later.
+### 5.6 Decide
 
-Project-owned concepts:
+The lifecycle coordinator records an explicit decision. Decisions SHOULD be
+derived from evidence and guardrail outcomes.
 
-- `ProjectContext`: project identity, name, goal, repo bindings, state bindings
-- `RepoBinding`: repo/worktree path, remote, role, branch, checkout metadata
-- `StateBinding`: local or external state locations bound to the project
-- `WorkItem`: prompt, focus request, backlog item, issue, ticket, research target
-- `Memory`: archive, observations, reports, playbook evidence, handoffs
+### 5.7 Publish
 
-### Lifecycle Data
+If the selected distribution supports publishing, it MAY update external systems
+such as branches, PRs, comments, ticket state, or managed-state records.
+Publishing behavior is implementation-defined.
 
-Lifecycle concepts are produced and consumed during a cycle:
+### 5.8 Learn
 
-- `ExecutionContract`: scope, mutable/fixed surfaces, budget, checks, report schema
-- `Evidence`: diffs, logs, eval scores, CI state, issue/PR reports, artifacts
-- `Decision`: keep, revert, merge, park, retry, escalate
+The memory system records durable learnings, observations, and reports. Memory
+SHOULD be usable by future work-item selection, scoping, and validation.
 
-### Platform Components
+### 5.9 Resume
 
-These are not project-owned; distributions choose implementations:
+The system SHOULD be able to reconstruct useful lifecycle state from durable
+records, evidence, external bindings, and materialized views. Exact in-memory
+runtime state is implementation-defined.
 
-- `WorkerRuntime`: local subprocess agents, plugin assets, or managed agents
-- `StateBackend`: `.factory`, GitHub/GitLab, Jira/Linear, or managed state
-- `Guardrail`: tests, lint, typecheck, evals, CI, review, security, leakage checks
-- `DistributionEmitter`: Claude/Codex files, plugin packages, managed manifests
+## 6. Distribution Specification
 
-## Project, Repo, and State Separation
+Distributions bundle component implementations.
 
-Project identity, repo identity, state storage, runtime execution, and
-distribution packaging are separate axes.
+### 6.1 `cli-local` Distribution
 
-Rules:
+The `cli-local` distribution is the primary compatibility surface.
 
-- Existing CLI path input maps to an implicit single-repo `ProjectContext`.
-- Future configuration may bind multiple repos under one project state graph.
-- Experiments, work items, decisions, and memory belong to the project.
-- Diffs, branches, and checkouts belong to repo bindings.
-- Runtime and distribution are never project-owned.
-- `.factory` remains the default local state implementation.
+It consists of:
 
-## Multi-User State Principles
+- CLI command surface
+- local worker runtime
+- local project state backend
+- local guardrail providers
+- distribution emitters for local agent/plugin artifacts
 
-State must eventually support multiple users and multiple state stores.
+### 6.2 Extension Distributions
 
-Design principles:
+Other distributions MAY exist:
 
-- Prefer append-only events and immutable evidence over overwrites.
-- Materialized views should be rebuildable from events and snapshots.
-- Records should carry `id`, `kind`, `project_id`, optional `repo_id`, `source`,
-  `actor`, `revision`, timestamps, and causal parent IDs.
-- Important state must not silently use last-writer-wins.
+- `plugin-native`
+- `hybrid`
+- `managed`
 
-Merge policies should be explicit per record kind:
+Extension distributions MUST document selected component implementations and
+SHOULD preserve the lifecycle semantics in this specification.
 
-- evidence/artifacts: append-only
-- work-item status: source-aware reconciliation
-- decisions/verdicts: single-owner or conflict-blocking
-- memory/playbook rules: evidence ledger with reinforce/contradict counts
-- config/contracts: optimistic concurrency with explicit conflict records
+## 7. State and Merge Semantics
 
-Conflicts are represented as `StateConflict` records.
+State backends SHOULD prefer append-only events and immutable evidence over
+destructive updates.
 
-## Current Module Mapping
+Materialized views SHOULD be rebuildable from durable records.
 
-| Contract | Current implementation |
-|---|---|
-| Project context | CLI path/project resolution, registry, `.factory` config |
-| Work item | `factory.issue`, backlog helpers in `factory.study`, CLI `--focus` |
-| Execution contract | `FactoryConfig`, research configs, CLI CEO task construction |
-| Worker runtime | `factory.runners`, `factory.agents.runner` |
-| State backend | `factory.store`, `factory.events`, `factory.registry`, `factory.report` |
-| Guardrails | `factory.eval`, `factory.precheck`, `factory.clean_pr`, leakage checks |
-| Evidence | experiments directories, eval JSON, diffs, review files, reports |
-| Decision | experiment verdicts, precheck results, CEO review verdicts |
-| Memory | archive, reports, ACE playbooks, checkpoint/resume, handoffs |
-| Distribution emitters | `factory.agents.plugin`, `factory install`, `scripts/sync_agents.py` |
+Merge policies are record-kind specific:
 
-## Phase Roadmap
+- Evidence and artifacts are append-only.
+- Work-item status uses source-aware reconciliation.
+- Decisions and verdicts are single-owner or conflict-blocking.
+- Memory and playbook rules use evidence ledgers with reinforce/contradict
+  counts.
+- Configuration and execution contracts use optimistic concurrency with explicit
+  conflict records.
 
-### Phase 0: Additive Wrappers
+Multi-user implementations MUST represent unresolved important conflicts as
+state records rather than silently applying last-writer-wins.
 
-Introduce explicit models, protocols, bundle descriptors, and wrappers over
-current behavior. Do not change CLI behavior, call sites, `.factory` schemas, or
-generated agent output.
+## 8. Guardrails and Trust Policy
 
-### Phase 1: Internal Delegation
+Each distribution MUST document its trust and safety posture.
 
-Gradually route selected internals through the new contracts while preserving
-the public CLI contract. Candidate seams: install emitters, work-item
-normalization, runtime invocation, and state reads.
+Implementation-defined policy areas include:
 
-### Phase 2: External State and Multi-Repo
+- sandboxing
+- approval prompts
+- network access
+- external writes
+- merge authority
+- credential handling
+- destructive filesystem operations
 
-Add real multi-repo project bindings and external state sources such as
-GitHub/GitLab/Jira/Linear through the state and work-item contracts.
+Guardrails SHOULD be explicit, observable, and traceable to evidence.
 
-### Phase 3: Managed Agents
+## 9. Conformance
 
-Add managed runtime/state implementations while keeping the CLI as the primary
-control and observability surface.
+### 9.1 Core Conformance
+
+A conforming implementation MUST:
+
+- represent work as work items
+- bind work to project context
+- distinguish projects from repository bindings
+- execute work under an execution contract
+- record evidence for validation and decisions
+- run or consume guardrail outcomes before accepting decisions
+- record explicit decisions
+- preserve durable memory or reports
+- document selected distribution components
+- document implementation-defined trust and safety policy
+
+### 9.2 Extension Conformance
+
+An implementation that supports multi-repo projects SHOULD:
+
+- identify repository bindings by stable IDs
+- attach repo-specific evidence to the relevant binding
+- keep project-level decisions and memory separate from checkout state
+
+An implementation that supports external state SHOULD:
+
+- preserve source identifiers and URLs
+- normalize external payloads into work items or state records
+- define reconciliation behavior for source state changes
+
+An implementation that supports multi-user state MUST:
+
+- track actor and source metadata for important records
+- define merge policy per record kind
+- produce explicit conflict records for unresolved important conflicts
+
+An implementation that supports additional distributions SHOULD:
+
+- describe the component bundle
+- preserve the domain model
+- document deviations from CLI-local behavior
