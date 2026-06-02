@@ -26,6 +26,7 @@ class Runner(Protocol):
         role: str = "unknown",
         session_name: str | None = None,
         tmux_persist: bool = False,
+        background: bool = False,
     ) -> tuple[str, int, AgentUsage | None]:
         """Run a headless (non-interactive) agent invocation.
 

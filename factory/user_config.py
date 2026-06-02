@@ -35,6 +35,7 @@ _CONFIG_TEMPLATE = """\
 # model = ""                           # Claude model for agent subprocesses
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 # tmux_persist = false                 # Launch agents in tmux windows
+# bg = false                           # Dispatch agents via claude --bg (agent view)
 
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"

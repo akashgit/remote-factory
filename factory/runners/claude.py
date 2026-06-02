@@ -52,6 +52,7 @@ class ClaudeRunner:
         role: str = "unknown",
         session_name: str | None = None,
         tmux_persist: bool = False,
+        background: bool = False,
     ) -> tuple[str, int, "AgentUsage | None"]:
         """Run a headless Claude Code invocation.
 
@@ -65,9 +66,19 @@ class ClaudeRunner:
             role: Agent role (used for streaming prefix).
             session_name: Optional session name for identification in /resume.
             tmux_persist: If True, run the agent interactively in a tmux window.
+            background: If True, dispatch via claude --bg (agent view).
 
         Returns (stdout, return_code, usage).
         """
+        if background:
+            from factory.runners._tmux_persist import run_in_background
+
+            return await run_in_background(
+                prompt, task, cwd, role,
+                model=model,
+                dangerously_skip_permissions=dangerously_skip_permissions,
+            )
+
         if tmux_persist:
             from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
 
