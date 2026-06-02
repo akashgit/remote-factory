@@ -32,7 +32,7 @@ Many agents already support it: OpenCode (`opencode acp`), Codex (`codex acp`), 
 
 ### Why Not ACP Only
 
-Claude Code doesn't have `claude acp` yet — it uses `--output-format stream-json` which is equally rich but proprietary. Bob Shell has no structured output at all. We need direct CLI adapters for these.
+Claude Code doesn't have `claude acp` yet — it uses `--output-format stream-json` which is equally rich but proprietary. We need a direct CLI adapter for Claude.
 
 ### v1 Scope
 
@@ -41,7 +41,15 @@ Claude Code doesn't have `claude acp` yet — it uses `--output-format stream-js
 | **Claude Code** | Direct CLI (Type A) | `claude --output-format stream-json -p ...` | Full — parsed from JSONL |
 | **Codex** | ACP client (Type B) | `spawn_agent_process("codex", "acp")` | Full — from session_update |
 | **OpenCode** | ACP client (Type B) | `spawn_agent_process("opencode", "acp")` | Full — from session_update |
-| **Bob Shell** | Direct CLI (Type A) | `bob -p ...` (existing) | None — no structured output |
+
+### Post-v1 (Optional)
+
+| Agent | Adapter type | Invocation | Trace data | Notes |
+|-------|-------------|------------|------------|-------|
+| **Bob Shell** | Direct CLI (Type A) | `bob -p ...` | None — no structured output | Migrate after v1 is stable. Existing adapter continues to work unchanged until then. |
+| **Qwen Code** | ACP client (Type B) | `spawn_agent_process("qwen", "acp")` | Full | One-liner on top of ACPAdapter |
+| **Goose** | ACP client (Type B) | `spawn_agent_process("goose", "acp")` | Full | Native ACP server |
+| **Aider** | Direct CLI (Type C) | `aider --message ... --yes` | None | No ACP, no structured output |
 
 ## Abstraction
 
@@ -302,10 +310,9 @@ factory/runners/
 ├── claude.py            # REWRITE: Claude CLI adapter, parses stream-json into ExecutionTrace
 ├── codex.py             # REWRITE: thin wrapper — ACPAdapter("codex", "acp") + health check
 ├── opencode.py          # NEW: thin wrapper — ACPAdapter("opencode", "acp") + health check
-├── bob.py               # UPDATE: refactor to return RunnerResponse, add check_health()
+├── bob.py               # UNCHANGED in v1: migrated post-v1 after new protocol is stable
 ├── _stream.py           # UPDATE: add JSONL event parsing alongside raw streaming
-├── telemetry.py         # NEW: unified usage ledger (replaces usage.py for Bob-only tracking)
-├── usage.py             # DEPRECATE: kept for backward compat, delegates to telemetry.py
+├── telemetry.py         # NEW: unified usage ledger
 └── __init__.py          # UPDATE: use RunnerRegistry, register all adapters
 ```
 
@@ -352,17 +359,7 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
 - Migrate `factory/agents/runner.py` to use `RunnerResponse` instead of `tuple[str, int]`
 - Tests with mocked subprocess output (sample Claude JSONL fixtures)
 
-### Phase 3: Bob Migration
-
-**Files:** `factory/runners/bob.py` (update)
-
-- Refactor to return `RunnerResponse` instead of `tuple[str, int]`
-- Move ceiling/usage tracking into `check_health()` and `RunnerResponse.usage`
-- Remove `project_path` from constructor — pass cycle state via `env_overrides`
-- `trace` is always `None` (Bob has no structured output)
-- Tests: ensure existing Bob behavior is preserved
-
-### Phase 4: ACP Adapter + Codex + OpenCode
+### Phase 3: ACP Adapter + Codex + OpenCode
 
 **Files:** `factory/runners/acp_adapter.py` (new), `factory/runners/codex.py` (rewrite), `factory/runners/opencode.py` (new)
 
@@ -388,7 +385,7 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
 - Add `agent-client-protocol` to optional deps
 - Tests: mock ACP server sending canned JSON-RPC events
 
-### Phase 5: Registry + CLI
+### Phase 4: Registry + CLI
 
 **Files:** `factory/runners/registry.py` (new), `factory/runners/__init__.py` (update), `factory/cli.py` (update)
 
@@ -399,7 +396,7 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
   - `factory runners check [name]` — health-check one or all runners
 - Update `factory agent` and `factory ceo` to use new registry
 
-### Phase 6: Telemetry + Trace Persistence
+### Phase 5: Telemetry + Trace Persistence
 
 **Files:** `factory/runners/telemetry.py` (new), `factory/store.py` (update), `factory/cli.py` (update)
 
@@ -407,9 +404,8 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
 - Wire into `agents/runner.py`: after each agent completes, log usage + save trace
 - Save traces to `.factory/experiments/NNN/trace.json`
 - CLI command: `factory trace <project> --exp N` — print trace summary
-- Deprecate `factory/runners/usage.py` (Bob-specific), delegate to unified ledger
 
-### Phase 7: CEO Trace Integration
+### Phase 6: CEO Trace Integration
 
 **Files:** CEO prompt updates, `factory/agents/runner.py` (update)
 
@@ -418,14 +414,27 @@ The factory works without ACP installed (Claude + Bob via direct CLI). Installin
 - CEO structured review can reference trace data ("Builder ran tests 2 times before they passed")
 - Wire trace patterns into ACE reflector input (for future playbook evolution)
 
+### Post-v1: Bob Migration
+
+**Files:** `factory/runners/bob.py` (update)
+
+- Refactor to return `RunnerResponse` instead of `tuple[str, int]`
+- Move ceiling/usage tracking into `check_health()` and `RunnerResponse.usage`
+- Remove `project_path` from constructor — pass cycle state via `env_overrides`
+- `trace` is always `None` (Bob has no structured output)
+- Deprecate `factory/runners/usage.py`, delegate to unified telemetry ledger
+
+**Why post-v1:** Bob works today. It doesn't need the new abstraction to function. Migrating it after the protocol is proven on Claude + Codex + OpenCode is lower risk and avoids disrupting an existing working adapter during the core refactor.
+
 ## Migration Path
 
 Backward-compatible at every phase:
 
-- **Phase 1-3:** Internal refactor. `factory agent` and `factory ceo` work identically. `FACTORY_RUNNER` env var and `--runner` flag unchanged.
-- **Phase 4:** New runners are additive. `--runner codex` works via ACP if SDK installed, falls back to current CLI adapter if not.
-- **Phase 5:** `factory runners list` is additive.
-- **Phase 6-7:** Trace data is additive — CEO review works the same, just has more data.
+- **Phase 1-2:** Internal refactor. `factory agent` and `factory ceo` work identically. `FACTORY_RUNNER` env var and `--runner` flag unchanged. Bob adapter is untouched — it continues using the old `tuple[str, int]` return internally, with a thin compatibility shim in `agents/runner.py` that wraps it into `RunnerResponse`.
+- **Phase 3:** New runners are additive. `--runner codex` works via ACP if SDK installed, falls back to current CLI adapter if not.
+- **Phase 4:** `factory runners list` is additive.
+- **Phase 5-6:** Trace data is additive — CEO review works the same, just has more data.
+- **Post-v1:** Bob migrated to new protocol once stable.
 
 ## Open Questions
 
