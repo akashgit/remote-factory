@@ -6,18 +6,22 @@ from pathlib import Path
 from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.acp_adapter import ACPAdapter
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
+from factory.runners.opencode import OpenCodeRunner
 from factory.runners.protocol import Runner
 
 __all__ = [
     "Runner",
     "CLIAdapter",
+    "ACPAdapter",
     "ClaudeRunner",
     "BobRunner",
     "CodexRunner",
+    "OpenCodeRunner",
     "get_runner",
     "RunnerName",
     "is_dry_run",
@@ -26,12 +30,13 @@ __all__ = [
     "stream_subprocess",
 ]
 
-RunnerName = Literal["claude", "bob", "codex"]
+RunnerName = Literal["claude", "bob", "codex", "opencode"]
 
 _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
+    "opencode": OpenCodeRunner,  # type: ignore[dict-item]
 }
 
 

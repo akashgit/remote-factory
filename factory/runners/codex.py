@@ -1,4 +1,4 @@
-"""CodexRunner — OpenAI Codex CLI backend implementation."""
+"""CodexRunner — OpenAI Codex CLI backend implementation (v2)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,12 @@ import subprocess
 from pathlib import Path
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.cli_adapter import CLIAdapter
+from factory.runners.types import (
+    RunnerCapability,
+    RunnerRequest,
+    RunnerResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,16 +59,62 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
-class CodexRunner:
+class CodexRunner(CLIAdapter):
     """Runner implementation for OpenAI Codex CLI."""
 
     name: str = "codex"
 
-    async def headless(
+    def __init__(self) -> None:
+        super().__init__(
+            name="codex",
+            display_name="OpenAI Codex",
+            capabilities={RunnerCapability.MODEL_OVERRIDE, RunnerCapability.SANDBOXING},
+            binary="codex",
+        )
+
+    async def check_health(self) -> tuple[bool, str]:
+        ok, msg = await super().check_health()
+        if not ok:
+            return ok, msg
+        if not (os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")):
+            return False, "CODEX_API_KEY or OPENAI_API_KEY not set"
+        return True, "codex found and API key set"
+
+    def _build_command(
         self,
-        prompt: str,
-        task: str,
-        cwd: Path,
+        request: RunnerRequest,
+        *,
+        prompt_file: str | None = None,
+    ) -> list[str]:
+        cmd = ["codex", "exec", request.prompt,
+               "--sandbox", "workspace-write",
+               "--ask-for-approval", "never"]
+        if request.model:
+            cmd.extend(["--model", request.model])
+        return cmd
+
+    def _parse_output(
+        self,
+        stdout: str,
+        stderr: str,
+        exit_code: int,
+    ) -> RunnerResponse:
+        return RunnerResponse(output=stdout, exit_code=exit_code)
+
+    def _build_env(self, request: RunnerRequest) -> dict[str, str]:
+        env = super()._build_env(request)
+        codex_key = env.get("CODEX_API_KEY")
+        if codex_key and "OPENAI_API_KEY" not in env:
+            env["OPENAI_API_KEY"] = codex_key
+        return env
+
+    # -- v1 backward-compat methods ----------------------------------------
+
+    async def headless(  # type: ignore[override]
+        self,
+        prompt: str | RunnerRequest = "",
+        task: str = "",
+        cwd: Path | str = ".",
         *,
         timeout: float = 600.0,
         model: str | None = None,
@@ -70,19 +122,25 @@ class CodexRunner:
         role: str = "unknown",
         session_name: str | None = None,
         tmux_persist: bool = False,
-    ) -> tuple[str, int, None]:
-        """Run a headless Codex CLI invocation via ``codex exec``.
+    ) -> tuple[str, int, None] | RunnerResponse:
+        """Run a headless Codex CLI invocation.
 
-        Codex exec streams progress to stderr and writes only the final
-        agent message to stdout, which aligns with the factory's capture model.
-
-        Returns (stdout, return_code, None). Codex has no token telemetry.
+        Supports both v1 (positional args -> tuple) and v2 (RunnerRequest -> RunnerResponse).
         """
+        if isinstance(prompt, RunnerRequest):
+            if is_codex_dry_run():
+                return RunnerResponse(
+                    output="[DRY-RUN] CodexRunner dry-run stub response.",
+                    exit_code=0,
+                )
+            return await CLIAdapter.headless(self, prompt)
+
+        # v1 path
         _ = session_name
         if tmux_persist:
             logger.warning("tmux_persist not supported with codex runner")
         if is_codex_dry_run():
-            stdout, code = self._dry_run_response(role, cwd, task)
+            stdout, code = self._dry_run_response(role, Path(str(cwd)), task)
             return stdout, code, None
 
         _check_auth()
@@ -125,13 +183,15 @@ class CodexRunner:
             logger.error("'codex' CLI not found on PATH")
             return "Error: 'codex' CLI not found on PATH", 1, None
 
-        stdout = stdout_bytes.decode()
-        stderr = stderr_bytes.decode()
+        raw_stdout = stdout_bytes.decode()
+        stderr_str = stderr_bytes.decode()
 
         if proc.returncode != 0:
-            logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr[:200])
+            logger.warning(
+                "CodexRunner exited with code %d: %s", proc.returncode, stderr_str[:200],
+            )
 
-        return stdout, proc.returncode or 0, None
+        return raw_stdout, proc.returncode or 0, None
 
     def interactive_run(
         self,
