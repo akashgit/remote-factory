@@ -129,6 +129,119 @@ class TestClaudeRunner:
             assert "--append-system-prompt" not in [c for c in cmd if c != "--append-system-prompt-file"]
 
 
+    async def test_v1_headless_returns_tuple(self, tmp_path: Path) -> None:
+        """v1 headless(prompt, task, ...) returns (str, int, AgentUsage | None)."""
+        runner = ClaudeRunner()
+
+        stream_json = (
+            '{"type":"result","result":"hello","usage":{"input_tokens":10,"output_tokens":5},'
+            '"cost_usd":0.01,"duration_ms":1000,"num_turns":1,"model":"claude-sonnet-4-6","session_id":"s1"}'
+        )
+        with patch(
+            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (stream_json.encode(), b"")
+            with patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                result = await runner.headless(
+                    prompt="system prompt",
+                    task="do something",
+                    cwd=tmp_path,
+                )
+
+                assert isinstance(result, tuple)
+                assert len(result) == 3
+                stdout, code, usage = result
+                assert isinstance(stdout, str)
+                assert isinstance(code, int)
+                assert code == 0
+                assert stdout == "hello"
+
+    async def test_v2_headless_returns_runner_response(self, tmp_path: Path) -> None:
+        """v2 headless(RunnerRequest) returns RunnerResponse."""
+        from factory.runners.types import RunnerRequest, RunnerResponse
+
+        runner = ClaudeRunner()
+
+        stream_json = (
+            '{"type":"result","result":"world","usage":{"input_tokens":20,"output_tokens":10},'
+            '"cost_usd":0.02,"duration_ms":2000,"model":"claude-sonnet-4-6","session_id":"s2"}'
+        )
+        with patch(
+            "factory.runners.cli_adapter.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (stream_json.encode(), b"")
+            with patch(
+                "asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                req = RunnerRequest(
+                    prompt="system prompt",
+                    cwd=str(tmp_path),
+                    model="claude-sonnet-4-6",
+                )
+                result = await runner.headless(req)
+
+                assert isinstance(result, RunnerResponse)
+                assert result.output == "world"
+                assert result.exit_code == 0
+                assert result.usage is not None
+                assert result.session_id == "s2"
+
+    def test_build_command_v2(self) -> None:
+        """_build_command builds correct args from RunnerRequest."""
+        from factory.runners.types import RunnerRequest
+
+        runner = ClaudeRunner()
+        req = RunnerRequest(
+            prompt="test prompt",
+            cwd="/tmp/test",
+            model="claude-opus-4-6",
+            skip_permissions=True,
+            session_name="test-session",
+        )
+        cmd = runner._build_command(req, prompt_file="/tmp/prompt.md")
+
+        assert cmd[0] == "claude"
+        assert "--append-system-prompt-file" in cmd
+        assert "/tmp/prompt.md" in cmd
+        assert "-p" in cmd
+        p_idx = cmd.index("-p")
+        assert cmd[p_idx + 1] == "test prompt"
+        assert "--output-format" in cmd
+        assert "stream-json" in cmd
+        assert "--dangerously-skip-permissions" in cmd
+        assert "--model" in cmd
+        assert "claude-opus-4-6" in cmd
+        assert "--name" in cmd
+        assert "test-session" in cmd
+
+    def test_build_command_minimal(self) -> None:
+        """_build_command with minimal request (no model, no session, no skip)."""
+        from factory.runners.types import RunnerRequest
+
+        runner = ClaudeRunner()
+        req = RunnerRequest(
+            prompt="hello",
+            cwd="/tmp",
+            skip_permissions=False,
+        )
+        cmd = runner._build_command(req)
+
+        assert cmd[0] == "claude"
+        assert "--dangerously-skip-permissions" not in cmd
+        assert "--model" not in cmd
+        assert "--name" not in cmd
+
+
 class TestBobRunner:
     def test_is_dry_run_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
