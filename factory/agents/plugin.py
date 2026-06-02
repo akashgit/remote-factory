@@ -6,11 +6,14 @@ import functools
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
 import yaml
 
 from factory.ace.injector import inject_playbook
 from factory.ace.paths import DEFAULTS_DIR as _PLAYBOOKS_DIR
 from factory.agents.runner import _PROMPTS_DIR
+
+log = structlog.get_logger()
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
 _PLUGIN_AGENTS_DIR_CANDIDATE = Path(__file__).resolve().parent.parent.parent / "agents"
@@ -34,6 +37,7 @@ def load_agent_config() -> dict[str, AgentMeta]:
 
     Only includes roles that also have a prompt file in prompts/.
     """
+    log.debug("load_agent_config", agents_yml=str(_AGENTS_YML))
     raw: dict[str, dict] = yaml.safe_load(_AGENTS_YML.read_text())
     config: dict[str, AgentMeta] = {}
     for role, entry in raw.items():
@@ -53,14 +57,13 @@ def generate_agent_content(role: str) -> str:
     Reads the source prompt from factory/agents/prompts/<role>.md and prepends
     YAML frontmatter and a generated-file header.
     """
+    log.debug("generate_agent_content", role=role)
     config = load_agent_config()
     if role not in config:
         raise ValueError(f"Unknown agent role: {role!r}")
 
     meta = config[role]
     prompt = (_PROMPTS_DIR / f"{role}.md").read_text()
-    # Only inject factory-default playbooks (not user-local ~/.factory/playbooks/)
-    # so that sync_agents.py output is deterministic across machines.
     playbook_path = _PLAYBOOKS_DIR / f"{role}.md"
     if playbook_path.exists():
         playbook = playbook_path.read_text().strip()
@@ -95,6 +98,7 @@ _WORKSPACE_WRITE_ROLES = frozenset({"builder", "archivist", "distiller", "ceo"})
 
 def _sandbox_mode(role: str) -> str:
     """Map agent role to Codex sandbox mode."""
+    log.debug("sandbox_mode", role=role)
     if role in _READ_ONLY_ROLES:
         return "read-only"
     if role in _WORKSPACE_WRITE_ROLES:
@@ -120,6 +124,7 @@ def generate_codex_agent_toml(role: str) -> str:
     Reads the same agents.yml + prompts/*.md sources as generate_agent_content
     but emits TOML with fields: name, description, developer_instructions, sandbox_mode.
     """
+    log.debug("generate_codex_agent_toml", role=role)
     config = load_agent_config()
     if role not in config:
         raise ValueError(f"Unknown agent role: {role!r}")
@@ -161,6 +166,7 @@ def check_codex_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
 
     Returns a list of role names that are out of sync (empty = all good).
     """
+    log.debug("check_codex_agents_in_sync", agents_dir=str(agents_dir))
     if agents_dir is None:
         agents_dir = _CODEX_PLUGIN_AGENTS_DIR
     if agents_dir is None:
@@ -187,6 +193,7 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
 
     Returns a list of role names that are out of sync (empty = all good).
     """
+    log.debug("check_agents_in_sync", agents_dir=str(agents_dir))
     if agents_dir is None:
         agents_dir = _PLUGIN_AGENTS_DIR
     if agents_dir is None:

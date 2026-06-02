@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import structlog
+
+log = structlog.get_logger()
+
 
 PHASES = [
     "Detect",
@@ -180,6 +184,7 @@ _AGENT_TO_PHASE: dict[str, str] = {
 
 def get_phases_for_mode(mode: str | None) -> list[str]:
     """Return the phase display-name list for a mode, falling back to PHASES."""
+    log.debug("get_phases_for_mode", mode=mode)
     mode_lower = (mode or "").lower()
     defs = MODE_PHASES.get(mode_lower)
     if defs:
@@ -189,6 +194,7 @@ def get_phases_for_mode(mode: str | None) -> list[str]:
 
 def infer_mode_from_artifacts(factory_dir: Path) -> str | None:
     """Infer mode from .factory/ artifacts when no events are available."""
+    log.debug("infer_mode_from_artifacts", factory_dir=str(factory_dir))
     if not factory_dir.exists():
         return None
     config_path = factory_dir / "config.json"
@@ -241,6 +247,7 @@ class FactoryLiveState:
 
 def infer_state(events: list[dict[str, Any]]) -> FactoryLiveState:
     """Replay a list of events to compute the current live state."""
+    log.debug("infer_state", event_count=len(events))
     state = FactoryLiveState()
     for event in events:
         state = update_state(state, event)
@@ -249,6 +256,7 @@ def infer_state(events: list[dict[str, Any]]) -> FactoryLiveState:
 
 def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveState:
     """Apply a single event to update the live state."""
+    log.debug("update_state", event_type=event.get("type", ""))
     event_type = event.get("type", "")
     agent = event.get("agent")
     data = event.get("data") or {}
@@ -316,6 +324,7 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
 
 def phase_index(phase: str | None, mode: str | None = None) -> int:
     """Return the 0-based index of a phase in the mode's pipeline, or -1."""
+    log.debug("phase_index", phase=phase, mode=mode)
     if phase is None:
         return -1
     phases = get_phases_for_mode(mode)
@@ -327,6 +336,7 @@ def phase_index(phase: str | None, mode: str | None = None) -> int:
 
 def completed_phases(state: FactoryLiveState) -> list[str]:
     """Return the list of phases completed before the current one."""
+    log.debug("completed_phases", current_phase=state.current_phase, mode=state.current_mode)
     phases = get_phases_for_mode(state.current_mode)
     idx = phase_index(state.current_phase, state.current_mode)
     if idx <= 0:
@@ -336,11 +346,13 @@ def completed_phases(state: FactoryLiveState) -> list[str]:
 
 def active_agent_count(state: FactoryLiveState) -> int:
     """Return the number of currently active agents."""
+    log.debug("active_agent_count", count=len(state.active_agents))
     return len(state.active_agents)
 
 
 def format_elapsed(started_at: str) -> str:
     """Format elapsed time since started_at as a human-readable string."""
+    log.debug("format_elapsed", started_at=started_at)
     from datetime import datetime, timezone
 
     if not started_at:

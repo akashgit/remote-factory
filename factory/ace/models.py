@@ -10,7 +10,10 @@ import re
 from datetime import date
 from typing import Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
+
+log = structlog.get_logger()
 
 
 class PlaybookItem(BaseModel):
@@ -29,11 +32,13 @@ class PlaybookItem(BaseModel):
         return self.helpful - self.harmful
 
     def to_line(self) -> str:
+        log.debug("playbook_item_to_line", item_id=self.id)
         return f"- [{self.id}] helpful={self.helpful} harmful={self.harmful} :: {self.content}"
 
     @classmethod
     def from_line(cls, line: str) -> PlaybookItem | None:
         """Parse a playbook bullet line. Returns None if unparseable."""
+        log.debug("playbook_item_from_line", line_length=len(line))
         m = re.match(
             r"^-\s+\[([^\]]+)\]\s+helpful=(\d+)\s+harmful=(\d+)\s+::\s+(.+)$",
             line.strip(),
@@ -59,6 +64,7 @@ class Playbook(BaseModel):
 
     def to_markdown(self) -> str:
         """Serialize to markdown with frontmatter."""
+        log.debug("playbook_to_markdown", role=self.role, item_count=len(self.items))
         self.updated = date.today().isoformat()
         lines = [
             "---",
@@ -91,6 +97,7 @@ class Playbook(BaseModel):
     @classmethod
     def from_markdown(cls, text: str) -> Playbook:
         """Parse a playbook from markdown. Tolerant of missing sections."""
+        log.debug("playbook_from_markdown", text_length=len(text))
         role = "unknown"
         updated = ""
         items: list[PlaybookItem] = []
@@ -123,4 +130,5 @@ class Playbook(BaseModel):
 
     @classmethod
     def empty(cls, role: str) -> Playbook:
+        log.debug("playbook_empty", role=role)
         return cls(role=role, items=[])

@@ -21,6 +21,7 @@ server = Server("factory")
 
 async def handle_get_score(project_path: str) -> str:
     """Read .factory/last_eval.json and return its contents as JSON text."""
+    log.debug("handle_get_score", project_path=project_path)
     p = Path(project_path).resolve()
     last_eval = p / ".factory" / "last_eval.json"
     if not last_eval.exists():
@@ -30,6 +31,7 @@ async def handle_get_score(project_path: str) -> str:
 
 async def handle_list_experiments(project_path: str, last_n: int = 10) -> str:
     """Read .factory/results.tsv, parse last N rows, return as JSON."""
+    log.debug("handle_list_experiments", project_path=project_path, last_n=last_n)
     from factory.store import ExperimentStore
 
     p = Path(project_path).resolve()
@@ -49,6 +51,7 @@ async def handle_list_experiments(project_path: str, last_n: int = 10) -> str:
 
 async def handle_get_status(project_path: str) -> str:
     """Return project state + config summary."""
+    log.debug("handle_get_status", project_path=project_path)
     from factory.state import detect_state
 
     p = Path(project_path).resolve()
@@ -64,6 +67,7 @@ async def handle_get_status(project_path: str) -> str:
 
 async def handle_list_projects(projects_dir: str) -> str:
     """Scan for subdirectories containing .factory/config.json."""
+    log.debug("handle_list_projects", projects_dir=projects_dir)
     d = Path(projects_dir).resolve()
     if not d.is_dir():
         return json.dumps({"error": f"Directory not found: {d}"})
@@ -151,11 +155,13 @@ _TOOLS = [
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
+    log.debug("list_tools", tool_count=len(_TOOLS))
     return _TOOLS
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    log.info("call_tool", tool_name=name)
     handlers = {
         "factory_get_score": lambda args: handle_get_score(args["project_path"]),
         "factory_list_experiments": lambda args: handle_list_experiments(
@@ -175,6 +181,7 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
 async def run_server() -> None:
     """Start the MCP stdio server."""
+    log.info("run_server_start")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -185,4 +192,5 @@ async def run_server() -> None:
 
 def main() -> None:
     """Entry point for the serve-mcp CLI command."""
+    log.info("mcp_server_main")
     asyncio.run(run_server())
