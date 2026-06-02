@@ -42,7 +42,7 @@ class TestGetRunner:
         assert runner.name == "claude"
 
     def test_unknown_runner_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown runner 'unknown'"):
+        with pytest.raises(ValueError, match="Unknown runner"):
             get_runner("unknown")
 
 

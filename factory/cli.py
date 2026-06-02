@@ -2173,6 +2173,44 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_runners(args: argparse.Namespace) -> int:
+    """List or health-check registered runners."""
+    from factory.runners import _registry
+
+    runners_cmd = getattr(args, "runners_command", None)
+
+    if runners_cmd == "list":
+        names = _registry.list_available()
+        if not names:
+            print("No runners registered.")
+            return 0
+        print(f"{'Name':<12} {'Status'}")
+        print("-" * 30)
+        for name in names:
+            print(f"{name:<12} registered")
+        return 0
+
+    if runners_cmd == "check":
+        target = getattr(args, "name", None)
+        if target:
+            ok, msg = _run(_registry.check_one(target))
+            status = "OK" if ok else "FAIL"
+            print(f"{target}: {status} — {msg}")
+            return 0 if ok else 1
+        results = _run(_registry.check_all())
+        all_ok = True
+        for name, (ok, msg) in results.items():
+            status = "OK" if ok else "FAIL"
+            if not ok:
+                all_ok = False
+            print(f"{name}: {status} — {msg}")
+        return 0 if all_ok else 1
+
+    # No sub-subcommand — print help
+    print("Usage: factory runners {list,check}")
+    return 1
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
@@ -3880,7 +3918,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Project paths to collect evidence from (default: all registered)")
     p_build.add_argument("--dry-run", action="store_true", default=False,
                          help="Print collected evidence without running LLM synthesis")
-    p_build.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
+    p_build.add_argument("--runner", choices=["claude", "bob", "codex", "opencode"], default=None,
                          help="CLI backend to use for synthesis")
     profile_sub.add_parser("show", help="Print the current user profile")
 
@@ -3890,6 +3928,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--agent", default=None, help="Agent role name")
     p.add_argument("--project", default=".", help="Project path")
     p.add_argument("--data", default=None, help="JSON string of additional event data")
+
+    # runners — list and health-check registered runners
+    runners_parser = sub.add_parser("runners", help="List or health-check registered runners")
+    runners_sub = runners_parser.add_subparsers(dest="runners_command")
+    runners_sub.add_parser("list", help="List all registered runners")
+    p_check = runners_sub.add_parser("check", help="Health-check one or all runners")
+    p_check.add_argument("name", nargs="?", default=None, help="Runner name to check (default: all)")
 
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
@@ -3903,7 +3948,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timeout in seconds (default: 600)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex", "opencode"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -3961,7 +4006,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex", "opencode"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4029,7 +4074,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex", "opencode"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4064,7 +4109,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=["claude", "bob", "codex", "opencode"], default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # tmux-ls — list factory tmux sessions
@@ -4141,6 +4186,7 @@ def main(argv: list[str] | None = None) -> int:
         "profile": cmd_profile,
         "emit": cmd_emit,
         "usage": cmd_usage,
+        "runners": cmd_runners,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,

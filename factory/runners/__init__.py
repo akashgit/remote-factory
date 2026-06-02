@@ -2,17 +2,30 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
-from factory.runners.acp_adapter import ACPAdapter
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
-from factory.runners.opencode import OpenCodeRunner
 from factory.runners.protocol import Runner
+from factory.runners.registry import RunnerRegistry
+
+logger = logging.getLogger(__name__)
+
+# Try importing ACP-based runners; skip gracefully if agent-client-protocol not installed
+try:
+    from factory.runners.acp_adapter import ACPAdapter
+    from factory.runners.opencode import OpenCodeRunner
+    _has_acp = True
+except Exception:
+    ACPAdapter = None  # type: ignore[assignment,misc]
+    OpenCodeRunner = None  # type: ignore[assignment,misc]
+    _has_acp = False
+    logger.debug("ACP adapter not available (agent-client-protocol not installed); opencode runner disabled")
 
 __all__ = [
     "Runner",
@@ -22,22 +35,39 @@ __all__ = [
     "BobRunner",
     "CodexRunner",
     "OpenCodeRunner",
+    "RunnerRegistry",
     "get_runner",
+    "register_runner",
     "RunnerName",
     "is_dry_run",
     "is_codex_dry_run",
     "should_stream",
     "stream_subprocess",
+    "_registry",
 ]
 
 RunnerName = Literal["claude", "bob", "codex", "opencode"]
+
+# -- Module-level registry instance ------------------------------------------
+
+_registry = RunnerRegistry()
+
+_registry.register("claude", lambda **_kw: ClaudeRunner())
+_registry.register("bob", lambda **kw: BobRunner(project_path=kw.get("project_path")))
+_registry.register("codex", lambda **_kw: CodexRunner())
+
+if _has_acp and OpenCodeRunner is not None:
+    _registry.register("opencode", lambda **_kw: OpenCodeRunner())
+
+# -- Legacy dict kept for backward compat (read-only reference) ---------------
 
 _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
-    "opencode": OpenCodeRunner,  # type: ignore[dict-item]
 }
+if _has_acp and OpenCodeRunner is not None:
+    _RUNNERS["opencode"] = OpenCodeRunner  # type: ignore[assignment]
 
 
 def get_runner(name: str | None = None, project_path: Path | None = None) -> Runner:
@@ -49,7 +79,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     3. Default to "claude"
 
     Args:
-        name: Runner name ("claude", "bob", or "codex").
+        name: Runner name ("claude", "bob", "codex", or "opencode").
         project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:
@@ -60,15 +90,10 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     resolved = resolve("runner", cli_value=name, env_var="FACTORY_RUNNER", default="claude") or "claude"
     resolved = resolved.lower().strip()
 
-    if resolved not in _RUNNERS:
-        available = ", ".join(_RUNNERS.keys())
-        raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
-
-    if resolved == "bob":
-        return BobRunner(project_path=project_path)
-    return _RUNNERS[resolved]()
+    return _registry.get(resolved, project_path=project_path)
 
 
 def register_runner(name: str, runner_class: type[Runner]) -> None:
-    """Register a runner implementation (used by bob module on import)."""
+    """Register a runner implementation (backward compat)."""
     _RUNNERS[name] = runner_class
+    _registry.register(name, runner_class)
