@@ -9,6 +9,8 @@ from typing import Literal
 
 from factory.ace.injector import inject_playbook, load_playbook
 from factory.runners import get_runner
+from factory.runners.types import ExecutionTrace, RunnerResponse, UsageStats
+from factory.runners.usage_ledger import log_usage
 
 logger = logging.getLogger(__name__)
 
@@ -195,7 +197,7 @@ async def invoke_agent(
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
 
     try:
-        stdout, return_code, usage = await runner.headless(
+        result = await runner.headless(
             prompt=prompt,
             task=task,
             cwd=project_path,
@@ -213,6 +215,24 @@ async def invoke_agent(
             _consecutive_failures += 1
             _check_failure_threshold(project_path, role)
         return f"Error: {e}", 1
+
+    # Normalize v1 tuple and v2 RunnerResponse into unified variables
+    trace: ExecutionTrace | None = None
+    v2_usage: UsageStats | None = None
+    if isinstance(result, RunnerResponse):
+        stdout = result.output
+        return_code = result.exit_code
+        v2_usage = result.usage
+        trace = result.trace
+        usage = None  # v1 AgentUsage not available from v2 path
+    else:
+        stdout, return_code, usage = result
+        # v1 path: no trace or v2 usage available
+
+    # Log usage to the ledger (v2 UsageStats)
+    if v2_usage is not None:
+        runner_name = runner_name or "claude"
+        log_usage(project_path, runner_name, role, v2_usage, exit_code=return_code)
 
     if return_code != 0:
         logger.warning("%s agent exited with code %d", role, return_code)
@@ -234,6 +254,14 @@ async def invoke_agent(
                 "duration_ms": usage.duration_ms,
                 "num_turns": usage.num_turns,
             })
+        elif v2_usage is not None:
+            completed_data.update({
+                "input_tokens": v2_usage.input_tokens,
+                "output_tokens": v2_usage.output_tokens,
+                "cost_usd": v2_usage.cost_usd,
+                "duration_seconds": v2_usage.duration_seconds,
+                "model": v2_usage.model_used,
+            })
         _emit_safe(
             project_path, "agent.completed", agent=role,
             data=completed_data,
@@ -241,7 +269,7 @@ async def invoke_agent(
         if _track_failures:
             _consecutive_failures = 0
 
-    _save_review(project_path, role, stdout, return_code)
+    _save_review(project_path, role, stdout, return_code, trace=trace)
 
     return stdout, return_code
 
@@ -274,7 +302,35 @@ def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
         logger.debug("Failed to emit event %s", event_type, exc_info=True)
 
 
-def _save_review(project_path: Path, role: str, output: str, return_code: int) -> None:
+def _format_trace_summary(trace: ExecutionTrace) -> str:
+    """Generate a markdown summary from an ExecutionTrace."""
+    lines = ["## Builder Trace Summary"]
+    if trace.files_read:
+        names = ", ".join(trace.files_read[:5])
+        suffix = "..." if len(trace.files_read) > 5 else ""
+        lines.append(f"- Read {len(trace.files_read)} files ({names}{suffix})")
+    if trace.files_written:
+        names = ", ".join(trace.files_written[:5])
+        suffix = "..." if len(trace.files_written) > 5 else ""
+        lines.append(f"- Edited {len(trace.files_written)} files ({names}{suffix})")
+    if trace.commands_executed:
+        cmds = ", ".join(trace.commands_executed[:5])
+        lines.append(f"- Ran {len(trace.commands_executed)} commands: {cmds}")
+    total_tools = sum(len(s.tool_calls) for s in trace.steps)
+    if total_tools:
+        lines.append(f"- {total_tools} tool calls across {len(trace.steps)} steps")
+    if trace.thinking_blocks:
+        lines.append(f"- {len(trace.thinking_blocks)} thinking blocks")
+    return "\n".join(lines)
+
+
+def _save_review(
+    project_path: Path,
+    role: str,
+    output: str,
+    return_code: int,
+    trace: ExecutionTrace | None = None,
+) -> None:
     """Save agent output to .factory/reviews/<role>-latest.md for CEO review.
 
     Creates the reviews directory if needed. Errors are swallowed so they
@@ -289,6 +345,8 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         header = f"# {role.title()} Agent Output\n\n- **timestamp:** {ts}\n- **exit_code:** {return_code}\n\n---\n\n"
         content = header + output
+        if trace is not None:
+            content += "\n\n---\n\n" + _format_trace_summary(trace)
         if role != "ceo":
             content += IDENTITY_REANCHOR
         review_path.write_text(content)

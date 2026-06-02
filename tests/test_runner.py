@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from factory.agents.runner import _save_review, resolve_prompt
+from factory.agents.runner import _format_trace_summary, _save_review, resolve_prompt
+from factory.runners.types import AgentStep, ExecutionTrace, ToolCallTrace, ToolKind
 
 
 class TestResolvePromptWithProfile:
@@ -88,3 +89,60 @@ class TestSaveReview:
         """Should not raise even if path is invalid."""
         # /nonexistent can't be written to — should not raise
         _save_review(Path("/nonexistent/path"), "builder", "output", 0)
+
+    def test_appends_trace_summary(self, tmp_path: Path) -> None:
+        project = tmp_path / "myproject"
+        project.mkdir()
+        trace = ExecutionTrace(
+            files_read=["src/main.py"],
+            files_written=["src/main.py"],
+            commands_executed=["pytest"],
+            steps=[AgentStep(step_index=0, tool_calls=[
+                ToolCallTrace(tool_name="Read", kind=ToolKind.READ),
+            ])],
+        )
+        _save_review(project, "builder", "build output", 0, trace=trace)
+        content = (project / ".factory" / "reviews" / "builder-latest.md").read_text()
+        assert "## Builder Trace Summary" in content
+        assert "Read 1 files" in content
+
+
+class TestFormatTraceSummary:
+    def test_with_sample_trace(self) -> None:
+        trace = ExecutionTrace(
+            files_read=["a.py", "b.py", "c.py"],
+            files_written=["a.py"],
+            commands_executed=["pytest", "ruff check ."],
+            steps=[
+                AgentStep(step_index=0, tool_calls=[
+                    ToolCallTrace(tool_name="Read", kind=ToolKind.READ),
+                    ToolCallTrace(tool_name="Edit", kind=ToolKind.EDIT),
+                ]),
+                AgentStep(step_index=1, tool_calls=[
+                    ToolCallTrace(tool_name="Bash", kind=ToolKind.EXECUTE),
+                ]),
+            ],
+            thinking_blocks=["thinking about it", "still thinking"],
+        )
+        result = _format_trace_summary(trace)
+        assert "## Builder Trace Summary" in result
+        assert "Read 3 files (a.py, b.py, c.py)" in result
+        assert "Edited 1 files (a.py)" in result
+        assert "Ran 2 commands: pytest, ruff check ." in result
+        assert "3 tool calls across 2 steps" in result
+        assert "2 thinking blocks" in result
+
+    def test_with_empty_trace(self) -> None:
+        trace = ExecutionTrace()
+        result = _format_trace_summary(trace)
+        assert result == "## Builder Trace Summary"
+
+    def test_truncates_long_file_lists(self) -> None:
+        trace = ExecutionTrace(
+            files_read=[f"file{i}.py" for i in range(10)],
+        )
+        result = _format_trace_summary(trace)
+        assert "Read 10 files" in result
+        assert "..." in result
+        # Only first 5 files should be listed
+        assert "file5.py" not in result
