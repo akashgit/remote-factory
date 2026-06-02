@@ -388,6 +388,7 @@ async def run_ceo_with_completion_guard(
     session_name: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    background: bool = False,
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
@@ -405,11 +406,20 @@ async def run_ceo_with_completion_guard(
         session_name: Optional session name for /resume identification.
         use_profile: If True, inject user profile into the CEO prompt.
         tmux_persist: If True, run agents in tmux windows.
+        background: If True, dispatch via claude --bg (single dispatch, no respawn).
 
     Returns:
         (final_output, exit_code)
     """
     from factory.agents.runner import invoke_agent
+
+    if background:
+        log.info("ceo_background_dispatch", reason="--bg: single dispatch, no respawn loop")
+        return await invoke_agent(
+            "ceo", initial_task, project_path,
+            timeout=timeout, model=model, runner_name=runner_name,
+            background=True,
+        )
 
     # Check escape hatch
     from factory.user_config import resolve

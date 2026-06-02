@@ -138,6 +138,7 @@ async def invoke_agent(
     session_name: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    background: bool = False,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -155,6 +156,7 @@ async def invoke_agent(
             If not provided, defaults to "factory: {project_name}/{role}".
         use_profile: If True, inject user profile into the agent prompt.
         tmux_persist: If True, run the agent interactively in a tmux window.
+        background: If True, dispatch via claude --bg (agent view).
 
     Returns (stdout, return_code).
 
@@ -185,6 +187,7 @@ async def invoke_agent(
             role=role,
             session_name=agent_session_name,
             tmux_persist=tmux_persist,
+            background=background,
         )
     except Exception as e:
         logger.error("%s agent failed: %s", role, e)
@@ -286,6 +289,7 @@ async def invoke_agents_parallel(
     model: str | None = None,
     runner_name: str | None = None,
     tmux_persist: bool = False,
+    background: bool = False,
 ) -> list[tuple[str, int]]:
     """Invoke multiple agents concurrently. Returns list of (output, return_code).
 
@@ -304,6 +308,7 @@ async def invoke_agents_parallel(
             runner_name=runner_name,
             _track_failures=False,  # Avoid race condition; track locally below
             tmux_persist=tmux_persist,
+            background=background,
         )
         for role, task in tasks
     ]
