@@ -76,7 +76,7 @@ async def run_in_tmux(
     signal = f"factory-done-{run_id}"
     path_hash = hashlib.sha1(str(project_path).encode()).hexdigest()[:6]
     session = f"{_SESSION_PREFIX}{project_path.name}-{path_hash}"
-    window = f"{role}-{run_id}"
+    window = role
 
     tmpdir = Path(tempfile.mkdtemp(prefix="factory-tmux-"))
     logfile = tmpdir / "output.log"

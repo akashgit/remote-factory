@@ -2826,7 +2826,7 @@ def _persist_spec(project_path: Path, spec: str) -> None:
 # ── tmux integration ──────────────────────────────────────────
 
 
-_TMUX_SESSION_PREFIX = "factory-"
+_TMUX_SESSION_PREFIX = "factory:"
 
 
 def _tmux_session_name(project_path: Path) -> str:
@@ -2898,6 +2898,14 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     if result.returncode != 0:
         print(f"Error: failed to create tmux session '{session}'", file=sys.stderr)
         return 1
+
+    # Rename session to distinctive factory:<project-name> format
+    factory_label = f"factory:{project_path.name}"
+    subprocess.run(
+        ["tmux", "rename-session", "-t", session, factory_label],
+        capture_output=True,
+    )
+    session = factory_label
 
     print(f"Factory launched in tmux session: {session}")
     print(f"  tmux attach -t {session}    # attach")

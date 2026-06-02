@@ -1464,6 +1464,7 @@ class TestCmdTmuxBareCLI:
             mock_run.side_effect = [
                 type("R", (), {"returncode": 1})(),  # has-session → no existing session
                 type("R", (), {"returncode": 0})(),   # new-session → success
+                type("R", (), {"returncode": 0})(),   # rename-session → success
             ]
             args = argparse.Namespace(
                 path="/tmp/test-project",
