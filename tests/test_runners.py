@@ -1577,32 +1577,14 @@ class TestCodexRunnerBuildCommandNewFields:
         defaults.update(kwargs)
         return RunnerRequest(**defaults)
 
-    def test_permission_mode_auto(self) -> None:
-        from factory.runners.types import PermissionMode
+    def test_sandbox_default_workspace_write(self) -> None:
+        """Default sandbox mode is workspace-write."""
         from factory.runners.codex import CodexRunner
         runner = CodexRunner()
-        req = self._make_request(permission_mode=PermissionMode.AUTO)
+        req = self._make_request()
         cmd = runner._build_command(req)
-        idx = cmd.index("--ask-for-approval")
-        assert cmd[idx + 1] == "never"
-
-    def test_permission_mode_approve_writes(self) -> None:
-        from factory.runners.types import PermissionMode
-        from factory.runners.codex import CodexRunner
-        runner = CodexRunner()
-        req = self._make_request(permission_mode=PermissionMode.APPROVE_WRITES)
-        cmd = runner._build_command(req)
-        idx = cmd.index("--ask-for-approval")
-        assert cmd[idx + 1] == "write"
-
-    def test_permission_mode_approve_all(self) -> None:
-        from factory.runners.types import PermissionMode
-        from factory.runners.codex import CodexRunner
-        runner = CodexRunner()
-        req = self._make_request(permission_mode=PermissionMode.APPROVE_ALL)
-        cmd = runner._build_command(req)
-        idx = cmd.index("--ask-for-approval")
-        assert cmd[idx + 1] == "always"
+        idx = cmd.index("--sandbox")
+        assert cmd[idx + 1] == "workspace-write"
 
     def test_sandbox_mode_read_only(self) -> None:
         from factory.runners.types import SandboxMode
@@ -1622,14 +1604,32 @@ class TestCodexRunnerBuildCommandNewFields:
         idx = cmd.index("--sandbox")
         assert cmd[idx + 1] == "workspace-write"
 
-    def test_sandbox_mode_none(self) -> None:
+    def test_sandbox_mode_full(self) -> None:
+        from factory.runners.types import SandboxMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(sandbox_mode=SandboxMode.FULL)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--sandbox")
+        assert cmd[idx + 1] == "danger-full-access"
+
+    def test_sandbox_mode_none_bypasses(self) -> None:
+        """SandboxMode.NONE uses --dangerously-bypass-approvals-and-sandbox."""
         from factory.runners.types import SandboxMode
         from factory.runners.codex import CodexRunner
         runner = CodexRunner()
         req = self._make_request(sandbox_mode=SandboxMode.NONE)
         cmd = runner._build_command(req)
-        idx = cmd.index("--sandbox")
-        assert cmd[idx + 1] == "none"
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--sandbox" not in cmd
+
+    def test_json_flag_present(self) -> None:
+        """Codex exec always uses --json for structured output."""
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request()
+        cmd = runner._build_command(req)
+        assert "--json" in cmd
 
 
 # -- OpenCodeRunner._build_command() new fields tests -------------------------

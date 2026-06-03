@@ -1,8 +1,19 @@
-"""CodexRunner — OpenAI Codex CLI backend implementation (v2)."""
+"""CodexRunner — OpenAI Codex CLI backend implementation (v2).
+
+Verified against codex-cli 0.136.0. Key findings from real CLI testing:
+- `codex exec` defaults to approval=never (no --ask-for-approval flag needed/available)
+- `--sandbox` values: read-only, workspace-write, danger-full-access
+- `--json` gives JSONL output with thread.started, turn.started, item.completed, turn.completed
+- `--cd` sets working directory (requires --skip-git-repo-check for non-git dirs)
+- `--model` / `-m` for model override
+- Auth uses `codex login` (not env vars), but OPENAI_API_KEY works as fallback
+- `--dangerously-bypass-approvals-and-sandbox` for full unrestricted mode
+"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
@@ -11,11 +22,13 @@ from pathlib import Path
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.types import (
-    PermissionMode,
+    AgentStep,
+    ExecutionTrace,
     RunnerCapability,
     RunnerRequest,
     RunnerResponse,
     SandboxMode,
+    UsageStats,
 )
 
 logger = logging.getLogger(__name__)
@@ -61,26 +74,74 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
-# -- Sandbox mode mapping --------------------------------------------------
+# -- Sandbox mode mapping (verified against codex-cli 0.136.0) ----------------
 
 _SANDBOX_MAP: dict[SandboxMode, str] = {
-    SandboxMode.NONE: "none",
     SandboxMode.READ_ONLY: "read-only",
     SandboxMode.WORKSPACE_WRITE: "workspace-write",
-    SandboxMode.FULL: "full",
+    SandboxMode.FULL: "danger-full-access",
+    # SandboxMode.NONE → use --dangerously-bypass-approvals-and-sandbox
 }
 
-# -- Permission mode mapping ------------------------------------------------
 
-_APPROVAL_MAP: dict[PermissionMode, str] = {
-    PermissionMode.AUTO: "never",
-    PermissionMode.APPROVE_WRITES: "write",
-    PermissionMode.APPROVE_ALL: "always",
-}
+# -- JSONL output parser -------------------------------------------------------
+
+def _parse_codex_jsonl(jsonl_text: str) -> tuple[str, UsageStats | None, ExecutionTrace | None]:
+    """Parse Codex --json JSONL output.
+
+    Events:
+    - thread.started: {thread_id}
+    - turn.started: {}
+    - item.completed: {item: {id, type, text}}  (type=agent_message for text output)
+    - turn.completed: {usage: {input_tokens, cached_input_tokens, output_tokens, reasoning_output_tokens}}
+    """
+    final_text = ""
+    usage: UsageStats | None = None
+    trace = ExecutionTrace()
+    step_index = 0
+
+    for line in jsonl_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        event_type = event.get("type", "")
+
+        if event_type == "item.completed":
+            item = event.get("item", {})
+            if item.get("type") == "agent_message":
+                text = item.get("text", "")
+                if text:
+                    final_text = text
+                    step = AgentStep(step_index=step_index, output_text=text)
+                    trace.steps.append(step)
+                    step_index += 1
+
+        elif event_type == "turn.completed":
+            usage_block = event.get("usage", {})
+            if usage_block:
+                input_tokens = usage_block.get("input_tokens")
+                output_tokens = usage_block.get("output_tokens")
+                usage = UsageStats(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=(
+                        (input_tokens or 0) + (output_tokens or 0)
+                    ) or None,
+                )
+
+    return final_text, usage, trace if trace.steps else None
 
 
 class CodexRunner(CLIAdapter):
-    """Runner implementation for OpenAI Codex CLI."""
+    """Runner implementation for OpenAI Codex CLI.
+
+    Verified against codex-cli 0.136.0.
+    """
 
     name: str = "codex"
 
@@ -91,6 +152,7 @@ class CodexRunner(CLIAdapter):
             capabilities={
                 RunnerCapability.MODEL_OVERRIDE,
                 RunnerCapability.SANDBOXING,
+                RunnerCapability.STRUCTURED_OUTPUT,
             },
             binary="codex",
         )
@@ -99,9 +161,9 @@ class CodexRunner(CLIAdapter):
         ok, msg = await super().check_health()
         if not ok:
             return ok, msg
-        if not (os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY")):
-            return False, "CODEX_API_KEY or OPENAI_API_KEY not set"
-        return True, "codex found and API key set"
+        # Codex uses `codex login` for auth — env vars are optional fallback
+        # Don't fail health check on missing env vars since codex has its own auth
+        return True, "codex found"
 
     def _inject_prompt_proxy(self, request: RunnerRequest) -> str:
         """Codex handles sandbox natively — proxy tool control and limits."""
@@ -130,12 +192,6 @@ class CodexRunner(CLIAdapter):
                 "Minimize token usage."
             )
 
-        # sandbox READ_ONLY: handled natively via --sandbox, but reinforce with prompt
-        if request.sandbox_mode == SandboxMode.READ_ONLY:
-            parts.append(
-                "IMPORTANT: READ-ONLY MODE. Do not write, edit, or delete any files."
-            )
-
         return "\n\n".join(parts)
 
     def _build_command(
@@ -147,15 +203,18 @@ class CodexRunner(CLIAdapter):
         cmd = ["codex", "exec", request.prompt]  # .prompt combines system+task
 
         # Sandbox mode (native)
-        sandbox = _SANDBOX_MAP.get(
-            request.sandbox_mode or SandboxMode.WORKSPACE_WRITE,
-            "workspace-write",
-        )
-        cmd.extend(["--sandbox", sandbox])
+        if request.sandbox_mode == SandboxMode.NONE:
+            # No sandbox restriction — bypass everything
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        else:
+            sandbox = _SANDBOX_MAP.get(
+                request.sandbox_mode or SandboxMode.WORKSPACE_WRITE,
+                "workspace-write",
+            )
+            cmd.extend(["--sandbox", sandbox])
 
-        # Permission mode (native)
-        approval = _APPROVAL_MAP.get(request.permission_mode, "never")
-        cmd.extend(["--ask-for-approval", approval])
+        # JSONL output for structured parsing
+        cmd.append("--json")
 
         # Model override
         if request.model:
@@ -169,7 +228,13 @@ class CodexRunner(CLIAdapter):
         stderr: str,
         exit_code: int,
     ) -> RunnerResponse:
-        return RunnerResponse(output=stdout, exit_code=exit_code)
+        final_text, usage, trace = _parse_codex_jsonl(stdout)
+        return RunnerResponse(
+            output=final_text or stdout,
+            exit_code=exit_code,
+            usage=usage,
+            trace=trace,
+        )
 
     def _build_env(self, request: RunnerRequest) -> dict[str, str]:
         env = super()._build_env(request)
@@ -220,7 +285,7 @@ class CodexRunner(CLIAdapter):
         cmd = ["codex", "exec", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.extend(["--sandbox", "workspace-write"])
 
         if model:
             cmd.extend(["--model", model])
@@ -274,10 +339,7 @@ class CodexRunner(CLIAdapter):
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Codex CLI session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Codex CLI session as a subprocess."""
         _ = role, session_name
 
         if is_codex_dry_run():
@@ -292,7 +354,7 @@ class CodexRunner(CLIAdapter):
         cmd = ["codex", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.extend(["--sandbox", "workspace-write"])
 
         if model:
             cmd.extend(["--model", model])

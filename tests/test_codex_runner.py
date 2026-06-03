@@ -186,8 +186,6 @@ class TestCodexHeadless:
                 assert call_args[1] == "exec"
                 assert "--sandbox" in call_args
                 assert "workspace-write" in call_args
-                assert "--ask-for-approval" in call_args
-                assert "never" in call_args
                 assert "--model" in call_args
                 assert "gpt-5.4" in call_args
 
@@ -252,7 +250,6 @@ class TestCodexHeadless:
 
                 call_args = mock_exec.call_args[0]
                 assert "--sandbox" not in call_args
-                assert "--ask-for-approval" not in call_args
 
     async def test_no_model_flag_when_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

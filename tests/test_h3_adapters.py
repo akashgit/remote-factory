@@ -148,8 +148,7 @@ class TestCodexRunnerV2:
         assert any("say hello" in arg for arg in cmd)
         assert "--sandbox" in cmd
         assert "workspace-write" in cmd
-        assert "--ask-for-approval" in cmd
-        assert "never" in cmd
+        assert "--json" in cmd
 
     def test_build_command_with_model(self) -> None:
         runner = CodexRunner()
@@ -187,21 +186,19 @@ class TestCodexRunnerV2:
         env = runner._build_env(request)
         assert env["OPENAI_API_KEY"] == "openai-key"
 
-    async def test_check_health_no_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("CODEX_API_KEY", raising=False)
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-        runner = CodexRunner()
-        with patch("shutil.which", return_value="/usr/bin/codex"):
-            ok, msg = await runner.check_health()
-        assert ok is False
-        assert "not set" in msg
-
-    async def test_check_health_with_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+    async def test_check_health_binary_found(self) -> None:
+        """check_health succeeds when binary is found (codex uses its own auth)."""
         runner = CodexRunner()
         with patch("shutil.which", return_value="/usr/bin/codex"):
             ok, msg = await runner.check_health()
         assert ok is True
+        assert "codex found" in msg
+
+    async def test_check_health_binary_not_found(self) -> None:
+        runner = CodexRunner()
+        with patch("shutil.which", return_value=None):
+            ok, msg = await runner.check_health()
+        assert ok is False
 
     async def test_check_health_no_binary(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")

@@ -52,17 +52,17 @@ Runners override `_inject_prompt_proxy()` to skip features they handle natively.
 | Append system prompt | `full_system_prompt` assembly | `full_system_prompt` assembly | `full_system_prompt` assembly |
 | System prompt files | file contents joined | file contents joined | file contents joined |
 | **Permission Control** | | | |
-| AUTO | `--dangerously-skip-permissions` | `--ask-for-approval never` | prompt proxy |
-| APPROVE_WRITES | _(default behavior)_ | `--ask-for-approval write` | prompt proxy |
-| APPROVE_ALL | _(default behavior)_ | `--ask-for-approval always` | prompt proxy |
+| AUTO | `--dangerously-skip-permissions` | `exec` defaults to `never` | prompt proxy |
+| APPROVE_WRITES | _(default behavior)_ | prompt proxy | prompt proxy |
+| APPROVE_ALL | _(default behavior)_ | prompt proxy | prompt proxy |
 | **Tool Control** | | | |
 | Allowed tools | `--allowedTools` (native) | prompt proxy | prompt proxy |
 | Disallowed tools | `--disallowedTools` (native) | prompt proxy | prompt proxy |
 | **Sandbox** | | | |
-| NONE | prompt proxy | `--sandbox none` | prompt proxy |
+| NONE | prompt proxy | `--dangerously-bypass-approvals-and-sandbox` | prompt proxy |
 | READ_ONLY | prompt proxy | `--sandbox read-only` | prompt proxy |
 | WORKSPACE_WRITE | prompt proxy | `--sandbox workspace-write` | prompt proxy |
-| FULL | prompt proxy | `--sandbox full` | prompt proxy |
+| FULL | prompt proxy | `--sandbox danger-full-access` | prompt proxy |
 | **Resource Limits** | | | |
 | Max turns | `--max-turns` (native) | prompt proxy | prompt proxy |
 | Max tokens | prompt proxy | prompt proxy | prompt proxy |
@@ -71,10 +71,10 @@ Runners override `_inject_prompt_proxy()` to skip features they handle natively.
 | Model override | `--model` | `--model` | `--model` |
 | Session resume | `--name` | _(not supported)_ | _(not supported)_ |
 | **Observability** | | | |
-| Usage stats | stream-json parsing | _(not available)_ | _(not available)_ |
-| Execution trace | stream-json parsing | _(not available)_ | _(not available)_ |
+| Usage stats | stream-json parsing | `--json` JSONL parsing | _(not available)_ |
+| Execution trace | stream-json parsing | `--json` JSONL parsing | _(not available)_ |
 | **Other** | | | |
-| Health check | `shutil.which` | `shutil.which` + API key | `shutil.which` |
+| Health check | `shutil.which` | `shutil.which` | `shutil.which` |
 | Dry-run | _(not implemented)_ | `FACTORY_CODEX_DRY_RUN` | _(not implemented)_ |
 | Interactive mode | native | native | native |
 
