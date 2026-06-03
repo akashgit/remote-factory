@@ -968,6 +968,89 @@ class TestCmdCeoParser:
         args = parser.parse_args(["ceo", "/some/path", "--mode", "meta"])
         assert args.mode == "meta"
 
+    def test_ceo_review_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "review", "--pr", "42"])
+        assert args.mode == "review"
+        assert args.pr == 42
+
+    def test_ceo_review_mode_with_repo(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "review", "--pr", "42", "--repo", "owner/repo"])
+        assert args.repo == "owner/repo"
+
+    def test_ceo_pr_default_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.pr is None
+
+    def test_ceo_repo_default_none(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path"])
+        assert args.repo is None
+
+
+class TestCmdCeoReview:
+    def test_review_mode_without_pr_errors(self, capsys):
+        result = main(["ceo", "/some/path", "--mode", "review"])
+        assert result == 1
+        assert "--pr" in capsys.readouterr().err
+
+    def test_review_mode_nonexistent_path_errors(self, capsys):
+        result = main(["ceo", "/nonexistent/path", "--mode", "review", "--pr", "42"])
+        assert result == 1
+        assert "existing directory" in capsys.readouterr().err
+
+    def test_review_mode_headless_builds_correct_task(self, tmp_path, capsys):
+        """--mode review --pr 42 --headless builds a review task and invokes CEO."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+        assert result == 0
+        mock_agent.assert_called_once()
+        task = mock_agent.call_args[0][1]
+        assert "Mode: review" in task
+        assert "PR #42" in task
+        assert "gh pr diff 42" in task
+        assert "gh pr view 42" in task
+
+    def test_review_mode_headless_with_repo(self, tmp_path, capsys):
+        """--mode review --pr 42 --repo owner/repo includes repo in task."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42",
+                           "--repo", "owner/repo", "--headless"])
+        assert result == 0
+        task = mock_agent.call_args[0][1]
+        assert "owner/repo" in task
+        assert "--repo owner/repo" in task
+
+    def test_review_mode_skips_worktree(self, tmp_path):
+        """Review mode does not create worktrees or touch experiment store."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
+             patch("factory.worktree.create_worktree") as mock_wt:
+            main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+        mock_wt.assert_not_called()
+
+    def test_review_mode_foreground(self, tmp_path):
+        """Review mode without --headless launches interactively."""
+        mock_run = MagicMock(return_value=MagicMock(returncode=0))
+        with patch("factory.runners.claude.subprocess.run", mock_run), \
+             patch("factory.cli._ensure_dashboard"):
+            main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42"])
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "claude"
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Mode: review" in task
+        assert "PR #42" in task
+
+    def test_review_mode_max_respawns_is_1(self, tmp_path):
+        """Review mode uses max_respawns=1."""
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
+        call_kwargs = mock_agent.call_args[1]
+        assert call_kwargs.get("timeout") == 7200.0
+
 
 class TestCmdCeo:
     def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
