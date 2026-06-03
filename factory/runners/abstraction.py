@@ -1,12 +1,43 @@
 """Agent-Runner abstraction — base class and core types for CLI backends.
 
+The 3-method contract
+---------------------
 Concrete runners implement three methods:
-  - identity (property): declares name, display_name, binary, capabilities
-  - _build_command(request, *, prompt_file): maps Request fields to CLI args
-  - _parse_response(stdout, stderr, exit_code): extracts Response from raw output
+
+  - ``identity`` (property) → ``RunnerIdentity``
+        Declares name, display_name, binary, and capabilities for registry
+        and health-check purposes.
+
+  - ``_build_command(request, *, prompt_file)`` → ``list[str]``
+        Maps ``Request`` fields to CLI args for the specific backend.
+        ``prompt_file`` is a temp file containing ``request.system_prompt``.
+
+  - ``_parse_response(stdout, stderr, exit_code)`` → ``Response``
+        Extracts structured output from raw subprocess results. Runners with
+        JSON output (e.g. Claude) parse it here; others return raw stdout.
 
 The base class handles the shared subprocess lifecycle (temp file management,
-env isolation, streaming, timeout enforcement) via run() and run_interactive().
+env isolation, streaming, timeout enforcement) via ``run()`` and
+``run_interactive()``.  Override ``_build_env()`` for custom environment setup
+(e.g. API key mapping, PATH manipulation).
+
+Adding a new runner
+-------------------
+1. Create ``factory/runners/<name>.py`` with a class extending ``AgentRunner``.
+2. Implement ``identity``, ``_build_command``, and ``_parse_response``.
+3. Register it in ``factory/runners/__init__.py`` → ``_RUNNERS`` dict.
+4. Update the ``RunnerName`` Literal type in ``__init__.py``.
+5. Add tests in ``tests/test_runner_integration.py``.
+
+Request.prompt vs Request.system_prompt / Request.task
+------------------------------------------------------
+``Request.system_prompt`` is WHO the agent is (role prompt + playbook).
+``Request.task`` is WHAT to do (the work request).
+``Request.prompt`` is a convenience property that combines both, separated by a
+``---`` divider.  Runners that support native system-prompt separation (e.g.
+Claude's ``--append-system-prompt-file``) use ``system_prompt`` and ``task``
+independently.  Runners without that feature (e.g. Aider, Bob) use the combined
+``prompt`` property.
 """
 
 from __future__ import annotations
