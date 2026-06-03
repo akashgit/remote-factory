@@ -245,3 +245,56 @@ class AgentRunner(ABC):
             return result.returncode
         finally:
             Path(prompt_file.name).unlink(missing_ok=True)
+
+    # ── Backward-compat shims (Phase 2 migration) ────────────────
+
+    async def headless(
+        self,
+        prompt: str,
+        task: str,
+        cwd: Path,
+        *,
+        timeout: float = 600.0,
+        model: str | None = None,
+        dangerously_skip_permissions: bool = True,
+        role: str = "unknown",
+        session_name: str | None = None,
+        tmux_persist: bool = False,
+    ) -> tuple[str, int, AgentUsage | None]:
+        """Backward-compat shim — delegates to run()."""
+        request = Request(
+            system_prompt=prompt,
+            task=task,
+            cwd=cwd,
+            timeout=timeout,
+            model=model,
+            skip_permissions=dangerously_skip_permissions,
+            session_name=session_name,
+            tmux_persist=tmux_persist,
+            role=role,
+        )
+        response = await self.run(request)
+        return response.output, response.exit_code, response.usage
+
+    def interactive_run(
+        self,
+        prompt: str,
+        task: str,
+        cwd: Path,
+        *,
+        model: str | None = None,
+        role: str = "ceo",
+        dangerously_skip_permissions: bool = False,
+        session_name: str | None = None,
+    ) -> int:
+        """Backward-compat shim — delegates to run_interactive()."""
+        request = Request(
+            system_prompt=prompt,
+            task=task,
+            cwd=cwd,
+            model=model,
+            skip_permissions=dangerously_skip_permissions,
+            session_name=session_name,
+            role=role,
+        )
+        return self.run_interactive(request)

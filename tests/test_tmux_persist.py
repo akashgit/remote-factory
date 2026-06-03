@@ -260,9 +260,9 @@ class TestClaudeRunnerTmuxPersist:
 
         with (
             patch("factory.runners._tmux_persist.tmux_available", return_value=False),
-            patch("factory.runners.claude.asyncio.create_subprocess_exec", return_value=mock_proc),
-            patch("factory.runners.claude.stream_subprocess", return_value=(b"headless output", b"")),
-            patch("factory.runners.claude.should_stream", return_value=False),
+            patch("factory.runners.abstraction.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("factory.runners.abstraction.stream_subprocess", return_value=(b"headless output", b"")),
+            patch("factory.runners.abstraction.should_stream", return_value=False),
         ):
             stdout, code, _usage = await runner.headless(
                 prompt="test prompt", task="test task", cwd=tmp_path,
@@ -276,9 +276,9 @@ class TestClaudeRunnerTmuxPersist:
         mock_proc.returncode = 0
 
         with (
-            patch("factory.runners.claude.asyncio.create_subprocess_exec", return_value=mock_proc),
-            patch("factory.runners.claude.stream_subprocess", return_value=(b"normal", b"")),
-            patch("factory.runners.claude.should_stream", return_value=False),
+            patch("factory.runners.abstraction.asyncio.create_subprocess_exec", return_value=mock_proc),
+            patch("factory.runners.abstraction.stream_subprocess", return_value=(b"normal", b"")),
+            patch("factory.runners.abstraction.should_stream", return_value=False),
         ):
             stdout, code, _usage = await runner.headless(
                 prompt="test prompt", task="test task", cwd=tmp_path,

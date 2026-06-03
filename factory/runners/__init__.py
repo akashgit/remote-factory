@@ -6,20 +6,24 @@ from pathlib import Path
 from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.abstraction import AgentRunner, Request, Response
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
 from factory.runners.protocol import Runner
 
 __all__ = [
-    "Runner",
-    "ClaudeRunner",
+    "AgentRunner",
     "BobRunner",
+    "ClaudeRunner",
     "CodexRunner",
-    "get_runner",
+    "Request",
+    "Response",
+    "Runner",
     "RunnerName",
-    "is_dry_run",
+    "get_runner",
     "is_codex_dry_run",
+    "is_dry_run",
     "should_stream",
     "stream_subprocess",
 ]
@@ -58,7 +62,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
         raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
 
     if resolved == "bob":
-        return BobRunner(project_path=project_path)
+        return BobRunner(project_path=project_path)  # type: ignore[return-value]
     return _RUNNERS[resolved]()
 
 

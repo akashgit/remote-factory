@@ -51,7 +51,7 @@ class TestClaudeRunner:
         runner = ClaudeRunner()
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b'{"result":"output","usage":{},"cost_usd":0,"duration_ms":0,"num_turns":1,"model":"claude-opus-4-7"}', b"")
 
@@ -90,7 +90,7 @@ class TestClaudeRunner:
         runner = ClaudeRunner()
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b'{"result":"ok"}', b"")
 
@@ -821,9 +821,9 @@ class TestStreamingOutput:
         runner = ClaudeRunner()
 
         # Mock should_stream to return True
-        with patch("factory.runners.claude.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b'{"result":"output"}', b"")
 
@@ -903,7 +903,7 @@ class TestStreamingOutput:
         runner = ClaudeRunner()
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b'{"result":"output"}', b"")
 
@@ -940,7 +940,7 @@ class TestStreamingOutput:
         json_output = json.dumps({"result": "Line 1\nLine 2\nLine 3\n", "usage": {}, "cost_usd": 0.01})
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (json_output.encode(), b"")
 
@@ -1224,9 +1224,9 @@ class TestAnsiSanitization:
 
         runner = ClaudeRunner()
 
-        with patch("factory.runners.claude.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b'{"result":"output"}', b"")
 

@@ -9,6 +9,7 @@ from typing import Literal
 
 from factory.ace.injector import inject_playbook, load_playbook
 from factory.runners import get_runner
+from factory.runners.abstraction import AgentRunner, Request
 
 logger = logging.getLogger(__name__)
 
@@ -175,17 +176,33 @@ async def invoke_agent(
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
 
     try:
-        stdout, return_code, usage = await runner.headless(
-            prompt=prompt,
-            task=task,
-            cwd=project_path,
-            timeout=timeout,
-            model=model,
-            dangerously_skip_permissions=dangerously_skip_permissions,
-            role=role,
-            session_name=agent_session_name,
-            tmux_persist=tmux_persist,
-        )
+        if isinstance(runner, AgentRunner):
+            request = Request(
+                system_prompt=prompt,
+                task=task,
+                cwd=project_path,
+                timeout=timeout,
+                model=model,
+                skip_permissions=dangerously_skip_permissions,
+                session_name=agent_session_name,
+                tmux_persist=tmux_persist,
+                role=role,
+            )
+            response = await runner.run(request)
+            stdout, return_code, usage = response.output, response.exit_code, response.usage
+        else:
+            # Legacy runners (Bob, Codex) — will be migrated in Phase 3
+            stdout, return_code, usage = await runner.headless(
+                prompt=prompt,
+                task=task,
+                cwd=project_path,
+                timeout=timeout,
+                model=model,
+                dangerously_skip_permissions=dangerously_skip_permissions,
+                role=role,
+                session_name=agent_session_name,
+                tmux_persist=tmux_persist,
+            )
     except Exception as e:
         logger.error("%s agent failed: %s", role, e)
         _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})

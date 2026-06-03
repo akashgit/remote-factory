@@ -331,12 +331,27 @@ def _classify_with_llm(
         old_quiet = os.environ.get("FACTORY_RUNNER_QUIET")
         os.environ["FACTORY_RUNNER_QUIET"] = "1"
         try:
-            result, code, _usage = _run(runner.headless(
-                prompt, task, Path.cwd(),
-                timeout=60.0,
-                dangerously_skip_permissions=True,
-                role="wizard",
-            ))
+            from factory.runners.abstraction import AgentRunner as _AgentRunner
+            from factory.runners.abstraction import Request as _Request
+
+            if isinstance(runner, _AgentRunner):
+                _req = _Request(
+                    system_prompt=prompt,
+                    task=task,
+                    cwd=str(Path.cwd()),
+                    timeout=60.0,
+                    skip_permissions=True,
+                    role="wizard",
+                )
+                _resp = _run(runner.run(_req))
+                result, code = _resp.output, _resp.exit_code
+            else:
+                result, code, _usage = _run(runner.headless(
+                    prompt, task, Path.cwd(),
+                    timeout=60.0,
+                    dangerously_skip_permissions=True,
+                    role="wizard",
+                ))
         finally:
             if old_quiet is None:
                 os.environ.pop("FACTORY_RUNNER_QUIET", None)
@@ -2515,13 +2530,28 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             mark_read(project_path, pending_ids)
+        from factory.runners.abstraction import AgentRunner as _AgentRunner
+        from factory.runners.abstraction import Request as _Request
+
         prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile)
         runner = get_runner(runner_name)
-        return runner.interactive_run(
-            prompt, task, wt_path,
-            model=model, role="ceo", dangerously_skip_permissions=True,
-            session_name=session_name,
-        )
+        if isinstance(runner, _AgentRunner):
+            _req = _Request(
+                system_prompt=prompt,
+                task=task,
+                cwd=wt_path,
+                model=model,
+                skip_permissions=True,
+                session_name=session_name,
+                role="ceo",
+            )
+            return runner.run_interactive(_req)
+        else:
+            return runner.interactive_run(
+                prompt, task, wt_path,
+                model=model, role="ceo", dangerously_skip_permissions=True,
+                session_name=session_name,
+            )
     finally:
         remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):

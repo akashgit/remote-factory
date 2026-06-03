@@ -1,4 +1,9 @@
-"""Runner protocol — interface for CLI backend implementations."""
+"""Runner protocol — interface for CLI backend implementations.
+
+Defines both the new Request/Response interface (run, run_interactive)
+and the legacy interface (headless, interactive_run) for backward compat
+during the Phase 2-3 migration.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +12,25 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from factory.models import AgentUsage
+    from factory.runners.abstraction import Request, Response
 
 
 class Runner(Protocol):
     """Protocol for CLI backend implementations (claude, bob, etc.)."""
 
     name: str
+
+    # ── New interface (Phase 2+) ──────────────────────────────────
+
+    async def run(self, request: Request) -> Response:
+        """Run a headless agent invocation via Request/Response types."""
+        ...
+
+    def run_interactive(self, request: Request) -> int:
+        """Run an interactive session with inherited stdio. Returns exit code."""
+        ...
+
+    # ── Legacy interface (backward compat, removed in Phase 4) ───
 
     async def headless(
         self,
@@ -27,23 +45,7 @@ class Runner(Protocol):
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, AgentUsage | None]:
-        """Run a headless (non-interactive) agent invocation.
-
-        Args:
-            prompt: The system prompt / agent role definition.
-            task: The task to execute.
-            cwd: Working directory for the subprocess.
-            timeout: Maximum execution time in seconds.
-            model: Optional model override.
-            dangerously_skip_permissions: If True, skip permission prompts.
-            role: Agent role name (used for logging and output prefixing).
-            session_name: Optional session name for identification in /resume.
-            tmux_persist: If True, run the agent interactively in a tmux window.
-
-        Returns:
-            (stdout, return_code, usage) tuple. usage is None for runners
-            without token telemetry (bob, codex).
-        """
+        """Run a headless invocation (legacy — use run() instead)."""
         ...
 
     def interactive_run(
@@ -57,21 +59,5 @@ class Runner(Protocol):
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive CLI session as a subprocess (returns on exit).
-
-        Unlike interactive_exec, this uses subprocess.run so the caller regains
-        control after the session finishes — enabling cleanup in finally blocks.
-
-        Args:
-            prompt: The system prompt to append.
-            task: The initial user message.
-            cwd: Working directory for the subprocess.
-            model: Optional model override.
-            role: Agent role name (used for logging and output prefixing).
-            dangerously_skip_permissions: If True, skip permission prompts (--yolo for bob).
-            session_name: Optional session name for identification in /resume.
-
-        Returns:
-            The subprocess exit code.
-        """
+        """Run an interactive session (legacy — use run_interactive() instead)."""
         ...

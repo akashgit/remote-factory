@@ -31,7 +31,7 @@ def _mock_foreground():
     """Mock the interactive foreground path: subprocess.run inside ClaudeRunner,
     worktree lifecycle, and dashboard.  Yields the subprocess.run mock."""
     mock_run = MagicMock(return_value=MagicMock(returncode=0))
-    with patch("factory.runners.claude.subprocess.run", mock_run), \
+    with patch("factory.runners.abstraction.subprocess.run", mock_run), \
          patch("factory.worktree.create_worktree",
                side_effect=lambda p, b="main": (p, "factory/run-test")), \
          patch("factory.worktree.remove_worktree"), \
