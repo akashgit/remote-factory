@@ -206,6 +206,10 @@ class BobRunner(AgentRunner):
     def identity(self) -> RunnerIdentity:
         return _IDENTITY
 
+    @property
+    def _sanitize_output(self) -> bool:
+        return True
+
     def _build_command(
         self, request: Request, *, prompt_file: str | None = None
     ) -> list[str]:

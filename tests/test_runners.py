@@ -173,7 +173,7 @@ class TestBobRunner:
 
         (tmp_path / ".factory").mkdir()
 
-        with patch("factory.runners.bob.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+        with patch("asyncio.wait_for", side_effect=asyncio.TimeoutError):
             with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
                 mock_proc = AsyncMock()
                 mock_proc.kill = AsyncMock()
@@ -484,7 +484,7 @@ class TestBobAuthPreflight:
 
         # Mock the streaming subprocess to avoid actual bob invocation
         with patch(
-            "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"output", b"")
 
@@ -634,7 +634,7 @@ class TestKeyPersistence:
         monkeypatch.chdir(tmp_path)
 
         with patch(
-            "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"output", b"")
 
@@ -865,9 +865,9 @@ class TestStreamingOutput:
         import factory.runners.bob as bob_module
         bob_module._auth_checked = False
 
-        with patch("factory.runners.bob.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b"output\n", b"")
 
@@ -1189,9 +1189,9 @@ class TestAnsiSanitization:
 
         runner = BobRunner()
 
-        with patch("factory.runners.bob.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b"output\n", b"")
 
@@ -1292,7 +1292,7 @@ class TestCeilingAccumulationAcrossInvocations:
 
         # Mock subprocess to avoid actually calling bob
         with patch(
-            "factory.runners.bob.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"output", b"")
 

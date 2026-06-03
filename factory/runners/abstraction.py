@@ -122,6 +122,14 @@ class AgentRunner(ABC):
         """Parse raw subprocess output into a Response."""
         ...
 
+    @property
+    def _sanitize_output(self) -> bool:
+        """Whether to sanitize ANSI escape sequences from streamed output.
+
+        Override in subclasses (e.g. BobRunner) that emit raw terminal sequences.
+        """
+        return False
+
     def _build_env(self, request: Request) -> dict[str, str]:
         """Build the subprocess environment.
 
@@ -183,7 +191,10 @@ class AgentRunner(ABC):
                     env=env,
                 )
                 stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                    stream_subprocess(proc, stream=stream, prefix=prefix),
+                    stream_subprocess(
+                        proc, stream=stream, prefix=prefix,
+                        sanitize=self._sanitize_output,
+                    ),
                     timeout=request.timeout,
                 )
             except asyncio.TimeoutError:
