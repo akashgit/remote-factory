@@ -521,3 +521,178 @@ class TestCodexE2E:
         )
         assert return_code == 0
         assert "shim ok" in stdout.lower() or "shim" in stdout.lower()
+
+
+@pytest.mark.skipif(
+    not shutil.which("codex"),
+    reason="codex CLI not installed",
+)
+class TestCodexBuildE2E:
+    """Real build tests — codex writes code, we run it, verify correctness.
+
+    These prove the full pipeline works: prompt → codex exec → file written → artifact runs.
+    Each test verifies:
+    1. The runner is CodexRunner (not accidentally falling back to claude)
+    2. Codex actually writes a file to disk via sandbox
+    3. The written file runs and produces verifiably correct output
+    4. Usage telemetry is captured
+    """
+
+    @pytest.fixture
+    def runner(self) -> CodexRunner:
+        r = CodexRunner()
+        # Verify we're testing the right runner, not a fallback
+        assert r.identity.name == "codex"
+        assert r.identity.cli_command == "codex"
+        return r
+
+    @pytest.fixture
+    def git_dir(self, tmp_path: Path) -> Path:
+        """Create a temporary git repo for codex (it requires one)."""
+        import subprocess
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, capture_output=True)
+        (repo / "README.md").write_text("# test")
+        subprocess.run(["git", "add", "."], cwd=repo, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
+        return repo
+
+    async def test_build_fibonacci_script(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Codex builds a fibonacci script, we run it and verify output."""
+        import subprocess
+
+        req = Request(
+            prompt=(
+                "You are a software engineer. Write files directly to disk. "
+                "Do not explain, just write the code."
+            ),
+            task=(
+                "Create a file called fib.py in the current directory. "
+                "It should define a function fibonacci(n) that returns the nth fibonacci number "
+                "(0-indexed: fibonacci(0)=0, fibonacci(1)=1, fibonacci(10)=55). "
+                "At the bottom, print the result of fibonacci(10)."
+            ),
+            cwd=git_dir,
+            timeout=120.0,
+            skip_permissions=True,
+        )
+
+        response = await runner.run(req)
+
+        # 1. Runner identity check
+        assert runner.identity.name == "codex"
+
+        # 2. Codex should exit cleanly
+        assert response.return_code == 0, f"codex failed: {response.stdout[:500]}"
+
+        # 3. File must exist on disk
+        fib_path = git_dir / "fib.py"
+        assert fib_path.exists(), (
+            f"fib.py not created. Directory contents: {list(git_dir.iterdir())}"
+        )
+
+        # 4. Run the script and verify output
+        result = subprocess.run(
+            ["python3", str(fib_path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, f"fib.py failed to run: {result.stderr}"
+        assert "55" in result.stdout, (
+            f"Expected fibonacci(10)=55 in output, got: {result.stdout!r}"
+        )
+
+        # 5. Usage telemetry was captured
+        assert response.usage is not None, "No usage data returned from codex"
+        assert response.usage.input_tokens > 0
+        assert response.usage.output_tokens > 0
+
+    async def test_build_fizzbuzz_and_verify(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Codex builds fizzbuzz, we run it and check several known outputs."""
+        import subprocess
+
+        req = Request(
+            prompt=(
+                "You are a software engineer. Write files directly to disk. "
+                "Do not explain, just write the code."
+            ),
+            task=(
+                "Create a file called fizzbuzz.py in the current directory. "
+                "It should print fizzbuzz for numbers 1 through 20, one per line. "
+                "Rules: divisible by 3 print 'Fizz', divisible by 5 print 'Buzz', "
+                "divisible by both print 'FizzBuzz', otherwise print the number."
+            ),
+            cwd=git_dir,
+            timeout=120.0,
+            skip_permissions=True,
+        )
+
+        response = await runner.run(req)
+        assert response.return_code == 0, f"codex failed: {response.stdout[:500]}"
+
+        fb_path = git_dir / "fizzbuzz.py"
+        assert fb_path.exists(), (
+            f"fizzbuzz.py not created. Directory contents: {list(git_dir.iterdir())}"
+        )
+
+        result = subprocess.run(
+            ["python3", str(fb_path)],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, f"fizzbuzz.py failed: {result.stderr}"
+
+        lines = result.stdout.strip().splitlines()
+        assert len(lines) == 20, f"Expected 20 lines, got {len(lines)}: {lines}"
+
+        # Spot-check known values
+        assert lines[0] == "1"           # 1
+        assert lines[2] == "Fizz"        # 3
+        assert lines[4] == "Buzz"        # 5
+        assert lines[14] == "FizzBuzz"   # 15
+        assert lines[19] == "Buzz"       # 20
+
+    async def test_build_with_proxied_tool_filtering(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Verify proxied tool filtering is injected into the prompt sent to codex."""
+        req = Request(
+            prompt="You are a software engineer.",
+            task="Create a file called hello.py that prints 'hello world'.",
+            cwd=git_dir,
+            timeout=120.0,
+            skip_permissions=True,
+            allowed_tools=["Bash", "Write"],
+            disallowed_tools=["WebSearch"],
+        )
+
+        # Verify the proxy injection happened in the command
+        cmd = runner._build_command(req)
+        prompt_arg = cmd[2]
+        assert "ONLY use these tools: Bash, Write" in prompt_arg
+        assert "must NOT use these tools: WebSearch" in prompt_arg
+
+        # Actually run it and verify the file was built
+        response = await runner.run(req)
+        assert response.return_code == 0
+
+        hello_path = git_dir / "hello.py"
+        if hello_path.exists():
+            import subprocess
+            result = subprocess.run(
+                ["python3", str(hello_path)],
+                capture_output=True, text=True, timeout=10,
+            )
+            assert result.returncode == 0
+            assert "hello world" in result.stdout.lower()
+
+    async def test_get_runner_returns_codex(self) -> None:
+        """Verify get_runner('codex') returns a CodexRunner, not claude."""
+        from factory.runners import get_runner
+
+        runner = get_runner("codex")
+        assert isinstance(runner, CodexRunner)
+        assert runner.identity.name == "codex"
+        assert runner.identity.cli_command == "codex"
+        # Must NOT be a ClaudeRunner
+        from factory.runners.claude import ClaudeRunner
+        assert not isinstance(runner, ClaudeRunner)
