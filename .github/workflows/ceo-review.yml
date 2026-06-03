@@ -86,6 +86,7 @@ jobs:
               per_page: 5,
             });
             const latest = comments.data.reverse().find(c =>
+              c.user.login === 'github-actions[bot]' &&
               c.body.includes('Factory') && c.body.includes('Review:')
             );
             if (latest && latest.body.includes('KEEP')) {
