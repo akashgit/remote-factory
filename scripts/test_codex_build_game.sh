@@ -108,9 +108,28 @@ START_TIME=$(date +%s)
 export FACTORY_RUNNER=codex
 export FACTORY_RUNNER_QUIET=0
 
+# The CEO on codex captures sub-agent output inside its sandbox — it doesn't
+# reach our terminal in real time. So we tail the events log in the background
+# to see agent starts/completions as they happen.
+EVENTS_LOG="$PROJECT_DIR/.factory/events.jsonl"
+
+# Start event watcher in background (will be killed when script ends)
+(
+    # Wait for events file to appear
+    while [ ! -f "$EVENTS_LOG" ]; do sleep 1; done
+    tail -f "$EVENTS_LOG" 2>/dev/null | while IFS= read -r line; do
+        agent=$(echo "$line" | python3 -c "import sys,json; e=json.loads(sys.stdin.read()); print(f'  [event] {e.get(\"type\",\"?\"):25s} agent={e.get(\"agent\",\"-\"):12s} {str(e.get(\"data\",{}))[:120]}')" 2>/dev/null)
+        [ -n "$agent" ] && echo "$agent"
+    done
+) &
+EVENT_WATCHER_PID=$!
+trap "kill $EVENT_WATCHER_PID 2>/dev/null" EXIT
+
 $FACTORY ceo "$PROJECT_DIR" --runner codex --headless 2>&1 | while IFS= read -r line; do
     echo "  [factory] $line"
 done
+
+kill $EVENT_WATCHER_PID 2>/dev/null || true
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))

@@ -2201,7 +2201,12 @@ def cmd_agent(args: argparse.Namespace) -> int:
         use_profile=use_profile,
         tmux_persist=tmux_persist,
     ))
+    # Print to both stdout (for capture) and stderr (for terminal visibility).
+    # In nested runs (CEO → codex → factory agent), stdout is captured by the
+    # parent codex process. Stderr reaches the terminal directly.
     print(result)
+    if result.strip():
+        print(result, file=sys.stderr)
     return code
 
 
