@@ -12,6 +12,7 @@ from factory.agents.runner import (
     ConsecutiveAgentFailureError,
     reset_failure_counter,
 )
+from factory.runners.abstraction import Response
 
 
 # Path to the project root (parent of factory/)
@@ -296,8 +297,8 @@ class TestConsecutiveFailureAbort:
         # Mock the runner at the point where it's imported in runner.py
         class MockRunner:
             name = "claude"
-            async def headless(self, *args, **kwargs):
-                return ("success", 0, None)
+            async def run(self, request):
+                return Response(output="success", exit_code=0)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -319,8 +320,8 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
-            async def headless(self, *args, **kwargs):
-                return ("error output", 1, None)  # non-zero exit code
+            async def run(self, request):
+                return Response(output="error output", exit_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -342,8 +343,8 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
-            async def headless(self, *args, **kwargs):
-                return ("error", 1, None)
+            async def run(self, request):
+                return Response(output="error", exit_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -370,8 +371,8 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
-            async def headless(self, *args, **kwargs):
-                return ("error", 1, None)
+            async def run(self, request):
+                return Response(output="error", exit_code=1)
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
 
@@ -405,7 +406,7 @@ class TestConsecutiveFailureAbort:
 
         class MockRunner:
             name = "claude"
-            async def headless(self, *args, **kwargs):
+            async def run(self, request):
                 raise RuntimeError("Connection failed")
 
         monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
