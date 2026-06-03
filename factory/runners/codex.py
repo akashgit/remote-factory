@@ -286,7 +286,7 @@ class CodexRunner(CLIAdapter):
         cmd = ["codex", "exec", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if model:
             cmd.extend(["--model", model])
@@ -323,9 +323,18 @@ class CodexRunner(CLIAdapter):
         stderr_str = stderr_bytes.decode()
 
         if proc.returncode != 0:
-            logger.warning(
-                "CodexRunner exited with code %d: %s", proc.returncode, stderr_str[:200],
+            logger.error(
+                "CodexRunner exited with code %d: stderr=%s stdout=%s",
+                proc.returncode, stderr_str[:300], raw_stdout[:300],
             )
+            import sys as _sys
+            print(
+                f"[codex:{role}] FAILED (exit={proc.returncode}): {stderr_str[:200]}",
+                file=_sys.stderr,
+            )
+            # Include stderr in output so caller can see the error
+            error_output = raw_stdout or stderr_str or f"codex exited with code {proc.returncode}"
+            return error_output, proc.returncode or 1, None
 
         return raw_stdout, proc.returncode or 0, None
 
@@ -353,7 +362,7 @@ class CodexRunner(CLIAdapter):
         cmd = ["codex", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if model:
             cmd.extend(["--model", model])

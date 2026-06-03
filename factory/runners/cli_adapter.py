@@ -200,9 +200,14 @@ class CLIAdapter(abc.ABC):
             return_code = proc.returncode or 0
 
             if return_code != 0:
-                logger.warning(
-                    "%s exited with code %d: %s",
-                    self._display_name, return_code, raw_stderr[:200],
+                import sys as _sys
+                logger.error(
+                    "%s exited with code %d: stderr=%s stdout=%s",
+                    self._display_name, return_code, raw_stderr[:300], raw_stdout[:300],
+                )
+                print(
+                    f"[{self._name}] FAILED (exit={return_code}): {raw_stderr[:200]}",
+                    file=_sys.stderr,
                 )
 
             return self._parse_output(raw_stdout, raw_stderr, return_code)

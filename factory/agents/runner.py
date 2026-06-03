@@ -255,10 +255,20 @@ async def invoke_agent(
         log_usage(project_path, runner_name, role, v2_usage, exit_code=return_code)
 
     if return_code != 0:
-        logger.warning("%s agent exited with code %d", role, return_code)
+        logger.error(
+            "%s agent failed (runner=%s, exit=%d): %s",
+            role, resolved_runner_name, return_code,
+            (stdout or "")[:300],
+        )
+        import sys as _sys
+        print(
+            f"[factory] {role} agent FAILED (runner={resolved_runner_name}, "
+            f"exit={return_code}): {(stdout or '')[:200]}",
+            file=_sys.stderr,
+        )
         _emit_safe(
             project_path, "agent.failed", agent=role,
-            data={"return_code": return_code, "runner": resolved_runner_name, "stderr": stdout[:200] if stdout else ""},
+            data={"return_code": return_code, "runner": resolved_runner_name, "stderr": (stdout or "")[:500]},
         )
         if _track_failures:
             _consecutive_failures += 1

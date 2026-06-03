@@ -194,8 +194,7 @@ class TestCodexHeadless:
                 call_args = mock_exec.call_args[0]
                 assert call_args[0] == "codex"
                 assert call_args[1] == "exec"
-                assert "--sandbox" in call_args
-                assert "workspace-write" in call_args
+                assert "--dangerously-bypass-approvals-and-sandbox" in call_args
                 assert "--model" in call_args
                 assert "gpt-5.4" in call_args
 
@@ -465,8 +464,7 @@ class TestCodexInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
-            assert "--sandbox" in cmd
-            assert "workspace-write" in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
