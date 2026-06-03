@@ -2419,6 +2419,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
+    # Propagate runner choice to subprocess environment so CEO's sub-agent
+    # invocations (factory agent <role>) inherit the runner selection.
+    if runner_name:
+        os.environ["FACTORY_RUNNER"] = runner_name
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     clean_pr_flag = getattr(args, "clean_pr", None)
@@ -3433,6 +3437,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+    runner_name = _resolve_runner(args)
+    if runner_name:
+        os.environ["FACTORY_RUNNER"] = runner_name
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
 
