@@ -48,7 +48,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 <!-- It must output JSON to stdout matching the EvalResult format. -->
 
 ```bash
-python eval/score.py
+uv run python eval/score.py
 ```
 
 ### Threshold
@@ -78,7 +78,7 @@ main
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
 
 ```bash
-pytest tests/test_models.py tests/test_guards.py tests/test_cli.py -x -q --tb=short
+uv run pytest tests/test_models.py tests/test_guards.py tests/test_cli.py -x -q --tb=short
 ```
 
 ## Constraints
