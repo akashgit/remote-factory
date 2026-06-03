@@ -62,9 +62,13 @@ echo ""
 
 # Don't pipe through tee — it breaks TTY detection and disables streaming.
 # Logs are written to .factory/ by the factory itself.
+# Default to gpt-5.4-mini for cheap/fast test runs. Override with CODEX_MODEL env var.
+MODEL_FLAG="--model ${CODEX_MODEL:-gpt-5.4-mini}"
+
 $FACTORY ceo "$WORKDIR" \
   --runner codex \
-  --headless
+  --headless \
+  $MODEL_FLAG
 
 CEO_EXIT=$?
 
