@@ -60,11 +60,13 @@ echo "=== Running: factory ceo --runner codex --headless ==="
 echo "=== This runs the FULL factory loop: CEO → agents, all powered by Codex ==="
 echo ""
 
+# Don't pipe through tee — it breaks TTY detection and disables streaming.
+# Logs are written to .factory/ by the factory itself.
 $FACTORY ceo "$WORKDIR" \
   --runner codex \
-  --headless 2>&1 | tee "$WORKDIR/.factory/ceo-stdout.log"
+  --headless
 
-CEO_EXIT=${PIPESTATUS[0]}
+CEO_EXIT=$?
 
 echo ""
 echo "=========================================="
