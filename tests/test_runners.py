@@ -1497,3 +1497,297 @@ class TestCeilingAccumulationAcrossInvocations:
 
         # Runner's cycle_start should be between now_before and now_after
         assert now_before <= runner.cycle_start <= now_after
+
+
+# -- ClaudeRunner._build_command() new fields tests ----------------------------
+
+class TestClaudeRunnerBuildCommandNewFields:
+    """Tests for ClaudeRunner._build_command() with new RunnerRequest fields."""
+
+    def _make_request(self, **kwargs):
+        from factory.runners.types import RunnerRequest
+        defaults = dict(system_prompt="sys", task="task", cwd="/tmp")
+        defaults.update(kwargs)
+        return RunnerRequest(**defaults)
+
+    def test_permission_mode_auto_with_skip(self) -> None:
+        """permission_mode=AUTO + skip_permissions=True → --dangerously-skip-permissions."""
+        from factory.runners.types import PermissionMode
+        runner = ClaudeRunner()
+        req = self._make_request(permission_mode=PermissionMode.AUTO, skip_permissions=True)
+        cmd = runner._build_command(req)
+        assert "--dangerously-skip-permissions" in cmd
+
+    def test_permission_mode_approve_writes(self) -> None:
+        """skip_permissions=False → no --dangerously-skip-permissions regardless of mode."""
+        from factory.runners.types import PermissionMode
+        runner = ClaudeRunner()
+        req = self._make_request(
+            permission_mode=PermissionMode.APPROVE_WRITES,
+            skip_permissions=False,
+        )
+        cmd = runner._build_command(req)
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_allowed_tools(self) -> None:
+        runner = ClaudeRunner()
+        req = self._make_request(allowed_tools=["Read", "Grep"])
+        cmd = runner._build_command(req)
+        idx = cmd.index("--allowedTools")
+        assert cmd[idx + 1] == "Read,Grep"
+
+    def test_disallowed_tools(self) -> None:
+        runner = ClaudeRunner()
+        req = self._make_request(disallowed_tools=["Bash"])
+        cmd = runner._build_command(req)
+        idx = cmd.index("--disallowedTools")
+        assert cmd[idx + 1] == "Bash"
+
+    def test_max_turns(self) -> None:
+        runner = ClaudeRunner()
+        req = self._make_request(max_turns=5)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--max-turns")
+        assert cmd[idx + 1] == "5"
+
+    def test_max_tokens_not_in_cmd(self) -> None:
+        runner = ClaudeRunner()
+        req = self._make_request(max_tokens=10000)
+        cmd = runner._build_command(req)
+        assert "--max-tokens" not in cmd
+        # max_tokens is only via prompt proxy
+        assert "10000" not in cmd
+
+    def test_max_cost_usd_not_in_cmd(self) -> None:
+        runner = ClaudeRunner()
+        req = self._make_request(max_cost_usd=0.50)
+        cmd = runner._build_command(req)
+        assert "--max-cost" not in cmd
+        assert "0.50" not in cmd
+
+
+# -- CodexRunner._build_command() new fields tests ----------------------------
+
+class TestCodexRunnerBuildCommandNewFields:
+    """Tests for CodexRunner._build_command() with new RunnerRequest fields."""
+
+    def _make_request(self, **kwargs):
+        from factory.runners.types import RunnerRequest
+        defaults = dict(system_prompt="sys", task="task", cwd="/tmp", skip_permissions=False)
+        defaults.update(kwargs)
+        return RunnerRequest(**defaults)
+
+    def test_permission_mode_auto(self) -> None:
+        from factory.runners.types import PermissionMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(permission_mode=PermissionMode.AUTO)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--ask-for-approval")
+        assert cmd[idx + 1] == "never"
+
+    def test_permission_mode_approve_writes(self) -> None:
+        from factory.runners.types import PermissionMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(permission_mode=PermissionMode.APPROVE_WRITES)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--ask-for-approval")
+        assert cmd[idx + 1] == "write"
+
+    def test_permission_mode_approve_all(self) -> None:
+        from factory.runners.types import PermissionMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(permission_mode=PermissionMode.APPROVE_ALL)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--ask-for-approval")
+        assert cmd[idx + 1] == "always"
+
+    def test_sandbox_mode_read_only(self) -> None:
+        from factory.runners.types import SandboxMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(sandbox_mode=SandboxMode.READ_ONLY)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--sandbox")
+        assert cmd[idx + 1] == "read-only"
+
+    def test_sandbox_mode_workspace_write(self) -> None:
+        from factory.runners.types import SandboxMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(sandbox_mode=SandboxMode.WORKSPACE_WRITE)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--sandbox")
+        assert cmd[idx + 1] == "workspace-write"
+
+    def test_sandbox_mode_none(self) -> None:
+        from factory.runners.types import SandboxMode
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        req = self._make_request(sandbox_mode=SandboxMode.NONE)
+        cmd = runner._build_command(req)
+        idx = cmd.index("--sandbox")
+        assert cmd[idx + 1] == "none"
+
+
+# -- OpenCodeRunner._build_command() new fields tests -------------------------
+
+class TestOpenCodeRunnerBuildCommand:
+    """Tests for OpenCodeRunner._build_command() model wiring."""
+
+    def test_model_in_command(self) -> None:
+        from factory.runners.types import RunnerRequest
+        from factory.runners.opencode import OpenCodeRunner
+        runner = OpenCodeRunner()
+        req = RunnerRequest(
+            system_prompt="sys", task="task", cwd="/tmp",
+            model="gpt-5",
+        )
+        cmd = runner._build_command(req)
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "gpt-5"
+
+    def test_no_model_omits_flag(self) -> None:
+        from factory.runners.types import RunnerRequest
+        from factory.runners.opencode import OpenCodeRunner
+        runner = OpenCodeRunner()
+        req = RunnerRequest(system_prompt="sys", task="task", cwd="/tmp")
+        cmd = runner._build_command(req)
+        assert "--model" not in cmd
+
+
+# -- CLIAdapter._inject_prompt_proxy() tests ----------------------------------
+
+class TestCLIAdapterPromptProxy:
+    """Tests for CLIAdapter base class _inject_prompt_proxy()."""
+
+    def _make_request(self, **kwargs):
+        from factory.runners.types import RunnerRequest
+        defaults = dict(system_prompt="sys", task="task", cwd="/tmp", skip_permissions=False)
+        defaults.update(kwargs)
+        return RunnerRequest(**defaults)
+
+    def _make_adapter(self):
+        """Create a concrete CLIAdapter subclass for testing the base class methods."""
+        from factory.runners.cli_adapter import CLIAdapter
+        from factory.runners.types import RunnerResponse
+
+        class _TestAdapter(CLIAdapter):
+            def _build_command(self, request, *, prompt_file=None):
+                return ["echo"]
+
+            def _parse_output(self, stdout, stderr, exit_code):
+                return RunnerResponse(output=stdout, exit_code=exit_code)
+
+        return _TestAdapter(name="test", display_name="Test")
+
+    def test_allowed_tools_in_proxy(self) -> None:
+        adapter = self._make_adapter()
+        req = self._make_request(allowed_tools=["Read", "Grep"])
+        proxy = adapter._inject_prompt_proxy(req)
+        assert "ONLY use these tools" in proxy
+        assert "Read" in proxy
+        assert "Grep" in proxy
+
+    def test_disallowed_tools_in_proxy(self) -> None:
+        adapter = self._make_adapter()
+        req = self._make_request(disallowed_tools=["Bash"])
+        proxy = adapter._inject_prompt_proxy(req)
+        assert "must NOT use these tools" in proxy
+        assert "Bash" in proxy
+
+    def test_max_turns_in_proxy(self) -> None:
+        adapter = self._make_adapter()
+        req = self._make_request(max_turns=5)
+        proxy = adapter._inject_prompt_proxy(req)
+        assert "within 5 conversation turns" in proxy
+
+    def test_sandbox_read_only_in_proxy(self) -> None:
+        from factory.runners.types import SandboxMode
+        adapter = self._make_adapter()
+        req = self._make_request(sandbox_mode=SandboxMode.READ_ONLY)
+        proxy = adapter._inject_prompt_proxy(req)
+        assert "READ-ONLY MODE" in proxy
+
+    def test_empty_proxy_when_no_features(self) -> None:
+        adapter = self._make_adapter()
+        req = self._make_request()
+        proxy = adapter._inject_prompt_proxy(req)
+        assert proxy == ""
+
+
+# -- CLIAdapter._write_system_prompt() tests ----------------------------------
+
+class TestCLIAdapterWriteSystemPrompt:
+    """Tests for CLIAdapter._write_system_prompt() temp file creation."""
+
+    def _make_adapter(self):
+        from factory.runners.cli_adapter import CLIAdapter
+        from factory.runners.types import RunnerResponse
+
+        class _TestAdapter(CLIAdapter):
+            def _build_command(self, request, *, prompt_file=None):
+                return ["echo"]
+
+            def _parse_output(self, stdout, stderr, exit_code):
+                return RunnerResponse(output=stdout, exit_code=exit_code)
+
+        return _TestAdapter(name="test", display_name="Test")
+
+    def test_writes_full_system_prompt(self) -> None:
+        from factory.runners.types import RunnerRequest
+        adapter = self._make_adapter()
+        req = RunnerRequest(system_prompt="Base prompt.", task="t", cwd="/tmp")
+        req.append_system_prompt("Extra section.")
+
+        path = adapter._write_system_prompt(req)
+        try:
+            content = Path(path).read_text()
+            assert "Base prompt." in content
+            assert "Extra section." in content
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_appends_prompt_proxy(self) -> None:
+        from factory.runners.types import RunnerRequest, SandboxMode
+        adapter = self._make_adapter()
+        req = RunnerRequest(
+            system_prompt="Base.",
+            task="t",
+            cwd="/tmp",
+            sandbox_mode=SandboxMode.READ_ONLY,
+        )
+
+        path = adapter._write_system_prompt(req)
+        try:
+            content = Path(path).read_text()
+            assert "Base." in content
+            assert "READ-ONLY MODE" in content
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_temp_file_exists(self) -> None:
+        from factory.runners.types import RunnerRequest
+        adapter = self._make_adapter()
+        req = RunnerRequest(system_prompt="sys", task="t", cwd="/tmp")
+
+        path = adapter._write_system_prompt(req)
+        try:
+            assert Path(path).exists()
+            assert Path(path).suffix == ".md"
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+    def test_no_proxy_separator_when_empty(self) -> None:
+        from factory.runners.types import RunnerRequest
+        adapter = self._make_adapter()
+        req = RunnerRequest(system_prompt="Just base.", task="t", cwd="/tmp")
+
+        path = adapter._write_system_prompt(req)
+        try:
+            content = Path(path).read_text()
+            assert content == "Just base."
+        finally:
+            Path(path).unlink(missing_ok=True)
