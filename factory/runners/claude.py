@@ -252,7 +252,7 @@ class ClaudeRunner(CLIAdapter):
         cmd = ["claude"]
         if prompt_file:
             cmd.extend(["--append-system-prompt-file", prompt_file])
-        cmd.extend(["-p", request.prompt, "--output-format", "stream-json"])
+        cmd.extend(["-p", request.task, "--output-format", "stream-json"])
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if request.model:

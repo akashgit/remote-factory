@@ -86,7 +86,7 @@ class TestACPAdapterHeadless:
             name="myagent",
             display_name="My Agent",
         )
-        request = RunnerRequest(prompt="test", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="test", cwd="/tmp")
         with patch("factory.runners.acp_adapter.ACP_AVAILABLE", False):
             resp = await adapter.headless(request)
         assert resp.exit_code == 1
@@ -100,11 +100,11 @@ class TestACPAdapterBuildCommand:
             name="myagent",
             display_name="My Agent",
         )
-        request = RunnerRequest(prompt="do the thing", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="do the thing", cwd="/tmp")
         cmd = adapter._build_command(request)
         assert cmd[0] == "my-agent"
         assert cmd[1] == "--headless"
-        assert "do the thing" in cmd
+        assert any("do the thing" in arg for arg in cmd)
 
     def test_build_command_with_prompt_file(self) -> None:
         adapter = ACPAdapter(
@@ -112,7 +112,7 @@ class TestACPAdapterBuildCommand:
             name="myagent",
             display_name="My Agent",
         )
-        request = RunnerRequest(prompt="hello", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="hello", cwd="/tmp")
         cmd = adapter._build_command(request, prompt_file="/tmp/prompt.md")
         assert "/tmp/prompt.md" in cmd
 
@@ -141,11 +141,11 @@ class TestCodexRunnerV2:
 
     def test_build_command_basic(self) -> None:
         runner = CodexRunner()
-        request = RunnerRequest(prompt="say hello", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="say hello", cwd="/tmp")
         cmd = runner._build_command(request)
         assert cmd[0] == "codex"
         assert cmd[1] == "exec"
-        assert "say hello" in cmd
+        assert any("say hello" in arg for arg in cmd)
         assert "--sandbox" in cmd
         assert "workspace-write" in cmd
         assert "--ask-for-approval" in cmd
@@ -153,14 +153,14 @@ class TestCodexRunnerV2:
 
     def test_build_command_with_model(self) -> None:
         runner = CodexRunner()
-        request = RunnerRequest(prompt="test", cwd="/tmp", model="gpt-5.4")
+        request = RunnerRequest(system_prompt="sys", task="test", cwd="/tmp", model="gpt-5.4")
         cmd = runner._build_command(request)
         assert "--model" in cmd
         assert "gpt-5.4" in cmd
 
     def test_build_command_no_model(self) -> None:
         runner = CodexRunner()
-        request = RunnerRequest(prompt="test", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="test", cwd="/tmp")
         cmd = runner._build_command(request)
         assert "--model" not in cmd
 
@@ -174,7 +174,7 @@ class TestCodexRunnerV2:
         monkeypatch.setenv("CODEX_API_KEY", "my-key")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         runner = CodexRunner()
-        request = RunnerRequest(prompt="test", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="test", cwd="/tmp")
         env = runner._build_env(request)
         assert env["OPENAI_API_KEY"] == "my-key"
         assert "VIRTUAL_ENV" not in env
@@ -183,7 +183,7 @@ class TestCodexRunnerV2:
         monkeypatch.setenv("CODEX_API_KEY", "codex-key")
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
         runner = CodexRunner()
-        request = RunnerRequest(prompt="test", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="test", cwd="/tmp")
         env = runner._build_env(request)
         assert env["OPENAI_API_KEY"] == "openai-key"
 
@@ -224,9 +224,10 @@ class TestOpenCodeRunner:
 
     def test_build_command(self) -> None:
         runner = OpenCodeRunner()
-        request = RunnerRequest(prompt="analyze this code", cwd="/tmp")
+        request = RunnerRequest(system_prompt="sys", task="analyze this code", cwd="/tmp")
         cmd = runner._build_command(request)
-        assert cmd == ["opencode", "run", "--format", "json", "analyze this code"]
+        assert cmd[:4] == ["opencode", "run", "--format", "json"]
+        assert "analyze this code" in cmd[4]
 
     def test_parse_output(self) -> None:
         runner = OpenCodeRunner()

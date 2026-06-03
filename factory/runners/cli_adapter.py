@@ -92,7 +92,7 @@ class CLIAdapter(abc.ABC):
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
         )
         try:
-            prompt_file.write(request.prompt)
+            prompt_file.write(request.system_prompt)
             prompt_file.close()
 
             cmd = self._build_command(request, prompt_file=prompt_file.name)
@@ -148,7 +148,7 @@ class CLIAdapter(abc.ABC):
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
         )
         try:
-            prompt_file.write(request.prompt)
+            prompt_file.write(request.system_prompt)
             prompt_file.close()
 
             cmd = self._build_command(request, prompt_file=prompt_file.name)

@@ -61,6 +61,25 @@ IDENTITY_REANCHOR = """\
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
+def assemble_system_prompt(
+    system_prompt: str,
+    playbook: str | None = None,
+    user_profile: str | None = None,
+) -> str:
+    """Assemble the system prompt from base prompt, playbook, and profile.
+
+    This is the agent role definition that gets delivered via the runner's
+    system prompt mechanism (e.g. --append-system-prompt-file for Claude).
+    The task is kept separate so each runner can deliver it appropriately.
+    """
+    parts = [system_prompt]
+    if playbook:
+        parts.append(f"---\n\nBehavioral Playbook (auto-evolved)\n\n{playbook}")
+    if user_profile:
+        parts.append(f"---\n\nUser Profile\n\n{user_profile}")
+    return "\n\n".join(parts)
+
+
 def assemble_prompt(
     system_prompt: str,
     playbook: str | None,
@@ -69,16 +88,11 @@ def assemble_prompt(
 ) -> str:
     """Assemble a complete prompt from system prompt, playbook, profile, and task.
 
-    Centralizes prompt assembly that was previously duplicated across runners.
-    Runners receive the result as a single pre-assembled string via RunnerRequest.prompt.
+    For runners that don't separate system prompt from task (e.g. Codex, Bob).
+    Claude uses assemble_system_prompt() + separate task delivery.
     """
-    parts = [system_prompt]
-    if playbook:
-        parts.append(f"---\n\nBehavioral Playbook (auto-evolved)\n\n{playbook}")
-    if user_profile:
-        parts.append(f"---\n\nUser Profile\n\n{user_profile}")
-    parts.append(f"---\n\n## Current Task\n\n{task}")
-    return "\n\n".join(parts)
+    base = assemble_system_prompt(system_prompt, playbook, user_profile)
+    return f"{base}\n\n---\n\n## Current Task\n\n{task}"
 
 
 def resolve_prompt(

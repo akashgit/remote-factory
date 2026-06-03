@@ -86,8 +86,9 @@ class TestRunnerInfo:
 
 class TestRunnerRequest:
     def test_defaults(self):
-        req = RunnerRequest(prompt="do stuff", cwd="/tmp")
-        assert req.prompt == "do stuff"
+        req = RunnerRequest(system_prompt="You are a builder.", task="Fix the bug", cwd="/tmp")
+        assert req.system_prompt == "You are a builder."
+        assert req.task == "Fix the bug"
         assert req.cwd == "/tmp"
         assert req.timeout == 300
         assert req.model is None
@@ -96,9 +97,16 @@ class TestRunnerRequest:
         assert req.skip_permissions is True
         assert req.env_overrides == {}
 
+    def test_prompt_property_combines_system_and_task(self):
+        req = RunnerRequest(system_prompt="System.", task="Do stuff", cwd="/tmp")
+        assert "System." in req.prompt
+        assert "Do stuff" in req.prompt
+        assert "Current Task" in req.prompt
+
     def test_full(self):
         req = RunnerRequest(
-            prompt="system prompt",
+            system_prompt="system prompt",
+            task="the task",
             cwd="/project",
             timeout=600,
             model="opus",

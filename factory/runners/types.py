@@ -33,7 +33,8 @@ class RunnerInfo:
 
 @dataclass
 class RunnerRequest:
-    prompt: str                                  # Fully assembled (system + playbook + task)
+    system_prompt: str                           # Agent role definition (system prompt + playbook)
+    task: str                                    # User-facing task description
     cwd: str                                     # Working directory
     timeout: int = 300
     model: str | None = None
@@ -41,6 +42,11 @@ class RunnerRequest:
     role: str | None = None                      # Agent role (for logging prefix)
     skip_permissions: bool = True
     env_overrides: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def prompt(self) -> str:
+        """Fully assembled prompt (system + task). For runners that don't separate them."""
+        return f"{self.system_prompt}\n\n---\n\n## Current Task\n\n{self.task}"
 
 
 # -- Usage --------------------------------------------------------------------

@@ -184,7 +184,8 @@ class TestClaudeRunner:
                 mock_exec.return_value = mock_proc
 
                 req = RunnerRequest(
-                    prompt="system prompt",
+                    system_prompt="system prompt",
+                    task="do stuff",
                     cwd=str(tmp_path),
                     model="claude-sonnet-4-6",
                 )
@@ -202,7 +203,8 @@ class TestClaudeRunner:
 
         runner = ClaudeRunner()
         req = RunnerRequest(
-            prompt="test prompt",
+            system_prompt="test system",
+            task="test task",
             cwd="/tmp/test",
             model="claude-opus-4-6",
             skip_permissions=True,
@@ -215,7 +217,7 @@ class TestClaudeRunner:
         assert "/tmp/prompt.md" in cmd
         assert "-p" in cmd
         p_idx = cmd.index("-p")
-        assert cmd[p_idx + 1] == "test prompt"
+        assert cmd[p_idx + 1] == "test task"  # task goes via -p, system via file
         assert "--output-format" in cmd
         assert "stream-json" in cmd
         assert "--dangerously-skip-permissions" in cmd
@@ -230,7 +232,8 @@ class TestClaudeRunner:
 
         runner = ClaudeRunner()
         req = RunnerRequest(
-            prompt="hello",
+            system_prompt="sys",
+            task="hello",
             cwd="/tmp",
             skip_permissions=False,
         )

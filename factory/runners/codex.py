@@ -86,7 +86,7 @@ class CodexRunner(CLIAdapter):
         *,
         prompt_file: str | None = None,
     ) -> list[str]:
-        cmd = ["codex", "exec", request.prompt,
+        cmd = ["codex", "exec", request.prompt,  # .prompt combines system+task
                "--sandbox", "workspace-write",
                "--ask-for-approval", "never"]
         if request.model:
