@@ -120,13 +120,18 @@ class TestCodexAuth:
 
 
 class TestCodexEnvMapping:
+    def _build_env(self, **overrides: str) -> dict[str, str]:
+        """Helper: build env via CodexRunner._build_env with a dummy Request."""
+        from factory.runners.abstraction import Request
+
+        request = Request(system_prompt="test", task="test", cwd="/tmp", **overrides)
+        return CodexRunner()._build_env(request)
+
     def test_codex_key_mapped_to_openai(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "my-codex-key")
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
 
-        from factory.runners.codex import _make_codex_env
-
-        env = _make_codex_env()
+        env = self._build_env()
         assert env["OPENAI_API_KEY"] == "my-codex-key"
         assert "VIRTUAL_ENV" not in env
 
@@ -134,17 +139,13 @@ class TestCodexEnvMapping:
         monkeypatch.setenv("CODEX_API_KEY", "codex-key")
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
-        from factory.runners.codex import _make_codex_env
-
-        env = _make_codex_env()
+        env = self._build_env()
         assert env["OPENAI_API_KEY"] == "openai-key"
 
     def test_virtual_env_stripped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
 
-        from factory.runners.codex import _make_codex_env
-
-        env = _make_codex_env()
+        env = self._build_env()
         assert "VIRTUAL_ENV" not in env
 
 
@@ -158,7 +159,7 @@ class TestCodexHeadless:
         runner = CodexRunner()
 
         with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"output", b"")
 
@@ -200,7 +201,7 @@ class TestCodexHeadless:
         runner = CodexRunner()
 
         with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
@@ -232,7 +233,7 @@ class TestCodexHeadless:
         runner = CodexRunner()
 
         with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
@@ -263,7 +264,7 @@ class TestCodexHeadless:
         runner = CodexRunner()
 
         with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
@@ -292,7 +293,7 @@ class TestCodexHeadless:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
-        with patch("factory.runners.codex.asyncio.wait_for", side_effect=aio.TimeoutError):
+        with patch("factory.runners.abstraction.asyncio.wait_for", side_effect=aio.TimeoutError):
             with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
                 mock_proc = AsyncMock()
                 mock_proc.kill = AsyncMock()
@@ -345,7 +346,7 @@ class TestCodexHeadless:
         runner = CodexRunner()
 
         with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
@@ -377,9 +378,9 @@ class TestCodexStreaming:
 
         runner = CodexRunner()
 
-        with patch("factory.runners.codex.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b"output\n", b"")
 
@@ -412,9 +413,9 @@ class TestCodexStreaming:
 
         runner = CodexRunner()
 
-        with patch("factory.runners.codex.should_stream", return_value=True):
+        with patch("factory.runners.abstraction.should_stream", return_value=True):
             with patch(
-                "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+                "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b"output\n", b"")
 
