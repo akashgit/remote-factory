@@ -12,15 +12,13 @@ Verified against codex-cli 0.136.0. Key differences from documentation:
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
 import subprocess
-import tempfile
 from pathlib import Path
 
-from factory.runners._stream import should_stream, stream_subprocess
+from factory.models import AgentUsage
 from factory.runners.abstraction import (
     AgentRunner,
     Capability,
@@ -95,7 +93,7 @@ _CODEX_IDENTITY = RunnerIdentity(
 )
 
 
-def _parse_codex_jsonl(raw: str) -> tuple[str, "AgentUsage | None"]:
+def _parse_codex_jsonl(raw: str) -> tuple[str, AgentUsage | None]:
     """Parse Codex JSONL output into (text, usage).
 
     Codex --json emits lines like:
@@ -106,8 +104,6 @@ def _parse_codex_jsonl(raw: str) -> tuple[str, "AgentUsage | None"]:
 
     We extract text from item.completed events and usage from turn.completed.
     """
-    from factory.models import AgentUsage
-
     texts: list[str] = []
     usage = None
 
@@ -237,7 +233,7 @@ class CodexRunner(AgentRunner):
         role: str = "unknown",
         session_name: str | None = None,
         tmux_persist: bool = False,
-    ) -> tuple[str, int, "AgentUsage | None"]:
+    ) -> tuple[str, int, AgentUsage | None]:
         """Run a headless Codex CLI invocation (backward-compat shim)."""
         _ = session_name
         if tmux_persist:
