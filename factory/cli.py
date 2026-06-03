@@ -723,6 +723,38 @@ def cmd_home(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_health(args: argparse.Namespace) -> int:
+    """Check health of all registered runners and print status table."""
+    from factory.runners import _RUNNERS, BobRunner
+
+    from factory.user_config import resolve
+
+    default_runner = resolve("runner", env_var="FACTORY_RUNNER", default="claude") or "claude"
+
+    default_ok = False
+
+    for name, cls in _RUNNERS.items():
+        try:
+            if cls is BobRunner:
+                runner = cls()
+            else:
+                runner = cls()
+            ok, msg = _run(runner.check_health())
+        except Exception as e:
+            ok, msg = False, str(e)
+
+        if name == default_runner:
+            default_ok = ok
+
+        if ok:
+            status = "\033[32mOK\033[0m"
+        else:
+            status = "\033[31mFAIL\033[0m"
+        print(f"  {name:<12} {status}    {msg}")
+
+    return 0 if default_ok else 1
+
+
 def cmd_detect(args: argparse.Namespace) -> int:
     from factory.state import detect_state
 
@@ -3601,6 +3633,9 @@ def build_parser() -> argparse.ArgumentParser:
     # home
     sub.add_parser("home", help="Print factory installation root directory")
 
+    # health
+    sub.add_parser("health", help="Check health of all registered runners")
+
     # detect
     p = sub.add_parser("detect", help="Print project state")
     p.add_argument("path", help="Path to the project")
@@ -4120,6 +4155,7 @@ def main(argv: list[str] | None = None) -> int:
 
     handlers = {
         "home": cmd_home,
+        "health": cmd_health,
         "detect": cmd_detect,
         "discover": cmd_discover,
         "init": cmd_init,
