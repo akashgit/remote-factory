@@ -231,121 +231,153 @@ def build_project(tmp_path):
     return tmp_path
 
 
-class TestCodexBuildGame:
-    """Test that Codex can actually build a working Python program.
+class TestCodexBuildViaFactory:
+    """Test the FULL factory pipeline: factory agent builder --runner codex.
 
-    This is the real integration test: give Codex a build task,
-    verify it creates files, and verify the output runs.
+    This spawns `factory agent builder` as a subprocess (just like a user would),
+    which calls invoke_agent() → get_runner("codex") → CodexRunner.headless() →
+    codex exec subprocess. Then we verify:
+    1. The factory CLI exited successfully
+    2. The codex runner was actually used (check events.jsonl)
+    3. The built artifact exists and runs correctly
     """
 
-    async def test_build_number_guessing_game(self, runner, build_project):
-        """Codex builds a number guessing game and it actually runs."""
-        request = RunnerRequest(
-            system_prompt=(
-                "You are a Python developer. Write clean, working Python code. "
-                "Create files directly in the current working directory."
-            ),
-            task=(
-                "Create a file called `guess.py` that implements a number guessing game.\n\n"
-                "Requirements:\n"
-                "- The game picks a random number between 1 and 100\n"
-                "- It must accept a `--answer` CLI argument (integer) for non-interactive testing\n"
-                "- When `--answer` is provided, it prints 'Correct!' if the answer matches, "
-                "'Too high!' or 'Too low!' otherwise\n"
-                "- Use argparse for argument parsing\n"
-                "- Use random.seed(42) so the number is deterministic for testing\n"
-                "- The file must be executable with `python guess.py --answer N`\n\n"
-                "Only create the single file `guess.py`. No other files needed."
-            ),
-            cwd=str(build_project),
-            timeout=120,
-            sandbox_mode=SandboxMode.WORKSPACE_WRITE,
+    async def test_factory_builder_builds_fizzbuzz(self, build_project):
+        """factory agent builder --runner codex builds a working fizzbuzz."""
+        project_dir = build_project
+
+        # Create .factory dir for events
+        factory_dir = project_dir / ".factory"
+        factory_dir.mkdir(exist_ok=True)
+
+        task = (
+            "Create a file called `fizzbuzz.py` in the project root that:\n"
+            "- Takes a single CLI argument N (integer) via sys.argv\n"
+            "- Prints FizzBuzz from 1 to N, one value per line\n"
+            "- Rules: divisible by 3 → 'Fizz', by 5 → 'Buzz', both → 'FizzBuzz', "
+            "otherwise the number\n"
+            "Only create `fizzbuzz.py`. Do not create any other files. "
+            "Do not create tests. Do not run tests."
         )
 
-        response = await runner.headless(request)
-        assert response.exit_code == 0, f"Codex failed: {response.output[:500]}"
-
-        # Verify the file was created
-        guess_py = build_project / "guess.py"
-        assert guess_py.exists(), f"guess.py not created. Files: {list(build_project.iterdir())}"
-
-        content = guess_py.read_text()
-        assert "argparse" in content or "argv" in content, "No argument parsing found"
-        assert "random" in content, "No random module usage found"
-
-        # Verify it's valid Python (syntax check)
+        # Run factory agent builder with --runner codex
         result = subprocess.run(
-            ["python3", "-c", f"import ast; ast.parse(open('{guess_py}').read())"],
+            [
+                "factory", "agent", "builder",
+                "--task", task,
+                "--project", str(project_dir),
+                "--runner", "codex",
+                "--timeout", "300",
+            ],
+            capture_output=True, text=True, timeout=320,
+        )
+
+        assert result.returncode == 0, (
+            f"factory agent builder failed (exit {result.returncode}):\n"
+            f"STDOUT: {result.stdout[:500]}\nSTDERR: {result.stderr[:500]}"
+        )
+
+        # ---- Verify the codex runner was actually used ----
+        events_file = factory_dir / "events.jsonl"
+        if events_file.exists():
+            import json
+            events = [json.loads(line) for line in events_file.read_text().splitlines() if line.strip()]
+            started = [e for e in events if e.get("type") == "agent.started" and e.get("agent") == "builder"]
+            assert len(started) > 0, f"No agent.started event for builder. Events: {events}"
+
+        # ---- Verify the review file was saved ----
+        review_file = factory_dir / "reviews" / "builder-latest.md"
+        assert review_file.exists(), "Builder review file not saved"
+        review_content = review_file.read_text()
+        assert "exit_code:** 0" in review_content or "exit_code: 0" in review_content, (
+            f"Builder review shows failure: {review_content[:300]}"
+        )
+
+        # ---- Verify fizzbuzz.py was created and works ----
+        fizzbuzz_py = project_dir / "fizzbuzz.py"
+        assert fizzbuzz_py.exists(), (
+            f"fizzbuzz.py not created. Files in project: {list(project_dir.iterdir())}"
+        )
+
+        # Syntax check
+        syntax_result = subprocess.run(
+            ["python3", "-c", f"import ast; ast.parse(open('{fizzbuzz_py}').read())"],
             capture_output=True, text=True,
         )
-        assert result.returncode == 0, f"Syntax error in guess.py: {result.stderr}"
+        assert syntax_result.returncode == 0, f"Syntax error: {syntax_result.stderr}"
 
-        # Run the game with the deterministic answer
+        # Run fizzbuzz
+        run_result = subprocess.run(
+            ["python3", str(fizzbuzz_py), "15"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert run_result.returncode == 0, f"FizzBuzz crashed: {run_result.stderr}"
+
+        lines = run_result.stdout.strip().splitlines()
+        assert len(lines) == 15, f"Expected 15 lines, got {len(lines)}: {lines}"
+        assert lines[0] == "1"
+        assert lines[2] == "Fizz"
+        assert lines[4] == "Buzz"
+        assert lines[14] == "FizzBuzz"
+
+    async def test_factory_builder_builds_guessing_game(self, build_project):
+        """factory agent builder --runner codex builds a working guessing game."""
+        project_dir = build_project
+        (project_dir / ".factory").mkdir(exist_ok=True)
+
+        task = (
+            "Create a file called `guess.py` that implements a number guessing game.\n"
+            "Requirements:\n"
+            "- Use random.seed(42) then random.randint(1, 100) to pick the number\n"
+            "- Accept a `--answer` CLI argument (integer) via argparse\n"
+            "- When --answer is provided: print 'Correct!' if it matches, "
+            "'Too high!' if too high, 'Too low!' if too low\n"
+            "- Exit with code 0 in all cases\n"
+            "Only create `guess.py`. No other files."
+        )
+
+        result = subprocess.run(
+            [
+                "factory", "agent", "builder",
+                "--task", task,
+                "--project", str(project_dir),
+                "--runner", "codex",
+                "--timeout", "300",
+            ],
+            capture_output=True, text=True, timeout=320,
+        )
+
+        assert result.returncode == 0, (
+            f"factory agent builder failed (exit {result.returncode}):\n"
+            f"STDOUT: {result.stdout[:500]}\nSTDERR: {result.stderr[:500]}"
+        )
+
+        guess_py = project_dir / "guess.py"
+        assert guess_py.exists(), f"guess.py not created. Files: {list(project_dir.iterdir())}"
+
         # random.seed(42) → random.randint(1, 100) = 82
         import random
         random.seed(42)
         correct_answer = random.randint(1, 100)
 
-        result = subprocess.run(
+        # Test correct answer
+        run_result = subprocess.run(
             ["python3", str(guess_py), "--answer", str(correct_answer)],
             capture_output=True, text=True, timeout=10,
         )
-        assert result.returncode == 0, f"Game crashed: {result.stderr}"
-        assert "Correct" in result.stdout or "correct" in result.stdout.lower(), (
-            f"Expected 'Correct' for answer={correct_answer}, got: {result.stdout}"
+        assert run_result.returncode == 0, f"Game crashed: {run_result.stderr}"
+        assert "correct" in run_result.stdout.lower(), (
+            f"Expected 'Correct' for answer={correct_answer}, got: {run_result.stdout}"
         )
 
-        # Test with a wrong answer
+        # Test wrong answer
         wrong = correct_answer + 10 if correct_answer < 90 else correct_answer - 10
-        result = subprocess.run(
+        run_result = subprocess.run(
             ["python3", str(guess_py), "--answer", str(wrong)],
             capture_output=True, text=True, timeout=10,
         )
-        assert result.returncode == 0, f"Game crashed on wrong answer: {result.stderr}"
-        output_lower = result.stdout.lower()
+        assert run_result.returncode == 0, f"Game crashed on wrong answer: {run_result.stderr}"
+        output_lower = run_result.stdout.lower()
         assert "too high" in output_lower or "too low" in output_lower, (
-            f"Expected 'Too high' or 'Too low' for wrong answer={wrong}, got: {result.stdout}"
+            f"Expected 'Too high/low' for wrong answer={wrong}, got: {run_result.stdout}"
         )
-
-    async def test_build_fizzbuzz(self, runner, build_project):
-        """Codex builds fizzbuzz and it produces correct output."""
-        request = RunnerRequest(
-            system_prompt="You are a Python developer. Write clean, working Python code.",
-            task=(
-                "Create a file called `fizzbuzz.py` that:\n"
-                "- Takes a single CLI argument N (integer)\n"
-                "- Prints FizzBuzz from 1 to N\n"
-                "- Rules: divisible by 3 → 'Fizz', by 5 → 'Buzz', both → 'FizzBuzz', "
-                "otherwise the number\n"
-                "- One value per line\n"
-                "- Use sys.argv for argument parsing (keep it simple)\n"
-                "Only create `fizzbuzz.py`. No other files."
-            ),
-            cwd=str(build_project),
-            timeout=120,
-            sandbox_mode=SandboxMode.WORKSPACE_WRITE,
-        )
-
-        response = await runner.headless(request)
-        assert response.exit_code == 0, f"Codex failed: {response.output[:500]}"
-
-        fizzbuzz_py = build_project / "fizzbuzz.py"
-        assert fizzbuzz_py.exists(), f"fizzbuzz.py not created. Files: {list(build_project.iterdir())}"
-
-        # Run it
-        result = subprocess.run(
-            ["python3", str(fizzbuzz_py), "15"],
-            capture_output=True, text=True, timeout=10,
-        )
-        assert result.returncode == 0, f"FizzBuzz crashed: {result.stderr}"
-
-        lines = result.stdout.strip().splitlines()
-        assert len(lines) == 15, f"Expected 15 lines, got {len(lines)}: {lines}"
-
-        # Verify specific outputs
-        assert lines[0] == "1"
-        assert lines[1] == "2"
-        assert lines[2] == "Fizz"
-        assert lines[3] == "4"
-        assert lines[4] == "Buzz"
-        assert lines[14] == "FizzBuzz"

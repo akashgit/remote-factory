@@ -278,7 +278,8 @@ class CodexRunner(CLIAdapter):
             stdout, code = self._dry_run_response(role, Path(str(cwd)), task)
             return stdout, code, None
 
-        _check_auth()
+        # Note: codex uses `codex login` for auth — env vars are optional fallback.
+        # Don't fail here if env vars are missing; let codex itself handle auth errors.
 
         full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
 
@@ -346,8 +347,6 @@ class CodexRunner(CLIAdapter):
             print("[DRY-RUN] Would exec: codex (interactive)")
             print(f"[DRY-RUN] Task: {task[:200]}...")
             return 0
-
-        _check_auth()
 
         full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
 

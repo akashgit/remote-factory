@@ -102,21 +102,31 @@ class TestCodexAuth:
         _check_auth()
         assert codex_module._auth_checked is True
 
-    async def test_headless_fails_without_key(
+    async def test_headless_no_env_key_does_not_raise(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Codex uses `codex login` for auth — missing env vars should not raise."""
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-        with pytest.raises(CodexAuthError):
-            await runner.headless(
-                prompt="Test",
-                task="Test",
-                cwd=tmp_path,
-                role="researcher",
-            )
+        # Should not raise CodexAuthError — codex handles its own auth
+        # Mock the subprocess so we don't actually call codex
+        with patch(
+            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_proc = AsyncMock()
+            mock_proc.returncode = 0
+            mock_stream.return_value = (b"ok", b"")
+            with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+                result = await runner.headless(
+                    prompt="Test",
+                    task="Test",
+                    cwd=tmp_path,
+                    role="researcher",
+                )
+        assert result[1] == 0  # exit code
 
 
 class TestCodexEnvMapping:
