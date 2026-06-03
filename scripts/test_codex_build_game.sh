@@ -22,6 +22,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FACTORY_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Load API key from .env if present
+if [ -f "$FACTORY_ROOT/.env" ]; then
+    set -a
+    source "$FACTORY_ROOT/.env"
+    set +a
+fi
+
+# Use a cheap/fast model (override with MODEL env var)
+MODEL="${MODEL:-gpt-5.4-mini}"
+
 # Use the local worktree's factory, not the globally installed one.
 FACTORY="uv run --project $FACTORY_ROOT factory"
 
@@ -96,6 +106,7 @@ echo ""
 echo "================================================================"
 echo "  FACTORY CEO RUN — ALL CODEX"
 echo "  Runner: codex (CEO + all specialist agents)"
+echo "  Model:  $MODEL"
 echo "  Mode:   build (new project from spec)"
 echo "================================================================"
 echo ""
@@ -125,7 +136,7 @@ EVENTS_LOG="$PROJECT_DIR/.factory/events.jsonl"
 EVENT_WATCHER_PID=$!
 trap "kill $EVENT_WATCHER_PID 2>/dev/null" EXIT
 
-$FACTORY ceo "$PROJECT_DIR" --runner codex --headless 2>&1 | while IFS= read -r line; do
+$FACTORY ceo "$PROJECT_DIR" --runner codex --model "$MODEL" --headless 2>&1 | while IFS= read -r line; do
     echo "  [factory] $line"
 done
 
