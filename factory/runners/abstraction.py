@@ -2,24 +2,26 @@
 
 Runner Capability Matrix
 ========================
-| Capability            | Claude  | Codex   | OpenCode | Implementation                                     |
-|-----------------------|---------|---------|----------|----------------------------------------------------|
-| model_override        | native  | native  | native   | --model flag                                       |
-| system_prompt_file    | native  | proxy   | proxy    | temp file vs inline                                |
-| append_system_prompt  | native  | proxy   | proxy    | --append-system-prompt vs fold into prompt          |
-| tool_filtering        | native  | proxy   | proxy    | --allowedTools vs prompt injection                  |
-| permission_modes      | native  | partial | partial  | --permission-mode vs --sandbox / --dangerously-skip |
-| budget_cap            | native  | proxy   | proxy    | --max-budget-usd vs accept silently                 |
-| effort_control        | native  | proxy   | native   | --effort vs prompt injection vs --variant           |
-| structured_output     | native  | proxy   | native   | --output-format vs raw text vs --format             |
-| session_resume        | native  | no      | native   | --resume/--name vs --continue/--session             |
-| streaming             | native  | no      | no       | subprocess streaming                                |
-| interactive           | native  | native  | native   | inherited stdio                                     |
-| sandboxing            | no      | native  | no       | --sandbox                                           |
-| mcp_config            | native  | no      | no       | --mcp-config                                        |
-| usage_tracking        | native  | no      | partial  | JSON parse vs opencode stats                        |
+| Capability            | Claude Code              | Codex 0.136.0                   |
+|-----------------------|--------------------------|---------------------------------|
+| model_override        | --model                  | --model                         |
+| system_prompt_file    | --append-system-prompt-file | inline in exec arg           |
+| append_system_prompt  | --append-system-prompt   | proxy: folded into prompt       |
+| tool_filtering        | --allowedTools/--disallowedTools | proxy: prompt injection  |
+| permission_modes      | --permission-mode (6 modes) | --sandbox (3 levels)         |
+| budget_cap            | --max-budget-usd         | accepted silently               |
+| effort_control        | --effort                 | proxy: prompt injection         |
+| structured_output     | --output-format json     | --json (JSONL events)           |
+| session_resume        | --name / --resume        | not supported                   |
+| streaming             | subprocess streaming     | not supported                   |
+| interactive           | inherited stdio          | inherited stdio                 |
+| sandboxing            | not supported            | --sandbox r/o, ws-write, full   |
+| mcp_config            | --mcp-config             | not supported                   |
+| usage_tracking        | JSON usage block         | JSONL turn.completed event      |
+| nesting               | native (no conflicts)    | CEO: danger-full-access sandbox |
 
-native = CLI flag, proxy = emulated via prompt/workaround, partial = limited support, no = not available
+native = real CLI flag, proxy = emulated via prompt/workaround
+Full reference: docs/runner-abstraction.md
 """
 
 from __future__ import annotations
