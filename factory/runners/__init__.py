@@ -7,16 +7,20 @@ from typing import Literal
 
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.abstraction import AgentRunner, Request, Response
+from factory.runners.aider import AiderRunner
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
+from factory.runners.opencode import OpenCodeRunner
 from factory.runners.protocol import Runner
 
 __all__ = [
     "AgentRunner",
+    "AiderRunner",
     "BobRunner",
     "ClaudeRunner",
     "CodexRunner",
+    "OpenCodeRunner",
     "Request",
     "Response",
     "Runner",
@@ -28,16 +32,18 @@ __all__ = [
     "stream_subprocess",
 ]
 
-RunnerName = Literal["claude", "bob", "codex"]
+RunnerName = Literal["claude", "bob", "codex", "opencode", "aider"]
 
-_RUNNERS: dict[str, type[Runner]] = {
-    "claude": ClaudeRunner,  # type: ignore[dict-item]
-    "bob": BobRunner,  # type: ignore[dict-item]
-    "codex": CodexRunner,  # type: ignore[dict-item]
+_RUNNERS: dict[str, type[AgentRunner]] = {
+    "claude": ClaudeRunner,
+    "bob": BobRunner,
+    "codex": CodexRunner,
+    "opencode": OpenCodeRunner,
+    "aider": AiderRunner,
 }
 
 
-def get_runner(name: str | None = None, project_path: Path | None = None) -> Runner:
+def get_runner(name: str | None = None, project_path: Path | None = None) -> AgentRunner:
     """Get a runner by name.
 
     Resolution order:
@@ -46,7 +52,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     3. Default to "claude"
 
     Args:
-        name: Runner name ("claude", "bob", or "codex").
+        name: Runner name ("claude", "bob", "codex", "opencode", or "aider").
         project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:
@@ -62,10 +68,10 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
         raise ValueError(f"Unknown runner '{resolved}'. Available: {available}")
 
     if resolved == "bob":
-        return BobRunner(project_path=project_path)  # type: ignore[return-value]
+        return BobRunner(project_path=project_path)
     return _RUNNERS[resolved]()
 
 
-def register_runner(name: str, runner_class: type[Runner]) -> None:
-    """Register a runner implementation (used by bob module on import)."""
+def register_runner(name: str, runner_class: type[AgentRunner]) -> None:
+    """Register a runner implementation."""
     _RUNNERS[name] = runner_class

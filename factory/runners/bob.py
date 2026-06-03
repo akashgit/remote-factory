@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import shutil
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-import subprocess as _subprocess
 
-from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.abstraction import (
+    AgentRunner,
+    Request,
+    Response,
+    RunnerIdentity,
+)
 from factory.runners.usage import (
     CeilingExceededError,
     check_ceilings,
@@ -24,6 +27,17 @@ _auth_checked = False
 
 # File where we persist the API key for nested subagent spawns
 _AUTH_FILE_NAME = ".bob_auth"
+
+_IDENTITY = RunnerIdentity(
+    name="bob",
+    display_name="Bob Shell",
+    binary="bob",
+    capabilities=set(),
+)
+
+# Bob Shell only supports built-in modes: plan, code, advanced, ask.
+# We use 'code' mode for agent work; the role is injected via the prompt.
+_BOB_CHAT_MODE = "code"
 
 
 class BobAuthError(Exception):
@@ -154,12 +168,14 @@ def _make_env_with_bob_path() -> dict[str, str]:
     return env
 
 
-# Bob Shell only supports built-in modes: plan, code, advanced, ask.
-# We use 'code' mode for agent work; the role is injected via the prompt.
-_BOB_CHAT_MODE = "code"
+def _sanitize_ansi(text: str) -> str:
+    """Strip ANSI escape sequences from text."""
+    import re
+
+    return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", text)
 
 
-class BobRunner:
+class BobRunner(AgentRunner):
     """Runner implementation for Bob Shell CLI."""
 
     name: str = "bob"
@@ -179,137 +195,98 @@ class BobRunner:
         if cycle_start is not None:
             self.cycle_start = cycle_start
         elif project_path is not None:
-            # Lazy import: ceo_completion imports runners, so module-level import would cycle
             from factory.ceo_completion import read_cycle_state
 
             state = read_cycle_state(project_path)
             self.cycle_start = state.started_at if state else datetime.now(timezone.utc)
         else:
             self.cycle_start = datetime.now(timezone.utc)
-        self._role: str = "unknown"
 
-    async def headless(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        timeout: float = 600.0,
-        model: str | None = None,
-        dangerously_skip_permissions: bool = True,
-        role: str = "unknown",
-        session_name: str | None = None,
-        tmux_persist: bool = False,
-    ) -> tuple[str, int, None]:
-        """Run a headless Bob Shell invocation.
+    @property
+    def identity(self) -> RunnerIdentity:
+        return _IDENTITY
 
-        Returns (stdout, return_code, None). Bob has no token telemetry.
-        """
-        _ = session_name
-        if tmux_persist:
-            logger.warning("tmux_persist not supported with bob runner")
-        self._role = role
-        project_path = self._find_project_path(cwd)
+    def _build_command(
+        self, request: Request, *, prompt_file: str | None = None
+    ) -> list[str]:
+        cmd = ["bob", "-p", request.prompt, f"--chat-mode={_BOB_CHAT_MODE}"]
+        if request.skip_permissions:
+            cmd.append("--yolo")
+        return cmd
 
-        # Persist key for nested subagent spawns (before dry-run check so file exists)
+    def _build_env(self, request: Request) -> dict[str, str]:
+        env = _make_env_with_bob_path()
+        # Strip VIRTUAL_ENV like the base class
+        env.pop("VIRTUAL_ENV", None)
+        if request.env:
+            env.update(request.env)
+        # Persist key for nested subagent spawns
+        project_path = self._find_project_path(Path(request.cwd))
+        _persist_key(project_path)
+        return env
+
+    def _parse_response(
+        self, stdout: str, stderr: str, exit_code: int
+    ) -> Response:
+        return Response(output=_sanitize_ansi(stdout), exit_code=exit_code)
+
+    async def check_health(self) -> tuple[bool, str]:
+        """Check bob binary and BOBSHELL_API_KEY."""
+        ok, msg = await super().check_health()
+        if not ok:
+            return ok, msg
+        if os.environ.get("BOBSHELL_API_KEY"):
+            return True, f"{self.identity.display_name} found and API key set"
+        try:
+            _check_auth()
+            return True, f"{self.identity.display_name} found and API key set"
+        except BobAuthError:
+            return False, "BOBSHELL_API_KEY not set"
+
+    async def run(self, request: Request) -> Response:
+        """Override to add dry-run detection, ceiling enforcement, usage logging."""
+        project_path = self._find_project_path(Path(request.cwd))
+
+        # Persist key before dry-run check so file exists for nested spawns
         _persist_key(project_path)
 
         if is_dry_run():
-            stdout, code = self._dry_run_response(role, cwd, task)
-            return stdout, code, None
+            stdout, code = self._dry_run_response(request.role, Path(request.cwd), request.task)
+            return Response(output=stdout, exit_code=code)
 
-        _check_auth(cwd)
+        _check_auth(Path(request.cwd))
 
         try:
             check_ceilings(project_path, self.cycle_start)
         except CeilingExceededError as e:
             self._emit_ceiling_event(project_path, e)
-            return str(e), 1, None
+            return Response(output=str(e), exit_code=1, error=str(e))
 
-        # NOTE: Custom modes are not supported in Bob Shell (unlike Claude Code).
-        # The agent role definition is injected via the prompt instead.
-
-        chat_mode = _BOB_CHAT_MODE
-        full_task = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["bob", "-p", full_task, f"--chat-mode={chat_mode}"]
-        if dangerously_skip_permissions:
-            cmd.append("--yolo")
-
-        logger.info("BobRunner headless: cwd=%s, role=%s, chat_mode=%s", cwd, role, chat_mode)
-
-        env = _make_env_with_bob_path()
         start_time = time.monotonic()
-
-        stream = should_stream()
-        prefix = f"[bob:{role}]" if stream else None
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                # sanitize=True: Bob is a TUI emitting cursor/clear/alt-screen
-                # escapes — strip them from the live terminal write (the captured
-                # buffer stays raw). See issue #379.
-                stream_subprocess(proc, stream=stream, prefix=prefix, sanitize=True),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()  # type: ignore[union-attr]
-            await proc.wait()  # type: ignore[union-attr]
-            duration = time.monotonic() - start_time
-            log_usage(project_path, role, cwd, duration, 1, dry_run=False)
-            logger.error("BobRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1, None
-        except FileNotFoundError:
-            logger.error("'bob' CLI not found on PATH")
-            return "Error: 'bob' CLI not found on PATH", 1, None
-
+        response = await super().run(request)
         duration = time.monotonic() - start_time
-        return_code = proc.returncode or 0
 
-        log_usage(project_path, role, cwd, duration, return_code, dry_run=False)
+        log_usage(
+            project_path, request.role, Path(request.cwd),
+            duration, response.exit_code, dry_run=False,
+        )
 
-        stdout = stdout_bytes.decode()
-        stderr = stderr_bytes.decode()
+        return response
 
-        if return_code != 0:
-            logger.warning("BobRunner exited with code %d: %s", return_code, stderr[:200])
+    def run_interactive(self, request: Request) -> int:
+        """Override for interactive Bob Shell session."""
+        import subprocess as _subprocess
 
-        return stdout, return_code, None
-
-    def interactive_run(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        model: str | None = None,
-        role: str = "ceo",
-        dangerously_skip_permissions: bool = False,
-        session_name: str | None = None,
-    ) -> int:
-        """Run an interactive Bob Shell session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
-        _ = session_name
-        project_path = self._find_project_path(cwd)
-
+        project_path = self._find_project_path(Path(request.cwd))
         _persist_key(project_path)
 
         if is_dry_run():
-            yolo_flag = " --yolo" if dangerously_skip_permissions else ""
-            print(f"[DRY-RUN] Would run: bob --chat-mode=factory-{role}{yolo_flag}")
-            print(f"[DRY-RUN] Task: {task[:200]}...")
+            yolo_flag = " --yolo" if request.skip_permissions else ""
+            print(f"[DRY-RUN] Would run: bob --chat-mode={_BOB_CHAT_MODE}{yolo_flag}")
+            print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        _check_auth(cwd)
+        _check_auth(Path(request.cwd))
 
         try:
             check_ceilings(project_path, self.cycle_start)
@@ -317,24 +294,21 @@ class BobRunner:
             print(f"ERROR: {e}")
             return 1
 
-        chat_mode = _BOB_CHAT_MODE
-        full_task = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
         cmd = [
             "bob",
-            f"--chat-mode={chat_mode}",
-            "-i", full_task,
+            f"--chat-mode={_BOB_CHAT_MODE}",
+            "-i", request.prompt,
         ]
-        if dangerously_skip_permissions:
+        if request.skip_permissions:
             cmd.append("--yolo")
 
-        logger.info("BobRunner interactive_run: cwd=%s, chat_mode=%s", cwd, chat_mode)
+        logger.info("BobRunner interactive: cwd=%s", request.cwd)
 
         bob_bin_dir = _get_bob_bin_dir()
         if bob_bin_dir and not os.environ.get("PATH", "").startswith(bob_bin_dir):
             os.environ["PATH"] = f"{bob_bin_dir}:{os.environ.get('PATH', '')}"
 
-        result = _subprocess.run(cmd, cwd=cwd)
+        result = _subprocess.run(cmd, cwd=request.cwd)
         return result.returncode
 
     def _find_project_path(self, cwd: Path) -> Path:
@@ -380,5 +354,3 @@ class BobRunner:
             )
         except Exception:
             logger.debug("Failed to emit ceiling event", exc_info=True)
-
-

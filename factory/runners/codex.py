@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-import subprocess
-from pathlib import Path
 
-from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.abstraction import (
+    AgentRunner,
+    Capability,
+    Request,
+    Response,
+    RunnerIdentity,
+)
 
 logger = logging.getLogger(__name__)
 
 _auth_checked = False
+
+_IDENTITY = RunnerIdentity(
+    name="codex",
+    display_name="OpenAI Codex",
+    binary="codex",
+    capabilities={Capability.MODEL_OVERRIDE, Capability.SANDBOXING},
+)
 
 
 class CodexAuthError(Exception):
@@ -37,14 +47,6 @@ def _check_auth() -> None:
     raise CodexAuthError()
 
 
-def _make_codex_env() -> dict[str, str]:
-    """Build subprocess env: strip VIRTUAL_ENV, ensure OPENAI_API_KEY is set."""
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    if "OPENAI_API_KEY" not in env and "CODEX_API_KEY" in env:
-        env["OPENAI_API_KEY"] = env["CODEX_API_KEY"]
-    return env
-
-
 def is_codex_dry_run() -> bool:
     """Return True if Codex dry-run mode is enabled."""
     from factory.user_config import resolve
@@ -53,127 +55,78 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
-class CodexRunner:
+class CodexRunner(AgentRunner):
     """Runner implementation for OpenAI Codex CLI."""
 
     name: str = "codex"
 
-    async def headless(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        timeout: float = 600.0,
-        model: str | None = None,
-        dangerously_skip_permissions: bool = True,
-        role: str = "unknown",
-        session_name: str | None = None,
-        tmux_persist: bool = False,
-    ) -> tuple[str, int, None]:
-        """Run a headless Codex CLI invocation via ``codex exec``.
+    @property
+    def identity(self) -> RunnerIdentity:
+        return _IDENTITY
 
-        Codex exec streams progress to stderr and writes only the final
-        agent message to stdout, which aligns with the factory's capture model.
+    def _build_command(
+        self, request: Request, *, prompt_file: str | None = None
+    ) -> list[str]:
+        cmd = ["codex", "exec", request.prompt]
+        if request.skip_permissions:
+            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+        if request.model:
+            cmd.extend(["--model", request.model])
+        return cmd
 
-        Returns (stdout, return_code, None). Codex has no token telemetry.
-        """
-        _ = session_name
-        if tmux_persist:
-            logger.warning("tmux_persist not supported with codex runner")
+    def _build_env(self, request: Request) -> dict[str, str]:
+        env = super()._build_env(request)
+        if "OPENAI_API_KEY" not in env and "CODEX_API_KEY" in env:
+            env["OPENAI_API_KEY"] = env["CODEX_API_KEY"]
+        return env
+
+    def _parse_response(
+        self, stdout: str, stderr: str, exit_code: int
+    ) -> Response:
+        return Response(output=stdout, exit_code=exit_code)
+
+    async def check_health(self) -> tuple[bool, str]:
+        """Check codex binary and API key."""
+        ok, msg = await super().check_health()
+        if not ok:
+            return ok, msg
+        if os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+            return True, f"{self.identity.display_name} found and API key set"
+        return False, "CODEX_API_KEY (or OPENAI_API_KEY) not set"
+
+    async def run(self, request: Request) -> Response:
+        """Override for dry-run detection."""
         if is_codex_dry_run():
-            stdout, code = self._dry_run_response(role, cwd, task)
-            return stdout, code, None
+            stdout, code = self._dry_run_response(request.role, request.cwd, request.task)
+            return Response(output=stdout, exit_code=code)
 
         _check_auth()
+        return await super().run(request)
 
-        full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["codex", "exec", full_prompt]
-
-        if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
-
-        if model:
-            cmd.extend(["--model", model])
-
-        logger.info("CodexRunner headless: cwd=%s, model=%s, role=%s", cwd, model, role)
-
-        env = _make_codex_env()
-
-        stream = should_stream()
-        prefix = f"[codex:{role}]" if stream else None
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                stream_subprocess(proc, stream=stream, prefix=prefix),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()  # type: ignore[union-attr]
-            await proc.wait()  # type: ignore[union-attr]
-            logger.error("CodexRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1, None
-        except FileNotFoundError:
-            logger.error("'codex' CLI not found on PATH")
-            return "Error: 'codex' CLI not found on PATH", 1, None
-
-        stdout = stdout_bytes.decode()
-        stderr = stderr_bytes.decode()
-
-        if proc.returncode != 0:
-            logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr[:200])
-
-        return stdout, proc.returncode or 0, None
-
-    def interactive_run(
-        self,
-        prompt: str,
-        task: str,
-        cwd: Path,
-        *,
-        model: str | None = None,
-        role: str = "ceo",
-        dangerously_skip_permissions: bool = False,
-        session_name: str | None = None,
-    ) -> int:
-        """Run an interactive Codex CLI session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
-        _ = role, session_name
+    def run_interactive(self, request: Request) -> int:
+        """Override for interactive Codex session."""
+        import subprocess
 
         if is_codex_dry_run():
             print("[DRY-RUN] Would exec: codex (interactive)")
-            print(f"[DRY-RUN] Task: {task[:200]}...")
+            print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
         _check_auth()
 
-        full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["codex", full_prompt]
-
-        if dangerously_skip_permissions:
+        cmd = ["codex", request.prompt]
+        if request.skip_permissions:
             cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+        if request.model:
+            cmd.extend(["--model", request.model])
 
-        if model:
-            cmd.extend(["--model", model])
+        logger.info("CodexRunner interactive: cwd=%s", request.cwd)
 
-        logger.info("CodexRunner interactive_run: cwd=%s", cwd)
-
-        env = _make_codex_env()
-        result = subprocess.run(cmd, cwd=cwd, env=env)
+        env = self._build_env(request)
+        result = subprocess.run(cmd, cwd=request.cwd, env=env)
         return result.returncode
 
-    def _dry_run_response(self, role: str, cwd: Path, task: str) -> tuple[str, int]:
+    def _dry_run_response(self, role: str, cwd: str | os.PathLike[str], task: str) -> tuple[str, int]:
         """Return a stub response for dry-run mode."""
         response = (
             f"[DRY-RUN] CodexRunner would have executed:\n"
