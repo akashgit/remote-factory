@@ -13,6 +13,7 @@ Prerequisites:
 from __future__ import annotations
 
 import shutil
+import subprocess
 
 import pytest
 
@@ -215,3 +216,136 @@ class TestCodexModel:
         assert "--model" in cmd
         idx = cmd.index("--model")
         assert cmd[idx + 1] == "o3"
+
+
+# -- Real Build Test: Codex builds a game ------------------------------------
+
+@pytest.fixture
+def build_project(tmp_path):
+    """Create a minimal project directory with git init for Codex to build in."""
+    subprocess.run(["git", "init"], cwd=tmp_path, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init"],
+        cwd=tmp_path, capture_output=True,
+    )
+    return tmp_path
+
+
+class TestCodexBuildGame:
+    """Test that Codex can actually build a working Python program.
+
+    This is the real integration test: give Codex a build task,
+    verify it creates files, and verify the output runs.
+    """
+
+    async def test_build_number_guessing_game(self, runner, build_project):
+        """Codex builds a number guessing game and it actually runs."""
+        request = RunnerRequest(
+            system_prompt=(
+                "You are a Python developer. Write clean, working Python code. "
+                "Create files directly in the current working directory."
+            ),
+            task=(
+                "Create a file called `guess.py` that implements a number guessing game.\n\n"
+                "Requirements:\n"
+                "- The game picks a random number between 1 and 100\n"
+                "- It must accept a `--answer` CLI argument (integer) for non-interactive testing\n"
+                "- When `--answer` is provided, it prints 'Correct!' if the answer matches, "
+                "'Too high!' or 'Too low!' otherwise\n"
+                "- Use argparse for argument parsing\n"
+                "- Use random.seed(42) so the number is deterministic for testing\n"
+                "- The file must be executable with `python guess.py --answer N`\n\n"
+                "Only create the single file `guess.py`. No other files needed."
+            ),
+            cwd=str(build_project),
+            timeout=120,
+            sandbox_mode=SandboxMode.WORKSPACE_WRITE,
+        )
+
+        response = await runner.headless(request)
+        assert response.exit_code == 0, f"Codex failed: {response.output[:500]}"
+
+        # Verify the file was created
+        guess_py = build_project / "guess.py"
+        assert guess_py.exists(), f"guess.py not created. Files: {list(build_project.iterdir())}"
+
+        content = guess_py.read_text()
+        assert "argparse" in content or "argv" in content, "No argument parsing found"
+        assert "random" in content, "No random module usage found"
+
+        # Verify it's valid Python (syntax check)
+        result = subprocess.run(
+            ["python3", "-c", f"import ast; ast.parse(open('{guess_py}').read())"],
+            capture_output=True, text=True,
+        )
+        assert result.returncode == 0, f"Syntax error in guess.py: {result.stderr}"
+
+        # Run the game with the deterministic answer
+        # random.seed(42) → random.randint(1, 100) = 82
+        import random
+        random.seed(42)
+        correct_answer = random.randint(1, 100)
+
+        result = subprocess.run(
+            ["python3", str(guess_py), "--answer", str(correct_answer)],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, f"Game crashed: {result.stderr}"
+        assert "Correct" in result.stdout or "correct" in result.stdout.lower(), (
+            f"Expected 'Correct' for answer={correct_answer}, got: {result.stdout}"
+        )
+
+        # Test with a wrong answer
+        wrong = correct_answer + 10 if correct_answer < 90 else correct_answer - 10
+        result = subprocess.run(
+            ["python3", str(guess_py), "--answer", str(wrong)],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, f"Game crashed on wrong answer: {result.stderr}"
+        output_lower = result.stdout.lower()
+        assert "too high" in output_lower or "too low" in output_lower, (
+            f"Expected 'Too high' or 'Too low' for wrong answer={wrong}, got: {result.stdout}"
+        )
+
+    async def test_build_fizzbuzz(self, runner, build_project):
+        """Codex builds fizzbuzz and it produces correct output."""
+        request = RunnerRequest(
+            system_prompt="You are a Python developer. Write clean, working Python code.",
+            task=(
+                "Create a file called `fizzbuzz.py` that:\n"
+                "- Takes a single CLI argument N (integer)\n"
+                "- Prints FizzBuzz from 1 to N\n"
+                "- Rules: divisible by 3 → 'Fizz', by 5 → 'Buzz', both → 'FizzBuzz', "
+                "otherwise the number\n"
+                "- One value per line\n"
+                "- Use sys.argv for argument parsing (keep it simple)\n"
+                "Only create `fizzbuzz.py`. No other files."
+            ),
+            cwd=str(build_project),
+            timeout=120,
+            sandbox_mode=SandboxMode.WORKSPACE_WRITE,
+        )
+
+        response = await runner.headless(request)
+        assert response.exit_code == 0, f"Codex failed: {response.output[:500]}"
+
+        fizzbuzz_py = build_project / "fizzbuzz.py"
+        assert fizzbuzz_py.exists(), f"fizzbuzz.py not created. Files: {list(build_project.iterdir())}"
+
+        # Run it
+        result = subprocess.run(
+            ["python3", str(fizzbuzz_py), "15"],
+            capture_output=True, text=True, timeout=10,
+        )
+        assert result.returncode == 0, f"FizzBuzz crashed: {result.stderr}"
+
+        lines = result.stdout.strip().splitlines()
+        assert len(lines) == 15, f"Expected 15 lines, got {len(lines)}: {lines}"
+
+        # Verify specific outputs
+        assert lines[0] == "1"
+        assert lines[1] == "2"
+        assert lines[2] == "Fizz"
+        assert lines[3] == "4"
+        assert lines[4] == "Buzz"
+        assert lines[14] == "FizzBuzz"
