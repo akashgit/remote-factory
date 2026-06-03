@@ -204,9 +204,15 @@ async def invoke_agent(
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
-    _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
-
     runner = get_runner(runner_name, project_path=project_path)
+    resolved_runner_name = getattr(runner, "name", runner_name or "unknown")
+
+    _emit_safe(
+        project_path, "agent.started", agent=role,
+        data={"task": task[:200], "runner": resolved_runner_name},
+    )
+
+    logger.info("Using runner: %s", resolved_runner_name)
 
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
 
@@ -252,13 +258,13 @@ async def invoke_agent(
         logger.warning("%s agent exited with code %d", role, return_code)
         _emit_safe(
             project_path, "agent.failed", agent=role,
-            data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
+            data={"return_code": return_code, "runner": resolved_runner_name, "stderr": stdout[:200] if stdout else ""},
         )
         if _track_failures:
             _consecutive_failures += 1
             _check_failure_threshold(project_path, role)
     else:
-        completed_data: dict[str, object] = {"return_code": 0}
+        completed_data: dict[str, object] = {"return_code": 0, "runner": resolved_runner_name}
         if usage is not None:
             completed_data.update({
                 "input_tokens": usage.input_tokens,
