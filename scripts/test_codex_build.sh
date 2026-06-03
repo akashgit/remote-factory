@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Test the factory with Codex as the agent runner.
-# Builds a Snake game (贪吃蛇) with a real UI in a temp directory.
+# Test the FULL factory loop with Codex as the agent runner.
+#
+# This runs `factory ceo --runner codex` which spawns the CEO agent
+# (as a codex subprocess) which then orchestrates the full loop:
+#   CEO → Researcher → Strategist → Builder → Reviewer → Evaluator → Archivist
+# ALL running as codex subprocesses.
 #
 # Usage: ./scripts/test_codex_build.sh
 #
@@ -10,68 +14,58 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 FACTORY="uv run --project $SCRIPT_DIR factory"
 
-WORKDIR=$(mktemp -d)
-trap 'echo ""; echo "=== Temp dir preserved at: $WORKDIR ===" ' EXIT
+WORKDIR=$(mktemp -d)/snake-game
+mkdir -p "$WORKDIR"
+trap 'echo ""; echo "=== Project preserved at: $WORKDIR ===" ' EXIT
 
-echo "=== Setting up test project in $WORKDIR ==="
+echo "=== Setting up project in $WORKDIR ==="
 echo "=== Using factory from: $SCRIPT_DIR ==="
 cd "$WORKDIR"
 git init -q
 git commit --allow-empty -q -m "init"
 mkdir -p .factory
 
+# Write a factory.md spec for the CEO to discover and build
+cat > factory.md <<'SPEC'
+# Snake Game (贪吃蛇)
+
+A browser-based Snake game as a single-page web app.
+
+## Requirements
+- Pure HTML/CSS/JavaScript, no frameworks, everything in one `index.html`
+- Canvas-based rendering, 400x400 pixel game board, 20x20 grid
+- Snake starts at center, moving right, length 3
+- Arrow keys to change direction (prevent reversing)
+- Food spawns at random grid positions
+- Eating food grows snake by 1, score += 10
+- Game over on wall or self collision
+- Display score and high score (localStorage)
+- Game over screen with "Press Space to restart"
+- Speed increases every 5 food eaten
+- Dark background, green snake, red food, white text
+
+## Tech Stack
+- HTML5 Canvas
+- Vanilla JavaScript (no build tools, no npm)
+
+## Eval
+Run `node -e "require('fs').readFileSync('index.html','utf8')"` to verify the file exists and is readable.
+SPEC
+
+git add factory.md
+git commit -q -m "add factory.md spec"
+
 echo ""
-echo "=== Phase 1: Build the Snake game ==="
+echo "=== Running: factory ceo --runner codex --headless ==="
+echo "=== This runs the FULL factory loop: CEO → agents, all powered by Codex ==="
 echo ""
 
-$FACTORY agent builder \
-  --task "Build a Snake game (贪吃蛇) as a single-page web app.
-
-Create these files in the project root:
-  - index.html (the game)
-  - README.md (how to play)
-
-Requirements:
-  - Pure HTML/CSS/JavaScript, no frameworks, everything in one index.html file
-  - Canvas-based rendering, 400x400 pixel game board
-  - Snake starts at center, moving right, length 3
-  - Arrow keys to change direction (prevent reversing into yourself)
-  - Food spawns at random grid positions (20x20 grid)
-  - Eating food grows the snake by 1 and increases score by 10
-  - Game over when snake hits wall or itself
-  - Display current score and high score (persisted in localStorage)
-  - Game over screen with 'Press Space to restart' message
-  - Speed increases slightly every 5 food eaten
-  - Clean visual style: dark background, green snake, red food, white text
-  - Responsive: game board centered on page
-
-Do NOT create any other files. Do NOT use npm or any build tools." \
-  --project "$WORKDIR" \
+$FACTORY ceo "$WORKDIR" \
   --runner codex \
-  --timeout 600 2>&1 | tee "$WORKDIR/.factory/builder-stdout.log"
+  --headless \
+  --timeout 600 2>&1 | tee "$WORKDIR/.factory/ceo-stdout.log"
 
-BUILD_EXIT=${PIPESTATUS[0]}
-
-echo ""
-echo "=== Phase 2: Add features to existing code ==="
-echo ""
-
-$FACTORY agent builder \
-  --task "Read the existing index.html Snake game and add these features:
-
-1. A pause/resume toggle with the P key — show 'PAUSED' overlay when paused
-2. A speed selector before the game starts (Slow / Normal / Fast) using HTML buttons
-3. Sound effects using the Web Audio API (no external files):
-   - Short blip when eating food
-   - Low buzz when game over
-4. A trailing gradient effect on the snake body (head is bright green, tail fades to dark green)
-
-Read the existing code first. Modify index.html in place. Do NOT create new files." \
-  --project "$WORKDIR" \
-  --runner codex \
-  --timeout 600 2>&1 | tee -a "$WORKDIR/.factory/builder-stdout.log"
-
-FEATURE_EXIT=${PIPESTATUS[0]}
+CEO_EXIT=${PIPESTATUS[0]}
 
 echo ""
 echo "=========================================="
@@ -79,50 +73,74 @@ echo "=== RESULTS ==="
 echo "=========================================="
 echo ""
 
-# 1. Exit codes
-echo "1. Build exit code:   $BUILD_EXIT"
-echo "   Feature exit code: $FEATURE_EXIT"
+# 1. Exit code
+echo "1. CEO exit code: $CEO_EXIT"
 
-# 2. Events — verify codex runner was used
+# 2. Events — verify codex runner was used for ALL agents
 echo ""
-echo "2. Events log:"
+echo "2. Agent events (runner identification):"
 if [ -f "$WORKDIR/.factory/events.jsonl" ]; then
-  CODEX_CONFIRMED=false
+  CODEX_COUNT=0
+  NON_CODEX_COUNT=0
   while IFS= read -r line; do
     TYPE=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('type','?'))" 2>/dev/null || echo "?")
     AGENT=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('agent','?'))" 2>/dev/null || echo "?")
     RUNNER=$(echo "$line" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('runner','?'))" 2>/dev/null || echo "?")
-    echo "   $TYPE  agent=$AGENT  runner=$RUNNER"
+    TS=$(echo "$line" | python3 -c "import sys,json; t=json.load(sys.stdin).get('timestamp',''); print(t[11:19] if len(t)>19 else t)" 2>/dev/null || echo "?")
+    if echo "$TYPE" | grep -q "started\|completed\|failed"; then
+      echo "   $TS  $TYPE  agent=$AGENT  runner=$RUNNER"
+    fi
     if [ "$RUNNER" = "codex" ]; then
-      CODEX_CONFIRMED=true
+      CODEX_COUNT=$((CODEX_COUNT + 1))
+    elif [ "$RUNNER" != "?" ] && echo "$TYPE" | grep -q "started"; then
+      NON_CODEX_COUNT=$((NON_CODEX_COUNT + 1))
     fi
   done < "$WORKDIR/.factory/events.jsonl"
   echo ""
-  if [ "$CODEX_CONFIRMED" = true ]; then
-    echo "   ✅ CONFIRMED: Codex runner was used"
+  if [ "$CODEX_COUNT" -gt 0 ] && [ "$NON_CODEX_COUNT" -eq 0 ]; then
+    echo "   ✅ ALL agents used Codex runner ($CODEX_COUNT events)"
+  elif [ "$CODEX_COUNT" -gt 0 ]; then
+    echo "   ⚠️  Mixed runners: $CODEX_COUNT codex, $NON_CODEX_COUNT other"
   else
-    echo "   ❌ WARNING: Could not confirm Codex runner in events"
+    echo "   ❌ Could not confirm Codex runner in events"
   fi
 else
-  echo "   (no events file found)"
+  echo "   (no events file found — check .factory/ in the worktree)"
+  # Events might be in a worktree subfolder
+  find "$WORKDIR" -name "events.jsonl" 2>/dev/null | while read f; do
+    echo "   Found events at: $f"
+    head -5 "$f"
+  done
 fi
 
-# 3. Files created
+# 3. Which agents were spawned?
 echo ""
-echo "3. Project files:"
-find "$WORKDIR" -maxdepth 1 -type f | while read f; do
+echo "3. Agent reviews saved:"
+if [ -d "$WORKDIR/.factory/reviews" ]; then
+  ls -la "$WORKDIR/.factory/reviews/" 2>/dev/null
+else
+  echo "   (no reviews dir)"
+  find "$WORKDIR" -path "*/.factory/reviews/*" -name "*-latest.md" 2>/dev/null | while read f; do
+    echo "   Found: $f"
+  done
+fi
+
+# 4. Was anything built?
+echo ""
+echo "4. Project files:"
+find "$WORKDIR" -maxdepth 2 -name "*.html" -o -name "*.py" -o -name "*.js" 2>/dev/null | while read f; do
   SIZE=$(wc -c < "$f" | tr -d ' ')
-  echo "   $(basename "$f") (${SIZE} bytes)"
+  echo "   $f ($SIZE bytes)"
 done
 
-# 4. Validate HTML
+# 5. Check for index.html
 echo ""
-echo "4. Validation:"
-if [ -f "$WORKDIR/index.html" ]; then
-  SIZE=$(wc -c < "$WORKDIR/index.html" | tr -d ' ')
-  echo "   index.html exists ($SIZE bytes)"
+echo "5. Game validation:"
+INDEX=$(find "$WORKDIR" -maxdepth 2 -name "index.html" 2>/dev/null | head -1)
+if [ -n "$INDEX" ]; then
+  SIZE=$(wc -c < "$INDEX" | tr -d ' ')
+  echo "   index.html found: $INDEX ($SIZE bytes)"
 
-  # Check for key features in the HTML
   CHECKS=(
     "canvas:Canvas element"
     "addEventListener:Event listeners"
@@ -131,36 +149,39 @@ if [ -f "$WORKDIR/index.html" ]; then
     "requestAnimationFrame\|setInterval:Game loop"
     "gameOver\|game_over\|GAME.OVER\|game-over:Game over logic"
     "score:Score tracking"
-    "Audio\|oscillator\|AudioContext:Sound effects"
-    "pause\|PAUSE:Pause feature"
   )
 
   for check in "${CHECKS[@]}"; do
     PATTERN="${check%%:*}"
     LABEL="${check##*:}"
-    if grep -qi "$PATTERN" "$WORKDIR/index.html" 2>/dev/null; then
+    if grep -qi "$PATTERN" "$INDEX" 2>/dev/null; then
       echo "   ✅ $LABEL"
     else
       echo "   ❌ $LABEL (not found)"
     fi
   done
+  echo ""
+  echo "   To play: open $INDEX"
 else
-  echo "   ❌ index.html not created"
+  echo "   ❌ No index.html found"
 fi
 
-if [ -f "$WORKDIR/README.md" ]; then
-  echo "   ✅ README.md exists"
+# 6. Factory experiment history
+echo ""
+echo "6. Experiment history:"
+if [ -f "$WORKDIR/.factory/results.tsv" ]; then
+  cat "$WORKDIR/.factory/results.tsv"
 else
-  echo "   ❌ README.md not created"
+  echo "   (no results.tsv)"
+  find "$WORKDIR" -name "results.tsv" 2>/dev/null | while read f; do
+    echo "   Found: $f"
+    cat "$f"
+  done
 fi
 
-# 5. How to play
 echo ""
-echo "5. To play the game:"
-echo "   open $WORKDIR/index.html"
-
-echo ""
-echo "6. Logs:"
-echo "   Builder stdout:  $WORKDIR/.factory/builder-stdout.log"
-echo "   Events:          $WORKDIR/.factory/events.jsonl"
-echo "   Reviews:         $WORKDIR/.factory/reviews/builder-latest.md"
+echo "7. Logs:"
+echo "   CEO stdout:    $WORKDIR/.factory/ceo-stdout.log"
+echo "   Events:        $WORKDIR/.factory/events.jsonl"
+echo "   Reviews:       $WORKDIR/.factory/reviews/"
+echo "   Experiments:   $WORKDIR/.factory/experiments/"
