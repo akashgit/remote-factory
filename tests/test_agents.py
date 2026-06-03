@@ -181,7 +181,7 @@ class TestInvokeAgentModel:
             return proc
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
@@ -208,7 +208,7 @@ class TestInvokeAgentModel:
             return proc
 
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.abstraction.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (b"ok", b"")
 
