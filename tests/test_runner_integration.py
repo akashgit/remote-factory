@@ -141,8 +141,9 @@ class TestCodexRunnerBuildCommand:
             permission_mode="bypassPermissions", skip_permissions=False,
         )
         cmd = runner._build_command(req)
-        # codex exec uses --dangerously-bypass-approvals-and-sandbox, NOT --ask-for-approval
-        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        # bypassPermissions maps to --sandbox danger-full-access
+        assert "--sandbox" in cmd
+        assert "danger-full-access" in cmd
         assert "--ask-for-approval" not in cmd
 
     def test_skip_permissions_uses_sandbox(self, tmp_path: Path) -> None:
@@ -159,7 +160,31 @@ class TestCodexRunnerBuildCommand:
         req = Request(prompt="p", task="t", cwd=tmp_path, skip_permissions=False)
         cmd = runner._build_command(req)
         assert "--sandbox" not in cmd
-        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+
+    def test_ceo_role_gets_full_access_for_nesting(self, tmp_path: Path) -> None:
+        """CEO role uses danger-full-access so child codex processes can start."""
+        runner = CodexRunner()
+        req = Request(prompt="p", task="t", cwd=tmp_path, skip_permissions=True, role="ceo")
+        cmd = runner._build_command(req)
+        assert "--sandbox" in cmd
+        assert "danger-full-access" in cmd
+        # NOT workspace-write — that blocks inner codex app-server init
+        assert "workspace-write" not in cmd
+
+    def test_specialist_role_gets_workspace_write(self, tmp_path: Path) -> None:
+        """Non-CEO roles use workspace-write sandbox."""
+        runner = CodexRunner()
+        for role in ("builder", "researcher", "strategist", "evaluator"):
+            req = Request(prompt="p", task="t", cwd=tmp_path, skip_permissions=True, role=role)
+            cmd = runner._build_command(req)
+            assert "--sandbox" in cmd
+            assert "workspace-write" in cmd
+
+    def test_env_propagates_factory_runner(self, tmp_path: Path) -> None:
+        """FACTORY_RUNNER=codex is set in env so sub-agents also use codex."""
+        runner = CodexRunner()
+        env = runner._build_env()
+        assert env.get("FACTORY_RUNNER") == "codex"
 
     def test_proxied_tool_filtering_in_prompt(self, tmp_path: Path) -> None:
         runner = CodexRunner()

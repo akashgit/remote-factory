@@ -54,6 +54,7 @@ class Capability(Enum):
     APPEND_SYSTEM_PROMPT = "append_system_prompt"
     MCP_CONFIG = "mcp_config"
     USAGE_TRACKING = "usage_tracking"
+    NESTING = "nesting"  # Can spawn child agent processes of the same runner type
 
 
 @dataclass

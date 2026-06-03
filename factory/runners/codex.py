@@ -89,6 +89,7 @@ _CODEX_IDENTITY = RunnerIdentity(
         Capability.SANDBOXING,
         Capability.STRUCTURED_OUTPUT,
         Capability.USAGE_TRACKING,
+        Capability.NESTING,
     }),
 )
 
@@ -172,10 +173,18 @@ class CodexRunner(AgentRunner):
 
         cmd = ["codex", "exec", full_prompt]
 
-        # Permission handling — codex exec only supports --sandbox and
-        # --dangerously-bypass-approvals-and-sandbox (NOT --ask-for-approval)
-        if request.permission_mode == "bypassPermissions":
-            cmd.append("--dangerously-bypass-approvals-and-sandbox")
+        # Permission/sandbox handling — codex exec only supports --sandbox and
+        # --dangerously-bypass-approvals-and-sandbox (NOT --ask-for-approval).
+        #
+        # Nesting: the CEO role spawns child `factory agent <role>` commands which
+        # themselves invoke `codex exec`. The inner codex needs to initialize its
+        # app-server, which requires full filesystem access. Using `workspace-write`
+        # for the outer CEO sandbox blocks the inner codex with:
+        #   "failed to initialize in-process app-server client: Operation not permitted"
+        # So CEO gets `danger-full-access`; specialists get `workspace-write`.
+        is_orchestrator = request.role in ("ceo",)
+        if request.permission_mode == "bypassPermissions" or is_orchestrator:
+            cmd.extend(["--sandbox", "danger-full-access"])
         elif request.skip_permissions:
             cmd.extend(["--sandbox", "workspace-write"])
 
@@ -188,7 +197,12 @@ class CodexRunner(AgentRunner):
         return cmd
 
     def _build_env(self) -> dict[str, str]:
-        return _make_codex_env()
+        env = _make_codex_env()
+        # Ensure sub-agents spawned by the CEO also use codex.
+        # The CEO shells out to `factory agent <role>`, which reads FACTORY_RUNNER
+        # to decide which runner to use. Without this, sub-agents fall back to claude.
+        env["FACTORY_RUNNER"] = "codex"
+        return env
 
     def _parse_response(
         self,

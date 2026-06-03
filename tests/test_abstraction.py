@@ -65,13 +65,13 @@ class TestCapability:
             "streaming", "interactive", "sandboxing", "structured_output",
             "tool_filtering", "permission_modes", "budget_cap",
             "effort_control", "append_system_prompt", "mcp_config",
-            "usage_tracking",
+            "usage_tracking", "nesting",
         }
         actual = {c.value for c in Capability}
         assert actual == expected
 
     def test_enum_count(self) -> None:
-        assert len(Capability) == 14
+        assert len(Capability) == 15
 
 
 class TestRunnerIdentity:
