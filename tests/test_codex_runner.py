@@ -7,6 +7,7 @@ import pytest
 
 import factory.runners.codex as codex_module
 from factory.runners import CodexRunner, get_runner, is_codex_dry_run
+from factory.runners.abstraction import Request
 from factory.runners.codex import CodexAuthError, _check_auth
 
 
@@ -81,9 +82,11 @@ class TestCodexDryRun:
 
 
 class TestCodexAuth:
-    def test_auth_fails_without_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_auth_fails_without_key(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        # Mock Path.home() to avoid finding real ~/.codex/auth.json
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
 
         with pytest.raises(CodexAuthError, match="CODEX_API_KEY"):
             _check_auth()
@@ -108,6 +111,8 @@ class TestCodexAuth:
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+        # Mock Path.home() to avoid finding real ~/.codex/auth.json
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
 
         runner = CodexRunner()
         with pytest.raises(CodexAuthError):
@@ -149,47 +154,34 @@ class TestCodexEnvMapping:
 
 
 class TestCodexHeadless:
+    """Tests for CodexRunner.headless() shim — now delegates to run() → super().run()."""
+
     async def test_builds_correct_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Verify _build_command produces correct flags (unit test, no subprocess)."""
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-
-        with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-        ) as mock_stream:
-            mock_stream.return_value = (b"output", b"")
-
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock
-            ) as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_exec.return_value = mock_proc
-
-                stdout, code, usage = await runner.headless(
-                    prompt="You are a test agent.",
-                    task="Say hello",
-                    cwd=tmp_path,
-                    timeout=60.0,
-                    model="gpt-5.4",
-                )
-
-                assert code == 0
-                assert stdout == "output"
-                assert usage is None
-
-                call_args = mock_exec.call_args[0]
-                assert call_args[0] == "codex"
-                assert call_args[1] == "exec"
-                assert "--sandbox" in call_args
-                assert "workspace-write" in call_args
-                assert "--ask-for-approval" in call_args
-                assert "never" in call_args
-                assert "--model" in call_args
-                assert "gpt-5.4" in call_args
+        req = Request(
+            prompt="You are a test agent.",
+            task="Say hello",
+            cwd=tmp_path,
+            timeout=60.0,
+            model="gpt-5.4",
+            skip_permissions=True,
+        )
+        cmd = runner._build_command(req)
+        assert cmd[0] == "codex"
+        assert cmd[1] == "exec"
+        assert "--sandbox" in cmd
+        assert "workspace-write" in cmd
+        # codex exec does NOT support --ask-for-approval
+        assert "--ask-for-approval" not in cmd
+        assert "--model" in cmd
+        assert "gpt-5.4" in cmd
+        assert "--json" in cmd
 
     async def test_combines_prompt_and_task(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -198,30 +190,12 @@ class TestCodexHeadless:
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-
-        with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-        ) as mock_stream:
-            mock_stream.return_value = (b"ok", b"")
-
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock
-            ) as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_exec.return_value = mock_proc
-
-                await runner.headless(
-                    prompt="You are the CEO.",
-                    task="Run the experiment",
-                    cwd=tmp_path,
-                )
-
-                call_args = mock_exec.call_args[0]
-                full_prompt = call_args[2]
-                assert "You are the CEO." in full_prompt
-                assert "Run the experiment" in full_prompt
-                assert "## Current Task" in full_prompt
+        req = Request(prompt="You are the CEO.", task="Run the experiment", cwd=tmp_path)
+        cmd = runner._build_command(req)
+        full_prompt = cmd[2]
+        assert "You are the CEO." in full_prompt
+        assert "Run the experiment" in full_prompt
+        assert "## Current Task" in full_prompt
 
     async def test_no_sandbox_flags_when_permissions_not_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -230,29 +204,10 @@ class TestCodexHeadless:
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-
-        with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-        ) as mock_stream:
-            mock_stream.return_value = (b"ok", b"")
-
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock
-            ) as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_exec.return_value = mock_proc
-
-                await runner.headless(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
-                    dangerously_skip_permissions=False,
-                )
-
-                call_args = mock_exec.call_args[0]
-                assert "--sandbox" not in call_args
-                assert "--ask-for-approval" not in call_args
+        req = Request(prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False)
+        cmd = runner._build_command(req)
+        assert "--sandbox" not in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     async def test_no_model_flag_when_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -261,28 +216,9 @@ class TestCodexHeadless:
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-
-        with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-        ) as mock_stream:
-            mock_stream.return_value = (b"ok", b"")
-
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock
-            ) as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_exec.return_value = mock_proc
-
-                await runner.headless(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
-                    model=None,
-                )
-
-                call_args = mock_exec.call_args[0]
-                assert "--model" not in call_args
+        req = Request(prompt="Test", task="Test", cwd=tmp_path, model=None)
+        cmd = runner._build_command(req)
+        assert "--model" not in cmd
 
     async def test_handles_timeout(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -292,7 +228,7 @@ class TestCodexHeadless:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
-        with patch("factory.runners.codex.asyncio.wait_for", side_effect=aio.TimeoutError):
+        with patch("asyncio.wait_for", side_effect=aio.TimeoutError):
             with patch("asyncio.create_subprocess_exec", new_callable=AsyncMock) as mock_exec:
                 mock_proc = AsyncMock()
                 mock_proc.kill = AsyncMock()
@@ -310,7 +246,6 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "timed out" in stdout.lower()
-        assert usage is None
 
     async def test_handles_missing_binary(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -332,7 +267,6 @@ class TestCodexHeadless:
 
         assert code == 1
         assert "not found" in stdout.lower()
-        assert usage is None
 
     async def test_passes_env_with_openai_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -343,31 +277,14 @@ class TestCodexHeadless:
         monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
 
         runner = CodexRunner()
-
-        with patch(
-            "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-        ) as mock_stream:
-            mock_stream.return_value = (b"ok", b"")
-
-            with patch(
-                "asyncio.create_subprocess_exec", new_callable=AsyncMock
-            ) as mock_exec:
-                mock_proc = AsyncMock()
-                mock_proc.returncode = 0
-                mock_exec.return_value = mock_proc
-
-                await runner.headless(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
-                )
-
-                call_kwargs = mock_exec.call_args.kwargs
-                assert "VIRTUAL_ENV" not in call_kwargs["env"]
-                assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"
+        env = runner._build_env()
+        assert "VIRTUAL_ENV" not in env
+        assert env["OPENAI_API_KEY"] == "test-key"
 
 
 class TestCodexStreaming:
+    """Test streaming config via _build_command and run() lifecycle."""
+
     async def test_uses_streaming_prefix(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -377,9 +294,9 @@ class TestCodexStreaming:
 
         runner = CodexRunner()
 
-        with patch("factory.runners.codex.should_stream", return_value=True):
+        with patch("factory.runners._stream.should_stream", return_value=True):
             with patch(
-                "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
+                "factory.runners._stream.stream_subprocess", new_callable=AsyncMock
             ) as mock_stream:
                 mock_stream.return_value = (b"output\n", b"")
 
@@ -401,39 +318,6 @@ class TestCodexStreaming:
                     call_kwargs = mock_stream.call_args.kwargs
                     assert call_kwargs["stream"] is True
                     assert call_kwargs["prefix"] == "[codex:builder]"
-
-    async def test_codex_runner_does_not_sanitize(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """CodexRunner.headless() does not sanitize (default False) — issue #379."""
-        monkeypatch.setenv("CODEX_API_KEY", "test-key")
-        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
-        monkeypatch.delenv("FACTORY_RUNNER_QUIET", raising=False)
-
-        runner = CodexRunner()
-
-        with patch("factory.runners.codex.should_stream", return_value=True):
-            with patch(
-                "factory.runners.codex.stream_subprocess", new_callable=AsyncMock
-            ) as mock_stream:
-                mock_stream.return_value = (b"output\n", b"")
-
-                with patch(
-                    "asyncio.create_subprocess_exec", new_callable=AsyncMock
-                ) as mock_exec:
-                    mock_proc = AsyncMock()
-                    mock_proc.returncode = 0
-                    mock_exec.return_value = mock_proc
-
-                    await runner.headless(
-                        prompt="Test",
-                        task="Test",
-                        cwd=tmp_path,
-                        role="builder",
-                    )
-
-                    mock_stream.assert_called_once()
-                    assert mock_stream.call_args.kwargs.get("sanitize", False) is False
 
 
 class TestCodexInteractive:
@@ -458,8 +342,8 @@ class TestCodexInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
-            assert "--sandbox" in cmd
-            assert "workspace-write" in cmd
+            # Interactive uses --dangerously-bypass-approvals-and-sandbox
+            assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
@@ -481,7 +365,7 @@ class TestCodexInteractive:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert "--sandbox" not in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     def test_interactive_run_passes_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

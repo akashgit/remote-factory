@@ -118,6 +118,21 @@ class TestCodexRunnerBuildCommand:
         assert cmd[1] == "exec"
         assert "--sandbox" in cmd
 
+    def test_prompt_included_in_command(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(prompt="system prompt here", task="do the thing", cwd=tmp_path)
+        cmd = runner._build_command(req)
+        # The full prompt (system + task) should be the positional arg to codex exec
+        combined = cmd[2]  # codex exec <prompt>
+        assert "system prompt here" in combined
+        assert "do the thing" in combined
+
+    def test_json_flag_present(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(prompt="p", task="t", cwd=tmp_path)
+        cmd = runner._build_command(req)
+        assert "--json" in cmd
+
     def test_permission_mode_bypass(self, tmp_path: Path) -> None:
         runner = CodexRunner()
         req = Request(
@@ -125,8 +140,44 @@ class TestCodexRunnerBuildCommand:
             permission_mode="bypassPermissions", skip_permissions=False,
         )
         cmd = runner._build_command(req)
+        # codex exec uses --dangerously-bypass-approvals-and-sandbox, NOT --ask-for-approval
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
+        assert "--ask-for-approval" not in cmd
+
+    def test_skip_permissions_uses_sandbox(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(prompt="p", task="t", cwd=tmp_path, skip_permissions=True)
+        cmd = runner._build_command(req)
         assert "--sandbox" in cmd
-        assert "--ask-for-approval" in cmd
+        assert "workspace-write" in cmd
+        # Should NOT use --ask-for-approval (not valid for codex exec)
+        assert "--ask-for-approval" not in cmd
+
+    def test_no_permissions_flag_when_disabled(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(prompt="p", task="t", cwd=tmp_path, skip_permissions=False)
+        cmd = runner._build_command(req)
+        assert "--sandbox" not in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+
+    def test_proxied_tool_filtering_in_prompt(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(
+            prompt="p", task="t", cwd=tmp_path,
+            allowed_tools=["Bash", "Edit"],
+            disallowed_tools=["WebSearch"],
+        )
+        cmd = runner._build_command(req)
+        prompt_arg = cmd[2]
+        assert "ONLY use these tools: Bash, Edit" in prompt_arg
+        assert "must NOT use these tools: WebSearch" in prompt_arg
+
+    def test_proxied_effort_in_prompt(self, tmp_path: Path) -> None:
+        runner = CodexRunner()
+        req = Request(prompt="p", task="t", cwd=tmp_path, effort="high")
+        cmd = runner._build_command(req)
+        prompt_arg = cmd[2]
+        assert "EFFORT LEVEL (high)" in prompt_arg
 
     def test_unsupported_fields_warn(self, tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
         runner = CodexRunner()
@@ -147,6 +198,8 @@ class TestCodexRunnerCapabilities:
         caps = runner.identity.capabilities
         assert Capability.MODEL_OVERRIDE in caps
         assert Capability.SANDBOXING in caps
+        assert Capability.STRUCTURED_OUTPUT in caps
+        assert Capability.USAGE_TRACKING in caps
         assert Capability.TOOL_FILTERING not in caps
         assert Capability.MCP_CONFIG not in caps
 
@@ -302,3 +355,169 @@ class TestInvokeAgentV2Dispatch:
             assert return_code == 0
             mock_runner.headless.assert_called_once()
             mock_runner.run.assert_not_called()
+
+
+class TestCodexJsonlParser:
+    """Test parsing of real Codex JSONL output format."""
+
+    def test_parse_agent_message(self) -> None:
+        from factory.runners.codex import _parse_codex_jsonl
+
+        raw = (
+            '{"type":"thread.started","thread_id":"abc"}\n'
+            '{"type":"turn.started"}\n'
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello factory"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":6,"reasoning_output_tokens":0}}\n'
+        )
+        text, usage = _parse_codex_jsonl(raw)
+        assert text == "hello factory"
+        assert usage is not None
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 6
+        assert usage.cache_read_tokens == 50
+
+    def test_parse_multiple_messages(self) -> None:
+        from factory.runners.codex import _parse_codex_jsonl
+
+        raw = (
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"line 1"}}\n'
+            '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"line 2"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":200,"cached_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0}}\n'
+        )
+        text, usage = _parse_codex_jsonl(raw)
+        assert "line 1" in text
+        assert "line 2" in text
+        assert usage is not None
+        assert usage.input_tokens == 200
+
+    def test_parse_no_usage(self) -> None:
+        from factory.runners.codex import _parse_codex_jsonl
+
+        raw = '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}\n'
+        text, usage = _parse_codex_jsonl(raw)
+        assert text == "hello"
+        assert usage is None
+
+    def test_parse_empty_output(self) -> None:
+        from factory.runners.codex import _parse_codex_jsonl
+
+        text, usage = _parse_codex_jsonl("")
+        assert text == ""
+        assert usage is None
+
+    def test_parse_non_json_lines_skipped(self) -> None:
+        from factory.runners.codex import _parse_codex_jsonl
+
+        raw = (
+            "Reading additional input from stdin...\n"
+            '{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"hello"}}\n'
+            '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}\n'
+        )
+        text, usage = _parse_codex_jsonl(raw)
+        assert text == "hello"
+        assert usage is not None
+
+
+import shutil
+
+
+@pytest.mark.skipif(
+    not shutil.which("codex"),
+    reason="codex CLI not installed",
+)
+class TestCodexE2E:
+    """Real end-to-end tests against the codex CLI.
+
+    These tests actually invoke ``codex exec`` and verify the full pipeline:
+    _build_command → subprocess → _parse_response → Response with text + usage.
+
+    Requires CODEX_API_KEY or OPENAI_API_KEY to be set.
+    """
+
+    @pytest.fixture
+    def runner(self) -> CodexRunner:
+        return CodexRunner()
+
+    @pytest.fixture
+    def git_dir(self, tmp_path: Path) -> Path:
+        """Create a temporary git repo for codex (it requires one)."""
+        import subprocess
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        subprocess.run(["git", "init"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo, capture_output=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=repo, capture_output=True)
+        (repo / "README.md").write_text("# test")
+        subprocess.run(["git", "add", "."], cwd=repo, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "init"], cwd=repo, capture_output=True)
+        return repo
+
+    async def test_simple_echo(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Codex can respond to a simple prompt and we parse the response."""
+        req = Request(
+            prompt="You are a helpful assistant.",
+            task="Say exactly this text and nothing else: FACTORY_E2E_OK",
+            cwd=git_dir,
+            timeout=60.0,
+            skip_permissions=True,
+        )
+        response = await runner.run(req)
+        assert response.return_code == 0
+        assert "FACTORY_E2E_OK" in response.stdout
+
+    async def test_usage_tracking(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Codex returns usage data via JSONL parsing."""
+        req = Request(
+            prompt="You are a helpful assistant.",
+            task="Say exactly: hello",
+            cwd=git_dir,
+            timeout=60.0,
+            skip_permissions=True,
+        )
+        response = await runner.run(req)
+        assert response.return_code == 0
+        assert response.usage is not None
+        assert response.usage.input_tokens > 0
+        assert response.usage.output_tokens > 0
+
+    async def test_model_override(self, runner: CodexRunner, git_dir: Path) -> None:
+        """--model flag is passed correctly to codex."""
+        req = Request(
+            prompt="You are a helpful assistant.",
+            task="Say exactly: model test ok",
+            cwd=git_dir,
+            timeout=60.0,
+            skip_permissions=True,
+            model="o4-mini",
+        )
+        cmd = runner._build_command(req)
+        assert "--model" in cmd
+        assert "o4-mini" in cmd
+
+    async def test_command_structure(self, runner: CodexRunner, git_dir: Path) -> None:
+        """Verify the command structure matches real codex CLI expectations."""
+        req = Request(
+            prompt="system", task="task", cwd=git_dir,
+            skip_permissions=True,
+        )
+        cmd = runner._build_command(req)
+        # Structure: codex exec <prompt> --sandbox workspace-write --json
+        assert cmd[0] == "codex"
+        assert cmd[1] == "exec"
+        assert isinstance(cmd[2], str)  # The combined prompt
+        assert "--sandbox" in cmd
+        assert "workspace-write" in cmd
+        assert "--json" in cmd
+        # Must NOT include --ask-for-approval (invalid for codex exec)
+        assert "--ask-for-approval" not in cmd
+
+    async def test_headless_shim_e2e(self, runner: CodexRunner, git_dir: Path) -> None:
+        """The backward-compat headless() shim also works end-to-end."""
+        stdout, return_code, usage = await runner.headless(
+            prompt="You are a helpful assistant.",
+            task="Say exactly: shim ok",
+            cwd=git_dir,
+            timeout=60.0,
+        )
+        assert return_code == 0
+        assert "shim ok" in stdout.lower() or "shim" in stdout.lower()

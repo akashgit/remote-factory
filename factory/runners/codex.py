@@ -1,11 +1,23 @@
-"""CodexRunner — OpenAI Codex CLI backend implementation."""
+"""CodexRunner — OpenAI Codex CLI backend implementation.
+
+Verified against codex-cli 0.136.0. Key differences from documentation:
+- ``codex exec`` does NOT support ``--ask-for-approval`` — only the interactive
+  ``codex`` command does. Use ``--sandbox workspace-write`` for headless.
+- ``--json`` produces JSONL events (thread.started, turn.started, item.completed,
+  turn.completed) — not a single JSON blob.
+- Usage data (input_tokens, output_tokens, cached_input_tokens) is available in
+  the ``turn.completed`` event's ``usage`` field.
+- ``--dangerously-bypass-approvals-and-sandbox`` is the nuclear permission option.
+"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 from factory.runners._stream import should_stream, stream_subprocess
@@ -34,11 +46,21 @@ class CodexAuthError(Exception):
 
 
 def _check_auth() -> None:
-    """Check that CODEX_API_KEY or OPENAI_API_KEY is set (once per process)."""
+    """Check that codex auth is configured (env var or file-based).
+
+    Codex supports multiple auth modes:
+    - CODEX_API_KEY or OPENAI_API_KEY environment variables
+    - File-based auth via ``codex login`` (stored in ~/.codex/auth.json)
+    """
     global _auth_checked  # noqa: PLW0603
     if _auth_checked:
         return
     if os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+        _auth_checked = True
+        return
+    # Check for file-based auth (codex login)
+    auth_file = Path.home() / ".codex" / "auth.json"
+    if auth_file.exists():
         _auth_checked = True
         return
     raise CodexAuthError()
@@ -67,12 +89,67 @@ _CODEX_IDENTITY = RunnerIdentity(
         Capability.MODEL_OVERRIDE,
         Capability.INTERACTIVE,
         Capability.SANDBOXING,
+        Capability.STRUCTURED_OUTPUT,
+        Capability.USAGE_TRACKING,
     }),
 )
 
 
+def _parse_codex_jsonl(raw: str) -> tuple[str, "AgentUsage | None"]:
+    """Parse Codex JSONL output into (text, usage).
+
+    Codex --json emits lines like:
+        {"type":"thread.started","thread_id":"..."}
+        {"type":"turn.started"}
+        {"type":"item.completed","item":{"id":"...","type":"agent_message","text":"..."}}
+        {"type":"turn.completed","usage":{"input_tokens":N,...}}
+
+    We extract text from item.completed events and usage from turn.completed.
+    """
+    from factory.models import AgentUsage
+
+    texts: list[str] = []
+    usage = None
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        event_type = event.get("type", "")
+
+        if event_type == "item.completed":
+            item = event.get("item", {})
+            text = item.get("text", "")
+            if text:
+                texts.append(text)
+
+        elif event_type == "turn.completed":
+            usage_block = event.get("usage", {})
+            if usage_block:
+                usage = AgentUsage(
+                    input_tokens=usage_block.get("input_tokens", 0),
+                    output_tokens=usage_block.get("output_tokens", 0),
+                    cache_read_tokens=usage_block.get("cached_input_tokens", 0),
+                    cache_creation_tokens=0,
+                    total_cost_usd=0.0,
+                    duration_ms=0.0,
+                    num_turns=1,
+                    model="",
+                )
+
+    return "\n".join(texts) if texts else raw, usage
+
+
 class CodexRunner(AgentRunner):
-    """Runner implementation for OpenAI Codex CLI."""
+    """Runner implementation for OpenAI Codex CLI.
+
+    Verified against codex-cli 0.136.0.
+    """
 
     name: str = "codex"
 
@@ -81,22 +158,36 @@ class CodexRunner(AgentRunner):
         return _CODEX_IDENTITY
 
     def _build_command(self, request: Request) -> list[str]:
-        """Build the codex CLI command.
+        """Build the codex exec command.
 
-        Tool filtering, effort, and append_system_prompt are proxied via prompt
-        injection (handled in headless() where the full prompt is assembled).
+        The prompt is included as the positional argument to ``codex exec``.
+        Tool filtering, effort, and append_system_prompt are proxied via
+        prompt injection — folded into the prompt text before passing.
+
+        Note: ``codex exec`` does NOT support ``--ask-for-approval``. Only
+        ``--sandbox`` and ``--dangerously-bypass-approvals-and-sandbox`` work.
         """
-        cmd = ["codex", "exec"]
+        # Build prompt with proxied features injected
+        full_prompt = request.prompt
+        full_prompt = self._inject_tool_restrictions(full_prompt, request)
+        full_prompt = self._inject_effort_instructions(full_prompt, request.effort)
+        full_prompt = self._inject_append_system_prompt(full_prompt, request.append_system_prompt)
+        full_prompt = f"{full_prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
-        # Permission handling
-        if request.permission_mode:
-            if request.permission_mode == "bypassPermissions":
-                cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+        cmd = ["codex", "exec", full_prompt]
+
+        # Permission handling — codex exec only supports --sandbox and
+        # --dangerously-bypass-approvals-and-sandbox (NOT --ask-for-approval)
+        if request.permission_mode == "bypassPermissions":
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
         elif request.skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.extend(["--sandbox", "workspace-write"])
 
         if request.model:
             cmd.extend(["--model", request.model])
+
+        # Structured output via JSONL
+        cmd.append("--json")
 
         return cmd
 
@@ -109,11 +200,12 @@ class CodexRunner(AgentRunner):
         stderr: str,
         return_code: int,
     ) -> Response:
-        """Parse codex output. No usage telemetry available."""
-        return Response(stdout=stdout, return_code=return_code, usage=None)
+        """Parse codex JSONL output into a Response with usage tracking."""
+        text, usage = _parse_codex_jsonl(stdout)
+        return Response(stdout=text, return_code=return_code, usage=usage)
 
     def _warn_unsupported(self, request: Request) -> None:
-        """Log warnings for features proxied via prompt injection."""
+        """Log warnings for features that cannot be proxied."""
         if request.max_budget_usd is not None:
             logger.warning(
                 "CodexRunner: max_budget_usd=%.2f accepted but not natively enforced",
@@ -122,13 +214,14 @@ class CodexRunner(AgentRunner):
         if request.mcp_config:
             logger.warning("CodexRunner: mcp_config is not supported by codex, ignoring")
 
-    def _build_full_prompt(self, prompt: str, task: str, request: Request) -> str:
-        """Build the combined prompt with proxied features folded in."""
-        full = prompt
-        full = self._inject_tool_restrictions(full, request)
-        full = self._inject_effort_instructions(full, request.effort)
-        full = self._inject_append_system_prompt(full, request.append_system_prompt)
-        return f"{full}\n\n---\n\n## Current Task\n\n{task}"
+    async def run(self, request: Request) -> Response:
+        """Override for dry-run detection and auth check."""
+        if is_codex_dry_run():
+            stdout, code = self._dry_run_response(request.role, request.cwd, request.task)
+            return Response(stdout=stdout, return_code=code)
+
+        _check_auth()
+        return await super().run(request)
 
     # -- Backward-compatible headless() shim --
 
@@ -144,62 +237,23 @@ class CodexRunner(AgentRunner):
         role: str = "unknown",
         session_name: str | None = None,
         tmux_persist: bool = False,
-    ) -> tuple[str, int, None]:
+    ) -> tuple[str, int, "AgentUsage | None"]:
         """Run a headless Codex CLI invocation (backward-compat shim)."""
         _ = session_name
         if tmux_persist:
             logger.warning("tmux_persist not supported with codex runner")
-        if is_codex_dry_run():
-            stdout, code = self._dry_run_response(role, cwd, task)
-            return stdout, code, None
 
-        _check_auth()
-
-        full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
-
-        cmd = ["codex", "exec", full_prompt]
-
-        if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
-
-        if model:
-            cmd.extend(["--model", model])
-
-        logger.info("CodexRunner headless: cwd=%s, model=%s, role=%s", cwd, model, role)
-
-        env = _make_codex_env()
-
-        stream = should_stream()
-        prefix = f"[codex:{role}]" if stream else None
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-            )
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                stream_subprocess(proc, stream=stream, prefix=prefix),
-                timeout=timeout,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()  # type: ignore[union-attr]
-            await proc.wait()  # type: ignore[union-attr]
-            logger.error("CodexRunner timed out after %ss", timeout)
-            return f"Agent timed out after {timeout}s", 1, None
-        except FileNotFoundError:
-            logger.error("'codex' CLI not found on PATH")
-            return "Error: 'codex' CLI not found on PATH", 1, None
-
-        stdout_str = stdout_bytes.decode()
-        stderr_str = stderr_bytes.decode()
-
-        if proc.returncode != 0:
-            logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr_str[:200])
-
-        return stdout_str, proc.returncode or 0, None
+        request = Request(
+            prompt=prompt,
+            task=task,
+            cwd=cwd,
+            timeout=timeout,
+            model=model,
+            skip_permissions=dangerously_skip_permissions,
+            role=role,
+        )
+        response = await self.run(request)
+        return response.stdout, response.return_code, response.usage
 
     def interactive_run(
         self,
@@ -224,10 +278,11 @@ class CodexRunner(AgentRunner):
 
         full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
 
+        # Interactive codex command DOES support --ask-for-approval
         cmd = ["codex", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if model:
             cmd.extend(["--model", model])
@@ -238,7 +293,7 @@ class CodexRunner(AgentRunner):
         result = subprocess.run(cmd, cwd=cwd, env=env)
         return result.returncode
 
-    def _dry_run_response(self, role: str, cwd: Path, task: str) -> tuple[str, int]:
+    def _dry_run_response(self, role: str, cwd: str | Path, task: str) -> tuple[str, int]:
         """Return a stub response for dry-run mode."""
         response = (
             f"[DRY-RUN] CodexRunner would have executed:\n"
