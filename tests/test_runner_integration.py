@@ -1,5 +1,6 @@
 """Integration tests for runner v2 — command building, capability declarations, invoke_agent dispatch."""
 
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -416,9 +417,6 @@ class TestCodexJsonlParser:
         text, usage = _parse_codex_jsonl(raw)
         assert text == "hello"
         assert usage is not None
-
-
-import shutil
 
 
 @pytest.mark.skipif(
