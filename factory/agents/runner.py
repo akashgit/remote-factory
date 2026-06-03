@@ -138,6 +138,11 @@ async def invoke_agent(
     session_name: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    allowed_tools: list[str] | None = None,
+    disallowed_tools: list[str] | None = None,
+    permission_mode: str | None = None,
+    max_budget_usd: float | None = None,
+    effort: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -148,13 +153,19 @@ async def invoke_agent(
         timeout: Maximum execution time in seconds.
         dangerously_skip_permissions: If True, skip permission prompts.
         model: Optional model override.
-        runner_name: CLI backend to use ("claude" or "bob"). Defaults to FACTORY_RUNNER env var.
+        runner_name: CLI backend to use ("claude", "bob", "codex", "opencode").
+            Defaults to FACTORY_RUNNER env var.
         _track_failures: If True (default), track consecutive failures globally.
             Set to False when called from invoke_agents_parallel to avoid race conditions.
         session_name: Optional session name for /resume identification.
             If not provided, defaults to "factory: {project_name}/{role}".
         use_profile: If True, inject user profile into the agent prompt.
         tmux_persist: If True, run the agent interactively in a tmux window.
+        allowed_tools: List of tools the agent may use (v2, passed to AgentRunner).
+        disallowed_tools: List of tools the agent must not use (v2, passed to AgentRunner).
+        permission_mode: Permission mode string (v2, passed to AgentRunner).
+        max_budget_usd: Maximum budget in USD (v2, passed to AgentRunner).
+        effort: Effort level: "low", "medium", "high", "xhigh", "max" (v2).
 
     Returns (stdout, return_code).
 
@@ -174,18 +185,45 @@ async def invoke_agent(
 
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
 
+    v2_fields_provided = any(v is not None for v in (
+        allowed_tools, disallowed_tools, permission_mode, max_budget_usd, effort,
+    ))
+
     try:
-        stdout, return_code, usage = await runner.headless(
-            prompt=prompt,
-            task=task,
-            cwd=project_path,
-            timeout=timeout,
-            model=model,
-            dangerously_skip_permissions=dangerously_skip_permissions,
-            role=role,
-            session_name=agent_session_name,
-            tmux_persist=tmux_persist,
-        )
+        # Duck-type dispatch: use AgentRunner.run() when v2 fields are provided
+        # and the runner supports it; otherwise fall back to legacy headless().
+        if v2_fields_provided and hasattr(runner, "run"):
+            from factory.runners.abstraction import Request, Response
+
+            request = Request(
+                prompt=prompt,
+                task=task,
+                cwd=project_path,
+                timeout=timeout,
+                model=model,
+                skip_permissions=dangerously_skip_permissions,
+                role=role,
+                session_name=agent_session_name,
+                allowed_tools=allowed_tools,
+                disallowed_tools=disallowed_tools,
+                permission_mode=permission_mode,
+                max_budget_usd=max_budget_usd,
+                effort=effort,
+            )
+            response: Response = await runner.run(request)  # type: ignore[union-attr]
+            stdout, return_code, usage = response.stdout, response.return_code, response.usage
+        else:
+            stdout, return_code, usage = await runner.headless(
+                prompt=prompt,
+                task=task,
+                cwd=project_path,
+                timeout=timeout,
+                model=model,
+                dangerously_skip_permissions=dangerously_skip_permissions,
+                role=role,
+                session_name=agent_session_name,
+                tmux_persist=tmux_persist,
+            )
     except Exception as e:
         logger.error("%s agent failed: %s", role, e)
         _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})

@@ -12,6 +12,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.abstraction import (
+    AgentRunner,
+    Capability,
+    Request,
+    Response,
+    RunnerIdentity,
+)
 
 if TYPE_CHECKING:
     from factory.models import AgentUsage
@@ -36,10 +43,98 @@ def _parse_usage(data: dict) -> "AgentUsage":
     )
 
 
-class ClaudeRunner:
+_CLAUDE_IDENTITY = RunnerIdentity(
+    name="claude",
+    cli_command="claude",
+    capabilities=frozenset({
+        Capability.MODEL_OVERRIDE,
+        Capability.SESSION_RESUME,
+        Capability.SYSTEM_PROMPT_FILE,
+        Capability.STREAMING,
+        Capability.INTERACTIVE,
+        Capability.STRUCTURED_OUTPUT,
+        Capability.TOOL_FILTERING,
+        Capability.PERMISSION_MODES,
+        Capability.BUDGET_CAP,
+        Capability.EFFORT_CONTROL,
+        Capability.APPEND_SYSTEM_PROMPT,
+        Capability.MCP_CONFIG,
+        Capability.USAGE_TRACKING,
+    }),
+)
+
+
+class ClaudeRunner(AgentRunner):
     """Runner implementation for Claude Code CLI."""
 
     name: str = "claude"
+
+    @property
+    def identity(self) -> RunnerIdentity:
+        return _CLAUDE_IDENTITY
+
+    def _build_command(self, request: Request) -> list[str]:
+        """Build the claude CLI command with all v2 fields mapped to flags."""
+        # Prompt is written to a temp file by run()/headless() — use placeholder.
+        # The actual file path is set in the headless() method.
+        cmd = ["claude"]
+
+        # permission_mode takes priority over skip_permissions
+        if request.permission_mode:
+            cmd.extend(["--permission-mode", request.permission_mode])
+        elif request.skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+
+        if request.model:
+            cmd.extend(["--model", request.model])
+        if request.session_name:
+            cmd.extend(["--name", request.session_name])
+
+        # v2 fields
+        if request.allowed_tools:
+            cmd.append("--allowedTools")
+            cmd.extend(request.allowed_tools)
+        if request.disallowed_tools:
+            cmd.append("--disallowedTools")
+            cmd.extend(request.disallowed_tools)
+        if request.max_budget_usd is not None:
+            cmd.extend(["--max-budget-usd", str(request.max_budget_usd)])
+        if request.effort:
+            cmd.extend(["--effort", request.effort])
+        if request.output_format:
+            cmd.extend(["--output-format", request.output_format])
+        else:
+            cmd.extend(["--output-format", "json"])
+        if request.append_system_prompt:
+            cmd.extend(["--append-system-prompt", request.append_system_prompt])
+        if request.mcp_config:
+            for cfg in request.mcp_config:
+                cmd.extend(["--mcp-config", cfg])
+
+        return cmd
+
+    def _parse_response(
+        self,
+        stdout: str,
+        stderr: str,
+        return_code: int,
+    ) -> Response:
+        """Parse Claude Code JSON output into a Response."""
+        usage = None
+        result_text = stdout
+        try:
+            data = json.loads(stdout)
+            if isinstance(data, dict):
+                result_value = data.get("result", stdout)
+                result_text = result_value if isinstance(result_value, str) else stdout
+                usage = _parse_usage(data)
+        except (json.JSONDecodeError, ValueError):
+            logger.debug("Could not parse JSON output, returning raw stdout")
+
+        return Response(stdout=result_text, return_code=return_code, usage=usage)
+
+    # -- Backward-compatible headless() shim --
+    # Existing callers use runner.headless() directly. This preserves that interface.
 
     async def headless(
         self,
@@ -54,21 +149,7 @@ class ClaudeRunner:
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, "AgentUsage | None"]:
-        """Run a headless Claude Code invocation.
-
-        Args:
-            prompt: The system prompt / agent role definition.
-            task: The task to execute.
-            cwd: Working directory for the subprocess.
-            timeout: Maximum execution time in seconds.
-            model: Optional model override.
-            dangerously_skip_permissions: If True, skip permission prompts.
-            role: Agent role (used for streaming prefix).
-            session_name: Optional session name for identification in /resume.
-            tmux_persist: If True, run the agent interactively in a tmux window.
-
-        Returns (stdout, return_code, usage).
-        """
+        """Run a headless Claude Code invocation (backward-compat shim)."""
         if tmux_persist:
             from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
 
@@ -162,10 +243,7 @@ class ClaudeRunner:
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Claude Code session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Claude Code session as a subprocess."""
         _ = role
         prompt_file = tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,

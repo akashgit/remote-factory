@@ -9,6 +9,7 @@ from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
+from factory.runners.opencode import OpenCodeRunner
 from factory.runners.protocol import Runner
 
 __all__ = [
@@ -16,6 +17,7 @@ __all__ = [
     "ClaudeRunner",
     "BobRunner",
     "CodexRunner",
+    "OpenCodeRunner",
     "get_runner",
     "RunnerName",
     "is_dry_run",
@@ -24,12 +26,13 @@ __all__ = [
     "stream_subprocess",
 ]
 
-RunnerName = Literal["claude", "bob", "codex"]
+RunnerName = Literal["claude", "bob", "codex", "opencode"]
 
 _RUNNERS: dict[str, type[Runner]] = {
     "claude": ClaudeRunner,  # type: ignore[dict-item]
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
+    "opencode": OpenCodeRunner,  # type: ignore[dict-item]
 }
 
 
@@ -42,7 +45,7 @@ def get_runner(name: str | None = None, project_path: Path | None = None) -> Run
     3. Default to "claude"
 
     Args:
-        name: Runner name ("claude", "bob", or "codex").
+        name: Runner name ("claude", "bob", "codex", or "opencode").
         project_path: Path to the project. Passed to BobRunner for cycle state lookup.
 
     Raises:

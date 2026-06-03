@@ -9,6 +9,13 @@ import subprocess
 from pathlib import Path
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.abstraction import (
+    AgentRunner,
+    Capability,
+    Request,
+    Response,
+    RunnerIdentity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +60,77 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
-class CodexRunner:
+_CODEX_IDENTITY = RunnerIdentity(
+    name="codex",
+    cli_command="codex",
+    capabilities=frozenset({
+        Capability.MODEL_OVERRIDE,
+        Capability.INTERACTIVE,
+        Capability.SANDBOXING,
+    }),
+)
+
+
+class CodexRunner(AgentRunner):
     """Runner implementation for OpenAI Codex CLI."""
 
     name: str = "codex"
+
+    @property
+    def identity(self) -> RunnerIdentity:
+        return _CODEX_IDENTITY
+
+    def _build_command(self, request: Request) -> list[str]:
+        """Build the codex CLI command.
+
+        Tool filtering, effort, and append_system_prompt are proxied via prompt
+        injection (handled in headless() where the full prompt is assembled).
+        """
+        cmd = ["codex", "exec"]
+
+        # Permission handling
+        if request.permission_mode:
+            if request.permission_mode == "bypassPermissions":
+                cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+        elif request.skip_permissions:
+            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+
+        if request.model:
+            cmd.extend(["--model", request.model])
+
+        return cmd
+
+    def _build_env(self) -> dict[str, str]:
+        return _make_codex_env()
+
+    def _parse_response(
+        self,
+        stdout: str,
+        stderr: str,
+        return_code: int,
+    ) -> Response:
+        """Parse codex output. No usage telemetry available."""
+        return Response(stdout=stdout, return_code=return_code, usage=None)
+
+    def _warn_unsupported(self, request: Request) -> None:
+        """Log warnings for features proxied via prompt injection."""
+        if request.max_budget_usd is not None:
+            logger.warning(
+                "CodexRunner: max_budget_usd=%.2f accepted but not natively enforced",
+                request.max_budget_usd,
+            )
+        if request.mcp_config:
+            logger.warning("CodexRunner: mcp_config is not supported by codex, ignoring")
+
+    def _build_full_prompt(self, prompt: str, task: str, request: Request) -> str:
+        """Build the combined prompt with proxied features folded in."""
+        full = prompt
+        full = self._inject_tool_restrictions(full, request)
+        full = self._inject_effort_instructions(full, request.effort)
+        full = self._inject_append_system_prompt(full, request.append_system_prompt)
+        return f"{full}\n\n---\n\n## Current Task\n\n{task}"
+
+    # -- Backward-compatible headless() shim --
 
     async def headless(
         self,
@@ -71,13 +145,7 @@ class CodexRunner:
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, None]:
-        """Run a headless Codex CLI invocation via ``codex exec``.
-
-        Codex exec streams progress to stderr and writes only the final
-        agent message to stdout, which aligns with the factory's capture model.
-
-        Returns (stdout, return_code, None). Codex has no token telemetry.
-        """
+        """Run a headless Codex CLI invocation (backward-compat shim)."""
         _ = session_name
         if tmux_persist:
             logger.warning("tmux_persist not supported with codex runner")
@@ -125,13 +193,13 @@ class CodexRunner:
             logger.error("'codex' CLI not found on PATH")
             return "Error: 'codex' CLI not found on PATH", 1, None
 
-        stdout = stdout_bytes.decode()
-        stderr = stderr_bytes.decode()
+        stdout_str = stdout_bytes.decode()
+        stderr_str = stderr_bytes.decode()
 
         if proc.returncode != 0:
-            logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr[:200])
+            logger.warning("CodexRunner exited with code %d: %s", proc.returncode, stderr_str[:200])
 
-        return stdout, proc.returncode or 0, None
+        return stdout_str, proc.returncode or 0, None
 
     def interactive_run(
         self,
@@ -144,10 +212,7 @@ class CodexRunner:
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Codex CLI session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Codex CLI session as a subprocess."""
         _ = role, session_name
 
         if is_codex_dry_run():
