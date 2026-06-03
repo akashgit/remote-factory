@@ -7,10 +7,12 @@ from factory.runners.types import (
     AgentStep,
     ExecutionTrace,
     FileLocation,
+    PermissionMode,
     RunnerCapability,
     RunnerInfo,
     RunnerRequest,
     RunnerResponse,
+    SandboxMode,
     ToolCallStatus,
     ToolCallTrace,
     ToolKind,
@@ -25,7 +27,7 @@ class TestRunnerCapability:
         expected = {
             "model_override", "session_resume", "structured_output",
             "streaming", "interactive", "dry_run", "sandboxing",
-            "acp", "execution_trace",
+            "acp", "execution_trace", "tool_control", "max_turns",
         }
         assert {c.value for c in RunnerCapability} == expected
 
@@ -332,3 +334,119 @@ class TestAssemblePrompt:
         up_idx = result.index("User Profile")
         ct_idx = result.index("Current Task")
         assert pb_idx < up_idx < ct_idx
+
+
+# -- PermissionMode enum ----------------------------------------------------
+
+class TestPermissionMode:
+    def test_all_values(self):
+        expected = {"auto", "approve_writes", "approve_all"}
+        assert {m.value for m in PermissionMode} == expected
+
+    def test_default_is_auto(self):
+        req = RunnerRequest(system_prompt="s", task="t", cwd="/tmp")
+        assert req.permission_mode == PermissionMode.AUTO
+
+
+# -- SandboxMode enum -------------------------------------------------------
+
+class TestSandboxMode:
+    def test_all_values(self):
+        expected = {"none", "read_only", "workspace_write", "full"}
+        assert {m.value for m in SandboxMode} == expected
+
+
+# -- RunnerRequest new fields -----------------------------------------------
+
+class TestRunnerRequestNewFields:
+    def test_new_field_defaults(self):
+        req = RunnerRequest(system_prompt="s", task="t", cwd="/tmp")
+        assert req.system_prompt_append == []
+        assert req.system_prompt_files == []
+        assert req.permission_mode == PermissionMode.AUTO
+        assert req.allowed_tools is None
+        assert req.disallowed_tools is None
+        assert req.sandbox_mode is None
+        assert req.max_turns is None
+        assert req.max_tokens is None
+        assert req.max_cost_usd is None
+
+    def test_append_system_prompt(self):
+        req = RunnerRequest(system_prompt="Base prompt.", task="t", cwd="/tmp")
+        req.append_system_prompt("Observation: tests pass.")
+        req.append_system_prompt("Context: user prefers Python.")
+        assert len(req.system_prompt_append) == 2
+        assert "Observation: tests pass." in req.full_system_prompt
+        assert "Context: user prefers Python." in req.full_system_prompt
+        assert req.full_system_prompt.startswith("Base prompt.")
+
+    def test_full_system_prompt_without_appends(self):
+        req = RunnerRequest(system_prompt="Just the base.", task="t", cwd="/tmp")
+        assert req.full_system_prompt == "Just the base."
+
+    def test_full_system_prompt_with_files(self, tmp_path):
+        ctx_file = tmp_path / "context.md"
+        ctx_file.write_text("File context here.")
+        req = RunnerRequest(
+            system_prompt="Base.",
+            task="t",
+            cwd="/tmp",
+            system_prompt_files=[str(ctx_file)],
+        )
+        assert "File context here." in req.full_system_prompt
+
+    def test_full_system_prompt_missing_file_ignored(self):
+        req = RunnerRequest(
+            system_prompt="Base.",
+            task="t",
+            cwd="/tmp",
+            system_prompt_files=["/nonexistent/file.md"],
+        )
+        # Should not raise, missing files are silently skipped
+        assert req.full_system_prompt == "Base."
+
+    def test_prompt_property_uses_full_system_prompt(self):
+        req = RunnerRequest(system_prompt="Base.", task="Do work", cwd="/tmp")
+        req.append_system_prompt("Extra context.")
+        prompt = req.prompt
+        assert "Base." in prompt
+        assert "Extra context." in prompt
+        assert "Do work" in prompt
+        assert "Current Task" in prompt
+
+    def test_allowed_tools(self):
+        req = RunnerRequest(
+            system_prompt="s", task="t", cwd="/tmp",
+            allowed_tools=["Read", "Grep", "Glob"],
+        )
+        assert req.allowed_tools == ["Read", "Grep", "Glob"]
+
+    def test_disallowed_tools(self):
+        req = RunnerRequest(
+            system_prompt="s", task="t", cwd="/tmp",
+            disallowed_tools=["Bash"],
+        )
+        assert req.disallowed_tools == ["Bash"]
+
+    def test_permission_mode(self):
+        req = RunnerRequest(
+            system_prompt="s", task="t", cwd="/tmp",
+            permission_mode=PermissionMode.APPROVE_WRITES,
+        )
+        assert req.permission_mode == PermissionMode.APPROVE_WRITES
+
+    def test_sandbox_mode(self):
+        req = RunnerRequest(
+            system_prompt="s", task="t", cwd="/tmp",
+            sandbox_mode=SandboxMode.READ_ONLY,
+        )
+        assert req.sandbox_mode == SandboxMode.READ_ONLY
+
+    def test_resource_limits(self):
+        req = RunnerRequest(
+            system_prompt="s", task="t", cwd="/tmp",
+            max_turns=5, max_tokens=10000, max_cost_usd=0.50,
+        )
+        assert req.max_turns == 5
+        assert req.max_tokens == 10000
+        assert req.max_cost_usd == 0.50

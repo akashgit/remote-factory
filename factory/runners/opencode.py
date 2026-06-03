@@ -33,7 +33,10 @@ class OpenCodeRunner(CLIAdapter):
         *,
         prompt_file: str | None = None,
     ) -> list[str]:
-        cmd = ["opencode", "run", "--format", "json", request.prompt]
+        cmd = ["opencode", "run", "--format", "json"]
+        if request.model:
+            cmd.extend(["--model", request.model])
+        cmd.append(request.prompt)
         return cmd
 
     def _parse_output(

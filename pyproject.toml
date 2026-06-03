@@ -44,7 +44,11 @@ factory = "factory.cli:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-markers = ["real_worktree: use real git worktree functions instead of mocks"]
+addopts = "-m 'not e2e'"
+markers = [
+    "real_worktree: use real git worktree functions instead of mocks",
+    "e2e: end-to-end tests that spawn real CLI subprocesses (cost tokens)",
+]
 
 [tool.ruff]
 line-length = 100

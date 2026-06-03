@@ -11,9 +11,11 @@ from pathlib import Path
 from factory.runners._stream import should_stream, stream_subprocess
 from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.types import (
+    PermissionMode,
     RunnerCapability,
     RunnerRequest,
     RunnerResponse,
+    SandboxMode,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,24 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
+# -- Sandbox mode mapping --------------------------------------------------
+
+_SANDBOX_MAP: dict[SandboxMode, str] = {
+    SandboxMode.NONE: "none",
+    SandboxMode.READ_ONLY: "read-only",
+    SandboxMode.WORKSPACE_WRITE: "workspace-write",
+    SandboxMode.FULL: "full",
+}
+
+# -- Permission mode mapping ------------------------------------------------
+
+_APPROVAL_MAP: dict[PermissionMode, str] = {
+    PermissionMode.AUTO: "never",
+    PermissionMode.APPROVE_WRITES: "write",
+    PermissionMode.APPROVE_ALL: "always",
+}
+
+
 class CodexRunner(CLIAdapter):
     """Runner implementation for OpenAI Codex CLI."""
 
@@ -68,7 +88,10 @@ class CodexRunner(CLIAdapter):
         super().__init__(
             name="codex",
             display_name="OpenAI Codex",
-            capabilities={RunnerCapability.MODEL_OVERRIDE, RunnerCapability.SANDBOXING},
+            capabilities={
+                RunnerCapability.MODEL_OVERRIDE,
+                RunnerCapability.SANDBOXING,
+            },
             binary="codex",
         )
 
@@ -80,17 +103,64 @@ class CodexRunner(CLIAdapter):
             return False, "CODEX_API_KEY or OPENAI_API_KEY not set"
         return True, "codex found and API key set"
 
+    def _inject_prompt_proxy(self, request: RunnerRequest) -> str:
+        """Codex handles sandbox natively — proxy tool control and limits."""
+        parts: list[str] = []
+
+        # Tool control: no native flag — prompt proxy
+        if request.allowed_tools:
+            tools = ", ".join(request.allowed_tools)
+            parts.append(f"IMPORTANT: You may ONLY use these tools: {tools}. Do not use any other tools.")
+        if request.disallowed_tools:
+            tools = ", ".join(request.disallowed_tools)
+            parts.append(f"IMPORTANT: You must NOT use these tools: {tools}.")
+
+        # Resource limits: no native flags — prompt proxy
+        if request.max_turns is not None:
+            parts.append(
+                f"IMPORTANT: Complete your work within {request.max_turns} conversation turns."
+            )
+        if request.max_tokens is not None:
+            parts.append(
+                f"IMPORTANT: Keep your total output under {request.max_tokens} tokens. Be concise."
+            )
+        if request.max_cost_usd is not None:
+            parts.append(
+                f"IMPORTANT: This invocation has a budget of ${request.max_cost_usd:.2f}. "
+                "Minimize token usage."
+            )
+
+        # sandbox READ_ONLY: handled natively via --sandbox, but reinforce with prompt
+        if request.sandbox_mode == SandboxMode.READ_ONLY:
+            parts.append(
+                "IMPORTANT: READ-ONLY MODE. Do not write, edit, or delete any files."
+            )
+
+        return "\n\n".join(parts)
+
     def _build_command(
         self,
         request: RunnerRequest,
         *,
         prompt_file: str | None = None,
     ) -> list[str]:
-        cmd = ["codex", "exec", request.prompt,  # .prompt combines system+task
-               "--sandbox", "workspace-write",
-               "--ask-for-approval", "never"]
+        cmd = ["codex", "exec", request.prompt]  # .prompt combines system+task
+
+        # Sandbox mode (native)
+        sandbox = _SANDBOX_MAP.get(
+            request.sandbox_mode or SandboxMode.WORKSPACE_WRITE,
+            "workspace-write",
+        )
+        cmd.extend(["--sandbox", sandbox])
+
+        # Permission mode (native)
+        approval = _APPROVAL_MAP.get(request.permission_mode, "never")
+        cmd.extend(["--ask-for-approval", approval])
+
+        # Model override
         if request.model:
             cmd.extend(["--model", request.model])
+
         return cmd
 
     def _parse_output(

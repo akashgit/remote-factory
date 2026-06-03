@@ -19,6 +19,25 @@ class RunnerCapability(Enum):
     SANDBOXING = "sandboxing"
     ACP = "acp"
     EXECUTION_TRACE = "execution_trace"
+    TOOL_CONTROL = "tool_control"
+    MAX_TURNS = "max_turns"
+
+
+# -- Permission & Sandbox Modes ---------------------------------------------
+
+class PermissionMode(Enum):
+    """How the agent handles permission prompts."""
+    AUTO = "auto"                        # Skip all prompts (headless)
+    APPROVE_WRITES = "approve_writes"    # Auto-approve reads, prompt for writes
+    APPROVE_ALL = "approve_all"          # Prompt for everything (interactive default)
+
+
+class SandboxMode(Enum):
+    """Workspace access level for the agent."""
+    NONE = "none"                        # No sandbox restrictions
+    READ_ONLY = "read_only"              # Can read but not write files
+    WORKSPACE_WRITE = "workspace_write"  # Can write in workspace only
+    FULL = "full"                        # Full filesystem access
 
 
 @dataclass
@@ -40,13 +59,47 @@ class RunnerRequest:
     model: str | None = None
     session_name: str | None = None
     role: str | None = None                      # Agent role (for logging prefix)
-    skip_permissions: bool = True
     env_overrides: dict[str, str] = field(default_factory=dict)
+
+    # -- System Prompt Management --
+    system_prompt_append: list[str] = field(default_factory=list)
+    system_prompt_files: list[str] = field(default_factory=list)
+
+    # -- Permission & Tool Control --
+    permission_mode: PermissionMode = PermissionMode.AUTO
+    allowed_tools: list[str] | None = None       # Whitelist: ["Read", "Grep", "Glob"]
+    disallowed_tools: list[str] | None = None    # Blacklist: ["Bash"]
+    sandbox_mode: SandboxMode | None = None
+
+    # -- Resource Limits --
+    max_turns: int | None = None
+    max_tokens: int | None = None
+    max_cost_usd: float | None = None
+
+    # -- Deprecated (use permission_mode instead) --
+    skip_permissions: bool = True
+
+    def append_system_prompt(self, text: str) -> None:
+        """Append an additional section to the system prompt."""
+        self.system_prompt_append.append(text)
+
+    @property
+    def full_system_prompt(self) -> str:
+        """System prompt with all appended sections and file contents joined."""
+        parts = [self.system_prompt]
+        parts.extend(self.system_prompt_append)
+        for fpath in self.system_prompt_files:
+            try:
+                with open(fpath) as f:
+                    parts.append(f.read())
+            except OSError:
+                pass
+        return "\n\n".join(parts)
 
     @property
     def prompt(self) -> str:
-        """Fully assembled prompt (system + task). For runners that don't separate them."""
-        return f"{self.system_prompt}\n\n---\n\n## Current Task\n\n{self.task}"
+        """Fully assembled prompt (system + appends + task). For runners that inline everything."""
+        return f"{self.full_system_prompt}\n\n---\n\n## Current Task\n\n{self.task}"
 
 
 # -- Usage --------------------------------------------------------------------

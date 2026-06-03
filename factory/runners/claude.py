@@ -17,9 +17,11 @@ from factory.runners.types import (
     AgentStep,
     ExecutionTrace,
     FileLocation,
+    PermissionMode,
     RunnerCapability,
     RunnerRequest,
     RunnerResponse,
+    SandboxMode,
     ToolCallStatus,
     ToolCallTrace,
     ToolKind,
@@ -239,9 +241,37 @@ class ClaudeRunner(CLIAdapter):
                 RunnerCapability.STREAMING,
                 RunnerCapability.INTERACTIVE,
                 RunnerCapability.EXECUTION_TRACE,
+                RunnerCapability.TOOL_CONTROL,
+                RunnerCapability.MAX_TURNS,
             },
             binary="claude",
         )
+
+    def _inject_prompt_proxy(self, request: RunnerRequest) -> str:
+        """Claude handles most features natively — only proxy what it can't do."""
+        parts: list[str] = []
+
+        # max_tokens: no native flag — prompt proxy
+        if request.max_tokens is not None:
+            parts.append(
+                f"IMPORTANT: Keep your total output under {request.max_tokens} tokens. Be concise."
+            )
+
+        # max_cost_usd: no native flag — prompt proxy
+        if request.max_cost_usd is not None:
+            parts.append(
+                f"IMPORTANT: This invocation has a budget of ${request.max_cost_usd:.2f}. "
+                "Minimize token usage. Avoid reading large files unnecessarily."
+            )
+
+        # sandbox_mode: no native flag — proxy via tool restrictions
+        if request.sandbox_mode == SandboxMode.READ_ONLY:
+            parts.append(
+                "IMPORTANT: READ-ONLY MODE. Do not write, edit, or delete any files. "
+                "Do not execute commands that modify the filesystem."
+            )
+
+        return "\n\n".join(parts)
 
     def _build_command(
         self,
@@ -252,13 +282,34 @@ class ClaudeRunner(CLIAdapter):
         cmd = ["claude"]
         if prompt_file:
             cmd.extend(["--append-system-prompt-file", prompt_file])
-        cmd.extend(["-p", request.task, "--output-format", "stream-json"])
-        if request.skip_permissions:
+        cmd.extend(["-p", request.task, "--output-format", "stream-json", "--verbose"])
+
+        # Permission mode: skip_permissions=False overrides permission_mode for backward compat
+        if request.skip_permissions and request.permission_mode == PermissionMode.AUTO:
             cmd.append("--dangerously-skip-permissions")
+        elif not request.skip_permissions:
+            pass  # Explicit opt-out — don't add the flag
+        elif request.permission_mode == PermissionMode.AUTO:
+            cmd.append("--dangerously-skip-permissions")
+
+        # Tool control (native)
+        if request.allowed_tools:
+            cmd.extend(["--allowedTools", ",".join(request.allowed_tools)])
+        if request.disallowed_tools:
+            cmd.extend(["--disallowedTools", ",".join(request.disallowed_tools)])
+
+        # Resource limits
+        if request.max_turns is not None:
+            cmd.extend(["--max-turns", str(request.max_turns)])
+
+        # Model override
         if request.model:
             cmd.extend(["--model", request.model])
+
+        # Session resume
         if request.session_name:
             cmd.extend(["--name", request.session_name])
+
         return cmd
 
     def _parse_output(
@@ -359,7 +410,7 @@ class ClaudeRunner(CLIAdapter):
             cmd = [
                 "claude", "--append-system-prompt-file", prompt_file.name,
                 "-p", task,
-                "--output-format", "stream-json",
+                "--output-format", "stream-json", "--verbose",
             ]
             if dangerously_skip_permissions:
                 cmd.append("--dangerously-skip-permissions")

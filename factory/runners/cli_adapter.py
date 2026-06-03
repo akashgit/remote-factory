@@ -27,6 +27,15 @@ class CLIAdapter(abc.ABC):
 
     Provides shared subprocess management (spawn, stream, timeout, env)
     while delegating command construction and output parsing to subclasses.
+
+    Subclasses implement:
+        - _build_command(): how to invoke the CLI
+        - _parse_output(): how to read the CLI output
+
+    Optionally override:
+        - _build_env(): env var setup
+        - _inject_prompt_proxy(): inline unsupported features into the prompt
+        - check_health(): binary + auth checks
     """
 
     def __init__(
@@ -65,7 +74,7 @@ class CLIAdapter(abc.ABC):
 
         Args:
             request: The runner request.
-            prompt_file: Path to a temp file containing request.prompt,
+            prompt_file: Path to a temp file containing the full system prompt,
                          created by headless()/interactive() for adapters
                          that deliver prompts via file (e.g. --append-system-prompt-file).
         """
@@ -86,16 +95,74 @@ class CLIAdapter(abc.ABC):
         env.update(request.env_overrides)
         return env
 
-    async def headless(self, request: RunnerRequest) -> RunnerResponse:
-        """Run a headless (non-interactive) agent invocation."""
-        prompt_file = tempfile.NamedTemporaryFile(
+    def _inject_prompt_proxy(self, request: RunnerRequest) -> str:
+        """Build prompt-proxy instructions for features this runner doesn't support natively.
+
+        Called by _write_system_prompt(). Subclasses that support features natively
+        (e.g. Claude's --allowedTools) should override to skip those.
+
+        Returns extra text to append to the system prompt, or empty string.
+        """
+        parts: list[str] = []
+
+        if request.allowed_tools:
+            tools = ", ".join(request.allowed_tools)
+            parts.append(f"IMPORTANT: You may ONLY use these tools: {tools}. Do not use any other tools.")
+
+        if request.disallowed_tools:
+            tools = ", ".join(request.disallowed_tools)
+            parts.append(f"IMPORTANT: You must NOT use these tools: {tools}.")
+
+        if request.max_turns is not None:
+            parts.append(
+                f"IMPORTANT: Complete your work within {request.max_turns} conversation turns. "
+                "Be efficient and avoid unnecessary back-and-forth."
+            )
+
+        if request.max_tokens is not None:
+            parts.append(
+                f"IMPORTANT: Keep your total output under {request.max_tokens} tokens. Be concise."
+            )
+
+        if request.max_cost_usd is not None:
+            parts.append(
+                f"IMPORTANT: This invocation has a budget of ${request.max_cost_usd:.2f}. "
+                "Minimize token usage. Avoid reading large files unnecessarily."
+            )
+
+        from factory.runners.types import SandboxMode
+        if request.sandbox_mode == SandboxMode.READ_ONLY:
+            parts.append(
+                "IMPORTANT: READ-ONLY MODE. Do not write, edit, or delete any files. "
+                "Do not execute commands that modify the filesystem."
+            )
+
+        return "\n\n".join(parts)
+
+    def _write_system_prompt(self, request: RunnerRequest) -> str:
+        """Assemble and write the full system prompt to a temp file.
+
+        Combines: base system_prompt + appended sections + file contents + prompt proxy.
+        Returns the temp file path. Caller is responsible for cleanup.
+        """
+        content = request.full_system_prompt
+
+        proxy = self._inject_prompt_proxy(request)
+        if proxy:
+            content = f"{content}\n\n---\n\n{proxy}"
+
+        fd = tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
         )
-        try:
-            prompt_file.write(request.system_prompt)
-            prompt_file.close()
+        fd.write(content)
+        fd.close()
+        return fd.name
 
-            cmd = self._build_command(request, prompt_file=prompt_file.name)
+    async def headless(self, request: RunnerRequest) -> RunnerResponse:
+        """Run a headless (non-interactive) agent invocation."""
+        prompt_path = self._write_system_prompt(request)
+        try:
+            cmd = self._build_command(request, prompt_file=prompt_path)
             env = self._build_env(request)
 
             stream = should_stream()
@@ -140,22 +207,17 @@ class CLIAdapter(abc.ABC):
 
             return self._parse_output(raw_stdout, raw_stderr, return_code)
         finally:
-            Path(prompt_file.name).unlink(missing_ok=True)
+            Path(prompt_path).unlink(missing_ok=True)
 
     def interactive(self, request: RunnerRequest) -> RunnerResponse:
         """Run an interactive CLI session with inherited stdio."""
-        prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
-        )
+        prompt_path = self._write_system_prompt(request)
         try:
-            prompt_file.write(request.system_prompt)
-            prompt_file.close()
-
-            cmd = self._build_command(request, prompt_file=prompt_file.name)
+            cmd = self._build_command(request, prompt_file=prompt_path)
 
             logger.info("%s interactive: cwd=%s", self._display_name, request.cwd)
 
             result = subprocess.run(cmd, cwd=request.cwd)
             return RunnerResponse(output="", exit_code=result.returncode)
         finally:
-            Path(prompt_file.name).unlink(missing_ok=True)
+            Path(prompt_path).unlink(missing_ok=True)

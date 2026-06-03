@@ -11,21 +11,20 @@ from factory.runners.bob import BobRunner, is_dry_run
 from factory.runners.cli_adapter import CLIAdapter
 from factory.runners.claude import ClaudeRunner
 from factory.runners.codex import CodexRunner, is_codex_dry_run
+from factory.runners.opencode import OpenCodeRunner
 from factory.runners.protocol import Runner
 from factory.runners.registry import RunnerRegistry
 
 logger = logging.getLogger(__name__)
 
-# Try importing ACP-based runners; skip gracefully if agent-client-protocol not installed
+# Try importing ACP adapter; skip gracefully if agent-client-protocol not installed
 try:
     from factory.runners.acp_adapter import ACPAdapter
-    from factory.runners.opencode import OpenCodeRunner
     _has_acp = True
 except Exception:
     ACPAdapter = None  # type: ignore[assignment,misc]
-    OpenCodeRunner = None  # type: ignore[assignment,misc]
     _has_acp = False
-    logger.debug("ACP adapter not available (agent-client-protocol not installed); opencode runner disabled")
+    logger.debug("ACP adapter not available (agent-client-protocol not installed)")
 
 __all__ = [
     "Runner",
@@ -56,8 +55,7 @@ _registry.register("claude", lambda **_kw: ClaudeRunner())
 _registry.register("bob", lambda **kw: BobRunner(project_path=kw.get("project_path")))
 _registry.register("codex", lambda **_kw: CodexRunner())
 
-if _has_acp and OpenCodeRunner is not None:
-    _registry.register("opencode", lambda **_kw: OpenCodeRunner())
+_registry.register("opencode", lambda **_kw: OpenCodeRunner())
 
 # -- Legacy dict kept for backward compat (read-only reference) ---------------
 
@@ -66,8 +64,7 @@ _RUNNERS: dict[str, type[Runner]] = {
     "bob": BobRunner,  # type: ignore[dict-item]
     "codex": CodexRunner,  # type: ignore[dict-item]
 }
-if _has_acp and OpenCodeRunner is not None:
-    _RUNNERS["opencode"] = OpenCodeRunner  # type: ignore[assignment]
+_RUNNERS["opencode"] = OpenCodeRunner  # type: ignore[assignment]
 
 
 def get_runner(name: str | None = None, project_path: Path | None = None) -> Runner:
