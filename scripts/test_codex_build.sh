@@ -62,8 +62,7 @@ echo ""
 
 $FACTORY ceo "$WORKDIR" \
   --runner codex \
-  --headless \
-  --timeout 600 2>&1 | tee "$WORKDIR/.factory/ceo-stdout.log"
+  --headless 2>&1 | tee "$WORKDIR/.factory/ceo-stdout.log"
 
 CEO_EXIT=${PIPESTATUS[0]}
 
