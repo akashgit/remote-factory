@@ -1,4 +1,4 @@
-"""CLI entry point — argparse subcommands wrapping library functions."""
+"""CLI entry point for the factory — argparse subcommands wrapping library functions."""
 
 from __future__ import annotations
 
