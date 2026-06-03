@@ -96,9 +96,51 @@ echo "[test] $(date '+%H:%M:%S')"
 echo ""
 
 START_TIME=$(date +%s)
+PROJECT_DIR="$(pwd)"
 
-# Filter factory output to show only state transitions and key events
-$FACTORY ceo "$(pwd)" \
+# Background watcher: tail events.jsonl files for sub-agent activity
+# The CEO spawns agents via shell commands inside its process — their events
+# go to events.jsonl in worktrees, not to stdout. This watcher surfaces them.
+(
+    sleep 5  # wait for worktree creation
+    while true; do
+        EVENTS_FILES=$(find "$PROJECT_DIR" -name "events.jsonl" 2>/dev/null)
+        for f in $EVENTS_FILES; do
+            # Use a marker file to track what we've already printed
+            MARKER="${f}.printed"
+            TOTAL=$(wc -l < "$f" 2>/dev/null | tr -d ' ')
+            SEEN=$(cat "$MARKER" 2>/dev/null || echo 0)
+            if [ "$TOTAL" -gt "$SEEN" ]; then
+                tail -n +$((SEEN + 1)) "$f" | while IFS= read -r line; do
+                    python3 -c "
+import json, sys
+e = json.loads(sys.argv[1])
+t = e.get('type','')
+a = e.get('agent','?')
+r = e.get('data',{}).get('runner','?')
+if 'started' in t and 'agent' in t:
+    print(f'  ▶ {a} started (runner={r})')
+elif 'completed' in t and 'agent' in t:
+    print(f'  ✅ {a} completed (runner={r})')
+elif 'failed' in t and 'agent' in t:
+    rc = e.get('data',{}).get('return_code','?')
+    print(f'  ❌ {a} FAILED (runner={r}, exit={rc})')
+elif 'cycle' in t:
+    print(f'  ⚙ {t}')
+elif 'sprint' in t:
+    print(f'  ⚙ {t}')
+" "$line" 2>/dev/null
+                done
+                echo "$TOTAL" > "$MARKER"
+            fi
+        done
+        sleep 3
+    done
+) &
+WATCHER_PID=$!
+
+# Run factory CEO — filter stdout for state transitions only
+$FACTORY ceo "$PROJECT_DIR" \
     --runner "$RUNNER" \
     --headless \
     $MODEL_FLAG 2>&1 | while IFS= read -r line; do
@@ -111,36 +153,27 @@ $FACTORY ceo "$(pwd)" \
     elif echo "$line" | grep -q "mode:"; then
         echo "  ⚙ $line"
 
-    # Agent lifecycle
-    elif echo "$line" | grep -q "agent.started"; then
-        AGENT=$(echo "$line" | grep -o "agent=[a-z_]*" | head -1)
-        echo "  ▶ $AGENT started"
-    elif echo "$line" | grep -q "agent.completed"; then
-        AGENT=$(echo "$line" | grep -o "agent=[a-z_]*" | head -1)
-        echo "  ✅ $AGENT completed"
-    elif echo "$line" | grep -q "agent.failed"; then
-        AGENT=$(echo "$line" | grep -o "agent=[a-z_]*" | head -1)
-        echo "  ❌ $AGENT FAILED"
-
-    # Errors
-    elif echo "$line" | grep -qi "FAILED\|ERROR\|error.*exit"; then
+    # CEO-level agent events (from invoke_agent stderr)
+    elif echo "$line" | grep -q "\[factory\].*FAILED"; then
         echo "  ❌ $line"
 
     # Cycle events
     elif echo "$line" | grep -q "cycle_state_created\|cycle_state_deleted\|ceo_spawn\|ceo_aborted"; then
         echo "  ⚙ $line"
 
-    # Experiment verdicts
-    elif echo "$line" | grep -qi "verdict.*keep\|verdict.*revert"; then
-        echo "  📋 $line"
-
     # Worktree operations
     elif echo "$line" | grep -q "worktree_create\b"; then
         echo "  🌿 worktree created"
+    elif echo "$line" | grep -q "worktree_remove\b"; then
+        echo "  🌿 worktree removed"
     fi
 done
 
 CEO_EXIT=${PIPESTATUS[0]}
+
+# Kill the background watcher
+kill $WATCHER_PID 2>/dev/null
+wait $WATCHER_PID 2>/dev/null
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 
