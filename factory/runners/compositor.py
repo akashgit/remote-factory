@@ -93,7 +93,7 @@ class AgentRunner:
 
         config = AgentLaunchConfig(
             project_path=cwd,
-            prompt=prompt,
+            append_system_prompt=prompt,
             task=task,
             role=role,
             model=model,
@@ -155,7 +155,7 @@ class AgentRunner:
 
         config = AgentLaunchConfig(
             project_path=cwd,
-            prompt=prompt,
+            append_system_prompt=prompt,
             task=task,
             role=role,
             model=model,

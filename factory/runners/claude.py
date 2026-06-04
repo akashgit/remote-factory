@@ -39,7 +39,22 @@ def _parse_usage(data: dict) -> "AgentUsage":
 
 
 class ClaudeCodeAgent:
-    """Agent implementation for Claude Code CLI (pure command building)."""
+    """Agent implementation for Claude Code CLI (pure command building).
+
+    Maps AgentLaunchConfig semantic fields to Claude Code CLI flags:
+
+        system_prompt       → --system-prompt
+        append_system_prompt → --append-system-prompt-file (via temp file)
+        task                → -p <task> (headless) or positional (interactive)
+        allowed_tools       → --allowedTools "Tool1 Tool2"
+        disallowed_tools    → --disallowedTools "Tool1 Tool2"
+        model               → --model
+        permissions         → --dangerously-skip-permissions / --permission-mode
+        session_name        → --name
+        max_budget_usd      → --max-budget-usd
+        add_dirs            → --add-dir
+        mode=headless       → --output-format json
+    """
 
     name: str = "claude"
 
@@ -47,29 +62,55 @@ class ClaudeCodeAgent:
         self._prompt_files: list[Path] = []
 
     def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
-        """Build the claude CLI command."""
-        prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
-        )
-        prompt_file.write(config.prompt)
-        prompt_file.close()
-        self._prompt_files.append(Path(prompt_file.name))
+        """Build the claude CLI command from semantic config fields."""
+        cmd = ["claude"]
 
-        cmd = ["claude", "--append-system-prompt-file", prompt_file.name]
+        # -- System prompt --
+        if config.system_prompt:
+            cmd.extend(["--system-prompt", config.system_prompt])
 
+        if config.append_system_prompt:
+            prompt_file = tempfile.NamedTemporaryFile(
+                mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+            )
+            prompt_file.write(config.append_system_prompt)
+            prompt_file.close()
+            self._prompt_files.append(Path(prompt_file.name))
+            cmd.extend(["--append-system-prompt-file", prompt_file.name])
+
+        # -- Tool control --
+        if config.allowed_tools:
+            cmd.extend(["--allowedTools", " ".join(config.allowed_tools)])
+
+        if config.disallowed_tools:
+            cmd.extend(["--disallowedTools", " ".join(config.disallowed_tools)])
+
+        # -- Permissions --
+        if config.permissions == "permissionless":
+            cmd.append("--dangerously-skip-permissions")
+
+        # -- Task (headless vs interactive) --
         if config.mode == "interactive":
-            if config.permissions == "permissionless":
-                cmd.append("--dangerously-skip-permissions")
             cmd.append(config.task)
         else:
             cmd.extend(["-p", config.task, "--output-format", "json"])
-            if config.permissions == "permissionless":
-                cmd.append("--dangerously-skip-permissions")
 
+        # -- Model --
         if config.model:
             cmd.extend(["--model", config.model])
+
+        # -- Session name --
         if config.session_name:
             cmd.extend(["--name", config.session_name])
+
+        # -- Budget --
+        if config.max_budget_usd is not None:
+            cmd.extend(["--max-budget-usd", str(config.max_budget_usd)])
+
+        # -- Additional dirs --
+        if config.add_dirs:
+            for d in config.add_dirs:
+                cmd.extend(["--add-dir", str(d)])
 
         return cmd
 

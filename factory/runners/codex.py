@@ -56,20 +56,54 @@ def is_codex_dry_run() -> bool:
 
 
 class CodexAgent:
-    """Agent implementation for OpenAI Codex CLI (pure command building)."""
+    """Agent implementation for OpenAI Codex CLI (pure command building).
+
+    Maps AgentLaunchConfig semantic fields to Codex CLI flags:
+
+        system_prompt        → prepended to prompt text (codex has no --system-prompt flag)
+        append_system_prompt → prepended to prompt text
+        task                 → appended to prompt as "## Current Task" section
+        allowed_tools        → not supported (codex has no tool filtering)
+        disallowed_tools     → not supported
+        model                → --model / -m
+        permissions          → --dangerously-bypass-approvals-and-sandbox / --sandbox
+        add_dirs             → --add-dir
+        mode=headless        → codex exec
+        mode=interactive     → codex (no exec)
+    """
 
     name: str = "codex"
 
     def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
-        """Build the codex CLI command."""
-        full_prompt = f"{config.prompt}\n\n---\n\n## Current Task\n\n{config.task}"
-        cmd = ["codex", "exec", full_prompt]
+        """Build the codex CLI command from semantic config fields."""
+        # Codex has no separate system prompt flag — we concatenate
+        # system prompt + task into a single prompt string.
+        parts: list[str] = []
+        if config.system_prompt:
+            parts.append(config.system_prompt)
+        if config.append_system_prompt:
+            parts.append(config.append_system_prompt)
 
+        parts.append(f"\n\n---\n\n## Current Task\n\n{config.task}")
+        full_prompt = "\n\n".join(parts)
+
+        if config.mode == "interactive":
+            cmd = ["codex", full_prompt]
+        else:
+            cmd = ["codex", "exec", full_prompt]
+
+        # -- Permissions / sandbox --
         if config.permissions == "permissionless":
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
+        # -- Model --
         if config.model:
             cmd.extend(["--model", config.model])
+
+        # -- Additional dirs --
+        if config.add_dirs:
+            for d in config.add_dirs:
+                cmd.extend(["--add-dir", str(d)])
 
         return cmd
 

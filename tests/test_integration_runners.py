@@ -26,7 +26,7 @@ from factory.runners import get_runner
 from factory.runners.claude import ClaudeCodeAgent
 from factory.runners.codex import CodexAgent
 from factory.runners.compositor import AgentRunner
-from factory.runners.config import AgentLaunchConfig
+from factory.runners.config import AgentLaunchConfig  # noqa: F401
 from factory.runners.runtime import ProcessRuntime
 
 pytestmark = pytest.mark.integration
@@ -106,11 +106,11 @@ class TestClaudeIntegration:
         assert len(agent._prompt_files) == 0
 
     async def test_headless_suggest_permissions(self, tmp_path):
-        """Headless with dangerously_skip_permissions=False omits the flag."""
+        """Headless with permissions=suggest omits --dangerously-skip-permissions."""
         agent = ClaudeCodeAgent()
         config = AgentLaunchConfig(
             project_path=tmp_path,
-            prompt="You are a test agent.",
+            append_system_prompt="You are a test agent.",
             task="Reply with: SUGGEST_MODE",
             permissions="suggest",
         )
@@ -219,11 +219,11 @@ class TestCodexIntegration:
         assert not hasattr(agent, "_prompt_files")
 
     async def test_headless_suggest_permissions(self, tmp_path):
-        """Headless with dangerously_skip_permissions=False omits bypass flag."""
+        """Headless with permissions=suggest omits bypass flag."""
         agent = CodexAgent()
         config = AgentLaunchConfig(
             project_path=tmp_path,
-            prompt="Test",
+            append_system_prompt="Test",
             task="Test",
             permissions="suggest",
         )
@@ -244,7 +244,8 @@ class TestCodexIntegration:
         assert code == 0
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "codex"
-        assert cmd[1] == "exec"
+        # Interactive mode: no "exec" subcommand
+        assert "exec" not in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_preflight_success(self):

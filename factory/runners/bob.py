@@ -137,7 +137,18 @@ def _find_project_path(cwd: Path) -> Path:
 
 
 class BobShellAgent:
-    """Agent implementation for Bob Shell CLI (pure command building)."""
+    """Agent implementation for Bob Shell CLI (pure command building).
+
+    Maps AgentLaunchConfig semantic fields to Bob Shell CLI flags:
+
+        system_prompt/append_system_prompt → prepended to prompt text
+        task                              → appended as "## Current Task"
+        allowed_tools/disallowed_tools    → not supported
+        model                             → not supported (bob uses its default)
+        permissions                       → --yolo
+        mode=headless                     → bob -p <prompt>
+        mode=interactive                  → bob -i <prompt>
+    """
 
     name: str = "bob"
 
@@ -145,9 +156,20 @@ class BobShellAgent:
         self._project_path = project_path
 
     def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
-        """Build the bob CLI command."""
-        full_task = f"{config.prompt}\n\n---\n\n## Current Task\n\n{config.task}"
-        cmd = ["bob", "-p", full_task, f"--chat-mode={_BOB_CHAT_MODE}"]
+        """Build the bob CLI command from semantic config fields."""
+        parts: list[str] = []
+        if config.system_prompt:
+            parts.append(config.system_prompt)
+        if config.append_system_prompt:
+            parts.append(config.append_system_prompt)
+        parts.append(f"\n\n---\n\n## Current Task\n\n{config.task}")
+        full_task = "\n\n".join(parts)
+
+        if config.mode == "interactive":
+            cmd = ["bob", f"--chat-mode={_BOB_CHAT_MODE}", "-i", full_task]
+        else:
+            cmd = ["bob", "-p", full_task, f"--chat-mode={_BOB_CHAT_MODE}"]
+
         if config.permissions == "permissionless":
             cmd.append("--yolo")
         return cmd
