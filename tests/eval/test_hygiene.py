@@ -606,7 +606,8 @@ class TestEvalCoverageLanguages:
         ):
             eval_coverage(tmp_path)
         mock_log.warning.assert_any_call(
-            "coverage_tool_failed", project=str(tmp_path), lang="rust", rc=1, stderr="some error"
+            "coverage_tool_failed", project=str(tmp_path), lang="rust", rc=1,
+            stderr="some error\n--- tarpaulin stderr ---\nsome error"
         )
 
     def test_rust_coverage_timeout_600s(self, tmp_path):

@@ -11,6 +11,7 @@ from factory.eval.growth import (
     eval_capability_surface,
     eval_observability,
 )
+from factory.eval.hygiene import eval_tests, eval_lint, eval_type_check
 from factory.discovery.introspect import (
     _detect_framework,
     _detect_lint_command,
@@ -652,3 +653,95 @@ class TestDetectProjectLanguageImportErrorFallback:
 
     def test_unknown_fallback(self, tmp_path):
         assert self._run_with_import_error(tmp_path) == "unknown"
+
+
+# ── Hygiene: polyglot independence ───────────────────────────────
+
+
+class TestPolyglotIndependence:
+    def test_cargo_missing_go_present(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        with (
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: {
+                "cargo": None, "go": "/usr/bin/go",
+            }.get(cmd)),
+            patch("factory.eval.hygiene._run_cmd") as mock_run,
+        ):
+            mock_run.return_value = (0, "ok\texample.com/x\t0.5s", "")
+            result = eval_tests(tmp_path)
+        assert result["score"] > 0
+        assert result["name"] == "tests"
+
+
+# ── Hygiene: Go eval_tests with go not on PATH ──────────────────
+
+
+class TestGoTestsGoNotOnPath:
+    def test_go_tests_go_not_on_path(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 0.5
+
+
+# ── Hygiene: Java tests unparsed output ──────────────────────────
+
+
+class TestJavaTestsUnparsed:
+    def test_java_tests_unparsed(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        with (
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/mvn" if cmd == "mvn" else None),
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS", "")),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 0.5
+
+
+# ── Hygiene: Rust eval_lint missing cargo ────────────────────────
+
+
+class TestRustLintCargoMissing:
+    def test_rust_lint_cargo_missing(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.5
+
+
+# ── Hygiene: polyglot shutil.which with side_effect ──────────────
+
+
+class TestPolyglotShutilWhichSideEffect:
+    def test_which_side_effect_routes_correctly(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        which_map = {"cargo": "/usr/bin/cargo", "go": None}
+        with (
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: which_map.get(cmd)),
+            patch("factory.eval.hygiene._run_cmd") as mock_run,
+        ):
+            mock_run.return_value = (0, "test result: 5 passed; 0 failed", "")
+            result = eval_tests(tmp_path)
+        called_cmds = [call[0][0] for call in mock_run.call_args_list]
+        assert any(cmd[0] == "cargo" for cmd in called_cmds)
+        assert not any(cmd[0] == "go" for cmd in called_cmds)
+
+
+# ── Hygiene: eval_type_check Go command assertion ────────────────
+
+
+class TestGoTypeCheckCommand:
+    def test_go_type_check_uses_go_build(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        with (
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/go" if cmd == "go" else None),
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")) as mock_run,
+        ):
+            eval_type_check(tmp_path)
+        assert mock_run.called
+        cmd_arg = mock_run.call_args[0][0]
+        assert cmd_arg[0] == "go"
+        assert cmd_arg[1] == "build"
+        assert "-o" in cmd_arg

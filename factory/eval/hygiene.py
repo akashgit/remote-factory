@@ -135,9 +135,12 @@ def _run_cmd(
 ) -> tuple[int, str, str]:
     """Run a command, return (returncode, stdout, stderr). Never raises."""
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    cargo_bin = Path.home() / ".cargo" / "bin"
-    if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
-        env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
+    try:
+        cargo_bin = Path.home() / ".cargo" / "bin"
+        if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
+            env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
+    except RuntimeError:
+        pass
     try:
         result = subprocess.run(
             cmd,
@@ -202,19 +205,22 @@ def eval_tests(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}: {p} passed, {f} failed")
 
         if _detect_node_project(sp):
-            # Try npm test
-            rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
-            output = stdout + stderr
-            # Jest: match only "Tests:" lines, not "Test Suites:" lines
-            p_matches = re.findall(r"^Tests:.*?(\d+)\s+passed", output, re.MULTILINE)
-            f_matches = re.findall(r"^Tests:.*?(\d+)\s+failed", output, re.MULTILINE)
-            p = sum(int(x) for x in p_matches)
-            f = sum(int(x) for x in f_matches)
-            if p + f > 0:
-                ran_any = True
-                total_passed += p
-                total_failed += f
-                details_parts.append(f"{sp.name}(js): {p} passed, {f} failed")
+            if not shutil.which("npm"):
+                log.warning("npm_not_found", project=str(sp), msg="npm not on PATH, skipping Node tests")
+            else:
+                # Try npm test
+                rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
+                output = stdout + stderr
+                # Jest: match only "Tests:" lines, not "Test Suites:" lines
+                p_matches = re.findall(r"^Tests:.*?(\d+)\s+passed", output, re.MULTILINE)
+                f_matches = re.findall(r"^Tests:.*?(\d+)\s+failed", output, re.MULTILINE)
+                p = sum(int(x) for x in p_matches)
+                f = sum(int(x) for x in f_matches)
+                if p + f > 0:
+                    ran_any = True
+                    total_passed += p
+                    total_failed += f
+                    details_parts.append(f"{sp.name}(js): {p} passed, {f} failed")
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
@@ -256,6 +262,10 @@ def eval_tests(project_path: Path) -> dict:
                 rc, stdout, stderr = _run_cmd(java_cmd, sp)
                 output = stdout + stderr
                 t_matches = re.findall(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)", output)
+                if not t_matches:
+                    t_matches_gradle = re.findall(r"(\d+)\s+tests?\s+completed,\s*(\d+)\s+failed", output)
+                    if t_matches_gradle:
+                        t_matches = [(c, f_s, "0") for c, f_s in t_matches_gradle]
                 if t_matches:
                     ran_any = True
                     java_passed = 0
@@ -269,6 +279,8 @@ def eval_tests(project_path: Path) -> dict:
                     details_parts.append(f"{sp.name}(java): {java_passed} passed, {java_failed} failed")
                 elif rc == 0:
                     log.warning("java_tests_unparsed", project=str(sp), msg="Tests passed but output format unrecognized")
+                elif rc != 0:
+                    log.warning("java_tests_unparsed_failure", project=str(sp), rc=rc, msg="Tests failed but output format unrecognized")
 
     if not ran_any:
         return _neutral("tests", "no test suite detected")
@@ -309,16 +321,19 @@ def eval_lint(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}: {count} errors")
 
         if _detect_node_project(sp):
-            rc, stdout, stderr = _run_cmd(["npx", "eslint", ".", "--format=compact"], sp, timeout=180)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}(js): clean")
+            if not shutil.which("npx"):
+                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node lint")
             else:
-                ran_any = True
-                count = len(re.findall(r"Error -", output))
-                total_errors += max(count, 1)
-                details_parts.append(f"{sp.name}(js): {max(count, 1)} errors")
+                rc, stdout, stderr = _run_cmd(["npx", "eslint", ".", "--format=compact"], sp, timeout=180)
+                output = stdout + stderr
+                if rc == 0:
+                    ran_any = True
+                    details_parts.append(f"{sp.name}(js): clean")
+                else:
+                    ran_any = True
+                    count = len(re.findall(r"Error -", output))
+                    total_errors += max(count, 1)
+                    details_parts.append(f"{sp.name}(js): {max(count, 1)} errors")
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
@@ -413,16 +428,19 @@ def eval_type_check(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}: {count} errors")
 
         if _detect_node_project(sp):
-            rc, stdout, stderr = _run_cmd(["npx", "tsc", "--noEmit"], sp, timeout=180)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}(ts): clean")
+            if not shutil.which("npx"):
+                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node type check")
             else:
-                ran_any = True
-                count = len(re.findall(r"error TS\d+", output))
-                total_errors += max(count, 1)
-                details_parts.append(f"{sp.name}(ts): {max(count, 1)} errors")
+                rc, stdout, stderr = _run_cmd(["npx", "tsc", "--noEmit"], sp, timeout=180)
+                output = stdout + stderr
+                if rc == 0:
+                    ran_any = True
+                    details_parts.append(f"{sp.name}(ts): clean")
+                else:
+                    ran_any = True
+                    count = len(re.findall(r"error TS\d+", output))
+                    total_errors += max(count, 1)
+                    details_parts.append(f"{sp.name}(ts): {max(count, 1)} errors")
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
@@ -536,7 +554,7 @@ def eval_coverage(project_path: Path) -> dict:
                     output = stdout + stderr
                     pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
                     if not pct_match:
-                        stderr = llvm_cov_stderr
+                        stderr = f"{llvm_cov_stderr}\n--- tarpaulin stderr ---\n{stderr}"
                 if pct_match:
                     ran_any = True
                     pct = int(float(pct_match.group(1)))
@@ -612,7 +630,7 @@ def eval_coverage(project_path: Path) -> dict:
                             coverages.append((f"{sp.name}(java)", pct))
                         else:
                             log.warning("jacoco_xml_no_line_counter", project=str(sp))
-                    except OSError:
+                    except (OSError, ValueError):
                         log.warning("jacoco_xml_read_failed", project=str(sp))
                 elif rc == 0:
                     log.warning("jacoco_xml_not_found", project=str(sp), path=str(jacoco_xml))

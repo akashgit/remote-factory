@@ -107,7 +107,10 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
     if language == "python":
         toml_text = ""
         if (project_path / "pyproject.toml").exists():
-            toml_text = (project_path / "pyproject.toml").read_text().lower()
+            try:
+                toml_text = (project_path / "pyproject.toml").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if "fastapi" in toml_text:
             return "fastapi"
         if "django" in toml_text:
@@ -126,7 +129,10 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
     elif language == "rust":
         cargo_text = ""
         if (project_path / "Cargo.toml").exists():
-            cargo_text = (project_path / "Cargo.toml").read_text().lower()
+            try:
+                cargo_text = (project_path / "Cargo.toml").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if "actix-web" in cargo_text:
             return "actix-web"
         if "axum" in cargo_text:
@@ -136,9 +142,15 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
     elif language == "go":
         go_deps = ""
         if (project_path / "go.mod").exists():
-            go_deps = (project_path / "go.mod").read_text().lower()
+            try:
+                go_deps = (project_path / "go.mod").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         elif (project_path / "go.sum").exists():
-            go_deps = (project_path / "go.sum").read_text().lower()
+            try:
+                go_deps = (project_path / "go.sum").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if "gin-gonic/gin" in go_deps:
             return "gin"
         if "labstack/echo" in go_deps:
@@ -148,11 +160,20 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
     elif language == "java":
         java_deps = ""
         if (project_path / "pom.xml").exists():
-            java_deps = (project_path / "pom.xml").read_text().lower()
+            try:
+                java_deps = (project_path / "pom.xml").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if (project_path / "build.gradle").exists():
-            java_deps += (project_path / "build.gradle").read_text().lower()
+            try:
+                java_deps += (project_path / "build.gradle").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if (project_path / "build.gradle.kts").exists():
-            java_deps += (project_path / "build.gradle.kts").read_text().lower()
+            try:
+                java_deps += (project_path / "build.gradle.kts").read_text().lower()
+            except (OSError, UnicodeDecodeError):
+                pass
         if "spring-boot" in java_deps:
             return "spring-boot"
         if "quarkus" in java_deps:
