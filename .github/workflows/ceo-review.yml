@@ -83,7 +83,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: ${{ steps.pr.outputs.number }},
-              per_page: 5,
+              per_page: 100,
             });
             const latest = comments.data.reverse().find(c =>
               c.user.login === 'github-actions[bot]' &&
@@ -97,6 +97,9 @@ jobs:
                 event: 'APPROVE',
                 body: '✅ Factory CEO approved this PR.',
               });
+              core.info('PR approved — KEEP verdict found');
+            } else {
+              core.info(`No approval — latest matching comment: ${latest ? 'found but no KEEP' : 'not found'}`);
             }
 
       - name: Post failure comment
