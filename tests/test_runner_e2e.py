@@ -43,11 +43,15 @@ def _runner_has_auth(name: str) -> bool:
         return False
 
     if name == "bob":
-        # Bob uses file-based auth — env var OR .bob_auth file on disk
-        if os.environ.get("BOBSHELL_API_KEY"):
-            return True
-        from factory.runners.bob import _find_auth_file
-        return _find_auth_file(Path.cwd()) is not None
+        # Bob stores auth in ~/.bob/, not env vars — if the binary responds, it's authed
+        try:
+            result = subprocess.run(
+                ["bob", "--version"],
+                capture_output=True, text=True, timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
 
     if name == "codex":
         # Codex uses ChatGPT OAuth — check via login status
@@ -63,7 +67,18 @@ def _runner_has_auth(name: str) -> bool:
             return False
 
     if name == "opencode":
-        # OpenCode needs OPENAI_API_KEY
+        # OpenCode needs OPENAI_API_KEY — uv doesn't inherit shell env, so source it
+        if not os.environ.get("OPENAI_API_KEY"):
+            try:
+                result = subprocess.run(
+                    ["zsh", "-c", "source ~/.zshrc && echo $OPENAI_API_KEY"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                key = result.stdout.strip()
+                if key:
+                    os.environ["OPENAI_API_KEY"] = key
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
         return bool(os.environ.get("OPENAI_API_KEY"))
 
     # Claude — if binary is available, auth is handled by the CLI itself
