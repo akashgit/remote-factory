@@ -2000,3 +2000,22 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+RUNTIME_SUBCOMMANDS = ["agent", "ceo", "run", "tmux"]
+RUNNER_NAMES = ["claude", "bob", "codex", "opencode"]
+
+
+@pytest.mark.parametrize("subcommand", RUNTIME_SUBCOMMANDS)
+@pytest.mark.parametrize("runner", RUNNER_NAMES)
+def test_runner_choices_accepted(subcommand, runner):
+    """build_parser() accepts --runner <name> for all runners on all runtime subcommands."""
+    parser = build_parser()
+    base_args = {
+        "agent": ["agent", "researcher", "--task", "x", "--project", "/tmp", "--runner", runner],
+        "ceo": ["ceo", "/tmp", "--runner", runner],
+        "run": ["run", "/tmp", "--runner", runner],
+        "tmux": ["tmux", "/tmp", "--runner", runner],
+    }
+    args = parser.parse_args(base_args[subcommand])
+    assert args.runner == runner
