@@ -76,23 +76,36 @@ _STAGE_LABELS = {
 def _tail_events(
     projects_dir: Path,
     stop: threading.Event,
-    existing_projects: set[Path],
+    start_time: float,
 ) -> None:
     """Background thread that detects the new project dir and tails only its events.
 
-    Only watches events.jsonl files inside the project directory created
-    by THIS test run — ignores other projects in ~/factory-projects/.
+    Finds the project by looking for the most recently modified directory
+    in projects_dir that has a .factory/ subdirectory created after start_time.
     """
     project_dir: Path | None = None
     seen: dict[str, int] = {}
 
     while not stop.is_set():
-        # Detect the new project directory created by the factory
+        # Detect the project directory by finding the one with the newest
+        # .factory/events.jsonl created after our start time
         if project_dir is None and projects_dir.exists():
-            current = set(projects_dir.iterdir()) if projects_dir.exists() else set()
-            new_dirs = [d for d in (current - existing_projects) if d.is_dir()]
-            if new_dirs:
-                project_dir = max(new_dirs, key=lambda d: d.stat().st_mtime)
+            best: Path | None = None
+            best_mtime = 0.0
+            for d in projects_dir.iterdir():
+                if not d.is_dir():
+                    continue
+                # Look for events.jsonl files created after test started
+                for ef in d.rglob("events.jsonl"):
+                    try:
+                        mt = ef.stat().st_mtime
+                        if mt > start_time and mt > best_mtime:
+                            best = d
+                            best_mtime = mt
+                    except OSError:
+                        pass
+            if best:
+                project_dir = best
                 print(f"  Project: {project_dir}", flush=True)
 
         if project_dir is None:
@@ -143,15 +156,16 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
 
     # Snapshot existing projects so we can find the new one
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
+    start_time = time.monotonic()
+    wall_start = time.time()
 
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, existing_projects),
+        args=(projects_dir, stop_event, wall_start),
         daemon=True,
     )
     tailer.start()
-    start_time = time.monotonic()
 
     try:
         result = subprocess.run(
