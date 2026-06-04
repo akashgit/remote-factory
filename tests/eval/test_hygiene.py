@@ -1,5 +1,6 @@
 """Tests for factory.eval.hygiene — universal hygiene dimensions."""
 
+import subprocess
 from unittest.mock import patch
 
 from factory.eval.hygiene import (
@@ -8,6 +9,7 @@ from factory.eval.hygiene import (
     _find_sub_projects,
     _java_build_tool,
     _java_test_cmd,
+    _run_cmd,
     compute_hygiene_results,
     eval_config_parser,
     eval_coverage,
@@ -562,12 +564,13 @@ class TestEvalCoverageLanguages:
         assert "85%" in result["details"]
 
     def test_rust_coverage_tarpaulin_fallback(self, tmp_path):
+        """Any non-zero rc from llvm-cov triggers the tarpaulin fallback."""
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
         tarpaulin_output = "85.5% coverage, 100/117 lines covered\n"
 
         def fake_run_cmd(cmd, *args, **kwargs):
             if "llvm-cov" in cmd:
-                return (1, "", "error: no such subcommand: `llvm-cov`")
+                return (1, "", "error: failed to run llvm-cov")
             return (0, tarpaulin_output, "")
 
         with (
@@ -696,3 +699,51 @@ class TestEvalCoverageLanguages:
         with patch("factory.eval.hygiene._java_build_tool", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
+
+    def test_rust_coverage_llvm_tools_preview_fallback(self, tmp_path):
+        """llvm-cov fails with 'llvm-tools-preview not found' — should fall back to tarpaulin."""
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        tarpaulin_output = "72.0% coverage, 80/111 lines covered\n"
+
+        def fake_run_cmd(cmd, *args, **kwargs):
+            if "llvm-cov" in cmd:
+                return (1, "", "error: failed to find llvm-tools-preview")
+            return (0, tarpaulin_output, "")
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", side_effect=fake_run_cmd),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(72 / 100, 4)
+        assert "72%" in result["details"]
+
+
+class TestRunCmdCargoPath:
+    """Test that _run_cmd adds ~/.cargo/bin to PATH."""
+
+    def test_cargo_bin_added_to_path(self, tmp_path):
+        cargo_dir = tmp_path / ".cargo" / "bin"
+        cargo_dir.mkdir(parents=True)
+        with (
+            patch("factory.eval.hygiene.Path.home", return_value=tmp_path),
+            patch("factory.eval.hygiene.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["echo"], returncode=0, stdout="", stderr="",
+            )
+            _run_cmd(["echo", "test"], tmp_path)
+            env = mock_run.call_args.kwargs["env"]
+            assert str(cargo_dir) in env.get("PATH", "")
+
+    def test_cargo_bin_not_added_when_missing(self, tmp_path):
+        with (
+            patch("factory.eval.hygiene.Path.home", return_value=tmp_path),
+            patch("factory.eval.hygiene.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["echo"], returncode=0, stdout="", stderr="",
+            )
+            _run_cmd(["echo", "test"], tmp_path)
+            env = mock_run.call_args.kwargs["env"]
+            assert ".cargo/bin" not in env.get("PATH", "")

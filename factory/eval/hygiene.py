@@ -135,6 +135,9 @@ def _run_cmd(
 ) -> tuple[int, str, str]:
     """Run a command, return (returncode, stdout, stderr). Never raises."""
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    cargo_bin = Path.home() / ".cargo" / "bin"
+    if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
+        env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
     try:
         result = subprocess.run(
             cmd,
@@ -517,7 +520,11 @@ def eval_coverage(project_path: Path) -> dict:
                 timeout=600,
             )
             output = stdout + stderr
-            if "no such command" in stderr.lower() or "no such subcommand" in stderr.lower():
+            pct_match = None
+            if rc == 0:
+                pct_match = re.search(r"TOTAL\s+[\d.]+\s+[\d.]+\s+([\d.]+)%", output)
+            else:
+                llvm_cov_stderr = stderr
                 rc, stdout, stderr = _run_cmd(
                     ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
                     sp,
@@ -525,8 +532,8 @@ def eval_coverage(project_path: Path) -> dict:
                 )
                 output = stdout + stderr
                 pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
-            else:
-                pct_match = re.search(r"TOTAL\s+[\d.]+\s+[\d.]+\s+([\d.]+)%", output)
+                if not pct_match:
+                    stderr = llvm_cov_stderr
             if pct_match:
                 ran_any = True
                 pct = int(float(pct_match.group(1)))
