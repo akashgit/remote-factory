@@ -189,8 +189,7 @@ class TestCodexAgent:
         full_prompt = cmd[2]
         assert "You are a coder" in full_prompt
         assert "code it" in full_prompt
-        assert "--sandbox" in cmd
-        assert "--ask-for-approval" in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_get_launch_command_with_model(self, tmp_path: Path) -> None:
         agent = CodexAgent()
@@ -206,8 +205,7 @@ class TestCodexAgent:
         config = self._make_config(tmp_path, permissions="suggest")
         cmd = agent.get_launch_command(config)
 
-        assert "--sandbox" not in cmd
-        assert "--ask-for-approval" not in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     def test_get_environment(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")

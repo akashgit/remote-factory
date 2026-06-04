@@ -66,7 +66,7 @@ class CodexAgent:
         cmd = ["codex", "exec", full_prompt]
 
         if config.permissions == "permissionless":
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if config.model:
             cmd.extend(["--model", config.model])
@@ -121,7 +121,7 @@ class CodexRunner:
         cmd = ["codex", "exec", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if model:
             cmd.extend(["--model", model])
@@ -188,7 +188,7 @@ class CodexRunner:
         cmd = ["codex", full_prompt]
 
         if dangerously_skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if model:
             cmd.extend(["--model", model])

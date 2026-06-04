@@ -184,10 +184,7 @@ class TestCodexHeadless:
                 call_args = mock_exec.call_args[0]
                 assert call_args[0] == "codex"
                 assert call_args[1] == "exec"
-                assert "--sandbox" in call_args
-                assert "workspace-write" in call_args
-                assert "--ask-for-approval" in call_args
-                assert "never" in call_args
+                assert "--dangerously-bypass-approvals-and-sandbox" in call_args
                 assert "--model" in call_args
                 assert "gpt-5.4" in call_args
 
@@ -251,8 +248,7 @@ class TestCodexHeadless:
                 )
 
                 call_args = mock_exec.call_args[0]
-                assert "--sandbox" not in call_args
-                assert "--ask-for-approval" not in call_args
+                assert "--dangerously-bypass-approvals-and-sandbox" not in call_args
 
     async def test_no_model_flag_when_none(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -458,8 +454,7 @@ class TestCodexInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
-            assert "--sandbox" in cmd
-            assert "workspace-write" in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
@@ -481,7 +476,7 @@ class TestCodexInteractive:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert "--sandbox" not in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     def test_interactive_run_passes_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
