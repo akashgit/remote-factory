@@ -90,7 +90,7 @@ class CodexRunner:
         cmd = ["codex", "exec", full_prompt, "--ignore-user-config"]
 
         if request.skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.extend(["--sandbox", "workspace-write"])
 
         if request.model:
             cmd.extend(["--model", request.model])
@@ -137,7 +137,7 @@ class CodexRunner:
         cmd = ["codex", full_prompt, "--ignore-user-config"]
 
         if request.skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+            cmd.extend(["--sandbox", "workspace-write"])
 
         if request.model:
             cmd.extend(["--model", request.model])

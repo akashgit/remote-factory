@@ -193,8 +193,7 @@ class TestCodexHeadless:
             assert "--ignore-user-config" in cmd
             assert "--sandbox" in cmd
             assert "workspace-write" in cmd
-            assert "--ask-for-approval" in cmd
-            assert "never" in cmd
+            assert "--ask-for-approval" not in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 

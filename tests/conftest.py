@@ -26,6 +26,15 @@ def _isolate_registry(tmp_path: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_agent_failure_counter() -> None:
+    """Reset consecutive agent failure counter between tests."""
+    from factory.agents.runner import reset_failure_counter
+    reset_failure_counter()
+    yield  # type: ignore[misc]
+    reset_failure_counter()
+
+
+@pytest.fixture(autouse=True)
 def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """Stub worktree functions for tests that don't exercise worktree logic.
 

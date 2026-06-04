@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -107,7 +106,6 @@ class OpenCodeRunner:
             "opencode",
             "-p", full_prompt,
             "-c", str(request.cwd),
-            "-f", "json",
             "-q",
         ]
         if request.skip_permissions:
@@ -122,8 +120,6 @@ class OpenCodeRunner:
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode invocation."""
-        from factory.models import AgentRunResult
-
         if is_opencode_dry_run():
             from factory.runners._subprocess import make_dry_run_result
             return make_dry_run_result("opencode", request.role, request.cwd, request.task)
@@ -134,24 +130,9 @@ class OpenCodeRunner:
 
         log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
 
-        result = await run_subprocess(
+        return await run_subprocess(
             cmd, cwd=str(request.cwd), env=env,
             timeout=request.timeout, runner_name="opencode", role=request.role,
-        )
-
-        result_text = result.stdout
-        try:
-            data = json.loads(result.stdout)
-            if isinstance(data, dict):
-                content = data.get("content", result.stdout)
-                result_text = content if isinstance(content, str) else result.stdout
-        except (json.JSONDecodeError, ValueError):
-            log.debug("opencode_json_parse_failed")
-
-        return AgentRunResult(
-            stdout=result_text,
-            return_code=result.return_code,
-            metadata=result.metadata,
         )
 
     def interactive_run(self, request: AgentRunRequest) -> int:
