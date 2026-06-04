@@ -210,7 +210,36 @@ def sample_project(tmp_path: Path) -> Path:
     (factory_dir / "config.json").write_text(json.dumps({
         "goal": "A sample CLI for testing",
         "scope": ["main.py", "utils.py", "tests/"],
+        "guards": [],
+        "eval_command": f"cd {tmp_path} && python -m pytest tests/ -q --tb=no",
         "eval_threshold": 0.5,
+        "constraints": [],
+    }))
+
+    # eval_profile.json — minimal profile for eval/agent CLI tests
+    (factory_dir / "eval_profile.json").write_text(json.dumps({
+        "project_type": "python",
+        "dimensions": [
+            {
+                "name": "tests",
+                "command": f"cd {tmp_path} && python -m pytest tests/ -q --tb=no",
+                "weight": 0.7,
+                "parser": "exit_code",
+                "description": "Run test suite",
+                "source": "discovered",
+            },
+            {
+                "name": "lint",
+                "command": "echo 'lint ok'",
+                "weight": 0.3,
+                "parser": "exit_code",
+                "description": "Lint check",
+                "source": "fallback",
+            },
+        ],
+        "tier": "discovered",
+        "confidence": 0.8,
+        "human_reviewed": True,
     }))
 
     # .factory/reviews/ for output capture
@@ -487,3 +516,101 @@ async def test_headless_produces_output(runner_name: str, sample_project: Path) 
     assert isinstance(result, AgentRunResult)
     assert result.return_code == 0, f"{runner_name} failed: {result.stdout[:300]}"
     assert len(result.stdout.strip()) > 0, f"{runner_name} returned empty output"
+
+
+# ── factory CLI tests (subprocess-level) ──────────────────────
+
+
+def _cli_env() -> dict[str, str]:
+    """Build subprocess env with PATH that includes ~/go/bin for opencode."""
+    env = os.environ.copy()
+    go_bin = str(Path.home() / "go" / "bin")
+    if go_bin not in env.get("PATH", ""):
+        env["PATH"] = go_bin + ":" + env["PATH"]
+    if not env.get("OPENAI_API_KEY"):
+        try:
+            result = subprocess.run(
+                ["zsh", "-c", "source ~/.zshrc 2>/dev/null && echo $OPENAI_API_KEY"],
+                capture_output=True, text=True, timeout=5,
+            )
+            key = result.stdout.strip()
+            if key:
+                env["OPENAI_API_KEY"] = key
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+    for var in _DRY_RUN_VARS:
+        env.pop(var, None)
+    return env
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
+def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) -> None:
+    """factory agent researcher via CLI subprocess for each runner."""
+    result = subprocess.run(
+        [
+            "uv", "run", "factory", "agent", "researcher",
+            "--task", "List files in this project. Be concise.",
+            "--runner", runner_name,
+            "--project", str(sample_project),
+            "--timeout", "60",
+        ],
+        cwd=sample_project,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        env=_cli_env(),
+    )
+    assert result.returncode == 0, (
+        f"factory agent researcher --runner {runner_name} failed "
+        f"(code={result.returncode}):\nstdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+    )
+    review_file = sample_project / ".factory" / "reviews" / "researcher-latest.md"
+    assert review_file.exists(), (
+        f"--runner {runner_name}: .factory/reviews/researcher-latest.md not created"
+    )
+
+
+@pytest.mark.slow
+def test_factory_eval_runs(sample_project: Path) -> None:
+    """factory eval produces JSON with results."""
+    result = subprocess.run(
+        ["uv", "run", "factory", "eval", str(sample_project)],
+        cwd=sample_project,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env=_cli_env(),
+    )
+    assert result.returncode == 0, (
+        f"factory eval failed (code={result.returncode}):\n"
+        f"stdout: {result.stdout[:500]}\nstderr: {result.stderr[:500]}"
+    )
+    data = json.loads(result.stdout)
+    assert "total" in data, "eval output missing 'total' key"
+    assert "results" in data, "eval output missing 'results' key"
+    assert isinstance(data["results"], list)
+    assert len(data["results"]) > 0, "eval produced no results"
+
+
+def test_factory_runners_list_all_present() -> None:
+    """factory runners list --json shows all 4 runners with correct metadata."""
+    result = subprocess.run(
+        ["uv", "run", "factory", "runners", "list", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, (
+        f"factory runners list --json failed: {result.stderr[:300]}"
+    )
+    data = json.loads(result.stdout)
+    assert isinstance(data, list)
+    names = {r["name"] for r in data}
+    for expected in ("claude", "bob", "codex", "opencode"):
+        assert expected in names, f"runner '{expected}' missing from list"
+    for runner in data:
+        assert "name" in runner
+        assert "display_name" in runner
+        assert "binary" in runner
+        assert "available" in runner
