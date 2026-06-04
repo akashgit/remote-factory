@@ -14,6 +14,7 @@ If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -153,11 +154,11 @@ def eval_tests(project_path: Path) -> dict:
             # Try npm test
             rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
             output = stdout + stderr
-            # Jest: "Tests: X passed, Y failed"
-            p_match = re.search(r"(\d+)\s+passed", output)
-            f_match = re.search(r"(\d+)\s+failed", output)
-            p = int(p_match.group(1)) if p_match else 0
-            f = int(f_match.group(1)) if f_match else 0
+            # Jest: "Tests: X passed, Y failed" — use findall to aggregate monorepo output
+            p_matches = re.findall(r"(\d+)\s+passed", output)
+            f_matches = re.findall(r"(\d+)\s+failed", output)
+            p = sum(int(x) for x in p_matches)
+            f = sum(int(x) for x in f_matches)
             if p + f > 0:
                 ran_any = True
                 total_passed += p
@@ -165,12 +166,15 @@ def eval_tests(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}(js): {p} passed, {f} failed")
 
         if _detect_rust_project(sp):
-            rc, stdout, stderr = _run_cmd(["cargo", "test"], sp)
+            if not shutil.which("cargo"):
+                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust tests")
+                continue
+            rc, stdout, stderr = _run_cmd(["cargo", "test", "--workspace"], sp)
             output = stdout + stderr
-            p_match = re.search(r"(\d+)\s+passed", output)
-            f_match = re.search(r"(\d+)\s+failed", output)
-            p = int(p_match.group(1)) if p_match else 0
-            f = int(f_match.group(1)) if f_match else 0
+            p_matches = re.findall(r"(\d+)\s+passed", output)
+            f_matches = re.findall(r"(\d+)\s+failed", output)
+            p = sum(int(x) for x in p_matches)
+            f = sum(int(x) for x in f_matches)
             if p + f > 0:
                 ran_any = True
                 total_passed += p

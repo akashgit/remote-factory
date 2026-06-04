@@ -1,5 +1,7 @@
 """Tests for factory.eval.hygiene — universal hygiene dimensions."""
 
+from unittest.mock import patch
+
 from factory.eval.hygiene import (
     HYGIENE_WEIGHTS,
     _find_sub_projects,
@@ -139,3 +141,93 @@ class TestComputeHygieneResults:
             assert "weight" in r
             assert "passed" in r
             assert "details" in r
+
+
+class TestRustWorkspaceAggregation:
+    """Tests for multi-crate cargo workspace test result aggregation."""
+
+    WORKSPACE_OUTPUT = (
+        "running 5 tests\n"
+        "test tests::test_a ... ok\n"
+        "test tests::test_b ... ok\n"
+        "test tests::test_c ... ok\n"
+        "test tests::test_d ... ok\n"
+        "test tests::test_e ... ok\n"
+        "\n"
+        "test result: ok. 5 passed; 0 failed; 0 ignored\n"
+        "\n"
+        "running 10 tests\n"
+        "test tests::test_f ... ok\n"
+        "test result: ok. 10 passed; 0 failed; 0 ignored\n"
+        "\n"
+        "running 3 tests\n"
+        "test tests::test_g ... FAILED\n"
+        "test result: FAILED. 2 passed; 1 failed; 0 ignored\n"
+    )
+
+    def test_aggregates_multiple_crates(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[workspace]\nmembers = ['a', 'b', 'c']\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, self.WORKSPACE_OUTPUT, "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["name"] == "tests"
+        # 5 + 10 + 2 = 17 passed, 1 failed
+        assert result["score"] == round(17 / 18, 4)
+        assert result["passed"] is False
+        assert "17 passed" in result["details"]
+        assert "1 failed" in result["details"]
+
+    def test_all_passing_workspace(self, tmp_path):
+        output = (
+            "test result: ok. 15 passed; 0 failed; 0 ignored\n"
+            "test result: ok. 20 passed; 0 failed; 0 ignored\n"
+        )
+        (tmp_path / "Cargo.toml").write_text("[workspace]\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+
+    def test_cargo_not_on_path_warns_and_skips(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        with (
+            patch("shutil.which", return_value=None),
+            patch("factory.eval.hygiene.log") as mock_log,
+        ):
+            result = eval_tests(tmp_path)
+        mock_log.warning.assert_called_once()
+        call_kwargs = mock_log.warning.call_args
+        assert "cargo_not_found" in call_kwargs.args or "cargo_not_found" == call_kwargs.args[0]
+        # No tests ran, should be neutral
+        assert result["score"] == 0.5
+
+
+class TestNodeMonorepoAggregation:
+    """Tests for Node/Jest monorepo test result aggregation."""
+
+    MONOREPO_OUTPUT = (
+        "Tests: 12 passed, 0 failed, 12 total\n"
+        "Tests: 8 passed, 2 failed, 10 total\n"
+    )
+
+    def test_aggregates_multiple_suites(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name": "monorepo"}\n')
+        with patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MONOREPO_OUTPUT, "")):
+            result = eval_tests(tmp_path)
+        assert result["name"] == "tests"
+        # 12 + 8 = 20 passed, 0 + 2 = 2 failed
+        assert result["score"] == round(20 / 22, 4)
+        assert result["passed"] is False
+
+    def test_single_suite_still_works(self, tmp_path):
+        output = "Tests: 5 passed, 0 failed\n"
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        with patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
