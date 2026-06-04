@@ -152,7 +152,7 @@ def _syntax_check_command(project: ProjectProfile) -> str:
             return "./gradlew compileJava"
         if "gradle" in tc:
             return "gradle compileJava"
-        return "javac -version"
+        return "true"
     return "true"  # no-op fallback
 
 

@@ -324,6 +324,9 @@ def eval_type_check(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}(ts): {max(count, 1)} errors")
 
         if _detect_rust_project(sp):
+            if not shutil.which("cargo"):
+                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust type check")
+                continue
             rc, stdout, stderr = _run_cmd(["cargo", "check"], sp)
             if rc == 0:
                 ran_any = True
@@ -335,6 +338,9 @@ def eval_type_check(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
 
         if _detect_go_project(sp):
+            if not shutil.which("go"):
+                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go type check")
+                continue
             rc, stdout, stderr = _run_cmd(["go", "build", "-o", "/dev/null", "./..."], sp)
             if rc == 0:
                 ran_any = True
@@ -387,6 +393,9 @@ def eval_coverage(project_path: Path) -> dict:
                 coverages.append((sp.name, pct))
 
         if _detect_rust_project(sp):
+            if not shutil.which("cargo"):
+                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust coverage")
+                continue
             rc, stdout, stderr = _run_cmd(
                 ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
                 sp,
@@ -399,6 +408,9 @@ def eval_coverage(project_path: Path) -> dict:
                 coverages.append((f"{sp.name}(rs)", pct))
 
         if _detect_go_project(sp):
+            if not shutil.which("go"):
+                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go coverage")
+                continue
             rc, stdout, stderr = _run_cmd(
                 ["go", "test", "-cover", "./..."],
                 sp,
@@ -411,6 +423,9 @@ def eval_coverage(project_path: Path) -> dict:
                 coverages.append((f"{sp.name}(go)", avg))
 
         if _detect_node_project(sp):
+            if not shutil.which("npx"):
+                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node coverage")
+                continue
             rc, stdout, stderr = _run_cmd(
                 ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text", "--passWithNoTests"],
                 sp,
