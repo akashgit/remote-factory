@@ -11,6 +11,10 @@ from factory.runners.codex import CodexRunner, is_codex_dry_run
 from factory.runners.opencode import OpenCodeRunner, is_opencode_dry_run
 from factory.runners.protocol import Runner, RunnerMeta
 
+import structlog
+
+log = structlog.get_logger()
+
 __all__ = [
     "Runner",
     "RunnerMeta",
@@ -107,6 +111,6 @@ def _load_entrypoint_runners() -> None:
                     runner_class = ep.load()
                     _RUNNERS[ep.name] = runner_class
                 except Exception:
-                    pass
+                    log.debug("runner_plugin_load_failed", name=ep.name, exc_info=True)
     except Exception:
         pass

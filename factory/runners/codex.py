@@ -43,14 +43,18 @@ def _check_auth() -> None:
     raise CodexAuthError()
 
 
-def _make_codex_env() -> dict[str, str]:
-    """Build subprocess env with auth isolation."""
+def _make_codex_env() -> tuple[dict[str, str], tempfile.TemporaryDirectory[str]]:
+    """Build subprocess env with auth isolation.
+
+    Returns (env_dict, tmpdir_handle) — caller must keep tmpdir_handle alive
+    until the subprocess exits, then call .cleanup().
+    """
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
     if "OPENAI_API_KEY" not in env and "CODEX_API_KEY" in env:
         env["OPENAI_API_KEY"] = env["CODEX_API_KEY"]
-    codex_home = tempfile.mkdtemp(prefix="factory-codex-")
-    env["CODEX_HOME"] = codex_home
-    return env
+    tmpdir = tempfile.TemporaryDirectory(prefix="factory-codex-")
+    env["CODEX_HOME"] = tmpdir.name
+    return env, tmpdir
 
 
 def is_codex_dry_run() -> bool:
@@ -74,7 +78,7 @@ class CodexRunner:
             display_name="OpenAI Codex",
             binary="codex",
             install_hint="npm install -g @openai/codex",
-            required_env_vars=[],
+            required_env_vars=["OPENAI_API_KEY"],
             supports_usage_telemetry=False,
             supports_session_name=False,
         )
@@ -104,12 +108,14 @@ class CodexRunner:
 
         log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
 
-        env = _make_codex_env()
-
-        return await run_subprocess(
-            cmd, cwd=str(request.cwd), env=env,
-            timeout=request.timeout, runner_name="codex", role=request.role,
-        )
+        env, tmpdir = _make_codex_env()
+        try:
+            return await run_subprocess(
+                cmd, cwd=str(request.cwd), env=env,
+                timeout=request.timeout, runner_name="codex", role=request.role,
+            )
+        finally:
+            tmpdir.cleanup()
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Codex CLI session as a subprocess."""
@@ -132,9 +138,12 @@ class CodexRunner:
 
         log.info("codex_interactive", cwd=str(request.cwd))
 
-        env = _make_codex_env()
-        result = subprocess.run(cmd, cwd=request.cwd, env=env)
-        return result.returncode
+        env, tmpdir = _make_codex_env()
+        try:
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
+            return result.returncode
+        finally:
+            tmpdir.cleanup()
 
     def _dry_run_response(self, role: str, cwd: Path, task: str) -> tuple[str, int]:
         """Return a stub response for dry-run mode."""

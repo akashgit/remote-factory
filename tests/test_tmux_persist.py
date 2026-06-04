@@ -270,7 +270,7 @@ class TestClaudeRunnerTmuxPersist:
 
         with (
             patch("factory.runners._tmux_persist.tmux_available", return_value=False),
-            patch("factory.runners._subprocess.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
+            patch("factory.runners.claude.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
         ):
             await runner.headless(request)
 
@@ -287,6 +287,6 @@ class TestClaudeRunnerTmuxPersist:
         mock_result = AgentRunResult(stdout="normal", return_code=0)
 
         with (
-            patch("factory.runners._subprocess.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
+            patch("factory.runners.claude.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
         ):
             await runner.headless(request)

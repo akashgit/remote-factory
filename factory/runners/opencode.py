@@ -18,6 +18,30 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
+_auth_checked = False
+
+
+class OpenCodeAuthError(Exception):
+    """Raised when OPENAI_API_KEY is not set."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "OPENAI_API_KEY environment variable is not set. "
+            "Set it directly or add it to a config.toml credential profile: "
+            "[credentials.opencode] OPENAI_API_KEY = \"...\""
+        )
+
+
+def _check_auth() -> None:
+    """Check that OPENAI_API_KEY is set (once per process)."""
+    global _auth_checked  # noqa: PLW0603
+    if _auth_checked:
+        return
+    if os.environ.get("OPENAI_API_KEY"):
+        _auth_checked = True
+        return
+    raise OpenCodeAuthError()
+
 
 def is_opencode_dry_run() -> bool:
     """Return True if OpenCode dry-run mode is enabled."""
@@ -55,6 +79,8 @@ class OpenCodeRunner:
         if is_opencode_dry_run():
             stdout, code = self._dry_run_response(request.role, request.cwd, request.task)
             return AgentRunResult(stdout=stdout, return_code=code)
+
+        _check_auth()
 
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
