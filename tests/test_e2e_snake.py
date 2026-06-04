@@ -54,18 +54,31 @@ _STAGE_LABELS = {
 }
 
 
-def _tail_events(events_dir: Path, stop: threading.Event) -> None:
-    """Background thread that tails .factory/events.jsonl and prints progress."""
-    seen = 0
+def _snapshot_event_counts(events_dir: Path) -> dict[str, int]:
+    """Record current line counts for all events.jsonl files so we only tail new lines."""
+    counts: dict[str, int] = {}
+    if events_dir.exists():
+        for f in events_dir.rglob("events.jsonl"):
+            try:
+                counts[str(f)] = len(f.read_text().splitlines())
+            except OSError:
+                pass
+    return counts
+
+
+def _tail_events(events_dir: Path, stop: threading.Event, baseline: dict[str, int]) -> None:
+    """Background thread that tails .factory/events.jsonl and prints NEW events only."""
+    seen: dict[str, int] = dict(baseline)
     while not stop.is_set():
-        # Search for events.jsonl in any worktree
-        candidates = list(events_dir.rglob("events.jsonl"))
+        candidates = list(events_dir.rglob("events.jsonl")) if events_dir.exists() else []
         for events_file in candidates:
+            key = str(events_file)
+            offset = seen.get(key, 0)
             try:
                 lines = events_file.read_text().splitlines()
             except OSError:
                 continue
-            for line in lines[seen:]:
+            for line in lines[offset:]:
                 try:
                     ev = json.loads(line)
                 except (json.JSONDecodeError, ValueError):
@@ -77,7 +90,7 @@ def _tail_events(events_dir: Path, stop: threading.Event) -> None:
                 if agent and agent != "None":
                     label = f"{label}: {agent}"
                 print(f"  [{ts}] {label}", flush=True)
-            seen = max(seen, len(lines))
+            seen[key] = len(lines)
         stop.wait(2.0)
 
 
@@ -104,12 +117,13 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     # Snapshot existing projects so we can find the new one
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
 
-    # Start event tailer — watches both tmp_path and the projects dir
-    # (factory creates the project under ~/factory-projects/<slug>/)
+    # Snapshot existing event files so we only print NEW events
+    baseline = _snapshot_event_counts(projects_dir)
+
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event),
+        args=(projects_dir, stop_event, baseline),
         daemon=True,
     )
     tailer.start()
