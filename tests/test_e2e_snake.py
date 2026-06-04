@@ -6,13 +6,15 @@ Run with: uv run pytest -m e2e tests/test_e2e_snake.py -v -s
 The -s flag is important — it disables output capture so you can see
 live progress from the factory state machine.
 
-Expected runtime: 15-30 minutes. Expected cost: ~$0.50-2.00 per run.
+Expected runtime: 15-30 minutes (full pipeline: Build → Discover → Improve).
+Expected cost: ~$0.50-2.00 per run.
 
 IMPORTANT: Always run via `uv run pytest` (not bare `pytest`) to ensure
 the local factory code is used, not the globally installed version.
 """
 
 import json
+import os
 import py_compile
 import shutil
 import subprocess
@@ -35,6 +37,10 @@ def _factory_available() -> bool:
     return _FACTORY_BIN is not None and _FACTORY_BIN != "None"
 
 
+def _has_codex_key() -> bool:
+    return bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+
+
 _STAGE_LABELS = {
     "detect": "Detecting project state",
     "discover.started": "Discovering project structure",
@@ -51,6 +57,17 @@ _STAGE_LABELS = {
     "cycle.started": "Cycle started",
     "cycle.completed": "Cycle complete",
     "ceo.respawn": "CEO respawning",
+    "phase.research.completed": "Research phase complete",
+    "phase.strategy.completed": "Strategy phase complete",
+    "phase.build.completed": "Build phase complete",
+    "phase.eval.completed": "Eval phase complete",
+    "phase.verdict": "Verdict reached",
+    "phase.archive.completed": "Archive phase complete",
+    "precheck.completed": "Precheck complete",
+    "guard.completed": "Guard check complete",
+    "verdict.force_kept": "Verdict: KEEP (forced)",
+    "summary.started": "Generating summary",
+    "summary.completed": "Summary complete",
 }
 
 
@@ -71,13 +88,8 @@ def _tail_events(
     stop: threading.Event,
     baseline: dict[str, int],
     existing_projects: set[Path],
-    build_done: threading.Event | None = None,
 ) -> None:
-    """Background thread that tails .factory/events.jsonl and prints NEW events only.
-
-    If build_done is provided, sets it when sprint.completed is observed
-    so the test can kill the factory instead of waiting for chaining.
-    """
+    """Background thread that tails .factory/events.jsonl and prints NEW events only."""
     seen: dict[str, int] = dict(baseline)
     project_announced = False
     while not stop.is_set():
@@ -110,28 +122,22 @@ def _tail_events(
                 if agent and agent != "None":
                     label = f"{label}: {agent}"
                 print(f"  [{ts}] {label}", flush=True)
-
-                # Signal build complete on first sprint.completed
-                if ev_type == "sprint.completed" and build_done and not build_done.is_set():
-                    build_done.set()
             seen[key] = len(lines)
         stop.wait(2.0)
 
 
-def _has_codex_key() -> bool:
-    import os
-    return bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
-
-
 def _find_projects_dir() -> Path:
     """Resolve the factory projects directory (same logic as factory CLI)."""
-    import os
     raw = os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects"))
     return Path(raw).expanduser()
 
 
 def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
-    """Shared e2e logic: run factory CEO to build a snake game with the given runner."""
+    """Shared e2e logic: run factory CEO to build a snake game with the given runner.
+
+    Runs the full factory pipeline (Build → Discover → Improve chaining)
+    as a normal user would. Streams live progress from the event log.
+    """
     projects_dir = _find_projects_dir()
     print(f"\n  Factory binary: {_FACTORY_BIN}")
     print(f"  Runner: {runner}")
@@ -144,66 +150,45 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     # Snapshot existing event files so we only print NEW events
     baseline = _snapshot_event_counts(projects_dir)
 
-    # Use Popen so we can kill the process after the first build sprint
-    # completes — no need to wait for chaining (Discover → Improve).
-    build_done = threading.Event()
-
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, baseline, existing_projects, build_done),
+        args=(projects_dir, stop_event, baseline, existing_projects),
         daemon=True,
     )
     tailer.start()
     start_time = time.monotonic()
 
-    proc = subprocess.Popen(
-        [_FACTORY_BIN, "ceo",
-         "Build a simple snake game in Python using curses. Create a single snake.py file.",
-         "--headless", "--mode", "build", "--no-github",
-         "--runner", runner],
-        cwd=tmp_path,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
     try:
-        # Wait for either: build sprint completes, process exits, or timeout
-        # The factory chains after build (Discover → Improve) which we don't need.
-        # Kill as soon as the first sprint.completed event appears.
-        build_done.wait(timeout=1800)
+        result = subprocess.run(
+            [_FACTORY_BIN, "ceo",
+             "Build a simple snake game in Python using curses. Create a single snake.py file.",
+             "--headless", "--mode", "build", "--no-github",
+             "--runner", runner],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=1800,
+        )
         elapsed = time.monotonic() - start_time
+        print(f"\n  Factory exited with code {result.returncode} in {elapsed:.0f}s")
 
-        if proc.poll() is None:
-            if build_done.is_set():
-                print(f"\n  Build sprint completed in {elapsed:.0f}s — stopping factory (skipping chain)", flush=True)
-            else:
-                print(f"\n  Timeout after {elapsed:.0f}s — stopping factory", flush=True)
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait()
+        assert result.returncode in (0, 1), (
+            f"Unexpected exit code {result.returncode}:\n{result.stderr[-500:]}"
+        )
+    except subprocess.TimeoutExpired:
+        elapsed = time.monotonic() - start_time
+        print(f"\n  Factory timed out after {elapsed:.0f}s")
+        new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
+        py_files: list[Path] = []
+        for d in [tmp_path, *new_projects]:
+            py_files.extend(d.rglob("*.py"))
+        if py_files:
+            pytest.skip(f"Timed out after 30min but produced {len(py_files)} .py files")
         else:
-            elapsed = time.monotonic() - start_time
-            print(f"\n  Factory exited with code {proc.returncode} in {elapsed:.0f}s", flush=True)
-
-        if not build_done.is_set():
-            # Check if files were produced despite no sprint.completed event
-            new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
-            py_files_check: list[Path] = []
-            for d in [tmp_path, *new_projects]:
-                py_files_check.extend(d.rglob("*.py"))
-            if py_files_check:
-                pytest.skip(f"Timed out after 30min but produced {len(py_files_check)} .py files")
-            else:
-                pytest.fail("Timed out after 30min with no output files and no sprint.completed")
+            pytest.fail("Timed out after 30min with no output files")
     finally:
-        if proc.poll() is None:
-            proc.kill()
-            proc.wait()
         stop_event.set()
         tailer.join(timeout=3)
 
@@ -237,7 +222,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
 @pytest.mark.skipif(shutil.which("claude") is None, reason="claude CLI not found")
 class TestE2ESnakeGameClaude:
     def test_factory_builds_snake_game_claude(self, tmp_path):
-        """E2E: factory builds a snake game using the Claude runner."""
+        """E2E: factory builds a snake game using the Claude runner (full pipeline)."""
         _run_factory_e2e(tmp_path, "claude")
 
 
@@ -246,5 +231,5 @@ class TestE2ESnakeGameClaude:
 @pytest.mark.skipif(not _has_codex_key(), reason="CODEX_API_KEY/OPENAI_API_KEY not set")
 class TestE2ESnakeGameCodex:
     def test_factory_builds_snake_game_codex(self, tmp_path):
-        """E2E: factory builds a snake game using the Codex runner."""
+        """E2E: factory builds a snake game using the Codex runner (full pipeline)."""
         _run_factory_e2e(tmp_path, "codex")
