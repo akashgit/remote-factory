@@ -272,7 +272,7 @@ class TestClaudeRunnerTmuxPersist:
             patch("factory.runners._tmux_persist.tmux_available", return_value=False),
             patch("factory.runners._subprocess.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
         ):
-            result = await runner.headless(request)
+            await runner.headless(request)
 
     async def test_headless_skips_tmux_when_not_requested(self, tmp_path: Path) -> None:
         from factory.models import AgentRunRequest, AgentRunResult
@@ -289,4 +289,4 @@ class TestClaudeRunnerTmuxPersist:
         with (
             patch("factory.runners._subprocess.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
         ):
-            result = await runner.headless(request)
+            await runner.headless(request)

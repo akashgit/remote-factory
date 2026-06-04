@@ -76,7 +76,6 @@ class TestClaudeRunner:
                 assert result.usage is not None
 
                 call_args = mock_exec.call_args
-                cmd = call_args[0][0]
                 # The args are passed as *cmd, so all elements are positional
                 all_args = list(call_args[0])
                 assert all_args[0] == "claude"
@@ -285,7 +284,7 @@ class TestBobRunner:
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
-        result = await runner.headless(AgentRunRequest(
+        await runner.headless(AgentRunRequest(
             prompt="Test prompt",
             task="Test task",
             cwd=tmp_path,
@@ -832,7 +831,7 @@ class TestStreamingOutput:
                     mock_proc.returncode = 0
                     mock_exec.return_value = mock_proc
 
-                    result = await runner.headless(AgentRunRequest(
+                    await runner.headless(AgentRunRequest(
                         prompt="Test",
                         task="Test",
                         cwd=tmp_path,
