@@ -737,6 +737,7 @@ class TestRunCmdCargoPath:
             assert str(cargo_dir) in env.get("PATH", "")
 
     def test_cargo_bin_not_added_when_missing(self, tmp_path):
+        cargo_dir = tmp_path / ".cargo" / "bin"
         with (
             patch("factory.eval.hygiene.Path.home", return_value=tmp_path),
             patch("factory.eval.hygiene.subprocess.run") as mock_run,
@@ -746,4 +747,4 @@ class TestRunCmdCargoPath:
             )
             _run_cmd(["echo", "test"], tmp_path)
             env = mock_run.call_args.kwargs["env"]
-            assert ".cargo/bin" not in env.get("PATH", "")
+            assert str(cargo_dir) not in env.get("PATH", "")
