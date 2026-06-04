@@ -6,7 +6,7 @@ Run with: uv run pytest -m e2e tests/test_e2e_snake.py -v -s
 The -s flag is important — it disables output capture so you can see
 live progress from the factory state machine.
 
-Expected runtime: 15-30 minutes (full pipeline: Build → Discover → Improve).
+Expected runtime: 25-45 minutes (full pipeline: Build → Discover → Improve).
 Expected cost: ~$0.50-2.00 per run.
 
 IMPORTANT: Always run via `uv run pytest` (not bare `pytest`) to ensure
@@ -137,7 +137,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     print(f"\n  Factory binary: {_FACTORY_BIN}")
     print(f"  Runner: {runner}")
     print(f"  Projects dir: {projects_dir}")
-    print(f"  Timeout: 1800s (30 min)\n")
+    print(f"  Timeout: 3600s (60 min)\n")
 
     # Snapshot existing projects so we can find the new one
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
