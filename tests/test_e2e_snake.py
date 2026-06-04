@@ -76,14 +76,19 @@ _STAGE_LABELS = {
 def _tail_events(
     stop: threading.Event,
     project_path_holder: list[Path | None],
+    wall_start: float,
 ) -> None:
     """Background thread that tails events from the project directory.
 
     The project path is set by the main thread (via project_path_holder)
-    once it's extracted from the factory's stdout output.
+    once it's extracted from the factory's stdout output. Only prints
+    events with timestamps after wall_start.
     """
     seen: dict[str, int] = {}
     announced = False
+    # ISO format of wall_start for comparing with event timestamps
+    from datetime import datetime, timezone
+    start_iso = datetime.fromtimestamp(wall_start, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     while not stop.is_set():
         project_dir = project_path_holder[0]
@@ -112,9 +117,12 @@ def _tail_events(
                     ev = json.loads(line)
                 except (json.JSONDecodeError, ValueError):
                     continue
+                ts = ev.get("timestamp", "")[:19]
+                # Skip events from before this test run
+                if ts < start_iso:
+                    continue
                 ev_type = ev.get("type", "")
                 agent = ev.get("agent", "")
-                ts = ev.get("timestamp", "")[:19]
                 label = _STAGE_LABELS.get(ev_type, ev_type)
                 if agent and agent != "None":
                     label = f"{label}: {agent}"
@@ -146,10 +154,11 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
     start_time = time.monotonic()
 
+    wall_start = time.time()
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(stop_event, project_path_holder),
+        args=(stop_event, project_path_holder, wall_start),
         daemon=True,
     )
     tailer.start()
