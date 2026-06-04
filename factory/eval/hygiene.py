@@ -596,10 +596,11 @@ def eval_coverage(project_path: Path) -> dict:
                 if rc == 0 and jacoco_xml.exists():
                     try:
                         xml_text = jacoco_xml.read_text()
-                        line_counter = re.search(r'<counter[^>]+type="LINE"[^>]*/>', xml_text)
-                        if line_counter:
-                            missed_m = re.search(r'missed="(\d+)"', line_counter.group(0))
-                            covered_m = re.search(r'covered="(\d+)"', line_counter.group(0))
+                        line_counters = re.findall(r'<counter[^>]+type="LINE"[^>]*/>', xml_text)
+                        line_counter_text = line_counters[-1] if line_counters else None
+                        if line_counter_text:
+                            missed_m = re.search(r'missed="(\d+)"', line_counter_text)
+                            covered_m = re.search(r'covered="(\d+)"', line_counter_text)
                         else:
                             missed_m = covered_m = None
                         if missed_m and covered_m:
