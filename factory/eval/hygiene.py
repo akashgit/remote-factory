@@ -125,8 +125,6 @@ def _java_test_cmd(project_path: Path) -> list[str] | None:
     tool = _java_build_tool(project_path)
     if not tool:
         return None
-    if tool[-1] in ("mvn",):
-        return [*tool, "test", "-q"]
     return [*tool, "test", "-q"]
 
 
@@ -328,6 +326,9 @@ def eval_lint(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
 
         if _detect_go_project(sp):
+            if not shutil.which("go"):
+                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go lint")
+                continue
             rc, stdout, stderr = _run_cmd(["go", "vet", "./..."], sp)
             if rc == 0:
                 ran_any = True
@@ -432,7 +433,7 @@ def eval_type_check(project_path: Path) -> dict:
             if not shutil.which("go"):
                 log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go type check")
                 continue
-            rc, stdout, stderr = _run_cmd(["go", "build", "-o", "/dev/null", "./..."], sp)
+            rc, stdout, stderr = _run_cmd(["go", "build", "-o", os.devnull, "./..."], sp)
             if rc == 0:
                 ran_any = True
                 details_parts.append(f"{sp.name}(go): clean")
