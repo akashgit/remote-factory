@@ -154,6 +154,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     )
     tailer.start()
 
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
     proc = subprocess.Popen(
         [_FACTORY_BIN, "ceo",
          "Build a simple snake game in Python using curses. Create a single snake.py file.",
@@ -163,6 +164,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        env=env,
     )
 
     # Read stdout in background to extract project path
