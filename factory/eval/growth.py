@@ -16,6 +16,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import structlog
+
+log = structlog.get_logger()
+
 # Relative weights within the growth category (sum to 1.0).
 # The runner normalizes these so that growth gets 50% of the composite.
 GROWTH_WEIGHTS = {
@@ -95,6 +99,21 @@ LANG_CONFIG: dict[str, dict[str, Any]] = {
             r"@QuarkusMain",
         ],
     },
+    "javascript": {
+        "extensions": ["*.js", "*.jsx", "*.mjs"],
+        "skip_dirs": {
+            "node_modules", "dist", "build", ".next", "coverage",
+            "test", "tests", "__tests__", "docs",
+        },
+        "function_regex": re.compile(
+            r"^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        "entry_point_patterns": [
+            r"\.command\(",
+            r'app\.(?:get|post|put|delete|use)\(',
+        ],
+    },
 }
 
 
@@ -103,11 +122,12 @@ def _detect_project_language(project_path: Path) -> str:
     try:
         from factory.discovery.introspect import _detect_language
         return _detect_language(project_path)
-    except ImportError:
+    except ImportError as exc:
+        log.warning("introspect_import_failed", exc=str(exc))
         if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
             return "python"
         if (project_path / "package.json").exists():
-            return "typescript"
+            return "typescript" if (project_path / "tsconfig.json").exists() else "javascript"
         if (project_path / "Cargo.toml").exists():
             return "rust"
         if (project_path / "go.mod").exists():

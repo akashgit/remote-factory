@@ -27,8 +27,8 @@ from factory.models import ProjectProfile
 
 
 class TestLangConfig:
-    def test_five_languages_configured(self):
-        assert set(LANG_CONFIG.keys()) == {"python", "rust", "go", "typescript", "java"}
+    def test_six_languages_configured(self):
+        assert set(LANG_CONFIG.keys()) == {"python", "rust", "go", "typescript", "javascript", "java"}
 
     def test_each_has_required_keys(self):
         for lang, cfg in LANG_CONFIG.items():
@@ -59,7 +59,12 @@ class TestDetectProjectLanguage:
 
     def test_typescript_project(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name":"x"}')
+        (tmp_path / "tsconfig.json").write_text('{"compilerOptions":{}}')
         assert _detect_project_language(tmp_path) == "typescript"
+
+    def test_javascript_project(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x"}')
+        assert _detect_project_language(tmp_path) == "javascript"
 
     def test_java_project(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
@@ -212,6 +217,7 @@ class TestCapabilitySurfaceMultiLang:
 
     def test_typescript_project(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name":"x"}')
+        (tmp_path / "tsconfig.json").write_text('{"compilerOptions":{}}')
         src = tmp_path / "src"
         src.mkdir()
         (src / "index.ts").write_text(
@@ -433,6 +439,7 @@ class TestProfileCoverageNotPythonGated:
 
     def test_typescript_project_gets_coverage_dimension(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name":"x","scripts":{"test":"jest"}}')
+        (tmp_path / "tsconfig.json").write_text('{"compilerOptions":{}}')
         proj = introspect_project(tmp_path)
         profile = build_eval_profile(proj)
         dim_names = [d.name for d in profile.dimensions]
@@ -624,7 +631,12 @@ class TestDetectProjectLanguageImportErrorFallback:
 
     def test_typescript_fallback(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name":"x"}')
+        (tmp_path / "tsconfig.json").write_text('{"compilerOptions":{}}')
         assert self._run_with_import_error(tmp_path) == "typescript"
+
+    def test_javascript_fallback(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x"}')
+        assert self._run_with_import_error(tmp_path) == "javascript"
 
     def test_rust_fallback(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='x'\n")

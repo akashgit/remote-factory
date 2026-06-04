@@ -39,7 +39,7 @@ def _detect_language(project_path: Path) -> str:
     if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
         lang = "python"
     elif (project_path / "package.json").exists():
-        lang = "typescript"
+        lang = "typescript" if (project_path / "tsconfig.json").exists() else "javascript"
     elif (project_path / "Cargo.toml").exists():
         lang = "rust"
     elif (project_path / "go.mod").exists():

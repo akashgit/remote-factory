@@ -362,9 +362,15 @@ class TestJavaBuildTool:
         assert result == ["gradle"]
 
     def test_mvn_fallback(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
         with patch("shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
             result = _java_build_tool(tmp_path)
         assert result == ["mvn"]
+
+    def test_mvn_without_pom_returns_none(self, tmp_path):
+        with patch("shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
+            result = _java_build_tool(tmp_path)
+        assert result is None
 
     def test_no_tool_returns_none(self, tmp_path):
         with patch("shutil.which", return_value=None):
@@ -663,36 +669,46 @@ class TestEvalCoverageLanguages:
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
-    def test_java_mvn_with_percentage(self, tmp_path):
+    def test_java_mvn_jacoco_xml(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
-        output = "Total line coverage: 78%\n"
+        jacoco_dir = tmp_path / "target" / "site" / "jacoco"
+        jacoco_dir.mkdir(parents=True)
+        (jacoco_dir / "jacoco.xml").write_text(
+            '<report><counter type="LINE" missed="22" covered="78"/></report>'
+        )
         with (
-            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
             patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(78 / 100, 4)
         assert "78%" in result["details"]
 
-    def test_java_gradle_coverage(self, tmp_path):
+    def test_java_gradle_jacoco_xml(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
-        output = "Total instruction coverage: 90%\n"
+        jacoco_dir = tmp_path / "build" / "reports" / "jacoco" / "test"
+        jacoco_dir.mkdir(parents=True)
+        (jacoco_dir / "jacocoTestReport.xml").write_text(
+            '<report><counter type="LINE" missed="10" covered="90"/></report>'
+        )
         with (
-            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
             patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(90 / 100, 4)
 
-    def test_java_rc0_no_pct_fallback(self, tmp_path):
+    def test_java_rc0_no_jacoco_xml_logs_warning(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS\n", "")),
             patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene.log") as mock_log,
         ):
             result = eval_coverage(tmp_path)
-        assert result["score"] == 0.0
-        assert "0%" in result["details"]
+        mock_log.warning.assert_called_once()
+        assert mock_log.warning.call_args[0][0] == "jacoco_xml_not_found"
+        assert result["score"] == 0.5
 
     def test_java_no_tool(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
@@ -717,6 +733,108 @@ class TestEvalCoverageLanguages:
             result = eval_coverage(tmp_path)
         assert result["score"] == round(72 / 100, 4)
         assert "72%" in result["details"]
+
+
+class TestPolyglotSubProject:
+    """T1: Polyglot sub-project — both languages detected in all 4 hygiene functions."""
+
+    def test_rust_and_node_both_evaluated_in_eval_tests(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        rust_output = "test result: ok. 3 passed; 0 failed; 0 ignored\n"
+        node_output = "Tests: 5 passed, 0 failed\n"
+
+        def fake_run(cmd, *args, **kwargs):
+            if "cargo" in cmd:
+                return (0, rust_output, "")
+            if "npm" in cmd:
+                return (0, node_output, "")
+            return (1, "", "")
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", side_effect=fake_run),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["passed"] is True
+        assert "3 passed" in result["details"]
+        assert "5 passed" in result["details"]
+
+    def test_rust_and_node_both_evaluated_in_eval_lint(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_lint(tmp_path)
+        assert "(rs): clean" in result["details"]
+        assert "(js): clean" in result["details"]
+
+    def test_rust_and_node_both_evaluated_in_eval_type_check(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_type_check(tmp_path)
+        assert "(rs): clean" in result["details"]
+        assert "(ts): clean" in result["details"]
+
+    def test_rust_and_node_both_evaluated_in_eval_coverage(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        rust_cov = "TOTAL     100      15      85.0%  200    30      85.0%\n"
+        node_cov = "All files |   72.5  |   60.0   |   80.0  |   72.5  |\n"
+
+        def fake_run(cmd, *args, **kwargs):
+            if "llvm-cov" in cmd:
+                return (0, rust_cov, "")
+            if "jest" in cmd:
+                return (0, node_cov, "")
+            return (1, "", "")
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", side_effect=fake_run),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert "85%" in result["details"]
+        assert "72%" in result["details"]
+
+
+class TestCargoWorkspaceFlag:
+    """T2: Assert command list includes --workspace."""
+
+    def test_cargo_test_uses_workspace_flag(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        output = "test result: ok. 5 passed; 0 failed; 0 ignored\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")) as mock_run,
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            eval_tests(tmp_path)
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["cargo", "test", "--workspace"]
+
+
+class TestJavaNoBuildToolIntegration:
+    """T3: eval_tests() handles _java_test_cmd returning None."""
+
+    def test_eval_tests_java_no_build_tool_logs_warning(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._java_build_tool", return_value=None),
+            patch("factory.eval.hygiene.log") as mock_log,
+        ):
+            result = eval_tests(tmp_path)
+        mock_log.warning.assert_called_once()
+        assert mock_log.warning.call_args[0][0] == "java_build_tool_not_found"
+        assert result["score"] == 0.5
 
 
 class TestRunCmdCargoPath:
