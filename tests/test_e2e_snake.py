@@ -81,79 +81,89 @@ def _tail_events(events_dir: Path, stop: threading.Event) -> None:
         stop.wait(2.0)
 
 
-@pytest.mark.skipif(not _factory_available(), reason="factory CLI not in venv")
-@pytest.mark.skipif(
-    shutil.which("claude") is None,
-    reason="claude CLI not found on PATH",
-)
-class TestE2ESnakeGame:
-    def test_factory_builds_snake_game(self, tmp_path):
-        """End-to-end: factory ceo builds a snake game from scratch.
+def _has_codex_key() -> bool:
+    import os
+    return bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
 
-        Uses the LOCAL factory binary (from the project venv), not the
-        global install. Validates the full pipeline: CEO → Researcher →
-        Strategist → Builder → Archivist.
 
-        Streams progress to stdout so you can follow the factory state
-        machine in real time (run with `pytest -s` to see it).
-        """
-        print(f"\n  Factory binary: {_FACTORY_BIN}")
-        print(f"  Output dir: {tmp_path}")
-        print(f"  Timeout: 1800s (30 min)\n")
+def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
+    """Shared e2e logic: run factory CEO to build a snake game with the given runner."""
+    print(f"\n  Factory binary: {_FACTORY_BIN}")
+    print(f"  Runner: {runner}")
+    print(f"  Output dir: {tmp_path}")
+    print(f"  Timeout: 1800s (30 min)\n")
 
-        # Start event tailer in background
-        stop_event = threading.Event()
-        tailer = threading.Thread(
-            target=_tail_events,
-            args=(tmp_path, stop_event),
-            daemon=True,
+    # Start event tailer in background
+    stop_event = threading.Event()
+    tailer = threading.Thread(
+        target=_tail_events,
+        args=(tmp_path, stop_event),
+        daemon=True,
+    )
+    tailer.start()
+    start_time = time.monotonic()
+
+    try:
+        result = subprocess.run(
+            [_FACTORY_BIN, "ceo",
+             "Build a simple snake game in Python using curses. Create a single snake.py file.",
+             "--headless", "--mode", "build", "--no-github",
+             "--runner", runner],
+            cwd=tmp_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=1800,
         )
-        tailer.start()
-        start_time = time.monotonic()
+        elapsed = time.monotonic() - start_time
+        print(f"\n  Factory exited with code {result.returncode} in {elapsed:.0f}s")
 
-        try:
-            result = subprocess.run(
-                [_FACTORY_BIN, "ceo",
-                 "Build a simple snake game in Python using curses. Create a single snake.py file.",
-                 "--headless", "--mode", "build", "--no-github"],
-                cwd=tmp_path,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                timeout=1800,
-            )
-            elapsed = time.monotonic() - start_time
-            print(f"\n  Factory exited with code {result.returncode} in {elapsed:.0f}s")
-
-            assert result.returncode in (0, 1), (
-                f"Unexpected exit code {result.returncode}:\n{result.stderr[-500:]}"
-            )
-        except subprocess.TimeoutExpired:
-            elapsed = time.monotonic() - start_time
-            print(f"\n  Factory timed out after {elapsed:.0f}s")
-            py_files = list(tmp_path.rglob("*.py"))
-            if py_files:
-                pytest.skip(f"Timed out after 30min but produced {len(py_files)} .py files")
-            else:
-                pytest.fail("Timed out after 30min with no output files")
-        finally:
-            stop_event.set()
-            tailer.join(timeout=3)
-
-        # Verify output
+        assert result.returncode in (0, 1), (
+            f"Unexpected exit code {result.returncode}:\n{result.stderr[-500:]}"
+        )
+    except subprocess.TimeoutExpired:
+        elapsed = time.monotonic() - start_time
+        print(f"\n  Factory timed out after {elapsed:.0f}s")
         py_files = list(tmp_path.rglob("*.py"))
-        print(f"  Python files produced: {[f.name for f in py_files]}")
-        assert len(py_files) > 0, "No .py files produced"
+        if py_files:
+            pytest.skip(f"Timed out after 30min but produced {len(py_files)} .py files")
+        else:
+            pytest.fail("Timed out after 30min with no output files")
+    finally:
+        stop_event.set()
+        tailer.join(timeout=3)
 
-        # At least one file should be valid Python
-        valid_files = []
-        for f in py_files:
-            try:
-                py_compile.compile(str(f), doraise=True)
-                valid_files.append(f.name)
-            except py_compile.PyCompileError:
-                pass
+    # Verify output
+    py_files = list(tmp_path.rglob("*.py"))
+    print(f"  Python files produced: {[f.name for f in py_files]}")
+    assert len(py_files) > 0, "No .py files produced"
 
-        print(f"  Valid Python files: {valid_files}")
-        assert len(valid_files) > 0, f"No valid Python files among: {[f.name for f in py_files]}"
-        print(f"\n  E2E test PASSED in {elapsed:.0f}s")
+    # At least one file should be valid Python
+    valid_files = []
+    for f in py_files:
+        try:
+            py_compile.compile(str(f), doraise=True)
+            valid_files.append(f.name)
+        except py_compile.PyCompileError:
+            pass
+
+    print(f"  Valid Python files: {valid_files}")
+    assert len(valid_files) > 0, f"No valid Python files among: {[f.name for f in py_files]}"
+    print(f"\n  E2E test PASSED ({runner}) in {elapsed:.0f}s")
+
+
+@pytest.mark.skipif(not _factory_available(), reason="factory CLI not in venv")
+@pytest.mark.skipif(shutil.which("claude") is None, reason="claude CLI not found")
+class TestE2ESnakeGameClaude:
+    def test_factory_builds_snake_game_claude(self, tmp_path):
+        """E2E: factory builds a snake game using the Claude runner."""
+        _run_factory_e2e(tmp_path, "claude")
+
+
+@pytest.mark.skipif(not _factory_available(), reason="factory CLI not in venv")
+@pytest.mark.skipif(shutil.which("codex") is None, reason="codex CLI not found")
+@pytest.mark.skipif(not _has_codex_key(), reason="CODEX_API_KEY/OPENAI_API_KEY not set")
+class TestE2ESnakeGameCodex:
+    def test_factory_builds_snake_game_codex(self, tmp_path):
+        """E2E: factory builds a snake game using the Codex runner."""
+        _run_factory_e2e(tmp_path, "codex")
