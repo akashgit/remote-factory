@@ -167,7 +167,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     proc = subprocess.Popen(
         [_FACTORY_BIN, "ceo",
          "Build a simple snake game in Python using curses. Create a single snake.py file.",
-         "--headless", "--mode", "build", "--no-github",
+         "--mode", "build", "--no-github",
          "--runner", runner],
         cwd=tmp_path,
         stdout=subprocess.PIPE,
