@@ -250,15 +250,18 @@ def eval_tests(project_path: Path) -> dict:
                 continue
             rc, stdout, stderr = _run_cmd(java_cmd, sp)
             output = stdout + stderr
-            t_match = re.search(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)", output)
-            if t_match:
+            t_matches = re.findall(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)", output)
+            if t_matches:
                 ran_any = True
-                total_run = int(t_match.group(1))
-                failures = int(t_match.group(2)) + int(t_match.group(3))
-                p = total_run - failures
-                total_passed += p
-                total_failed += failures
-                details_parts.append(f"{sp.name}(java): {p} passed, {failures} failed")
+                java_passed = 0
+                java_failed = 0
+                for total_run_s, fail_s, err_s in t_matches:
+                    p = int(total_run_s) - int(fail_s) - int(err_s)
+                    java_passed += p
+                    java_failed += int(fail_s) + int(err_s)
+                total_passed += java_passed
+                total_failed += java_failed
+                details_parts.append(f"{sp.name}(java): {java_passed} passed, {java_failed} failed")
             elif rc == 0:
                 ran_any = True
                 total_passed += 1
@@ -449,7 +452,11 @@ def eval_type_check(project_path: Path) -> dict:
             if not tool:
                 log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java type check")
                 continue
-            rc, stdout, stderr = _run_cmd([*tool, "compile", "-q"], sp)
+            if tool[-1] == "mvn":
+                cmd = [*tool, "compile", "-q"]
+            else:
+                cmd = [*tool, "compileJava", "-q"]
+            rc, stdout, stderr = _run_cmd(cmd, sp)
             if rc == 0:
                 ran_any = True
                 details_parts.append(f"{sp.name}(java): clean")

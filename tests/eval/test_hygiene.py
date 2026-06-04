@@ -234,6 +234,44 @@ class TestNodeMonorepoAggregation:
         assert result["passed"] is True
 
 
+class TestJavaMavenMultiModuleAggregation:
+    """Multi-module Maven builds report multiple 'Tests run:' lines — all must be summed."""
+
+    MULTI_MODULE_OUTPUT = (
+        "[INFO] --- maven-surefire-plugin:3.0.0:test (default-test) @ module-a ---\n"
+        "Tests run: 10, Failures: 1, Errors: 0, Skipped: 0\n"
+        "[INFO] --- maven-surefire-plugin:3.0.0:test (default-test) @ module-b ---\n"
+        "Tests run: 20, Failures: 0, Errors: 2, Skipped: 0\n"
+    )
+
+    def test_aggregates_multiple_modules(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MULTI_MODULE_OUTPUT, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["name"] == "tests"
+        # module-a: 10 - 1 - 0 = 9 passed, 1 failed
+        # module-b: 20 - 0 - 2 = 18 passed, 2 failed
+        # total: 27 passed, 3 failed
+        assert result["score"] == round(27 / 30, 4)
+        assert result["passed"] is False
+        assert "27 passed" in result["details"]
+        assert "3 failed" in result["details"]
+
+    def test_single_module_still_works(self, tmp_path):
+        output = "Tests run: 5, Failures: 0, Errors: 0, Skipped: 0\n"
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+
+
 class TestRustWorkspaceDedup:
     """Bug 1: Rust workspace triple-counting — member crates should be deduplicated."""
 
