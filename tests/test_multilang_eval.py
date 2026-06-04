@@ -392,7 +392,7 @@ class TestCoverageCommand:
     def test_rust_coverage(self):
         cmd = _coverage_command(self._make_profile("rust"))
         assert cmd is not None
-        assert "cargo tarpaulin" in cmd
+        assert "cargo llvm-cov --summary-only" in cmd
 
     def test_go_coverage(self):
         cmd = _coverage_command(self._make_profile("go"))

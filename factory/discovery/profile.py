@@ -163,7 +163,7 @@ def _coverage_command(project: ProjectProfile) -> str | None:
         pm = "uv run" if project.package_manager == "uv" else "python -m"
         return f"{pm} pytest --cov={coverage_target} --cov-report=term -q"
     if project.language == "rust":
-        return "cargo tarpaulin --out stdout --skip-clean"
+        return "cargo llvm-cov --summary-only"
     if project.language == "go":
         return "go test -cover ./..."
     if project.language == "typescript":

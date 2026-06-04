@@ -548,8 +548,11 @@ class TestEvalCoverageLanguages:
     """Tests for eval_coverage() Rust, Go, Node, and Java branches."""
 
     def test_rust_coverage_parse(self, tmp_path):
-        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
-        output = "85.5% coverage, 100/117 lines covered\n"
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        output = (
+            "Filename  Regions  Missed  Cover  Lines  Missed  Cover\n"
+            "TOTAL     100      15      85.0%  200    30      85.0%\n"
+        )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
             patch("shutil.which", return_value="/usr/bin/cargo"),
@@ -557,6 +560,56 @@ class TestEvalCoverageLanguages:
             result = eval_coverage(tmp_path)
         assert result["score"] == round(85 / 100, 4)
         assert "85%" in result["details"]
+
+    def test_rust_coverage_tarpaulin_fallback(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        tarpaulin_output = "85.5% coverage, 100/117 lines covered\n"
+
+        def fake_run_cmd(cmd, *args, **kwargs):
+            if "llvm-cov" in cmd:
+                return (1, "", "error: no such subcommand: `llvm-cov`")
+            return (0, tarpaulin_output, "")
+
+        with (
+            patch("factory.eval.hygiene._run_cmd", side_effect=fake_run_cmd),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(85 / 100, 4)
+        assert "85%" in result["details"]
+
+    def test_rust_coverage_timeout_warns(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "Timed out after 600s")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.log") as mock_log,
+        ):
+            eval_coverage(tmp_path)
+        mock_log.warning.assert_any_call("coverage_timeout", project=str(tmp_path), lang="rust", timeout=600)
+
+    def test_rust_coverage_tool_failed_warns(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "some error")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.log") as mock_log,
+        ):
+            eval_coverage(tmp_path)
+        mock_log.warning.assert_any_call(
+            "coverage_tool_failed", project=str(tmp_path), lang="rust", rc=1, stderr="some error"
+        )
+
+    def test_rust_coverage_timeout_600s(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")) as mock_run,
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            eval_coverage(tmp_path)
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs.get("timeout") == 600
 
     def test_rust_no_cargo(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")

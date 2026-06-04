@@ -512,15 +512,29 @@ def eval_coverage(project_path: Path) -> dict:
                 log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust coverage")
                 continue
             rc, stdout, stderr = _run_cmd(
-                ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
+                ["cargo", "llvm-cov", "--summary-only"],
                 sp,
+                timeout=600,
             )
             output = stdout + stderr
-            pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
+            if "no such command" in stderr.lower() or "no such subcommand" in stderr.lower():
+                rc, stdout, stderr = _run_cmd(
+                    ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
+                    sp,
+                    timeout=600,
+                )
+                output = stdout + stderr
+                pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
+            else:
+                pct_match = re.search(r"TOTAL\s+[\d.]+\s+[\d.]+\s+([\d.]+)%", output)
             if pct_match:
                 ran_any = True
                 pct = int(float(pct_match.group(1)))
                 coverages.append((f"{sp.name}(rs)", pct))
+            elif "Timed out" in stderr:
+                log.warning("coverage_timeout", project=str(sp), lang="rust", timeout=600)
+            elif rc != 0:
+                log.warning("coverage_tool_failed", project=str(sp), lang="rust", rc=rc, stderr=stderr[:200])
 
         if _detect_go_project(sp):
             if not shutil.which("go"):
