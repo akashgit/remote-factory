@@ -27,6 +27,8 @@ import pytest
 
 pytestmark = pytest.mark.e2e
 
+E2E_TIMEOUT_SECONDS = int(os.environ.get("FACTORY_E2E_TIMEOUT", "3600"))
+
 # Resolve the factory binary from the same venv Python is running in.
 _FACTORY_BIN = str(shutil.which("factory", path=str(
     Path(sys.executable).parent
@@ -137,7 +139,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     print(f"\n  Factory binary: {_FACTORY_BIN}")
     print(f"  Runner: {runner}")
     print(f"  Projects dir: {projects_dir}")
-    print(f"  Timeout: 3600s (60 min)\n")
+    print(f"  Timeout: {E2E_TIMEOUT_SECONDS}s ({E2E_TIMEOUT_SECONDS // 60} min)\n")
 
     # Snapshot existing projects so we can find the new one
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
@@ -161,7 +163,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=3600,
+            timeout=E2E_TIMEOUT_SECONDS,
         )
         elapsed = time.monotonic() - start_time
         timed_out = False
