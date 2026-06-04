@@ -45,15 +45,15 @@ def _using_api_key() -> bool:
 
 
 def _check_auth() -> None:
-    """Check that Codex auth is available (API key or OAuth, once per process)."""
+    """Check that Codex auth is available (OAuth preferred, then API key)."""
     global _auth_checked  # noqa: PLW0603
     if _auth_checked:
         return
-    if _using_api_key():
-        _auth_checked = True
-        return
     if _has_codex_oauth():
         log.info("codex_oauth_detected")
+        _auth_checked = True
+        return
+    if _using_api_key():
         _auth_checked = True
         return
     raise CodexAuthError()
@@ -62,13 +62,22 @@ def _check_auth() -> None:
 def _make_codex_env() -> tuple[dict[str, str], tempfile.TemporaryDirectory[str] | None]:
     """Build subprocess env with auth isolation.
 
+    OAuth is preferred when ~/.codex/auth.json exists — OPENAI_API_KEY is
+    stripped from the env so Codex doesn't switch to API key mode (which
+    can cause 401 errors when the key lacks Responses API scopes).
+
     In API key mode, sets CODEX_HOME to a temp dir to avoid stale OAuth.
-    In OAuth mode, leaves CODEX_HOME unset so Codex uses ~/.codex/.
 
     Returns (env_dict, tmpdir_handle_or_None) — caller must keep tmpdir_handle
     alive until the subprocess exits, then call .cleanup() if not None.
     """
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+
+    if _has_codex_oauth():
+        env.pop("OPENAI_API_KEY", None)
+        env.pop("CODEX_API_KEY", None)
+        return env, None
+
     if "OPENAI_API_KEY" not in env and "CODEX_API_KEY" in env:
         env["OPENAI_API_KEY"] = env["CODEX_API_KEY"]
 
@@ -180,7 +189,7 @@ class CodexRunner:
             cmd.append("--ignore-user-config")
 
         if request.skip_permissions:
-            cmd.extend(["--sandbox", "workspace-write"])
+            cmd.append("--full-auto")
 
         if request.model:
             cmd.extend(["--model", request.model])
