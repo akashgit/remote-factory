@@ -68,8 +68,12 @@ class CodexAgent:
         model                → --model / -m
         permissions          → --dangerously-bypass-approvals-and-sandbox / --sandbox
         add_dirs             → --add-dir
-        mode=headless        → codex exec
-        mode=interactive     → codex (no exec)
+        mode                 → always uses `codex exec` (non-interactive subcommand)
+
+    Note: Unlike Claude Code which has separate interactive (`claude <task>`)
+    and headless (`claude -p <task>`) modes, Codex CLI's interactive mode
+    (`codex <prompt>`) requires a TTY. The `codex exec` subcommand works
+    in both TTY and non-TTY environments, so we always use it.
     """
 
     name: str = "codex"
@@ -87,10 +91,9 @@ class CodexAgent:
         parts.append(f"\n\n---\n\n## Current Task\n\n{config.task}")
         full_prompt = "\n\n".join(parts)
 
-        if config.mode == "interactive":
-            cmd = ["codex", full_prompt]
-        else:
-            cmd = ["codex", "exec", full_prompt]
+        # Always use `codex exec` — the interactive `codex` command requires
+        # a TTY which isn't available in subprocess-based invocations.
+        cmd = ["codex", "exec", full_prompt]
 
         # -- Permissions / sandbox --
         if config.permissions == "permissionless":
@@ -219,7 +222,7 @@ class CodexRunner:
 
         full_prompt = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
 
-        cmd = ["codex", full_prompt]
+        cmd = ["codex", "exec", full_prompt]
 
         if dangerously_skip_permissions:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")

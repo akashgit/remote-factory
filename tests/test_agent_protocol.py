@@ -421,12 +421,13 @@ class TestCodexAgent:
 
     # -- mode interactive → codex (no exec) --
 
-    def test_interactive_mode(self, tmp_path: Path) -> None:
+    def test_interactive_mode_still_uses_exec(self, tmp_path: Path) -> None:
+        """Codex always uses `codex exec` — interactive codex requires a TTY."""
         agent = CodexAgent()
         config = self._make_config(tmp_path, mode="interactive")
         cmd = agent.get_launch_command(config)
         assert cmd[0] == "codex"
-        assert cmd[1] != "exec"
+        assert cmd[1] == "exec"
 
     # -- get_environment --
 

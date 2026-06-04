@@ -244,8 +244,8 @@ class TestCodexIntegration:
         assert code == 0
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "codex"
-        # Interactive mode: no "exec" subcommand
-        assert "exec" not in cmd
+        # Codex always uses exec (interactive codex requires TTY)
+        assert cmd[1] == "exec"
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
 
     def test_preflight_success(self):
