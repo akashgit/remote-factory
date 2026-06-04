@@ -105,8 +105,16 @@ class TestCodexAuth:
         monkeypatch.delenv("CODEX_API_KEY", raising=False)
         monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
 
-        _check_auth()
-        assert codex_module._auth_checked is True
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            _check_auth()
+            assert codex_module._auth_checked is True
+
+    def test_auth_prefers_oauth_over_api_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=True):
+            _check_auth()
+            assert codex_module._auth_checked is True
 
     async def test_headless_fails_without_key(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -135,30 +143,45 @@ class TestCodexEnvMapping:
 
         from factory.runners.codex import _make_codex_env
 
-        env, tmpdir = _make_codex_env()
-        tmpdir.cleanup()
-        assert env["OPENAI_API_KEY"] == "my-codex-key"
-        assert "VIRTUAL_ENV" not in env
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            env, tmpdir = _make_codex_env()
+            tmpdir.cleanup()
+            assert env["OPENAI_API_KEY"] == "my-codex-key"
+            assert "VIRTUAL_ENV" not in env
 
-    def test_openai_key_not_overridden(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_openai_key_not_overridden_without_oauth(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "codex-key")
         monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
 
         from factory.runners.codex import _make_codex_env
 
-        env, tmpdir = _make_codex_env()
-        tmpdir.cleanup()
-        assert env["OPENAI_API_KEY"] == "openai-key"
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            env, tmpdir = _make_codex_env()
+            tmpdir.cleanup()
+            assert env["OPENAI_API_KEY"] == "openai-key"
+
+    def test_oauth_strips_api_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+        monkeypatch.setenv("CODEX_API_KEY", "codex-key")
+
+        from factory.runners.codex import _make_codex_env
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=True):
+            env, tmpdir = _make_codex_env()
+            assert tmpdir is None
+            assert "OPENAI_API_KEY" not in env
+            assert "CODEX_API_KEY" not in env
 
     def test_virtual_env_stripped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
 
         from factory.runners.codex import _make_codex_env
 
-        env, tmpdir = _make_codex_env()
-        if tmpdir is not None:
-            tmpdir.cleanup()
-        assert "VIRTUAL_ENV" not in env
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            env, tmpdir = _make_codex_env()
+            if tmpdir is not None:
+                tmpdir.cleanup()
+            assert "VIRTUAL_ENV" not in env
 
 
 class TestCodexHeadless:
@@ -346,22 +369,23 @@ class TestCodexHeadless:
 
         runner = CodexRunner()
 
-        with patch(
-            "factory.runners.codex.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
-            mock_run.return_value = AgentRunResult(stdout="ok", return_code=0)
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            with patch(
+                "factory.runners.codex.run_subprocess", new_callable=AsyncMock
+            ) as mock_run:
+                mock_run.return_value = AgentRunResult(stdout="ok", return_code=0)
 
-            await runner.headless(
-                AgentRunRequest(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
+                await runner.headless(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                    )
                 )
-            )
 
-            call_kwargs = mock_run.call_args.kwargs
-            assert "VIRTUAL_ENV" not in call_kwargs["env"]
-            assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"
+                call_kwargs = mock_run.call_args.kwargs
+                assert "VIRTUAL_ENV" not in call_kwargs["env"]
+                assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"
 
 
 class TestCodexStreaming:
@@ -447,8 +471,7 @@ class TestCodexInteractive:
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
             assert "--ignore-user-config" in cmd
-            assert "--sandbox" in cmd
-            assert "workspace-write" in cmd
+            assert "--full-auto" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
@@ -472,7 +495,7 @@ class TestCodexInteractive:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert "--sandbox" not in cmd
+            assert "--full-auto" not in cmd
 
     def test_interactive_run_passes_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -484,16 +507,17 @@ class TestCodexInteractive:
 
         runner = CodexRunner()
 
-        with patch("subprocess.run") as mock_run:
-            mock_run.return_value = type("Result", (), {"returncode": 0})()
-            runner.interactive_run(
-                AgentRunRequest(
-                    prompt="Test",
-                    task="Test",
-                    cwd=tmp_path,
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            with patch("subprocess.run") as mock_run:
+                mock_run.return_value = type("Result", (), {"returncode": 0})()
+                runner.interactive_run(
+                    AgentRunRequest(
+                        prompt="Test",
+                        task="Test",
+                        cwd=tmp_path,
+                    )
                 )
-            )
 
-            call_kwargs = mock_run.call_args.kwargs
-            assert "VIRTUAL_ENV" not in call_kwargs["env"]
-            assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"
+                call_kwargs = mock_run.call_args.kwargs
+                assert "VIRTUAL_ENV" not in call_kwargs["env"]
+                assert call_kwargs["env"]["OPENAI_API_KEY"] == "test-key"

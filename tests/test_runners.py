@@ -9,6 +9,7 @@ import pytest
 
 from factory.models import AgentRunRequest, AgentRunResult
 from factory.runners import ClaudeRunner, BobRunner, get_runner, is_dry_run
+from factory.runners.opencode import OpenCodeRunner
 from factory.runners.usage import (
     CeilingExceededError,
     CeilingWarning,
@@ -1364,3 +1365,103 @@ class TestCeilingAccumulationAcrossInvocations:
 
         # Runner's cycle_start should be between now_before and now_after
         assert now_before <= runner.cycle_start <= now_after
+
+
+class TestOpenCodeInteractive:
+    """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
+
+    def test_interactive_run_passes_prompt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() passes -p with the prompt to OpenCode."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        runner = OpenCodeRunner()
+
+        with patch("factory.runners.opencode.subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            code = runner.interactive_run(AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            ))
+
+            assert code == 0
+            cmd = mock_run.call_args[0][0]
+            assert cmd[0] == "opencode"
+            assert "-p" in cmd
+            p_idx = cmd.index("-p")
+            full_prompt = cmd[p_idx + 1]
+            assert "You are the CEO." in full_prompt
+            assert "Start session" in full_prompt
+            assert "## Current Task" in full_prompt
+
+    def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() passes -c with the cwd."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        runner = OpenCodeRunner()
+
+        with patch("factory.runners.opencode.subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            runner.interactive_run(AgentRunRequest(
+                prompt="Test",
+                task="Test",
+                cwd=tmp_path,
+            ))
+
+            cmd = mock_run.call_args[0][0]
+            assert "-c" in cmd
+            c_idx = cmd.index("-c")
+            assert cmd[c_idx + 1] == str(tmp_path)
+
+    def test_interactive_run_dry_run(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """interactive_run() prints dry-run message and returns 0."""
+        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
+        runner = OpenCodeRunner()
+
+        code = runner.interactive_run(AgentRunRequest(
+            prompt="Test prompt",
+            task="Test task",
+            cwd=tmp_path,
+        ))
+
+        assert code == 0
+        captured = capsys.readouterr()
+        assert "[DRY-RUN]" in captured.out
+
+
+class TestBobInteractivePrompt:
+    """Tests for BobRunner.interactive_run() — prompt delivery."""
+
+    def test_interactive_run_passes_prompt_via_i_flag(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """interactive_run() passes the prompt via -i flag."""
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_BOB_DRY_RUN", raising=False)
+
+        import factory.runners.bob as bob_module
+        bob_module._auth_checked = False
+
+        (tmp_path / ".factory").mkdir()
+        runner = BobRunner()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            code = runner.interactive_run(AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            ))
+
+            assert code == 0
+            cmd = mock_run.call_args[0][0]
+            assert cmd[0] == "bob"
+            assert "-i" in cmd
+            i_idx = cmd.index("-i")
+            full_prompt = cmd[i_idx + 1]
+            assert "You are the CEO." in full_prompt
+            assert "Start session" in full_prompt
+
+        bob_module._auth_checked = False

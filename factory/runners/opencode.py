@@ -171,7 +171,8 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        cmd = ["opencode", "-c", str(request.cwd)]
+        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
 
         log.info("opencode_interactive", cwd=str(request.cwd))
 
