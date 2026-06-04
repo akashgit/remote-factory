@@ -13,10 +13,13 @@ from factory.eval.growth import (
 )
 from factory.discovery.introspect import (
     _detect_framework,
+    _detect_lint_command,
     _detect_project_evals,
+    _detect_test_command,
+    _detect_type_check_command,
     introspect_project,
 )
-from factory.discovery.profile import build_eval_profile, _coverage_command
+from factory.discovery.profile import build_eval_profile, _coverage_command, _syntax_check_command
 from factory.models import ProjectProfile
 
 
@@ -434,3 +437,206 @@ class TestProfileCoverageNotPythonGated:
         profile = build_eval_profile(proj)
         dim_names = [d.name for d in profile.dimensions]
         assert "coverage" in dim_names
+
+
+# ── _detect_test_command for Java ─────────────────────────────────
+
+
+class TestDetectTestCommandJava:
+    def test_pom_xml_returns_mvn_test(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        assert _detect_test_command(tmp_path, "java") == "mvn test"
+
+    def test_gradlew_returns_gradlew_test(self, tmp_path):
+        (tmp_path / "gradlew").write_text("#!/bin/sh")
+        assert _detect_test_command(tmp_path, "java") == "./gradlew test"
+
+    def test_build_gradle_returns_gradle_test(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        assert _detect_test_command(tmp_path, "java") == "gradle test"
+
+    def test_build_gradle_kts_returns_gradle_test(self, tmp_path):
+        (tmp_path / "build.gradle.kts").write_text("")
+        assert _detect_test_command(tmp_path, "java") == "gradle test"
+
+    def test_no_build_file_returns_none(self, tmp_path):
+        assert _detect_test_command(tmp_path, "java") is None
+
+
+# ── _detect_lint_command for Java ─────────────────────────────────
+
+
+class TestDetectLintCommandJava:
+    def test_pom_xml_returns_checkstyle(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        assert _detect_lint_command(tmp_path, "java") == "mvn checkstyle:check"
+
+    def test_no_pom_xml_returns_none(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        assert _detect_lint_command(tmp_path, "java") is None
+
+
+# ── _detect_type_check_command for Java ───────────────────────────
+
+
+class TestDetectTypeCheckCommandJava:
+    def test_pom_xml_returns_mvn_compile(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        assert _detect_type_check_command(tmp_path, "java") == "mvn compile -q"
+
+    def test_gradlew_returns_gradlew_compile(self, tmp_path):
+        (tmp_path / "gradlew").write_text("#!/bin/sh")
+        assert _detect_type_check_command(tmp_path, "java") == "./gradlew compileJava"
+
+    def test_build_gradle_returns_gradle_compile(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        assert _detect_type_check_command(tmp_path, "java") == "gradle compileJava"
+
+    def test_build_gradle_kts_returns_gradle_compile(self, tmp_path):
+        (tmp_path / "build.gradle.kts").write_text("")
+        assert _detect_type_check_command(tmp_path, "java") == "gradle compileJava"
+
+    def test_no_build_file_returns_none(self, tmp_path):
+        assert _detect_type_check_command(tmp_path, "java") is None
+
+
+# ── _detect_project_evals top-level .sh scripts ──────────────────
+
+
+class TestDetectProjectEvalsTopLevelSh:
+    def test_evaluate_sh_discovered(self, tmp_path):
+        (tmp_path / "evaluate.sh").write_text("#!/bin/bash\necho done")
+        evals = _detect_project_evals(tmp_path)
+        match = [e for e in evals if e["name"] == "evaluate"]
+        assert len(match) == 1
+        assert match[0]["command"] == "bash evaluate.sh"
+
+    def test_benchmark_sh_discovered(self, tmp_path):
+        (tmp_path / "benchmark.sh").write_text("#!/bin/bash\necho done")
+        evals = _detect_project_evals(tmp_path)
+        match = [e for e in evals if e["name"] == "benchmark"]
+        assert len(match) == 1
+        assert match[0]["command"] == "bash benchmark.sh"
+
+    def test_bench_sh_discovered(self, tmp_path):
+        (tmp_path / "bench.sh").write_text("#!/bin/bash\necho done")
+        evals = _detect_project_evals(tmp_path)
+        match = [e for e in evals if e["name"] == "bench"]
+        assert len(match) == 1
+        assert match[0]["command"] == "bash bench.sh"
+
+
+# ── _syntax_check_command for Java ────────────────────────────────
+
+
+class TestSyntaxCheckCommandJava:
+    def _make_java_profile(self, test_command: str | None = None) -> ProjectProfile:
+        return ProjectProfile(
+            name="test-project",
+            language="java",
+            framework=None,
+            project_type="cli_tool",
+            has_tests=test_command is not None,
+            has_linter=False,
+            has_type_checker=False,
+            has_ci=False,
+            test_command=test_command,
+            lint_command=None,
+            type_check_command=None,
+            package_manager=None,
+            discovered_evals=[],
+        )
+
+    def test_mvn_test_returns_mvn_compile(self):
+        profile = self._make_java_profile("mvn test")
+        assert _syntax_check_command(profile) == "mvn compile -q"
+
+    def test_gradlew_test_returns_gradlew_compile(self):
+        profile = self._make_java_profile("./gradlew test")
+        assert _syntax_check_command(profile) == "./gradlew compileJava"
+
+    def test_gradle_test_returns_gradle_compile(self):
+        profile = self._make_java_profile("gradle test")
+        assert _syntax_check_command(profile) == "gradle compileJava"
+
+    def test_no_test_command_returns_true(self):
+        profile = self._make_java_profile(None)
+        assert _syntax_check_command(profile) == "true"
+
+
+# ── _coverage_command for Java with gradlew/gradle ────────────────
+
+
+class TestCoverageCommandJavaGradlew:
+    def _make_java_profile(self, test_command: str) -> ProjectProfile:
+        return ProjectProfile(
+            name="test-project",
+            language="java",
+            framework=None,
+            project_type="cli_tool",
+            has_tests=True,
+            has_linter=False,
+            has_type_checker=False,
+            has_ci=False,
+            test_command=test_command,
+            lint_command=None,
+            type_check_command=None,
+            package_manager=None,
+            discovered_evals=[],
+        )
+
+    def test_gradlew_returns_gradlew_jacoco(self):
+        profile = self._make_java_profile("./gradlew test")
+        assert _coverage_command(profile) == "./gradlew jacocoTestReport"
+
+    def test_gradle_returns_gradle_jacoco(self):
+        profile = self._make_java_profile("gradle test")
+        assert _coverage_command(profile) == "gradle jacocoTestReport"
+
+    def test_mvn_returns_mvn_jacoco(self):
+        profile = self._make_java_profile("mvn test")
+        assert _coverage_command(profile) == "mvn jacoco:report"
+
+
+# ── _detect_project_language ImportError fallback ─────────────────
+
+
+class TestDetectProjectLanguageImportErrorFallback:
+    """Test the ImportError fallback path in _detect_project_language.
+
+    Setting sys.modules["factory.discovery.introspect"] to None makes
+    ``from factory.discovery.introspect import _detect_language`` raise
+    ImportError, triggering the fallback detection logic.
+    """
+
+    def _run_with_import_error(self, tmp_path):
+        import sys
+        with patch.dict(sys.modules, {"factory.discovery.introspect": None}):
+            return _detect_project_language(tmp_path)
+
+    def test_python_fallback(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
+        assert self._run_with_import_error(tmp_path) == "python"
+
+    def test_python_setup_py_fallback(self, tmp_path):
+        (tmp_path / "setup.py").write_text("from setuptools import setup\n")
+        assert self._run_with_import_error(tmp_path) == "python"
+
+    def test_typescript_fallback(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x"}')
+        assert self._run_with_import_error(tmp_path) == "typescript"
+
+    def test_rust_fallback(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='x'\n")
+        assert self._run_with_import_error(tmp_path) == "rust"
+
+    def test_go_fallback(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        assert self._run_with_import_error(tmp_path) == "go"
+
+    def test_java_fallback(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project/>")
+        assert self._run_with_import_error(tmp_path) == "java"
+
+    def test_unknown_fallback(self, tmp_path):
+        assert self._run_with_import_error(tmp_path) == "unknown"
