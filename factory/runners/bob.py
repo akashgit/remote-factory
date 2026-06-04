@@ -151,6 +151,7 @@ class BobShellAgent:
     """
 
     name: str = "bob"
+    requires_tty: bool = True
 
     def __init__(self, project_path: Path | None = None) -> None:
         self._project_path = project_path

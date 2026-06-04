@@ -170,7 +170,10 @@ class AgentRunner:
         env = self._agent.get_environment(config)
 
         try:
-            return self._runtime.execute_interactive(cmd, env, cwd)
+            return self._runtime.execute_interactive(
+                cmd, env, cwd,
+                requires_tty=self._agent.requires_tty,
+            )
         finally:
             if hasattr(self._agent, "cleanup"):
                 self._agent.cleanup()

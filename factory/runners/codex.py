@@ -77,6 +77,7 @@ class CodexAgent:
     """
 
     name: str = "codex"
+    requires_tty: bool = False
 
     def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
         """Build the codex CLI command from semantic config fields."""

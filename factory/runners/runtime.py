@@ -34,6 +34,8 @@ class Runtime(Protocol):
         cmd: list[str],
         env: dict[str, str],
         cwd: Path,
+        *,
+        requires_tty: bool = True,
     ) -> int:
         """Execute a command interactively, returning the exit code."""
         ...
@@ -91,9 +93,17 @@ class ProcessRuntime:
         cmd: list[str],
         env: dict[str, str],
         cwd: Path,
+        *,
+        requires_tty: bool = True,
     ) -> int:
-        """Execute a command interactively via subprocess.run."""
-        result = subprocess.run(cmd, cwd=cwd, env=env)
+        """Execute a command interactively via subprocess.run.
+
+        Args:
+            requires_tty: If False, close stdin so CLIs that check for a
+                terminal (e.g. codex) don't hang waiting for input.
+        """
+        stdin = None if requires_tty else subprocess.DEVNULL
+        result = subprocess.run(cmd, cwd=cwd, env=env, stdin=stdin)
         return result.returncode
 
 
@@ -179,8 +189,11 @@ class TmuxRuntime:
         cmd: list[str],
         env: dict[str, str],
         cwd: Path,
+        *,
+        requires_tty: bool = True,
     ) -> int:
         """Interactive execution is not supported in TmuxRuntime; use ProcessRuntime."""
         logger.warning("TmuxRuntime does not support execute_interactive; using subprocess")
-        result = subprocess.run(cmd, cwd=cwd, env=env)
+        stdin = None if requires_tty else subprocess.DEVNULL
+        result = subprocess.run(cmd, cwd=cwd, env=env, stdin=stdin)
         return result.returncode

@@ -57,6 +57,7 @@ class ClaudeCodeAgent:
     """
 
     name: str = "claude"
+    requires_tty: bool = True
 
     def __init__(self) -> None:
         self._prompt_files: list[Path] = []

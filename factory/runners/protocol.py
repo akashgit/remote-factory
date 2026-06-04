@@ -28,6 +28,7 @@ class Agent(Protocol):
     """
 
     name: str
+    requires_tty: bool
 
     def get_launch_command(self, config: "AgentLaunchConfig") -> list[str]:
         """Build the CLI command to launch this agent.
