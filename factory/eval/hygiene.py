@@ -247,6 +247,9 @@ def eval_tests(project_path: Path) -> dict:
                 if rc == 0:
                     ran_any = True
                     ok_count = len(re.findall(r"^ok\s+", output, re.MULTILINE))
+                    if ok_count == 0:
+                        log.warning("go_test_pass_count_fallback", project=str(sp),
+                                    msg="go test passed but no 'ok' lines found, counting as 1")
                     total_passed += max(ok_count, 1)
                     details_parts.append(f"{sp.name}(go): passed")
                 elif "FAIL" in output:
@@ -586,7 +589,7 @@ def eval_coverage(project_path: Path) -> dict:
                 log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node coverage")
             else:
                 rc, stdout, stderr = _run_cmd(
-                    ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text", "--passWithNoTests"],
+                    ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text"],
                     sp,
                     timeout=180,
                 )

@@ -143,7 +143,7 @@ def _count_functions_python(modules: list[Path]) -> int:
     for mod in modules:
         try:
             tree = ast.parse(mod.read_text())
-        except (SyntaxError, UnicodeDecodeError):
+        except (SyntaxError, UnicodeDecodeError, OSError):
             continue
         for node in ast.walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -214,6 +214,7 @@ def eval_capability_surface(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="capability_surface", exc=str(exc))
         return {
             "name": "capability_surface",
             "score": 0.0,
@@ -282,6 +283,7 @@ def eval_experiment_diversity(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="experiment_diversity", exc=str(exc))
         return {
             "name": "experiment_diversity",
             "score": 0.0,
@@ -314,6 +316,7 @@ def eval_observability(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="observability", exc=str(exc))
         return {
             "name": "observability",
             "score": 0.0,
@@ -429,6 +432,7 @@ def eval_research_grounding(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="research_grounding", exc=str(exc))
         return {
             "name": "research_grounding",
             "score": 0.0,
@@ -539,6 +543,7 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="factory_effectiveness", exc=str(exc))
         return {
             "name": "factory_effectiveness",
             "score": 0.0,
@@ -598,6 +603,7 @@ def eval_spec_compliance(project_path: Path) -> dict:
             "details": f"{passed}/{total} spec checks passed",
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="spec_compliance", exc=str(exc))
         return {
             "name": "spec_compliance",
             "score": 0.5,

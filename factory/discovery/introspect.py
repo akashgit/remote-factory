@@ -263,6 +263,12 @@ def _detect_type_check_command(project_path: Path, language: str) -> str | None:
             return "./gradlew compileJava"
         if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
             return "gradle compileJava"
+    elif language == "rust":
+        if (project_path / "Cargo.toml").exists():
+            return "cargo check"
+    elif language == "go":
+        if (project_path / "go.mod").exists():
+            return "go build -o /dev/null ./..."
     return None
 
 

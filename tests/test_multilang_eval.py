@@ -508,6 +508,30 @@ class TestDetectTypeCheckCommandJava:
         assert _detect_type_check_command(tmp_path, "java") is None
 
 
+# ── _detect_type_check_command for Rust ─────────────────────────
+
+
+class TestDetectTypeCheckCommandRust:
+    def test_rust_with_cargo_toml(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]")
+        assert _detect_type_check_command(tmp_path, "rust") == "cargo check"
+
+    def test_rust_without_cargo_toml(self, tmp_path):
+        assert _detect_type_check_command(tmp_path, "rust") is None
+
+
+# ── _detect_type_check_command for Go ───────────────────────────
+
+
+class TestDetectTypeCheckCommandGo:
+    def test_go_with_go_mod(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/foo")
+        assert _detect_type_check_command(tmp_path, "go") == "go build -o /dev/null ./..."
+
+    def test_go_without_go_mod(self, tmp_path):
+        assert _detect_type_check_command(tmp_path, "go") is None
+
+
 # ── _detect_project_evals top-level .sh scripts ──────────────────
 
 
