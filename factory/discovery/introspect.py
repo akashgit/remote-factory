@@ -151,6 +151,8 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             java_deps = (project_path / "pom.xml").read_text().lower()
         if (project_path / "build.gradle").exists():
             java_deps += (project_path / "build.gradle").read_text().lower()
+        if (project_path / "build.gradle.kts").exists():
+            java_deps += (project_path / "build.gradle.kts").read_text().lower()
         if "spring-boot" in java_deps:
             return "spring-boot"
         if "quarkus" in java_deps:
