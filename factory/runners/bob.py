@@ -12,6 +12,8 @@ from pathlib import Path
 import subprocess as _subprocess
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.config import AgentLaunchConfig
+from factory.runners.protocol import AgentResult
 from factory.runners.usage import (
     CeilingExceededError,
     check_ceilings,
@@ -37,10 +39,7 @@ class BobAuthError(Exception):
 
 
 def _find_auth_file(start_path: Path) -> Path | None:
-    """Search for the auth file starting from start_path and walking up.
-
-    Returns the path to the auth file if found, or None.
-    """
+    """Search for the auth file starting from start_path and walking up."""
     path = start_path.resolve()
     while path != path.parent:
         auth_file = path / ".factory" / _AUTH_FILE_NAME
@@ -51,15 +50,7 @@ def _find_auth_file(start_path: Path) -> Path | None:
 
 
 def _persist_key(project_path: Path) -> None:
-    """Persist BOBSHELL_API_KEY to a file for nested subagent spawns.
-
-    Only writes if:
-    - BOBSHELL_API_KEY is set in the environment
-    - The .factory directory exists
-    - The file doesn't already exist (or we're updating it)
-
-    The file is created with chmod 600 for security.
-    """
+    """Persist BOBSHELL_API_KEY to a file for nested subagent spawns."""
     key = os.environ.get("BOBSHELL_API_KEY")
     if not key:
         return
@@ -78,29 +69,15 @@ def _persist_key(project_path: Path) -> None:
 
 
 def _check_auth(start_path: Path | None = None) -> None:
-    """Check that BOBSHELL_API_KEY is set (once per process).
-
-    Resolution order:
-    1. Environment variable BOBSHELL_API_KEY
-    2. File .factory/.bob_auth (searched from start_path upward, or cwd if None)
-
-    If found in file, injects into os.environ for subprocess inheritance.
-
-    Limitation: _auth_checked is a module-level flag, so the check only runs once
-    per Python process. If the key changes or expires mid-session, the cached
-    result won't reflect that. For long-running processes, consider restarting
-    the factory rather than relying on key rotation.
-    """
+    """Check that BOBSHELL_API_KEY is set (once per process)."""
     global _auth_checked
     if _auth_checked:
         return
 
-    # First check environment variable
     if os.environ.get("BOBSHELL_API_KEY"):
         _auth_checked = True
         return
 
-    # Fall back to file-based persistence
     search_from = start_path if start_path is not None else Path.cwd()
     auth_file = _find_auth_file(search_from)
     if auth_file:
@@ -126,11 +103,7 @@ def is_dry_run() -> bool:
 
 
 def _get_bob_bin_dir() -> str | None:
-    """Find the directory containing the bob binary.
-
-    Used to prepend to PATH so that the correct Node version is found
-    when bob's shebang resolves `#!/usr/bin/env node`.
-    """
+    """Find the directory containing the bob binary."""
     bob_path = shutil.which("bob")
     if bob_path:
         return str(Path(bob_path).parent)
@@ -138,12 +111,7 @@ def _get_bob_bin_dir() -> str | None:
 
 
 def _make_env_with_bob_path() -> dict[str, str]:
-    """Create environment dict with bob's bin directory prepended to PATH.
-
-    Bob Shell's shebang is `#!/usr/bin/env node`. If multiple Node version
-    managers (nvm, fnm, volta) are installed, the wrong Node may be found.
-    Prepending bob's bin directory ensures its companion node is used.
-    """
+    """Create environment dict with bob's bin directory prepended to PATH."""
     env = dict(os.environ)
     bob_bin_dir = _get_bob_bin_dir()
     if bob_bin_dir:
@@ -155,8 +123,50 @@ def _make_env_with_bob_path() -> dict[str, str]:
 
 
 # Bob Shell only supports built-in modes: plan, code, advanced, ask.
-# We use 'code' mode for agent work; the role is injected via the prompt.
 _BOB_CHAT_MODE = "code"
+
+
+def _find_project_path(cwd: Path) -> Path:
+    """Find the project root (directory containing .factory/)."""
+    path = cwd.resolve()
+    while path != path.parent:
+        if (path / ".factory").is_dir():
+            return path
+        path = path.parent
+    return cwd.resolve()
+
+
+class BobShellAgent:
+    """Agent implementation for Bob Shell CLI (pure command building)."""
+
+    name: str = "bob"
+
+    def __init__(self, project_path: Path | None = None) -> None:
+        self._project_path = project_path
+
+    def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
+        """Build the bob CLI command."""
+        full_task = f"{config.prompt}\n\n---\n\n## Current Task\n\n{config.task}"
+        cmd = ["bob", "-p", full_task, f"--chat-mode={_BOB_CHAT_MODE}"]
+        if config.permissions == "permissionless":
+            cmd.append("--yolo")
+        return cmd
+
+    def get_environment(self, config: AgentLaunchConfig) -> dict[str, str]:
+        """Build subprocess environment for Bob Shell."""
+        return _make_env_with_bob_path()
+
+    def parse_output(self, stdout: str, return_code: int) -> AgentResult:
+        """Parse Bob Shell output (raw text, no usage telemetry)."""
+        return AgentResult(output=stdout, return_code=return_code, usage=None)
+
+    def preflight(self) -> None:
+        """Check auth and dry-run mode, persist key, check ceilings."""
+        project_path = self._project_path or Path.cwd()
+        _persist_key(project_path)
+        if is_dry_run():
+            return
+        _check_auth(project_path)
 
 
 class BobRunner:
@@ -169,17 +179,9 @@ class BobRunner:
         cycle_start: datetime | None = None,
         project_path: Path | None = None,
     ) -> None:
-        """Initialize BobRunner.
-
-        Args:
-            cycle_start: Start time of the current factory cycle (for ceiling tracking).
-                If not provided and project_path is given, reads from cycle.json.
-            project_path: Path to the project (used to read cycle state from cycle.json).
-        """
         if cycle_start is not None:
             self.cycle_start = cycle_start
         elif project_path is not None:
-            # Lazy import: ceo_completion imports runners, so module-level import would cycle
             from factory.ceo_completion import read_cycle_state
 
             state = read_cycle_state(project_path)
@@ -201,17 +203,13 @@ class BobRunner:
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, None]:
-        """Run a headless Bob Shell invocation.
-
-        Returns (stdout, return_code, None). Bob has no token telemetry.
-        """
+        """Run a headless Bob Shell invocation."""
         _ = session_name
         if tmux_persist:
             logger.warning("tmux_persist not supported with bob runner")
         self._role = role
         project_path = self._find_project_path(cwd)
 
-        # Persist key for nested subagent spawns (before dry-run check so file exists)
         _persist_key(project_path)
 
         if is_dry_run():
@@ -225,9 +223,6 @@ class BobRunner:
         except CeilingExceededError as e:
             self._emit_ceiling_event(project_path, e)
             return str(e), 1, None
-
-        # NOTE: Custom modes are not supported in Bob Shell (unlike Claude Code).
-        # The agent role definition is injected via the prompt instead.
 
         chat_mode = _BOB_CHAT_MODE
         full_task = f"{prompt}\n\n---\n\n## Current Task\n\n{task}"
@@ -253,9 +248,6 @@ class BobRunner:
                 env=env,
             )
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                # sanitize=True: Bob is a TUI emitting cursor/clear/alt-screen
-                # escapes — strip them from the live terminal write (the captured
-                # buffer stays raw). See issue #379.
                 stream_subprocess(proc, stream=stream, prefix=prefix, sanitize=True),
                 timeout=timeout,
             )
@@ -294,10 +286,7 @@ class BobRunner:
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Bob Shell session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Bob Shell session as a subprocess."""
         _ = session_name
         project_path = self._find_project_path(cwd)
 
@@ -339,12 +328,7 @@ class BobRunner:
 
     def _find_project_path(self, cwd: Path) -> Path:
         """Find the project root (directory containing .factory/)."""
-        path = cwd.resolve()
-        while path != path.parent:
-            if (path / ".factory").is_dir():
-                return path
-            path = path.parent
-        return cwd.resolve()
+        return _find_project_path(cwd)
 
     def _dry_run_response(self, role: str, cwd: Path, task: str) -> tuple[str, int]:
         """Return a stub response for dry-run mode."""
@@ -380,5 +364,3 @@ class BobRunner:
             )
         except Exception:
             logger.debug("Failed to emit ceiling event", exc_info=True)
-
-

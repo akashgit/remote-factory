@@ -939,8 +939,9 @@ class TestStreamingOutput:
 
         json_output = json.dumps({"result": "Line 1\nLine 2\nLine 3\n", "usage": {}, "cost_usd": 0.01})
 
+        # Patch stream_subprocess in the runtime module (where ProcessRuntime imports it)
         with patch(
-            "factory.runners.claude.stream_subprocess", new_callable=AsyncMock
+            "factory.runners.runtime.stream_subprocess", new_callable=AsyncMock
         ) as mock_stream:
             mock_stream.return_value = (json_output.encode(), b"")
 

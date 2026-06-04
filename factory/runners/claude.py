@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.config import AgentLaunchConfig
+from factory.runners.protocol import AgentResult
 
 if TYPE_CHECKING:
     from factory.models import AgentUsage
@@ -36,6 +38,73 @@ def _parse_usage(data: dict) -> "AgentUsage":
     )
 
 
+class ClaudeCodeAgent:
+    """Agent implementation for Claude Code CLI (pure command building)."""
+
+    name: str = "claude"
+
+    def __init__(self) -> None:
+        self._prompt_files: list[Path] = []
+
+    def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
+        """Build the claude CLI command."""
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+        )
+        prompt_file.write(config.prompt)
+        prompt_file.close()
+        self._prompt_files.append(Path(prompt_file.name))
+
+        cmd = ["claude", "--append-system-prompt-file", prompt_file.name]
+
+        if config.mode == "interactive":
+            if config.permissions == "permissionless":
+                cmd.append("--dangerously-skip-permissions")
+            cmd.append(config.task)
+        else:
+            cmd.extend(["-p", config.task, "--output-format", "json"])
+            if config.permissions == "permissionless":
+                cmd.append("--dangerously-skip-permissions")
+
+        if config.model:
+            cmd.extend(["--model", config.model])
+        if config.session_name:
+            cmd.extend(["--name", config.session_name])
+
+        return cmd
+
+    def get_environment(self, config: AgentLaunchConfig) -> dict[str, str]:
+        """Build subprocess environment for Claude Code."""
+        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        if config.model:
+            env["FACTORY_MODEL"] = config.model
+        return env
+
+    def parse_output(self, stdout: str, return_code: int) -> AgentResult:
+        """Parse Claude Code JSON output into AgentResult."""
+        usage = None
+        result_text = stdout
+        try:
+            data = json.loads(stdout)
+            if isinstance(data, dict):
+                result_value = data.get("result", stdout)
+                result_text = result_value if isinstance(result_value, str) else stdout
+                usage = _parse_usage(data)
+        except (json.JSONDecodeError, ValueError):
+            logger.debug("Could not parse JSON output, returning raw stdout")
+
+        return AgentResult(output=result_text, return_code=return_code, usage=usage)
+
+    def preflight(self) -> None:
+        """No preflight checks needed for Claude Code."""
+
+    def cleanup(self) -> None:
+        """Clean up temporary prompt files."""
+        for f in self._prompt_files:
+            f.unlink(missing_ok=True)
+        self._prompt_files.clear()
+
+
 class ClaudeRunner:
     """Runner implementation for Claude Code CLI."""
 
@@ -54,21 +123,7 @@ class ClaudeRunner:
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, "AgentUsage | None"]:
-        """Run a headless Claude Code invocation.
-
-        Args:
-            prompt: The system prompt / agent role definition.
-            task: The task to execute.
-            cwd: Working directory for the subprocess.
-            timeout: Maximum execution time in seconds.
-            model: Optional model override.
-            dangerously_skip_permissions: If True, skip permission prompts.
-            role: Agent role (used for streaming prefix).
-            session_name: Optional session name for identification in /resume.
-            tmux_persist: If True, run the agent interactively in a tmux window.
-
-        Returns (stdout, return_code, usage).
-        """
+        """Run a headless Claude Code invocation."""
         if tmux_persist:
             from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
 
@@ -162,10 +217,7 @@ class ClaudeRunner:
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Claude Code session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Claude Code session as a subprocess."""
         _ = role
         prompt_file = tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,

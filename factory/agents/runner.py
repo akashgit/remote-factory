@@ -148,7 +148,7 @@ async def invoke_agent(
         timeout: Maximum execution time in seconds.
         dangerously_skip_permissions: If True, skip permission prompts.
         model: Optional model override.
-        runner_name: CLI backend to use ("claude" or "bob"). Defaults to FACTORY_RUNNER env var.
+        runner_name: CLI backend to use ("claude", "bob", or "codex"). Defaults to FACTORY_RUNNER env var.
         _track_failures: If True (default), track consecutive failures globally.
             Set to False when called from invoke_agents_parallel to avoid race conditions.
         session_name: Optional session name for /resume identification.

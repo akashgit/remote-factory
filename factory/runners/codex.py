@@ -9,6 +9,8 @@ import subprocess
 from pathlib import Path
 
 from factory.runners._stream import should_stream, stream_subprocess
+from factory.runners.config import AgentLaunchConfig
+from factory.runners.protocol import AgentResult
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,39 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
+class CodexAgent:
+    """Agent implementation for OpenAI Codex CLI (pure command building)."""
+
+    name: str = "codex"
+
+    def get_launch_command(self, config: AgentLaunchConfig) -> list[str]:
+        """Build the codex CLI command."""
+        full_prompt = f"{config.prompt}\n\n---\n\n## Current Task\n\n{config.task}"
+        cmd = ["codex", "exec", full_prompt]
+
+        if config.permissions == "permissionless":
+            cmd.extend(["--sandbox", "workspace-write", "--ask-for-approval", "never"])
+
+        if config.model:
+            cmd.extend(["--model", config.model])
+
+        return cmd
+
+    def get_environment(self, config: AgentLaunchConfig) -> dict[str, str]:
+        """Build subprocess environment for Codex."""
+        return _make_codex_env()
+
+    def parse_output(self, stdout: str, return_code: int) -> AgentResult:
+        """Parse Codex output (raw text, no usage telemetry)."""
+        return AgentResult(output=stdout, return_code=return_code, usage=None)
+
+    def preflight(self) -> None:
+        """Check auth and dry-run mode."""
+        if is_codex_dry_run():
+            return
+        _check_auth()
+
+
 class CodexRunner:
     """Runner implementation for OpenAI Codex CLI."""
 
@@ -71,13 +106,7 @@ class CodexRunner:
         session_name: str | None = None,
         tmux_persist: bool = False,
     ) -> tuple[str, int, None]:
-        """Run a headless Codex CLI invocation via ``codex exec``.
-
-        Codex exec streams progress to stderr and writes only the final
-        agent message to stdout, which aligns with the factory's capture model.
-
-        Returns (stdout, return_code, None). Codex has no token telemetry.
-        """
+        """Run a headless Codex CLI invocation via ``codex exec``."""
         _ = session_name
         if tmux_persist:
             logger.warning("tmux_persist not supported with codex runner")
@@ -144,10 +173,7 @@ class CodexRunner:
         dangerously_skip_permissions: bool = False,
         session_name: str | None = None,
     ) -> int:
-        """Run an interactive Codex CLI session as a subprocess.
-
-        Returns the exit code so the caller can clean up in a finally block.
-        """
+        """Run an interactive Codex CLI session as a subprocess."""
         _ = role, session_name
 
         if is_codex_dry_run():

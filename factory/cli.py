@@ -31,6 +31,13 @@ def _run(coro):  # noqa: ANN001, ANN202
     return asyncio.run(coro)
 
 
+def _runner_choices() -> tuple[str, ...]:
+    """DRY runner choices derived from the RunnerName literal."""
+    from factory.runners import RUNNER_CHOICES
+
+    return RUNNER_CHOICES
+
+
 def _read_target_branch(project_path: Path) -> str:
     """Read target branch from .factory/config.json, falling back to git detection."""
     config_path = project_path / ".factory" / "config.json"
@@ -2555,7 +2562,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 min_growth=min_growth, max_new=max_new, branch=branch,
                 already_improved=mode in ("improve", "meta") or discover_only,
                 model=model, no_github=no_github, use_profile=use_profile,
-                tmux_persist=tmux_persist,
+                tmux_persist=tmux_persist, runner_name=runner_name,
             )
         finally:
             remove_worktree(project_path, wt_path, wt_branch)
@@ -3334,6 +3341,7 @@ def _chain_modes(
     no_github: bool = False,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    runner_name: str | None = None,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -3361,7 +3369,7 @@ def _chain_modes(
             project_path, next_mode, focus=focus,
             min_growth=min_growth, max_new=max_new, branch=branch,
             no_github=no_github, model=model, use_profile=use_profile,
-            tmux_persist=tmux_persist,
+            tmux_persist=tmux_persist, runner_name=runner_name,
         )
         if code != 0:
             return code
@@ -3385,6 +3393,7 @@ def _run_single_cycle(
     use_profile: bool = False,
     clean_pr: bool = False,
     tmux_persist: bool = False,
+    runner_name: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3420,6 +3429,7 @@ def _run_single_cycle(
             timeout=7200.0,
             dangerously_skip_permissions=True,
             model=model,
+            runner_name=runner_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
         ))
@@ -3451,6 +3461,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
     model = _resolve_model(args)
+    runner_name = _resolve_runner(args)
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
 
@@ -3527,6 +3538,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             use_profile=use_profile_flag,
             clean_pr=clean_pr_resolved,
             tmux_persist=tmux_persist,
+            runner_name=runner_name,
             **budget_kwargs,
         )
         if code != 0:
@@ -3535,7 +3547,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             project_path, focus=focus, already_improved=skip_improve,
             min_growth=min_growth, max_new=max_new, branch=branch,
             model=model, no_github=no_github, use_profile=use_profile_flag,
-            tmux_persist=tmux_persist,
+            tmux_persist=tmux_persist, runner_name=runner_name,
         )
 
     # Heartbeat loop mode
@@ -3567,13 +3579,14 @@ def cmd_run(args: argparse.Namespace) -> int:
                 use_profile=use_profile_flag,
                 clean_pr=clean_pr_resolved,
                 tmux_persist=tmux_persist,
+                runner_name=runner_name,
                 **budget_kwargs,
             )
             _chain_modes(
                 project_path, focus=focus, already_improved=skip_improve,
                 min_growth=min_growth, max_new=max_new, branch=branch,
                 model=model, no_github=no_github, use_profile=use_profile_flag,
-                tmux_persist=tmux_persist,
+                tmux_persist=tmux_persist, runner_name=runner_name,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -3896,7 +3909,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--runner",
-        choices=["claude", "codex"],
+        choices=_runner_choices(),
         default="claude",
         help="Target CLI: claude writes Markdown to ~/.claude/agents/, codex writes TOML to ~/.codex/agents/ (default: claude)",
     )
@@ -3936,7 +3949,7 @@ def build_parser() -> argparse.ArgumentParser:
                          help="Project paths to collect evidence from (default: all registered)")
     p_build.add_argument("--dry-run", action="store_true", default=False,
                          help="Print collected evidence without running LLM synthesis")
-    p_build.add_argument("--runner", choices=["claude", "bob", "codex"], default=None,
+    p_build.add_argument("--runner", choices=_runner_choices(), default=None,
                          help="CLI backend to use for synthesis")
     profile_sub.add_parser("show", help="Print the current user profile")
 
@@ -3959,7 +3972,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Timeout in seconds (default: 600)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=_runner_choices(), default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4017,7 +4030,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=_runner_choices(), default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4089,7 +4102,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Target branch for PRs (default: from factory.md, fallback: main)")
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=_runner_choices(), default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
     p.add_argument("--profile", default=None,
                     help="Credential profile from ~/.factory/config.toml")
@@ -4124,7 +4137,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--model", default=None,
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", choices=["claude", "bob"], default=None,
+    p.add_argument("--runner", choices=_runner_choices(), default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
 
     # tmux-ls — list factory tmux sessions
