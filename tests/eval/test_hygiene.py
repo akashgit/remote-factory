@@ -6,6 +6,8 @@ from factory.eval.hygiene import (
     HYGIENE_WEIGHTS,
     _detect_java_project,
     _find_sub_projects,
+    _java_build_tool,
+    _java_test_cmd,
     compute_hygiene_results,
     eval_config_parser,
     eval_coverage,
@@ -333,3 +335,311 @@ class TestJestDoesNotDoubleCount:
             result = eval_tests(tmp_path)
         assert result["score"] == round(8 / 10, 4)
         assert result["passed"] is False
+
+
+class TestJavaBuildTool:
+    """Tests for _java_build_tool() — gradlew > gradle > mvn priority."""
+
+    def test_gradlew_preferred(self, tmp_path):
+        (tmp_path / "gradlew").write_text("#!/bin/sh\n")
+        (tmp_path / "build.gradle").write_text("")
+        with patch("shutil.which", return_value="/usr/bin/mvn"):
+            result = _java_build_tool(tmp_path)
+        assert result == [str(tmp_path / "gradlew")]
+
+    def test_gradle_with_build_gradle(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        with patch("shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
+            result = _java_build_tool(tmp_path)
+        assert result == ["gradle"]
+
+    def test_gradle_with_build_gradle_kts(self, tmp_path):
+        (tmp_path / "build.gradle.kts").write_text("")
+        with patch("shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
+            result = _java_build_tool(tmp_path)
+        assert result == ["gradle"]
+
+    def test_mvn_fallback(self, tmp_path):
+        with patch("shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
+            result = _java_build_tool(tmp_path)
+        assert result == ["mvn"]
+
+    def test_no_tool_returns_none(self, tmp_path):
+        with patch("shutil.which", return_value=None):
+            result = _java_build_tool(tmp_path)
+        assert result is None
+
+
+class TestJavaTestCmd:
+    """Tests for _java_test_cmd() — delegates to _java_build_tool."""
+
+    def test_returns_cmd_when_tool_available(self, tmp_path):
+        with patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]):
+            result = _java_test_cmd(tmp_path)
+        assert result == ["mvn", "test", "-q"]
+
+    def test_returns_none_when_no_tool(self, tmp_path):
+        with patch("factory.eval.hygiene._java_build_tool", return_value=None):
+            result = _java_test_cmd(tmp_path)
+        assert result is None
+
+
+class TestEvalLintLanguages:
+    """Tests for eval_lint() Go and Java branches."""
+
+    def test_go_pass(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("shutil.which", return_value="/usr/bin/go"),
+        ):
+            result = eval_lint(tmp_path)
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_go_fail_counts_errors(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        stderr = "main.go:10:5: unreachable code\nmain.go:20:3: unused variable\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
+            patch("shutil.which", return_value="/usr/bin/go"),
+        ):
+            result = eval_lint(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+    def test_go_no_go_on_path(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        with patch("shutil.which", return_value=None):
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_java_mvn_pass(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_lint(tmp_path)
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_java_mvn_fail(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        output = "[ERROR] src/Main.java:1\n[ERROR] src/Main.java:5\n[ERROR] src/Main.java:10\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_lint(tmp_path)
+        assert result["passed"] is False
+        assert "3 errors" in result["details"]
+
+    def test_java_gradle_pass(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+        ):
+            result = eval_lint(tmp_path)
+        assert result["passed"] is True
+
+    def test_java_no_tool(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with patch("factory.eval.hygiene._java_build_tool", return_value=None):
+            result = eval_lint(tmp_path)
+        assert result["score"] == 0.5
+
+
+class TestEvalTypeCheckLanguages:
+    """Tests for eval_type_check() Rust, Go, and Java branches."""
+
+    def test_rust_pass(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_rust_fail(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        stderr = "error[E0308]: mismatched types\nerror[E0425]: cannot find value\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+    def test_rust_no_cargo(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        with patch("shutil.which", return_value=None):
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_go_pass(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("shutil.which", return_value="/usr/bin/go"),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_go_fail(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        output = "main.go:10:5: cannot use x\nmain.go:20:3: undefined: y\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
+            patch("shutil.which", return_value="/usr/bin/go"),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+    def test_go_no_go(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        with patch("shutil.which", return_value=None):
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_java_mvn_pass(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is True
+
+    def test_java_mvn_fail(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        output = "[ERROR] src/Main.java:1\n[ERROR] src/Main.java:5\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+    def test_java_gradle_pass(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+        ):
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is True
+
+    def test_java_no_tool(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with patch("factory.eval.hygiene._java_build_tool", return_value=None):
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 0.5
+
+
+class TestEvalCoverageLanguages:
+    """Tests for eval_coverage() Rust, Go, Node, and Java branches."""
+
+    def test_rust_coverage_parse(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        output = "85.5% coverage, 100/117 lines covered\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(85 / 100, 4)
+        assert "85%" in result["details"]
+
+    def test_rust_no_cargo(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        with patch("shutil.which", return_value=None):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_go_multi_package_coverage(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        output = (
+            "ok  \ttest/pkg1\t0.5s\tcoverage: 80.0% of statements\n"
+            "ok  \ttest/pkg2\t0.3s\tcoverage: 60.0% of statements\n"
+        )
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("shutil.which", return_value="/usr/bin/go"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(70 / 100, 4)
+        assert "70%" in result["details"]
+
+    def test_go_no_go(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        with patch("shutil.which", return_value=None):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_node_jest_coverage_parse(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        output = (
+            "----------|---------|----------|---------|---------|---\n"
+            "File      | % Stmts | % Branch | % Funcs | % Lines |\n"
+            "----------|---------|----------|---------|---------|---\n"
+            "All files |   72.5  |   60.0   |   80.0  |   72.5  |\n"
+            "----------|---------|----------|---------|---------|---\n"
+        )
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("shutil.which", return_value="/usr/bin/npx"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(72 / 100, 4)
+        assert "72%" in result["details"]
+
+    def test_node_no_npx(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        with patch("shutil.which", return_value=None):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+
+    def test_java_mvn_with_percentage(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        output = "Total line coverage: 78%\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(78 / 100, 4)
+        assert "78%" in result["details"]
+
+    def test_java_gradle_coverage(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        output = "Total instruction coverage: 90%\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(90 / 100, 4)
+
+    def test_java_rc0_no_pct_fallback(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS\n", "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.0
+        assert "0%" in result["details"]
+
+    def test_java_no_tool(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        with patch("factory.eval.hygiene._java_build_tool", return_value=None):
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
