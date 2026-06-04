@@ -173,6 +173,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     proc = subprocess.Popen(
         cmd,
         cwd=tmp_path,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
