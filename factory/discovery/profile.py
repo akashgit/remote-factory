@@ -61,19 +61,17 @@ def build_eval_profile(project: ProjectProfile) -> EvalProfile:
         if tier == "fallback":
             tier = "researched"
 
-    # Add coverage eval if tests exist but coverage isn't tracked
-    if project.has_tests and project.language == "python":
-        # Find the main package for coverage target
-        coverage_target = project.name.replace("-", "_")
-        pm = "uv run" if project.package_manager == "uv" else "python -m"
-        dimensions.append(EvalDimension(
-            name="coverage",
-            command=f"{pm} pytest --cov={coverage_target} --cov-report=term -q",
-            weight=0.15,
-            parser="exit_code",
-            description="Measure test coverage",
-            source="researched",
-        ))
+    if project.has_tests:
+        cov_cmd = _coverage_command(project)
+        if cov_cmd:
+            dimensions.append(EvalDimension(
+                name="coverage",
+                command=cov_cmd,
+                weight=0.15,
+                parser="exit_code",
+                description="Measure test coverage",
+                source="researched",
+            ))
 
     # Tier 0: Fallback — minimal checks
     if not dimensions:
@@ -147,3 +145,18 @@ def _syntax_check_command(project: ProjectProfile) -> str:
     if project.language == "go":
         return "go vet ./..."
     return "true"  # no-op fallback
+
+
+def _coverage_command(project: ProjectProfile) -> str | None:
+    """Return a coverage command appropriate for the project language."""
+    if project.language == "python":
+        coverage_target = project.name.replace("-", "_")
+        pm = "uv run" if project.package_manager == "uv" else "python -m"
+        return f"{pm} pytest --cov={coverage_target} --cov-report=term -q"
+    if project.language == "rust":
+        return "cargo tarpaulin --out stdout --skip-clean"
+    if project.language == "go":
+        return "go test -cover ./..."
+    if project.language == "typescript":
+        return "npx jest --coverage --passWithNoTests"
+    return None

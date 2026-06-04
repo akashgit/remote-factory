@@ -252,6 +252,18 @@ def eval_lint(project_path: Path) -> dict:
                 total_errors += max(count, 1)
                 details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
 
+        if _detect_go_project(sp):
+            rc, stdout, stderr = _run_cmd(["go", "vet", "./..."], sp)
+            if rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(go): clean")
+            else:
+                ran_any = True
+                output = stdout + stderr
+                count = len(re.findall(r"^.*\.go:\d+:\d+:", output, re.MULTILINE))
+                total_errors += max(count, 1)
+                details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
+
     if not ran_any:
         return _neutral("lint", "no linter detected")
 
@@ -307,6 +319,29 @@ def eval_type_check(project_path: Path) -> dict:
                 total_errors += max(count, 1)
                 details_parts.append(f"{sp.name}(ts): {max(count, 1)} errors")
 
+        if _detect_rust_project(sp):
+            rc, stdout, stderr = _run_cmd(["cargo", "check"], sp)
+            if rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(rs): clean")
+            else:
+                ran_any = True
+                count = len(re.findall(r"^error", stderr, re.MULTILINE))
+                total_errors += max(count, 1)
+                details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
+
+        if _detect_go_project(sp):
+            rc, stdout, stderr = _run_cmd(["go", "build", "./..."], sp)
+            if rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(go): clean")
+            else:
+                ran_any = True
+                output = stdout + stderr
+                count = len(re.findall(r"^.*\.go:\d+:\d+:", output, re.MULTILINE))
+                total_errors += max(count, 1)
+                details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
+
     if not ran_any:
         return _neutral("type_check", "no type checker detected")
 
@@ -331,7 +366,6 @@ def eval_coverage(project_path: Path) -> dict:
 
     for sp in sub_projects:
         if _detect_python_project(sp):
-            # Find source dir for --cov target
             src_dirs = [
                 c.name for c in sorted(sp.iterdir())
                 if c.is_dir() and (c / "__init__.py").exists()
@@ -347,6 +381,43 @@ def eval_coverage(project_path: Path) -> dict:
                 ran_any = True
                 pct = int(total_match.group(1))
                 coverages.append((sp.name, pct))
+
+        if _detect_rust_project(sp):
+            rc, stdout, stderr = _run_cmd(
+                ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
+                sp,
+            )
+            output = stdout + stderr
+            pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
+            if pct_match:
+                ran_any = True
+                pct = int(float(pct_match.group(1)))
+                coverages.append((f"{sp.name}(rs)", pct))
+
+        if _detect_go_project(sp):
+            rc, stdout, stderr = _run_cmd(
+                ["go", "test", "-cover", "./..."],
+                sp,
+            )
+            output = stdout + stderr
+            pcts = [float(m) for m in re.findall(r"coverage:\s+(\d+(?:\.\d+)?)%", output)]
+            if pcts:
+                ran_any = True
+                avg = int(sum(pcts) / len(pcts))
+                coverages.append((f"{sp.name}(go)", avg))
+
+        if _detect_node_project(sp):
+            rc, stdout, stderr = _run_cmd(
+                ["npx", "jest", "--coverage", "--coverageReporters=text", "--passWithNoTests"],
+                sp,
+                timeout=180,
+            )
+            output = stdout + stderr
+            pct_match = re.search(r"All files\s*\|\s*(\d+(?:\.\d+)?)", output)
+            if pct_match:
+                ran_any = True
+                pct = int(float(pct_match.group(1)))
+                coverages.append((f"{sp.name}(js)", pct))
 
     if not ran_any:
         return _neutral("coverage", "no coverage tool detected")

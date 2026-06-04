@@ -121,6 +121,28 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             return "next.js"
         if "express" in deps:
             return "express"
+    elif language == "rust":
+        cargo_text = ""
+        if (project_path / "Cargo.toml").exists():
+            cargo_text = (project_path / "Cargo.toml").read_text().lower()
+        if "actix-web" in cargo_text:
+            return "actix-web"
+        if "axum" in cargo_text:
+            return "axum"
+        if "rocket" in cargo_text:
+            return "rocket"
+    elif language == "go":
+        go_sum = ""
+        if (project_path / "go.sum").exists():
+            go_sum = (project_path / "go.sum").read_text().lower()
+        elif (project_path / "go.mod").exists():
+            go_sum = (project_path / "go.mod").read_text().lower()
+        if "gin-gonic/gin" in go_sum:
+            return "gin"
+        if "labstack/echo" in go_sum:
+            return "echo"
+        if "gofiber/fiber" in go_sum:
+            return "fiber"
     return None
 
 
@@ -216,12 +238,26 @@ def _detect_project_evals(project_path: Path) -> list[dict[str, str]]:
                 "command": f"python {dir_name}/{script.name}",
                 "source": "discovered",
             })
+        for script in eval_dir.glob("*.sh"):
+            evals.append({
+                "name": script.stem,
+                "command": f"bash {dir_name}/{script.name}",
+                "source": "discovered",
+            })
 
     for name in ("evaluate.py", "benchmark.py", "bench.py"):
         if (project_path / name).exists():
             evals.append({
                 "name": Path(name).stem,
                 "command": f"python {name}",
+                "source": "discovered",
+            })
+
+    for name in ("evaluate.sh", "benchmark.sh", "bench.sh"):
+        if (project_path / name).exists():
+            evals.append({
+                "name": Path(name).stem,
+                "command": f"bash {name}",
                 "source": "discovered",
             })
 

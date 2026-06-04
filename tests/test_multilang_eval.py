@@ -1,0 +1,369 @@
+"""Tests for multi-language eval support in growth, hygiene, profile, and introspect."""
+
+from pathlib import Path
+from unittest.mock import patch
+
+from factory.eval.growth import (
+    LANG_CONFIG,
+    _count_functions_regex,
+    _detect_project_language,
+    _find_src_dirs,
+    eval_capability_surface,
+    eval_observability,
+)
+from factory.discovery.introspect import (
+    _detect_framework,
+    _detect_project_evals,
+    introspect_project,
+)
+from factory.discovery.profile import build_eval_profile, _coverage_command
+from factory.models import ProjectProfile
+
+
+# ── LANG_CONFIG structure ──────────────────────────────────────────
+
+
+class TestLangConfig:
+    def test_four_languages_configured(self):
+        assert set(LANG_CONFIG.keys()) == {"python", "rust", "go", "typescript"}
+
+    def test_each_has_required_keys(self):
+        for lang, cfg in LANG_CONFIG.items():
+            assert "extensions" in cfg, f"{lang} missing extensions"
+            assert "skip_dirs" in cfg, f"{lang} missing skip_dirs"
+            assert "function_regex" in cfg, f"{lang} missing function_regex"
+            assert "entry_point_patterns" in cfg, f"{lang} missing entry_point_patterns"
+
+    def test_python_has_no_function_regex(self):
+        assert LANG_CONFIG["python"]["function_regex"] is None
+
+
+# ── _detect_project_language ───────────────────────────────────────
+
+
+class TestDetectProjectLanguage:
+    def test_python_project(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        assert _detect_project_language(tmp_path) == "python"
+
+    def test_rust_project(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        assert _detect_project_language(tmp_path) == "rust"
+
+    def test_go_project(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        assert _detect_project_language(tmp_path) == "go"
+
+    def test_typescript_project(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x"}')
+        assert _detect_project_language(tmp_path) == "typescript"
+
+    def test_unknown_project(self, tmp_path):
+        assert _detect_project_language(tmp_path) == "unknown"
+
+
+# ── _find_src_dirs multi-language ──────────────────────────────────
+
+
+class TestFindSrcDirsMultiLang:
+    def test_finds_rust_src(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "main.rs").write_text("fn main() {}")
+        dirs = _find_src_dirs(tmp_path, "rust")
+        assert any("src" in str(d) for d in dirs)
+
+    def test_finds_go_src(self, tmp_path):
+        pkg = tmp_path / "cmd"
+        pkg.mkdir()
+        (pkg / "main.go").write_text("package main")
+        dirs = _find_src_dirs(tmp_path, "go")
+        assert any("cmd" in str(d) for d in dirs)
+
+    def test_finds_typescript_src(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "index.ts").write_text("export function hello() {}")
+        dirs = _find_src_dirs(tmp_path, "typescript")
+        assert any("src" in str(d) for d in dirs)
+
+    def test_skips_language_specific_dirs(self, tmp_path):
+        target = tmp_path / "target"
+        target.mkdir()
+        (target / "debug.rs").write_text("fn x() {}")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("pub fn y() {}")
+        dirs = _find_src_dirs(tmp_path, "rust")
+        assert not any("target" in str(d) for d in dirs)
+
+    def test_fallback_to_project_root(self, tmp_path):
+        dirs = _find_src_dirs(tmp_path, "go")
+        assert dirs == [tmp_path]
+
+
+# ── Multi-language function counting ──────────────────────────────
+
+
+class TestMultiLangFunctionCounting:
+    def test_rust_public_functions(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text(
+            "pub fn hello() {}\n"
+            "pub async fn async_hello() {}\n"
+            "fn private_fn() {}\n"
+        )
+        pattern = LANG_CONFIG["rust"]["function_regex"]
+        count = _count_functions_regex([src / "lib.rs"], pattern)
+        assert count == 2
+
+    def test_go_exported_functions(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "handler.go").write_text(
+            "package handler\n\n"
+            "func HandleRequest(w http.ResponseWriter, r *http.Request) {}\n"
+            "func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {}\n"
+            "func privateHelper() {}\n"
+        )
+        pattern = LANG_CONFIG["go"]["function_regex"]
+        count = _count_functions_regex([pkg / "handler.go"], pattern)
+        assert count == 2
+
+    def test_typescript_functions(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "app.ts").write_text(
+            "export function handleRequest() {}\n"
+            "export async function fetchData() {}\n"
+            "function privateHelper() {}\n"
+        )
+        pattern = LANG_CONFIG["typescript"]["function_regex"]
+        count = _count_functions_regex([src / "app.ts"], pattern)
+        assert count == 3
+
+    def test_unreadable_file_skipped(self, tmp_path):
+        fake = tmp_path / "bad.rs"
+        fake.write_bytes(b"\xff\xfe invalid utf-8 \x80\x81")
+        pattern = LANG_CONFIG["rust"]["function_regex"]
+        count = _count_functions_regex([fake], pattern)
+        assert count == 0
+
+
+# ── eval_capability_surface multi-language ─────────────────────────
+
+
+class TestCapabilitySurfaceMultiLang:
+    def test_rust_project(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "main.rs").write_text(
+            "pub fn greet() {}\npub fn serve() {}\nfn main() {}\n"
+        )
+        result = eval_capability_surface(tmp_path)
+        assert result["score"] > 0.0
+        assert "public_fns=2" in result["details"]
+
+    def test_go_project(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        pkg = tmp_path / "cmd"
+        pkg.mkdir()
+        (pkg / "main.go").write_text(
+            "package main\n\nfunc Main() {}\nfunc main() {}\n"
+        )
+        result = eval_capability_surface(tmp_path)
+        assert result["score"] > 0.0
+        assert "public_fns=1" in result["details"]
+
+    def test_typescript_project(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x"}')
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "index.ts").write_text(
+            "export function hello() {}\n"
+            "export async function world() {}\n"
+        )
+        result = eval_capability_surface(tmp_path)
+        assert result["score"] > 0.0
+
+    def test_nonexistent_path_handled(self):
+        result = eval_capability_surface(Path("/nonexistent/path"))
+        assert result["score"] == 0.0
+
+
+# ── eval_observability language detection ──────────────────────────
+
+
+class TestObservabilityLanguageDetection:
+    def test_passes_detected_language(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        with patch("factory.study._analyze_observability") as mock_obs:
+            mock_obs.return_value = {
+                "observability_score": 0.5,
+                "function_coverage": 0.3,
+                "structured_logging": False,
+            }
+            eval_observability(tmp_path)
+            mock_obs.assert_called_once_with(tmp_path, "rust")
+
+    def test_python_project_passes_python(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")
+        with patch("factory.study._analyze_observability") as mock_obs:
+            mock_obs.return_value = {
+                "observability_score": 0.5,
+                "function_coverage": 0.3,
+                "structured_logging": False,
+            }
+            eval_observability(tmp_path)
+            mock_obs.assert_called_once_with(tmp_path, "python")
+
+
+# ── Framework detection (Rust/Go) ─────────────────────────────────
+
+
+class TestFrameworkDetectionRustGo:
+    def test_rust_actix_web(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text(
+            '[dependencies]\nactix-web = "4"\n'
+        )
+        assert _detect_framework(tmp_path, "rust") == "actix-web"
+
+    def test_rust_axum(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text(
+            '[dependencies]\naxum = "0.7"\n'
+        )
+        assert _detect_framework(tmp_path, "rust") == "axum"
+
+    def test_rust_rocket(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text(
+            '[dependencies]\nrocket = "0.5"\n'
+        )
+        assert _detect_framework(tmp_path, "rust") == "rocket"
+
+    def test_go_gin(self, tmp_path):
+        (tmp_path / "go.mod").write_text(
+            "module example.com/x\nrequire github.com/gin-gonic/gin v1.9.0\n"
+        )
+        assert _detect_framework(tmp_path, "go") == "gin"
+
+    def test_go_echo(self, tmp_path):
+        (tmp_path / "go.sum").write_text(
+            "github.com/labstack/echo/v4 v4.11.0 h1:abc\n"
+        )
+        assert _detect_framework(tmp_path, "go") == "echo"
+
+    def test_go_fiber(self, tmp_path):
+        (tmp_path / "go.mod").write_text(
+            "module example.com/x\nrequire github.com/gofiber/fiber/v2 v2.50.0\n"
+        )
+        assert _detect_framework(tmp_path, "go") == "fiber"
+
+    def test_no_framework(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        assert _detect_framework(tmp_path, "rust") is None
+
+
+# ── Eval discovery (.sh scripts) ──────────────────────────────────
+
+
+class TestEvalDiscoverySh:
+    def test_discovers_sh_in_eval_dir(self, tmp_path):
+        eval_dir = tmp_path / "eval"
+        eval_dir.mkdir()
+        (eval_dir / "run_bench.sh").write_text("#!/bin/bash\necho done")
+        evals = _detect_project_evals(tmp_path)
+        names = [e["name"] for e in evals]
+        assert "run_bench" in names
+        cmd = next(e for e in evals if e["name"] == "run_bench")
+        assert cmd["command"] == "bash eval/run_bench.sh"
+
+    def test_discovers_top_level_sh(self, tmp_path):
+        (tmp_path / "benchmark.sh").write_text("#!/bin/bash\necho done")
+        evals = _detect_project_evals(tmp_path)
+        names = [e["name"] for e in evals]
+        assert "benchmark" in names
+
+    def test_py_and_sh_coexist(self, tmp_path):
+        eval_dir = tmp_path / "eval"
+        eval_dir.mkdir()
+        (eval_dir / "accuracy.py").write_text("print('ok')")
+        (eval_dir / "speed.sh").write_text("#!/bin/bash\necho fast")
+        evals = _detect_project_evals(tmp_path)
+        names = [e["name"] for e in evals]
+        assert "accuracy" in names
+        assert "speed" in names
+
+
+# ── Profile coverage command ───────────────────────────────────────
+
+
+class TestCoverageCommand:
+    def _make_profile(self, language: str, **kwargs) -> ProjectProfile:
+        return ProjectProfile(
+            name="test-project",
+            language=language,
+            framework=None,
+            project_type="cli_tool",
+            has_tests=True,
+            has_linter=False,
+            has_type_checker=False,
+            has_ci=False,
+            test_command="test",
+            lint_command=None,
+            type_check_command=None,
+            package_manager=kwargs.get("package_manager"),
+            discovered_evals=[],
+        )
+
+    def test_python_coverage(self):
+        profile = self._make_profile("python", package_manager="uv")
+        cmd = _coverage_command(profile)
+        assert cmd is not None
+        assert "pytest --cov=" in cmd
+        assert cmd.startswith("uv run")
+
+    def test_rust_coverage(self):
+        cmd = _coverage_command(self._make_profile("rust"))
+        assert cmd is not None
+        assert "cargo tarpaulin" in cmd
+
+    def test_go_coverage(self):
+        cmd = _coverage_command(self._make_profile("go"))
+        assert cmd is not None
+        assert "go test -cover" in cmd
+
+    def test_typescript_coverage(self):
+        cmd = _coverage_command(self._make_profile("typescript"))
+        assert cmd is not None
+        assert "jest --coverage" in cmd
+
+    def test_unknown_returns_none(self):
+        assert _coverage_command(self._make_profile("unknown")) is None
+
+
+# ── Profile coverage not gated to Python ───────────────────────────
+
+
+class TestProfileCoverageNotPythonGated:
+    def test_rust_project_gets_coverage_dimension(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
+        proj = introspect_project(tmp_path)
+        profile = build_eval_profile(proj)
+        dim_names = [d.name for d in profile.dimensions]
+        assert "coverage" in dim_names
+
+    def test_go_project_gets_coverage_dimension(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module example.com/x\n")
+        proj = introspect_project(tmp_path)
+        profile = build_eval_profile(proj)
+        dim_names = [d.name for d in profile.dimensions]
+        assert "coverage" in dim_names
+
+    def test_typescript_project_gets_coverage_dimension(self, tmp_path):
+        (tmp_path / "package.json").write_text('{"name":"x","scripts":{"test":"jest"}}')
+        proj = introspect_project(tmp_path)
+        profile = build_eval_profile(proj)
+        dim_names = [d.name for d in profile.dimensions]
+        assert "coverage" in dim_names
