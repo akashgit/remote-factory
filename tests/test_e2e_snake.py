@@ -66,10 +66,25 @@ def _snapshot_event_counts(events_dir: Path) -> dict[str, int]:
     return counts
 
 
-def _tail_events(events_dir: Path, stop: threading.Event, baseline: dict[str, int]) -> None:
+def _tail_events(
+    events_dir: Path,
+    stop: threading.Event,
+    baseline: dict[str, int],
+    existing_projects: set[Path],
+) -> None:
     """Background thread that tails .factory/events.jsonl and prints NEW events only."""
     seen: dict[str, int] = dict(baseline)
+    project_announced = False
     while not stop.is_set():
+        # Detect and announce new project directory
+        if not project_announced and events_dir.exists():
+            current = set(events_dir.iterdir()) if events_dir.exists() else set()
+            new = current - existing_projects
+            for d in new:
+                if d.is_dir():
+                    print(f"  Project created: {d}", flush=True)
+                    project_announced = True
+
         candidates = list(events_dir.rglob("events.jsonl")) if events_dir.exists() else []
         for events_file in candidates:
             key = str(events_file)
@@ -123,7 +138,7 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, baseline),
+        args=(projects_dir, stop_event, baseline, existing_projects),
         daemon=True,
     )
     tailer.start()
