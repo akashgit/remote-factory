@@ -723,7 +723,7 @@ class TestPolyglotShutilWhichSideEffect:
             patch("factory.eval.hygiene._run_cmd") as mock_run,
         ):
             mock_run.return_value = (0, "test result: 5 passed; 0 failed", "")
-            result = eval_tests(tmp_path)
+            eval_tests(tmp_path)
         called_cmds = [call[0][0] for call in mock_run.call_args_list]
         assert any(cmd[0] == "cargo" for cmd in called_cmds)
         assert not any(cmd[0] == "go" for cmd in called_cmds)
