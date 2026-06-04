@@ -26,6 +26,7 @@ def _find_source_files(project_path: Path, language: str) -> list[Path]:
         "typescript": ".ts",
         "go": ".go",
         "rust": ".rs",
+        "java": ".java",
     }.get(language, ".py")
 
     sources: list[Path] = []

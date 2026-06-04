@@ -79,6 +79,22 @@ LANG_CONFIG: dict[str, dict[str, Any]] = {
             r'app\.(?:get|post|put|delete|use)\(',
         ],
     },
+    "java": {
+        "extensions": ["*.java"],
+        "skip_dirs": {
+            "target", "build", "test", "tests", ".gradle", "docs", "examples",
+        },
+        "function_regex": re.compile(
+            r"^\s*(?:public|protected)\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?\w+\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        "entry_point_patterns": [
+            r"public\s+static\s+void\s+main\s*\(",
+            r"@SpringBootApplication",
+            r"@RestController",
+            r"@QuarkusMain",
+        ],
+    },
 }
 
 
@@ -96,6 +112,8 @@ def _detect_project_language(project_path: Path) -> str:
             return "rust"
         if (project_path / "go.mod").exists():
             return "go"
+        if any((project_path / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts")):
+            return "java"
         return "unknown"
 
 

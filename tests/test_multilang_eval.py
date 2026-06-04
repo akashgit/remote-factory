@@ -24,8 +24,8 @@ from factory.models import ProjectProfile
 
 
 class TestLangConfig:
-    def test_four_languages_configured(self):
-        assert set(LANG_CONFIG.keys()) == {"python", "rust", "go", "typescript"}
+    def test_five_languages_configured(self):
+        assert set(LANG_CONFIG.keys()) == {"python", "rust", "go", "typescript", "java"}
 
     def test_each_has_required_keys(self):
         for lang, cfg in LANG_CONFIG.items():
@@ -57,6 +57,14 @@ class TestDetectProjectLanguage:
     def test_typescript_project(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name":"x"}')
         assert _detect_project_language(tmp_path) == "typescript"
+
+    def test_java_project(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        assert _detect_project_language(tmp_path) == "java"
+
+    def test_java_gradle_project(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("apply plugin: 'java'")
+        assert _detect_project_language(tmp_path) == "java"
 
     def test_unknown_project(self, tmp_path):
         assert _detect_project_language(tmp_path) == "unknown"
@@ -96,6 +104,13 @@ class TestFindSrcDirsMultiLang:
         (src / "lib.rs").write_text("pub fn y() {}")
         dirs = _find_src_dirs(tmp_path, "rust")
         assert not any("target" in str(d) for d in dirs)
+
+    def test_finds_java_src(self, tmp_path):
+        src = tmp_path / "src" / "main" / "java" / "com"
+        src.mkdir(parents=True)
+        (src / "App.java").write_text("public class App {}")
+        dirs = _find_src_dirs(tmp_path, "java")
+        assert any("src" in str(d) for d in dirs)
 
     def test_fallback_to_project_root(self, tmp_path):
         dirs = _find_src_dirs(tmp_path, "go")
@@ -143,6 +158,21 @@ class TestMultiLangFunctionCounting:
         count = _count_functions_regex([src / "app.ts"], pattern)
         assert count == 3
 
+    def test_java_public_methods(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "App.java").write_text(
+            "public class App {\n"
+            "    public String getName() { return null; }\n"
+            "    protected int getAge() { return 0; }\n"
+            "    private void helper() {}\n"
+            "    public App() {}\n"  # constructor — no return type, should NOT match
+            "}\n"
+        )
+        pattern = LANG_CONFIG["java"]["function_regex"]
+        count = _count_functions_regex([src / "App.java"], pattern)
+        assert count == 2
+
     def test_unreadable_file_skipped(self, tmp_path):
         fake = tmp_path / "bad.rs"
         fake.write_bytes(b"\xff\xfe invalid utf-8 \x80\x81")
@@ -187,6 +217,20 @@ class TestCapabilitySurfaceMultiLang:
         )
         result = eval_capability_surface(tmp_path)
         assert result["score"] > 0.0
+
+    def test_java_project(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        src = tmp_path / "src" / "main" / "java" / "com"
+        src.mkdir(parents=True)
+        (src / "App.java").write_text(
+            "public class App {\n"
+            "    public String greet() { return \"hi\"; }\n"
+            "    public static void main(String[] args) {}\n"
+            "}\n"
+        )
+        result = eval_capability_surface(tmp_path)
+        assert result["score"] > 0.0
+        assert "public_fns=" in result["details"]
 
     def test_nonexistent_path_handled(self):
         result = eval_capability_surface(Path("/nonexistent/path"))
@@ -259,6 +303,24 @@ class TestFrameworkDetectionRustGo:
             "module example.com/x\nrequire github.com/gofiber/fiber/v2 v2.50.0\n"
         )
         assert _detect_framework(tmp_path, "go") == "fiber"
+
+    def test_java_spring_boot(self, tmp_path):
+        (tmp_path / "pom.xml").write_text(
+            "<project><dependency>spring-boot-starter</dependency></project>"
+        )
+        assert _detect_framework(tmp_path, "java") == "spring-boot"
+
+    def test_java_quarkus(self, tmp_path):
+        (tmp_path / "build.gradle").write_text(
+            "dependencies { implementation 'io.quarkus:quarkus-core' }"
+        )
+        assert _detect_framework(tmp_path, "java") == "quarkus"
+
+    def test_java_micronaut(self, tmp_path):
+        (tmp_path / "pom.xml").write_text(
+            "<project><dependency>micronaut-core</dependency></project>"
+        )
+        assert _detect_framework(tmp_path, "java") == "micronaut"
 
     def test_no_framework(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname = 'x'\n")
@@ -338,6 +400,11 @@ class TestCoverageCommand:
         cmd = _coverage_command(self._make_profile("typescript"))
         assert cmd is not None
         assert "jest --coverage" in cmd
+
+    def test_java_coverage(self):
+        cmd = _coverage_command(self._make_profile("java"))
+        assert cmd is not None
+        assert "jacoco" in cmd
 
     def test_unknown_returns_none(self):
         assert _coverage_command(self._make_profile("unknown")) is None

@@ -144,6 +144,8 @@ def _syntax_check_command(project: ProjectProfile) -> str:
         return "cargo check"
     if project.language == "go":
         return "go vet ./..."
+    if project.language == "java":
+        return "javac -version"
     return "true"  # no-op fallback
 
 
@@ -159,4 +161,6 @@ def _coverage_command(project: ProjectProfile) -> str | None:
         return "go test -cover ./..."
     if project.language == "typescript":
         return "npx jest --coverage --passWithNoTests"
+    if project.language == "java":
+        return "mvn jacoco:report"
     return None

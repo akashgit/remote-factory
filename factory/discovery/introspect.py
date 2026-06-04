@@ -44,6 +44,8 @@ def _detect_language(project_path: Path) -> str:
         lang = "rust"
     elif (project_path / "go.mod").exists():
         lang = "go"
+    elif any((project_path / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts")):
+        lang = "java"
     elif (project_path / "Package.swift").exists():
         lang = "swift"
     else:
@@ -143,6 +145,18 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             return "echo"
         if "gofiber/fiber" in go_deps:
             return "fiber"
+    elif language == "java":
+        java_deps = ""
+        if (project_path / "pom.xml").exists():
+            java_deps = (project_path / "pom.xml").read_text().lower()
+        if (project_path / "build.gradle").exists():
+            java_deps += (project_path / "build.gradle").read_text().lower()
+        if "spring-boot" in java_deps:
+            return "spring-boot"
+        if "quarkus" in java_deps:
+            return "quarkus"
+        if "micronaut" in java_deps:
+            return "micronaut"
     return None
 
 
@@ -166,6 +180,13 @@ def _detect_test_command(project_path: Path, language: str) -> str | None:
         return "cargo test"
     elif language == "go":
         return "go test ./..."
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn test"
+        if (project_path / "gradlew").exists():
+            return "./gradlew test"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle test"
     return None
 
 
@@ -188,6 +209,10 @@ def _detect_lint_command(project_path: Path, language: str) -> str | None:
         return "cargo clippy"
     elif language == "go":
         return "golangci-lint run"
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn checkstyle:check"
+        return None
     return None
 
 
@@ -208,6 +233,13 @@ def _detect_type_check_command(project_path: Path, language: str) -> str | None:
         pkg = _read_json(project_path / "package.json")
         if "typescript" in pkg.get("devDependencies", {}):
             return "npx tsc --noEmit"
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn compile -q"
+        if (project_path / "gradlew").exists():
+            return "./gradlew compileJava"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle compileJava"
     return None
 
 
