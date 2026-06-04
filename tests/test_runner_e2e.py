@@ -547,6 +547,10 @@ def _cli_env() -> dict[str, str]:
 @pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
 def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) -> None:
     """factory agent researcher via CLI subprocess for each runner."""
+    env = _cli_env()
+    if runner_name == "codex":
+        env.pop("OPENAI_API_KEY", None)
+        env.pop("CODEX_API_KEY", None)
     result = subprocess.run(
         [
             "uv", "run", "factory", "agent", "researcher",
@@ -559,7 +563,7 @@ def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) ->
         capture_output=True,
         text=True,
         timeout=120,
-        env=_cli_env(),
+        env=env,
     )
     assert result.returncode == 0, (
         f"factory agent researcher --runner {runner_name} failed "
