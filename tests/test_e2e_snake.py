@@ -71,39 +71,34 @@ _STAGE_LABELS = {
 }
 
 
-def _snapshot_event_counts(events_dir: Path) -> dict[str, int]:
-    """Record current line counts for all events.jsonl files so we only tail new lines."""
-    counts: dict[str, int] = {}
-    if events_dir.exists():
-        for f in events_dir.rglob("events.jsonl"):
-            try:
-                counts[str(f)] = len(f.read_text().splitlines())
-            except OSError:
-                pass
-    return counts
-
-
 def _tail_events(
-    events_dir: Path,
+    projects_dir: Path,
     stop: threading.Event,
-    baseline: dict[str, int],
     existing_projects: set[Path],
 ) -> None:
-    """Background thread that tails .factory/events.jsonl and prints NEW events only."""
-    seen: dict[str, int] = dict(baseline)
-    project_announced = False
-    while not stop.is_set():
-        # Detect and announce new project directory
-        if not project_announced and events_dir.exists():
-            current = set(events_dir.iterdir()) if events_dir.exists() else set()
-            new = current - existing_projects
-            for d in new:
-                if d.is_dir():
-                    print(f"  Project created: {d}", flush=True)
-                    project_announced = True
+    """Background thread that detects the new project dir and tails only its events.
 
-        candidates = list(events_dir.rglob("events.jsonl")) if events_dir.exists() else []
-        for events_file in candidates:
+    Only watches events.jsonl files inside the project directory created
+    by THIS test run — ignores other projects in ~/factory-projects/.
+    """
+    project_dir: Path | None = None
+    seen: dict[str, int] = {}
+
+    while not stop.is_set():
+        # Detect the new project directory created by the factory
+        if project_dir is None and projects_dir.exists():
+            current = set(projects_dir.iterdir()) if projects_dir.exists() else set()
+            new_dirs = [d for d in (current - existing_projects) if d.is_dir()]
+            if new_dirs:
+                project_dir = max(new_dirs, key=lambda d: d.stat().st_mtime)
+                print(f"  Project: {project_dir}", flush=True)
+
+        if project_dir is None:
+            stop.wait(2.0)
+            continue
+
+        # Tail only events.jsonl files inside THIS project
+        for events_file in project_dir.rglob("events.jsonl"):
             key = str(events_file)
             offset = seen.get(key, 0)
             try:
@@ -147,13 +142,10 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     # Snapshot existing projects so we can find the new one
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
 
-    # Snapshot existing event files so we only print NEW events
-    baseline = _snapshot_event_counts(projects_dir)
-
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, baseline, existing_projects),
+        args=(projects_dir, stop_event, existing_projects),
         daemon=True,
     )
     tailer.start()
