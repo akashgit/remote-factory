@@ -222,7 +222,10 @@ class TestNodeMonorepoAggregation:
 
     def test_aggregates_multiple_suites(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name": "monorepo"}\n')
-        with patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MONOREPO_OUTPUT, "")):
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MONOREPO_OUTPUT, "")),
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
+        ):
             result = eval_tests(tmp_path)
         assert result["name"] == "tests"
         # 12 + 8 = 20 passed, 0 + 2 = 2 failed
@@ -232,7 +235,10 @@ class TestNodeMonorepoAggregation:
     def test_single_suite_still_works(self, tmp_path):
         output = "Tests: 5 passed, 0 failed\n"
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
-        with patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")):
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
+        ):
             result = eval_tests(tmp_path)
         assert result["score"] == 1.0
         assert result["passed"] is True
@@ -322,7 +328,10 @@ class TestJestDoesNotDoubleCount:
             "Time:        1.5 s\n"
         )
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
-        with patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")):
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
+        ):
             result = eval_tests(tmp_path)
         assert result["score"] == 1.0
         assert "10 passed" in result["details"]
@@ -333,7 +342,10 @@ class TestJestDoesNotDoubleCount:
             "Tests:       2 failed, 8 passed, 10 total\n"
         )
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
-        with patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")):
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
+            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
+        ):
             result = eval_tests(tmp_path)
         assert result["score"] == round(8 / 10, 4)
         assert result["passed"] is False
