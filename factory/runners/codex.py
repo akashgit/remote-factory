@@ -109,7 +109,7 @@ class CodexRunner:
         """Build the Codex CLI command, env dict, and temp files."""
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
-        cmd = ["codex", "exec", full_prompt]
+        cmd = ["codex", "exec"]
 
         if _using_api_key():
             cmd.append("--ignore-user-config")
@@ -119,6 +119,9 @@ class CodexRunner:
 
         if request.model:
             cmd.extend(["--model", request.model])
+
+        cmd.append("--skip-git-repo-check")
+        cmd.extend(["--", full_prompt])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
