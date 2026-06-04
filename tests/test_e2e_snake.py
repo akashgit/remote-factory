@@ -74,39 +74,26 @@ _STAGE_LABELS = {
 
 
 def _tail_events(
-    projects_dir: Path,
     stop: threading.Event,
-    start_time: float,
+    project_path_holder: list[Path | None],
 ) -> None:
-    """Background thread that detects the new project dir and tails only its events.
+    """Background thread that tails events from the project directory.
 
-    Finds the project by looking for the most recently modified directory
-    in projects_dir that has a .factory/ subdirectory created after start_time.
+    The project path is set by the main thread (via project_path_holder)
+    once it's extracted from the factory's stdout output.
     """
-    project_dir: Path | None = None
     seen: dict[str, int] = {}
+    announced = False
 
     while not stop.is_set():
-        # Detect the project directory by finding the one with the newest
-        # .factory/events.jsonl created after our start time
-        if project_dir is None and projects_dir.exists():
-            best: Path | None = None
-            best_mtime = 0.0
-            for d in projects_dir.iterdir():
-                if not d.is_dir():
-                    continue
-                # Look for events.jsonl files created after test started
-                for ef in d.rglob("events.jsonl"):
-                    try:
-                        mt = ef.stat().st_mtime
-                        if mt > start_time and mt > best_mtime:
-                            best = d
-                            best_mtime = mt
-                    except OSError:
-                        pass
-            if best:
-                project_dir = best
-                print(f"  Project: {project_dir}", flush=True)
+        project_dir = project_path_holder[0]
+        if project_dir is None:
+            stop.wait(2.0)
+            continue
+
+        if not announced:
+            print(f"  Project: {project_dir}", flush=True)
+            announced = True
 
         if project_dir is None:
             stop.wait(2.0)
@@ -154,50 +141,77 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     print(f"  Projects dir: {projects_dir}")
     print(f"  Timeout: {E2E_TIMEOUT_SECONDS}s ({E2E_TIMEOUT_SECONDS // 60} min)\n")
 
-    # Snapshot existing projects so we can find the new one
+    # Shared holder for the project path — set by stdout reader, read by tailer
+    project_path_holder: list[Path | None] = [None]
     existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
     start_time = time.monotonic()
-    wall_start = time.time()
 
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, wall_start),
+        args=(stop_event, project_path_holder),
         daemon=True,
     )
     tailer.start()
 
+    proc = subprocess.Popen(
+        [_FACTORY_BIN, "ceo",
+         "Build a simple snake game in Python using curses. Create a single snake.py file.",
+         "--headless", "--mode", "build", "--no-github",
+         "--runner", runner],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+
+    # Read stdout in background to extract project path
+    stdout_lines: list[str] = []
+
+    def _read_stdout() -> None:
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            stdout_lines.append(line)
+            # Factory prints: "New project from prompt: /path/to/project"
+            if "New project from prompt:" in line:
+                path_str = line.split(":", 1)[1].strip()
+                project_path_holder[0] = Path(path_str)
+
+    stdout_reader = threading.Thread(target=_read_stdout, daemon=True)
+    stdout_reader.start()
+
     try:
-        result = subprocess.run(
-            [_FACTORY_BIN, "ceo",
-             "Build a simple snake game in Python using curses. Create a single snake.py file.",
-             "--headless", "--mode", "build", "--no-github",
-             "--runner", runner],
-            cwd=tmp_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=E2E_TIMEOUT_SECONDS,
-        )
+        proc.wait(timeout=E2E_TIMEOUT_SECONDS)
         elapsed = time.monotonic() - start_time
         timed_out = False
-        print(f"\n  Factory exited with code {result.returncode} in {elapsed:.0f}s")
+        print(f"\n  Factory exited with code {proc.returncode} in {elapsed:.0f}s")
 
-        assert result.returncode in (0, 1), (
-            f"Unexpected exit code {result.returncode}:\n{result.stderr[-500:]}"
+        assert proc.returncode in (0, 1), (
+            f"Unexpected exit code {proc.returncode}"
         )
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start_time
         timed_out = True
         print(f"\n  Factory timed out after {elapsed:.0f}s — checking output")
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
     finally:
         stop_event.set()
+        stdout_reader.join(timeout=3)
         tailer.join(timeout=3)
 
-    # Find the new project directory created by the factory
+    # Find project dir — from stdout or by detecting new dirs
+    project_dir = project_path_holder[0]
     new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
-    search_dirs = [tmp_path, *new_projects]
-    print(f"  New project dirs: {[d.name for d in new_projects]}")
+    search_dirs = [tmp_path]
+    if project_dir:
+        search_dirs.append(project_dir)
+    search_dirs.extend(new_projects)
+    print(f"  Project dir: {project_dir}")
 
     # Verify output — search both tmp_path and new project dirs
     py_files: list[Path] = []
