@@ -1128,7 +1128,7 @@ Before creating a new GitHub issue, check if the hypothesis text or backlog item
    (cd "$PROJECT_PATH" && gh issue view <number> --json state --jq '.state') 2>/dev/null
    ```
    If the command fails or returns anything other than `OPEN`, treat as no existing issue and proceed to create a new one.
-3. Verify the issue is relevant: read the issue title via `gh issue view <number> --json title --jq .title`. Check that at least one keyword from the hypothesis appears in the issue title. If no keyword matches, the reference may be coincidental. Skip reuse and create a new issue.
+3. If the reference was matched via the bare-number fallback (rule 1b only), verify the issue is relevant: read the issue title via `gh issue view <number> --json title --jq .title`. Check that at least one keyword from the hypothesis appears in the issue title. If no keyword matches, the reference may be coincidental. Skip reuse and create a new issue. Explicit references (rule 1a) skip this check since they signal clear authorial intent.
 4. If the issue is open and relevant, reuse it: set `$ISSUE_NUM` to that number, post an update comment with the current experiment context, and **skip issue creation**:
    ```bash
    gh issue comment "$ISSUE_NUM" --body "**Updated for experiment $EXP_ID**
