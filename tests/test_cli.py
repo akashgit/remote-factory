@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
+from factory.cli import main, build_parser, _is_github_url, _parse_pr_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -2077,3 +2077,38 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+class TestParsePrUrl:
+    """Tests for _parse_pr_url() helper."""
+
+    def test_parse_pr_url_basic(self):
+        result = _parse_pr_url("https://github.com/acme/widgets/pull/42")
+        assert result == ("acme/widgets", 42)
+
+    def test_parse_pr_url_with_suffix(self):
+        assert _parse_pr_url("https://github.com/acme/widgets/pull/99/files") == ("acme/widgets", 99)
+        assert _parse_pr_url("https://github.com/acme/widgets/pull/7/commits") == ("acme/widgets", 7)
+
+    def test_parse_pr_url_not_pr(self):
+        assert _parse_pr_url("https://github.com/acme/widgets") is None
+        assert _parse_pr_url("https://github.com/acme/widgets/issues/5") is None
+        assert _parse_pr_url("https://example.com/acme/widgets/pull/1") is None
+
+    def test_resolve_input_pr_url(self, tmp_path):
+        """_resolve_input clones the base repo and checks out the PR."""
+        mock_run = MagicMock(return_value=MagicMock(returncode=0))
+        with patch("factory.cli.subprocess.run", mock_run), \
+             patch("factory.cli.tempfile.mkdtemp", return_value=str(tmp_path)):
+            project_path, context = _resolve_input("https://github.com/acme/widgets/pull/42")
+
+        assert project_path == tmp_path
+        assert context is None
+        assert mock_run.call_count == 2
+        # First call: git clone
+        clone_call = mock_run.call_args_list[0]
+        assert clone_call[0][0] == ["git", "clone", "https://github.com/acme/widgets", str(tmp_path)]
+        # Second call: gh pr checkout
+        checkout_call = mock_run.call_args_list[1]
+        assert checkout_call[0][0] == ["gh", "pr", "checkout", "42"]
+        assert checkout_call[1]["cwd"] == str(tmp_path)
