@@ -145,6 +145,13 @@ def _syntax_check_command(project: ProjectProfile) -> str:
     if project.language == "go":
         return "go vet ./..."
     if project.language == "java":
+        tc = project.test_command or ""
+        if "mvn" in tc:
+            return "mvn compile -q"
+        if "gradlew" in tc:
+            return "./gradlew compileJava"
+        if "gradle" in tc:
+            return "gradle compileJava"
         return "javac -version"
     return "true"  # no-op fallback
 
@@ -162,5 +169,10 @@ def _coverage_command(project: ProjectProfile) -> str | None:
     if project.language == "typescript":
         return "npx jest --coverage --passWithNoTests"
     if project.language == "java":
+        tc = project.test_command or ""
+        if "gradlew" in tc:
+            return "./gradlew jacocoTestReport"
+        if "gradle" in tc:
+            return "gradle jacocoTestReport"
         return "mvn jacoco:report"
     return None

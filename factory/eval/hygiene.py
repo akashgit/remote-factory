@@ -335,7 +335,7 @@ def eval_type_check(project_path: Path) -> dict:
                 details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
 
         if _detect_go_project(sp):
-            rc, stdout, stderr = _run_cmd(["go", "vet", "./..."], sp)
+            rc, stdout, stderr = _run_cmd(["go", "build", "-o", "/dev/null", "./..."], sp)
             if rc == 0:
                 ran_any = True
                 details_parts.append(f"{sp.name}(go): clean")
