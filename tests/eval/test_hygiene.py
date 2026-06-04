@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from factory.eval.hygiene import (
     HYGIENE_WEIGHTS,
+    _detect_java_project,
     _find_sub_projects,
     compute_hygiene_results,
     eval_config_parser,
@@ -231,3 +232,66 @@ class TestNodeMonorepoAggregation:
             result = eval_tests(tmp_path)
         assert result["score"] == 1.0
         assert result["passed"] is True
+
+
+class TestRustWorkspaceDedup:
+    """Bug 1: Rust workspace triple-counting — member crates should be deduplicated."""
+
+    def test_rust_workspace_deduplicates_members(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[workspace]\nmembers = ['crate_a', 'crate_b']\n")
+        (tmp_path / "crate_a").mkdir()
+        (tmp_path / "crate_a" / "Cargo.toml").write_text("[package]\nname = 'crate_a'\n")
+        (tmp_path / "crate_b").mkdir()
+        (tmp_path / "crate_b" / "Cargo.toml").write_text("[package]\nname = 'crate_b'\n")
+        roots = _find_sub_projects(tmp_path)
+        assert len(roots) == 1
+        assert roots[0] == tmp_path
+
+
+class TestJavaProjectDetected:
+    """Bug 2: Java missing from hygiene eval — pom.xml should be detected."""
+
+    def test_java_project_detected(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
+        roots = _find_sub_projects(tmp_path)
+        assert tmp_path in roots
+
+    def test_java_gradle_detected(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("apply plugin: 'java'")
+        assert _detect_java_project(tmp_path) is True
+
+    def test_java_gradle_kts_detected(self, tmp_path):
+        (tmp_path / "build.gradle.kts").write_text("plugins { java }")
+        assert _detect_java_project(tmp_path) is True
+
+    def test_non_java_not_detected(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[project]")
+        assert _detect_java_project(tmp_path) is False
+
+
+class TestJestDoesNotDoubleCount:
+    """Bug 3: Jest over-counting — regex should match Tests: line only, not Test Suites:."""
+
+    def test_jest_does_not_double_count_suites(self, tmp_path):
+        output = (
+            "Test Suites: 2 passed, 2 total\n"
+            "Tests:       10 passed, 10 total\n"
+            "Snapshots:   0 total\n"
+            "Time:        1.5 s\n"
+        )
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        with patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")):
+            result = eval_tests(tmp_path)
+        assert result["score"] == 1.0
+        assert "10 passed" in result["details"]
+
+    def test_jest_with_failures_counts_correctly(self, tmp_path):
+        output = (
+            "Test Suites: 1 failed, 2 passed, 3 total\n"
+            "Tests:       2 failed, 8 passed, 10 total\n"
+        )
+        (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        with patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")):
+            result = eval_tests(tmp_path)
+        assert result["score"] == round(8 / 10, 4)
+        assert result["passed"] is False

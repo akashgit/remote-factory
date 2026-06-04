@@ -44,7 +44,7 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
     Checks the project root and immediate subdirectories. Returns the project
     root itself if it has project markers, plus any sub-project dirs.
     """
-    markers = ["pyproject.toml", "package.json", "Cargo.toml", "go.mod"]
+    markers = ["pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts"]
     skip = {".git", ".factory", "node_modules", ".venv", "venv", "__pycache__"}
     roots: list[Path] = []
 
@@ -60,6 +60,25 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
         resolved = child.resolve()
         if any((resolved / m).exists() for m in markers):
             roots.append(child)
+
+    # Rust workspace dedup: if a root has a workspace Cargo.toml, remove member sub-crates
+    workspace_roots: list[Path] = []
+    for r in roots:
+        cargo = r / "Cargo.toml"
+        if cargo.exists():
+            try:
+                if "[workspace]" in cargo.read_text():
+                    workspace_roots.append(r.resolve())
+            except OSError:
+                pass
+    if workspace_roots:
+        roots = [
+            r for r in roots
+            if not any(
+                r.resolve() != ws and str(r.resolve()).startswith(str(ws) + os.sep)
+                for ws in workspace_roots
+            )
+        ]
 
     return roots or [project_path]
 
@@ -78,6 +97,37 @@ def _detect_rust_project(project_path: Path) -> bool:
 
 def _detect_go_project(project_path: Path) -> bool:
     return (project_path / "go.mod").exists()
+
+
+def _detect_java_project(project_path: Path) -> bool:
+    return (
+        (project_path / "pom.xml").exists()
+        or (project_path / "build.gradle").exists()
+        or (project_path / "build.gradle.kts").exists()
+    )
+
+
+def _java_build_tool(project_path: Path) -> list[str] | None:
+    """Return the Java build tool command prefix, or None if not available."""
+    gradlew = project_path / "gradlew"
+    if gradlew.exists():
+        return [str(gradlew)]
+    if shutil.which("gradle") and (
+        (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists()
+    ):
+        return ["gradle"]
+    if shutil.which("mvn"):
+        return ["mvn"]
+    return None
+
+
+def _java_test_cmd(project_path: Path) -> list[str] | None:
+    tool = _java_build_tool(project_path)
+    if not tool:
+        return None
+    if tool[-1] in ("mvn",):
+        return [*tool, "test", "-q"]
+    return [*tool, "test", "-q"]
 
 
 def _run_cmd(
@@ -154,9 +204,9 @@ def eval_tests(project_path: Path) -> dict:
             # Try npm test
             rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
             output = stdout + stderr
-            # Jest: "Tests: X passed, Y failed" — use findall to aggregate monorepo output
-            p_matches = re.findall(r"(\d+)\s+passed", output)
-            f_matches = re.findall(r"(\d+)\s+failed", output)
+            # Jest: match only "Tests:" lines, not "Test Suites:" lines
+            p_matches = re.findall(r"^Tests:.*?(\d+)\s+passed", output, re.MULTILINE)
+            f_matches = re.findall(r"^Tests:.*?(\d+)\s+failed", output, re.MULTILINE)
             p = sum(int(x) for x in p_matches)
             f = sum(int(x) for x in f_matches)
             if p + f > 0:
@@ -194,6 +244,27 @@ def eval_tests(project_path: Path) -> dict:
                 ran_any = True
                 total_failed += 1
                 details_parts.append(f"{sp.name}(go): failed")
+
+        if _detect_java_project(sp):
+            java_cmd = _java_test_cmd(sp)
+            if not java_cmd:
+                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java tests")
+                continue
+            rc, stdout, stderr = _run_cmd(java_cmd, sp)
+            output = stdout + stderr
+            t_match = re.search(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)", output)
+            if t_match:
+                ran_any = True
+                total_run = int(t_match.group(1))
+                failures = int(t_match.group(2)) + int(t_match.group(3))
+                p = total_run - failures
+                total_passed += p
+                total_failed += failures
+                details_parts.append(f"{sp.name}(java): {p} passed, {failures} failed")
+            elif rc == 0:
+                ran_any = True
+                total_passed += 1
+                details_parts.append(f"{sp.name}(java): passed")
 
     if not ran_any:
         return _neutral("tests", "no test suite detected")
@@ -267,6 +338,26 @@ def eval_lint(project_path: Path) -> dict:
                 count = len(re.findall(r"^.*\.go:\d+:\d+:", output, re.MULTILINE))
                 total_errors += max(count, 1)
                 details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
+
+        if _detect_java_project(sp):
+            tool = _java_build_tool(sp)
+            if not tool:
+                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java lint")
+                continue
+            if tool[-1] == "mvn":
+                cmd = [*tool, "checkstyle:check", "-q"]
+            else:
+                cmd = [*tool, "checkstyleMain", "-q"]
+            rc, stdout, stderr = _run_cmd(cmd, sp)
+            if rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(java): clean")
+            else:
+                ran_any = True
+                output = stdout + stderr
+                count = len(re.findall(r"\[ERROR\]", output))
+                total_errors += max(count, 1)
+                details_parts.append(f"{sp.name}(java): {max(count, 1)} errors")
 
     if not ran_any:
         return _neutral("lint", "no linter detected")
@@ -351,6 +442,22 @@ def eval_type_check(project_path: Path) -> dict:
                 count = len(re.findall(r"^.*\.go:\d+:\d+:", output, re.MULTILINE))
                 total_errors += max(count, 1)
                 details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
+
+        if _detect_java_project(sp):
+            tool = _java_build_tool(sp)
+            if not tool:
+                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java type check")
+                continue
+            rc, stdout, stderr = _run_cmd([*tool, "compile", "-q"], sp)
+            if rc == 0:
+                ran_any = True
+                details_parts.append(f"{sp.name}(java): clean")
+            else:
+                ran_any = True
+                output = stdout + stderr
+                count = len(re.findall(r"\[ERROR\]", output))
+                total_errors += max(count, 1)
+                details_parts.append(f"{sp.name}(java): {max(count, 1)} errors")
 
     if not ran_any:
         return _neutral("type_check", "no type checker detected")
@@ -437,6 +544,26 @@ def eval_coverage(project_path: Path) -> dict:
                 ran_any = True
                 pct = int(float(pct_match.group(1)))
                 coverages.append((f"{sp.name}(js)", pct))
+
+        if _detect_java_project(sp):
+            tool = _java_build_tool(sp)
+            if not tool:
+                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java coverage")
+                continue
+            if tool[-1] == "mvn":
+                cmd = [*tool, "verify", "-q", "-Djacoco.skip=false"]
+            else:
+                cmd = [*tool, "jacocoTestReport", "-q"]
+            rc, stdout, stderr = _run_cmd(cmd, sp)
+            output = stdout + stderr
+            pct_match = re.search(r"Total.*?(\d+)%", output)
+            if pct_match:
+                ran_any = True
+                pct = int(pct_match.group(1))
+                coverages.append((f"{sp.name}(java)", pct))
+            elif rc == 0:
+                ran_any = True
+                coverages.append((f"{sp.name}(java)", 0))
 
     if not ran_any:
         return _neutral("coverage", "no coverage tool detected")
