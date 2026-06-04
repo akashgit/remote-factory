@@ -408,7 +408,7 @@ def eval_coverage(project_path: Path) -> dict:
 
         if _detect_node_project(sp):
             rc, stdout, stderr = _run_cmd(
-                ["npx", "jest", "--coverage", "--coverageReporters=text", "--passWithNoTests"],
+                ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text", "--passWithNoTests"],
                 sp,
                 timeout=180,
             )

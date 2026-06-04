@@ -132,16 +132,16 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if "rocket" in cargo_text:
             return "rocket"
     elif language == "go":
-        go_sum = ""
-        if (project_path / "go.sum").exists():
-            go_sum = (project_path / "go.sum").read_text().lower()
-        elif (project_path / "go.mod").exists():
-            go_sum = (project_path / "go.mod").read_text().lower()
-        if "gin-gonic/gin" in go_sum:
+        go_deps = ""
+        if (project_path / "go.mod").exists():
+            go_deps = (project_path / "go.mod").read_text().lower()
+        elif (project_path / "go.sum").exists():
+            go_deps = (project_path / "go.sum").read_text().lower()
+        if "gin-gonic/gin" in go_deps:
             return "gin"
-        if "labstack/echo" in go_sum:
+        if "labstack/echo" in go_deps:
             return "echo"
-        if "gofiber/fiber" in go_sum:
+        if "gofiber/fiber" in go_deps:
             return "fiber"
     return None
 
