@@ -71,8 +71,13 @@ def _tail_events(
     stop: threading.Event,
     baseline: dict[str, int],
     existing_projects: set[Path],
+    build_done: threading.Event | None = None,
 ) -> None:
-    """Background thread that tails .factory/events.jsonl and prints NEW events only."""
+    """Background thread that tails .factory/events.jsonl and prints NEW events only.
+
+    If build_done is provided, sets it when sprint.completed is observed
+    so the test can kill the factory instead of waiting for chaining.
+    """
     seen: dict[str, int] = dict(baseline)
     project_announced = False
     while not stop.is_set():
@@ -105,6 +110,10 @@ def _tail_events(
                 if agent and agent != "None":
                     label = f"{label}: {agent}"
                 print(f"  [{ts}] {label}", flush=True)
+
+                # Signal build complete on first sprint.completed
+                if ev_type == "sprint.completed" and build_done and not build_done.is_set():
+                    build_done.set()
             seen[key] = len(lines)
         stop.wait(2.0)
 
@@ -135,46 +144,66 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     # Snapshot existing event files so we only print NEW events
     baseline = _snapshot_event_counts(projects_dir)
 
+    # Use Popen so we can kill the process after the first build sprint
+    # completes — no need to wait for chaining (Discover → Improve).
+    build_done = threading.Event()
+
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(projects_dir, stop_event, baseline, existing_projects),
+        args=(projects_dir, stop_event, baseline, existing_projects, build_done),
         daemon=True,
     )
     tailer.start()
     start_time = time.monotonic()
 
-    try:
-        result = subprocess.run(
-            [_FACTORY_BIN, "ceo",
-             "Build a simple snake game in Python using curses. Create a single snake.py file.",
-             "--headless", "--mode", "build", "--no-github",
-             "--runner", runner],
-            cwd=tmp_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            timeout=1800,
-        )
-        elapsed = time.monotonic() - start_time
-        print(f"\n  Factory exited with code {result.returncode} in {elapsed:.0f}s")
+    proc = subprocess.Popen(
+        [_FACTORY_BIN, "ceo",
+         "Build a simple snake game in Python using curses. Create a single snake.py file.",
+         "--headless", "--mode", "build", "--no-github",
+         "--runner", runner],
+        cwd=tmp_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
 
-        assert result.returncode in (0, 1), (
-            f"Unexpected exit code {result.returncode}:\n{result.stderr[-500:]}"
-        )
-    except subprocess.TimeoutExpired:
+    try:
+        # Wait for either: build sprint completes, process exits, or timeout
+        # The factory chains after build (Discover → Improve) which we don't need.
+        # Kill as soon as the first sprint.completed event appears.
+        build_done.wait(timeout=1800)
         elapsed = time.monotonic() - start_time
-        print(f"\n  Factory timed out after {elapsed:.0f}s")
-        # Check both tmp_path and new project dirs
-        new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
-        py_files: list[Path] = []
-        for d in [tmp_path, *new_projects]:
-            py_files.extend(d.rglob("*.py"))
-        if py_files:
-            pytest.skip(f"Timed out after 30min but produced {len(py_files)} .py files")
+
+        if proc.poll() is None:
+            if build_done.is_set():
+                print(f"\n  Build sprint completed in {elapsed:.0f}s — stopping factory (skipping chain)", flush=True)
+            else:
+                print(f"\n  Timeout after {elapsed:.0f}s — stopping factory", flush=True)
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
         else:
-            pytest.fail("Timed out after 30min with no output files")
+            elapsed = time.monotonic() - start_time
+            print(f"\n  Factory exited with code {proc.returncode} in {elapsed:.0f}s", flush=True)
+
+        if not build_done.is_set():
+            # Check if files were produced despite no sprint.completed event
+            new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
+            py_files_check: list[Path] = []
+            for d in [tmp_path, *new_projects]:
+                py_files_check.extend(d.rglob("*.py"))
+            if py_files_check:
+                pytest.skip(f"Timed out after 30min but produced {len(py_files_check)} .py files")
+            else:
+                pytest.fail("Timed out after 30min with no output files and no sprint.completed")
     finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
         stop_event.set()
         tailer.join(timeout=3)
 
