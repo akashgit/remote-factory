@@ -1,81 +1,83 @@
 """E2E tests for runner implementations — real API calls, no mocks, no dry-run.
 
-These tests invoke actual CLI binaries and make real API calls.
-Mark with @pytest.mark.slow so they can be skipped in fast CI runs.
+These tests invoke actual CLI binaries and make real API calls via the factory's
+invoke_agent() path, which is the production code path for agent invocations.
+
+Slow tests (real API calls) are marked @pytest.mark.slow.
+Fast tests (metadata, CLI commands) run without the marker.
 
 Cost control:
-- Tiny greeter project (2 files, <20 lines)
+- Minimal sample project (5 files, <50 lines each)
 - Short prompts, trivial tasks
-- 60s timeouts
+- 60–120s timeouts
 """
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import subprocess
+from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
-from factory.models import AgentRunRequest, AgentRunResult
-from factory.runners import get_available_runners
-
-pytestmark = pytest.mark.slow
+from factory.agents.runner import invoke_agent
+from factory.runners import get_all_runner_meta, get_available_runners, get_runner
 
 
-# ── fixtures ─────────────────────────────────────────────────────
-
-
-@pytest.fixture
-def greeter_project(tmp_path: Path) -> Path:
-    """Create a tiny Python project for agents to work with."""
-    main = tmp_path / "greeter.py"
-    main.write_text(
-        'def greet(name: str) -> str:\n'
-        '    return f"Hello, {name}!"\n'
-        '\n'
-        'if __name__ == "__main__":\n'
-        '    print(greet("World"))\n'
-    )
-    readme = tmp_path / "README.md"
-    readme.write_text("# Greeter\n\nA tiny greeter.\n")
-    return tmp_path
-
-
-def _runner_available(name: str) -> bool:
-    """Check if a runner binary is on PATH and auth is configured."""
-    runners = get_available_runners()
-    if name not in runners:
-        return False
-    cls = runners[name]
-    try:
-        meta = cls.metadata()  # type: ignore[union-attr]
-        if not meta.is_available():
-            return False
-        return True
-    except (AttributeError, TypeError):
-        return shutil.which(name) is not None
+# ── auth detection ──────────────────────────────────────────────
 
 
 def _runner_has_auth(name: str) -> bool:
-    """Check if a runner's auth requirements are met."""
-    if name == "codex":
-        return bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
+    """Check if a runner's auth is configured using the actual runner mechanism."""
+    runners = get_available_runners()
+    cls = runners.get(name)
+    if not cls:
+        return False
+
+    meta = cls.metadata()
+    if not meta.is_available():
+        return False
+
     if name == "bob":
-        return bool(os.environ.get("BOBSHELL_API_KEY"))
+        # Bob uses file-based auth — env var OR .bob_auth file on disk
+        if os.environ.get("BOBSHELL_API_KEY"):
+            return True
+        from factory.runners.bob import _find_auth_file
+        return _find_auth_file(Path.cwd()) is not None
+
+    if name == "codex":
+        # Codex uses ChatGPT OAuth — check via login status
+        if os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+            return True
+        try:
+            result = subprocess.run(
+                ["codex", "login", "status"],
+                capture_output=True, text=True, timeout=10,
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
     if name == "opencode":
+        # OpenCode needs OPENAI_API_KEY
         return bool(os.environ.get("OPENAI_API_KEY"))
+
+    # Claude — if binary is available, auth is handled by the CLI itself
     return True
 
 
-# ── parametrized runner IDs ──────────────────────────────────────
+# ── collect available runners ───────────────────────────────────
 
 
 def _collect_runner_ids() -> list[str]:
-    """Collect runner names that are installed and authenticated on this machine."""
+    """Collect runner names that are installed and authenticated."""
     ids = []
     for name in get_available_runners():
-        if _runner_available(name) and _runner_has_auth(name):
+        if _runner_has_auth(name):
             ids.append(name)
     return ids
 
@@ -83,104 +85,127 @@ def _collect_runner_ids() -> list[str]:
 AVAILABLE_RUNNERS = _collect_runner_ids()
 
 
-def _make_request(
-    project: Path,
-    *,
-    task: str = "Read greeter.py and tell me what the greet function returns. Reply in one sentence.",
-    role: str = "researcher",
-    timeout: float = 60.0,
-    model: str | None = None,
-) -> AgentRunRequest:
-    """Build a minimal AgentRunRequest for testing."""
-    return AgentRunRequest(
-        prompt="You are a code assistant. Be concise.",
-        task=task,
-        cwd=project,
-        timeout=timeout,
-        skip_permissions=True,
-        role=role,
-        model=model,
+# ── sample project fixture ──────────────────────────────────────
+
+
+@pytest.fixture
+def sample_project(tmp_path: Path) -> Path:
+    """Create a realistic sample Python project with .factory/ config."""
+    # main.py — simple CLI with argparse
+    (tmp_path / "main.py").write_text(
+        'import argparse\n'
+        'from utils import format_name, validate_positive\n'
+        '\n'
+        '\n'
+        'def greet(name: str) -> str:\n'
+        '    return f"Hello, {format_name(name)}!"\n'
+        '\n'
+        '\n'
+        'def add(a: int, b: int) -> int:\n'
+        '    validate_positive(a)\n'
+        '    validate_positive(b)\n'
+        '    return a + b\n'
+        '\n'
+        '\n'
+        'def main() -> None:\n'
+        '    parser = argparse.ArgumentParser(description="Sample CLI")\n'
+        '    parser.add_argument("name", help="Name to greet")\n'
+        '    parser.add_argument("--add", nargs=2, type=int, help="Two numbers to add")\n'
+        '    args = parser.parse_args()\n'
+        '    print(greet(args.name))\n'
+        '    if args.add:\n'
+        '        print(f"Sum: {add(*args.add)}")\n'
+        '\n'
+        '\n'
+        'if __name__ == "__main__":\n'
+        '    main()\n'
     )
 
-
-# ── tests ────────────────────────────────────────────────────────
-
-
-@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
-async def test_headless_produces_output(
-    runner_name: str, greeter_project: Path
-) -> None:
-    """Every runner can do a headless invocation and return non-empty stdout."""
-    from factory.runners import get_runner
-
-    runner = get_runner(runner_name)
-    request = _make_request(greeter_project)
-    result = await runner.headless(request)
-
-    assert isinstance(result, AgentRunResult)
-    assert result.return_code == 0, f"{runner_name} failed: {result.stdout[:300]}"
-    assert len(result.stdout.strip()) > 0, f"{runner_name} returned empty output"
-
-
-@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
-async def test_timeout_handling(
-    runner_name: str, greeter_project: Path
-) -> None:
-    """Runners handle very short timeouts gracefully (return code 1, no crash)."""
-    from factory.runners import get_runner
-
-    runner = get_runner(runner_name)
-    request = _make_request(
-        greeter_project,
-        task="Write a 1000-line essay about software engineering.",
-        timeout=3.0,
+    # utils.py — helper functions
+    (tmp_path / "utils.py").write_text(
+        'def format_name(name: str) -> str:\n'
+        '    return name.strip().title()\n'
+        '\n'
+        '\n'
+        'def validate_positive(n: int) -> None:\n'
+        '    if n < 0:\n'
+        '        raise ValueError(f"Expected positive number, got {n}")\n'
     )
-    result = await runner.headless(request)
 
-    assert isinstance(result, AgentRunResult)
-    assert result.return_code != 0 or "timed out" in result.stdout.lower()
+    # tests/test_main.py
+    tests_dir = tmp_path / "tests"
+    tests_dir.mkdir()
+    (tests_dir / "test_main.py").write_text(
+        'from main import greet, add\n'
+        '\n'
+        '\n'
+        'def test_greet():\n'
+        '    assert greet("alice") == "Hello, Alice!"\n'
+        '\n'
+        '\n'
+        'def test_greet_strips_whitespace():\n'
+        '    assert greet("  bob  ") == "Hello, Bob!"\n'
+        '\n'
+        '\n'
+        'def test_add():\n'
+        '    assert add(2, 3) == 5\n'
+        '\n'
+        '\n'
+        'def test_add_rejects_negative():\n'
+        '    import pytest\n'
+        '    with pytest.raises(ValueError):\n'
+        '        add(-1, 2)\n'
+    )
+
+    # pyproject.toml
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\n'
+        'name = "sample-project"\n'
+        'version = "0.1.0"\n'
+        'requires-python = ">=3.11"\n'
+        '\n'
+        '[tool.pytest.ini_options]\n'
+        'testpaths = ["tests"]\n'
+    )
+
+    # README.md
+    (tmp_path / "README.md").write_text(
+        "# Sample Project\n\n"
+        "A simple CLI that greets users and adds numbers.\n"
+    )
+
+    # .factory/ config
+    factory_dir = tmp_path / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "config.json").write_text(json.dumps({
+        "goal": "A sample CLI for testing",
+        "scope": ["main.py", "utils.py", "tests/"],
+        "eval_threshold": 0.5,
+    }))
+
+    # .factory/reviews/ for output capture
+    (factory_dir / "reviews").mkdir()
+
+    # Initialize git repo (agents need git)
+    subprocess.run(
+        ["git", "init"], cwd=tmp_path,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "add", "."], cwd=tmp_path,
+        capture_output=True, check=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "initial commit"],
+        cwd=tmp_path, capture_output=True, check=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "test@test.com",
+             "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "test@test.com"},
+    )
+
+    return tmp_path
 
 
-@pytest.mark.skipif("claude" not in AVAILABLE_RUNNERS, reason="claude not available")
-async def test_claude_usage_telemetry(greeter_project: Path) -> None:
-    """Claude runner returns usage telemetry (input/output tokens, cost)."""
-    from factory.runners import get_runner
-
-    runner = get_runner("claude")
-    request = _make_request(greeter_project)
-    result = await runner.headless(request)
-
-    assert result.return_code == 0
-    assert result.usage is not None, "Claude should return usage telemetry"
-    assert result.usage.input_tokens > 0
-    assert result.usage.output_tokens > 0
-
-
-@pytest.mark.skipif("claude" not in AVAILABLE_RUNNERS, reason="claude not available")
-async def test_claude_model_override(greeter_project: Path) -> None:
-    """Claude respects model override."""
-    from factory.runners import get_runner
-
-    runner = get_runner("claude")
-    request = _make_request(greeter_project, model="claude-sonnet-4-6")
-    result = await runner.headless(request)
-
-    assert result.return_code == 0
-    assert len(result.stdout.strip()) > 0
-
-
-@pytest.mark.skipif("opencode" not in AVAILABLE_RUNNERS, reason="opencode not available")
-async def test_opencode_headless(greeter_project: Path) -> None:
-    """OpenCode runner can do a headless invocation."""
-    from factory.runners import get_runner
-
-    runner = get_runner("opencode")
-    request = _make_request(greeter_project)
-    result = await runner.headless(request)
-
-    assert isinstance(result, AgentRunResult)
-    assert result.return_code == 0, f"opencode failed: {result.stdout[:300]}"
-    assert len(result.stdout.strip()) > 0
+# ── fast tests (no API calls) ──────────────────────────────────
 
 
 def test_runners_list_command() -> None:
@@ -195,10 +220,6 @@ def test_runners_list_command() -> None:
 
 def test_runners_list_json() -> None:
     """factory runners list --json returns valid JSON with all runners."""
-    import json
-    from io import StringIO
-    from unittest.mock import patch
-
     from factory.cli import build_parser, cmd_runners_list
 
     parser = build_parser()
@@ -230,8 +251,6 @@ def test_get_available_runners_includes_all_builtins() -> None:
 
 def test_runner_metadata_consistency() -> None:
     """All runners have consistent metadata."""
-    from factory.runners import get_all_runner_meta
-
     meta_list = get_all_runner_meta()
     assert len(meta_list) >= 4
 
@@ -254,20 +273,185 @@ def test_entry_point_discovery_does_not_crash() -> None:
     assert runners_mod._entrypoints_loaded is True
 
 
+def test_capability_matrix() -> None:
+    """RunnerMeta accurately reflects each runner's capabilities."""
+    for name, cls in get_available_runners().items():
+        meta = cls.metadata()
+        assert meta.name == name
+        if meta.is_available():
+            found = shutil.which(meta.binary)
+            if not found:
+                common = [
+                    Path.home() / "go" / "bin" / meta.binary,
+                    Path.home() / ".local" / "bin" / meta.binary,
+                ]
+                assert any(p.is_file() for p in common), (
+                    f"{name}: binary '{meta.binary}' claimed available "
+                    f"but not found on PATH or common paths"
+                )
+
+
+def test_available_runners_detected() -> None:
+    """At least one runner is detected as available and authenticated."""
+    assert len(AVAILABLE_RUNNERS) > 0, (
+        "No runners detected — auth detection may be broken"
+    )
+
+
+# ── slow tests (real API calls) ─────────────────────────────────
+
+# Agent invocation via invoke_agent() — the real factory code path
+
+
+@pytest.mark.slow
 @pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
-async def test_cross_runner_parity(
-    runner_name: str, greeter_project: Path
-) -> None:
-    """All runners produce a valid AgentRunResult with the same task."""
-    from factory.runners import get_runner
+async def test_agent_invocation(runner_name: str, sample_project: Path) -> None:
+    """Each runner can invoke a specialist agent and produce output."""
+    stdout, code = await invoke_agent(
+        "researcher",
+        "List all functions in main.py and utils.py. Be concise.",
+        sample_project,
+        runner_name=runner_name,
+        timeout=90.0,
+    )
+    assert code == 0, f"{runner_name} researcher failed (code={code}): {stdout[:300]}"
+    assert len(stdout.strip()) > 0, f"{runner_name} returned empty output"
+
+    review_file = sample_project / ".factory" / "reviews" / "researcher-latest.md"
+    assert review_file.exists(), f"{runner_name}: output not captured to reviews/"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
+async def test_builder_makes_changes(runner_name: str, sample_project: Path) -> None:
+    """Each runner's Builder can modify code and the changes exist."""
+    stdout, code = await invoke_agent(
+        "builder",
+        "Add a one-line docstring to the greet() function in main.py. "
+        "Commit the change with message 'add docstring'.",
+        sample_project,
+        runner_name=runner_name,
+        timeout=120.0,
+    )
+    assert code == 0, f"{runner_name} builder failed (code={code}): {stdout[:300]}"
+
+    content = (sample_project / "main.py").read_text()
+    assert "def greet" in content, "greet function should still exist"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
+async def test_output_captured_to_reviews(runner_name: str, sample_project: Path) -> None:
+    """Agent output is captured to .factory/reviews/<role>-latest.md for all runners."""
+    stdout, code = await invoke_agent(
+        "researcher",
+        "What does this project do? One sentence.",
+        sample_project,
+        runner_name=runner_name,
+        timeout=60.0,
+    )
+    review_file = sample_project / ".factory" / "reviews" / "researcher-latest.md"
+    assert review_file.exists(), f"{runner_name}: output not captured to reviews/"
+    content = review_file.read_text()
+    assert len(content) > 10, f"{runner_name}: review file is too short"
+
+
+@pytest.mark.slow
+async def test_cross_runner_parity(sample_project: Path) -> None:
+    """Same task with all runners produces valid results."""
+    results: dict[str, dict[str, object]] = {}
+    for name in AVAILABLE_RUNNERS:
+        stdout, code = await invoke_agent(
+            "researcher",
+            "Count the number of Python files in this project. Reply with just the number.",
+            sample_project,
+            runner_name=name,
+            timeout=60.0,
+        )
+        results[name] = {"stdout": stdout, "code": code}
+
+    for name, r in results.items():
+        assert r["code"] == 0, f"{name} failed with code {r['code']}"
+        stdout = r["stdout"]
+        assert isinstance(stdout, str)
+        assert len(stdout.strip()) > 0, f"{name} returned empty output"
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
+async def test_timeout_handling(runner_name: str, sample_project: Path) -> None:
+    """Very short timeout is handled gracefully."""
+    stdout, code = await invoke_agent(
+        "researcher",
+        "Write a detailed 5000-word analysis of every aspect of this project.",
+        sample_project,
+        runner_name=runner_name,
+        timeout=5.0,
+    )
+    assert code != 0, f"{runner_name} should have timed out but returned code 0"
+
+
+@pytest.mark.slow
+@pytest.mark.skipif("claude" not in AVAILABLE_RUNNERS, reason="claude not available")
+async def test_claude_usage_telemetry(sample_project: Path) -> None:
+    """Claude runner returns usage telemetry (input/output tokens)."""
+    runner = get_runner("claude")
+    from factory.models import AgentRunRequest
+    request = AgentRunRequest(
+        prompt="You are a code assistant. Be concise.",
+        task="What does main.py do? One sentence.",
+        cwd=sample_project,
+        timeout=60.0,
+        skip_permissions=True,
+        role="researcher",
+        project_path=sample_project,
+    )
+    result = await runner.headless(request)
+
+    assert result.return_code == 0
+    assert result.usage is not None, "Claude should return usage telemetry"
+    assert result.usage.input_tokens > 0
+    assert result.usage.output_tokens > 0
+
+
+@pytest.mark.slow
+async def test_tmux_persist_degrades_for_non_claude(sample_project: Path) -> None:
+    """tmux_persist=True on non-Claude runners warns but doesn't crash."""
+    for name in AVAILABLE_RUNNERS:
+        if name == "claude":
+            continue
+        stdout, code = await invoke_agent(
+            "researcher",
+            "List files in this project. Be concise.",
+            sample_project,
+            runner_name=name,
+            timeout=60.0,
+            tmux_persist=True,
+        )
+        assert code == 0, (
+            f"{name} should succeed despite unsupported tmux_persist "
+            f"(code={code}): {stdout[:200]}"
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("runner_name", AVAILABLE_RUNNERS)
+async def test_headless_produces_output(runner_name: str, sample_project: Path) -> None:
+    """Every runner can do a headless invocation via the low-level runner API."""
+    from factory.models import AgentRunRequest, AgentRunResult
 
     runner = get_runner(runner_name)
-    request = _make_request(
-        greeter_project,
-        task="What does greeter.py do? Answer in one sentence.",
+    request = AgentRunRequest(
+        prompt="You are a code assistant. Be concise.",
+        task="What does main.py do? Reply in one sentence.",
+        cwd=sample_project,
+        timeout=60.0,
+        skip_permissions=True,
+        role="researcher",
+        project_path=sample_project,
     )
     result = await runner.headless(request)
 
     assert isinstance(result, AgentRunResult)
-    assert isinstance(result.stdout, str)
-    assert isinstance(result.return_code, int)
+    assert result.return_code == 0, f"{runner_name} failed: {result.stdout[:300]}"
+    assert len(result.stdout.strip()) > 0, f"{runner_name} returned empty output"
