@@ -86,18 +86,30 @@ def _has_codex_key() -> bool:
     return bool(os.environ.get("CODEX_API_KEY") or os.environ.get("OPENAI_API_KEY"))
 
 
+def _find_projects_dir() -> Path:
+    """Resolve the factory projects directory (same logic as factory CLI)."""
+    import os
+    raw = os.environ.get("FACTORY_PROJECTS_DIR", str(Path.home() / "factory-projects"))
+    return Path(raw).expanduser()
+
+
 def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     """Shared e2e logic: run factory CEO to build a snake game with the given runner."""
+    projects_dir = _find_projects_dir()
     print(f"\n  Factory binary: {_FACTORY_BIN}")
     print(f"  Runner: {runner}")
-    print(f"  Output dir: {tmp_path}")
+    print(f"  Projects dir: {projects_dir}")
     print(f"  Timeout: 1800s (30 min)\n")
 
-    # Start event tailer in background
+    # Snapshot existing projects so we can find the new one
+    existing_projects = set(projects_dir.iterdir()) if projects_dir.exists() else set()
+
+    # Start event tailer — watches both tmp_path and the projects dir
+    # (factory creates the project under ~/factory-projects/<slug>/)
     stop_event = threading.Event()
     tailer = threading.Thread(
         target=_tail_events,
-        args=(tmp_path, stop_event),
+        args=(projects_dir, stop_event),
         daemon=True,
     )
     tailer.start()
@@ -124,7 +136,11 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start_time
         print(f"\n  Factory timed out after {elapsed:.0f}s")
-        py_files = list(tmp_path.rglob("*.py"))
+        # Check both tmp_path and new project dirs
+        new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
+        py_files: list[Path] = []
+        for d in [tmp_path, *new_projects]:
+            py_files.extend(d.rglob("*.py"))
         if py_files:
             pytest.skip(f"Timed out after 30min but produced {len(py_files)} .py files")
         else:
@@ -133,8 +149,15 @@ def _run_factory_e2e(tmp_path: Path, runner: str) -> None:
         stop_event.set()
         tailer.join(timeout=3)
 
-    # Verify output
-    py_files = list(tmp_path.rglob("*.py"))
+    # Find the new project directory created by the factory
+    new_projects = (set(projects_dir.iterdir()) - existing_projects) if projects_dir.exists() else set()
+    search_dirs = [tmp_path, *new_projects]
+    print(f"  New project dirs: {[d.name for d in new_projects]}")
+
+    # Verify output — search both tmp_path and new project dirs
+    py_files = []
+    for d in search_dirs:
+        py_files.extend(d.rglob("*.py"))
     print(f"  Python files produced: {[f.name for f in py_files]}")
     assert len(py_files) > 0, "No .py files produced"
 
