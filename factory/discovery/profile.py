@@ -172,7 +172,7 @@ def _coverage_command(project: ProjectProfile) -> str | None:
     if project.language == "go":
         return "go test -cover ./..."
     if project.language in ("typescript", "javascript"):
-        return "npx jest --coverage --passWithNoTests"
+        return "npx jest --coverage"
     if project.language == "java":
         tc = project.test_command or ""
         if "gradlew" in tc:

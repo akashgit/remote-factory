@@ -141,13 +141,15 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if "rocket" in cargo_text:
             return "rocket"
     elif language == "go":
-        go_deps = (_safe_read(project_path / "go.mod") or _safe_read(project_path / "go.sum")).lower()
+        go_deps = f'{_safe_read(project_path / "go.mod")} {_safe_read(project_path / "go.sum")}'.lower()
         if "gin-gonic/gin" in go_deps:
             return "gin"
         if "labstack/echo" in go_deps:
             return "echo"
         if "gofiber/fiber" in go_deps:
             return "fiber"
+        if "go-chi/chi" in go_deps:
+            return "chi"
     elif language == "java":
         parts = [
             _safe_read(project_path / "pom.xml"),
