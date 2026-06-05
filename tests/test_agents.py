@@ -491,3 +491,105 @@ class TestCeoPromptNoBackgroundSpawning:
         # Should mention the consequence: double-spend
         assert "double" in playbook.lower()
 
+
+class TestBuildRootCeoPrompt:
+    """Tests for the build-root-ceo agent prompt — Phase 2 of build-root mode."""
+
+    def test_prompt_resolves(self):
+        """resolve_prompt('build-root-ceo') returns content from build-root-ceo.md."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert len(prompt) > 100
+        assert "build-root" in prompt.lower()
+
+    def test_prompt_file_exists_and_nonempty(self):
+        """The prompt file exists on disk and is non-empty."""
+        prompt_file = _PROJECT_ROOT / "factory" / "agents" / "prompts" / "build-root-ceo.md"
+        assert prompt_file.exists(), "build-root-ceo.md must exist"
+        assert prompt_file.stat().st_size > 0, "build-root-ceo.md must be non-empty"
+
+    def test_agents_yml_has_entry(self):
+        """agents.yml has a build-root-ceo entry with model: opus."""
+        import yaml
+
+        agents_yml = _PROJECT_ROOT / "factory" / "agents" / "agents.yml"
+        data = yaml.safe_load(agents_yml.read_text())
+        assert "build-root-ceo" in data, "agents.yml must have build-root-ceo entry"
+        assert data["build-root-ceo"]["model"] == "opus"
+
+    def test_prompt_has_identity_section(self):
+        """Prompt starts with the build-root orchestrator identity."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert prompt.startswith("# Build-Root CEO Agent")
+
+    def test_prompt_has_stage_definitions(self):
+        """Prompt contains all 4 stage definitions."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "Stage 1: DEP RESOLVE" in prompt
+        assert "Stage 2: ARTIFACT RECOVERY" in prompt
+        assert "Stage 3: COMPILE" in prompt
+        assert "Stage 4: TEST" in prompt
+
+    def test_prompt_has_surface_constraints(self):
+        """Prompt defines fixed and mutable surfaces."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "Fixed Surfaces" in prompt
+        assert "Mutable Surfaces" in prompt
+        assert "build.gradle" in prompt
+        assert "Containerfile" in prompt
+
+    def test_prompt_has_expert_gates(self):
+        """Prompt defines all 3 expert gate types."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "Artifact Recovery Gate" in prompt
+        assert "Plateau Gate" in prompt
+        assert "Build Review Gate" in prompt
+
+    def test_prompt_has_git_commit_protocol(self):
+        """Prompt defines the git commit message format."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "[stage-N/cycle-M]" in prompt
+        assert "git revert" in prompt
+
+    def test_prompt_has_container_pattern(self):
+        """Prompt defines container execution pattern."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "CONTAINER_RUNTIME" in prompt
+        assert "podman" in prompt
+
+    def test_prompt_has_known_fixes_protocol(self):
+        """Prompt defines the known-fixes consultation protocol."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "known-fixes.yaml" in prompt
+        assert "dead_end" in prompt or "dead-end" in prompt
+
+    def test_prompt_is_self_contained(self):
+        """Prompt does not reference ceo.md — it is standalone."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "ceo.md" not in prompt
+
+    def test_prompt_forbids_direct_gradle(self):
+        """Prompt forbids running Gradle outside a container."""
+        prompt = resolve_prompt("build-root-ceo")
+        assert "MUST NOT run" in prompt and "gradlew" in prompt
+
+    @pytest.mark.asyncio
+    async def test_agent_spawning_loads_prompt(self, tmp_path, monkeypatch):
+        """Spawning with role 'build-root-ceo' loads the correct prompt."""
+        from factory.agents.runner import invoke_agent
+
+        captured_prompt: list[str] = []
+
+        class MockRunner:
+            name = "claude"
+            async def headless(self, request):
+                captured_prompt.append(request.prompt)
+                from factory.models import AgentRunResult
+                return AgentRunResult(stdout="ok", return_code=0)
+
+        monkeypatch.setattr("factory.agents.runner.get_runner", lambda *a, **kw: MockRunner())
+        (tmp_path / ".factory").mkdir()
+
+        await invoke_agent("build-root-ceo", "test task", tmp_path)
+        assert len(captured_prompt) == 1
+        assert "Build-Root CEO Agent" in captured_prompt[0]
+
