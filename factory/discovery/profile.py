@@ -1,4 +1,7 @@
-"""Build an EvalProfile from a ProjectProfile — the bridge between introspection and eval generation."""
+"""Build an EvalProfile from a ProjectProfile.
+
+The bridge between introspection and eval generation.
+"""
 
 from __future__ import annotations
 
@@ -163,7 +166,8 @@ def _coverage_command(project: ProjectProfile) -> str | None:
         pm = "uv run" if project.package_manager == "uv" else "python -m"
         return f"{pm} pytest --cov={coverage_target} --cov-report=term -q"
     if project.language == "rust":
-        # hygiene.py falls back to cargo tarpaulin if this fails
+        # Primary: llvm-cov. hygiene.py auto-falls back to
+        # `cargo tarpaulin --out stdout --skip-clean` if llvm-cov fails.
         return "cargo llvm-cov --summary-only"
     if project.language == "go":
         return "go test -cover ./..."

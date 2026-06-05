@@ -111,7 +111,11 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             try:
                 toml_text = (project_path / "pyproject.toml").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "pyproject.toml"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "pyproject.toml"),
+                    exc=str(exc),
+                )
         if "fastapi" in toml_text:
             return "fastapi"
         if "django" in toml_text:
@@ -133,7 +137,11 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             try:
                 cargo_text = (project_path / "Cargo.toml").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "Cargo.toml"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "Cargo.toml"),
+                    exc=str(exc),
+                )
         if "actix-web" in cargo_text:
             return "actix-web"
         if "axum" in cargo_text:
@@ -146,12 +154,20 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             try:
                 go_deps = (project_path / "go.mod").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "go.mod"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "go.mod"),
+                    exc=str(exc),
+                )
         elif (project_path / "go.sum").exists():
             try:
                 go_deps = (project_path / "go.sum").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "go.sum"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "go.sum"),
+                    exc=str(exc),
+                )
         if "gin-gonic/gin" in go_deps:
             return "gin"
         if "labstack/echo" in go_deps:
@@ -164,17 +180,29 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             try:
                 java_deps = (project_path / "pom.xml").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "pom.xml"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "pom.xml"),
+                    exc=str(exc),
+                )
         if (project_path / "build.gradle").exists():
             try:
-                java_deps += (project_path / "build.gradle").read_text().lower()
+                java_deps += "\n" + (project_path / "build.gradle").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "build.gradle"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "build.gradle"),
+                    exc=str(exc),
+                )
         if (project_path / "build.gradle.kts").exists():
             try:
-                java_deps += (project_path / "build.gradle.kts").read_text().lower()
+                java_deps += "\n" + (project_path / "build.gradle.kts").read_text().lower()
             except (OSError, UnicodeDecodeError) as exc:
-                log.debug("framework_file_read_failed", path=str(project_path / "build.gradle.kts"), exc=str(exc))
+                log.debug(
+                    "framework_file_read_failed",
+                    path=str(project_path / "build.gradle.kts"),
+                    exc=str(exc),
+                )
         if "spring-boot" in java_deps:
             return "spring-boot"
         if "quarkus" in java_deps:

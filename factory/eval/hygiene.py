@@ -44,7 +44,10 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
     Checks the project root and immediate subdirectories. Returns the project
     root itself if it has project markers, plus any sub-project dirs.
     """
-    markers = ["pyproject.toml", "package.json", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts"]
+    markers = [
+        "pyproject.toml", "package.json", "Cargo.toml", "go.mod",
+        "pom.xml", "build.gradle", "build.gradle.kts",
+    ]
     skip = {".git", ".factory", "node_modules", ".venv", "venv", "__pycache__"}
     roots: list[Path] = []
 
@@ -187,12 +190,16 @@ def eval_tests(project_path: Path) -> dict:
     total_passed = 0
     total_failed = 0
     ran_any = False
+    tool_missing = False
     details_parts: list[str] = []
 
     for sp in sub_projects:
         if _detect_python_project(sp):
             # Try pytest
-            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "pytest", "-v", "--tb=no", "-q"], sp)
+            rc, stdout, stderr = _run_cmd(
+                [sys.executable, "-m", "pytest", "-v", "--tb=no", "-q"],
+                sp,
+            )
             output = stdout + stderr
             p_match = re.search(r"(\d+)\s+passed", output)
             f_match = re.search(r"(\d+)\s+failed", output)
@@ -206,10 +213,19 @@ def eval_tests(project_path: Path) -> dict:
 
         if _detect_node_project(sp):
             if not shutil.which("npm"):
-                log.warning("npm_not_found", project=str(sp), msg="npm not on PATH, skipping Node tests")
+                tool_missing = True
+                log.warning(
+                    "npm_not_found",
+                    project=str(sp),
+                    msg="npm not installed, skipping Node tests",
+                )
             else:
                 # Try npm test
-                rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
+                rc, stdout, stderr = _run_cmd(
+                    ["npm", "test", "--", "--passWithNoTests"],
+                    sp,
+                    timeout=180,
+                )
                 output = stdout + stderr
                 # Jest: match only "Tests:" lines, not "Test Suites:" lines
                 p_matches = re.findall(r"^Tests:.*?(\d+)\s+passed", output, re.MULTILINE)
@@ -224,12 +240,17 @@ def eval_tests(project_path: Path) -> dict:
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
-                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust tests")
+                tool_missing = True
+                log.warning(
+                    "cargo_not_found",
+                    project=str(sp),
+                    msg="cargo not installed, skipping Rust tests",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(["cargo", "test", "--workspace"], sp)
                 output = stdout + stderr
-                p_matches = re.findall(r"(\d+)\s+passed", output)
-                f_matches = re.findall(r"(\d+)\s+failed", output)
+                p_matches = re.findall(r"test result:.*?(\d+)\s+passed", output)
+                f_matches = re.findall(r"test result:.*?(\d+)\s+failed", output)
                 p = sum(int(x) for x in p_matches)
                 f = sum(int(x) for x in f_matches)
                 if p + f > 0:
@@ -240,7 +261,12 @@ def eval_tests(project_path: Path) -> dict:
 
         if _detect_go_project(sp):
             if not shutil.which("go"):
-                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go tests")
+                tool_missing = True
+                log.warning(
+                    "go_not_found",
+                    project=str(sp),
+                    msg="go not installed, skipping Go tests",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(["go", "test", "./..."], sp)
                 output = stdout + stderr
@@ -256,17 +282,35 @@ def eval_tests(project_path: Path) -> dict:
                     ran_any = True
                     total_failed += 1
                     details_parts.append(f"{sp.name}(go): failed")
+                else:
+                    log.warning(
+                        "go_test_nonzero_no_fail",
+                        project=str(sp),
+                        rc=rc,
+                        msg="go test returned non-zero but no FAIL in output",
+                    )
 
         if _detect_java_project(sp):
             java_cmd = _java_test_cmd(sp)
             if not java_cmd:
-                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java tests")
+                tool_missing = True
+                log.warning(
+                    "java_build_tool_not_found",
+                    project=str(sp),
+                    msg="mvn/gradle not installed, skipping Java tests",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(java_cmd, sp)
                 output = stdout + stderr
-                t_matches = re.findall(r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)", output)
+                t_matches = re.findall(
+                    r"Tests run:\s*(\d+),\s*Failures:\s*(\d+),\s*Errors:\s*(\d+)",
+                    output,
+                )
                 if not t_matches:
-                    t_matches_gradle = re.findall(r"(\d+)\s+tests?\s+completed,\s*(\d+)\s+failed", output)
+                    t_matches_gradle = re.findall(
+                        r"(\d+)\s+tests?\s+completed,\s*(\d+)\s+failed",
+                        output,
+                    )
                     if t_matches_gradle:
                         t_matches = [(c, f_s, "0") for c, f_s in t_matches_gradle]
                 if t_matches:
@@ -279,17 +323,26 @@ def eval_tests(project_path: Path) -> dict:
                         java_failed += int(fail_s) + int(err_s)
                     total_passed += java_passed
                     total_failed += java_failed
-                    details_parts.append(f"{sp.name}(java): {java_passed} passed, {java_failed} failed")
+                    details_parts.append(
+                        f"{sp.name}(java): {java_passed} passed, {java_failed} failed"
+                    )
                 elif rc == 0:
-                    ran_any = True
-                    total_passed += 1
-                    details_parts.append(f"{sp.name}(java): passed (output unparsed)")
-                    log.warning("java_tests_unparsed", project=str(sp), msg="Tests passed but output format unrecognized")
+                    log.warning(
+                        "java_tests_unparsed",
+                        project=str(sp),
+                        msg="rc=0 but test output unrecognized, not counting as pass",
+                    )
                 elif rc != 0:
-                    log.warning("java_tests_unparsed_failure", project=str(sp), rc=rc, msg="Tests failed but output format unrecognized")
+                    log.warning(
+                        "java_tests_unparsed_failure",
+                        project=str(sp),
+                        rc=rc,
+                        msg="Tests failed but output format unrecognized",
+                    )
 
     if not ran_any:
-        return _neutral("tests", "no test suite detected")
+        reason = "tool not on PATH" if tool_missing else "no test suite detected"
+        return _neutral("tests", reason)
 
     total = total_passed + total_failed
     score = total_passed / total if total > 0 else 0.0
@@ -310,11 +363,14 @@ def eval_lint(project_path: Path) -> dict:
     sub_projects = _find_sub_projects(project_path)
     total_errors = 0
     ran_any = False
+    tool_missing = False
     details_parts: list[str] = []
 
     for sp in sub_projects:
         if _detect_python_project(sp):
-            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "ruff", "check", "."], sp)
+            rc, stdout, stderr = _run_cmd(
+                [sys.executable, "-m", "ruff", "check", "."], sp,
+            )
             output = stdout + stderr
             if rc == 0:
                 ran_any = True
@@ -328,9 +384,18 @@ def eval_lint(project_path: Path) -> dict:
 
         if _detect_node_project(sp):
             if not shutil.which("npx"):
-                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node lint")
+                tool_missing = True
+                log.warning(
+                    "npx_not_found",
+                    project=str(sp),
+                    msg="npx not installed, skipping Node lint",
+                )
             else:
-                rc, stdout, stderr = _run_cmd(["npx", "eslint", ".", "--format=compact"], sp, timeout=180)
+                rc, stdout, stderr = _run_cmd(
+                    ["npx", "eslint", ".", "--format=compact"],
+                    sp,
+                    timeout=180,
+                )
                 output = stdout + stderr
                 if rc == 0:
                     ran_any = True
@@ -343,9 +408,16 @@ def eval_lint(project_path: Path) -> dict:
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
-                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust lint")
+                tool_missing = True
+                log.warning(
+                    "cargo_not_found",
+                    project=str(sp),
+                    msg="cargo not installed, skipping Rust lint",
+                )
             else:
-                rc, stdout, stderr = _run_cmd(["cargo", "clippy", "--", "-D", "warnings"], sp)
+                rc, stdout, stderr = _run_cmd(
+                    ["cargo", "clippy", "--", "-D", "warnings"], sp,
+                )
                 if rc == 0:
                     ran_any = True
                     details_parts.append(f"{sp.name}(rs): clean")
@@ -357,7 +429,12 @@ def eval_lint(project_path: Path) -> dict:
 
         if _detect_go_project(sp):
             if not shutil.which("go"):
-                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go lint")
+                tool_missing = True
+                log.warning(
+                    "go_not_found",
+                    project=str(sp),
+                    msg="go not installed, skipping Go lint",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(["go", "vet", "./..."], sp)
                 if rc == 0:
@@ -373,7 +450,12 @@ def eval_lint(project_path: Path) -> dict:
         if _detect_java_project(sp):
             tool = _java_build_tool(sp)
             if not tool:
-                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java lint")
+                tool_missing = True
+                log.warning(
+                    "java_build_tool_not_found",
+                    project=str(sp),
+                    msg="mvn/gradle not installed, skipping Java lint",
+                )
             else:
                 if tool[-1] == "mvn":
                     cmd = [*tool, "checkstyle:check", "-q"]
@@ -391,7 +473,8 @@ def eval_lint(project_path: Path) -> dict:
                     details_parts.append(f"{sp.name}(java): {max(count, 1)} errors")
 
     if not ran_any:
-        return _neutral("lint", "no linter detected")
+        reason = "tool not on PATH" if tool_missing else "no linter detected"
+        return _neutral("lint", reason)
 
     score = max(0.0, 1.0 - total_errors * 0.1)
     return {
@@ -411,6 +494,7 @@ def eval_type_check(project_path: Path) -> dict:
     sub_projects = _find_sub_projects(project_path)
     total_errors = 0
     ran_any = False
+    tool_missing = False
     details_parts: list[str] = []
 
     for sp in sub_projects:
@@ -435,9 +519,16 @@ def eval_type_check(project_path: Path) -> dict:
 
         if _detect_node_project(sp):
             if not shutil.which("npx"):
-                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node type check")
+                tool_missing = True
+                log.warning(
+                    "npx_not_found",
+                    project=str(sp),
+                    msg="npx not installed, skipping Node type check",
+                )
             else:
-                rc, stdout, stderr = _run_cmd(["npx", "tsc", "--noEmit"], sp, timeout=180)
+                rc, stdout, stderr = _run_cmd(
+                    ["npx", "tsc", "--noEmit"], sp, timeout=180,
+                )
                 output = stdout + stderr
                 if rc == 0:
                     ran_any = True
@@ -450,7 +541,12 @@ def eval_type_check(project_path: Path) -> dict:
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
-                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust type check")
+                tool_missing = True
+                log.warning(
+                    "cargo_not_found",
+                    project=str(sp),
+                    msg="cargo not installed, skipping Rust type check",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(["cargo", "check"], sp)
                 if rc == 0:
@@ -464,9 +560,16 @@ def eval_type_check(project_path: Path) -> dict:
 
         if _detect_go_project(sp):
             if not shutil.which("go"):
-                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go type check")
+                tool_missing = True
+                log.warning(
+                    "go_not_found",
+                    project=str(sp),
+                    msg="go not installed, skipping Go type check",
+                )
             else:
-                rc, stdout, stderr = _run_cmd(["go", "build", "-o", os.devnull, "./..."], sp)
+                rc, stdout, stderr = _run_cmd(
+                    ["go", "build", "-o", os.devnull, "./..."], sp,
+                )
                 if rc == 0:
                     ran_any = True
                     details_parts.append(f"{sp.name}(go): clean")
@@ -480,7 +583,12 @@ def eval_type_check(project_path: Path) -> dict:
         if _detect_java_project(sp):
             tool = _java_build_tool(sp)
             if not tool:
-                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java type check")
+                tool_missing = True
+                log.warning(
+                    "java_build_tool_not_found",
+                    project=str(sp),
+                    msg="mvn/gradle not installed, skipping Java type check",
+                )
             else:
                 if tool[-1] == "mvn":
                     cmd = [*tool, "compile", "-q"]
@@ -498,7 +606,8 @@ def eval_type_check(project_path: Path) -> dict:
                     details_parts.append(f"{sp.name}(java): {max(count, 1)} errors")
 
     if not ran_any:
-        return _neutral("type_check", "no type checker detected")
+        reason = "tool not on PATH" if tool_missing else "no type checker detected"
+        return _neutral("type_check", reason)
 
     score = max(0.0, 1.0 - total_errors * 0.05)
     return {
@@ -518,6 +627,7 @@ def eval_coverage(project_path: Path) -> dict:
     sub_projects = _find_sub_projects(project_path)
     coverages: list[tuple[str, int]] = []
     ran_any = False
+    tool_missing = False
 
     for sp in sub_projects:
         if _detect_python_project(sp):
@@ -539,7 +649,12 @@ def eval_coverage(project_path: Path) -> dict:
 
         if _detect_rust_project(sp):
             if not shutil.which("cargo"):
-                log.warning("cargo_not_found", project=str(sp), msg="cargo not on PATH, skipping Rust coverage")
+                tool_missing = True
+                log.warning(
+                    "cargo_not_found",
+                    project=str(sp),
+                    msg="cargo not installed, skipping Rust coverage",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(
                     ["cargo", "llvm-cov", "--summary-only"],
@@ -548,6 +663,7 @@ def eval_coverage(project_path: Path) -> dict:
                 )
                 output = stdout + stderr
                 pct_match = None
+                cov_tool = "llvm-cov"
                 if rc == 0:
                     pct_match = re.search(r"TOTAL\s+[\d.]+\s+[\d.]+\s+([\d.]+)%", output)
                 else:
@@ -558,6 +674,7 @@ def eval_coverage(project_path: Path) -> dict:
                         timeout=600,
                     )
                     output = stdout + stderr
+                    cov_tool = "tarpaulin"
                     pct_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
                     if not pct_match:
                         stderr = f"{llvm_cov_stderr}\n--- tarpaulin stderr ---\n{stderr}"
@@ -566,16 +683,31 @@ def eval_coverage(project_path: Path) -> dict:
                     pct = int(float(pct_match.group(1)))
                     coverages.append((f"{sp.name}(rs)", pct))
                 elif rc == 0:
-                    log.warning("coverage_output_unrecognized", project=str(sp), lang="rust",
-                                msg="llvm-cov succeeded but output not parseable")
+                    log.warning(
+                        "coverage_output_unrecognized",
+                        project=str(sp),
+                        lang="rust",
+                        msg=f"{cov_tool} succeeded but output not parseable",
+                    )
                 elif "Timed out" in stderr:
                     log.warning("coverage_timeout", project=str(sp), lang="rust", timeout=600)
                 elif rc != 0:
-                    log.warning("coverage_tool_failed", project=str(sp), lang="rust", rc=rc, stderr=stderr[:200])
+                    log.warning(
+                        "coverage_tool_failed",
+                        project=str(sp),
+                        lang="rust",
+                        rc=rc,
+                        stderr=stderr[:200],
+                    )
 
         if _detect_go_project(sp):
             if not shutil.which("go"):
-                log.warning("go_not_found", project=str(sp), msg="go not on PATH, skipping Go coverage")
+                tool_missing = True
+                log.warning(
+                    "go_not_found",
+                    project=str(sp),
+                    msg="go not installed, skipping Go coverage",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(
                     ["go", "test", "-cover", "./..."],
@@ -592,7 +724,12 @@ def eval_coverage(project_path: Path) -> dict:
 
         if _detect_node_project(sp):
             if not shutil.which("npx"):
-                log.warning("npx_not_found", project=str(sp), msg="npx not on PATH, skipping Node coverage")
+                tool_missing = True
+                log.warning(
+                    "npx_not_found",
+                    project=str(sp),
+                    msg="npx not installed, skipping Node coverage",
+                )
             else:
                 rc, stdout, stderr = _run_cmd(
                     ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text"],
@@ -611,14 +748,21 @@ def eval_coverage(project_path: Path) -> dict:
         if _detect_java_project(sp):
             tool = _java_build_tool(sp)
             if not tool:
-                log.warning("java_build_tool_not_found", project=str(sp), msg="mvn/gradle not on PATH, skipping Java coverage")
+                tool_missing = True
+                log.warning(
+                    "java_build_tool_not_found",
+                    project=str(sp),
+                    msg="mvn/gradle not installed, skipping Java coverage",
+                )
             else:
                 if tool[-1] == "mvn":
                     cmd = [*tool, "verify", "-q", "-Djacoco.skip=false"]
                     jacoco_xml = sp / "target" / "site" / "jacoco" / "jacoco.xml"
                 else:
                     cmd = [*tool, "jacocoTestReport", "-q"]
-                    jacoco_xml = sp / "build" / "reports" / "jacoco" / "test" / "jacocoTestReport.xml"
+                    jacoco_xml = (
+                        sp / "build" / "reports" / "jacoco" / "test" / "jacocoTestReport.xml"
+                    )
                 rc, stdout, stderr = _run_cmd(cmd, sp)
                 if rc == 0 and jacoco_xml.exists():
                     try:
@@ -647,7 +791,8 @@ def eval_coverage(project_path: Path) -> dict:
                     log.warning("jacoco_xml_not_found", project=str(sp), path=str(jacoco_xml))
 
     if not ran_any:
-        return _neutral("coverage", "no coverage tool detected")
+        reason = "tool not on PATH" if tool_missing else "no coverage tool detected"
+        return _neutral("coverage", reason)
 
     avg_pct = sum(p for _, p in coverages) / len(coverages)
     score = avg_pct / 100.0

@@ -727,16 +727,18 @@ class TestGoTestsGoNotOnPath:
 
 class TestJavaTestsUnparsed:
     def test_java_tests_unparsed(self, tmp_path):
-        """rc==0 with unparsed output credits 1 pass instead of dropping to neutral."""
+        """rc==0 with unparsed output drops to neutral — not credited as pass."""
         (tmp_path / "pom.xml").write_text("<project/>")
         with (
-            patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/mvn" if cmd == "mvn" else None),
+            patch(
+                "factory.eval.hygiene.shutil.which",
+                side_effect=lambda cmd: "/usr/bin/mvn" if cmd == "mvn" else None,
+            ),
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS", "")),
         ):
             result = eval_tests(tmp_path)
-        assert result["score"] == 1.0
-        assert result["passed"] is True
-        assert "output unparsed" in result["details"]
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
 
 
 # ── Hygiene: Rust eval_lint missing cargo ────────────────────────
