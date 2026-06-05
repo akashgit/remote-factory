@@ -15,6 +15,13 @@ from factory.worktree import (
 
 pytestmark = pytest.mark.real_worktree
 
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@test.com",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@test.com",
+}
+
 
 @pytest.fixture
 def git_project(tmp_path: Path) -> Path:
@@ -22,14 +29,7 @@ def git_project(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
 
-    env = {
-        "GIT_AUTHOR_NAME": "test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-        "HOME": str(tmp_path),
-        "PATH": "/usr/bin:/bin:/usr/local/bin",
-    }
+    env = {**GIT_ENV, "HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"}
 
     subprocess.run(["git", "init", "-b", "main"], cwd=project, capture_output=True, check=True)
     (project / ".gitignore").write_text(".factory/\n")
@@ -80,14 +80,7 @@ class TestCreateWorktree:
         assert result.stdout.strip() == branch
 
     def test_worktree_uses_custom_base_branch(self, git_project: Path) -> None:
-        env = {
-            "GIT_AUTHOR_NAME": "test",
-            "GIT_AUTHOR_EMAIL": "test@test.com",
-            "GIT_COMMITTER_NAME": "test",
-            "GIT_COMMITTER_EMAIL": "test@test.com",
-            "HOME": str(git_project.parent),
-            "PATH": "/usr/bin:/bin:/usr/local/bin",
-        }
+        env = {**GIT_ENV, "HOME": str(git_project.parent), "PATH": "/usr/bin:/bin:/usr/local/bin"}
         subprocess.run(
             ["git", "checkout", "-b", "develop"],
             cwd=git_project, capture_output=True, check=True,
@@ -197,14 +190,7 @@ def git_project_master(tmp_path: Path) -> Path:
     project = tmp_path / "project"
     project.mkdir()
 
-    env = {
-        "GIT_AUTHOR_NAME": "test",
-        "GIT_AUTHOR_EMAIL": "test@test.com",
-        "GIT_COMMITTER_NAME": "test",
-        "GIT_COMMITTER_EMAIL": "test@test.com",
-        "HOME": str(tmp_path),
-        "PATH": "/usr/bin:/bin:/usr/local/bin",
-    }
+    env = {**GIT_ENV, "HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"}
 
     subprocess.run(["git", "init", "-b", "master"], cwd=project, capture_output=True, check=True)
     (project / ".gitignore").write_text(".factory/\n")
@@ -239,14 +225,7 @@ class TestDetectDefaultBranch:
         project = tmp_path / "project"
         project.mkdir()
 
-        env = {
-            "GIT_AUTHOR_NAME": "test",
-            "GIT_AUTHOR_EMAIL": "test@test.com",
-            "GIT_COMMITTER_NAME": "test",
-            "GIT_COMMITTER_EMAIL": "test@test.com",
-            "HOME": str(tmp_path),
-            "PATH": "/usr/bin:/bin:/usr/local/bin",
-        }
+        env = {**GIT_ENV, "HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"}
 
         subprocess.run(
             ["git", "init", "-b", "develop"],
@@ -289,14 +268,6 @@ class TestSymlinkResolution:
         config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
         assert config_via_symlink == config_direct
-
-
-GIT_ENV = {
-    "GIT_AUTHOR_NAME": "test",
-    "GIT_AUTHOR_EMAIL": "test@test.com",
-    "GIT_COMMITTER_NAME": "test",
-    "GIT_COMMITTER_EMAIL": "test@test.com",
-}
 
 
 @pytest.fixture
