@@ -59,6 +59,18 @@ def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
         yield  # type: ignore[misc]
 
 
+@pytest.fixture(scope="session")
+def gradle_wrapper_jar(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Download gradle-wrapper.jar once per test session for container build tests."""
+    jar_path = tmp_path_factory.mktemp("gradle-wrapper") / "gradle-wrapper.jar"
+    import urllib.request
+    urllib.request.urlretrieve(
+        "https://raw.githubusercontent.com/gradle/gradle/v7.6.1/gradle/wrapper/gradle-wrapper.jar",
+        str(jar_path),
+    )
+    return jar_path
+
+
 @pytest.fixture
 def tmp_project(tmp_path: Path) -> Path:
     """Create a minimal project directory with git init."""

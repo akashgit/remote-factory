@@ -47,11 +47,36 @@ class TestContainerBuild:
             capture_output=True, timeout=30,
         )
 
-    def test_fast_build_mini_project(self, tmp_path: Path) -> None:
+    def test_fast_build_mini_project(self, tmp_path: Path, gradle_wrapper_jar: Path) -> None:
         """Build the mini-java-project image and run BUILD_MODE=fast against it."""
         mini_project = FIXTURES_DIR / "mini-java-project"
         work_dir = tmp_path / "build-root"
         shutil.copytree(mini_project, work_dir)
+
+        wrapper_dest = work_dir / "gradle" / "wrapper" / "gradle-wrapper.jar"
+        if not wrapper_dest.exists():
+            wrapper_dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(gradle_wrapper_jar, wrapper_dest)
+
+        # Fix DEFAULT_JVM_OPTS quoting — the fixture gradlew uses inner double
+        # quotes that Java interprets as a class name instead of a JVM option.
+        gradlew_path = work_dir / "gradlew"
+        gradlew_text = gradlew_path.read_text()
+        gradlew_path.write_text(
+            gradlew_text.replace(
+                """DEFAULT_JVM_OPTS='"-Xmx64m" "-Xms64m"'""",
+                "DEFAULT_JVM_OPTS='-Xmx64m -Xms64m'",
+            )
+        )
+
+        # Add JUnit dependency for compileTestJava
+        app_build = work_dir / "app" / "build.gradle"
+        app_build.write_text(
+            app_build.read_text().replace(
+                "dependencies {",
+                "dependencies {\n    testImplementation 'junit:junit:4.13.2'",
+            )
+        )
 
         (work_dir / "gradle" / "init.d").mkdir(parents=True, exist_ok=True)
         (work_dir / "gradle" / "init.d" / "repositories.gradle").write_text("")
@@ -72,8 +97,11 @@ class TestContainerBuild:
         assert build_result.returncode == 0, f"Image build failed: {build_result.stderr}"
 
         run_result = subprocess.run(
-            ["podman", "run", "--rm", image_name, "bash", "-c",
-             "./gradlew compileJava compileTestJava --continue 2>&1"],
+            ["podman", "run", "--rm",
+             "-v", f"{work_dir}:/workspace:rw",
+             image_name, "bash", "-c",
+             "cd /workspace && chmod +x gradlew"
+             " && ./gradlew compileJava compileTestJava --continue 2>&1"],
             capture_output=True, text=True, timeout=600,
         )
         assert run_result.returncode == 0, (
