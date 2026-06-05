@@ -857,6 +857,17 @@ def cmd_guard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_issue_resolve(args: argparse.Namespace) -> int:
+    """Check if a hypothesis references a reusable open GitHub issue."""
+    from factory.issue import resolve_reusable_issue
+
+    project_path = Path(args.path)
+    number = resolve_reusable_issue(args.hypothesis, project_path)
+    if number is not None:
+        print(number)
+    return 0
+
+
 def cmd_begin(args: argparse.Namespace) -> int:
     from factory.store import ExperimentStore
 
@@ -3702,6 +3713,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Also check fixed surface constraints (research mode)")
 
     # begin
+    p = sub.add_parser("issue-resolve",
+                        help="Check if hypothesis references a reusable open issue")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--hypothesis", required=True, help="Hypothesis text to scan for issue refs")
+
+    # begin
     p = sub.add_parser("begin", help="Start experiment, print ID")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--hypothesis", required=True, help="Experiment hypothesis text")
@@ -4209,6 +4226,7 @@ def main(argv: list[str] | None = None) -> int:
         "init": cmd_init,
         "eval": cmd_eval,
         "guard": cmd_guard,
+        "issue-resolve": cmd_issue_resolve,
         "begin": cmd_begin,
         "finalize": cmd_finalize,
         "history": cmd_history,
