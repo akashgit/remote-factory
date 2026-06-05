@@ -721,6 +721,108 @@
   }
   .filter-btn:hover:not(.active) { background: rgba(88,166,255,0.1); }
 
+  /* Build-root pipeline */
+  .build-root-pipeline {
+    grid-column: 1 / -1;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    display: none;
+  }
+  .build-root-pipeline.visible { display: block; }
+  .build-root-pipeline-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .br-stages {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .br-stage-box {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    background: var(--bg);
+    min-width: 140px;
+  }
+  .br-stage-box.active { border-color: var(--accent); }
+  .br-stage-box.completed { border-color: var(--green); }
+  .br-stage-box.gated { border-color: var(--yellow); animation: gate-pulse 1.5s infinite; }
+  @keyframes gate-pulse {
+    0%, 100% { border-color: var(--yellow); box-shadow: 0 0 0 0 rgba(210,153,34,0.3); }
+    50% { border-color: var(--yellow); box-shadow: 0 0 8px 2px rgba(210,153,34,0.2); }
+  }
+  .br-stage-name {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .br-stage-name .br-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .br-status-dot.pending { background: var(--text-dim); }
+  .br-status-dot.active { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .br-status-dot.completed { background: var(--green); }
+  .br-status-dot.gated { background: var(--yellow); }
+  .br-stage-metrics {
+    display: flex;
+    gap: 12px;
+    font-size: 11px;
+    color: var(--text-dim);
+    align-items: center;
+  }
+  .br-metric-value { font-weight: 600; color: var(--text); }
+  .br-trend-up { color: var(--green); }
+  .br-trend-down { color: var(--red); }
+  .br-trend-flat { color: var(--text-dim); }
+  .br-gate-badge {
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    text-transform: uppercase;
+    background: #3d2e1f;
+    color: var(--yellow);
+  }
+  .br-stage-arrow {
+    color: var(--border);
+    font-size: 18px;
+    flex-shrink: 0;
+    margin: 0 6px;
+  }
+  .br-event-log {
+    margin-top: 12px;
+    max-height: 120px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+  }
+  .br-event-log-item {
+    padding: 4px 12px;
+    font-size: 11px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+  }
+  .br-event-log-item:last-child { border-bottom: none; }
+  .br-event-time { color: var(--text-dim); flex-shrink: 0; }
+  .br-event-stage { color: var(--accent); font-weight: 600; flex-shrink: 0; }
+
   /* Responsive */
   @media (max-width: 800px) {
     main {
@@ -736,6 +838,8 @@
     .experiments-panel { max-height: 50vh; }
     .agent-output-panel { width: 100%; right: -100%; }
     .phase-detail-grid { grid-template-columns: 1fr; }
+    .br-stages { flex-wrap: wrap; gap: 8px; }
+    .br-stage-arrow { display: none; }
   }
 </style>
 </head>
@@ -756,6 +860,12 @@
   <div class="kpi-strip" id="kpi-strip"></div>
 
   <div class="pipeline-bar" id="pipeline-bar"></div>
+
+  <div class="build-root-pipeline" id="build-root-pipeline">
+    <div class="build-root-pipeline-title">Build Root Pipeline</div>
+    <div class="br-stages" id="br-stages"></div>
+    <div class="br-event-log" id="br-event-log"></div>
+  </div>
 
   <div class="phase-detail-row" id="phase-detail-row"></div>
 
@@ -872,6 +982,7 @@ async function selectProject(name) {
   loadProjects();
   loadExperiments(name);
   loadLiveState();
+  loadBuildRootStatus();
 }
 
 // ── Experiments ──
@@ -942,6 +1053,9 @@ function connectSSE() {
       // Refresh experiments if the event is for the selected project
       if (selectedProject && event.project === selectedProject) {
         loadExperiments(selectedProject);
+        if ((event.type || '').startsWith('stage.') || (event.type || '').startsWith('gate.')) {
+          loadBuildRootStatus();
+        }
       }
     } catch (err) {
       console.error('Failed to parse event:', err);
@@ -1933,6 +2047,98 @@ async function loadLiveState() {
   }
 }
 
+// ── Build Root Pipeline ──
+let buildRootVisible = false;
+
+async function loadBuildRootStatus() {
+  if (!selectedProject) return;
+  try {
+    const res = await fetch(`/api/projects/${selectedProject}/build-root-status`);
+    const data = await res.json();
+    const hasStageEvents = data.stages && data.stages.some(s => s.status !== 'pending');
+    const panel = document.getElementById('build-root-pipeline');
+    if (hasStageEvents) {
+      panel.classList.add('visible');
+      buildRootVisible = true;
+      renderBuildRootStages(data.stages);
+      renderBuildRootEventLog(data.recent_events || []);
+    } else {
+      panel.classList.remove('visible');
+      buildRootVisible = false;
+    }
+  } catch (e) {
+    // Silently ignore
+  }
+}
+
+function trendArrow(trend) {
+  if (trend === 'up') return '<span class="br-trend-up">↑</span>';
+  if (trend === 'down') return '<span class="br-trend-down">↓</span>';
+  return '<span class="br-trend-flat">→</span>';
+}
+
+function formatElapsed(seconds) {
+  if (seconds == null) return '';
+  const s = Math.round(seconds);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60);
+  return m + 'm' + (s % 60) + 's';
+}
+
+function renderBuildRootStages(stages) {
+  const el = document.getElementById('br-stages');
+  el.innerHTML = stages.map((s, i) => {
+    const statusCls = s.status;
+    const metricStr = s.metric != null
+      ? `<span class="br-metric-value">${s.metric}${s.metric_total != null ? '/' + s.metric_total : ''}</span>`
+      : '';
+    const elapsedStr = s.elapsed_seconds != null
+      ? `<span style="color:var(--accent)">${formatElapsed(s.elapsed_seconds)}</span>`
+      : '';
+    const gateHtml = s.gate ? '<span class="br-gate-badge">Gate</span>' : '';
+    const arrow = i < stages.length - 1 ? '<span class="br-stage-arrow">▸</span>' : '';
+    return `<div class="br-stage-box ${statusCls}">
+      <div class="br-stage-name">
+        <span class="br-status-dot ${statusCls}"></span>
+        ${esc(s.display_name)}
+        ${gateHtml}
+      </div>
+      <div class="br-stage-metrics">
+        <span>C${s.cycles}</span>
+        ${metricStr}
+        ${s.cycles >= 3 ? trendArrow(s.trend) : ''}
+        ${elapsedStr}
+      </div>
+    </div>${arrow}`;
+  }).join('');
+}
+
+function renderBuildRootEventLog(events) {
+  const el = document.getElementById('br-event-log');
+  if (events.length === 0) {
+    el.innerHTML = '<div class="br-event-log-item" style="color:var(--text-dim)">No stage events yet</div>';
+    return;
+  }
+  el.innerHTML = events.slice().reverse().map(ev => {
+    const ts = new Date(ev.timestamp);
+    const timeStr = ts.toLocaleTimeString('en-US', { hour12: false });
+    const data = ev.data || {};
+    const stage = data.stage || '';
+    const evType = (ev.type || '').replace('stage.', '');
+    let detail = '';
+    if (ev.type === 'stage.cycle') {
+      const r = data.resolved != null ? data.resolved : '?';
+      const t = data.total != null ? '/' + data.total : '';
+      detail = ` ${r}${t}`;
+    }
+    return `<div class="br-event-log-item">
+      <span class="br-event-time">${timeStr}</span>
+      <span class="br-event-stage">${esc(stage)}</span>
+      <span>${esc(evType)}${detail}</span>
+    </div>`;
+  }).join('');
+}
+
 // ── Init ──
 loadProjects();
 loadSummary();
@@ -1946,7 +2152,10 @@ setInterval(() => {
   loadProjects();
   loadSummary();
   loadLiveState();
-  if (selectedProject) loadExperiments(selectedProject);
+  if (selectedProject) {
+    loadExperiments(selectedProject);
+    loadBuildRootStatus();
+  }
 }, 10000);
 </script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

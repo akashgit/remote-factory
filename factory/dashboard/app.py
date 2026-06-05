@@ -365,6 +365,116 @@ def _validate_path_segment(value: str, label: str = "name") -> None:
         raise HTTPException(status_code=400, detail=f"Invalid {label}: {value}")
 
 
+_BUILD_ROOT_STAGES = ["dep_resolve", "artifact_recovery", "compile", "test"]
+
+_STAGE_DISPLAY_NAMES: dict[str, str] = {
+    "dep_resolve": "DEP RESOLVE",
+    "artifact_recovery": "ARTIFACT RECOVERY",
+    "compile": "COMPILE",
+    "test": "TEST",
+}
+
+
+def _build_pipeline_state(events: list[dict[str, Any]]) -> dict[str, Any]:
+    """Reconstruct 4-stage build-root pipeline state from stage.* events.
+
+    Pure function: takes a list of event dicts, returns structured pipeline state.
+    """
+    stages: dict[str, dict[str, Any]] = {}
+    for name in _BUILD_ROOT_STAGES:
+        stages[name] = {
+            "name": name,
+            "display_name": _STAGE_DISPLAY_NAMES[name],
+            "status": "pending",
+            "cycles": 0,
+            "metric": None,
+            "metric_total": None,
+            "trend": "flat",
+            "elapsed_seconds": None,
+            "gate": False,
+            "entered_at": None,
+        }
+
+    recent_metrics: dict[str, list[float]] = {s: [] for s in _BUILD_ROOT_STAGES}
+    stage_events: list[dict[str, Any]] = []
+
+    for ev in events:
+        ev_type = ev.get("type", "")
+        data = ev.get("data", {})
+        ts = ev.get("timestamp", "")
+        stage_name = data.get("stage", "")
+
+        if ev_type == "stage.entered" and stage_name in stages:
+            stages[stage_name]["status"] = "active"
+            stages[stage_name]["entered_at"] = ts
+            stages[stage_name]["cycles"] = 0
+            stages[stage_name]["gate"] = False
+
+        elif ev_type == "stage.cycle" and stage_name in stages:
+            stages[stage_name]["cycles"] += 1
+            resolved = data.get("resolved")
+            total = data.get("total")
+            if resolved is not None:
+                stages[stage_name]["metric"] = resolved
+                recent_metrics[stage_name].append(float(resolved))
+            if total is not None:
+                stages[stage_name]["metric_total"] = total
+
+        elif ev_type == "stage.completed" and stage_name in stages:
+            stages[stage_name]["status"] = "completed"
+            stages[stage_name]["gate"] = False
+
+        elif ev_type == "gate.raised":
+            gate_stage = data.get("stage", "")
+            if gate_stage in stages:
+                stages[gate_stage]["status"] = "gated"
+                stages[gate_stage]["gate"] = True
+
+        elif ev_type == "gate.resolved":
+            gate_stage = data.get("stage", "")
+            if gate_stage in stages:
+                stages[gate_stage]["gate"] = False
+                if stages[gate_stage]["status"] == "gated":
+                    stages[gate_stage]["status"] = "active"
+
+        if ev_type.startswith("stage."):
+            stage_events.append(ev)
+
+    for name in _BUILD_ROOT_STAGES:
+        metrics = recent_metrics[name]
+        if len(metrics) >= 3:
+            last3 = metrics[-3:]
+            if last3[-1] > last3[0]:
+                stages[name]["trend"] = "up"
+            elif last3[-1] < last3[0]:
+                stages[name]["trend"] = "down"
+            else:
+                stages[name]["trend"] = "flat"
+
+        if stages[name]["status"] == "active" and stages[name]["entered_at"]:
+            try:
+                entered = datetime.fromisoformat(stages[name]["entered_at"])
+                last_ts = None
+                for ev in reversed(events):
+                    if (ev.get("type", "").startswith("stage.")
+                            and ev.get("data", {}).get("stage") == name):
+                        last_ts = datetime.fromisoformat(ev["timestamp"])
+                        break
+                if last_ts:
+                    stages[name]["elapsed_seconds"] = (
+                        last_ts - entered
+                    ).total_seconds()
+            except (ValueError, KeyError):
+                pass
+
+        del stages[name]["entered_at"]
+
+    return {
+        "stages": [stages[s] for s in _BUILD_ROOT_STAGES],
+        "recent_events": stage_events[-20:],
+    }
+
+
 def create_app(projects_dir: Path) -> FastAPI:
     """Create the FastAPI dashboard app bound to a projects directory."""
     log.info("dashboard_create_app", projects_dir=str(projects_dir))
@@ -630,6 +740,18 @@ def create_app(projects_dir: Path) -> FastAPI:
             "dashboard_request", endpoint="/research/{name}", project=name
         )
         return HTMLResponse((_STATIC_DIR / "research.html").read_text())
+
+    @app.get("/api/projects/{name}/build-root-status")
+    async def build_root_status(name: str) -> dict[str, Any]:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/build-root-status",
+            project=name,
+        )
+        path = projects_dir / name
+        events = load_events(path)
+        return _build_pipeline_state(events)
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
