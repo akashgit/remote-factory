@@ -282,6 +282,24 @@ class TestJavaMavenMultiModuleAggregation:
         assert result["passed"] is True
 
 
+class TestJavaGradleTestOutputParsing:
+    """Gradle-style test output ('N tests completed, M failed') is parsed correctly."""
+
+    def test_gradle_test_output_parsed(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        output = "3 tests completed, 1 failed\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["name"] == "tests"
+        assert result["score"] == round(2 / 3, 4)
+        assert result["passed"] is False
+        assert "2 passed" in result["details"]
+        assert "1 failed" in result["details"]
+
+
 class TestRustWorkspaceDedup:
     """Bug 1: Rust workspace triple-counting — member crates should be deduplicated."""
 
@@ -355,11 +373,13 @@ class TestJavaBuildTool:
     """Tests for _java_build_tool() — gradlew > gradle > mvn priority."""
 
     def test_gradlew_preferred(self, tmp_path):
-        (tmp_path / "gradlew").write_text("#!/bin/sh\n")
+        gradlew = tmp_path / "gradlew"
+        gradlew.write_text("#!/bin/sh\n")
+        gradlew.chmod(0o755)
         (tmp_path / "build.gradle").write_text("")
         with patch("shutil.which", return_value="/usr/bin/mvn"):
             result = _java_build_tool(tmp_path)
-        assert result == [str(tmp_path / "gradlew")]
+        assert result == [str(gradlew)]
 
     def test_gradle_with_build_gradle(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")

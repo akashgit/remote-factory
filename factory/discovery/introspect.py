@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import structlog
@@ -109,8 +110,8 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if (project_path / "pyproject.toml").exists():
             try:
                 toml_text = (project_path / "pyproject.toml").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "pyproject.toml"), exc=str(exc))
         if "fastapi" in toml_text:
             return "fastapi"
         if "django" in toml_text:
@@ -131,8 +132,8 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if (project_path / "Cargo.toml").exists():
             try:
                 cargo_text = (project_path / "Cargo.toml").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "Cargo.toml"), exc=str(exc))
         if "actix-web" in cargo_text:
             return "actix-web"
         if "axum" in cargo_text:
@@ -144,13 +145,13 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if (project_path / "go.mod").exists():
             try:
                 go_deps = (project_path / "go.mod").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "go.mod"), exc=str(exc))
         elif (project_path / "go.sum").exists():
             try:
                 go_deps = (project_path / "go.sum").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "go.sum"), exc=str(exc))
         if "gin-gonic/gin" in go_deps:
             return "gin"
         if "labstack/echo" in go_deps:
@@ -162,18 +163,18 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
         if (project_path / "pom.xml").exists():
             try:
                 java_deps = (project_path / "pom.xml").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "pom.xml"), exc=str(exc))
         if (project_path / "build.gradle").exists():
             try:
                 java_deps += (project_path / "build.gradle").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "build.gradle"), exc=str(exc))
         if (project_path / "build.gradle.kts").exists():
             try:
                 java_deps += (project_path / "build.gradle.kts").read_text().lower()
-            except (OSError, UnicodeDecodeError):
-                pass
+            except (OSError, UnicodeDecodeError) as exc:
+                log.debug("framework_file_read_failed", path=str(project_path / "build.gradle.kts"), exc=str(exc))
         if "spring-boot" in java_deps:
             return "spring-boot"
         if "quarkus" in java_deps:
@@ -235,6 +236,10 @@ def _detect_lint_command(project_path: Path, language: str) -> str | None:
     elif language == "java":
         if (project_path / "pom.xml").exists():
             return "mvn checkstyle:check"
+        if (project_path / "gradlew").exists():
+            return "./gradlew checkstyleMain"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle checkstyleMain"
         return None
     return None
 
@@ -268,7 +273,7 @@ def _detect_type_check_command(project_path: Path, language: str) -> str | None:
             return "cargo check"
     elif language == "go":
         if (project_path / "go.mod").exists():
-            return "go build -o /dev/null ./..."
+            return f"go build -o {os.devnull} ./..."
     return None
 
 

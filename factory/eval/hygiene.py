@@ -110,7 +110,7 @@ def _detect_java_project(project_path: Path) -> bool:
 def _java_build_tool(project_path: Path) -> list[str] | None:
     """Return the Java build tool command prefix, or None if not available."""
     gradlew = project_path / "gradlew"
-    if gradlew.exists():
+    if gradlew.exists() and os.access(gradlew, os.X_OK):
         return [str(gradlew)]
     if shutil.which("gradle") and (
         (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists()
@@ -139,8 +139,8 @@ def _run_cmd(
         cargo_bin = Path.home() / ".cargo" / "bin"
         if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
             env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
-    except RuntimeError:
-        pass
+    except (RuntimeError, KeyError, OSError) as exc:
+        log.debug("cargo_bin_path_injection_failed", exc=str(exc))
     try:
         result = subprocess.run(
             cmd,
@@ -281,6 +281,9 @@ def eval_tests(project_path: Path) -> dict:
                     total_failed += java_failed
                     details_parts.append(f"{sp.name}(java): {java_passed} passed, {java_failed} failed")
                 elif rc == 0:
+                    ran_any = True
+                    total_passed += 1
+                    details_parts.append(f"{sp.name}(java): passed (output unparsed)")
                     log.warning("java_tests_unparsed", project=str(sp), msg="Tests passed but output format unrecognized")
                 elif rc != 0:
                     log.warning("java_tests_unparsed_failure", project=str(sp), rc=rc, msg="Tests failed but output format unrecognized")
@@ -562,6 +565,9 @@ def eval_coverage(project_path: Path) -> dict:
                     ran_any = True
                     pct = int(float(pct_match.group(1)))
                     coverages.append((f"{sp.name}(rs)", pct))
+                elif rc == 0:
+                    log.warning("coverage_output_unrecognized", project=str(sp), lang="rust",
+                                msg="llvm-cov succeeded but output not parseable")
                 elif "Timed out" in stderr:
                     log.warning("coverage_timeout", project=str(sp), lang="rust", timeout=600)
                 elif rc != 0:
@@ -633,8 +639,10 @@ def eval_coverage(project_path: Path) -> dict:
                             coverages.append((f"{sp.name}(java)", pct))
                         else:
                             log.warning("jacoco_xml_no_line_counter", project=str(sp))
-                    except (OSError, ValueError):
-                        log.warning("jacoco_xml_read_failed", project=str(sp))
+                    except OSError as exc:
+                        log.warning("jacoco_xml_read_failed", project=str(sp), exc=str(exc))
+                    except ValueError as exc:
+                        log.warning("jacoco_xml_parse_failed", project=str(sp), exc=str(exc))
                 elif rc == 0:
                     log.warning("jacoco_xml_not_found", project=str(sp), path=str(jacoco_xml))
 

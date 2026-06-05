@@ -646,7 +646,7 @@ def _find_src_dirs(project_path: Path, language: str = "python") -> list[Path]:
     src_dir = project_path / "src"
     if src_dir.is_dir():
         for child in src_dir.iterdir():
-            if child.is_dir() and _has_source_files(child):
+            if child.is_dir() and child not in candidates and _has_source_files(child):
                 candidates.append(child)
 
     return candidates or [project_path]

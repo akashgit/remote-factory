@@ -416,6 +416,11 @@ class TestCoverageCommand:
         assert cmd is not None
         assert "jacoco" in cmd
 
+    def test_javascript_coverage(self):
+        cmd = _coverage_command(self._make_profile("javascript"))
+        assert cmd is not None
+        assert "jest --coverage" in cmd
+
     def test_unknown_returns_none(self):
         assert _coverage_command(self._make_profile("unknown")) is None
 
@@ -479,8 +484,15 @@ class TestDetectLintCommandJava:
         (tmp_path / "pom.xml").write_text("<project/>")
         assert _detect_lint_command(tmp_path, "java") == "mvn checkstyle:check"
 
-    def test_no_pom_xml_returns_none(self, tmp_path):
+    def test_gradle_returns_checkstyle(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
+        assert _detect_lint_command(tmp_path, "java") == "gradle checkstyleMain"
+
+    def test_gradlew_returns_checkstyle(self, tmp_path):
+        (tmp_path / "gradlew").write_text("#!/bin/sh")
+        assert _detect_lint_command(tmp_path, "java") == "./gradlew checkstyleMain"
+
+    def test_no_build_file_returns_none(self, tmp_path):
         assert _detect_lint_command(tmp_path, "java") is None
 
 
@@ -714,13 +726,16 @@ class TestGoTestsGoNotOnPath:
 
 class TestJavaTestsUnparsed:
     def test_java_tests_unparsed(self, tmp_path):
+        """rc==0 with unparsed output credits 1 pass instead of dropping to neutral."""
         (tmp_path / "pom.xml").write_text("<project/>")
         with (
             patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/mvn" if cmd == "mvn" else None),
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS", "")),
         ):
             result = eval_tests(tmp_path)
-        assert result["score"] == 0.5
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "output unparsed" in result["details"]
 
 
 # ── Hygiene: Rust eval_lint missing cargo ────────────────────────
