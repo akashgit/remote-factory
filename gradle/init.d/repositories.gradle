@@ -1,0 +1,27 @@
+// Inject mavenCentral(), gradlePluginPortal(), and mavenLocal() into all three
+// Gradle resolution paths. Missing any one path causes a different class of 401.
+
+allprojects {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    buildscript {
+        repositories {
+            mavenLocal()
+            mavenCentral()
+            gradlePluginPortal()
+        }
+    }
+}
+
+settingsEvaluated { settings ->
+    settings.pluginManagement {
+        repositories {
+            mavenLocal()
+            mavenCentral()
+            gradlePluginPortal()
+        }
+    }
+}

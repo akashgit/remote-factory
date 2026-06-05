@@ -1,0 +1,51 @@
+version: 1
+
+universal:
+  fixes: []
+  dead_ends:
+    - artifact: "com.ibm.websphere:uow:6.0.2.17"
+      strategies_tried:
+        - "Maven Central search"
+        - "IBM SDK archives"
+        - "mvnrepository.com"
+      confirmed_date: "2025-01-15"
+      workaround: "Exclude WebSphere module support (-x spring-tx:compileJava when WebSphere UOW is sole blocker)"
+      confirmed_by: "human"
+
+projects:
+  spring-framework:
+    fixes:
+      - id: spring-repo-401
+        pattern: "repo\\.spring\\.io.*(401|403|Could not resolve)"
+        fix_type: init_script
+        fix_content: |
+          // See gradle/init.d/repositories.gradle — inject mavenCentral() + gradlePluginPortal()
+          // into allprojects.repositories, allprojects.buildscript.repositories,
+          // and settingsEvaluated.pluginManagement.repositories
+        applies_to: "v5.*"
+        stage: 1
+
+      - id: propdeps-substitute
+        pattern: "propdeps-plugin.*0\\.0\\.9"
+        fix_type: dependency_substitution
+        fix_content: |
+          // See gradle/init.d/substitutions.gradle
+          // org.springframework.build.gradle:propdeps-plugin → cn.bestwu.gradle:propdeps-plugin:0.0.10
+        applies_to: "v5.0.*,v5.1.*,v5.2.*"
+        stage: 1
+
+      - id: docbook-exclude
+        pattern: "docbook-reference-plugin"
+        fix_type: build_command
+        fix_content: "-x reference -x javadoc"
+        applies_to: "v4.*,v5.0.*"
+        stage: 3
+
+      - id: asciidoctor-exclude
+        pattern: "spring-asciidoctor-extensions"
+        fix_type: build_command
+        fix_content: "-x asciidoctor"
+        applies_to: "v5.*"
+        stage: 3
+
+    dead_ends: []

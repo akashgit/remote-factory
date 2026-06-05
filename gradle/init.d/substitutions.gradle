@@ -1,0 +1,14 @@
+// Remap unavailable artifacts to available alternatives.
+// Each substitution corresponds to a known-fix entry in config/known-fixes.yaml.
+
+allprojects {
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.springframework.build.gradle' &&
+                details.requested.name == 'propdeps-plugin') {
+                details.useTarget 'cn.bestwu.gradle:propdeps-plugin:0.0.10'
+                details.because 'Original artifact unavailable; substitute from known-fixes'
+            }
+        }
+    }
+}
