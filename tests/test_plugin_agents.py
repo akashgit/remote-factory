@@ -48,7 +48,7 @@ class TestLoadAgentConfig:
 
     def test_non_ceo_agents_use_sonnet(self):
         for role, meta in load_agent_config().items():
-            if role != "ceo":
+            if role not in ("ceo", "build-root-ceo"):
                 assert meta.model == "sonnet", f"{role} should use sonnet, got {meta.model}"
 
     def test_builder_has_edit_write(self):
