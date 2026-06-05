@@ -16,6 +16,7 @@ from pathlib import Path
 
 import structlog
 
+from factory.agents.runner import AgentRole
 from factory.events import emit_event, load_events
 from factory.models import CycleState
 
@@ -416,8 +417,9 @@ async def run_ceo_with_completion_guard(
 
     if resolve("ceo_respawn_disabled", env_var="FACTORY_CEO_RESPAWN_DISABLED") == "1":
         log.info("ceo_respawn_disabled", reason="FACTORY_CEO_RESPAWN_DISABLED=1")
+        agent_role: AgentRole = "build-root-ceo" if mode == "build-root" else "ceo"
         return await invoke_agent(
-            "ceo", initial_task, project_path,
+            agent_role, initial_task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
@@ -457,8 +459,9 @@ async def run_ceo_with_completion_guard(
     for attempt in range(max_respawns + 1):
         log.info("ceo_spawn", attempt=attempt, task_preview=task[:100], mode=mode)
 
+        agent_role: AgentRole = "build-root-ceo" if mode == "build-root" else "ceo"
         result, code = await invoke_agent(
-            "ceo", task, project_path,
+            agent_role, task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
