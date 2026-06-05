@@ -174,7 +174,7 @@ class TestRustWorkspaceAggregation:
         (tmp_path / "Cargo.toml").write_text("[workspace]\nmembers = ['a', 'b', 'c']\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, self.WORKSPACE_OUTPUT, "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_tests(tmp_path)
         assert result["name"] == "tests"
@@ -192,7 +192,7 @@ class TestRustWorkspaceAggregation:
         (tmp_path / "Cargo.toml").write_text("[workspace]\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_tests(tmp_path)
         assert result["score"] == 1.0
@@ -201,7 +201,7 @@ class TestRustWorkspaceAggregation:
     def test_cargo_not_on_path_warns_and_skips(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
         with (
-            patch("shutil.which", return_value=None),
+            patch("factory.eval.hygiene.shutil.which", return_value=None),
             patch("factory.eval.hygiene.log") as mock_log,
         ):
             result = eval_tests(tmp_path)
@@ -377,35 +377,35 @@ class TestJavaBuildTool:
         gradlew.write_text("#!/bin/sh\n")
         gradlew.chmod(0o755)
         (tmp_path / "build.gradle").write_text("")
-        with patch("shutil.which", return_value="/usr/bin/mvn"):
+        with patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/mvn"):
             result = _java_build_tool(tmp_path)
         assert result == [str(gradlew)]
 
     def test_gradle_with_build_gradle(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
-        with patch("shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
+        with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
             result = _java_build_tool(tmp_path)
         assert result == ["gradle"]
 
     def test_gradle_with_build_gradle_kts(self, tmp_path):
         (tmp_path / "build.gradle.kts").write_text("")
-        with patch("shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
+        with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
             result = _java_build_tool(tmp_path)
         assert result == ["gradle"]
 
     def test_mvn_fallback(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
-        with patch("shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
+        with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
             result = _java_build_tool(tmp_path)
         assert result == ["mvn"]
 
     def test_mvn_without_pom_returns_none(self, tmp_path):
-        with patch("shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
+        with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
             result = _java_build_tool(tmp_path)
         assert result is None
 
     def test_no_tool_returns_none(self, tmp_path):
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = _java_build_tool(tmp_path)
         assert result is None
 
@@ -431,7 +431,7 @@ class TestEvalLintLanguages:
         (tmp_path / "go.mod").write_text("module test\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("shutil.which", return_value="/usr/bin/go"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
         ):
             result = eval_lint(tmp_path)
         assert result["passed"] is True
@@ -442,7 +442,7 @@ class TestEvalLintLanguages:
         stderr = "main.go:10:5: unreachable code\nmain.go:20:3: unused variable\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
-            patch("shutil.which", return_value="/usr/bin/go"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
         ):
             result = eval_lint(tmp_path)
         assert result["passed"] is False
@@ -450,7 +450,7 @@ class TestEvalLintLanguages:
 
     def test_go_no_go_on_path(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_lint(tmp_path)
         assert result["score"] == 0.5
 
@@ -498,7 +498,7 @@ class TestEvalTypeCheckLanguages:
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is True
@@ -509,7 +509,7 @@ class TestEvalTypeCheckLanguages:
         stderr = "error[E0308]: mismatched types\nerror[E0425]: cannot find value\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is False
@@ -517,7 +517,7 @@ class TestEvalTypeCheckLanguages:
 
     def test_rust_no_cargo(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_type_check(tmp_path)
         assert result["score"] == 0.5
 
@@ -525,7 +525,7 @@ class TestEvalTypeCheckLanguages:
         (tmp_path / "go.mod").write_text("module test\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("shutil.which", return_value="/usr/bin/go"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is True
@@ -536,7 +536,7 @@ class TestEvalTypeCheckLanguages:
         output = "main.go:10:5: cannot use x\nmain.go:20:3: undefined: y\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
-            patch("shutil.which", return_value="/usr/bin/go"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is False
@@ -544,7 +544,7 @@ class TestEvalTypeCheckLanguages:
 
     def test_go_no_go(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_type_check(tmp_path)
         assert result["score"] == 0.5
 
@@ -595,7 +595,7 @@ class TestEvalCoverageLanguages:
         )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(85 / 100, 4)
@@ -613,7 +613,7 @@ class TestEvalCoverageLanguages:
 
         with (
             patch("factory.eval.hygiene._run_cmd", side_effect=fake_run_cmd),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(85 / 100, 4)
@@ -623,7 +623,7 @@ class TestEvalCoverageLanguages:
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "Timed out after 600s")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
             patch("factory.eval.hygiene.log") as mock_log,
         ):
             eval_coverage(tmp_path)
@@ -633,7 +633,7 @@ class TestEvalCoverageLanguages:
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "some error")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
             patch("factory.eval.hygiene.log") as mock_log,
         ):
             eval_coverage(tmp_path)
@@ -646,7 +646,7 @@ class TestEvalCoverageLanguages:
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")) as mock_run,
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             eval_coverage(tmp_path)
         mock_run.assert_called_once()
@@ -655,7 +655,7 @@ class TestEvalCoverageLanguages:
 
     def test_rust_no_cargo(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
@@ -667,7 +667,7 @@ class TestEvalCoverageLanguages:
         )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
-            patch("shutil.which", return_value="/usr/bin/go"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(70 / 100, 4)
@@ -675,7 +675,7 @@ class TestEvalCoverageLanguages:
 
     def test_go_no_go(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
@@ -690,7 +690,7 @@ class TestEvalCoverageLanguages:
         )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
-            patch("shutil.which", return_value="/usr/bin/npx"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/npx"),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(72 / 100, 4)
@@ -698,7 +698,7 @@ class TestEvalCoverageLanguages:
 
     def test_node_no_npx(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
-        with patch("shutil.which", return_value=None):
+        with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
@@ -761,7 +761,7 @@ class TestEvalCoverageLanguages:
 
         with (
             patch("factory.eval.hygiene._run_cmd", side_effect=fake_run_cmd),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(72 / 100, 4)
@@ -786,7 +786,7 @@ class TestPolyglotSubProject:
 
         with (
             patch("factory.eval.hygiene._run_cmd", side_effect=fake_run),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_tests(tmp_path)
         assert result["passed"] is True
@@ -799,7 +799,7 @@ class TestPolyglotSubProject:
 
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_lint(tmp_path)
         assert "(rs): clean" in result["details"]
@@ -811,7 +811,7 @@ class TestPolyglotSubProject:
 
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_type_check(tmp_path)
         assert "(rs): clean" in result["details"]
@@ -832,7 +832,7 @@ class TestPolyglotSubProject:
 
         with (
             patch("factory.eval.hygiene._run_cmd", side_effect=fake_run),
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             result = eval_coverage(tmp_path)
         assert "85%" in result["details"]
@@ -847,7 +847,7 @@ class TestCargoWorkspaceFlag:
         output = "test result: ok. 5 passed; 0 failed; 0 ignored\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")) as mock_run,
-            patch("shutil.which", return_value="/usr/bin/cargo"),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
         ):
             eval_tests(tmp_path)
         mock_run.assert_called_once()

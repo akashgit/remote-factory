@@ -457,7 +457,7 @@ def eval_lint(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java lint",
                 )
             else:
-                if tool[-1] == "mvn":
+                if tool[-1].endswith("mvn"):
                     cmd = [*tool, "checkstyle:check", "-q"]
                 else:
                     cmd = [*tool, "checkstyleMain", "-q"]
@@ -590,7 +590,7 @@ def eval_type_check(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java type check",
                 )
             else:
-                if tool[-1] == "mvn":
+                if tool[-1].endswith("mvn"):
                     cmd = [*tool, "compile", "-q"]
                 else:
                     cmd = [*tool, "compileJava", "-q"]
@@ -755,7 +755,7 @@ def eval_coverage(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java coverage",
                 )
             else:
-                if tool[-1] == "mvn":
+                if tool[-1].endswith("mvn"):
                     cmd = [*tool, "verify", "-q", "-Djacoco.skip=false"]
                     jacoco_xml = sp / "target" / "site" / "jacoco" / "jacoco.xml"
                 else:
