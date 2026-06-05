@@ -179,5 +179,5 @@ def _coverage_command(project: ProjectProfile) -> str | None:
             return "./gradlew jacocoTestReport"
         if "gradle" in tc:
             return "gradle jacocoTestReport"
-        return "mvn jacoco:report"
+        return "mvn verify -Djacoco.skip=false"
     return None

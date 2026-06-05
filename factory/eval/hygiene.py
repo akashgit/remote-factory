@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Literal
 
 import structlog
 
@@ -56,17 +57,26 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
         roots.append(project_path)
 
     # Check immediate subdirs
+    project_boundary = project_path.resolve()
     for child in sorted(project_path.iterdir()):
         if not child.is_dir() or child.name in skip or child.name.startswith("."):
             continue
-        # Also follow symlinks
         resolved = child.resolve()
+        if not str(resolved).startswith(str(project_boundary) + os.sep):
+            log.warning(
+                "symlink_outside_boundary",
+                path=str(child),
+                resolved=str(resolved),
+                msg="symlink resolves outside project boundary, skipping",
+            )
+            continue
         if any((resolved / m).exists() for m in markers):
             roots.append(child)
 
-    # Rust workspace dedup: if a root has a workspace Cargo.toml, remove member sub-crates
+    # Workspace dedup: if a root is a multi-module parent, remove child sub-projects
     workspace_roots: list[Path] = []
     for r in roots:
+        # Rust workspace
         cargo = r / "Cargo.toml"
         if cargo.exists():
             try:
@@ -74,6 +84,23 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
                     workspace_roots.append(r.resolve())
             except OSError as exc:
                 log.debug("cargo_toml_read_failed", path=str(cargo), exc=str(exc))
+        # Maven multi-module
+        pom = r / "pom.xml"
+        if pom.exists():
+            try:
+                if "<modules>" in pom.read_text():
+                    workspace_roots.append(r.resolve())
+            except OSError as exc:
+                log.debug("pom_xml_read_failed", path=str(pom), exc=str(exc))
+        # Gradle multi-project
+        for settings_name in ("settings.gradle", "settings.gradle.kts"):
+            settings = r / settings_name
+            if settings.exists():
+                try:
+                    if "include" in settings.read_text():
+                        workspace_roots.append(r.resolve())
+                except OSError as exc:
+                    log.debug("settings_gradle_read_failed", path=str(settings), exc=str(exc))
     if workspace_roots:
         roots = [
             r for r in roots
@@ -86,64 +113,91 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
     return roots or [project_path]
 
 
+def _has_source_files(project_path: Path, extensions: tuple[str, ...]) -> bool:
+    """Check that at least one source file with the given extensions exists."""
+    for child in project_path.rglob("*"):
+        if child.is_file() and child.suffix in extensions:
+            return True
+    return False
+
+
 def _detect_python_project(project_path: Path) -> bool:
-    return (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists()
+    if not ((project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists()):
+        return False
+    return _has_source_files(project_path, (".py",))
 
 
 def _detect_node_project(project_path: Path) -> bool:
-    return (project_path / "package.json").exists()
+    if not (project_path / "package.json").exists():
+        return False
+    return _has_source_files(project_path, (".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs"))
 
 
 def _detect_rust_project(project_path: Path) -> bool:
-    return (project_path / "Cargo.toml").exists()
+    if not (project_path / "Cargo.toml").exists():
+        return False
+    return _has_source_files(project_path, (".rs",))
 
 
 def _detect_go_project(project_path: Path) -> bool:
-    return (project_path / "go.mod").exists()
+    if not (project_path / "go.mod").exists():
+        return False
+    return _has_source_files(project_path, (".go",))
 
 
 def _detect_java_project(project_path: Path) -> bool:
-    return (
+    has_build_file = (
         (project_path / "pom.xml").exists()
         or (project_path / "build.gradle").exists()
         or (project_path / "build.gradle.kts").exists()
     )
+    if not has_build_file:
+        return False
+    return _has_source_files(project_path, (".java", ".kt", ".scala"))
 
 
-def _java_build_tool(project_path: Path) -> list[str] | None:
-    """Return the Java build tool command prefix, or None if not available."""
+JavaBuildKind = Literal["maven", "gradle"]
+
+
+def _java_build_tool(project_path: Path) -> tuple[list[str], JavaBuildKind] | None:
+    """Return the Java build tool command prefix and kind, or None if not available."""
     gradlew = project_path / "gradlew"
     if gradlew.exists() and os.access(gradlew, os.X_OK):
-        return [str(gradlew)]
+        return [str(gradlew)], "gradle"
     if shutil.which("gradle") and (
         (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists()
     ):
-        return ["gradle"]
+        return ["gradle"], "gradle"
     if shutil.which("mvn") and (project_path / "pom.xml").exists():
-        return ["mvn"]
+        return ["mvn"], "maven"
     return None
 
 
 def _java_test_cmd(project_path: Path) -> list[str] | None:
-    tool = _java_build_tool(project_path)
-    if not tool:
+    result = _java_build_tool(project_path)
+    if not result:
         return None
-    return [*tool, "test", "-q"]
+    tool, kind = result
+    if kind == "maven":
+        return [*tool, "test", "-q"]
+    return [*tool, "test", "--console=plain"]
 
 
 def _run_cmd(
     cmd: list[str],
     cwd: Path,
     timeout: int = 300,
+    rust_path: bool = False,
 ) -> tuple[int, str, str]:
     """Run a command, return (returncode, stdout, stderr). Never raises."""
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    try:
-        cargo_bin = Path.home() / ".cargo" / "bin"
-        if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
-            env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
-    except (RuntimeError, KeyError, OSError) as exc:
-        log.debug("cargo_bin_path_injection_failed", exc=str(exc))
+    if rust_path:
+        try:
+            cargo_bin = Path.home() / ".cargo" / "bin"
+            if cargo_bin.is_dir() and str(cargo_bin) not in env.get("PATH", ""):
+                env["PATH"] = f"{cargo_bin}:{env.get('PATH', '')}"
+        except (RuntimeError, KeyError, OSError) as exc:
+            log.debug("cargo_bin_path_injection_failed", exc=str(exc))
     try:
         result = subprocess.run(
             cmd,
@@ -247,7 +301,7 @@ def eval_tests(project_path: Path) -> dict:
                     msg="cargo not installed, skipping Rust tests",
                 )
             else:
-                rc, stdout, stderr = _run_cmd(["cargo", "test", "--workspace"], sp)
+                rc, stdout, stderr = _run_cmd(["cargo", "test", "--workspace"], sp, rust_path=True)
                 output = stdout + stderr
                 p_matches = re.findall(r"test result:.*?(\d+)\s+passed", output)
                 f_matches = re.findall(r"test result:.*?(\d+)\s+failed", output)
@@ -308,11 +362,11 @@ def eval_tests(project_path: Path) -> dict:
                 )
                 if not t_matches:
                     t_matches_gradle = re.findall(
-                        r"(\d+)\s+tests?\s+completed,\s*(\d+)\s+failed",
+                        r"(\d+)\s+tests?\s+completed(?:,\s*(\d+)\s+failed)?",
                         output,
                     )
                     if t_matches_gradle:
-                        t_matches = [(c, f_s, "0") for c, f_s in t_matches_gradle]
+                        t_matches = [(c, f_s or "0", "0") for c, f_s in t_matches_gradle]
                 if t_matches:
                     ran_any = True
                     java_passed = 0
@@ -416,7 +470,7 @@ def eval_lint(project_path: Path) -> dict:
                 )
             else:
                 rc, stdout, stderr = _run_cmd(
-                    ["cargo", "clippy", "--", "-D", "warnings"], sp,
+                    ["cargo", "clippy", "--", "-D", "warnings"], sp, rust_path=True,
                 )
                 if rc == 0:
                     ran_any = True
@@ -448,8 +502,8 @@ def eval_lint(project_path: Path) -> dict:
                     details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
 
         if _detect_java_project(sp):
-            tool = _java_build_tool(sp)
-            if not tool:
+            bt = _java_build_tool(sp)
+            if not bt:
                 tool_missing = True
                 log.warning(
                     "java_build_tool_not_found",
@@ -457,7 +511,8 @@ def eval_lint(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java lint",
                 )
             else:
-                if tool[-1].endswith("mvn"):
+                tool, kind = bt
+                if kind == "maven":
                     cmd = [*tool, "checkstyle:check", "-q"]
                 else:
                     cmd = [*tool, "checkstyleMain", "-q"]
@@ -548,7 +603,7 @@ def eval_type_check(project_path: Path) -> dict:
                     msg="cargo not installed, skipping Rust type check",
                 )
             else:
-                rc, stdout, stderr = _run_cmd(["cargo", "check"], sp)
+                rc, stdout, stderr = _run_cmd(["cargo", "check"], sp, rust_path=True)
                 if rc == 0:
                     ran_any = True
                     details_parts.append(f"{sp.name}(rs): clean")
@@ -581,8 +636,8 @@ def eval_type_check(project_path: Path) -> dict:
                     details_parts.append(f"{sp.name}(go): {max(count, 1)} errors")
 
         if _detect_java_project(sp):
-            tool = _java_build_tool(sp)
-            if not tool:
+            bt = _java_build_tool(sp)
+            if not bt:
                 tool_missing = True
                 log.warning(
                     "java_build_tool_not_found",
@@ -590,7 +645,8 @@ def eval_type_check(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java type check",
                 )
             else:
-                if tool[-1].endswith("mvn"):
+                tool, kind = bt
+                if kind == "maven":
                     cmd = [*tool, "compile", "-q"]
                 else:
                     cmd = [*tool, "compileJava", "-q"]
@@ -660,6 +716,7 @@ def eval_coverage(project_path: Path) -> dict:
                     ["cargo", "llvm-cov", "--summary-only"],
                     sp,
                     timeout=600,
+                    rust_path=True,
                 )
                 output = stdout + stderr
                 pct_match = None
@@ -672,6 +729,7 @@ def eval_coverage(project_path: Path) -> dict:
                         ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"],
                         sp,
                         timeout=600,
+                        rust_path=True,
                     )
                     output = stdout + stderr
                     cov_tool = "tarpaulin"
@@ -746,8 +804,8 @@ def eval_coverage(project_path: Path) -> dict:
                     log.warning("coverage_output_unrecognized", project=str(sp), lang="node")
 
         if _detect_java_project(sp):
-            tool = _java_build_tool(sp)
-            if not tool:
+            bt = _java_build_tool(sp)
+            if not bt:
                 tool_missing = True
                 log.warning(
                     "java_build_tool_not_found",
@@ -755,7 +813,8 @@ def eval_coverage(project_path: Path) -> dict:
                     msg="mvn/gradle not installed, skipping Java coverage",
                 )
             else:
-                if tool[-1].endswith("mvn"):
+                tool, kind = bt
+                if kind == "maven":
                     cmd = [*tool, "verify", "-q", "-Djacoco.skip=false"]
                     jacoco_xml = sp / "target" / "site" / "jacoco" / "jacoco.xml"
                 else:
@@ -795,7 +854,7 @@ def eval_coverage(project_path: Path) -> dict:
         return _neutral("coverage", reason)
 
     avg_pct = sum(p for _, p in coverages) / len(coverages)
-    score = avg_pct / 100.0
+    score = min(1.0, avg_pct / 100.0)
     details = ", ".join(f"{name}: {pct}%" for name, pct in coverages)
     return {
         "name": "coverage",

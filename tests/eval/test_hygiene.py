@@ -172,6 +172,8 @@ class TestRustWorkspaceAggregation:
 
     def test_aggregates_multiple_crates(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[workspace]\nmembers = ['a', 'b', 'c']\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, self.WORKSPACE_OUTPUT, "")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -190,6 +192,8 @@ class TestRustWorkspaceAggregation:
             "test result: ok. 20 passed; 0 failed; 0 ignored\n"
         )
         (tmp_path / "Cargo.toml").write_text("[workspace]\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -200,6 +204,8 @@ class TestRustWorkspaceAggregation:
 
     def test_cargo_not_on_path_warns_and_skips(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene.shutil.which", return_value=None),
             patch("factory.eval.hygiene.log") as mock_log,
@@ -222,6 +228,7 @@ class TestNodeMonorepoAggregation:
 
     def test_aggregates_multiple_suites(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name": "monorepo"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MONOREPO_OUTPUT, "")),
             patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
@@ -235,6 +242,7 @@ class TestNodeMonorepoAggregation:
     def test_single_suite_still_works(self, tmp_path):
         output = "Tests: 5 passed, 0 failed\n"
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
             patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
@@ -256,9 +264,10 @@ class TestJavaMavenMultiModuleAggregation:
 
     def test_aggregates_multiple_modules(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, self.MULTI_MODULE_OUTPUT, "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_tests(tmp_path)
         assert result["name"] == "tests"
@@ -273,9 +282,10 @@ class TestJavaMavenMultiModuleAggregation:
     def test_single_module_still_works(self, tmp_path):
         output = "Tests run: 5, Failures: 0, Errors: 0, Skipped: 0\n"
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_tests(tmp_path)
         assert result["score"] == 1.0
@@ -287,10 +297,11 @@ class TestJavaGradleTestOutputParsing:
 
     def test_gradle_test_output_parsed(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
+        (tmp_path / "App.java").write_text("public class App {}")
         output = "3 tests completed, 1 failed\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")),
         ):
             result = eval_tests(tmp_path)
         assert result["name"] == "tests"
@@ -298,6 +309,20 @@ class TestJavaGradleTestOutputParsing:
         assert result["passed"] is False
         assert "2 passed" in result["details"]
         assert "1 failed" in result["details"]
+
+    def test_gradle_all_pass_no_failure_count(self, tmp_path):
+        (tmp_path / "build.gradle").write_text("")
+        (tmp_path / "App.java").write_text("public class App {}")
+        output = "5 tests completed\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")),
+        ):
+            result = eval_tests(tmp_path)
+        assert result["name"] == "tests"
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "5 passed" in result["details"]
 
 
 class TestRustWorkspaceDedup:
@@ -324,14 +349,20 @@ class TestJavaProjectDetected:
 
     def test_java_gradle_detected(self, tmp_path):
         (tmp_path / "build.gradle").write_text("apply plugin: 'java'")
+        (tmp_path / "App.java").write_text("public class App {}")
         assert _detect_java_project(tmp_path) is True
 
     def test_java_gradle_kts_detected(self, tmp_path):
         (tmp_path / "build.gradle.kts").write_text("plugins { java }")
+        (tmp_path / "App.java").write_text("public class App {}")
         assert _detect_java_project(tmp_path) is True
 
     def test_non_java_not_detected(self, tmp_path):
         (tmp_path / "pyproject.toml").write_text("[project]")
+        assert _detect_java_project(tmp_path) is False
+
+    def test_java_no_source_files_not_detected(self, tmp_path):
+        (tmp_path / "pom.xml").write_text("<project></project>")
         assert _detect_java_project(tmp_path) is False
 
 
@@ -346,6 +377,7 @@ class TestJestDoesNotDoubleCount:
             "Time:        1.5 s\n"
         )
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
             patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
@@ -360,6 +392,7 @@ class TestJestDoesNotDoubleCount:
             "Tests:       2 failed, 8 passed, 10 total\n"
         )
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
             patch("factory.eval.hygiene.shutil.which", side_effect=lambda cmd: "/usr/bin/npm" if cmd == "npm" else None),
@@ -370,7 +403,7 @@ class TestJestDoesNotDoubleCount:
 
 
 class TestJavaBuildTool:
-    """Tests for _java_build_tool() — gradlew > gradle > mvn priority."""
+    """Tests for _java_build_tool() — gradlew > gradle > mvn priority, returns (cmd, kind)."""
 
     def test_gradlew_preferred(self, tmp_path):
         gradlew = tmp_path / "gradlew"
@@ -379,25 +412,25 @@ class TestJavaBuildTool:
         (tmp_path / "build.gradle").write_text("")
         with patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/mvn"):
             result = _java_build_tool(tmp_path)
-        assert result == [str(gradlew)]
+        assert result == ([str(gradlew)], "gradle")
 
     def test_gradle_with_build_gradle(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
         with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
             result = _java_build_tool(tmp_path)
-        assert result == ["gradle"]
+        assert result == (["gradle"], "gradle")
 
     def test_gradle_with_build_gradle_kts(self, tmp_path):
         (tmp_path / "build.gradle.kts").write_text("")
         with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/gradle" if t == "gradle" else None):
             result = _java_build_tool(tmp_path)
-        assert result == ["gradle"]
+        assert result == (["gradle"], "gradle")
 
     def test_mvn_fallback(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
         with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
             result = _java_build_tool(tmp_path)
-        assert result == ["mvn"]
+        assert result == (["mvn"], "maven")
 
     def test_mvn_without_pom_returns_none(self, tmp_path):
         with patch("factory.eval.hygiene.shutil.which", side_effect=lambda t: "/usr/bin/mvn" if t == "mvn" else None):
@@ -413,10 +446,15 @@ class TestJavaBuildTool:
 class TestJavaTestCmd:
     """Tests for _java_test_cmd() — delegates to _java_build_tool."""
 
-    def test_returns_cmd_when_tool_available(self, tmp_path):
-        with patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]):
+    def test_returns_maven_cmd_with_quiet(self, tmp_path):
+        with patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")):
             result = _java_test_cmd(tmp_path)
         assert result == ["mvn", "test", "-q"]
+
+    def test_returns_gradle_cmd_with_console_plain(self, tmp_path):
+        with patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")):
+            result = _java_test_cmd(tmp_path)
+        assert result == ["gradle", "test", "--console=plain"]
 
     def test_returns_none_when_no_tool(self, tmp_path):
         with patch("factory.eval.hygiene._java_build_tool", return_value=None):
@@ -429,6 +467,7 @@ class TestEvalLintLanguages:
 
     def test_go_pass(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
@@ -439,6 +478,7 @@ class TestEvalLintLanguages:
 
     def test_go_fail_counts_errors(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         stderr = "main.go:10:5: unreachable code\nmain.go:20:3: unused variable\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
@@ -450,15 +490,17 @@ class TestEvalLintLanguages:
 
     def test_go_no_go_on_path(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_lint(tmp_path)
         assert result["score"] == 0.5
 
     def test_java_mvn_pass(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_lint(tmp_path)
         assert result["passed"] is True
@@ -466,10 +508,11 @@ class TestEvalLintLanguages:
 
     def test_java_mvn_fail(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         output = "[ERROR] src/Main.java:1\n[ERROR] src/Main.java:5\n[ERROR] src/Main.java:10\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_lint(tmp_path)
         assert result["passed"] is False
@@ -477,15 +520,17 @@ class TestEvalLintLanguages:
 
     def test_java_gradle_pass(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")),
         ):
             result = eval_lint(tmp_path)
         assert result["passed"] is True
 
     def test_java_no_tool(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with patch("factory.eval.hygiene._java_build_tool", return_value=None):
             result = eval_lint(tmp_path)
         assert result["score"] == 0.5
@@ -496,6 +541,8 @@ class TestEvalTypeCheckLanguages:
 
     def test_rust_pass(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -506,6 +553,8 @@ class TestEvalTypeCheckLanguages:
 
     def test_rust_fail(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         stderr = "error[E0308]: mismatched types\nerror[E0425]: cannot find value\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", stderr)),
@@ -517,12 +566,15 @@ class TestEvalTypeCheckLanguages:
 
     def test_rust_no_cargo(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_type_check(tmp_path)
         assert result["score"] == 0.5
 
     def test_go_pass(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/go"),
@@ -533,6 +585,7 @@ class TestEvalTypeCheckLanguages:
 
     def test_go_fail(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         output = "main.go:10:5: cannot use x\nmain.go:20:3: undefined: y\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
@@ -544,25 +597,28 @@ class TestEvalTypeCheckLanguages:
 
     def test_go_no_go(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_type_check(tmp_path)
         assert result["score"] == 0.5
 
     def test_java_mvn_pass(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is True
 
     def test_java_mvn_fail(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         output = "[ERROR] src/Main.java:1\n[ERROR] src/Main.java:5\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, output, "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is False
@@ -570,15 +626,17 @@ class TestEvalTypeCheckLanguages:
 
     def test_java_gradle_pass(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")),
         ):
             result = eval_type_check(tmp_path)
         assert result["passed"] is True
 
     def test_java_no_tool(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with patch("factory.eval.hygiene._java_build_tool", return_value=None):
             result = eval_type_check(tmp_path)
         assert result["score"] == 0.5
@@ -589,6 +647,8 @@ class TestEvalCoverageLanguages:
 
     def test_rust_coverage_parse(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         output = (
             "Filename  Regions  Missed  Cover  Lines  Missed  Cover\n"
             "TOTAL     100      15      85.0%  200    30      85.0%\n"
@@ -604,6 +664,8 @@ class TestEvalCoverageLanguages:
     def test_rust_coverage_tarpaulin_fallback(self, tmp_path):
         """Any non-zero rc from llvm-cov triggers the tarpaulin fallback."""
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         tarpaulin_output = "85.5% coverage, 100/117 lines covered\n"
 
         def fake_run_cmd(cmd, *args, **kwargs):
@@ -621,6 +683,8 @@ class TestEvalCoverageLanguages:
 
     def test_rust_coverage_timeout_warns(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "Timed out after 600s")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -631,6 +695,8 @@ class TestEvalCoverageLanguages:
 
     def test_rust_coverage_tool_failed_warns(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(1, "", "some error")),
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -644,6 +710,8 @@ class TestEvalCoverageLanguages:
 
     def test_rust_coverage_timeout_600s(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")) as mock_run,
             patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
@@ -655,12 +723,15 @@ class TestEvalCoverageLanguages:
 
     def test_rust_no_cargo(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
     def test_go_multi_package_coverage(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         output = (
             "ok  \ttest/pkg1\t0.5s\tcoverage: 80.0% of statements\n"
             "ok  \ttest/pkg2\t0.3s\tcoverage: 60.0% of statements\n"
@@ -675,12 +746,14 @@ class TestEvalCoverageLanguages:
 
     def test_go_no_go(self, tmp_path):
         (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("package main")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
     def test_node_jest_coverage_parse(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         output = (
             "----------|---------|----------|---------|---------|---\n"
             "File      | % Stmts | % Branch | % Funcs | % Lines |\n"
@@ -698,12 +771,14 @@ class TestEvalCoverageLanguages:
 
     def test_node_no_npx(self, tmp_path):
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         with patch("factory.eval.hygiene.shutil.which", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
 
     def test_java_mvn_jacoco_xml(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         jacoco_dir = tmp_path / "target" / "site" / "jacoco"
         jacoco_dir.mkdir(parents=True)
         (jacoco_dir / "jacoco.xml").write_text(
@@ -711,7 +786,7 @@ class TestEvalCoverageLanguages:
         )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(78 / 100, 4)
@@ -719,6 +794,7 @@ class TestEvalCoverageLanguages:
 
     def test_java_gradle_jacoco_xml(self, tmp_path):
         (tmp_path / "build.gradle").write_text("")
+        (tmp_path / "App.java").write_text("public class App {}")
         jacoco_dir = tmp_path / "build" / "reports" / "jacoco" / "test"
         jacoco_dir.mkdir(parents=True)
         (jacoco_dir / "jacocoTestReport.xml").write_text(
@@ -726,16 +802,17 @@ class TestEvalCoverageLanguages:
         )
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["gradle"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["gradle"], "gradle")),
         ):
             result = eval_coverage(tmp_path)
         assert result["score"] == round(90 / 100, 4)
 
     def test_java_rc0_no_jacoco_xml_logs_warning(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "BUILD SUCCESS\n", "")),
-            patch("factory.eval.hygiene._java_build_tool", return_value=["mvn"]),
+            patch("factory.eval.hygiene._java_build_tool", return_value=(["mvn"], "maven")),
             patch("factory.eval.hygiene.log") as mock_log,
         ):
             result = eval_coverage(tmp_path)
@@ -745,6 +822,7 @@ class TestEvalCoverageLanguages:
 
     def test_java_no_tool(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with patch("factory.eval.hygiene._java_build_tool", return_value=None):
             result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
@@ -752,6 +830,8 @@ class TestEvalCoverageLanguages:
     def test_rust_coverage_llvm_tools_preview_fallback(self, tmp_path):
         """llvm-cov fails with 'llvm-tools-preview not found' — should fall back to tarpaulin."""
         (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         tarpaulin_output = "72.0% coverage, 80/111 lines covered\n"
 
         def fake_run_cmd(cmd, *args, **kwargs):
@@ -767,13 +847,28 @@ class TestEvalCoverageLanguages:
         assert result["score"] == round(72 / 100, 4)
         assert "72%" in result["details"]
 
+    def test_coverage_clamped_to_one(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\nname=\"test\"\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
+        output = "TOTAL     100      0      120.0%  200    0      120.0%\n"
+        with (
+            patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")),
+            patch("factory.eval.hygiene.shutil.which", return_value="/usr/bin/cargo"),
+        ):
+            result = eval_coverage(tmp_path)
+        assert result["score"] <= 1.0
+
 
 class TestPolyglotSubProject:
     """T1: Polyglot sub-project — both languages detected in all 4 hygiene functions."""
 
     def test_rust_and_node_both_evaluated_in_eval_tests(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         rust_output = "test result: ok. 3 passed; 0 failed; 0 ignored\n"
         node_output = "Tests: 5 passed, 0 failed\n"
 
@@ -795,7 +890,10 @@ class TestPolyglotSubProject:
 
     def test_rust_and_node_both_evaluated_in_eval_lint(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
 
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
@@ -807,7 +905,10 @@ class TestPolyglotSubProject:
 
     def test_rust_and_node_both_evaluated_in_eval_type_check(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
 
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, "", "")),
@@ -819,7 +920,10 @@ class TestPolyglotSubProject:
 
     def test_rust_and_node_both_evaluated_in_eval_coverage(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         (tmp_path / "package.json").write_text('{"name": "app"}\n')
+        (tmp_path / "index.js").write_text("module.exports = {}")
         rust_cov = "TOTAL     100      15      85.0%  200    30      85.0%\n"
         node_cov = "All files |   72.5  |   60.0   |   80.0  |   72.5  |\n"
 
@@ -844,6 +948,8 @@ class TestCargoWorkspaceFlag:
 
     def test_cargo_test_uses_workspace_flag(self, tmp_path):
         (tmp_path / "Cargo.toml").write_text("[package]\nname='test'\n")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "lib.rs").write_text("pub fn x() {}")
         output = "test result: ok. 5 passed; 0 failed; 0 ignored\n"
         with (
             patch("factory.eval.hygiene._run_cmd", return_value=(0, output, "")) as mock_run,
@@ -860,6 +966,7 @@ class TestJavaNoBuildToolIntegration:
 
     def test_eval_tests_java_no_build_tool_logs_warning(self, tmp_path):
         (tmp_path / "pom.xml").write_text("<project></project>")
+        (tmp_path / "App.java").write_text("public class App {}")
         with (
             patch("factory.eval.hygiene._java_build_tool", return_value=None),
             patch("factory.eval.hygiene.log") as mock_log,
@@ -871,9 +978,23 @@ class TestJavaNoBuildToolIntegration:
 
 
 class TestRunCmdCargoPath:
-    """Test that _run_cmd adds ~/.cargo/bin to PATH."""
+    """Test that _run_cmd adds ~/.cargo/bin to PATH only when rust_path=True."""
 
-    def test_cargo_bin_added_to_path(self, tmp_path):
+    def test_cargo_bin_added_when_rust_path_true(self, tmp_path):
+        cargo_dir = tmp_path / ".cargo" / "bin"
+        cargo_dir.mkdir(parents=True)
+        with (
+            patch("factory.eval.hygiene.Path.home", return_value=tmp_path),
+            patch("factory.eval.hygiene.subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=["echo"], returncode=0, stdout="", stderr="",
+            )
+            _run_cmd(["echo", "test"], tmp_path, rust_path=True)
+            env = mock_run.call_args.kwargs["env"]
+            assert str(cargo_dir) in env.get("PATH", "")
+
+    def test_cargo_bin_not_added_without_rust_path(self, tmp_path):
         cargo_dir = tmp_path / ".cargo" / "bin"
         cargo_dir.mkdir(parents=True)
         with (
@@ -885,9 +1006,9 @@ class TestRunCmdCargoPath:
             )
             _run_cmd(["echo", "test"], tmp_path)
             env = mock_run.call_args.kwargs["env"]
-            assert str(cargo_dir) in env.get("PATH", "")
+            assert str(cargo_dir) not in env.get("PATH", "")
 
-    def test_cargo_bin_not_added_when_missing(self, tmp_path):
+    def test_cargo_bin_not_added_when_dir_missing(self, tmp_path):
         cargo_dir = tmp_path / ".cargo" / "bin"
         with (
             patch("factory.eval.hygiene.Path.home", return_value=tmp_path),
@@ -896,6 +1017,6 @@ class TestRunCmdCargoPath:
             mock_run.return_value = subprocess.CompletedProcess(
                 args=["echo"], returncode=0, stdout="", stderr="",
             )
-            _run_cmd(["echo", "test"], tmp_path)
+            _run_cmd(["echo", "test"], tmp_path, rust_path=True)
             env = mock_run.call_args.kwargs["env"]
             assert str(cargo_dir) not in env.get("PATH", "")
