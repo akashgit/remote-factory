@@ -385,11 +385,13 @@ class TestCeoPrompt:
 
 class TestStrategistIdeationMode:
     def test_has_ideation_section(self, strategist_prompt: str) -> None:
-        assert "## Interactive / Ideation Mode" in strategist_prompt
+        assert "## Design / Ideation Mode" in strategist_prompt
 
     def test_has_output_format(self, strategist_prompt: str) -> None:
-        assert "### Vision" in strategist_prompt
-        assert "### Architecture" in strategist_prompt
+        assert "## Normative Language" in strategist_prompt
+        assert "## 1. Problem Statement" in strategist_prompt
+        assert "## 8. Implementation Plan" in strategist_prompt
+        assert "#### H1:" in strategist_prompt
 
     def test_has_refinement_mode(self, strategist_prompt: str) -> None:
         assert "### Refinement Mode" in strategist_prompt
@@ -404,6 +406,9 @@ class TestStrategistIdeationMode:
 
     def test_has_open_questions(self, strategist_prompt: str) -> None:
         assert "Open Questions" in strategist_prompt
+
+    def test_has_deferred_section(self, strategist_prompt: str) -> None:
+        assert "## Deferred" in strategist_prompt
 
     def test_references_research_file(self, strategist_prompt: str) -> None:
         assert "research.md" in strategist_prompt
