@@ -820,15 +820,15 @@ Generate the Containerfile based on the `jdk_version` from `BuildRootConfig`.
 
 | JDK Version | Base Image |
 |-------------|------------|
-| 8 | `eclipse-temurin:8-jdk-jammy` |
-| 11 | `eclipse-temurin:11-jdk-jammy` |
-| 17 | `eclipse-temurin:17-jdk-jammy` |
-| 21 | `eclipse-temurin:21-jdk-jammy` |
+| 8 | `docker.io/library/eclipse-temurin:8-jdk-jammy` |
+| 11 | `docker.io/library/eclipse-temurin:11-jdk-jammy` |
+| 17 | `docker.io/library/eclipse-temurin:17-jdk-jammy` |
+| 21 | `docker.io/library/eclipse-temurin:21-jdk-jammy` |
 
 ### Template
 
 ```dockerfile
-FROM eclipse-temurin:$JDK_VERSION-jdk-jammy
+FROM docker.io/library/eclipse-temurin:$JDK_VERSION-jdk-jammy
 
 # System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \

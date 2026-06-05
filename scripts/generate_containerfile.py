@@ -6,7 +6,7 @@ import sys
 
 
 def generate(jdk_version: int = 11, build_system: str = "gradle") -> str:
-    base_image = f"eclipse-temurin:{jdk_version}-jdk-jammy"
+    base_image = f"docker.io/library/eclipse-temurin:{jdk_version}-jdk-jammy"
 
     lines = [
         f"FROM {base_image}",
