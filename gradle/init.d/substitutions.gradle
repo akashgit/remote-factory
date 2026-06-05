@@ -1,0 +1,11 @@
+allprojects {
+    configurations.all {
+        resolutionStrategy.eachDependency { DependencyResolveDetails details ->
+            if (details.requested.group == 'org.springframework.build.gradle'
+                    && details.requested.name == 'propdeps-plugin') {
+                details.useTarget 'cn.bestwu.gradle:propdeps-plugin:0.0.10'
+                details.because 'Original plugin repo (repo.spring.io) is decommissioned'
+            }
+        }
+    }
+}

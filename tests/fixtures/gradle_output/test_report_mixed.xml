@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="org.springframework.core.MixedTests" tests="6" failures="3" errors="1" skipped="1" time="125.432">
+  <testcase classname="org.springframework.core.io.ResourceTests" name="testFileResource" time="0.023">
+  </testcase>
+  <testcase classname="org.springframework.core.io.ResourceTests" name="testClassPathResource" time="0.015">
+    <skipped/>
+  </testcase>
+  <testcase classname="org.springframework.jms.JmsTemplateTests" name="testSendMessage" time="2.105">
+    <failure type="javax.jms.JMSException" message="javax.jms.JMSException: Could not connect to broker: ConnectionRefused">
+      javax.jms.JMSException: Could not connect to broker: ConnectionRefused
+        at org.apache.activemq.transport.tcp.TcpTransport.connect(TcpTransport.java:515)
+        at org.springframework.jms.core.JmsTemplate.execute(JmsTemplate.java:492)
+    </failure>
+  </testcase>
+  <testcase classname="org.springframework.format.DateFormatTests" name="testDateFormatLocale" time="0.042">
+    <failure type="java.lang.AssertionError" message="expected:&lt;2023-01-15&gt; but was:&lt;15/01/2023&gt; AssertionError en_US locale formatting mismatch">
+      java.lang.AssertionError: expected:&lt;2023-01-15&gt; but was:&lt;15/01/2023&gt; AssertionError en_US locale formatting mismatch
+        at org.junit.Assert.fail(Assert.java:89)
+        at org.springframework.format.DateFormatTests.testDateFormatLocale(DateFormatTests.java:45)
+    </failure>
+  </testcase>
+  <testcase classname="org.springframework.scheduling.SlowTaskTests" name="testScheduledExecution" time="65.200">
+    <failure type="java.lang.AssertionError" message="Task did not complete within expected time">
+      java.lang.AssertionError: Task did not complete within expected time
+        at org.springframework.scheduling.SlowTaskTests.testScheduledExecution(SlowTaskTests.java:33)
+    </failure>
+  </testcase>
+  <testcase classname="org.springframework.beans.BeanWrapperTests" name="testPropertyAccess" time="0.018">
+    <error type="java.lang.NullPointerException" message="Cannot invoke method on null reference">
+      java.lang.NullPointerException: Cannot invoke method on null reference
+        at org.springframework.beans.BeanWrapperImpl.setPropertyValue(BeanWrapperImpl.java:328)
+        at org.springframework.beans.BeanWrapperTests.testPropertyAccess(BeanWrapperTests.java:72)
+    </error>
+  </testcase>
+</testsuite>

@@ -1,0 +1,32 @@
+
+> Task :spring-jcl:compileJava
+
+> Task :spring-core:compileJava FAILED
+/workspace/spring-core/src/main/java/org/springframework/core/ReactiveAdapterRegistry.java:42: error: cannot find symbol
+    import io.reactivex.rxjava3.core.Flowable;
+                                      ^
+  symbol:   class Flowable
+  location: package io.reactivex.rxjava3.core
+/workspace/spring-core/src/main/java/org/springframework/core/ReactiveAdapterRegistry.java:158: error: cannot find symbol
+    Flowable<?> flowable = Flowable.fromPublisher(source);
+    ^
+  symbol:   class Flowable
+  location: class ReactiveAdapterRegistry.RxJava3Registrar
+
+> Task :spring-beans:compileJava FAILED
+/workspace/spring-beans/src/main/java/org/springframework/beans/factory/support/DefaultListableBeanFactory.java:89: error: package org.springframework.core does not exist
+import org.springframework.core.ResolvableType;
+                                ^
+
+> Task :spring-aop:compileJava
+> Task :spring-expression:compileJava
+
+> Task :spring-context:compileJava FAILED
+/workspace/spring-context/src/main/java/org/springframework/context/support/AbstractApplicationContext.java:55: error: package org.springframework.beans.factory.support does not exist
+import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+                                                ^
+
+> Task :spring-web:compileJava
+
+BUILD FAILED in 3m 12s
+7 actionable tasks: 7 executed, 3 with failures

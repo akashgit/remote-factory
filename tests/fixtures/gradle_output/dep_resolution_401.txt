@@ -1,0 +1,43 @@
+
+> Task :spring-core:dependencies
+
+------------------------------------------------------------
+Project ':spring-core' - Spring Core
+------------------------------------------------------------
+
+compileClasspath - Compile classpath for source set 'main'.
++--- org.apache.commons:commons-lang3:3.12.0
++--- io.projectreactor:reactor-core:3.4.14
+|    \--- org.reactivestreams:reactive-streams:1.0.3
++--- com.google.code.findbugs:jsr305:3.0.2
+\--- org.springframework.build.gradle:propdeps-plugin:0.0.9 FAILED
+
+> Task :spring-web:dependencies
+
+------------------------------------------------------------
+Project ':spring-web' - Spring Web
+------------------------------------------------------------
+
+compileClasspath - Compile classpath for source set 'main'.
++--- project :spring-core
++--- project :spring-beans
+\--- com.ibm.websphere:uow:6.0.2.17 FAILED
+
+FAILURE: Build completed with 2 failures.
+
+1: Task failed with an exception.
+-----------
+* What went wrong:
+Could not resolve all dependencies for configuration ':spring-core:compileClasspath'.
+> Could not resolve org.springframework.build.gradle:propdeps-plugin:0.0.9.
+  > Could not get resource 'https://repo.spring.io/plugins-release/org/springframework/build/gradle/propdeps-plugin/0.0.9/propdeps-plugin-0.0.9.pom'.
+    > Could not GET 'https://repo.spring.io/plugins-release/org/springframework/build/gradle/propdeps-plugin/0.0.9/propdeps-plugin-0.0.9.pom'. Received status code 401 from server: Unauthorized
+
+2: Task failed with an exception.
+-----------
+* What went wrong:
+Could not resolve all dependencies for configuration ':spring-web:compileClasspath'.
+> Could not resolve com.ibm.websphere:uow:6.0.2.17.
+  > Could not find com.ibm.websphere:uow:6.0.2.17 in any repository.
+
+BUILD FAILED in 12s

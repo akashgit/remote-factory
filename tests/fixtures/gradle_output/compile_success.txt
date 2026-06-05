@@ -1,0 +1,14 @@
+
+> Task :spring-jcl:compileJava
+> Task :spring-core:compileJava
+> Task :spring-beans:compileJava
+> Task :spring-aop:compileJava
+> Task :spring-expression:compileJava
+> Task :spring-context:compileJava
+> Task :spring-tx:compileJava
+> Task :spring-jdbc:compileJava
+> Task :spring-web:compileJava
+> Task :spring-webmvc:compileJava
+
+BUILD SUCCESSFUL in 2m 34s
+10 actionable tasks: 10 executed

@@ -1,0 +1,61 @@
+version: 1
+
+universal:
+  fixes: []
+  dead_ends: []
+
+projects:
+  spring-framework:
+    fixes:
+      - id: spring-repo-401
+        pattern: 'repo\.spring\.io.*(401|403|Could not resolve)'
+        fix_type: init_script
+        fix_content: |
+          allprojects {
+            repositories {
+              mavenLocal()
+              mavenCentral()
+              gradlePluginPortal()
+            }
+            buildscript.repositories {
+              mavenLocal()
+              mavenCentral()
+              gradlePluginPortal()
+            }
+          }
+          settingsEvaluated { settings ->
+            settings.pluginManagement.repositories {
+              mavenLocal()
+              mavenCentral()
+              gradlePluginPortal()
+            }
+          }
+        applies_to: "v*"
+        stage: 1
+
+      - id: propdeps-substitute
+        pattern: 'propdeps-plugin.*0\.0\.9'
+        fix_type: substitution
+        fix_content: "cn.bestwu.gradle:propdeps-plugin:0.0.10"
+        applies_to: "v5.2.*"
+        stage: 1
+
+      - id: docbook-exclude
+        pattern: 'docbook-reference-plugin'
+        fix_type: build_command
+        fix_content: "-x reference -x javadoc"
+        applies_to: "v4.*"
+        stage: 3
+
+      - id: asciidoctor-exclude
+        pattern: 'spring-asciidoctor-extensions'
+        fix_type: build_command
+        fix_content: "-x asciidoctor"
+        applies_to: "v5.*"
+        stage: 3
+
+    dead_ends:
+      - artifact: "com.ibm.websphere:uow:6.0.2.17"
+        reason: "Proprietary IBM artifact — not available in any public repository"
+        workaround: "exclude WebSphere module support"
+        applies_to: "v*"

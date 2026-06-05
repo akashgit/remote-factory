@@ -1,0 +1,50 @@
+
+> Task :spring-core:dependencies
+
+------------------------------------------------------------
+Project ':spring-core' - Spring Core
+------------------------------------------------------------
+
+compileClasspath - Compile classpath for source set 'main'.
++--- org.apache.commons:commons-lang3:3.12.0
++--- io.projectreactor:reactor-core:3.4.14
+|    \--- org.reactivestreams:reactive-streams:1.0.3
++--- io.projectreactor:reactor-test:3.4.14
++--- org.apache.logging.log4j:log4j-api:2.17.1
+\--- com.google.code.findbugs:jsr305:3.0.2
+
+> Task :spring-beans:dependencies
+
+------------------------------------------------------------
+Project ':spring-beans' - Spring Beans
+------------------------------------------------------------
+
+compileClasspath - Compile classpath for source set 'main'.
++--- project :spring-core
+|    +--- org.apache.commons:commons-lang3:3.12.0
+|    +--- io.projectreactor:reactor-core:3.4.14
+|    |    \--- org.reactivestreams:reactive-streams:1.0.3
+|    \--- com.google.code.findbugs:jsr305:3.0.2
+\--- javax.inject:javax.inject:1
+
+> Task :spring-context:dependencies
+
+------------------------------------------------------------
+Project ':spring-context' - Spring Context
+------------------------------------------------------------
+
+compileClasspath - Compile classpath for source set 'main'.
++--- project :spring-beans
+|    +--- project :spring-core
+|    |    +--- org.apache.commons:commons-lang3:3.12.0
+|    |    +--- io.projectreactor:reactor-core:3.4.14
+|    |    |    \--- org.reactivestreams:reactive-streams:1.0.3
+|    |    \--- com.google.code.findbugs:jsr305:3.0.2
+|    \--- javax.inject:javax.inject:1
++--- project :spring-aop
++--- project :spring-expression
+\--- io.micrometer:micrometer-observation:1.10.3
+     \--- io.micrometer:micrometer-commons:1.10.3
+
+BUILD SUCCESSFUL in 8s
+3 actionable tasks: 3 executed
