@@ -1,0 +1,19 @@
+{
+  "name": "remote-factory",
+  "owner": {
+    "name": "Akash Srivastava",
+    "url": "https://github.com/akashgit"
+  },
+  "metadata": {
+    "description": "Multi-agent software evolution plugins for Claude Code"
+  },
+  "plugins": [
+    {
+      "name": "factory",
+      "source": "./",
+      "description": "Autonomous multi-agent software evolution via /factory:implement",
+      "category": "development",
+      "tags": ["agents", "eval", "evolution", "autonomous"]
+    }
+  ]
+}

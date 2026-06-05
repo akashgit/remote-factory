@@ -1,0 +1,108 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: "Experiment Lifecycle — Phase 3: Decision"
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+scores: {
+  label: "Scores Collected"
+  style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 14; border-radius: 6 }
+}
+
+precheck: {
+  label: "Precheck (hard gate)"
+  shape: hexagon
+  style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 14; bold: true }
+}
+
+checks: {
+  label: "4 Precheck Gates"
+  style: { fill: "#FFF9C4"; stroke: "#F9A825"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-rows: 2
+
+  c1: {
+    label: "Score direction"
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  c2: {
+    label: "Scope guard"
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  c3: {
+    label: "Anti-pattern"
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  c4: {
+    label: "Smoke test"
+    style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+}
+
+keep: {
+  label: "KEEP\napprove PR (open)"
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+revert: {
+  label: "REVERT\nclose PR"
+  style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+archivist: {
+  label: Archivist
+  style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+}
+
+scores -> precheck
+precheck -> checks
+
+precheck -> keep: "all pass" {
+  style: { stroke: "#2E7D32"; stroke-width: 3; font-size: 12; font-color: "#0D1B2A" }
+}
+precheck -> revert: "any fail" {
+  style: { stroke: "#C62828"; stroke-width: 3; font-size: 12; font-color: "#0D1B2A" }
+}
+
+keep -> archivist
+revert -> archivist
+
+archivist -> scores: "next hypothesis" {
+  style: { stroke-dash: 5; stroke: "#9E9E9E"; font-size: 11; font-color: "#0D1B2A" }
+}
+
+research_gate: {
+  label: "Research Mode"
+  style: { fill: "#E0F7FA"; stroke: "#00695C"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  monotonic: {
+    label: "Monotonic Gate\nmetric >= best"
+    shape: hexagon
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 12; bold: true }
+  }
+}
+
+scores -> research_gate.monotonic: "research mode" {
+  style: { stroke: "#00695C"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+}
+research_gate.monotonic -> precheck: "passed" {
+  style: { stroke: "#00695C"; stroke-width: 2; font-size: 11; font-color: "#0D1B2A" }
+}
+research_gate.monotonic -> revert: "regressed" {
+  style: { stroke: "#C62828"; stroke-width: 2; font-size: 11; font-color: "#0D1B2A" }
+}
+
+focus_note: {
+  label: "Targeted mode (--focus): exits after one decision"
+  near: bottom-center
+  shape: text
+  style: { font-size: 11; italic: true; font-color: "#0D1B2A" }
+}

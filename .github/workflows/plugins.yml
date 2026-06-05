@@ -1,0 +1,44 @@
+name: Build plugins branch
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build-plugin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Generate plugin agent files
+        run: uv run python scripts/sync_agents.py
+
+      - name: Copy skills to .agents/skills
+        run: cp -r skills/ .agents/skills/
+
+      - name: Push to plugins branch (and legacy plugin branch)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B plugins
+          git add -f agents/ codex-agents/ .agents/skills/
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "build: generate plugin agent files from $(git rev-parse --short main)"
+          git push --force origin plugins
+          # Backward compatibility: mirror to the legacy 'plugin' branch.
+          # Remove once downstream marketplace installs have migrated to 'plugins'.
+          git push --force origin plugins:plugin
