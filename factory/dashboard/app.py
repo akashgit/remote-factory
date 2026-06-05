@@ -255,6 +255,18 @@ def _phase_data_research(
     }, verdict
 
 
+def _phase_data_build_root(
+    factory_dir: Path,
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    status_path = factory_dir.parent / "results" / "build-root-status.json"
+    status = _read_json_safe(status_path) or {}
+    return {
+        "stage_completed": status.get("stage_completed", 0),
+        "current_stage": status.get("current_stage"),
+        "stages": status.get("stages", []),
+    }, None
+
+
 def _phase_data_strategize(
     factory_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
@@ -598,6 +610,10 @@ def create_app(projects_dir: Path) -> FastAPI:
             "review": lambda: _phase_data_review(factory_dir),
             "eval": lambda: _phase_data_eval(factory_dir, exp_id),
             "archive": lambda: _phase_data_archive(factory_dir),
+            "dep_resolve": lambda: _phase_data_build_root(factory_dir),
+            "artifact_recovery": lambda: _phase_data_build_root(factory_dir),
+            "compile": lambda: _phase_data_build_root(factory_dir),
+            "test": lambda: _phase_data_build_root(factory_dir),
         }
 
         builder = _PHASE_BUILDERS.get(builder_key)

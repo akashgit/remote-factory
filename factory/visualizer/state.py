@@ -63,6 +63,12 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
         ("Archive", "archive", False),
         ("ACE", "archive", False),
     ],
+    "build-root": [
+        ("Dep Resolve", "dep_resolve", True),
+        ("Artifact Recovery", "artifact_recovery", True),
+        ("Compile", "compile", True),
+        ("Test", "test", True),
+    ],
 }
 
 MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
@@ -103,6 +109,12 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "reviewer": "Review",
         "evaluator": "Eval",
         "archivist": "Archive",
+    },
+    "build-root": {
+        "builder": "Compile",
+        "researcher": "Artifact Recovery",
+        "evaluator": "Test",
+        "build-root-ceo": "Dep Resolve",
     },
 }
 
@@ -148,6 +160,13 @@ MODE_EVENT_TO_PHASE: dict[str, dict[str, str]] = {
         "archive.completed": "Archive",
         "ace.started": "ACE",
         "ace.completed": "ACE",
+    },
+    "build-root": {
+        "stage.entered": None,
+        "stage.completed": None,
+        "stage.cycle": None,
+        "gate.raised": None,
+        "gate.resolved": None,
     },
 }
 
@@ -195,6 +214,8 @@ def infer_mode_from_artifacts(factory_dir: Path) -> str | None:
     if config_path.exists():
         try:
             config = json.loads(config_path.read_text())
+            if config.get("build_root") is not None:
+                return "build-root"
             if config.get("research_target") is not None:
                 return "research"
         except (json.JSONDecodeError, OSError):
@@ -297,7 +318,17 @@ def update_state(state: FactoryLiveState, event: dict[str, Any]) -> FactoryLiveS
         state.active_agents.pop(agent, None)
 
     elif event_type in event_phase_map:
-        state.current_phase = event_phase_map[event_type]
+        mapped = event_phase_map[event_type]
+        if mapped is not None:
+            state.current_phase = mapped
+
+    # --- Build-root stage.* events: map stage number to phase name ---
+    if event_type.startswith("stage."):
+        stage_num = data.get("stage")
+        stage_map = {1: "Dep Resolve", 2: "Artifact Recovery", 3: "Compile", 4: "Test"}
+        if stage_num in stage_map:
+            state.current_phase = stage_map[stage_num]
+            state.current_mode = "build-root"
 
     # --- Experiment / hypothesis tracking ---
     if event_type == "experiment.begin":
