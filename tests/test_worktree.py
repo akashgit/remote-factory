@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from factory.worktree import create_worktree, detect_default_branch, prune_stale, remove_worktree
+from factory.worktree import (
+    _fetch_and_resolve_base,
+    create_worktree,
+    detect_default_branch,
+    prune_stale,
+    remove_worktree,
+)
 
 pytestmark = pytest.mark.real_worktree
 
@@ -283,6 +289,91 @@ class TestSymlinkResolution:
         config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
         assert config_via_symlink == config_direct
+
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "test",
+    "GIT_AUTHOR_EMAIL": "test@test.com",
+    "GIT_COMMITTER_NAME": "test",
+    "GIT_COMMITTER_EMAIL": "test@test.com",
+}
+
+
+@pytest.fixture
+def git_project_with_remote(tmp_path: Path) -> Path:
+    """Create a project with a bare remote where origin/main is ahead of local main."""
+    env = {**GIT_ENV, "HOME": str(tmp_path), "PATH": "/usr/bin:/bin:/usr/local/bin"}
+
+    bare = tmp_path / "bare.git"
+    subprocess.run(["git", "init", "--bare", "-b", "main", str(bare)],
+                    capture_output=True, check=True)
+
+    project = tmp_path / "project"
+    subprocess.run(["git", "clone", str(bare), str(project)],
+                    capture_output=True, check=True)
+    (project / "README.md").write_text("v1")
+    (project / ".gitignore").write_text(".factory/\n")
+    subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=project,
+                    capture_output=True, check=True, env=env)
+    subprocess.run(["git", "push"], cwd=project, capture_output=True, check=True)
+
+    # Simulate a PR merge: push a new commit directly to the bare remote via a
+    # temporary clone, so the project's local main is behind origin/main.
+    pusher = tmp_path / "pusher"
+    subprocess.run(["git", "clone", str(bare), str(pusher)],
+                    capture_output=True, check=True)
+    (pusher / "new_feature.py").write_text("print('merged PR')")
+    subprocess.run(["git", "add", "."], cwd=pusher, capture_output=True, check=True)
+    subprocess.run(["git", "commit", "-m", "merged PR"], cwd=pusher,
+                    capture_output=True, check=True, env=env)
+    subprocess.run(["git", "push"], cwd=pusher, capture_output=True, check=True)
+
+    # project's local main is now 1 commit behind origin/main
+    factory_dir = project / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "config.json").write_text("{}")
+    (factory_dir / "results.tsv").write_text("id\n")
+
+    return project
+
+
+class TestFetchAndResolveBase:
+    def test_returns_remote_ref_when_behind(self, git_project_with_remote: Path) -> None:
+        result = _fetch_and_resolve_base(git_project_with_remote, "main")
+        assert result == "origin/main"
+
+    def test_returns_remote_ref_when_up_to_date(self, git_project_with_remote: Path) -> None:
+        subprocess.run(["git", "pull"], cwd=git_project_with_remote,
+                        capture_output=True, check=True)
+        result = _fetch_and_resolve_base(git_project_with_remote, "main")
+        assert result == "origin/main"
+
+    def test_falls_back_to_local_without_remote(self, git_project: Path) -> None:
+        result = _fetch_and_resolve_base(git_project, "main")
+        assert result == "main"
+
+
+class TestCreateWorktreeWithRemote:
+    def test_worktree_includes_remote_changes(self, git_project_with_remote: Path) -> None:
+        """Worktree should contain the file from the 'merged PR' that only exists on origin."""
+        wt_path, branch = create_worktree(git_project_with_remote)
+        try:
+            assert (wt_path / "new_feature.py").exists(), (
+                "Worktree should include commits from origin/main, not stale local main"
+            )
+            assert (wt_path / "new_feature.py").read_text() == "print('merged PR')"
+        finally:
+            remove_worktree(git_project_with_remote, wt_path, branch)
+
+    def test_local_only_repo_still_works(self, git_project: Path) -> None:
+        """Repos without a remote should still create worktrees normally."""
+        wt_path, branch = create_worktree(git_project)
+        try:
+            assert wt_path.exists()
+            assert (wt_path / "README.md").exists()
+        finally:
+            remove_worktree(git_project, wt_path, branch)
 
 
 class TestFilelockConcurrency:
