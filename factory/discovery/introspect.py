@@ -236,7 +236,8 @@ def _detect_lint_command(project_path: Path, language: str) -> str | None:
     elif language == "java":
         if (project_path / "pom.xml").exists():
             return "mvn checkstyle:check"
-        if (project_path / "gradlew").exists():
+        gradlew = project_path / "gradlew"
+        if gradlew.exists() and os.access(gradlew, os.X_OK):
             return "./gradlew checkstyleMain"
         if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
             return "gradle checkstyleMain"

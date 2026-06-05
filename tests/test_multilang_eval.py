@@ -490,6 +490,7 @@ class TestDetectLintCommandJava:
 
     def test_gradlew_returns_checkstyle(self, tmp_path):
         (tmp_path / "gradlew").write_text("#!/bin/sh")
+        (tmp_path / "gradlew").chmod(0o755)
         assert _detect_lint_command(tmp_path, "java") == "./gradlew checkstyleMain"
 
     def test_no_build_file_returns_none(self, tmp_path):
