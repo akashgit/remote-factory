@@ -393,9 +393,9 @@ class TestDistillerPrompt:
         assert (PROMPTS_DIR / "distiller.md").exists()
 
     def test_has_output_format(self, distiller_prompt: str) -> None:
-        assert "## Vision" in distiller_prompt
-        assert "## Core Features" in distiller_prompt
-        assert "## Architecture" in distiller_prompt
+        assert "## 1. Problem Statement" in distiller_prompt
+        assert "## 2. Goals and Non-Goals" in distiller_prompt
+        assert "## 3. System Overview" in distiller_prompt
 
     def test_has_refinement_mode(self, distiller_prompt: str) -> None:
         assert "## Refinement Mode" in distiller_prompt
