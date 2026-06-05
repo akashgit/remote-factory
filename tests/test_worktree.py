@@ -353,6 +353,21 @@ class TestFetchAndResolveBase:
         result = _fetch_and_resolve_base(git_project, "main")
         assert result == "main"
 
+    def test_falls_back_to_local_on_fetch_timeout(
+        self, git_project_with_remote: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        original_run = subprocess.run
+
+        def slow_fetch(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+            cmd = args[0] if args else kwargs.get("args", [])
+            if isinstance(cmd, list) and "fetch" in cmd:
+                raise subprocess.TimeoutExpired(cmd, 30)
+            return original_run(*args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", slow_fetch)
+        result = _fetch_and_resolve_base(git_project_with_remote, "main")
+        assert result == "main"
+
 
 class TestCreateWorktreeWithRemote:
     def test_worktree_includes_remote_changes(self, git_project_with_remote: Path) -> None:

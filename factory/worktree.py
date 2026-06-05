@@ -17,12 +17,17 @@ def _fetch_and_resolve_base(project_path: Path, base_branch: str) -> str:
     ``origin/<base_branch>`` so the worktree starts from the remote tip.
     Falls back to the local ``<base_branch>`` for repos without a remote.
     """
-    fetch = subprocess.run(
-        ["git", "fetch", "origin", base_branch],
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        fetch = subprocess.run(
+            ["git", "fetch", "origin", base_branch],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("worktree_fetch_skipped", reason="timeout", base=base_branch)
+        return base_branch
     if fetch.returncode != 0:
         log.info("worktree_fetch_skipped", reason="no_remote", base=base_branch)
         return base_branch
