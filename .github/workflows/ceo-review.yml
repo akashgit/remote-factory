@@ -79,27 +79,24 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const comments = await github.rest.issues.listComments({
+            const reviews = await github.rest.pulls.listReviews({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: ${{ steps.pr.outputs.number }},
-              per_page: 100,
+              pull_number: ${{ steps.pr.outputs.number }},
             });
-            const latest = comments.data.reverse().find(c =>
-              c.user.login === 'github-actions[bot]' &&
-              c.body.includes('Factory') && c.body.includes('Review:')
+            const latestBot = reviews.data.reverse().find(r =>
+              r.user.login === 'github-actions[bot]'
             );
-            if (latest && latest.body.includes('KEEP')) {
-              await github.rest.pulls.createReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: ${{ steps.pr.outputs.number }},
-                event: 'APPROVE',
-                body: '✅ Factory CEO approved this PR.',
-              });
-              core.info('PR approved — KEEP verdict found');
+            if (!latestBot) {
+              core.info('No formal review from github-actions[bot] found');
+              return;
+            }
+            if (latestBot.state === 'APPROVED') {
+              core.info('PR already approved by factory review');
+            } else if (latestBot.state === 'CHANGES_REQUESTED') {
+              core.info('Factory review requested changes — not approving');
             } else {
-              core.info(`No approval — latest matching comment: ${latest ? 'found but no KEEP' : 'not found'}`);
+              core.info(`Unexpected review state: ${latestBot.state}`);
             }
 
       - name: Post failure comment
