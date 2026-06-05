@@ -282,7 +282,7 @@ def eval_tests(project_path: Path) -> dict:
                     ran_any = True
                     total_failed += 1
                     details_parts.append(f"{sp.name}(go): failed")
-                else:
+                elif rc != 0:
                     log.warning(
                         "go_test_nonzero_no_fail",
                         project=str(sp),
