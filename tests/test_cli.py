@@ -12,7 +12,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
+from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _has_build_root_config, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -2077,3 +2077,93 @@ class TestDeferredCreationFlow:
         project_path, context = _resolve_input(str(tmp_path))
         assert project_path == tmp_path
         assert context is None
+
+
+def _make_build_root_config(*, build_root: dict | None = None) -> dict:
+    """Build a valid FactoryConfig dict with optional build_root."""
+    config: dict = {
+        "goal": "test project",
+        "scope": ["src/**/*.py"],
+        "guards": ["Do not delete tests"],
+        "eval_command": "python eval/score.py",
+        "eval_threshold": 0.8,
+        "constraints": ["Prefer small changes"],
+    }
+    if build_root is not None:
+        config["build_root"] = build_root
+    return config
+
+
+class TestBuildRootRouting:
+    """Tests for build-root mode CLI routing, auto-detection, and config helpers."""
+
+    def test_ceo_parser_accepts_build_root_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "/some/path", "--mode", "build-root"])
+        assert args.mode == "build-root"
+
+    def test_run_parser_accepts_build_root_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["run", "/some/path", "--mode", "build-root"])
+        assert args.mode == "build-root"
+
+    def test_tmux_parser_accepts_build_root_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/some/path", "--mode", "build-root"])
+        assert args.mode == "build-root"
+
+    def test_has_build_root_config_false_no_factory(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        assert _has_build_root_config(tmp_path) is False
+
+    def test_has_build_root_config_false_no_build_root(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text(json.dumps(_make_build_root_config()))
+        assert _has_build_root_config(tmp_path) is False
+
+    def test_has_build_root_config_true(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        br = {"project_repo": "https://github.com/user/repo", "version_tag": "v1.0"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_build_root_config(build_root=br)))
+        assert _has_build_root_config(tmp_path) is True
+
+    def test_auto_detect_build_root_mode(self, tmp_project, sample_config):
+        from factory.models import BuildRootConfig
+        br = BuildRootConfig(project_repo="repo", version_tag="v1")
+        config_with_br = sample_config.model_copy(update={"build_root": br})
+        store = ExperimentStore(tmp_project)
+        asyncio.run(store.init(config_with_br))
+
+        from factory.cli import _auto_detect_mode
+        mode = _auto_detect_mode(tmp_project, force_fresh=True)
+        assert mode == "build-root"
+
+    def test_build_root_mode_headless_task(self, tmp_path):
+        (tmp_path / ".git").mkdir()
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        br = {"project_repo": "https://github.com/user/repo", "version_tag": "v1.0"}
+        (factory_dir / "config.json").write_text(json.dumps(_make_build_root_config(build_root=br)))
+        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+            result = main(["ceo", str(tmp_path), "--mode", "build-root", "--headless"])
+        assert result == 0
+        call_args = mock_agent.call_args
+        assert call_args[0][0] == "build-root-ceo"
+        task = call_args[0][1]
+        assert "Mode: build-root" in task
+        assert "https://github.com/user/repo" in task
+        assert "v1.0" in task
+
+    def test_build_root_mode_nonexistent_path_errors(self, capsys):
+        result = main(["ceo", "/nonexistent/path", "--mode", "build-root"])
+        assert result == 1
+        assert "existing directory" in capsys.readouterr().err
+
+    def test_build_root_task_text(self, tmp_path):
+        task = _build_ceo_task(tmp_path, "build-root")
+        assert "Build-Root mode" in task
+        assert "4-stage gated pipeline" in task

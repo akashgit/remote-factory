@@ -5,6 +5,7 @@ from datetime import datetime
 
 from factory.models import (
     AggregateMethod,
+    BuildRootConfig,
     CostBudget,
     CostBudgetConfig,
     CompositeScore,
@@ -474,3 +475,67 @@ class TestCycleStateResearchMode:
             mode="research",
         )
         assert cs.mode == "research"
+
+
+class TestBuildRootConfig:
+    def test_valid_construction_defaults(self):
+        c = BuildRootConfig(project_repo="https://github.com/spring-projects/spring-framework", version_tag="v5.2.9.RELEASE")
+        assert c.project_repo == "https://github.com/spring-projects/spring-framework"
+        assert c.version_tag == "v5.2.9.RELEASE"
+        assert c.jdk_version == 11
+        assert c.build_system == "gradle"
+        assert c.known_fixes_path == "config/known-fixes.yaml"
+        assert c.local_repo_path == "local-repo/"
+
+    def test_valid_construction_all_fields(self):
+        c = BuildRootConfig(
+            project_repo="https://github.com/user/repo",
+            version_tag="v1.0",
+            jdk_version=17,
+            build_system="gradle",
+            known_fixes_path="fixes.yaml",
+            local_repo_path="repo/",
+        )
+        assert c.jdk_version == 17
+        assert c.known_fixes_path == "fixes.yaml"
+        assert c.local_repo_path == "repo/"
+
+    def test_rejects_extra_fields(self):
+        with pytest.raises(Exception):
+            BuildRootConfig(
+                project_repo="repo", version_tag="v1", extra="bad",
+            )
+
+    def test_json_roundtrip(self):
+        c = BuildRootConfig(
+            project_repo="https://github.com/user/repo",
+            version_tag="v5.2.9",
+            jdk_version=17,
+        )
+        data = c.model_dump()
+        restored = BuildRootConfig(**data)
+        assert restored == c
+
+    def test_factory_config_accepts_build_root(self):
+        br = BuildRootConfig(project_repo="repo", version_tag="v1")
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[], build_root=br,
+        )
+        assert config.build_root is not None
+        assert config.build_root.project_repo == "repo"
+
+    def test_factory_config_build_root_none(self):
+        config = FactoryConfig(
+            goal="Test", scope=[], guards=[], eval_command="pytest",
+            eval_threshold=0.8, constraints=[],
+        )
+        assert config.build_root is None
+
+    def test_cycle_state_build_root_mode(self):
+        cs = CycleState(
+            cycle_id="test-br",
+            started_at=datetime.now(),
+            mode="build-root",
+        )
+        assert cs.mode == "build-root"

@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from factory.models import (
     AggregateMethod,
+    BuildRootConfig,
     CompositeScore,
     CostBudgetConfig,
     EvalProfile,
@@ -120,6 +121,26 @@ def _parse_research_target(items: str | list[str] | float) -> ResearchTarget | N
     )
     log.debug("research_target_parsed", metric=metric, target=rt.target)
     return rt
+
+
+def _parse_build_root(items: str | list[str] | float) -> BuildRootConfig | None:
+    """Parse build root key-value block from factory.md."""
+    kv = _parse_kv_list(items, str)
+    if not kv:
+        return None
+    project_repo = str(kv.get("project_repo", ""))
+    version_tag = str(kv.get("version_tag", ""))
+    if not project_repo or not version_tag:
+        log.warning("build_root_incomplete", keys=list(kv.keys()))
+        return None
+    return BuildRootConfig(
+        project_repo=project_repo,
+        version_tag=version_tag,
+        jdk_version=int(str(kv.get("jdk_version", "11"))),
+        build_system=str(kv.get("build_system", "gradle")),
+        known_fixes_path=str(kv.get("known_fixes_path", "config/known-fixes.yaml")),
+        local_repo_path=str(kv.get("local_repo_path", "local-repo/")),
+    )
 
 
 def _parse_cost_budget(items: str | list[str] | float) -> CostBudgetConfig | None:
@@ -279,6 +300,7 @@ class ExperimentStore:
             "multi-run": "inner_loop",
             "multi_run": "inner_loop",
             "surface_scoping": "outer_loop_surfaces",
+            "build_root": "build_root",
         }
 
         def _flush_list() -> None:
@@ -333,6 +355,7 @@ class ExperimentStore:
         smoke_test = str(smoke_test_raw).strip() if smoke_test_raw else ""
 
         research_target = _parse_research_target(parsed.get("research_target", []))
+        build_root = _parse_build_root(parsed.get("build_root", []))
         inner_loop = _parse_inner_loop(parsed.get("inner_loop", []))
         outer_loop = _parse_outer_loop(parsed.get("outer_loop_surfaces", []))
         cost_budget = _parse_cost_budget(parsed.get("cost_budget", []))
@@ -382,6 +405,7 @@ class ExperimentStore:
             clean_pr=clean_pr,
             clean_pr_include=clean_pr_include,
             clean_pr_exclude=clean_pr_exclude,
+            build_root=build_root,
         )
 
         (self.factory_dir / "config.json").write_text(

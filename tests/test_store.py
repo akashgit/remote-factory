@@ -743,3 +743,116 @@ class TestEnsureFactoryDir:
         assert store.factory_dir.is_dir()
         assert not store.factory_dir.is_symlink()
         assert (store.factory_dir / "config.json").exists()
+
+
+class TestBuildRootParsing:
+    """Tests for parsing ## Build Root section from factory.md."""
+
+    async def test_parse_build_root(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nBuild root project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n\n"
+            "## Build Root\n"
+            "- project_repo: https://github.com/spring-projects/spring-framework\n"
+            "- version_tag: v5.2.9.RELEASE\n"
+            "- jdk_version: 11\n"
+            "- build_system: gradle\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.build_root is not None
+        assert config.build_root.project_repo == "https://github.com/spring-projects/spring-framework"
+        assert config.build_root.version_tag == "v5.2.9.RELEASE"
+        assert config.build_root.jdk_version == 11
+        assert config.build_root.build_system == "gradle"
+
+    async def test_parse_build_root_missing_required_fields(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nBuild root\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Build Root\n"
+            "- jdk_version: 17\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.build_root is None
+
+    async def test_parse_build_root_defaults(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nBuild root\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n\n"
+            "## Build Root\n"
+            "- project_repo: https://github.com/user/repo\n"
+            "- version_tag: v1.0\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.build_root is not None
+        assert config.build_root.jdk_version == 11
+        assert config.build_root.build_system == "gradle"
+        assert config.build_root.known_fixes_path == "config/known-fixes.yaml"
+        assert config.build_root.local_repo_path == "local-repo/"
+
+    async def test_build_root_roundtrip(self, store, sample_config):
+        from factory.models import BuildRootConfig
+        br = BuildRootConfig(
+            project_repo="https://github.com/user/repo",
+            version_tag="v2.0",
+            jdk_version=17,
+        )
+        config = sample_config.model_copy(update={"build_root": br})
+        await store.init(config)
+        loaded = await store.read_config()
+        assert loaded.build_root is not None
+        assert loaded.build_root.project_repo == "https://github.com/user/repo"
+        assert loaded.build_root.version_tag == "v2.0"
+        assert loaded.build_root.jdk_version == 17
+
+    async def test_other_fields_unaffected(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nBuild root project\n\n"
+            "## Scope\n- src/\n- lib/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.85\n\n"
+            "## Constraints\n- keep it simple\n\n"
+            "## Build Root\n"
+            "- project_repo: repo\n"
+            "- version_tag: v1\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.goal == "Build root project"
+        assert config.scope == ["src/", "lib/"]
+        assert config.eval_threshold == 0.85
+        assert config.build_root is not None
+
+    async def test_no_build_root_section(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.build_root is None

@@ -86,6 +86,19 @@ class ResearchTarget(BaseModel):
     timeout: int = 3600
 
 
+class BuildRootConfig(BaseModel):
+    """Build-root mode config — defines the target Java project and build parameters."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    project_repo: str
+    version_tag: str
+    jdk_version: int = 11
+    build_system: Literal["gradle"] = "gradle"
+    known_fixes_path: str = "config/known-fixes.yaml"
+    local_repo_path: str = "local-repo/"
+
+
 class AggregateMethod(str, Enum):
     """How to aggregate multiple run metrics into a single value."""
 
@@ -210,6 +223,7 @@ class FactoryConfig(BaseModel):
     clean_pr: bool = False
     clean_pr_include: list[str] = []
     clean_pr_exclude: list[str] = []
+    build_root: BuildRootConfig | None = None
 
 
 # ── eval ──────────────────────────────────────────────────────────
@@ -453,7 +467,7 @@ class CycleState(BaseModel):
 
     cycle_id: str
     started_at: datetime
-    mode: Literal["build", "discover", "improve", "meta", "research", "review"]
+    mode: Literal["build", "discover", "improve", "meta", "research", "review", "build-root"]
     initial_prompt: str = ""
     respawns: int = 0
     runner_name: str | None = None

@@ -2381,6 +2381,63 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print(result)
         return code
 
+    # ── build-root mode early exit ────────────────────────────
+    if mode == "build-root":
+        model = _resolve_model(args)
+        runner_name = _resolve_runner(args)
+
+        project_path = Path(raw_path).expanduser().resolve()
+        if not project_path.is_dir():
+            print(f"Error: project path must be an existing directory for build-root mode: {raw_path}",
+                  file=sys.stderr)
+            return 1
+
+        _print_banner("build-root")
+
+        try:
+            from factory.store import ExperimentStore
+            config = _run(ExperimentStore(project_path).read_config())
+            br = config.build_root
+        except Exception:
+            br = None
+
+        if br is None:
+            print("Error: build_root not configured in factory.md / config.json", file=sys.stderr)
+            return 1
+
+        task = (
+            f"Project: {project_path}\nMode: build-root\n\n"
+            f"## Build Root Directive\n\n"
+            f"Build a verified build environment for `{br.project_repo}` "
+            f"at version `{br.version_tag}`.\n\n"
+            f"- JDK version: {br.jdk_version}\n"
+            f"- Build system: {br.build_system}\n"
+            f"- Known fixes: {br.known_fixes_path}\n"
+            f"- Local repo: {br.local_repo_path}\n"
+        )
+
+        if not headless:
+            from factory.agents.runner import resolve_prompt
+            from factory.models import AgentRunRequest
+            from factory.runners import get_runner
+
+            prompt = resolve_prompt("build-root-ceo", project_path)
+            runner = get_runner(runner_name)
+            return runner.interactive_run(AgentRunRequest(
+                prompt=prompt, task=task, cwd=project_path,
+                model=model, role="build-root-ceo", skip_permissions=True,
+            ))
+
+        from factory.agents.runner import invoke_agent
+        result, code = _run(invoke_agent(
+            "build-root-ceo", task, project_path,
+            timeout=7200.0,
+            model=model,
+            runner_name=runner_name,
+        ))
+        print(result)
+        return code
+
     _interactive_is_existing = (
         mode == "interactive"
         and raw_path
@@ -3105,6 +3162,16 @@ def _has_research_target(project_path: Path) -> bool:
         return False
 
 
+def _has_build_root_config(project_path: Path) -> bool:
+    """Check if project has build_root configured."""
+    try:
+        from factory.store import ExperimentStore
+        config = _run(ExperimentStore(project_path).read_config())
+        return config.build_root is not None
+    except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
+        return False
+
+
 def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
     """Detect the right mode based on project state.
 
@@ -3144,7 +3211,9 @@ def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh:
     }
     mode = mode_map[state]
 
-    if state == ProjectState.HAS_FACTORY and _has_research_target(project_path):
+    if state == ProjectState.HAS_FACTORY and _has_build_root_config(project_path):
+        mode = "build-root"
+    elif state == ProjectState.HAS_FACTORY and _has_research_target(project_path):
         mode = "research"
 
     print(f"  State: {state.value} → mode: {mode}", file=sys.stderr)
@@ -3323,6 +3392,13 @@ def _build_ceo_task(
             "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
             "untouched), run the research command, compare results against the target, and "
             "make a keep/revert decision. Respect research_constraints and cost_budget."
+        )
+    elif mode == "build-root":
+        task += (
+            "\n\nRun Build-Root mode: produce a verified build environment for a historical "
+            "Java project version. Read the build_root config from config.json for project_repo, "
+            "version_tag, jdk_version, and build_system. Follow the 4-stage gated pipeline: "
+            "DEP RESOLVE → ARTIFACT RECOVERY → COMPILE → TEST."
         )
 
     if no_github:
@@ -4034,11 +4110,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research", "review"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research", "review", "build-root"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, interactive (research + brainstorm → spec → build), "
-             "research (autonomous research optimization), or review (on-demand PR review)",
+             "research (autonomous research optimization), review (on-demand PR review), "
+             "or build-root (build environment reconstruction for historical Java versions)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -4104,10 +4181,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research", "build-root"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, meta, or research",
+             "build, discover, improve, meta, research, or build-root",
     )
     p.add_argument(
         "--focus", default=None,
@@ -4163,7 +4240,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research", "build-root"],
         default="auto",
         help="Run mode (default: auto, respects in-flight cycle)",
     )

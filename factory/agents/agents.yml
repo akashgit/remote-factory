@@ -71,3 +71,11 @@ failure_analyst:
     Analyze research experiment failures by stage and root cause.
     Reads run artifacts, classifies failures, and produces structured analysis
     for the Strategist. Use after a research experiment fails.
+
+build-root-ceo:
+  model: opus
+  tools: [Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch]
+  description: >-
+    Orchestrator for the build-root pipeline — produces verified build
+    environments for historical Java project versions using a 4-stage
+    gated pipeline (DEP RESOLVE, ARTIFACT RECOVERY, COMPILE, TEST).
