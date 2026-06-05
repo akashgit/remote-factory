@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import structlog
@@ -34,16 +35,28 @@ def _read_toml_rough(path: Path) -> dict[str, str]:
     return result
 
 
+def _safe_read(path: Path) -> str:
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text()
+    except (OSError, UnicodeDecodeError) as exc:
+        log.debug("framework_file_read_failed", path=str(path), exc=str(exc))
+        return ""
+
+
 def _detect_language(project_path: Path) -> str:
     """Detect primary language from project files."""
     if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
         lang = "python"
     elif (project_path / "package.json").exists():
-        lang = "typescript"
+        lang = "typescript" if (project_path / "tsconfig.json").exists() else "javascript"
     elif (project_path / "Cargo.toml").exists():
         lang = "rust"
     elif (project_path / "go.mod").exists():
         lang = "go"
+    elif any((project_path / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts")):
+        lang = "java"
     elif (project_path / "Package.swift").exists():
         lang = "swift"
     else:
@@ -103,9 +116,7 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
     """Detect framework from dependencies."""
     log.debug("detect_framework_start", language=language)
     if language == "python":
-        toml_text = ""
-        if (project_path / "pyproject.toml").exists():
-            toml_text = (project_path / "pyproject.toml").read_text().lower()
+        toml_text = _safe_read(project_path / "pyproject.toml").lower()
         if "fastapi" in toml_text:
             return "fastapi"
         if "django" in toml_text:
@@ -121,6 +132,37 @@ def _detect_framework(project_path: Path, language: str) -> str | None:
             return "next.js"
         if "express" in deps:
             return "express"
+    elif language == "rust":
+        cargo_text = _safe_read(project_path / "Cargo.toml").lower()
+        if "actix-web" in cargo_text:
+            return "actix-web"
+        if "axum" in cargo_text:
+            return "axum"
+        if "rocket" in cargo_text:
+            return "rocket"
+    elif language == "go":
+        go_deps = f'{_safe_read(project_path / "go.mod")} {_safe_read(project_path / "go.sum")}'.lower()
+        if "gin-gonic/gin" in go_deps:
+            return "gin"
+        if "labstack/echo" in go_deps:
+            return "echo"
+        if "gofiber/fiber" in go_deps:
+            return "fiber"
+        if "go-chi/chi" in go_deps:
+            return "chi"
+    elif language == "java":
+        parts = [
+            _safe_read(project_path / "pom.xml"),
+            _safe_read(project_path / "build.gradle"),
+            _safe_read(project_path / "build.gradle.kts"),
+        ]
+        java_deps = "\n".join(parts).lower()
+        if "spring-boot" in java_deps:
+            return "spring-boot"
+        if "quarkus" in java_deps:
+            return "quarkus"
+        if "micronaut" in java_deps:
+            return "micronaut"
     return None
 
 
@@ -144,6 +186,13 @@ def _detect_test_command(project_path: Path, language: str) -> str | None:
         return "cargo test"
     elif language == "go":
         return "go test ./..."
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn test"
+        if (project_path / "gradlew").exists():
+            return "./gradlew test"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle test"
     return None
 
 
@@ -166,6 +215,15 @@ def _detect_lint_command(project_path: Path, language: str) -> str | None:
         return "cargo clippy"
     elif language == "go":
         return "golangci-lint run"
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn checkstyle:check"
+        gradlew = project_path / "gradlew"
+        if gradlew.exists() and os.access(gradlew, os.X_OK):
+            return "./gradlew checkstyleMain"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle checkstyleMain"
+        return None
     return None
 
 
@@ -186,6 +244,19 @@ def _detect_type_check_command(project_path: Path, language: str) -> str | None:
         pkg = _read_json(project_path / "package.json")
         if "typescript" in pkg.get("devDependencies", {}):
             return "npx tsc --noEmit"
+    elif language == "java":
+        if (project_path / "pom.xml").exists():
+            return "mvn compile -q"
+        if (project_path / "gradlew").exists():
+            return "./gradlew compileJava"
+        if (project_path / "build.gradle").exists() or (project_path / "build.gradle.kts").exists():
+            return "gradle compileJava"
+    elif language == "rust":
+        if (project_path / "Cargo.toml").exists():
+            return "cargo check"
+    elif language == "go":
+        if (project_path / "go.mod").exists():
+            return f"go build -o {os.devnull} ./..."
     return None
 
 
@@ -216,12 +287,26 @@ def _detect_project_evals(project_path: Path) -> list[dict[str, str]]:
                 "command": f"python {dir_name}/{script.name}",
                 "source": "discovered",
             })
+        for script in eval_dir.glob("*.sh"):
+            evals.append({
+                "name": script.stem,
+                "command": f"bash {dir_name}/{script.name}",
+                "source": "discovered",
+            })
 
     for name in ("evaluate.py", "benchmark.py", "bench.py"):
         if (project_path / name).exists():
             evals.append({
                 "name": Path(name).stem,
                 "command": f"python {name}",
+                "source": "discovered",
+            })
+
+    for name in ("evaluate.sh", "benchmark.sh", "bench.sh"):
+        if (project_path / name).exists():
+            evals.append({
+                "name": Path(name).stem,
+                "command": f"bash {name}",
                 "source": "discovered",
             })
 

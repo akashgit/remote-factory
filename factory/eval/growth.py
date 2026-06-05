@@ -14,6 +14,11 @@ import re
 import time
 from collections import Counter
 from pathlib import Path
+from typing import Any
+
+import structlog
+
+log = structlog.get_logger()
 
 # Relative weights within the growth category (sum to 1.0).
 # The runner normalizes these so that growth gets 50% of the composite.
@@ -26,47 +31,174 @@ GROWTH_WEIGHTS = {
     "spec_compliance": 0.10,
 }
 
+LANG_CONFIG: dict[str, dict[str, Any]] = {
+    "python": {
+        "extensions": ["*.py"],
+        "skip_dirs": {
+            "tests", "test", "node_modules", ".venv", "venv",
+            "__pycache__", "build", "dist", "docs", "doc",
+            "examples", "scripts", "eval",
+        },
+        "function_regex": None,
+        "entry_point_patterns": [
+            r'add_parser\("(\w[\w-]*)"',
+            r"@\w+\.command\(",
+        ],
+    },
+    "rust": {
+        "extensions": ["*.rs"],
+        "skip_dirs": {
+            "target", "tests", "test", "examples", "benches", "docs",
+        },
+        "function_regex": re.compile(r"^\s*pub\s+(?:async\s+)?fn\s+(\w+)", re.MULTILINE),
+        "entry_point_patterns": [
+            r"fn\s+main\s*\(",
+            r'#\[(?:tokio::main|actix_web::main)\]',
+        ],
+    },
+    "go": {
+        "extensions": ["*.go"],
+        "skip_dirs": {
+            "vendor", "testdata", "test", "docs", "examples",
+        },
+        "function_regex": re.compile(r"^func\s+(?:\(\w+\s+\*?\w+\)\s+)?([A-Z]\w*)\s*\(", re.MULTILINE),
+        "entry_point_patterns": [
+            r"func\s+main\s*\(",
+            r'\.HandleFunc\(',
+            r'\.Handle\(',
+        ],
+    },
+    "typescript": {
+        "extensions": ["*.ts", "*.tsx"],
+        "skip_dirs": {
+            "node_modules", "dist", "build", ".next", "coverage",
+            "test", "tests", "__tests__", "docs",
+        },
+        "function_regex": re.compile(
+            r"^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        "entry_point_patterns": [
+            r"\.command\(",
+            r'app\.(?:get|post|put|delete|use)\(',
+        ],
+    },
+    "java": {
+        "extensions": ["*.java"],
+        "skip_dirs": {
+            "target", "build", "test", "tests", ".gradle", "docs", "examples",
+        },
+        "function_regex": re.compile(
+            r"^\s*(?:public|protected)\s+(?:static\s+)?(?:final\s+)?(?:synchronized\s+)?\w+\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        "entry_point_patterns": [
+            r"public\s+static\s+void\s+main\s*\(",
+            r"@SpringBootApplication",
+            r"@RestController",
+            r"@QuarkusMain",
+        ],
+    },
+    "javascript": {
+        "extensions": ["*.js", "*.jsx", "*.mjs"],
+        "skip_dirs": {
+            "node_modules", "dist", "build", ".next", "coverage",
+            "test", "tests", "__tests__", "docs",
+        },
+        "function_regex": re.compile(
+            r"^(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(",
+            re.MULTILINE,
+        ),
+        "entry_point_patterns": [
+            r"\.command\(",
+            r'app\.(?:get|post|put|delete|use)\(',
+        ],
+    },
+}
+
+
+def _detect_project_language(project_path: Path) -> str:
+    """Detect project language, reusing introspect logic when available."""
+    try:
+        from factory.discovery.introspect import _detect_language
+        return _detect_language(project_path)
+    except ImportError as exc:
+        log.warning("introspect_import_failed", exc=str(exc))
+        if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
+            return "python"
+        if (project_path / "package.json").exists():
+            return "typescript" if (project_path / "tsconfig.json").exists() else "javascript"
+        if (project_path / "Cargo.toml").exists():
+            return "rust"
+        if (project_path / "go.mod").exists():
+            return "go"
+        if any((project_path / f).exists() for f in ("pom.xml", "build.gradle", "build.gradle.kts")):
+            return "java"
+        return "unknown"
+
+
+def _count_functions_python(modules: list[Path]) -> int:
+    """Count public functions in Python files via AST."""
+    public_fns = 0
+    for mod in modules:
+        try:
+            tree = ast.parse(mod.read_text())
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not node.name.startswith("_"):
+                    public_fns += 1
+    return public_fns
+
+
+def _count_functions_regex(modules: list[Path], pattern: re.Pattern[str]) -> int:
+    """Count public functions in non-Python files via regex."""
+    count = 0
+    for mod in modules:
+        try:
+            text = mod.read_text()
+        except (OSError, UnicodeDecodeError):
+            continue
+        count += len(pattern.findall(text))
+    return count
+
 
 def eval_capability_surface(project_path: Path) -> dict:
     """Measure breadth of capabilities: modules, public functions, entry points."""
     try:
-        # Find Python source directories (skip tests, venvs, hidden dirs)
-        src_dirs = _find_src_dirs(project_path)
+        language = _detect_project_language(project_path)
+        src_dirs = _find_src_dirs(project_path, language)
+        lang_cfg = LANG_CONFIG.get(language, LANG_CONFIG["python"])
+        skip_dirs = lang_cfg["skip_dirs"]
 
         modules: list[Path] = []
         for src_dir in src_dirs:
-            modules.extend(
-                f for f in src_dir.rglob("*.py")
-                if f.name != "__init__.py"
-                and ".venv" not in f.parts
-                and "node_modules" not in f.parts
-            )
+            for ext in lang_cfg["extensions"]:
+                for f in src_dir.rglob(ext):
+                    if f.name == "__init__.py":
+                        continue
+                    if any(part in skip_dirs or part.startswith(".") for part in f.relative_to(project_path).parts):
+                        continue
+                    modules.append(f)
 
-        # Count public functions via AST
-        public_fns = 0
-        for mod in modules:
-            try:
-                tree = ast.parse(mod.read_text())
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    if not node.name.startswith("_"):
-                        public_fns += 1
+        if language == "python":
+            public_fns = _count_functions_python(modules)
+        elif lang_cfg["function_regex"] is not None:
+            public_fns = _count_functions_regex(modules, lang_cfg["function_regex"])
+        else:
+            public_fns = 0
 
-        # Count CLI entry points (argparse add_parser, click commands, etc.)
         entry_points = 0
         for mod in modules:
             try:
                 text = mod.read_text()
             except (OSError, UnicodeDecodeError):
                 continue
-            entry_points += len(re.findall(r'add_parser\("(\w[\w-]*)"', text))
-            entry_points += len(re.findall(r"@\w+\.command\(", text))
+            for pattern in lang_cfg["entry_point_patterns"]:
+                entry_points += len(re.findall(pattern, text))
 
         surface = len(modules) + public_fns + entry_points
-        # Target scales with project size but stays ambitious:
-        # modules * 10 means you need ~9 public functions per module to max out
         target = max(100, len(modules) * 10)
         score = min(1.0, surface / target)
         details = (
@@ -82,6 +214,7 @@ def eval_capability_surface(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="capability_surface", exc=str(exc))
         return {
             "name": "capability_surface",
             "score": 0.0,
@@ -150,6 +283,7 @@ def eval_experiment_diversity(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="experiment_diversity", exc=str(exc))
         return {
             "name": "experiment_diversity",
             "score": 0.0,
@@ -164,7 +298,8 @@ def eval_observability(project_path: Path) -> dict:
     try:
         from factory.study import _analyze_observability
 
-        result = _analyze_observability(project_path, "python")
+        language = _detect_project_language(project_path)
+        result = _analyze_observability(project_path, language)
         score = result.get("observability_score", 0.0)
         fn_cov = result.get("function_coverage", 0.0)
         structured = result.get("structured_logging", False)
@@ -181,6 +316,7 @@ def eval_observability(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="observability", exc=str(exc))
         return {
             "name": "observability",
             "score": 0.0,
@@ -296,6 +432,7 @@ def eval_research_grounding(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="research_grounding", exc=str(exc))
         return {
             "name": "research_grounding",
             "score": 0.0,
@@ -406,6 +543,7 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
             "details": details,
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="factory_effectiveness", exc=str(exc))
         return {
             "name": "factory_effectiveness",
             "score": 0.0,
@@ -465,6 +603,7 @@ def eval_spec_compliance(project_path: Path) -> dict:
             "details": f"{passed}/{total} spec checks passed",
         }
     except Exception as exc:
+        log.error("growth_eval_failed", dimension="spec_compliance", exc=str(exc))
         return {
             "name": "spec_compliance",
             "score": 0.5,
@@ -486,26 +625,28 @@ def compute_growth_results(project_path: Path) -> list[dict]:
     ]
 
 
-def _find_src_dirs(project_path: Path) -> list[Path]:
-    """Find Python source directories in a project (not tests, venvs, etc.)."""
+def _find_src_dirs(project_path: Path, language: str = "python") -> list[Path]:
+    """Find source directories in a project for the given language."""
+    lang_cfg = LANG_CONFIG.get(language, LANG_CONFIG["python"])
+    skip_dirs = lang_cfg["skip_dirs"]
+    extensions = lang_cfg["extensions"]
+
+    def _has_source_files(directory: Path) -> bool:
+        return any(any(directory.rglob(ext)) for ext in extensions)
+
     candidates = []
-    # Check for common patterns: src/<name>/, <name>/, app/, lib/
     for child in project_path.iterdir():
         if not child.is_dir():
             continue
-        if child.name.startswith(".") or child.name in {
-            "tests", "test", "node_modules", ".venv", "venv", "__pycache__",
-            "build", "dist", "docs", "doc", "examples", "scripts", "eval",
-        }:
+        if child.name.startswith(".") or child.name in skip_dirs:
             continue
-        if any(child.rglob("*.py")):
+        if _has_source_files(child):
             candidates.append(child)
 
-    # Also check src/ subdirectory
     src_dir = project_path / "src"
     if src_dir.is_dir():
         for child in src_dir.iterdir():
-            if child.is_dir() and any(child.rglob("*.py")):
+            if child.is_dir() and child not in candidates and _has_source_files(child):
                 candidates.append(child)
 
     return candidates or [project_path]

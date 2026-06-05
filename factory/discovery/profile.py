@@ -1,4 +1,7 @@
-"""Build an EvalProfile from a ProjectProfile — the bridge between introspection and eval generation."""
+"""Build an EvalProfile from a ProjectProfile.
+
+The bridge between introspection and eval generation.
+"""
 
 from __future__ import annotations
 
@@ -61,19 +64,17 @@ def build_eval_profile(project: ProjectProfile) -> EvalProfile:
         if tier == "fallback":
             tier = "researched"
 
-    # Add coverage eval if tests exist but coverage isn't tracked
-    if project.has_tests and project.language == "python":
-        # Find the main package for coverage target
-        coverage_target = project.name.replace("-", "_")
-        pm = "uv run" if project.package_manager == "uv" else "python -m"
-        dimensions.append(EvalDimension(
-            name="coverage",
-            command=f"{pm} pytest --cov={coverage_target} --cov-report=term -q",
-            weight=0.15,
-            parser="exit_code",
-            description="Measure test coverage",
-            source="researched",
-        ))
+    if project.has_tests:
+        cov_cmd = _coverage_command(project)
+        if cov_cmd:
+            dimensions.append(EvalDimension(
+                name="coverage",
+                command=cov_cmd,
+                weight=0.15,
+                parser="exit_code",
+                description="Measure test coverage",
+                source="researched",
+            ))
 
     # Tier 0: Fallback — minimal checks
     if not dimensions:
@@ -146,4 +147,37 @@ def _syntax_check_command(project: ProjectProfile) -> str:
         return "cargo check"
     if project.language == "go":
         return "go vet ./..."
+    if project.language == "java":
+        tc = project.test_command or ""
+        if "mvn" in tc:
+            return "mvn compile -q"
+        if "gradlew" in tc:
+            return "./gradlew compileJava"
+        if "gradle" in tc:
+            return "gradle compileJava"
+        return "true"
     return "true"  # no-op fallback
+
+
+def _coverage_command(project: ProjectProfile) -> str | None:
+    """Return a coverage command appropriate for the project language."""
+    if project.language == "python":
+        coverage_target = project.name.replace("-", "_")
+        pm = "uv run" if project.package_manager == "uv" else "python -m"
+        return f"{pm} pytest --cov={coverage_target} --cov-report=term -q"
+    if project.language == "rust":
+        # Primary: llvm-cov. hygiene.py auto-falls back to
+        # `cargo tarpaulin --out stdout --skip-clean` if llvm-cov fails.
+        return "cargo llvm-cov --summary-only"
+    if project.language == "go":
+        return "go test -cover ./..."
+    if project.language in ("typescript", "javascript"):
+        return "npx jest --coverage"
+    if project.language == "java":
+        tc = project.test_command or ""
+        if "gradlew" in tc:
+            return "./gradlew jacocoTestReport"
+        if "gradle" in tc:
+            return "gradle jacocoTestReport"
+        return "mvn jacoco:report"
+    return None

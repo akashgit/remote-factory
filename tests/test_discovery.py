@@ -36,9 +36,18 @@ class TestIntrospect:
         project = tmp_path / "myapp"
         project.mkdir()
         (project / "package.json").write_text('{"name":"myapp","scripts":{"test":"jest"}}')
+        (project / "tsconfig.json").write_text('{"compilerOptions":{}}')
         (project / "README.md").write_text("# My App\n")
         profile = introspect_project(project)
         assert profile.language == "typescript"
+
+    def test_detects_javascript(self, tmp_path):
+        project = tmp_path / "myapp"
+        project.mkdir()
+        (project / "package.json").write_text('{"name":"myapp","scripts":{"test":"jest"}}')
+        (project / "README.md").write_text("# My App\n")
+        profile = introspect_project(project)
+        assert profile.language == "javascript"
 
     def test_unknown_language(self, tmp_path):
         project = tmp_path / "mystery"
