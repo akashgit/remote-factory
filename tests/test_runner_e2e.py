@@ -350,6 +350,10 @@ def test_capability_matrix() -> None:
                 )
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI") == "true",
+    reason="No runners authenticated in CI",
+)
 def test_available_runners_detected() -> None:
     """At least one runner is detected as available and authenticated."""
     assert len(AVAILABLE_RUNNERS) > 0, (
