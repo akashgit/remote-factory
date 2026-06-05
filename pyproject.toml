@@ -46,6 +46,7 @@ asyncio_mode = "auto"
 markers = [
     "real_worktree: use real git worktree functions instead of mocks",
     "slow: tests that make real API calls (deselect with -m 'not slow')",
+    "integration: marks tests as integration tests (deselect with -m 'not integration')",
 ]
 
 [tool.ruff]

@@ -1,0 +1,2 @@
+rootProject.name = 'mini-java-project'
+include 'core', 'app'
