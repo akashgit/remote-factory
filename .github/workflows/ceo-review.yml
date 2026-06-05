@@ -14,7 +14,7 @@ jobs:
     if: >-
       github.event.issue.pull_request &&
       contains(github.event.comment.body, '@ceo-review') &&
-      contains(fromJSON('["akashgit", "xukai92"]'), github.event.comment.user.login)
+      contains(fromJSON('["akashgit", "xukai92", "colehurwitz", "shivchander"]'), github.event.comment.user.login)
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
