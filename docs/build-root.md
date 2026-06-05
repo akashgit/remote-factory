@@ -12,6 +12,34 @@ The pipeline never modifies project source code. All build behavior changes go t
 | RAM | 8 GB |
 | Disk | 20 GB free (container images + Gradle caches) |
 
+## Storage Configuration
+
+Large Java builds consume significant disk space. Plan for:
+
+| Component | Typical Size |
+|---|---|
+| Gradle caches | 5–10 GB per project |
+| Container images | 2–5 GB per build root |
+| Local Maven repo (`local-repo/`) | 0.5–2 GB per project |
+
+### Custom Storage Root
+
+On machines where the root partition is small but a large NVMe or secondary drive is available, set `PODMAN_STORAGE_ROOT` to redirect Podman's image and layer storage:
+
+```bash
+export PODMAN_STORAGE_ROOT=/mnt/nvme/podman-storage
+```
+
+`build.sh` passes `--root $PODMAN_STORAGE_ROOT` to all `podman build` and `podman run` commands when this variable is set.
+
+### Disk Space Warnings
+
+`build.sh` and `scripts/check-prerequisites.sh` check free disk space at startup. If less than 20 GB is available on the target storage path, a warning is printed. The target path is determined by:
+
+1. `PODMAN_STORAGE_ROOT` (if set)
+2. `~/.local/share/containers` (Podman default)
+3. `/var/lib/docker` (Docker fallback)
+
 ## Required Tools
 
 ### Podman >= 4.0
@@ -132,6 +160,31 @@ Runs the project test suite inside the container.
 - **Terminal condition:** Tests pass with documented exclusions in `results/test-exclusions.json`
 - **Failure classification:** TEST_INFRA (missing services), TEST_ENV (locale/timezone), TEST_TIMEOUT (>60s), TEST_GENUINE (real failures)
 
+## Build Modes
+
+`build.sh` supports three build modes via the `BUILD_MODE` environment variable, controlling verification depth:
+
+| Mode | Gradle Command | Time | When to Use |
+|---|---|---|---|
+| `compile` (default) | `compileJava` | ~2–5 min | Minimum viable check during early pipeline stages |
+| `fast` | `compileJava compileTestJava` | ~3–5 min | Iteration feedback loops — proves dependencies resolve and code compiles |
+| `full` | `clean test build` | ~20–40 min | Final verification after a stage reaches its terminal condition |
+
+### Usage
+
+```bash
+# Quick compile check (default)
+BUILD_MODE=compile BUILD_STAGE=3 ./build.sh
+
+# Fast iteration during auto-research loop
+BUILD_MODE=fast BUILD_STAGE=3 ./build.sh
+
+# Full verification before transitioning stages
+BUILD_MODE=full BUILD_STAGE=3 ./build.sh
+```
+
+The fast/full distinction is critical for iteration speed: 10–20 fix iterations at 3 min each = 30–60 min, vs 10–20 iterations at 30 min each = 5–10 hours.
+
 ## Known Fixes Database
 
 The file at `config/known-fixes.yaml` stores reusable fixes and dead ends. The build-root agent consults this database before attempting any repair.
@@ -213,6 +266,9 @@ Triggered when the pipeline completes all 4 stages.
 |---|---|---|
 | `CONTAINER_RUNTIME` | `podman` | Container runtime executable (`podman` or `docker`) |
 | `BUILD_STAGE` | — | Pipeline stage number (1-4), set by `build.sh` |
+| `BUILD_MODE` | `compile` | Build verification depth: `fast`, `full`, or `compile` |
+| `PODMAN_STORAGE_ROOT` | — | Custom Podman storage root (passed as `--root` to podman) |
+| `PROJECT_SOURCE` | — | Path to project source to mount into the container |
 
 ## Project Layout
 

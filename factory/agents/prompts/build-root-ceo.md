@@ -325,8 +325,16 @@ EVALUATE → DIAGNOSE → LOOKUP → FIX → COMMIT → RE-EVAL
 
 **1. EVALUATE** — Run the stage's eval command inside the container. Capture output to `results/`.
 
+During iteration (auto-research loop), use `BUILD_MODE=fast` for quick ~3–5 min feedback:
+
 ```bash
-BUILD_STAGE=$STAGE_NUM ./build.sh 2>&1 | tee results/stage-$STAGE_NUM-cycle-$CYCLE_NUM.log
+BUILD_MODE=fast BUILD_STAGE=$STAGE_NUM ./build.sh 2>&1 | tee results/stage-$STAGE_NUM-cycle-$CYCLE_NUM.log
+```
+
+After a stage reaches its terminal condition, run `BUILD_MODE=full` once as final verification before transitioning:
+
+```bash
+BUILD_MODE=full BUILD_STAGE=$STAGE_NUM ./build.sh 2>&1 | tee results/stage-$STAGE_NUM-final.log
 ```
 
 **2. DIAGNOSE** — Parse the output using the stage's parser script. Identify the specific failures, their error messages, and the most likely root cause. Focus on the FIRST failure in dependency order.
@@ -698,6 +706,52 @@ Wrap container runs with a timeout to prevent hangs:
 ```bash
 timeout 3600 $CONTAINER_RUNTIME run --rm ... || echo "Container timed out after 60 minutes"
 ```
+
+---
+
+## Build Modes
+
+`build.sh` supports three build modes via the `BUILD_MODE` environment variable. Choose the right mode for the right context:
+
+### `compile` — Minimum Viable Check
+
+```bash
+BUILD_MODE=compile BUILD_STAGE=3 ./build.sh
+```
+
+Runs `./gradlew compileJava`. Use during early pipeline stages when you only need to verify that source compiles. This is the default.
+
+### `fast` — Iteration Feedback Loop
+
+```bash
+BUILD_MODE=fast BUILD_STAGE=3 ./build.sh
+```
+
+Runs `./gradlew compileJava compileTestJava`. Proves the build root has all dependencies and both main + test code compiles. Takes ~3–5 minutes. **Use this during the auto-research loop** for quick feedback.
+
+### `full` — Final Verification
+
+```bash
+BUILD_MODE=full BUILD_STAGE=3 ./build.sh
+```
+
+Runs `./gradlew clean test build`. Full baseline verification that the entire build is healthy. Takes ~20–40 minutes. **Use once after a stage reaches its terminal condition** before transitioning to the next stage.
+
+The fast/full distinction is CRITICAL for iteration speed: 10–20 fix iterations at 3 min each = 30–60 min vs 10–20 iterations at 30 min each = 5–10 hours.
+
+### Disk Space Management
+
+Large Java builds consume significant disk:
+- Gradle caches: 5–10 GB
+- Container images/layers: 2–5 GB per build root
+
+If the root partition is small, set `PODMAN_STORAGE_ROOT` to redirect Podman storage to a large drive:
+
+```bash
+export PODMAN_STORAGE_ROOT=/mnt/nvme/podman-storage
+```
+
+`build.sh` checks disk space at startup and warns if < 20 GB is available on the target storage path.
 
 ---
 

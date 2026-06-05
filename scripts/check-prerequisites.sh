@@ -76,6 +76,32 @@ else
     check_optional "Docker not found (optional — set CONTAINER_RUNTIME=docker to use)"
 fi
 
+# Disk space check
+disk_warn_gb=20
+if [ -n "${PODMAN_STORAGE_ROOT:-}" ]; then
+    disk_target="$PODMAN_STORAGE_ROOT"
+elif command -v podman >/dev/null 2>&1; then
+    disk_target="${HOME}/.local/share/containers"
+else
+    disk_target="/var/lib/docker"
+fi
+
+if [ ! -d "$disk_target" ]; then
+    disk_target="$(dirname "$disk_target")"
+fi
+
+if avail_kb=$(df --output=avail "$disk_target" 2>/dev/null | tail -1 | tr -d ' '); then
+    avail_gb=$(( avail_kb / 1048576 ))
+    if [ "$avail_gb" -ge "$disk_warn_gb" ]; then
+        check "disk" 1 "Disk space: ${avail_gb}GB free on $disk_target (>= ${disk_warn_gb}GB)"
+    else
+        printf '[WARN] Disk space: %dGB free on %s (< %dGB recommended)\n' \
+            "$avail_gb" "$disk_target" "$disk_warn_gb"
+    fi
+else
+    check_optional "Could not determine disk space for $disk_target"
+fi
+
 echo ""
 echo "Required: $passed passed, $failed failed"
 
