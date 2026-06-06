@@ -18,6 +18,7 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 _auth_checked = False
+_compat_checked = False
 
 
 class OpenCodeAuthError(Exception):
@@ -48,6 +49,7 @@ def _check_auth() -> None:
     global _auth_checked  # noqa: PLW0603
     if _auth_checked:
         return
+    _check_binary_compat()
     if os.environ.get("OPENAI_API_KEY"):
         _auth_checked = True
         return
@@ -55,6 +57,56 @@ def _check_auth() -> None:
         _auth_checked = True
         return
     raise OpenCodeAuthError()
+
+
+def _check_binary_compat() -> None:
+    """Warn if the opencode binary is the npm version instead of the Go version.
+
+    The OpenCode runner relies on CLI flags (-p, -c, -q) that only exist in the
+    Go binary (go install github.com/opencode-ai/opencode@latest).  The npm
+    package (opencode-ai) exposes a different CLI that silently ignores these
+    flags.  We detect the Go binary by running ``opencode version`` and checking
+    for output matching ``opencode version v<semver>``.
+    """
+    global _compat_checked  # noqa: PLW0603
+    if _compat_checked:
+        return
+    _compat_checked = True
+
+    import re
+    import shutil
+
+    if not shutil.which("opencode"):
+        # Binary not on PATH at all — _find_opencode_bin_dir will handle later.
+        return
+
+    try:
+        result = subprocess.run(
+            ["opencode", "version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        output = (result.stdout or "").strip() + (result.stderr or "").strip()
+        # Go binary outputs e.g. "opencode version v0.0.55" or "v0.1.0"
+        if re.search(r"v\d+\.\d+\.\d+", output):
+            log.debug("opencode_binary_compat_ok", output=output)
+            return
+        log.warning(
+            "opencode_binary_compat_mismatch",
+            output=output,
+            hint=(
+                "The opencode binary does not appear to be the Go version. "
+                "The factory OpenCode runner requires the Go binary "
+                "(go install github.com/opencode-ai/opencode@latest). "
+                "The npm package 'opencode-ai' has a different CLI and will "
+                "fail silently. Please install the Go version."
+            ),
+        )
+    except FileNotFoundError:
+        pass
+    except subprocess.TimeoutExpired:
+        log.debug("opencode_version_check_timeout")
 
 
 def _find_opencode_bin_dir() -> str | None:
