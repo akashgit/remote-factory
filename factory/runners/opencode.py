@@ -113,6 +113,8 @@ class OpenCodeRunner:
     """Runner implementation for OpenCode CLI."""
 
     name: str = "opencode"
+    _agents_md_path: Path | None = None
+    _agents_md_backup: str | None = None
 
     @classmethod
     def metadata(cls) -> RunnerMeta:

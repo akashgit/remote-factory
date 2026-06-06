@@ -101,6 +101,8 @@ class CodexRunner:
     """Runner implementation for OpenAI Codex CLI."""
 
     name: str = "codex"
+    _agents_md_path: Path | None = None
+    _agents_md_backup: str | None = None
 
     @classmethod
     def metadata(cls) -> RunnerMeta:
