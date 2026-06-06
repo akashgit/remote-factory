@@ -106,7 +106,7 @@ async def _wait_for_sentinel(sentinel_path: Path, timeout: float) -> bool:
     while time.monotonic() < deadline:
         if sentinel_path.exists():
             return True
-        await asyncio.sleep(min(interval, deadline - time.monotonic()))
+        await asyncio.sleep(max(0, min(interval, deadline - time.monotonic())))
         interval = min(interval * 2, _SENTINEL_POLL_CAP)
     return sentinel_path.exists()
 
