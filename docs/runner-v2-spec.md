@@ -164,11 +164,13 @@ The concatenation approach works — all 22 e2e tests pass, and agents produce u
 
 3. **OpenCode binary PATH**: Installed via `go install` to `~/go/bin/opencode`. Not on system PATH by default. The runner auto-detects common locations.
 
-4. **System prompt degradation**: Non-Claude runners concatenate system + task prompts. Works but less effective than proper system prompt slot.
+4. **OpenCode Go vs npm incompatibility**: The OpenCode runner requires the **Go binary** (`go install github.com/opencode-ai/opencode@latest`). The npm package (`opencode-ai`) exposes a different CLI that does not support the `-p`, `-c`, or `-q` flags used by the runner, and will fail silently. The runner performs a runtime compatibility check on first invocation by running `opencode version` and looking for Go-style semver output (e.g. `opencode version v0.0.55`). A warning is logged if the binary appears to be the npm version.
 
-5. **No fallback chains**: If a runner fails, the factory aborts. No automatic failover to another runner.
+5. **System prompt degradation**: Non-Claude runners concatenate system + task prompts. Works but less effective than proper system prompt slot.
 
-6. **Bob invocation ceilings**: Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings via `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8). All invocations logged to `.factory/bob_usage.jsonl`. Ceiling violations abort with an actionable error.
+6. **No fallback chains**: If a runner fails, the factory aborts. No automatic failover to another runner.
+
+7. **Bob invocation ceilings**: Bob Shell has no token telemetry, so the factory self-enforces invocation ceilings via `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` (default: 8). All invocations logged to `.factory/bob_usage.jsonl`. Ceiling violations abort with an actionable error.
 
 ## Dry-Run Mode
 
