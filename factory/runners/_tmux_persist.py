@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
 import platform
 import re
@@ -17,6 +18,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 _SESSION_PREFIX = "factory-persist-"
+_SENTINEL_POLL_INTERVAL = 2.0
 
 
 def find_project_path(cwd: Path) -> Path:
@@ -54,6 +56,34 @@ def _session_exists(session: str) -> bool:
 _DEFAULT_TMUX_TIMEOUT = 86400.0  # 24 hours — interactive sessions are user-driven
 
 
+def _generate_settings(sentinel_path: Path, tmpdir: Path) -> Path:
+    """Generate a settings.json with Stop/StopFailure hooks that touch a sentinel file."""
+    settings = {
+        "hooks": {
+            "Stop": [
+                {"hooks": [{"type": "command", "command": f"touch {sentinel_path}", "timeout": 5}]}
+            ],
+            "StopFailure": [
+                {"hooks": [{"type": "command", "command": f"touch {sentinel_path}", "timeout": 5}]}
+            ],
+        }
+    }
+    settings_file = tmpdir / "settings.json"
+    settings_file.write_text(json.dumps(settings))
+    return settings_file
+
+
+async def _wait_for_sentinel(sentinel_path: Path, timeout: float) -> bool:
+    """Poll for sentinel file creation. Returns True if found, False on timeout."""
+    elapsed = 0.0
+    while elapsed < timeout:
+        if sentinel_path.exists():
+            return True
+        await asyncio.sleep(_SENTINEL_POLL_INTERVAL)
+        elapsed += _SENTINEL_POLL_INTERVAL
+    return False
+
+
 async def run_in_tmux(
     prompt: str,
     task: str,
@@ -67,13 +97,13 @@ async def run_in_tmux(
 ) -> tuple[str, int, None]:
     """Launch claude interactively in a tmux window and wait for completion.
 
-    Output is captured via the `script` command. The factory blocks on
-    `tmux wait-for` until the session exits, then reads the captured output.
+    Output is captured via the `script` command. Completion is signaled via
+    a sentinel file touched by Claude Code Stop/StopFailure hooks. A trap
+    handler provides crash-resilience for abnormal exits.
 
     Returns (stdout, return_code, None). Usage is always None for tmux mode.
     """
     run_id = uuid.uuid4().hex[:8]
-    signal = f"factory-done-{run_id}"
     path_hash = hashlib.sha1(str(project_path).encode()).hexdigest()[:6]
     session = f"{_SESSION_PREFIX}{project_path.name}-{path_hash}"
     window = f"{role}-{run_id}"
@@ -81,12 +111,15 @@ async def run_in_tmux(
     tmpdir = Path(tempfile.mkdtemp(prefix="factory-tmux-"))
     logfile = tmpdir / "output.log"
     exitcode_file = tmpdir / "exitcode"
+    sentinel_file = tmpdir / "sentinel"
     wrapper_script = tmpdir / "wrapper.sh"
 
     prompt_file = tmpdir / "prompt.md"
     prompt_file.write_text(prompt)
 
-    cmd = ["claude", "--append-system-prompt-file", str(prompt_file)]
+    settings_file = _generate_settings(sentinel_file, tmpdir)
+
+    cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file)]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
     if model:
@@ -100,11 +133,14 @@ async def run_in_tmux(
     else:
         script_line = f"script -q -c {shlex.quote(claude_cmd)} {logfile_q}\n"
 
+    sentinel_q = shlex.quote(str(sentinel_file))
+    exitcode_q = shlex.quote(str(exitcode_file))
     wrapper_script.write_text(
         "#!/bin/bash\n"
+        f"cleanup() {{ echo $? > {exitcode_q}; touch {sentinel_q}; }}\n"
+        "trap cleanup EXIT\n"
         f"{script_line}"
-        f"echo $? > {shlex.quote(str(exitcode_file))}\n"
-        f"tmux wait-for -S {shlex.quote(signal)}\n"
+        f"echo $? > {exitcode_q}\n"
     )
     wrapper_script.chmod(0o755)
 
@@ -133,16 +169,8 @@ async def run_in_tmux(
     print(f"  tmux attach -t {session}    # attach and interact", file=sys.stderr)
     print("  /exit or Ctrl-d to finish   # factory resumes when you exit", file=sys.stderr)
 
-    try:
-        wait_proc = await asyncio.create_subprocess_exec(
-            "tmux", "wait-for", signal,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await asyncio.wait_for(wait_proc.wait(), timeout=timeout)
-    except asyncio.TimeoutError:
-        wait_proc.kill()
-        await wait_proc.wait()
+    found = await _wait_for_sentinel(sentinel_file, timeout)
+    if not found:
         subprocess.run(
             ["tmux", "kill-window", "-t", f"{session}:{window}"],
             capture_output=True,
@@ -150,6 +178,17 @@ async def run_in_tmux(
         logger.error("tmux agent timed out after %ss: role=%s", timeout, role)
         _cleanup(tmpdir)
         return f"Agent timed out after {timeout}s", 1, None
+
+    subprocess.run(
+        ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "Enter"],
+        capture_output=True,
+    )
+    await asyncio.sleep(3)
+    if _session_exists(session):
+        subprocess.run(
+            ["tmux", "kill-window", "-t", f"{session}:{window}"],
+            capture_output=True,
+        )
 
     stdout = ""
     return_code = 1
