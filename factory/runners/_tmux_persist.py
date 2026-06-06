@@ -12,6 +12,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -75,12 +76,11 @@ def _generate_settings(sentinel_path: Path, tmpdir: Path) -> Path:
 
 async def _wait_for_sentinel(sentinel_path: Path, timeout: float) -> bool:
     """Poll for sentinel file creation. Returns True if found, False on timeout."""
-    elapsed = 0.0
-    while elapsed < timeout:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
         if sentinel_path.exists():
             return True
         await asyncio.sleep(_SENTINEL_POLL_INTERVAL)
-        elapsed += _SENTINEL_POLL_INTERVAL
     return False
 
 
