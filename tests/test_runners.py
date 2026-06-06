@@ -1368,10 +1368,10 @@ class TestCeilingAccumulationAcrossInvocations:
 
 
 class TestOpenCodeInteractive:
-    """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
+    """Tests for OpenCodeRunner.interactive_run() — prompt delivery via AGENTS.md."""
 
-    def test_interactive_run_passes_prompt(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -p with the prompt to OpenCode."""
+    def test_interactive_run_passes_task_only_via_p(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() passes only the task via -p, not the system prompt."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1389,10 +1389,59 @@ class TestOpenCodeInteractive:
             assert cmd[0] == "opencode"
             assert "-p" in cmd
             p_idx = cmd.index("-p")
-            full_prompt = cmd[p_idx + 1]
-            assert "You are the CEO." in full_prompt
-            assert "Start session" in full_prompt
-            assert "## Current Task" in full_prompt
+            assert cmd[p_idx + 1] == "Start session"
+            assert "You are the CEO." not in cmd[p_idx + 1]
+
+    def test_interactive_run_writes_agents_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() writes system prompt to AGENTS.md and cleans up."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        runner = OpenCodeRunner()
+        agents_md = tmp_path / "AGENTS.md"
+
+        written_content = None
+
+        def capture_and_return(*args: object, **kwargs: object) -> type:
+            nonlocal written_content
+            written_content = agents_md.read_text()
+            return type("Result", (), {"returncode": 0})()
+
+        with patch("factory.runners.opencode.subprocess.run", side_effect=capture_and_return):
+            runner.interactive_run(AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+            ))
+
+        assert written_content is not None
+        assert "You are the CEO." in written_content
+        assert not agents_md.exists()
+
+    def test_interactive_run_preserves_existing_agents_md(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() appends to existing AGENTS.md and restores it."""
+        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
+        runner = OpenCodeRunner()
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("# Original\n")
+
+        written_content = None
+
+        def capture_and_return(*args: object, **kwargs: object) -> type:
+            nonlocal written_content
+            written_content = agents_md.read_text()
+            return type("Result", (), {"returncode": 0})()
+
+        with patch("factory.runners.opencode.subprocess.run", side_effect=capture_and_return):
+            runner.interactive_run(AgentRunRequest(
+                prompt="System prompt.",
+                task="Do task",
+                cwd=tmp_path,
+            ))
+
+        assert "# Original" in written_content
+        assert "System prompt." in written_content
+        assert agents_md.read_text() == "# Original\n"
 
     def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """interactive_run() passes -c with the cwd."""

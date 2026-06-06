@@ -116,8 +116,22 @@ class CodexRunner:
         )
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
-        """Build the Codex CLI command, env dict, and temp files."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        """Build the Codex CLI command, env dict, and temp files.
+
+        Writes the system prompt to a temporary AGENTS.md in cwd so Codex
+        treats it as system instructions rather than user-visible text.
+        Only the task is passed as the user message.
+        """
+        agents_md = Path(request.cwd) / "AGENTS.md"
+        self._agents_md_path = agents_md
+        self._agents_md_backup: str | None = None
+        if agents_md.is_file():
+            self._agents_md_backup = agents_md.read_text()
+            agents_md.write_text(
+                f"{self._agents_md_backup}\n\n{request.prompt}"
+            )
+        else:
+            agents_md.write_text(request.prompt)
 
         cmd = ["codex", "exec"]
 
@@ -131,11 +145,11 @@ class CodexRunner:
             cmd.extend(["--model", request.model])
 
         cmd.append("--skip-git-repo-check")
-        cmd.extend(["--", full_prompt])
+        cmd.extend(["--", request.task])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
-        return cmd, env, []
+        return cmd, env, [agents_md]
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless Codex CLI invocation via ``codex exec``."""
@@ -169,8 +183,25 @@ class CodexRunner:
                 )
             return result
         finally:
+            self._restore_agents_md()
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
+
+    def _restore_agents_md(self) -> None:
+        """Restore the original AGENTS.md content after a Codex invocation."""
+        agents_md = getattr(self, "_agents_md_path", None)
+        if agents_md is None:
+            return
+        backup = getattr(self, "_agents_md_backup", None)
+        try:
+            if backup is not None:
+                agents_md.write_text(backup)
+            elif agents_md.is_file():
+                agents_md.unlink()
+        except OSError:
+            log.debug("codex_agents_md_restore_failed", exc_info=True)
+        self._agents_md_path = None
+        self._agents_md_backup = None
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Codex CLI session as a subprocess."""
@@ -181,9 +212,18 @@ class CodexRunner:
 
         _check_auth()
 
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        agents_md = Path(request.cwd) / "AGENTS.md"
+        self._agents_md_path = agents_md
+        self._agents_md_backup = None
+        if agents_md.is_file():
+            self._agents_md_backup = agents_md.read_text()
+            agents_md.write_text(
+                f"{self._agents_md_backup}\n\n{request.prompt}"
+            )
+        else:
+            agents_md.write_text(request.prompt)
 
-        cmd = ["codex", full_prompt]
+        cmd = ["codex", request.task]
 
         if _using_api_key():
             cmd.append("--ignore-user-config")
@@ -201,6 +241,7 @@ class CodexRunner:
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
+            self._restore_agents_md()
             if tmpdir is not None:
                 tmpdir.cleanup()
 
