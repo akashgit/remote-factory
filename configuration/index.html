@@ -1,0 +1,1936 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A harness for agentic software evolution — detect, delegate, evaluate, archive">
+      
+      
+      
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/configuration/">
+      
+      
+        <link rel="prev" href="../setup/">
+      
+      
+        <link rel="next" href="../architecture/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - re:factory</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            re:factory
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    re:factory
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#all-sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Sections
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="All Sections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#goal-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Goal (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope-modifiable-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Scope / Modifiable (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guards-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Guards (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-command-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval / Command (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval / Threshold
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Target Branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Hypothesis Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project-eval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Project Eval
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-weights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval Weights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Smoke Test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Research Target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mutable-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Mutable Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Fixed Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Research Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inner-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Inner Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#outer-loop-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Outer Loop Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Cost Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#factory-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .factory/ Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-configuration-factoryconfigtoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Configuration (~/.factory/config.toml)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="User Configuration (~/.factory/config.toml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#precedence-highest-wins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence (highest wins)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-configtoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example config.toml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-defaults-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available defaults keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self-improvement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACE Playbook Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#minimal-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Minimal Configuration
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#all-sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        All Sections
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="All Sections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#goal-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Goal (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scope-modifiable-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Scope / Modifiable (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#guards-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Guards (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-command-required" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval / Command (required)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval / Threshold
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#target-branch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Target Branch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hypothesis-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Hypothesis Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#project-eval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Project Eval
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#eval-weights" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Eval Weights
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#smoke-test" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Smoke Test
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Research Target
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mutable-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Mutable Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixed-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Fixed Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#research-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Research Constraints
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inner-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Inner Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#outer-loop-surfaces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Outer Loop Surfaces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cost-budget" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ## Cost Budget
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#factory-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        .factory/ Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#user-configuration-factoryconfigtoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        User Configuration (~/.factory/config.toml)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="User Configuration (~/.factory/config.toml)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#precedence-highest-wins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence (highest wins)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#example-configtoml" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Example config.toml
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Commands
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#credential-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Credential profiles
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Security
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#available-defaults-keys" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Available defaults keys
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration-reference">Configuration Reference<a class="headerlink" href="#configuration-reference" title="Permanent link">&para;</a></h1>
+<p>Each re:factory-managed project uses a <code>factory.md</code> file at its root. The CEO auto-generates this during discovery mode, but you can edit it manually.</p>
+<h2 id="minimal-configuration">Minimal Configuration<a class="headerlink" href="#minimal-configuration" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gu">## Goal</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>One sentence describing what the project should achieve.
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gu">## Scope</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="gu">### Modifiable</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">-</span><span class="w"> </span>src/**
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">-</span><span class="w"> </span>tests/**
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="gu">## Guards</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="k">-</span><span class="w"> </span>Do not delete existing tests
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">-</span><span class="w"> </span>Do not modify files outside scope
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="gu">## Eval</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="gu">### Command</span>
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>pytest --tb=short -q
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="gu">### Threshold</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>0.8
+</code></pre></div>
+<h2 id="all-sections">All Sections<a class="headerlink" href="#all-sections" title="Permanent link">&para;</a></h2>
+<h3 id="goal-required"><code>## Goal</code> (required)<a class="headerlink" href="#goal-required" title="Permanent link">&para;</a></h3>
+<p>What the project should achieve. One sentence that guides the Strategist's hypotheses.</p>
+<h3 id="scope-modifiable-required"><code>## Scope / Modifiable</code> (required)<a class="headerlink" href="#scope-modifiable-required" title="Permanent link">&para;</a></h3>
+<p>Glob patterns defining which files re:factory may edit. Anything outside scope triggers a guard violation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gu">## Scope</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="gu">### Modifiable</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="k">-</span><span class="w"> </span>src/**
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">-</span><span class="w"> </span>tests/**
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="k">-</span><span class="w"> </span>docs/**
+</code></pre></div>
+<h3 id="guards-required"><code>## Guards</code> (required)<a class="headerlink" href="#guards-required" title="Permanent link">&para;</a></h3>
+<p>Inviolable rules checked before every merge. Guard violations force a revert regardless of eval score.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="gu">## Guards</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">-</span><span class="w"> </span>Do not delete existing tests
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">-</span><span class="w"> </span>Do not modify files outside scope
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">-</span><span class="w"> </span>Do not remove error handling
+</code></pre></div>
+<h3 id="eval-command-required"><code>## Eval / Command</code> (required)<a class="headerlink" href="#eval-command-required" title="Permanent link">&para;</a></h3>
+<p>Shell command for running project evaluation. Must produce parseable output.</p>
+<h3 id="eval-threshold"><code>## Eval / Threshold</code><a class="headerlink" href="#eval-threshold" title="Permanent link">&para;</a></h3>
+<p>Minimum composite score to keep a change. Default: <code>0.8</code>.</p>
+<h3 id="target-branch"><code>## Target Branch</code><a class="headerlink" href="#target-branch" title="Permanent link">&para;</a></h3>
+<p>Branch for experiment PRs. Default: <code>main</code>.</p>
+<p>Set to a different branch (e.g. <code>factory/dev</code>) to stage all factory work separately:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gu">## Target Branch</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>factory/dev
+</code></pre></div>
+<p>Override per-run: <code>factory ceo ~/my-project --branch staging</code></p>
+<h3 id="hypothesis-budget"><code>## Hypothesis Budget</code><a class="headerlink" href="#hypothesis-budget" title="Permanent link">&para;</a></h3>
+<p>Controls hypothesis generation constraints per cycle. The Strategist clears as many backlog items as possible and adds at most <code>max_new</code> new items:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="gu">## Hypothesis Budget</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">-</span><span class="w"> </span>min_growth: 2
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">-</span><span class="w"> </span>max_new: 2
+</code></pre></div>
+<ul>
+<li><strong>min_growth</strong>: Minimum hypotheses targeting growth dimensions (guaranteed, never cannibalized)</li>
+<li><strong>max_new</strong>: Maximum new items the Strategist may add to the backlog per cycle</li>
+</ul>
+<p>Override per-run: <code>factory ceo ~/my-project --min-growth 3 --max-new 1</code></p>
+<h3 id="project-eval"><code>## Project Eval</code><a class="headerlink" href="#project-eval" title="Permanent link">&para;</a></h3>
+<p>User-defined eval dimensions for domain-specific metrics:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="gu">## Project Eval</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">-</span><span class="w"> </span>name: benchmark_accuracy
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>  command: python eval/benchmark.py
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>  parse: json
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>  weight: 0.6
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>  timeout: 300
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>  description: Run benchmark and report accuracy
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="k">-</span><span class="w"> </span>name: response_latency
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>  command: python eval/latency_test.py
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>  parse: exit_code
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>  weight: 0.4
+</code></pre></div>
+<p>See <a href="../eval/">Eval System</a> for details on parse formats and scoring.</p>
+<h3 id="eval-weights"><code>## Eval Weights</code><a class="headerlink" href="#eval-weights" title="Permanent link">&para;</a></h3>
+<p>Custom weight distribution across the three eval tiers:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="gu">## Eval Weights</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">-</span><span class="w"> </span>hygiene: 0.25
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="k">-</span><span class="w"> </span>growth: 0.25
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">-</span><span class="w"> </span>project: 0.50
+</code></pre></div>
+<p>Default when project eval is present: <code>0.30 / 0.20 / 0.50</code>. Without project eval: <code>0.50 / 0.50</code>.</p>
+<h3 id="smoke-test"><code>## Smoke Test</code><a class="headerlink" href="#smoke-test" title="Permanent link">&para;</a></h3>
+<p>An e2e verification command that must pass before any change is kept:</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="gu">## Smoke Test</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>```bash
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>curl -sf http://localhost:8000/health
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Good smoke tests are fast (under 30s), test the core user flow, and catch integration issues that unit tests miss.
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>### `## Clean PR`
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>Strips non-essential artifacts (eval scripts, benchmarks, `.factory/` data, eval test files) from PRs before pushing to external repositories. Useful when contributing factory-managed code to upstream repos that don&#39;t want factory infrastructure.
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>```markdown
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>## Clean PR
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>- clean_pr: true
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>- clean_pr_include: [&quot;src/**&quot;, &quot;lib/**&quot;]
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>- clean_pr_exclude: [&quot;src/internal/**&quot;]
+</code></pre></div></p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clean_pr</code></td>
+<td>Enable clean PR mode</td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>clean_pr_include</code></td>
+<td>Include-only glob patterns — if set, only matching files survive</td>
+<td><code>[]</code></td>
+</tr>
+<tr>
+<td><code>clean_pr_exclude</code></td>
+<td>Additional exclude patterns beyond defaults</td>
+<td><code>[]</code></td>
+</tr>
+</tbody>
+</table>
+<p>Default excludes (always applied): <code>eval/score.py</code>, <code>benchmarks/**</code>, <code>tests/eval_*</code>, <code>.factory/**</code>. A file matched by both include and exclude is excluded (exclude wins).</p>
+<p>Resolution precedence: CLI flag (<code>--clean-pr</code> / <code>--no-clean-pr</code>) &gt; <code>config.json</code> &gt; default (<code>false</code>).</p>
+<h3 id="constraints"><code>## Constraints</code><a class="headerlink" href="#constraints" title="Permanent link">&para;</a></h3>
+<p>Soft rules that guide behavior but don't block merges:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="gu">## Constraints</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="k">-</span><span class="w"> </span>Prefer small, focused changes over large refactors
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="k">-</span><span class="w"> </span>Add tests for any new public function
+</code></pre></div>
+<h3 id="research-target"><code>## Research Target</code><a class="headerlink" href="#research-target" title="Permanent link">&para;</a></h3>
+<p>Only for research/benchmark projects. Defines the metric to improve iteratively. When present, auto-detection routes to research mode instead of improve mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="gu">## Research Target</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="k">-</span><span class="w"> </span>objective: maximize SWE-bench resolve rate
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="k">-</span><span class="w"> </span>metric: resolved/total
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="k">-</span><span class="w"> </span>target: 0.35
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="k">-</span><span class="w"> </span>run_command: python run_benchmark.py
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="k">-</span><span class="w"> </span>result_path: results/output.json
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="k">-</span><span class="w"> </span>result_parser: json
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="k">-</span><span class="w"> </span>timeout: 3600
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>objective</code></td>
+<td>Human-readable description of the research goal</td>
+</tr>
+<tr>
+<td><code>metric</code></td>
+<td>Key to extract from results (JSON path or regex)</td>
+</tr>
+<tr>
+<td><code>target</code></td>
+<td>Goal value — experiments stop when this is reached</td>
+</tr>
+<tr>
+<td><code>run_command</code></td>
+<td>Shell command to execute the benchmark/evaluation</td>
+</tr>
+<tr>
+<td><code>result_path</code></td>
+<td>Where the run command writes results</td>
+</tr>
+<tr>
+<td><code>result_parser</code></td>
+<td>How to parse results: <code>json</code>, <code>regex</code>, or <code>exit_code</code></td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>Maximum seconds for the run command</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mutable-surfaces"><code>## Mutable Surfaces</code><a class="headerlink" href="#mutable-surfaces" title="Permanent link">&para;</a></h3>
+<p>Files the Builder is allowed to modify during research experiments. One glob pattern per line. Only used in research mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="gu">## Mutable Surfaces</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="k">-</span><span class="w"> </span>src/**/*.py
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="k">-</span><span class="w"> </span>config/*.yaml
+</code></pre></div>
+<h3 id="fixed-surfaces"><code>## Fixed Surfaces</code><a class="headerlink" href="#fixed-surfaces" title="Permanent link">&para;</a></h3>
+<p>Ground truth files, test data, and eval infrastructure. These are fingerprinted for leakage detection and must never be modified. One glob pattern per line. Only used in research mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="gu">## Fixed Surfaces</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="k">-</span><span class="w"> </span>tests/gold/*.json
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="k">-</span><span class="w"> </span>eval/**/*.py
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="k">-</span><span class="w"> </span>data/benchmark/*.jsonl
+</code></pre></div>
+<h3 id="research-constraints"><code>## Research Constraints</code><a class="headerlink" href="#research-constraints" title="Permanent link">&para;</a></h3>
+<p>Additional rules for the research loop. Only used in research mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="gu">## Research Constraints</span>
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="k">-</span><span class="w"> </span>Do not use GPT-4 (cost constraint)
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="k">-</span><span class="w"> </span>Each experiment must complete within 30 minutes
+</code></pre></div>
+<h3 id="inner-loop"><code>## Inner Loop</code><a class="headerlink" href="#inner-loop" title="Permanent link">&para;</a></h3>
+<p>Multi-run configuration for research mode. Runs the evaluation harness multiple times per cycle and aggregates the metric. Useful for stochastic pipelines where a single run doesn't give a reliable signal. Only used in research mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="gu">## Inner Loop</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="k">-</span><span class="w"> </span>runs_per_cycle: 5
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="k">-</span><span class="w"> </span>aggregate: mean
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="k">-</span><span class="w"> </span>plateau_threshold: 3
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="k">-</span><span class="w"> </span>max_inner_runs_per_cycle: 10
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runs_per_cycle</code></td>
+<td>Number of times to run the harness per cycle</td>
+<td><code>1</code></td>
+</tr>
+<tr>
+<td><code>aggregate</code></td>
+<td>How to combine scores: <code>mean</code>, <code>median</code>, <code>max</code>, <code>all_pass</code></td>
+<td><code>mean</code></td>
+</tr>
+<tr>
+<td><code>plateau_threshold</code></td>
+<td>Consecutive non-improving cycles before triggering outer loop</td>
+<td><code>3</code></td>
+</tr>
+<tr>
+<td><code>max_inner_runs_per_cycle</code></td>
+<td>Optional cap on runs per cycle</td>
+<td>None</td>
+</tr>
+</tbody>
+</table>
+<h3 id="outer-loop-surfaces"><code>## Outer Loop Surfaces</code><a class="headerlink" href="#outer-loop-surfaces" title="Permanent link">&para;</a></h3>
+<p>Surface scoping for inner/outer loop transitions. When inner loop improvements plateau, re:factory expands the Builder's scope to include outer surfaces for architectural changes. Only used in research mode.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="gu">## Outer Loop Surfaces</span>
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="k">-</span><span class="w"> </span>max_outer_cycles: 5
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="k">-</span><span class="w"> </span>inner: prompts/*.md
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a><span class="k">-</span><span class="w"> </span>inner: config/*.yaml
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a><span class="k">-</span><span class="w"> </span>outer: src/**/*.py
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a><span class="k">-</span><span class="w"> </span>outer: agents/**/*.md
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>max_outer_cycles</code></td>
+<td>Maximum outer loop expansions before stopping</td>
+</tr>
+<tr>
+<td><code>inner: &lt;glob&gt;</code></td>
+<td>Narrow surfaces used during inner loop (one per line)</td>
+</tr>
+<tr>
+<td><code>outer: &lt;glob&gt;</code></td>
+<td>Additional surfaces unlocked after plateau (one per line)</td>
+</tr>
+</tbody>
+</table>
+<p>Entries use prefix format — <code>inner:</code> and <code>outer:</code> followed by a glob pattern. Multiple entries per type are allowed.</p>
+<h3 id="cost-budget"><code>## Cost Budget</code><a class="headerlink" href="#cost-budget" title="Permanent link">&para;</a></h3>
+<p>Per-cycle or total budget constraints for research experiments.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="gu">## Cost Budget</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>$5/cycle, $50 total
+</code></pre></div>
+<h2 id="factory-directory"><code>.factory/</code> Directory<a class="headerlink" href="#factory-directory" title="Permanent link">&para;</a></h2>
+<p>Generated at runtime by re:factory. Add to <code>.gitignore</code> — do not edit manually:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>.factory/
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>├── config.json              # Parsed from factory.md
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>├── eval_profile.json        # Discovered eval dimensions
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>├── results.tsv              # Append-only experiment history
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>├── events.jsonl             # Structured event log
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>├── performance_report.json  # Aggregated verdicts, observations, stats
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a>├── experiments/
+<a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>│   └── 001/
+<a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a>│       ├── hypothesis.md
+<a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a>│       ├── eval_before.json
+<a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a>│       ├── eval_after.json
+<a id="__codelineno-17-12" name="__codelineno-17-12" href="#__codelineno-17-12"></a>│       ├── changes.diff
+<a id="__codelineno-17-13" name="__codelineno-17-13" href="#__codelineno-17-13"></a>│       └── verdict.json
+<a id="__codelineno-17-14" name="__codelineno-17-14" href="#__codelineno-17-14"></a>├── strategy/
+<a id="__codelineno-17-15" name="__codelineno-17-15" href="#__codelineno-17-15"></a>│   ├── current.md
+<a id="__codelineno-17-16" name="__codelineno-17-16" href="#__codelineno-17-16"></a>│   ├── observations.md
+<a id="__codelineno-17-17" name="__codelineno-17-17" href="#__codelineno-17-17"></a>│   ├── backlog.md
+<a id="__codelineno-17-18" name="__codelineno-17-18" href="#__codelineno-17-18"></a>│   └── insights.md
+<a id="__codelineno-17-19" name="__codelineno-17-19" href="#__codelineno-17-19"></a>├── reviews/
+<a id="__codelineno-17-20" name="__codelineno-17-20" href="#__codelineno-17-20"></a>│   ├── &lt;role&gt;-latest.md
+<a id="__codelineno-17-21" name="__codelineno-17-21" href="#__codelineno-17-21"></a>│   └── ceo-verdict-&lt;role&gt;.md
+<a id="__codelineno-17-22" name="__codelineno-17-22" href="#__codelineno-17-22"></a>├── archive/                 # Archivist notes
+<a id="__codelineno-17-23" name="__codelineno-17-23" href="#__codelineno-17-23"></a>│   ├── experiments/
+<a id="__codelineno-17-24" name="__codelineno-17-24" href="#__codelineno-17-24"></a>│   ├── strategies/
+<a id="__codelineno-17-25" name="__codelineno-17-25" href="#__codelineno-17-25"></a>│   ├── sources/
+<a id="__codelineno-17-26" name="__codelineno-17-26" href="#__codelineno-17-26"></a>│   └── patterns/
+<a id="__codelineno-17-27" name="__codelineno-17-27" href="#__codelineno-17-27"></a>└── agents/                  # Per-project prompt overrides
+</code></pre></div>
+<h2 id="user-configuration-factoryconfigtoml">User Configuration (<code>~/.factory/config.toml</code>)<a class="headerlink" href="#user-configuration-factoryconfigtoml" title="Permanent link">&para;</a></h2>
+<p>All <code>FACTORY_*</code> environment variables can also be set in <code>~/.factory/config.toml</code>. Env vars remain fully supported (for CI, Docker, scripting) — config.toml is additive.</p>
+<h3 id="precedence-highest-wins">Precedence (highest wins)<a class="headerlink" href="#precedence-highest-wins" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>CLI flag  &gt;  env var  &gt;  profile credential  &gt;  config.toml [defaults]  &gt;  hardcoded default
+</code></pre></div>
+<h3 id="example-configtoml">Example config.toml<a class="headerlink" href="#example-configtoml" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="k">[defaults]</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="n">runner</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;claude&quot;</span><span class="w">                        </span><span class="c1"># CLI backend: &quot;claude&quot; or &quot;bob&quot;</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="n">model</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;&quot;</span><span class="w">                               </span><span class="c1"># Claude model for agent subprocesses</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="n">projects_dir</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;~/factory-projects&quot;</span><span class="w">      </span><span class="c1"># Root for factory-managed projects</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="k">[credentials.vertex]</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="n">CLAUDE_CODE_USE_VERTEX</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;1&quot;</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="n">ANTHROPIC_VERTEX_PROJECT_ID</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;my-gcp-project&quot;</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="n">CLOUD_ML_REGION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;us-east5&quot;</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="k">[credentials.bob]</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="n">FACTORY_RUNNER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;bob&quot;</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="n">BOBSHELL_API_KEY</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;...&quot;</span>
+</code></pre></div>
+<h3 id="commands">Commands<a class="headerlink" href="#commands" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>factory<span class="w"> </span>config<span class="w"> </span>edit<span class="w">                      </span><span class="c1"># Open config in $EDITOR (creates template if missing)</span>
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>factory<span class="w"> </span>config<span class="w"> </span>show<span class="w">                      </span><span class="c1"># Show resolved config (secrets masked)</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>factory<span class="w"> </span>config<span class="w"> </span>show<span class="w"> </span>--reveal<span class="w">             </span><span class="c1"># Show full values including secrets</span>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a>factory<span class="w"> </span>config<span class="w"> </span>migrate<span class="w">                   </span><span class="c1"># Create starter config from current env vars</span>
+</code></pre></div>
+<h3 id="credential-profiles">Credential profiles<a class="headerlink" href="#credential-profiles" title="Permanent link">&para;</a></h3>
+<p>Profiles let you switch between environments without juggling env vars:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>vertex
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>factory<span class="w"> </span>run<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>bob<span class="w"> </span>--loop
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>factory<span class="w"> </span>agent<span class="w"> </span>researcher<span class="w"> </span>--task<span class="w"> </span><span class="s2">&quot;...&quot;</span><span class="w"> </span>--project<span class="w"> </span>~/my-project<span class="w"> </span>--profile<span class="w"> </span>vertex
+</code></pre></div>
+<p>Profile credentials are injected via <code>os.environ.setdefault()</code>, so pre-existing env vars always win.</p>
+<h3 id="security">Security<a class="headerlink" href="#security" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Config file is created with <code>0o600</code> permissions (owner read/write only)</li>
+<li><code>factory config show</code> masks secrets by default (keys containing "key", "token", "secret", "password")</li>
+<li>Profile names are validated: <code>[a-zA-Z0-9_-]+</code> only (no path traversal)</li>
+<li>Credential keys must be valid shell identifiers: <code>[A-Z_][A-Z0-9_]*</code></li>
+</ul>
+<h3 id="available-defaults-keys">Available defaults keys<a class="headerlink" href="#available-defaults-keys" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Env var equivalent</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>runner</code></td>
+<td><code>FACTORY_RUNNER</code></td>
+<td><code>claude</code></td>
+</tr>
+<tr>
+<td><code>model</code></td>
+<td><code>FACTORY_MODEL</code></td>
+<td><em>(Claude Code default)</em></td>
+</tr>
+<tr>
+<td><code>projects_dir</code></td>
+<td><code>FACTORY_PROJECTS_DIR</code></td>
+<td><code>~/factory-projects</code></td>
+</tr>
+<tr>
+<td><code>vault_path</code></td>
+<td><code>FACTORY_VAULT_PATH</code></td>
+<td><em>(unset)</em></td>
+</tr>
+<tr>
+<td><code>playbooks_dir</code></td>
+<td><code>FACTORY_PLAYBOOKS_DIR</code></td>
+<td><code>~/.factory/playbooks</code></td>
+</tr>
+<tr>
+<td><code>registry_dir</code></td>
+<td><code>FACTORY_REGISTRY_DIR</code></td>
+<td><code>~/.factory</code></td>
+</tr>
+<tr>
+<td><code>managed_dirs</code></td>
+<td><code>FACTORY_MANAGED_DIRS</code></td>
+<td><em>(unset)</em></td>
+</tr>
+<tr>
+<td><code>runner_quiet</code></td>
+<td><code>FACTORY_RUNNER_QUIET</code></td>
+<td><em>(unset)</em></td>
+</tr>
+<tr>
+<td><code>bob_dry_run</code></td>
+<td><code>FACTORY_BOB_DRY_RUN</code></td>
+<td><em>(unset)</em></td>
+</tr>
+<tr>
+<td><code>bob_max_invocations_per_cycle</code></td>
+<td><code>FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE</code></td>
+<td><code>8</code></td>
+</tr>
+<tr>
+<td><code>ceo_respawn_disabled</code></td>
+<td><code>FACTORY_CEO_RESPAWN_DISABLED</code></td>
+<td><em>(unset)</em></td>
+</tr>
+<tr>
+<td><code>ceo_max_respawns</code></td>
+<td><code>FACTORY_CEO_MAX_RESPAWNS</code></td>
+<td><code>3</code></td>
+</tr>
+</tbody>
+</table>
+<h2 id="environment-variables">Environment Variables<a class="headerlink" href="#environment-variables" title="Permanent link">&para;</a></h2>
+<p>All environment variables listed below can alternatively be set in <code>~/.factory/config.toml</code> (see above). Env vars are still supported for CI, Docker, and scripting.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+<th>Default</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>FACTORY_PROJECTS_DIR</code></td>
+<td>Parent directory for projects created from prompts</td>
+<td><code>~/factory-projects</code></td>
+</tr>
+<tr>
+<td><code>FACTORY_MODEL</code></td>
+<td>Model override for agent subprocesses</td>
+<td><em>(Claude Code default)</em></td>
+</tr>
+<tr>
+<td><code>FACTORY_PLAYBOOKS_DIR</code></td>
+<td>Directory for ACE-evolved agent playbooks</td>
+<td><code>~/.factory/playbooks</code></td>
+</tr>
+<tr>
+<td><code>FACTORY_REGISTRY_DIR</code></td>
+<td>Override global registry location</td>
+<td><code>~/.factory</code></td>
+</tr>
+<tr>
+<td><code>FACTORY_RUNNER</code></td>
+<td>CLI backend: <code>claude</code> or <code>bob</code></td>
+<td><code>claude</code></td>
+</tr>
+</tbody>
+</table>
+<p>See <a href="../setup/#environment-variables">Setup Guide — Environment Variables</a> for the full list, including Claude Code authentication, Bob Shell, notifications, and advanced CEO options.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

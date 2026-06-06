@@ -1,0 +1,78 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: "Data Flow — Research & Self-Improvement"
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+research_config: {
+  label: "Research Configuration"
+  style: { fill: "#E0F7FA"; stroke: "#00695C"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  target: {
+    label: "Research Target\nobjective, metric, target"
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+  mutable: {
+    label: "Mutable Surfaces\nfiles Builder can modify"
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+  fixed: {
+    label: "Fixed Surfaces\nground truth (read-only)"
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+}
+
+run_artifacts: {
+  label: "Run Artifacts"
+  style: { fill: "#E0F7FA"; stroke: "#00695C"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  runs: {
+    label: "runs/\nstdout, stderr, summary"
+    style: { fill: "#B2EBF2"; stroke: "#00838F"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+  leakage: {
+    label: "Leakage Guard"
+    shape: hexagon
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 12; bold: true }
+  }
+}
+
+ace: {
+  label: "ACE Self-Improvement"
+  style: { fill: "#FCE4EC"; stroke: "#AD1457"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+
+  reflect: {
+    label: Reflect
+    style: { fill: "#F48FB1"; stroke: "#AD1457"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+  curate: {
+    label: Curate
+    style: { fill: "#F48FB1"; stroke: "#AD1457"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+  inject: {
+    label: "Inject\n→ playbooks"
+    style: { fill: "#F48FB1"; stroke: "#AD1457"; font-color: "#0D1B2A"; font-size: 12; border-radius: 6 }
+  }
+
+  reflect -> curate -> inject
+}
+
+research_config -> run_artifacts: "run_command" {
+  style: { stroke: "#00695C"; stroke-width: 2; font-size: 11; font-color: "#0D1B2A" }
+}
+research_config.fixed -> run_artifacts.leakage: "fingerprints" {
+  style: { stroke: "#C62828"; stroke-width: 2; font-size: 10; font-color: "#0D1B2A" }
+}
+
+run_artifacts -> ace.reflect: "experiment data" {
+  style: { stroke: "#AD1457"; stroke-dash: 3; font-size: 10; font-color: "#0D1B2A" }
+}

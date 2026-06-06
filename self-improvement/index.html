@@ -1,0 +1,1784 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A harness for agentic software evolution — detect, delegate, evaluate, archive">
+      
+      
+      
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/self-improvement/">
+      
+      
+        <link rel="prev" href="../eval/">
+      
+      
+        <link rel="next" href="../ace/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Self-Improvement Loop - re:factory</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#self-improvement-loop" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            re:factory
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Self-Improvement Loop
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    re:factory
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-loop-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Loop at a Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-ceo-tracks-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the CEO Tracks Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the CEO Tracks Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-review-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Review Gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#role-specific-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Role-Specific Assessment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mandatory-archival" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mandatory Archival
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ace-how-playbooks-evolve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ACE: How Playbooks Evolve
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ACE: How Playbooks Evolve">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-feeds-ace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Feeds ACE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-ace-produces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What ACE Produces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-rules-reach-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Rules Reach Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-project-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Project Learning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cross-Project Learning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-insights-are-generated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Insights Are Generated
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-insights-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Insights Are Used
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#archive-and-performance-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Archive and Performance Reports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#global-project-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Project Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-ceo-improves-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the CEO Improves Itself
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the CEO Improves Itself">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-reflector-analyzes-for-the-ceo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the Reflector Analyzes for the CEO
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-ceo-playbook-as-of-writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current CEO Playbook (as of writing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-feedback-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Feedback Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meta-mode-full-self-improvement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Meta Mode: Full Self-Improvement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Meta Mode: Full Self-Improvement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-improve-refactory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Improve re:factory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-evolve-all-playbooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Evolve All Playbooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-run-meta-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Run Meta Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hard-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard Guardrails
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-humans-are-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When Humans Are Needed
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACE Playbook Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-loop-at-a-glance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Loop at a Glance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-ceo-tracks-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the CEO Tracks Agents
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the CEO Tracks Agents">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#the-review-gate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Review Gate
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#role-specific-assessment" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Role-Specific Assessment
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#decision-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Decision Metadata
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mandatory-archival" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mandatory Archival
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#ace-how-playbooks-evolve" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ACE: How Playbooks Evolve
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ACE: How Playbooks Evolve">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-feeds-ace" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What Feeds ACE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-ace-produces" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What ACE Produces
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-rules-reach-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Rules Reach Agents
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-project-learning" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-Project Learning
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Cross-Project Learning">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#how-insights-are-generated" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Insights Are Generated
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-insights-are-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Insights Are Used
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#archive-and-performance-reports" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Archive and Performance Reports
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#global-project-registry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Project Registry
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-the-ceo-improves-itself" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How the CEO Improves Itself
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="How the CEO Improves Itself">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-the-reflector-analyzes-for-the-ceo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What the Reflector Analyzes for the CEO
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#current-ceo-playbook-as-of-writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current CEO Playbook (as of writing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-feedback-loop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Feedback Loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#meta-mode-full-self-improvement" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Meta Mode: Full Self-Improvement
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Meta Mode: Full Self-Improvement">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#phase-1-improve-refactory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 1: Improve re:factory
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#phase-2-evolve-all-playbooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2: Evolve All Playbooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#when-to-run-meta-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When to Run Meta Mode
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hard-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Hard Guardrails
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-humans-are-needed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        When Humans Are Needed
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="self-improvement-loop">Self-Improvement Loop<a class="headerlink" href="#self-improvement-loop" title="Permanent link">&para;</a></h1>
+<p>re:factory is a fully autonomous self-improvement system. Once pointed at a project, it runs measured experiments, learns from the outcomes, and gets sharper over time — no human intervention required. This document explains how the loop works end-to-end: how the CEO tracks agents, how playbooks evolve, how cross-project learning feeds back, and how the CEO improves itself.</p>
+<h2 id="the-loop-at-a-glance">The Loop at a Glance<a class="headerlink" href="#the-loop-at-a-glance" title="Permanent link">&para;</a></h2>
+<pre class="mermaid"><code>graph TB
+    subgraph cycle ["Experiment Cycle"]
+        R["Researcher&lt;br&gt;&lt;i&gt;observe&lt;/i&gt;"] --&gt; S["Strategist&lt;br&gt;&lt;i&gt;hypothesize&lt;/i&gt;"]
+        S --&gt; B["Builder&lt;br&gt;&lt;i&gt;implement&lt;/i&gt;"]
+        B --&gt; RV["Reviewer&lt;br&gt;&lt;i&gt;guard&lt;/i&gt;"]
+        RV --&gt; E["Evaluator&lt;br&gt;&lt;i&gt;measure&lt;/i&gt;"]
+        E --&gt; CEO{"CEO&lt;br&gt;&lt;i&gt;decide&lt;/i&gt;"}
+        CEO -- "score up" --&gt; KEEP["KEEP"]
+        CEO -- "score down" --&gt; REVERT["REVERT"]
+    end
+
+    subgraph archive ["Archival"]
+        AR["Archivist&lt;br&gt;&lt;i&gt;record everything&lt;/i&gt;"]
+    end
+
+    subgraph learn ["Learning"]
+        ACE["ACE&lt;br&gt;&lt;i&gt;reflect → curate → inject&lt;/i&gt;"]
+        XP["Cross-Project&lt;br&gt;Insights"]
+    end
+
+    KEEP --&gt; AR
+    REVERT --&gt; AR
+    AR --&gt; ACE
+    AR --&gt; XP
+    ACE -.-&gt;|"evolved playbooks"| R
+    XP -.-&gt;|"category success rates"| S
+
+    style cycle fill:#e8eaf6,stroke:#5c6bc0
+    style archive fill:#fff3e0,stroke:#ff8f00
+    style learn fill:#e8f5e9,stroke:#43a047</code></pre>
+<p>Every experiment produces structured data: hypothesis category, verdict (keep/revert), score delta, and CEO decision metadata. This data feeds two learning systems — ACE (playbook evolution) and cross-project insights (category success rates) — which shape the next cycle's behavior.</p>
+<h2 id="how-the-ceo-tracks-agents">How the CEO Tracks Agents<a class="headerlink" href="#how-the-ceo-tracks-agents" title="Permanent link">&para;</a></h2>
+<p>Every specialist agent runs as an independent Claude Code subprocess. The CEO doesn't just spawn and forget — it enforces a <strong>mandatory review gate</strong> after each agent completes.</p>
+<h3 id="the-review-gate">The Review Gate<a class="headerlink" href="#the-review-gate" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Agent runs and produces output</li>
+<li>Output is auto-saved to <code>.factory/reviews/&lt;role&gt;-latest.md</code></li>
+<li>CEO reads the output and writes a verdict to <code>.factory/reviews/ceo-verdict-&lt;role&gt;.md</code>:</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="gu">## Verdict: PROCEED | REDIRECT | ABORT</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="gs">**Rationale:**</span> [specific evidence from agent output]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="gs">**Issues found:**</span> [list]
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="gs">**Instructions for next agent:**</span> [what to pass forward]
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Verdict</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>PROCEED</strong></td>
+<td>Move to the next agent in the pipeline</td>
+</tr>
+<tr>
+<td><strong>REDIRECT</strong></td>
+<td>Re-invoke the same agent with corrections (max 2 retries)</td>
+</tr>
+<tr>
+<td><strong>ABORT</strong></td>
+<td>Log failure, skip to recovery</td>
+</tr>
+</tbody>
+</table>
+<h3 id="role-specific-assessment">Role-Specific Assessment<a class="headerlink" href="#role-specific-assessment" title="Permanent link">&para;</a></h3>
+<p>The CEO evaluates each agent against criteria tailored to its role:</p>
+<table>
+<thead>
+<tr>
+<th>Agent</th>
+<th>What the CEO checks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Researcher</strong></td>
+<td>Covered the right topics? Enough depth? Web research included?</td>
+</tr>
+<tr>
+<td><strong>Strategist</strong></td>
+<td>Hypotheses align with goals? At least one growth hypothesis? (<strong>hard gate</strong>)</td>
+</tr>
+<tr>
+<td><strong>Builder</strong></td>
+<td>PR matches plan? No scope creep? Tests included?</td>
+</tr>
+<tr>
+<td><strong>Reviewer</strong></td>
+<td>Substantive review? Violations caught? Not rubber-stamped?</td>
+</tr>
+<tr>
+<td><strong>Evaluator</strong></td>
+<td>Valid JSON scores? All dimensions present? Before/after compared?</td>
+</tr>
+</tbody>
+</table>
+<p>The Strategist gate is particularly important: if all hypotheses target hygiene dimensions (lint, tests, types) with none targeting growth (capability, diversity, observability), the CEO redirects with an explicit correction. This prevents the system from grinding on polish while ignoring real improvements.</p>
+<h3 id="decision-metadata">Decision Metadata<a class="headerlink" href="#decision-metadata" title="Permanent link">&para;</a></h3>
+<p>Every keep/revert decision is recorded with structured metadata in the experiment notes:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>ceo:keep score_delta=+0.05 precheck=passed agents_spawned=R,S,B,RV,E,A
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>ceo:revert reason=precheck_failed failures=score_direction score_delta=-0.02
+</code></pre></div>
+<p>This metadata is later parsed by the ACE reflector to learn from the CEO's own decisions.</p>
+<h3 id="mandatory-archival">Mandatory Archival<a class="headerlink" href="#mandatory-archival" title="Permanent link">&para;</a></h3>
+<p>The Archivist runs after every phase — not just at the end. The CEO tracks archival completion via checkpoint files:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Researcher → ARCHIVIST → Strategist → ARCHIVIST → Builder → ARCHIVIST
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>→ Reviewer → ARCHIVIST → Evaluator → ARCHIVIST → Final ARCHIVIST (blocking)
+</code></pre></div>
+<p>The final Archivist invocation is blocking: the CEO waits for it to complete before finalizing. If any checkpoint is missing, the CEO spawns the Archivist for that phase before continuing. This is Sacred Rule 7 — the system's most battle-tested behavioral rule (<code>helpful=28, harmful=4</code>).</p>
+<h2 id="ace-how-playbooks-evolve">ACE: How Playbooks Evolve<a class="headerlink" href="#ace-how-playbooks-evolve" title="Permanent link">&para;</a></h2>
+<p>ACE (Autonomous Context Engineering) is a three-phase loop that turns experiment outcomes into behavioral rules for agents. See <a href="../ace/">ACE Self-Improvement</a> for the mechanics. Here's how it fits into the larger system.</p>
+<h3 id="what-feeds-ace">What Feeds ACE<a class="headerlink" href="#what-feeds-ace" title="Permanent link">&para;</a></h3>
+<p>ACE draws from two data sources per project:</p>
+<p><strong>Primary: Performance reports</strong> (<code>.factory/performance_report.json</code>) — consolidated data including experiment records, CEO verdict patterns (PROCEED/REDIRECT/ABORT counts per role), and observation coverage (how much of the archive is populated). Generated by <code>factory report-update</code>.</p>
+<p><strong>Fallback: TSV history</strong> (<code>results.tsv</code>) — raw experiment records with hypothesis text, verdict, score delta, and CEO decision notes.</p>
+<p>Each experiment record contains:
+- The hypothesis text (classified into one of 13 categories: bugfix, testing, feature, refactoring, etc.)
+- The verdict (keep, revert, or error)
+- The score delta (how much the composite score changed)
+- CEO decision notes (structured metadata about what agents were spawned, what failed)</p>
+<p>ACE analyzes this across <strong>all re:factory-managed projects</strong> (discovered via the global registry) — not just the current one.</p>
+<h3 id="what-ace-produces">What ACE Produces<a class="headerlink" href="#what-ace-produces" title="Permanent link">&para;</a></h3>
+<p>For each of the agent roles, ACE generates DO and DON'T rules backed by empirical evidence:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="gu">### DO</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">-</span><span class="w"> </span>[strat-00003] helpful=8 harmful=1 :: Prioritize testing hypotheses — 85% keep rate across 12 experiments
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="gu">### DON&#39;T</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="k">-</span><span class="w"> </span>[strat-00005] helpful=5 harmful=0 :: Avoid pure refactoring hypotheses — only 30% keep rate, high revert risk
+</code></pre></div>
+<p>In addition to experiment-outcome bullets, the reflector generates two new types of bullets from performance reports:</p>
+<ul>
+<li><strong>Verdict pattern bullets</strong> — when a specific agent role accumulates 3+ REDIRECTs or 2+ ABORTs, a bullet flags the pattern (e.g., "The builder agent frequently needs REDIRECT (4 times)")</li>
+<li><strong>Observation coverage bullets</strong> — when archive notes are sparse relative to total observations, a bullet recommends more thorough documentation</li>
+</ul>
+<p>Each rule has <code>helpful</code> and <code>harmful</code> counters. Rules that correlate with reverted experiments accumulate harmful counts. Once <code>harmful &gt; helpful</code> with 3+ observations, the rule gets pruned. The playbook is capped at 15 items to prevent prompt bloat.</p>
+<h3 id="how-rules-reach-agents">How Rules Reach Agents<a class="headerlink" href="#how-rules-reach-agents" title="Permanent link">&para;</a></h3>
+<p>At invocation time, <code>factory/agents/runner.py</code> does a two-step prompt assembly:</p>
+<ol>
+<li>Load the base prompt (<code>factory/agents/prompts/&lt;role&gt;.md</code> or project override)</li>
+<li>Load the evolved playbook (<code>~/.factory/playbooks/&lt;role&gt;.md</code>, falling back to <code>factory/agents/playbooks/&lt;role&gt;.md</code>) and append it as a <code>## Behavioral Playbook</code> section</li>
+</ol>
+<p>The agent sees its evolved rules as part of its instructions. No explicit "follow these rules" preamble needed — they're integrated into the prompt.</p>
+<h2 id="cross-project-learning">Cross-Project Learning<a class="headerlink" href="#cross-project-learning" title="Permanent link">&para;</a></h2>
+<p>This is where re:factory's knowledge compounds. Instead of treating each project as isolated, re:factory learns patterns that transfer across projects.</p>
+<h3 id="how-insights-are-generated">How Insights Are Generated<a class="headerlink" href="#how-insights-are-generated" title="Permanent link">&para;</a></h3>
+<p><code>factory/insights.py</code> discovers all re:factory-managed projects (via the global registry, with directory scanning as fallback), loads their experiment histories, and computes:</p>
+<ul>
+<li><strong>Category success rates</strong>: Which types of hypotheses (bugfix, testing, feature, observability, etc.) get kept vs reverted across all projects</li>
+<li><strong>Winning categories</strong>: Keep rate &gt;= 80% with 3+ experiments (reliable bets)</li>
+<li><strong>Losing categories</strong>: Keep rate &lt; 50% with 3+ experiments (risky bets)</li>
+<li><strong>Cross-project patterns</strong>: Categories that are reliable across multiple projects (&gt;90% keep rate) or risky across projects (&lt;50% keep rate)</li>
+</ul>
+<p>The output is a <code>CrossProjectInsights</code> object with evidence-backed patterns and confidence scores.</p>
+<h3 id="how-insights-are-used">How Insights Are Used<a class="headerlink" href="#how-insights-are-used" title="Permanent link">&para;</a></h3>
+<p>Cross-project insights flow into the system at three points:</p>
+<p><strong>1. Researcher observations</strong> — When the Researcher agent runs in Meta mode (improving re:factory itself), it reads <code>.factory/strategy/insights.md</code> and uses category success rates to inform what areas to investigate.</p>
+<p><strong>2. Strategist hypothesis ranking</strong> — The FEEC priority system (Fix &gt; Exploit &gt; Explore &gt; Combine) uses category success rates to rank hypotheses. A hypothesis in a winning category gets a boost; one in a losing category gets deprioritized.</p>
+<p><strong>3. ACE reflection</strong> — The reflector generates playbook bullets from cross-project data. If <code>testing</code> hypotheses have an 85% keep rate across 5 projects, the Strategist gets a DO bullet recommending testing hypotheses. If <code>refactoring</code> has a 30% keep rate, it gets a DON'T.</p>
+<h3 id="archive-and-performance-reports">Archive and Performance Reports<a class="headerlink" href="#archive-and-performance-reports" title="Permanent link">&para;</a></h3>
+<p>The Archivist writes structured notes to <code>.factory/archive/</code> inside each project:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>.factory/archive/
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>├── experiments/                 # Per-experiment notes
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>│   └── {project}-NNN.md
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>├── strategies/                  # Strategy snapshots
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>│   └── {project}-{date}.md
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>├── sources/                     # Research source notes
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>│   └── {source-name}.md
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>├── patterns/                    # Cross-project patterns
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>│   └── patterns.md
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>└── {project}.md                 # Project dashboard
+</code></pre></div>
+<p>After writing notes, the Archivist runs <code>factory report-update</code> to regenerate <code>.factory/performance_report.json</code> — a consolidated report that merges experiment records, CEO verdicts, and observations into a single file. This report is what the ACE reflector reads for qualitative signals (verdict patterns, observation coverage).</p>
+<p>The Researcher reads prior knowledge from <code>.factory/archive/sources/</code> before doing web searches — if a topic is already covered by source notes, it skips the web search and uses the archived knowledge. This means re:factory gets faster and more targeted as its archive grows.</p>
+<h3 id="global-project-registry">Global Project Registry<a class="headerlink" href="#global-project-registry" title="Permanent link">&para;</a></h3>
+<p>re:factory maintains a global registry at <code>~/.factory/registry.json</code> that tracks all re:factory-managed projects. Projects are auto-registered when experiments begin (<code>factory begin</code>) and stats are updated on finalize. This replaces the previous approach of scanning a <code>--projects-dir</code> directory.</p>
+<p>The registry enables:
+- <strong>ACE without <code>--projects-dir</code></strong>: The reflector discovers projects via the registry, falling back to directory scanning for backward compatibility
+- <strong>Cross-project insights</strong>: <code>factory insights</code> and <code>factory study</code> use the registry to find projects automatically
+- <strong>Dashboard</strong>: The live dashboard reads from the registry to list all managed projects</p>
+<h2 id="how-the-ceo-improves-itself">How the CEO Improves Itself<a class="headerlink" href="#how-the-ceo-improves-itself" title="Permanent link">&para;</a></h2>
+<p>The CEO's own playbook evolves through the same ACE pipeline as every other agent. There's no special case — the CEO is treated as another role with its own behavioral rules.</p>
+<h3 id="what-the-reflector-analyzes-for-the-ceo">What the Reflector Analyzes for the CEO<a class="headerlink" href="#what-the-reflector-analyzes-for-the-ceo" title="Permanent link">&para;</a></h3>
+<p>The ACE reflector parses <code>ceo:keep</code> and <code>ceo:revert</code> notes from experiment history and generates CEO-specific bullets by analyzing:</p>
+<ul>
+<li><strong>Overall keep/revert rate</strong>: If keep rate is below 30%, hypotheses are too ambitious — bullet: "scope down." If above 80%, they're too conservative — bullet: "be bolder."</li>
+<li><strong>Builder failure patterns</strong>: If the Builder consistently fails on certain types of changes, the CEO learns to redirect earlier.</li>
+<li><strong>Reviewer strictness</strong>: If experiments are reverted despite positive score deltas (Reviewer caught something the score missed), the CEO learns to trust the Reviewer.</li>
+<li><strong>Archival compliance</strong>: Tracks whether archival checkpoints were skipped — generates enforcement bullets.</li>
+<li><strong>Decision accuracy over time</strong>: Were keeps actually beneficial? Were reverts wise in retrospect?</li>
+</ul>
+<h3 id="current-ceo-playbook-as-of-writing">Current CEO Playbook (as of writing)<a class="headerlink" href="#current-ceo-playbook-as-of-writing" title="Permanent link">&para;</a></h3>
+<p>The CEO's playbook contains 10 empirically evolved rules, including:</p>
+<table>
+<thead>
+<tr>
+<th>Rule</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E2E testing before optimization</td>
+<td><code>helpful=1</code></td>
+</tr>
+<tr>
+<td>Real E2E tests after integration code</td>
+<td><code>helpful=1</code></td>
+</tr>
+<tr>
+<td>ALWAYS spawn Archivist</td>
+<td>Enforced rule</td>
+</tr>
+<tr>
+<td>Hard-reject all-hygiene hypothesis sets</td>
+<td><code>helpful=0</code></td>
+</tr>
+<tr>
+<td>Mandatory Playwright verification for UI focus</td>
+<td><code>helpful=0</code></td>
+</tr>
+<tr>
+<td>Archival at every checkpoint</td>
+<td><code>helpful=28, harmful=4</code></td>
+</tr>
+</tbody>
+</table>
+<p>The last rule — archival at every checkpoint — is the most battle-tested rule in the system. It was reinforced by 28 experiments and only contradicted by 4, making it the strongest empirical signal the CEO operates on.</p>
+<h3 id="the-feedback-loop">The Feedback Loop<a class="headerlink" href="#the-feedback-loop" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>CEO makes keep/revert decisions
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    → structured notes in results.tsv (ceo:keep score_delta=+0.05 ...)
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    → ACE reflector parses CEO notes
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>    → generates CEO-specific bullets
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>    → curator merges with existing CEO playbook
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    → next CEO invocation gets updated playbook
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    → CEO makes better decisions
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    → loop continues
+</code></pre></div>
+<h2 id="meta-mode-full-self-improvement">Meta Mode: Full Self-Improvement<a class="headerlink" href="#meta-mode-full-self-improvement" title="Permanent link">&para;</a></h2>
+<p>Meta mode (<code>factory ceo --mode meta</code>) is re:factory improving itself. It runs in two phases:</p>
+<h3 id="phase-1-improve-refactory">Phase 1: Improve re:factory<a class="headerlink" href="#phase-1-improve-refactory" title="Permanent link">&para;</a></h3>
+<p>The CEO runs the full experiment loop on re:factory's own codebase:</p>
+<ol>
+<li>Researcher observes re:factory code + reads cross-project insights</li>
+<li>Strategist generates hypotheses for improving re:factory (e.g., "add stuck detection to FEEC," "improve eval reliability")</li>
+<li>Builder implements on an experiment branch</li>
+<li>Evaluator scores before and after</li>
+<li>CEO decides keep or revert</li>
+<li>Archivist records everything</li>
+</ol>
+<p>This is re:factory eating its own dogfood — the same process it uses on target projects, applied to itself.</p>
+<h3 id="phase-2-evolve-all-playbooks">Phase 2: Evolve All Playbooks<a class="headerlink" href="#phase-2-evolve-all-playbooks" title="Permanent link">&para;</a></h3>
+<p>After the improve cycle, the CEO runs ACE across all managed projects:</p>
+<ol>
+<li><strong>Update counters</strong>: Load all experiment records, update <code>helpful</code>/<code>harmful</code> counters on existing playbook bullets</li>
+<li><strong>Reflect</strong>: Analyze cross-project experiment data, generate candidate bullets for all agent roles</li>
+<li><strong>Curate</strong>: Merge candidates with existing playbooks, deduplicate (75% similarity threshold), prune net-negative rules, cap at 15 items per role</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Run meta mode</span>
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>factory<span class="w"> </span>ceo<span class="w"> </span>~/remote-factory<span class="w"> </span>--mode<span class="w"> </span>meta
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Or run ACE independently</span>
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>factory<span class="w"> </span>ace<span class="w"> </span>~/remote-factory
+</code></pre></div>
+<h3 id="when-to-run-meta-mode">When to Run Meta Mode<a class="headerlink" href="#when-to-run-meta-mode" title="Permanent link">&para;</a></h3>
+<p>Meta mode is re:factory's most powerful self-improvement mechanism, but it has diminishing returns if run too frequently or too early. ACE needs a critical mass of experiment data to generate meaningful playbook updates. Running it too early produces noisy rules from small samples; running it too often churns playbooks without enough new evidence between runs.</p>
+<p><strong>Recommended cadence:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Usage level</th>
+<th>Cadence</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Light (1-2 experiments/day)</td>
+<td>Weekly</td>
+<td>One week accumulates enough new outcomes for ACE to find real patterns</td>
+</tr>
+<tr>
+<td>Heavy (5+ experiments/day)</td>
+<td>Nightly</td>
+<td>High experiment volume means new signal accumulates faster</td>
+</tr>
+<tr>
+<td>Occasional (a few experiments/week)</td>
+<td>Every two weeks or on-demand</td>
+<td>Not enough data to justify frequent evolution</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Prerequisites — run meta mode only when:</strong>
+- At least <strong>5 experiments</strong> have been recorded across your managed projects since the last meta run (10+ preferred for stronger signal). ACE analyzes cross-project data; with fewer than 5 experiments, it lacks the sample size to distinguish signal from noise.
+- re:factory has been through at least one full Build-Discover-Improve cycle on at least one project. Running meta mode on a brand-new factory with no experiment history is a no-op.</p>
+<p><strong>Signs it's time to run meta mode:</strong>
+- <strong>Stale playbooks</strong>: Agents keep making the same mistakes that get reverted — the playbooks haven't learned to avoid those patterns yet.
+- <strong>Consistent revert patterns</strong>: You see 3+ reverts in the same category across projects, but the Strategist keeps proposing that category.
+- <strong>New project types</strong>: You started managing a project in a language or domain re:factory hasn't seen before. Meta mode can generate domain-specific playbook rules from the new experiment data.
+- <strong>Playbook counters are outdated</strong>: Check <code>~/.factory/playbooks/*.md</code> — if the <code>helpful</code>/<code>harmful</code> counters are far behind the actual experiment count in <code>results.tsv</code>, ACE needs to catch up.</p>
+<p><strong>When NOT to run meta mode:</strong>
+- <strong>Right after initial build.</strong> re:factory just scaffolded a project and has zero or one experiment. ACE has nothing to learn from yet. Wait until the project has been through several improve cycles.
+- <strong>After every improve loop.</strong> This is the most common mistake. Each improve cycle produces 1-5 experiments — not enough new data to meaningfully change playbooks. The result is noisy churn: rules get added and removed in rapid succession without converging.
+- <strong>When the last meta run was recent and few new experiments have run.</strong> If you ran meta mode yesterday and only 2 new experiments have completed since, skip it.
+- <strong>During a focused improvement sprint.</strong> If you're using <code>--focus</code> to target a specific area, finish the focused work first. Meta mode's broad playbook evolution can dilute focus-specific learnings.</p>
+<p><strong>Automation:</strong> For long-running re:factory deployments, schedule meta mode on a regular cadence:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Weekly meta mode via cron, Sunday night</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="m">0</span><span class="w"> </span><span class="m">2</span><span class="w"> </span>*<span class="w"> </span>*<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="nb">cd</span><span class="w"> </span>~/remote-factory<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>factory<span class="w"> </span>ceo<span class="w"> </span>~/remote-factory<span class="w"> </span>--mode<span class="w"> </span>meta
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Or use re:factory&#39;s own tmux loop for nightly runs</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="c1"># Note: --mode is forwarded through tmux → run → ceo</span>
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>factory<span class="w"> </span>tmux<span class="w"> </span>~/remote-factory<span class="w"> </span>--loop<span class="w"> </span>--interval<span class="w"> </span><span class="m">86400</span><span class="w"> </span>--mode<span class="w"> </span>meta
+</code></pre></div>
+<h2 id="hard-guardrails">Hard Guardrails<a class="headerlink" href="#hard-guardrails" title="Permanent link">&para;</a></h2>
+<p>The loop is autonomous but not unconstrained. These guardrails cannot be overridden:</p>
+<table>
+<thead>
+<tr>
+<th>Guardrail</th>
+<th>Enforcement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Precheck gate</strong></td>
+<td>Score must not regress, scope must be clean, hypothesis must not repeat a reverted pattern. CEO cannot override a failed precheck.</td>
+</tr>
+<tr>
+<td><strong>Growth dimension gate</strong></td>
+<td>At least one hypothesis must target a growth dimension. All-hygiene sets get redirected.</td>
+</tr>
+<tr>
+<td><strong>7 sacred rules</strong></td>
+<td>No deleting tests, no out-of-scope changes, no skipping evals, no skipping archival, etc. Enforced by <code>factory guard</code> and review gates.</td>
+</tr>
+<tr>
+<td><strong>Archival is blocking</strong></td>
+<td>The final Archivist invocation blocks — the CEO won't finalize without it.</td>
+</tr>
+<tr>
+<td><strong>Anti-pattern detection</strong></td>
+<td>Hypotheses &gt;60% similar to previously reverted experiments are rejected.</td>
+</tr>
+<tr>
+<td><strong>Stuck detection</strong></td>
+<td>After 3+ consecutive same-category reverts, FEEC forces category rotation.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="when-humans-are-needed">When Humans Are Needed<a class="headerlink" href="#when-humans-are-needed" title="Permanent link">&para;</a></h2>
+<p>The system is fully autonomous for Improve and Meta modes. Human intervention is only needed in edge cases:</p>
+<ul>
+<li><strong>External credentials</strong>: If the target project needs API keys, database access, or test accounts that re:factory can't provision itself, the CEO pauses and lists what it needs.</li>
+<li><strong>First-time eval review</strong>: When re:factory discovers a new project and generates eval dimensions, it pauses for human review of the eval profile before running experiments.</li>
+</ul>
+<p>Everything else — hypothesis generation, implementation, scoring, keep/revert decisions, archival, playbook evolution, cross-project learning — runs without human input.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

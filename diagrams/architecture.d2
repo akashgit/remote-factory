@@ -1,0 +1,170 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: Factory Architecture
+  near: top-center
+  shape: text
+  style: { font-size: 20; bold: true; font-color: "#0D1B2A" }
+}
+
+user: {
+  label: User
+  shape: person
+  style: { fill: "#BBDEFB"; stroke: "#1565C0"; font-color: "#0D1B2A" }
+}
+
+cli: {
+  label: "Layer 1: CLI Tools (no decisions)"
+  style: { fill: "#E8EAF6"; stroke: "#5C6BC0"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+  grid-rows: 2
+
+  ceo_cmd: {
+    label: "factory ceo"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  run_cmd: {
+    label: "factory run"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  eval_cmd: {
+    label: "factory eval"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  study_cmd: {
+    label: "factory study"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  guard_cmd: {
+    label: "factory guard"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  precheck_cmd: {
+    label: "factory precheck"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  review_cmd: {
+    label: "factory review"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  discover_cmd: {
+    label: "factory discover"
+    shape: parallelogram
+    style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+}
+
+ceo: {
+  label: "Layer 2: CEO Agent (orchestrator)"
+  style: { fill: "#FFF3E0"; stroke: "#EF6C00"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+
+  orchestrator: {
+    label: Orchestrator
+    style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+  }
+  review_gate: {
+    label: Review Gate
+    shape: hexagon
+    style: { fill: "#FFCC80"; stroke: "#F57C00"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  precheck: {
+    label: "Precheck (hard gate)"
+    shape: hexagon
+    style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 13; bold: true }
+  }
+
+  orchestrator -> review_gate: "after agent" {
+    style: { font-size: 11; font-color: "#0D1B2A" }
+  }
+  orchestrator -> precheck: "before verdict" {
+    style: { font-size: 11; font-color: "#0D1B2A" }
+  }
+}
+
+agents: {
+  label: "Layer 3: Specialist Agents"
+  style: { fill: "#E8F5E9"; stroke: "#2E7D32"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+  grid-rows: 2
+
+  researcher: {
+    label: "Researcher\nObserve"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  strategist: {
+    label: "Strategist\nHypothesize"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  builder: {
+    label: "Builder\nImplement"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  reviewer: {
+    label: "Reviewer\nGuard"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  evaluator: {
+    label: "Evaluator\nMeasure"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  archivist: {
+    label: "Archivist\nRecord"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  distiller: {
+    label: "Distiller\nRefine"
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+  failure_analyst: {
+    label: "Failure Analyst\nClassify"
+    style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; border-radius: 6 }
+  }
+}
+
+stores: {
+  label: "Persistent Storage"
+  style: { fill: "#F3E5F5"; stroke: "#7B1FA2"; border-radius: 8; font-color: "#0D1B2A"; bold: true }
+
+  factory_dir: {
+    label: ".factory/"
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  registry: {
+    label: "Registry\n~/.factory/"
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+  github: {
+    label: GitHub
+    shape: cylinder
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 13 }
+  }
+}
+
+user -> cli: commands {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
+cli -> ceo: "spawns CEO" {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
+ceo -> agents: "delegates" {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
+agents -> stores: "read / write" {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
+ceo -> stores: "lifecycle mgmt" {
+  style: { font-size: 12; font-color: "#0D1B2A" }
+}
