@@ -129,31 +129,48 @@ class ClaudeRunner:
             for f in temp_files:
                 f.unlink(missing_ok=True)
 
-    def interactive_run(self, request: AgentRunRequest) -> int:
-        """Run an interactive Claude Code session as a subprocess."""
+    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the interactive Claude CLI command, env dict, and temp files.
+
+        Shares env/auth/model/session logic with build_command() but uses
+        the interactive CLI invocation pattern (task as positional arg,
+        no ``--output-format json``, no ``-p``).
+        """
         prompt_file = tempfile.NamedTemporaryFile(
             mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
         )
-        try:
-            prompt_file.write(request.prompt)
-            prompt_file.close()
+        prompt_file.write(request.prompt)
+        prompt_file.close()
+        prompt_path = Path(prompt_file.name)
 
-            cmd = [
-                "claude",
-                "--append-system-prompt-file", prompt_file.name,
-            ]
-            if request.skip_permissions:
-                cmd.append("--dangerously-skip-permissions")
-            cmd.append(request.task)
+        cmd = [
+            "claude", "--append-system-prompt-file", prompt_file.name,
+        ]
+        if request.skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        cmd.append(request.task)
+        if request.model:
+            cmd.extend(["--model", request.model])
+        if request.session_name:
+            cmd.extend(["--name", request.session_name])
+
+        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        if request.model:
+            env["FACTORY_MODEL"] = request.model
+
+        return cmd, env, [prompt_path]
+
+    def interactive_run(self, request: AgentRunRequest) -> int:
+        """Run an interactive Claude Code session as a subprocess."""
+        cmd, env, temp_files = self.build_interactive_command(request)
+        try:
             if request.model:
-                cmd.extend(["--model", request.model])
                 os.environ["FACTORY_MODEL"] = request.model
-            if request.session_name:
-                cmd.extend(["--name", request.session_name])
 
             log.info("claude_interactive", cwd=str(request.cwd))
 
             result = subprocess.run(cmd, cwd=request.cwd)
             return result.returncode
         finally:
-            Path(prompt_file.name).unlink(missing_ok=True)
+            for f in temp_files:
+                f.unlink(missing_ok=True)
