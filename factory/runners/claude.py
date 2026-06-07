@@ -164,12 +164,9 @@ class ClaudeRunner:
         """Run an interactive Claude Code session as a subprocess."""
         cmd, env, temp_files = self.build_interactive_command(request)
         try:
-            if request.model:
-                os.environ["FACTORY_MODEL"] = request.model
-
             log.info("claude_interactive", cwd=str(request.cwd))
 
-            result = subprocess.run(cmd, cwd=request.cwd)
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
             for f in temp_files:

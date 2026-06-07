@@ -263,11 +263,7 @@ class BobRunner:
 
         log.info("bob_interactive", cwd=str(request.cwd), chat_mode=_BOB_CHAT_MODE)
 
-        bob_bin_dir = _get_bob_bin_dir()
-        if bob_bin_dir and not os.environ.get("PATH", "").startswith(bob_bin_dir):
-            os.environ["PATH"] = f"{bob_bin_dir}:{os.environ.get('PATH', '')}"
-
-        result = _subprocess.run(cmd, cwd=request.cwd)
+        result = _subprocess.run(cmd, cwd=request.cwd, env=env)
         return result.returncode
 
     def _find_project_path(self, cwd: Path) -> Path:
