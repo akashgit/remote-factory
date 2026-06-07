@@ -117,24 +117,19 @@ class CodexRunner:
             supports_session_name=False,
         )
 
-    def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
-        """Build the Codex CLI command, env dict, and temp files.
-
-        Writes the system prompt to a temporary AGENTS.md in cwd so Codex
-        treats it as system instructions rather than user-visible text.
-        Only the task is passed as the user message.
-        """
-        agents_md = Path(request.cwd) / "AGENTS.md"
+    def _setup_agents_md(self, cwd: Path, prompt: str) -> None:
+        """Write the system prompt to AGENTS.md, backing up any existing content."""
+        agents_md = cwd / "AGENTS.md"
         self._agents_md_path = agents_md
-        self._agents_md_backup: str | None = None
+        self._agents_md_backup = None
         if agents_md.is_file():
             self._agents_md_backup = agents_md.read_text()
-            agents_md.write_text(
-                f"{self._agents_md_backup}\n\n{request.prompt}"
-            )
+            agents_md.write_text(f"{self._agents_md_backup}\n\n{prompt}")
         else:
-            agents_md.write_text(request.prompt)
+            agents_md.write_text(prompt)
 
+    def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the Codex CLI command, env dict, and temp files."""
         cmd = ["codex", "exec"]
 
         if _using_api_key():
@@ -151,7 +146,7 @@ class CodexRunner:
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
-        return cmd, env, [agents_md]
+        return cmd, env, []
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless Codex CLI invocation via ``codex exec``."""
@@ -164,12 +159,13 @@ class CodexRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
-
-        log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
-
-        retried = False
+        self._setup_agents_md(request.cwd, request.prompt)
         try:
+            cmd, env, _ = self.build_command(request)
+
+            log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
+
+            retried = False
             result = await run_subprocess(
                 cmd, cwd=str(request.cwd), env=env,
                 timeout=request.timeout, runner_name="codex", role=request.role,
@@ -214,36 +210,28 @@ class CodexRunner:
 
         _check_auth()
 
-        agents_md = Path(request.cwd) / "AGENTS.md"
-        self._agents_md_path = agents_md
-        self._agents_md_backup = None
-        if agents_md.is_file():
-            self._agents_md_backup = agents_md.read_text()
-            agents_md.write_text(
-                f"{self._agents_md_backup}\n\n{request.prompt}"
-            )
-        else:
-            agents_md.write_text(request.prompt)
-
-        cmd = ["codex", request.task]
-
-        if _using_api_key():
-            cmd.append("--ignore-user-config")
-
-        if request.skip_permissions:
-            cmd.append("--full-auto")
-
-        if request.model:
-            cmd.extend(["--model", request.model])
-
-        log.info("codex_interactive", cwd=str(request.cwd))
-
-        env, tmpdir = _make_codex_env()
+        self._setup_agents_md(request.cwd, request.prompt)
         try:
-            result = subprocess.run(cmd, cwd=request.cwd, env=env)
-            return result.returncode
+            cmd = ["codex", request.task]
+
+            if _using_api_key():
+                cmd.append("--ignore-user-config")
+
+            if request.skip_permissions:
+                cmd.append("--full-auto")
+
+            if request.model:
+                cmd.extend(["--model", request.model])
+
+            log.info("codex_interactive", cwd=str(request.cwd))
+
+            env, tmpdir = _make_codex_env()
+            try:
+                result = subprocess.run(cmd, cwd=request.cwd, env=env)
+                return result.returncode
+            finally:
+                if tmpdir is not None:
+                    tmpdir.cleanup()
         finally:
             self._restore_agents_md()
-            if tmpdir is not None:
-                tmpdir.cleanup()
 
