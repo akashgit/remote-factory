@@ -107,8 +107,12 @@ def _has_bob_auth() -> bool:
     if os.environ.get("BOBSHELL_API_KEY"):
         return True
     auth_file = _find_auth_file(Path.cwd())
-    if auth_file and auth_file.is_file():
-        return True
+    if auth_file is not None:
+        try:
+            if auth_file.read_text().strip():
+                return True
+        except OSError:
+            pass
     bob_config = Path.home() / ".bob" / "settings.json"
     return bob_config.is_file()
 

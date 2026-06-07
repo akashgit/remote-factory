@@ -1508,6 +1508,18 @@ class TestBobMetaAuthCheck:
         meta = BobRunner.metadata()
         assert meta.check_auth() is False
 
+    def test_check_auth_false_with_empty_auth_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / ".bob_auth").write_text("   \n  ")
+
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is False
+
 
 class TestRunnerMetaCustomAuthCheck:
     """Tests for RunnerMeta.custom_auth_check support."""
