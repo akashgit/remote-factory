@@ -567,6 +567,20 @@ class RefinementState(BaseModel):
 # ── runner v2 ────────────────────────────────────────────────────
 
 
+class SpecLock(BaseModel):
+    """Scope lock created when a user approves a spec in interactive mode.
+
+    Prevents build-mode agents from silently overwriting the approved scope.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    spec_hash: str
+    scope_boundaries: list[str]
+    locked_at: str
+    source: Literal["interactive", "research"]
+
+
 class AgentRunRequest(BaseModel):
     """Structured input for a runner invocation."""
 
