@@ -6,7 +6,9 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Literal
 
+import pydantic
 import structlog
 
 from factory.models import SpecLock
@@ -20,7 +22,7 @@ def create_spec_lock(
     project_path: Path,
     spec_content: str,
     scope_boundaries: list[str],
-    source: str = "interactive",
+    source: Literal["interactive", "research"] = "interactive",
 ) -> SpecLock:
     """Write a spec lock after the user approves a spec in interactive mode."""
     from factory.store import ensure_factory_dir
@@ -30,7 +32,7 @@ def create_spec_lock(
         spec_hash=spec_hash,
         scope_boundaries=scope_boundaries,
         locked_at=datetime.now(timezone.utc).isoformat(),
-        source=source,  # type: ignore[arg-type]
+        source=source,
     )
     factory_dir = project_path / ".factory"
     ensure_factory_dir(factory_dir)
@@ -49,7 +51,7 @@ def read_spec_lock(project_path: Path) -> SpecLock | None:
     try:
         data = json.loads(lock_path.read_text())
         lock = SpecLock.model_validate(data)
-    except (json.JSONDecodeError, Exception) as exc:
+    except (json.JSONDecodeError, pydantic.ValidationError) as exc:
         log.warning("spec_lock.corrupt", path=str(lock_path), error=str(exc))
         return None
     log.info("spec_lock.loaded", path=str(lock_path))
