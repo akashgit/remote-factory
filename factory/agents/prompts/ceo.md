@@ -576,14 +576,34 @@ When the user approves the spec:
    - The approved spec should contain a `## Research Configuration` section with Research Target, Mutable Surfaces, Fixed Surfaces, etc.
    - Verify it's present. If the Distiller omitted it, REDIRECT with: "This is a research project — the spec MUST include a Research Configuration section."
    - The research config will be extracted and populated into `factory.md` during Review mode (step 4b).
-3. **Spawn Archivist** to record the ideation process:
+3. **Lock the approved scope**: Write `.factory/spec_lock.json` to prevent build-mode agents from silently overwriting the user-approved scope. Extract the scope boundaries from the spec (the `## Scope Boundaries` section for existing projects, or the feature list for new ideas) and run:
+   ```bash
+   python -c "
+   from factory.spec_lock import create_spec_lock
+   from pathlib import Path
+   p = Path('$PROJECT_PATH')
+   spec = (p / '.factory/strategy/current.md').read_text()
+   # Extract scope boundaries from the spec — use the Scope Boundaries section if present,
+   # otherwise use the full spec as the scope boundary
+   import re
+   scope_match = re.search(r'## Scope Boundaries\n(.*?)(?=\n##|\Z)', spec, re.DOTALL)
+   boundaries = [line.strip('- ').strip() for line in (scope_match.group(1) if scope_match else '').strip().splitlines() if line.strip().startswith('- ')]
+   if not boundaries:
+       boundaries = ['(full spec — no explicit boundaries)']
+   source = 'research' if 'Research Configuration' in spec else 'interactive'
+   create_spec_lock(p, spec, boundaries, source)
+   "
+   ```
+   This lock ensures that the Researcher and Strategist in subsequent build mode cannot silently override the approved scope. If they need to deviate, they must explicitly flag it.
+
+4. **Spawn Archivist** to record the ideation process:
    ```bash
    factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
    Read .factory/strategy/current.md (the approved spec).
    Read .factory/strategy/research.md (the research).
    Write project inception notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
    ```
-4. **Transition — route by project type:**
+5. **Transition — route by project type:**
 
    **For new ideas** (no `existing_project: true` flag): Transition to **Build mode**. The spec is now persisted. Continue with Mode: Build starting from step B0 (Research). The Build-mode Researcher will do a more focused, implementation-oriented research pass using the approved spec as context.
 
@@ -656,7 +676,30 @@ This is an **inviolable constraint**. There is NO valid reason to exit between p
 
 Violating this constraint means the factory produced no usable output. A project with only scaffolds and no implementation is a failure, regardless of how clean the scaffolds are.
 
-### B0: Research (Researcher Agent)
+### B0: Spec Lock Check
+
+Before starting the build pipeline, check for a spec lock from interactive mode:
+
+```bash
+python -c "
+from factory.spec_lock import read_spec_lock
+from pathlib import Path
+lock = read_spec_lock(Path('$PROJECT_PATH'))
+if lock:
+    print('SPEC LOCK ACTIVE')
+    print(f'Source: {lock.source}')
+    print(f'Locked at: {lock.locked_at}')
+    print(f'Scope boundaries:')
+    for b in lock.scope_boundaries:
+        print(f'  - {b}')
+else:
+    print('No spec lock — proceeding without scope constraints')
+"
+```
+
+If a spec lock is active, **all subsequent build-mode agents (Researcher, Strategist, Builder) must work within the locked scope boundaries.** If an agent needs to deviate from the locked scope, the CEO must flag it and — if running interactively — request user approval before proceeding. Do NOT silently override the approved spec.
+
+### B0a: Research (Researcher Agent)
 
 ```bash
 factory agent researcher --task "Mode 1 Discovery for $PROJECT_PATH.
@@ -668,19 +711,22 @@ The project is new or incomplete. Research:
 5. Write a research report to .factory/strategy/research.md covering: similar projects found, recommended tech stack, architecture patterns, potential pitfalls, and MVP scope
 
 The project specification is saved at $PROJECT_PATH/.factory/strategy/current.md — read it for full details.
+
+SCOPE CONSTRAINT: If .factory/spec_lock.json exists, your research must stay within the approved scope boundaries defined there. Do not recommend expanding scope beyond what was approved. If you believe the scope needs expansion, explicitly note it as a deviation requiring user approval.
 " --project "$PROJECT_PATH" --timeout 600
 ```
 
-### B0r: CEO Review — Research
+### B0ar: CEO Review — Research
 
 Apply the **CEO Review Gate**:
 1. Read `.factory/reviews/researcher-latest.md` and `.factory/strategy/research.md`
 2. Check: Did the Researcher cover the right topics? Is there enough depth to inform a build plan? Any obvious technology gaps?
-3. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
-4. If REDIRECT: re-invoke the Researcher with specific gaps to fill (max 2 retries)
-5. If PROCEED: continue to B0a
+3. **Spec lock check:** If `.factory/spec_lock.json` exists, verify the Researcher's findings stay within the locked scope. If the Researcher recommended scope expansion, flag it — do not silently approve scope changes.
+4. Write verdict to `.factory/reviews/ceo-verdict-researcher.md`
+5. If REDIRECT: re-invoke the Researcher with specific gaps to fill (max 2 retries)
+6. If PROCEED: continue to B0b
 
-### B0a: MANDATORY Archivist — record research (DO NOT SKIP)
+### B0b: MANDATORY Archivist — record research (DO NOT SKIP)
 
 ```bash
 factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
@@ -723,6 +769,8 @@ If any items truly cannot be built without human intervention, list them at the 
 
 This section MUST use a markdown heading (## Deferred) — not bold text or other formatting. Items listed here become the project's backlog for Improve mode.
 
+SCOPE CONSTRAINT: If .factory/spec_lock.json exists, the build plan MUST stay within the approved scope boundaries defined there. Do not add features or phases that fall outside the locked scope. If you believe additional scope is needed, list it separately under a '## Scope Deviations' heading with justification — the CEO will review these with the user before approving.
+
 Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
 
@@ -738,6 +786,7 @@ This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
    - Is the total scope achievable or is it over-ambitious?
    - Are there any phases that should be split, merged, or reordered?
    - **Deferral strictness:** Does the `## Deferred` section (if present) ONLY contain items that require human intervention? If it contains features, integrations, or anything that could be built without a human, **REDIRECT** the Strategist to include those items in the build phases. The factory builds everything it can — deferral is not for convenience, only for genuine blockers.
+   - **Spec lock check:** If `.factory/spec_lock.json` exists, verify the Strategist's plan does not introduce work outside the locked scope boundaries. If a `## Scope Deviations` section is present, review each deviation — if running interactively, present deviations to the user for approval. If running headlessly, REDIRECT the Strategist to remove out-of-scope items.
 3. Write verdict to `.factory/reviews/ceo-verdict-strategist.md`
 4. If REDIRECT: re-invoke the Strategist with specific corrections (e.g., "Phase 3 is too large — split into 3a and 3b", "Move OAuth integration from Deferred to a build phase — we don't need user credentials to scaffold it")
 5. If PROCEED: write `PLAN APPROVED` in your verdict file, then persist backlog items:
