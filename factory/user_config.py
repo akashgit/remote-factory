@@ -15,7 +15,13 @@ import structlog
 
 log = structlog.get_logger()
 
-CONFIG_PATH: Path = Path("~/.factory/config.toml").expanduser()
+def _default_config_path() -> Path:
+    from factory.paths import config_path
+
+    return config_path()
+
+
+CONFIG_PATH: Path = _default_config_path()
 
 _PROFILE_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 _CREDENTIAL_KEY_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")

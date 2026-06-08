@@ -19,7 +19,9 @@ def user_playbooks_dir() -> Path:
     if override:
         d = Path(override).expanduser().resolve()
     else:
-        d = Path.home() / ".factory" / "playbooks"
+        from factory.paths import playbooks_dir as _playbooks_dir
+
+        d = _playbooks_dir()
     d.mkdir(parents=True, exist_ok=True)
     return d
 
