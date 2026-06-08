@@ -18,11 +18,8 @@ def _default_registry_path() -> Path:
     from factory.user_config import resolve
 
     override = resolve("registry_dir", env_var="FACTORY_REGISTRY_DIR")
-    if override:
-        return Path(override) / "registry.json"
-    from factory.paths import registry_path
-
-    return registry_path()
+    base = Path(override) if override else Path.home() / ".factory"
+    return base / "registry.json"
 
 
 def _parse_registry_datetimes(data: dict) -> None:

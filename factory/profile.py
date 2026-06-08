@@ -9,13 +9,7 @@ import structlog
 
 log = structlog.get_logger()
 
-def _default_profile_path() -> Path:
-    from factory.paths import profile_path
-
-    return profile_path()
-
-
-_PROFILE_PATH = _default_profile_path()
+_PROFILE_PATH = Path.home() / ".factory" / "profile.md"
 _MAX_SECTION_CHARS = 4000
 
 
@@ -106,9 +100,7 @@ def _read_strategy_archive(project_path: Path) -> str:
 
 
 def _read_ace_playbooks() -> str:
-    from factory.paths import playbooks_dir as _playbooks_dir
-
-    playbooks_dir = _playbooks_dir()
+    playbooks_dir = Path.home() / ".factory" / "playbooks"
     if not playbooks_dir.is_dir():
         return ""
     chunks: list[str] = []
