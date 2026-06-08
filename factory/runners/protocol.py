@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
     from factory.models import AgentRunRequest, AgentRunResult
@@ -25,13 +25,20 @@ class RunnerMeta:
     supports_streaming: bool = True
     supports_usage_telemetry: bool = False
     supports_session_name: bool = False
+    custom_auth_check: Callable[[], bool] | None = None
 
     def is_available(self) -> bool:
         """Check if the runner binary is on PATH."""
         return shutil.which(self.binary) is not None
 
     def check_auth(self) -> bool:
-        """Check if required env vars are set."""
+        """Check if authentication is available.
+
+        Uses ``custom_auth_check`` when provided (e.g. Bob's file-based auth),
+        otherwise falls back to checking ``required_env_vars``.
+        """
+        if self.custom_auth_check is not None:
+            return self.custom_auth_check()
         import os
         return all(os.environ.get(v) for v in self.required_env_vars)
 

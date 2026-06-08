@@ -1465,3 +1465,82 @@ class TestBobInteractivePrompt:
             assert "Start session" in full_prompt
 
         bob_module._auth_checked = False
+
+
+class TestBobMetaAuthCheck:
+    """Tests for BobRunner.metadata().check_auth() — file-based auth support."""
+
+    def test_check_auth_true_with_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("BOBSHELL_API_KEY", "test-key")
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is True
+
+    def test_check_auth_true_with_bob_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        bob_dir = tmp_path / ".bob"
+        bob_dir.mkdir()
+        (bob_dir / "settings.json").write_text("{}")
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is True
+
+    def test_check_auth_true_with_factory_auth_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / ".bob_auth").write_text("file-key")
+
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is True
+
+    def test_check_auth_false_when_nothing_configured(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is False
+
+    def test_check_auth_false_with_empty_auth_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("BOBSHELL_API_KEY", raising=False)
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / ".bob_auth").write_text("   \n  ")
+
+        meta = BobRunner.metadata()
+        assert meta.check_auth() is False
+
+
+class TestRunnerMetaCustomAuthCheck:
+    """Tests for RunnerMeta.custom_auth_check support."""
+
+    def test_custom_auth_check_used_when_provided(self) -> None:
+        from factory.runners.protocol import RunnerMeta
+
+        meta = RunnerMeta(
+            name="test", display_name="Test", binary="test",
+            install_hint="test", custom_auth_check=lambda: True,
+        )
+        assert meta.check_auth() is True
+
+    def test_falls_back_to_env_var_check_without_custom(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from factory.runners.protocol import RunnerMeta
+
+        monkeypatch.delenv("SOME_KEY", raising=False)
+        meta = RunnerMeta(
+            name="test", display_name="Test", binary="test",
+            install_hint="test", required_env_vars=["SOME_KEY"],
+        )
+        assert meta.check_auth() is False
