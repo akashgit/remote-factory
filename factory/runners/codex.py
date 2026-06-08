@@ -172,15 +172,14 @@ class CodexRunner:
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
-    def interactive_run(self, request: AgentRunRequest) -> int:
-        """Run an interactive Codex CLI session as a subprocess."""
-        if is_codex_dry_run():
-            print("[DRY-RUN] Would exec: codex (interactive)")
-            print(f"[DRY-RUN] Task: {request.task[:200]}...")
-            return 0
+    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the interactive Codex CLI command, env dict, and temp files.
 
-        _check_auth()
-
+        Shares env/auth/model logic with build_command() but uses the
+        interactive CLI invocation pattern (``codex prompt`` with
+        ``--full-auto`` instead of ``codex exec -- prompt`` with
+        ``--sandbox workspace-write``).
+        """
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
         cmd = ["codex", full_prompt]
@@ -194,13 +193,27 @@ class CodexRunner:
         if request.model:
             cmd.extend(["--model", request.model])
 
+        env, tmpdir = _make_codex_env()
+        self._interactive_tmpdir = tmpdir
+        return cmd, env, []
+
+    def interactive_run(self, request: AgentRunRequest) -> int:
+        """Run an interactive Codex CLI session as a subprocess."""
+        if is_codex_dry_run():
+            print("[DRY-RUN] Would exec: codex (interactive)")
+            print(f"[DRY-RUN] Task: {request.task[:200]}...")
+            return 0
+
+        _check_auth()
+
+        cmd, env, _ = self.build_interactive_command(request)
+
         log.info("codex_interactive", cwd=str(request.cwd))
 
-        env, tmpdir = _make_codex_env()
         try:
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
-            if tmpdir is not None:
-                tmpdir.cleanup()
+            if hasattr(self, "_interactive_tmpdir") and self._interactive_tmpdir is not None:
+                self._interactive_tmpdir.cleanup()
 
