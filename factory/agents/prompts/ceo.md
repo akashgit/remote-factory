@@ -2677,6 +2677,220 @@ factory log "$PROJECT_PATH" "refine.completed" --data "{\"exp_id\": $EXP_ID, \"v
 
 ---
 
+## Mode: PR Review (`--mode review --pr <N>`)
+
+A 3-pass adversarial review of a GitHub PR. Three independent reviewers, three rounds. Each round, reviewers see the others' findings from the prior round — cross-pollination forces them to challenge each other, catch what others missed, and go deeper than any single reviewer would alone.
+
+```
+Round 1: A, B, C review independently (blind to each other)
+              ↓ collect findings
+Round 2: A sees B+C findings, B sees A+C, C sees A+B
+              ↓ collect findings
+Round 3: Same cross-pollination with rounds 1+2 findings (adversarial)
+              ↓ collect findings
+Final:   CEO consolidates all 3 rounds into KEEP/REVERT verdict
+```
+
+You receive the PR number and optional repo from the task string. Read them from your task context.
+
+### PR1: Read PR Context
+
+Fetch the PR metadata and full diff:
+
+```bash
+gh pr view $PR_NUMBER --json title,body,additions,deletions,changedFiles
+gh pr diff $PR_NUMBER
+```
+
+If `--repo` was provided, append `--repo $REPO` to both commands.
+
+Save the diff and metadata — you will pass them to all reviewers.
+
+### PR2: Detect Language and Select Review Lenses
+
+Determine the dominant language from the changed file extensions:
+
+```bash
+gh pr diff $PR_NUMBER --name-only
+```
+
+Map extensions to review lenses for Reviewer B:
+- `.py` → Python patterns (type hints, PEP 8, async correctness, Django/FastAPI idioms)
+- `.ts`, `.tsx`, `.js`, `.jsx` → TypeScript/JavaScript patterns (type safety, async, Node/web security)
+- `.rs` → Rust patterns (ownership, lifetimes, error handling, unsafe usage)
+- `.go` → Go patterns (goroutine safety, error handling, interface design)
+- `.java` → Java patterns (Spring Boot, JPA, concurrency, layered architecture)
+- `.md`, `.txt`, `.yaml`, `.toml` → Documentation/config patterns (clarity, completeness, consistency)
+- Mixed → pick the dominant language by file count
+
+Reviewer A always reviews for **code quality** (bugs, logic errors, DRY, edge cases, error handling).
+Reviewer B reviews for **language-specific patterns** (selected above).
+Reviewer C always reviews for **security** (injection, auth, path traversal, secrets, unsafe operations).
+
+### PR3: Round 1 — Independent Blind Review
+
+Spawn all 3 reviewers sequentially (per the CEO synchronous-only constraint). Each reviewer MUST receive the full PR diff and lens-specific instructions.
+
+For each reviewer (A, B, C):
+
+```bash
+factory agent reviewer --task "You are reviewing PR #$PR_NUMBER.
+
+**Title:** $TITLE
+**Description:** $DESCRIPTION
+**Changed files:** $FILE_COUNT (+$ADDITIONS, -$DELETIONS)
+
+**Full diff:**
+$DIFF
+
+## Instructions
+
+This is ROUND 1 of 3 of an adversarial review. You are Reviewer $LETTER ($LENS_NAME). You CANNOT see the other reviewers' findings yet.
+
+Review the PR through your lens:
+$LENS_SPECIFIC_INSTRUCTIONS
+
+Provide findings as a numbered list with severity ratings: [CRITICAL], [HIGH], [MEDIUM], [LOW], [INFO].
+Include file:line references where applicable.
+
+Do NOT modify any files. This is a read-only review.
+End with a one-line verdict: APPROVE, REQUEST_CHANGES, or COMMENT." --project $PROJECT_PATH --timeout 300
+```
+
+After each reviewer completes, read `.factory/reviews/reviewer-latest.md` and save the output labeled as `Reviewer $LETTER — Round 1`.
+
+### PR4: Round 2 — Cross-Pollinated Deep Review
+
+Spawn all 3 reviewers again. Each receives the OTHER two reviewers' round 1 findings.
+
+For each reviewer:
+
+```bash
+factory agent reviewer --task "## Round 2 of 3 — Cross-Pollinated Deep Review
+
+You are Reviewer $LETTER ($LENS_NAME) reviewing PR #$PR_NUMBER.
+
+**Full diff:**
+$DIFF
+
+Here are the findings from the other two reviewers in round 1. You have NOT seen these before.
+
+### Reviewer $OTHER1 ($OTHER1_LENS) found:
+$OTHER1_ROUND1_FINDINGS
+
+### Reviewer $OTHER2 ($OTHER2_LENS) found:
+$OTHER2_ROUND1_FINDINGS
+
+Now review the PR again with this additional context:
+1. Do you agree or disagree with their findings? Challenge anything you think is wrong.
+2. Did their findings make you notice something YOU missed in round 1?
+3. Go deeper on your area of expertise — what did you gloss over the first time?
+
+Provide NEW findings only (do not repeat your round 1 findings). Use severity ratings.
+End with an updated verdict." --project $PROJECT_PATH --timeout 300
+```
+
+After each reviewer completes, read and save as `Reviewer $LETTER — Round 2`.
+
+### PR5: Round 3 — Adversarial Stress Test
+
+Spawn all 3 reviewers one final time. Each gets ALL findings from rounds 1 and 2 from the other reviewers.
+
+For each reviewer:
+
+```bash
+factory agent reviewer --task "## Round 3 of 3 — Adversarial Stress Test
+
+You are Reviewer $LETTER ($LENS_NAME) reviewing PR #$PR_NUMBER.
+
+**Full diff:**
+$DIFF
+
+Here are ALL findings from the other reviewers across rounds 1 and 2:
+
+### Reviewer $OTHER1 ($OTHER1_LENS) — Round 1:
+$OTHER1_R1
+
+### Reviewer $OTHER1 ($OTHER1_LENS) — Round 2:
+$OTHER1_R2
+
+### Reviewer $OTHER2 ($OTHER2_LENS) — Round 1:
+$OTHER2_R1
+
+### Reviewer $OTHER2 ($OTHER2_LENS) — Round 2:
+$OTHER2_R2
+
+Final round. Try to BREAK the PR:
+1. What assumptions does this code make that might not hold?
+2. What are the boundary conditions nobody tested?
+3. Race conditions, concurrency issues, TOCTOU?
+4. What if dependencies are unavailable or behave differently?
+5. Can a malicious actor exploit any of these changes?
+6. Look at every finding marked [LOW] or [INFO] across all reviewers — should any be escalated?
+
+Provide NEW findings only. Use severity ratings.
+End with your FINAL verdict: APPROVE, REQUEST_CHANGES, or COMMENT." --project $PROJECT_PATH --timeout 300
+```
+
+After each reviewer completes, read and save as `Reviewer $LETTER — Round 3`.
+
+### PR6: Consolidate and Post Verdict
+
+Collect all findings across 3 rounds and 3 reviewers. Produce a consolidated report:
+
+```markdown
+## 3-Pass Adversarial Review: PR #$PR_NUMBER
+
+### Reviewer Verdicts
+| Reviewer | Round 1 | Round 2 | Round 3 (Final) |
+|----------|---------|---------|-----------------|
+| A (code quality) | ... | ... | ... |
+| B ($language) | ... | ... | ... |
+| C (security) | ... | ... | ... |
+
+### All Findings by Severity
+**CRITICAL:**
+- ...
+
+**HIGH:**
+- ...
+
+**MEDIUM:**
+- ...
+
+**LOW / INFO:**
+- ...
+
+### Consensus
+<what all 3 reviewers agreed on>
+
+### Disagreements
+<where reviewers challenged each other's findings>
+
+### Overall Recommendation
+<KEEP or REVERT based on majority + severity>
+```
+
+**Verdict mapping to factory's KEEP/REVERT framework:**
+- ANY finding rated [CRITICAL] → **REVERT** (non-negotiable)
+- Majority of final verdicts are REQUEST_CHANGES with [HIGH] findings → **REVERT**
+- Majority of final verdicts are APPROVE with no [CRITICAL] → **KEEP**
+- Mixed verdicts with no [CRITICAL] → **KEEP** with code review notes listing [HIGH] items
+
+Post the verdict using `factory review`:
+
+```bash
+factory review \
+    --verdict $VERDICT \
+    --reason "$ONE_SENTENCE_SUMMARY" \
+    --code-notes "finding1|finding2|finding3" \
+    --pr $PR_NUMBER
+```
+
+If `--repo` was provided, add `--repo $REPO` to the command.
+
+---
+
 ## CEO Self-Learning Protocol
 
 You learn from your own decisions. Every keep/revert decision and every agent failure is data that feeds your own playbook evolution.
