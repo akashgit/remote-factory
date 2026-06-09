@@ -12,13 +12,11 @@ All functions take a project_path and return an EvalResult-compatible dict.
 If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 """
 
-import os
-import re
-import subprocess
-import sys
 from pathlib import Path
 
 import structlog
+
+from factory.eval.languages import _aggregate, detect_languages
 
 log = structlog.get_logger()
 
@@ -34,7 +32,7 @@ HYGIENE_WEIGHTS = {
 }
 
 
-# ── Tool detection ─────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────
 
 
 def _find_sub_projects(project_path: Path) -> list[Path]:
@@ -63,55 +61,6 @@ def _find_sub_projects(project_path: Path) -> list[Path]:
     return roots or [project_path]
 
 
-def _detect_python_project(project_path: Path) -> bool:
-    return (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists()
-
-
-def _detect_node_project(project_path: Path) -> bool:
-    return (project_path / "package.json").exists()
-
-
-def _detect_rust_project(project_path: Path) -> bool:
-    return (project_path / "Cargo.toml").exists()
-
-
-def _detect_go_project(project_path: Path) -> bool:
-    return (project_path / "go.mod").exists()
-
-
-def _run_cmd(
-    cmd: list[str],
-    cwd: Path,
-    timeout: int = 300,
-) -> tuple[int, str, str]:
-    """Run a command, return (returncode, stdout, stderr). Never raises."""
-    env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=cwd,
-            env=env,
-        )
-        if result.returncode != 0:
-            log.debug(
-                "subprocess_failed",
-                cmd=cmd,
-                cwd=str(cwd),
-                returncode=result.returncode,
-                stderr=result.stderr[:200] if result.stderr else "",
-            )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        return 1, "", f"Timed out after {timeout}s"
-    except FileNotFoundError:
-        return 1, "", f"Command not found: {cmd[0]}"
-    except Exception as exc:
-        return 1, "", str(exc)
-
-
 def _neutral(name: str, reason: str) -> dict:
     """Return a neutral score (0.5) when a tool isn't detected."""
     return {
@@ -129,80 +78,15 @@ def _neutral(name: str, reason: str) -> dict:
 def eval_tests(project_path: Path) -> dict:
     """Run test suites across all detected sub-projects. Parse pass/fail ratio."""
     sub_projects = _find_sub_projects(project_path)
-    total_passed = 0
-    total_failed = 0
-    ran_any = False
-    details_parts: list[str] = []
-
+    fragments = []
     for sp in sub_projects:
-        if _detect_python_project(sp):
-            # Try pytest
-            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "pytest", "-v", "--tb=no", "-q"], sp)
-            output = stdout + stderr
-            p_match = re.search(r"(\d+)\s+passed", output)
-            f_match = re.search(r"(\d+)\s+failed", output)
-            p = int(p_match.group(1)) if p_match else 0
-            f = int(f_match.group(1)) if f_match else 0
-            if p + f > 0:
-                ran_any = True
-                total_passed += p
-                total_failed += f
-                details_parts.append(f"{sp.name}: {p} passed, {f} failed")
-
-        if _detect_node_project(sp):
-            # Try npm test
-            rc, stdout, stderr = _run_cmd(["npm", "test", "--", "--passWithNoTests"], sp, timeout=180)
-            output = stdout + stderr
-            # Jest: "Tests: X passed, Y failed"
-            p_match = re.search(r"(\d+)\s+passed", output)
-            f_match = re.search(r"(\d+)\s+failed", output)
-            p = int(p_match.group(1)) if p_match else 0
-            f = int(f_match.group(1)) if f_match else 0
-            if p + f > 0:
-                ran_any = True
-                total_passed += p
-                total_failed += f
-                details_parts.append(f"{sp.name}(js): {p} passed, {f} failed")
-
-        if _detect_rust_project(sp):
-            rc, stdout, stderr = _run_cmd(["cargo", "test"], sp)
-            output = stdout + stderr
-            p_match = re.search(r"(\d+)\s+passed", output)
-            f_match = re.search(r"(\d+)\s+failed", output)
-            p = int(p_match.group(1)) if p_match else 0
-            f = int(f_match.group(1)) if f_match else 0
-            if p + f > 0:
-                ran_any = True
-                total_passed += p
-                total_failed += f
-                details_parts.append(f"{sp.name}(rs): {p} passed, {f} failed")
-
-        if _detect_go_project(sp):
-            rc, stdout, stderr = _run_cmd(["go", "test", "./..."], sp)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                # go test: count "ok" lines
-                ok_count = len(re.findall(r"^ok\s+", output, re.MULTILINE))
-                total_passed += max(ok_count, 1)
-                details_parts.append(f"{sp.name}(go): passed")
-            elif "FAIL" in output:
-                ran_any = True
-                total_failed += 1
-                details_parts.append(f"{sp.name}(go): failed")
-
-    if not ran_any:
+        for evaluator in detect_languages(sp):
+            result = evaluator.run_tests(sp)
+            if result is not None:
+                fragments.append(result)
+    if not fragments:
         return _neutral("tests", "no test suite detected")
-
-    total = total_passed + total_failed
-    score = total_passed / total if total > 0 else 0.0
-    return {
-        "name": "tests",
-        "score": round(score, 4),
-        "weight": HYGIENE_WEIGHTS["tests"],
-        "passed": total_failed == 0,
-        "details": "; ".join(details_parts) or f"{total_passed} passed, {total_failed} failed",
-    }
+    return _aggregate(fragments, "tests")
 
 
 # ── Dimension 2: lint (weight 0.15) ───────────────────────────────
@@ -211,58 +95,15 @@ def eval_tests(project_path: Path) -> dict:
 def eval_lint(project_path: Path) -> dict:
     """Run linters across detected sub-projects. Partial credit per error."""
     sub_projects = _find_sub_projects(project_path)
-    total_errors = 0
-    ran_any = False
-    details_parts: list[str] = []
-
+    fragments = []
     for sp in sub_projects:
-        if _detect_python_project(sp):
-            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "ruff", "check", "."], sp)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}: clean")
-            else:
-                ran_any = True
-                err_match = re.search(r"Found\s+(\d+)\s+error", output)
-                count = int(err_match.group(1)) if err_match else 1
-                total_errors += count
-                details_parts.append(f"{sp.name}: {count} errors")
-
-        if _detect_node_project(sp):
-            rc, stdout, stderr = _run_cmd(["npx", "eslint", ".", "--format=compact"], sp, timeout=180)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}(js): clean")
-            else:
-                ran_any = True
-                count = len(re.findall(r"Error -", output))
-                total_errors += max(count, 1)
-                details_parts.append(f"{sp.name}(js): {max(count, 1)} errors")
-
-        if _detect_rust_project(sp):
-            rc, stdout, stderr = _run_cmd(["cargo", "clippy", "--", "-D", "warnings"], sp)
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}(rs): clean")
-            else:
-                ran_any = True
-                count = len(re.findall(r"^error", stderr, re.MULTILINE))
-                total_errors += max(count, 1)
-                details_parts.append(f"{sp.name}(rs): {max(count, 1)} errors")
-
-    if not ran_any:
+        for evaluator in detect_languages(sp):
+            result = evaluator.run_lint(sp)
+            if result is not None:
+                fragments.append(result)
+    if not fragments:
         return _neutral("lint", "no linter detected")
-
-    score = max(0.0, 1.0 - total_errors * 0.1)
-    return {
-        "name": "lint",
-        "score": round(score, 4),
-        "weight": HYGIENE_WEIGHTS["lint"],
-        "passed": total_errors == 0,
-        "details": "; ".join(details_parts),
-    }
+    return _aggregate(fragments, "lint")
 
 
 # ── Dimension 3: type_check (weight 0.10) ─────────────────────────
@@ -271,53 +112,15 @@ def eval_lint(project_path: Path) -> dict:
 def eval_type_check(project_path: Path) -> dict:
     """Run type checkers across detected sub-projects. Partial credit per error."""
     sub_projects = _find_sub_projects(project_path)
-    total_errors = 0
-    ran_any = False
-    details_parts: list[str] = []
-
+    fragments = []
     for sp in sub_projects:
-        if _detect_python_project(sp):
-            # Find the main source dir (first dir with __init__.py)
-            src_dirs = []
-            for child in sorted(sp.iterdir()):
-                if child.is_dir() and (child / "__init__.py").exists():
-                    src_dirs.append(child.name)
-            target = src_dirs[0] if src_dirs else "."
-            rc, stdout, stderr = _run_cmd([sys.executable, "-m", "mypy", target], sp)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}: clean")
-            else:
-                ran_any = True
-                err_match = re.search(r"Found\s+(\d+)\s+error", output)
-                count = int(err_match.group(1)) if err_match else 1
-                total_errors += count
-                details_parts.append(f"{sp.name}: {count} errors")
-
-        if _detect_node_project(sp):
-            rc, stdout, stderr = _run_cmd(["npx", "tsc", "--noEmit"], sp, timeout=180)
-            output = stdout + stderr
-            if rc == 0:
-                ran_any = True
-                details_parts.append(f"{sp.name}(ts): clean")
-            else:
-                ran_any = True
-                count = len(re.findall(r"error TS\d+", output))
-                total_errors += max(count, 1)
-                details_parts.append(f"{sp.name}(ts): {max(count, 1)} errors")
-
-    if not ran_any:
+        for evaluator in detect_languages(sp):
+            result = evaluator.run_type_check(sp)
+            if result is not None:
+                fragments.append(result)
+    if not fragments:
         return _neutral("type_check", "no type checker detected")
-
-    score = max(0.0, 1.0 - total_errors * 0.05)
-    return {
-        "name": "type_check",
-        "score": round(score, 4),
-        "weight": HYGIENE_WEIGHTS["type_check"],
-        "passed": total_errors == 0,
-        "details": "; ".join(details_parts),
-    }
+    return _aggregate(fragments, "type_check")
 
 
 # ── Dimension 4: coverage (weight 0.25) ───────────────────────────
@@ -326,41 +129,15 @@ def eval_type_check(project_path: Path) -> dict:
 def eval_coverage(project_path: Path) -> dict:
     """Run test coverage across detected sub-projects."""
     sub_projects = _find_sub_projects(project_path)
-    coverages: list[tuple[str, int]] = []
-    ran_any = False
-
+    fragments = []
     for sp in sub_projects:
-        if _detect_python_project(sp):
-            # Find source dir for --cov target
-            src_dirs = [
-                c.name for c in sorted(sp.iterdir())
-                if c.is_dir() and (c / "__init__.py").exists()
-            ]
-            cov_target = src_dirs[0] if src_dirs else "."
-            rc, stdout, stderr = _run_cmd(
-                [sys.executable, "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
-                sp,
-            )
-            output = stdout + stderr
-            total_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
-            if total_match:
-                ran_any = True
-                pct = int(total_match.group(1))
-                coverages.append((sp.name, pct))
-
-    if not ran_any:
+        for evaluator in detect_languages(sp):
+            result = evaluator.run_coverage(sp)
+            if result is not None:
+                fragments.append(result)
+    if not fragments:
         return _neutral("coverage", "no coverage tool detected")
-
-    avg_pct = sum(p for _, p in coverages) / len(coverages)
-    score = avg_pct / 100.0
-    details = ", ".join(f"{name}: {pct}%" for name, pct in coverages)
-    return {
-        "name": "coverage",
-        "score": round(score, 4),
-        "weight": HYGIENE_WEIGHTS["coverage"],
-        "passed": avg_pct >= 80,
-        "details": f"Coverage: {details} (threshold: 80%)",
-    }
+    return _aggregate(fragments, "coverage")
 
 
 # ── Dimension 5: guard_patterns (weight 0.10) ─────────────────────
