@@ -1,6 +1,10 @@
 """Characterization tests for hygiene eval functions — snapshot tests with mocked subprocess."""
 
+import subprocess
+from pathlib import Path
 from unittest.mock import patch
+
+import pytest
 
 from factory.eval.hygiene import (
     HYGIENE_WEIGHTS,
@@ -9,6 +13,8 @@ from factory.eval.hygiene import (
     eval_tests,
     eval_type_check,
 )
+from factory.eval.languages import _aggregate
+from factory.eval.languages.base import EvalFragment, _run_cmd
 
 
 def _make_run_result(stdout: str = "", stderr: str = "", returncode: int = 0):
@@ -373,3 +379,231 @@ class TestEvalFragmentClamping:
         from factory.eval.languages.base import EvalFragment
         frag = EvalFragment(passed=5, failed=5, score=0.5, details="test")
         assert frag.score == 0.5
+
+
+# ── Go lint / type_check / coverage ─────────────────────────────
+
+
+class TestGoLint:
+    def test_go_vet_clean(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(returncode=0)
+            result = eval_lint(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_go_vet_errors(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="main.go:5: assignment copies lock value\nmain.go:12: unreachable code\n",
+                stderr="vet: errors in package\n",
+                returncode=1,
+            )
+            result = eval_lint(tmp_path)
+        assert result["passed"] is False
+        assert "3 errors" in result["details"]
+
+
+class TestGoTypeCheck:
+    def test_go_build_clean(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(returncode=0)
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_go_build_errors(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stderr="main.go:10: undefined: foo\nmain.go:15: cannot use x\n",
+                returncode=1,
+            )
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+
+class TestGoCoverage:
+    def test_go_test_cover(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="ok  \ttest/pkg\t0.5s\tcoverage: 75.0% of statements\n",
+                returncode=0,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(75.0 / 100.0, 4)
+        assert "75%" in result["details"]
+
+    def test_go_test_cover_no_data(self, tmp_path):
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="ok  \ttest/pkg\t0.5s\n",
+                returncode=0,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
+
+
+# ── Rust type_check / coverage ──────────────────────────────────
+
+
+class TestRustTypeCheck:
+    def test_cargo_check_clean(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(returncode=0)
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+    def test_cargo_check_errors(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stderr="error[E0308]: mismatched types\nerror[E0599]: no method named\n",
+                returncode=1,
+            )
+            result = eval_type_check(tmp_path)
+        assert result["passed"] is False
+        assert "2 errors" in result["details"]
+
+
+class TestRustCoverage:
+    def test_tarpaulin_result(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="85.2% coverage, 100/117 lines covered\n",
+                returncode=0,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(85 / 100.0, 4)
+        assert "85%" in result["details"]
+
+    def test_tarpaulin_no_match(self, tmp_path):
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="no coverage data\n",
+                returncode=1,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
+
+
+# ── Node coverage / type_check clean ────────────────────────────
+
+
+class TestNodeCoverage:
+    def test_jest_coverage(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        (tmp_path / "index.js").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="All files | 92.5 | 85 | 90 | 95\n",
+                returncode=0,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == round(92 / 100.0, 4)
+        assert "92%" in result["details"]
+
+    def test_jest_coverage_no_data(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        (tmp_path / "index.js").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="Tests: 5 passed\n",
+                returncode=0,
+            )
+            result = eval_coverage(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
+
+
+class TestNodeTypeCheckClean:
+    def test_tsc_clean(self, tmp_path):
+        (tmp_path / "package.json").write_text("{}\n")
+        (tmp_path / "index.ts").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(returncode=0)
+            result = eval_type_check(tmp_path)
+        assert result["score"] == 1.0
+        assert result["passed"] is True
+        assert "clean" in result["details"]
+
+
+# ── _run_cmd error paths ────────────────────────────────────────
+
+
+class TestRunCmd:
+    def test_timeout(self):
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd=["test"], timeout=300)
+            rc, stdout, stderr = _run_cmd(["test", "cmd"], Path("/tmp"))
+        assert rc == 1
+        assert stdout == ""
+        assert "Timed out after 300s" in stderr
+
+    def test_file_not_found(self):
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.side_effect = FileNotFoundError()
+            rc, stdout, stderr = _run_cmd(["nonexistent"], Path("/tmp"))
+        assert rc == 1
+        assert stdout == ""
+        assert "Command not found: nonexistent" in stderr
+
+    def test_generic_exception(self):
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.side_effect = RuntimeError("something broke")
+            rc, stdout, stderr = _run_cmd(["cmd"], Path("/tmp"))
+        assert rc == 1
+        assert stdout == ""
+        assert stderr == "something broke"
+
+    def test_debug_log_on_failure(self):
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stderr="some error output", returncode=1
+            )
+            rc, stdout, stderr = _run_cmd(["failing", "cmd"], Path("/tmp"))
+        assert rc == 1
+        assert stderr == "some error output"
+
+
+# ── _aggregate unknown dimension ────────────────────────────────
+
+
+class TestAggregateUnknownDimension:
+    def test_raises_value_error(self):
+        fragment = EvalFragment(passed=1, failed=0, score=1.0, details="test")
+        with pytest.raises(ValueError, match="Unknown dimension"):
+            _aggregate([fragment], "nonexistent")
