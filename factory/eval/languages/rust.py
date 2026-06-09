@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
@@ -16,14 +15,6 @@ class RustEvaluator:
 
     def detect(self, project_path: Path) -> bool:
         return (project_path / "Cargo.toml").exists()
-
-    def _rust_env(self) -> dict[str, str]:
-        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        cargo_bin = str(Path.home() / ".cargo" / "bin")
-        path = env.get("PATH", "")
-        if cargo_bin not in path:
-            env["PATH"] = cargo_bin + os.pathsep + path
-        return env
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
