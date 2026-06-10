@@ -64,7 +64,8 @@ Before writing any code, answer these questions:
 **1. Containerfile**
 - Use the exact JDK version the project was built with, not just a compatible one
 - Install the exact compiler if it differs from javac (e.g., Eclipse JDT)
-- Set locale, timezone, encoding to match the original build environment
+- Set locale and encoding to match the original build environment (affects string formatting and character handling in code and tests)
+- Do NOT fake timestamps or system clock — the output should honestly say "built in 2026 from historical source," not pretend to be the original artifact
 - Pre-download build tool distributions (Gradle wrapper, Ant) to avoid download failures
 
 **2. Build system configuration**
