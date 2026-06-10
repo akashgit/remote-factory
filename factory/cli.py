@@ -2248,6 +2248,33 @@ def cmd_runners_list(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_build_root_compare(args: argparse.Namespace) -> int:
+    """Compare rebuilt JARs against originals from Maven Central."""
+    from factory.build_root.equivalence import run_comparison
+
+    module_jar_map = None
+    if args.module_jar_map:
+        with open(args.module_jar_map) as f:
+            module_jar_map = json.load(f)
+
+    report = run_comparison(
+        group=args.group,
+        modules=args.modules,
+        version=args.version,
+        rebuilt_dir=args.rebuilt_dir,
+        output_path=args.output,
+        module_to_jar=module_jar_map,
+        repo_url=args.repo_url,
+    )
+
+    print(report.summary())
+
+    if args.output:
+        print(f"\nJSON report written to: {args.output}")
+
+    return 0 if all(m.api_match for m in report.modules) else 1
+
+
 def cmd_serve_mcp(args: argparse.Namespace) -> int:
     """Start the Factory MCP stdio server."""
     from factory.mcp_server import main as mcp_main
@@ -3961,6 +3988,23 @@ def build_parser() -> argparse.ArgumentParser:
     p_runners_list.add_argument("--json", action="store_true", default=False,
                                 help="Output as JSON")
 
+    # build-root-compare — equivalence testing for rebuilt Java artifacts
+    p = sub.add_parser("build-root-compare",
+                        help="Compare rebuilt JARs against originals from Maven Central")
+    p.add_argument("--group", required=True, help="Maven group ID (e.g. org.springframework)")
+    p.add_argument("--modules", required=True, nargs="+",
+                    help="Maven artifact IDs (e.g. spring-core spring-beans)")
+    p.add_argument("--version", required=True, help="Maven version (e.g. 3.0.0.RELEASE)")
+    p.add_argument("--rebuilt-dir", required=True,
+                    help="Directory containing rebuilt JARs")
+    p.add_argument("--output", default=None,
+                    help="Path to write JSON report (default: stdout summary only)")
+    p.add_argument("--repo-url", default="https://repo1.maven.org/maven2",
+                    help="Maven repository URL (default: Maven Central)")
+    p.add_argument("--module-jar-map", default=None,
+                    help="JSON file mapping module names to rebuilt JAR filenames "
+                         "(if naming differs from Maven convention)")
+
     # serve-mcp — MCP stdio server
     sub.add_parser("serve-mcp", help="Start the Factory MCP stdio server")
 
@@ -4256,6 +4300,7 @@ def main(argv: list[str] | None = None) -> int:
         "emit": cmd_emit,
         "usage": cmd_usage,
         "runners": cmd_runners_list,
+        "build-root-compare": cmd_build_root_compare,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,
