@@ -7,15 +7,19 @@ argument-hint: "<PR number or URL>"
 
 # 3-Pass Adversarial PR Review
 
-Three independent reviewers, three rounds. Each round, reviewers see the others' findings from the prior round — cross-pollination forces them to challenge each other, catch what others missed, and go deeper than any single reviewer would alone.
+Three independent reviewers, three rounds. In each subsequent round, a reviewer sees its own full prior trajectory but only **summaries** of the other reviewers' findings — this preserves each reviewer's depth while cross-pollinating awareness without anchoring or context bloat.
 
 ```
-Round 1: A, B, C review independently (blind to each other)
-              ↓ collect findings
-Round 2: A sees B+C's findings, B sees A+C's, C sees A+B's
-              ↓ collect findings  
-Round 3: Same cross-pollination with rounds 1+2 findings
-              ↓ collect findings
+Round 1: A1, B1, C1 review independently (blind)
+              ↓ parent writes a summary of each reviewer's findings
+Round 2: A2 sees A1 (full) + summaries of B1, C1
+         B2 sees B1 (full) + summaries of A1, C1
+         C2 sees C1 (full) + summaries of A1, B1
+              ↓ parent writes a summary of each reviewer's round 2 findings
+Round 3: A3 sees A1+A2 (full) + summaries of B1, B2, C1, C2
+         B3 sees B1+B2 (full) + summaries of A1, A2, C1, C2
+         C3 sees C1+C2 (full) + summaries of A1, A2, B1, B2
+              ↓ collect final findings
 Final:   Parent consolidates all 3 rounds into verdict
 ```
 
@@ -90,23 +94,27 @@ Do NOT modify any files. This is a read-only review.
 End with a one-line verdict: APPROVE, REQUEST_CHANGES, or COMMENT.
 ```
 
-Wait for all 3 to complete. Collect and label each reviewer's findings.
+Wait for all 3 to complete. Collect and label each reviewer's full output.
+
+**Summarization step (MANDATORY after Round 1):** For each reviewer's full output, write a concise summary (3-8 bullet points) capturing: the verdict, each finding with its severity and file:line reference, and the reviewer's key concern. These summaries are what get cross-pollinated to the OTHER reviewers. The full outputs are only sent back to the reviewer who wrote them.
 
 ### Step 4: Round 2 — Cross-Pollinated Deep Review
 
-Use `SendMessage` to **continue** each reviewer (preserving their full context). Each reviewer receives the OTHER two reviewers' round 1 findings.
+Use `SendMessage` to **continue** each reviewer (preserving their full context). Each reviewer receives:
+- Its OWN round 1 findings are already in its context (via SendMessage continuation)
+- The OTHER two reviewers' round 1 findings as **summaries only**
 
 Send to reviewer-a:
 ```
 ## Round 2 of 3 — Cross-Pollinated Deep Review
 
-Here are the findings from the other two reviewers in round 1. You have NOT seen these before.
+Here are condensed summaries of the other two reviewers' round 1 findings. You have NOT seen these before.
 
-### Reviewer B (language specialist) found:
-<paste reviewer B's round 1 findings>
+### Reviewer B (language specialist) — Round 1 summary:
+<paste reviewer B's round 1 SUMMARY>
 
-### Reviewer C (security) found:
-<paste reviewer C's round 1 findings>
+### Reviewer C (security) — Round 1 summary:
+<paste reviewer C's round 1 SUMMARY>
 
 Now review the PR again with this additional context:
 1. Do you agree or disagree with their findings? Challenge anything you think is wrong.
@@ -117,29 +125,31 @@ Provide NEW findings only (don't repeat your round 1). Use severity ratings.
 End with an updated verdict.
 ```
 
-Send equivalent messages to reviewer-b (with A+C's findings) and reviewer-c (with A+B's findings).
+Send equivalent messages to reviewer-b (with A+C summaries) and reviewer-c (with A+B summaries).
 
 Wait for all 3 to complete. Collect round 2 findings.
 
+**Summarization step (MANDATORY after Round 2):** Same as after Round 1 — write a concise summary for each reviewer's round 2 output.
+
 ### Step 5: Round 3 — Adversarial Stress Test
 
-Use `SendMessage` again to continue each reviewer. Each gets ALL findings from rounds 1 and 2 from the other reviewers.
+Use `SendMessage` again to continue each reviewer. Each reviewer's own full trajectory is already in its context. Each receives **summaries only** from all other reviewers' rounds 1 and 2.
 
 Send to each reviewer:
 ```
 ## Round 3 of 3 — Adversarial Stress Test
 
-Here are ALL findings from the other reviewers across rounds 1 and 2:
+Here are summaries of ALL findings from the other reviewers across rounds 1 and 2:
 
-### Reviewer [X] — Round 1:
-<findings>
-### Reviewer [X] — Round 2:
-<findings>
+### Reviewer [X] — Round 1 summary:
+<summary>
+### Reviewer [X] — Round 2 summary:
+<summary>
 
-### Reviewer [Y] — Round 1:
-<findings>
-### Reviewer [Y] — Round 2:
-<findings>
+### Reviewer [Y] — Round 1 summary:
+<summary>
+### Reviewer [Y] — Round 2 summary:
+<summary>
 
 Final round. Try to BREAK the PR:
 1. What assumptions does this code make that might not hold?

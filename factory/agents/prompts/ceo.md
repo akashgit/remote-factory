@@ -2679,15 +2679,19 @@ factory log "$PROJECT_PATH" "refine.completed" --data "{\"exp_id\": $EXP_ID, \"v
 
 ## Mode: PR Review (`--mode review --pr <N>`)
 
-A 3-pass adversarial review of a GitHub PR. Three independent reviewers, three rounds. Each round, reviewers see the others' findings from the prior round — cross-pollination forces them to challenge each other, catch what others missed, and go deeper than any single reviewer would alone.
+A 3-pass adversarial review of a GitHub PR. Three independent reviewers, three rounds. In each subsequent round, a reviewer sees its own full prior trajectory but only **summaries** of the other reviewers' findings — this preserves each reviewer's depth while cross-pollinating awareness without anchoring or context bloat.
 
 ```
-Round 1: A, B, C review independently (blind to each other)
-              ↓ collect findings
-Round 2: A sees B+C findings, B sees A+C, C sees A+B
-              ↓ collect findings
-Round 3: Same cross-pollination with rounds 1+2 findings (adversarial)
-              ↓ collect findings
+Round 1: A1, B1, C1 review independently (blind)
+              ↓ CEO writes a summary of each reviewer's findings
+Round 2: A2 sees A1 (full) + summaries of B1, C1
+         B2 sees B1 (full) + summaries of A1, C1
+         C2 sees C1 (full) + summaries of A1, B1
+              ↓ CEO writes a summary of each reviewer's round 2 findings
+Round 3: A3 sees A1+A2 (full) + summaries of B1, B2, C1, C2
+         B3 sees B1+B2 (full) + summaries of A1, A2, C1, C2
+         C3 sees C1+C2 (full) + summaries of A1, A2, B1, B2
+              ↓ collect final findings
 Final:   CEO consolidates all 3 rounds into KEEP/REVERT verdict
 ```
 
@@ -2757,11 +2761,15 @@ Do NOT modify any files. This is a read-only review.
 End with a one-line verdict: APPROVE, REQUEST_CHANGES, or COMMENT." --project $PROJECT_PATH --timeout 300
 ```
 
-After each reviewer completes, read `.factory/reviews/reviewer-latest.md` and save the output labeled as `Reviewer $LETTER — Round 1`.
+After each reviewer completes, read `.factory/reviews/reviewer-latest.md` and save the full output as `Reviewer $LETTER — Round 1 (full)`.
+
+**CEO summarization step (MANDATORY after Round 1):** For each reviewer's full output, write a concise summary (3-8 bullet points) capturing: the verdict, each finding with its severity and file:line reference, and the reviewer's key concern. These summaries are what get cross-pollinated to the OTHER reviewers in subsequent rounds. Label each as `Reviewer $LETTER — Round 1 (summary)`.
 
 ### PR4: Round 2 — Cross-Pollinated Deep Review
 
-Spawn all 3 reviewers again. Each receives the OTHER two reviewers' round 1 findings.
+Spawn all 3 reviewers again. Each receives:
+- Its OWN round 1 output in **full** (preserves the reviewer's depth and reasoning chain)
+- The OTHER two reviewers' round 1 findings as **summaries only** (provides awareness without anchoring)
 
 For each reviewer:
 
@@ -2773,13 +2781,18 @@ You are Reviewer $LETTER ($LENS_NAME) reviewing PR #$PR_NUMBER.
 **Full diff:**
 $DIFF
 
-Here are the findings from the other two reviewers in round 1. You have NOT seen these before.
+## Your Round 1 Review (full)
+$OWN_ROUND1_FULL
 
-### Reviewer $OTHER1 ($OTHER1_LENS) found:
-$OTHER1_ROUND1_FINDINGS
+## Other Reviewers' Round 1 Findings (summaries)
 
-### Reviewer $OTHER2 ($OTHER2_LENS) found:
-$OTHER2_ROUND1_FINDINGS
+You have NOT seen these before. These are condensed summaries — not the full reviews.
+
+### Reviewer $OTHER1 ($OTHER1_LENS) — Round 1 summary:
+$OTHER1_ROUND1_SUMMARY
+
+### Reviewer $OTHER2 ($OTHER2_LENS) — Round 1 summary:
+$OTHER2_ROUND1_SUMMARY
 
 Now review the PR again with this additional context:
 1. Do you agree or disagree with their findings? Challenge anything you think is wrong.
@@ -2790,11 +2803,15 @@ Provide NEW findings only (do not repeat your round 1 findings). Use severity ra
 End with an updated verdict." --project $PROJECT_PATH --timeout 300
 ```
 
-After each reviewer completes, read and save as `Reviewer $LETTER — Round 2`.
+After each reviewer completes, read and save the full output as `Reviewer $LETTER — Round 2 (full)`.
+
+**CEO summarization step (MANDATORY after Round 2):** Same as after Round 1 — write a concise summary for each reviewer's round 2 output. Label as `Reviewer $LETTER — Round 2 (summary)`.
 
 ### PR5: Round 3 — Adversarial Stress Test
 
-Spawn all 3 reviewers one final time. Each gets ALL findings from rounds 1 and 2 from the other reviewers.
+Spawn all 3 reviewers one final time. Each receives:
+- Its OWN rounds 1+2 output in **full** (complete reasoning trajectory)
+- ALL other reviewers' rounds 1+2 findings as **summaries only**
 
 For each reviewer:
 
@@ -2806,19 +2823,27 @@ You are Reviewer $LETTER ($LENS_NAME) reviewing PR #$PR_NUMBER.
 **Full diff:**
 $DIFF
 
-Here are ALL findings from the other reviewers across rounds 1 and 2:
+## Your Prior Reviews (full trajectory)
 
-### Reviewer $OTHER1 ($OTHER1_LENS) — Round 1:
-$OTHER1_R1
+### Your Round 1:
+$OWN_ROUND1_FULL
 
-### Reviewer $OTHER1 ($OTHER1_LENS) — Round 2:
-$OTHER1_R2
+### Your Round 2:
+$OWN_ROUND2_FULL
 
-### Reviewer $OTHER2 ($OTHER2_LENS) — Round 1:
-$OTHER2_R1
+## Other Reviewers' Findings (summaries only)
 
-### Reviewer $OTHER2 ($OTHER2_LENS) — Round 2:
-$OTHER2_R2
+### Reviewer $OTHER1 ($OTHER1_LENS) — Round 1 summary:
+$OTHER1_R1_SUMMARY
+
+### Reviewer $OTHER1 ($OTHER1_LENS) — Round 2 summary:
+$OTHER1_R2_SUMMARY
+
+### Reviewer $OTHER2 ($OTHER2_LENS) — Round 1 summary:
+$OTHER2_R1_SUMMARY
+
+### Reviewer $OTHER2 ($OTHER2_LENS) — Round 2 summary:
+$OTHER2_R2_SUMMARY
 
 Final round. Try to BREAK the PR:
 1. What assumptions does this code make that might not hold?
