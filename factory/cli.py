@@ -937,7 +937,8 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 _emit_cli_event(project_path, "verdict.force_kept", {
                     "exp_id": args.id,
                 })
-                print("Finalize gate: precheck SKIPPED (--force), hard constraints PASSED")
+                hc_msg = ", hard constraints PASSED" if config.hard_constraints else ""
+                print(f"Finalize gate: precheck SKIPPED (--force){hc_msg}")
 
     cost = args.cost
     if cost is None:
