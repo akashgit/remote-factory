@@ -165,6 +165,8 @@ class OpenCodeRunner:
     """Runner implementation for OpenCode CLI."""
 
     name: str = "opencode"
+    _agents_md_path: Path | None = None
+    _agents_md_backup: str | None = None
 
     @classmethod
     def metadata(cls) -> RunnerMeta:
@@ -182,13 +184,38 @@ class OpenCodeRunner:
             supports_session_name=False,
         )
 
+    def _setup_agents_md(self, cwd: Path, prompt: str) -> None:
+        """Write the system prompt to AGENTS.md, backing up any existing content."""
+        agents_md = cwd / "AGENTS.md"
+        self._agents_md_path = agents_md
+        self._agents_md_backup = None
+        if agents_md.is_file():
+            self._agents_md_backup = agents_md.read_text()
+            agents_md.write_text(f"{self._agents_md_backup}\n\n{prompt}")
+        else:
+            agents_md.write_text(prompt)
+
+    def _restore_agents_md(self) -> None:
+        """Restore the original AGENTS.md content after an OpenCode invocation."""
+        agents_md = self._agents_md_path
+        if agents_md is None:
+            return
+        backup = self._agents_md_backup
+        try:
+            if backup is not None:
+                agents_md.write_text(backup)
+            elif agents_md.is_file():
+                agents_md.unlink()
+        except OSError:
+            log.debug("opencode_agents_md_restore_failed", exc_info=True)
+        self._agents_md_path = None
+        self._agents_md_backup = None
+
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode CLI command and env dict."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
         cmd = [
             "opencode",
-            "-p", full_prompt,
+            "-p", request.task,
             "-c", str(request.cwd),
             "-q",
         ]
@@ -207,14 +234,18 @@ class OpenCodeRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
+        self._setup_agents_md(request.cwd, request.prompt)
+        try:
+            cmd, env, _ = self.build_command(request)
 
-        log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+            log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
 
-        return await run_subprocess(
-            cmd, cwd=str(request.cwd), env=env,
-            timeout=request.timeout, runner_name="opencode", role=request.role,
-        )
+            return await run_subprocess(
+                cmd, cwd=str(request.cwd), env=env,
+                timeout=request.timeout, runner_name="opencode", role=request.role,
+            )
+        finally:
+            self._restore_agents_md()
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode session as a subprocess."""
@@ -223,15 +254,18 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
+        self._setup_agents_md(request.cwd, request.prompt)
+        try:
+            cmd = ["opencode", "-p", request.task, "-c", str(request.cwd)]
 
-        log.info("opencode_interactive", cwd=str(request.cwd))
+            log.info("opencode_interactive", cwd=str(request.cwd))
 
-        env = dict(os.environ)
-        _prepend_opencode_path(env)
-        _source_openai_key_from_shell(env)
+            env = dict(os.environ)
+            _prepend_opencode_path(env)
+            _source_openai_key_from_shell(env)
 
-        result = subprocess.run(cmd, cwd=request.cwd, env=env)
-        return result.returncode
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
+            return result.returncode
+        finally:
+            self._restore_agents_md()
 

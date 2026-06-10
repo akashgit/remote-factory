@@ -101,6 +101,8 @@ class CodexRunner:
     """Runner implementation for OpenAI Codex CLI."""
 
     name: str = "codex"
+    _agents_md_path: Path | None = None
+    _agents_md_backup: str | None = None
 
     @classmethod
     def metadata(cls) -> RunnerMeta:
@@ -115,10 +117,19 @@ class CodexRunner:
             supports_session_name=False,
         )
 
+    def _setup_agents_md(self, cwd: Path, prompt: str) -> None:
+        """Write the system prompt to AGENTS.md, backing up any existing content."""
+        agents_md = cwd / "AGENTS.md"
+        self._agents_md_path = agents_md
+        self._agents_md_backup = None
+        if agents_md.is_file():
+            self._agents_md_backup = agents_md.read_text()
+            agents_md.write_text(f"{self._agents_md_backup}\n\n{prompt}")
+        else:
+            agents_md.write_text(prompt)
+
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the Codex CLI command, env dict, and temp files."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
         cmd = ["codex", "exec"]
 
         if _using_api_key():
@@ -131,7 +142,7 @@ class CodexRunner:
             cmd.extend(["--model", request.model])
 
         cmd.append("--skip-git-repo-check")
-        cmd.extend(["--", full_prompt])
+        cmd.extend(["--", request.task])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
@@ -148,12 +159,13 @@ class CodexRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
-
-        log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
-
-        retried = False
+        self._setup_agents_md(request.cwd, request.prompt)
         try:
+            cmd, env, _ = self.build_command(request)
+
+            log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
+
+            retried = False
             result = await run_subprocess(
                 cmd, cwd=str(request.cwd), env=env,
                 timeout=request.timeout, runner_name="codex", role=request.role,
@@ -169,8 +181,25 @@ class CodexRunner:
                 )
             return result
         finally:
+            self._restore_agents_md()
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
+
+    def _restore_agents_md(self) -> None:
+        """Restore the original AGENTS.md content after a Codex invocation."""
+        agents_md = getattr(self, "_agents_md_path", None)
+        if agents_md is None:
+            return
+        backup = getattr(self, "_agents_md_backup", None)
+        try:
+            if backup is not None:
+                agents_md.write_text(backup)
+            elif agents_md.is_file():
+                agents_md.unlink()
+        except OSError:
+            log.debug("codex_agents_md_restore_failed", exc_info=True)
+        self._agents_md_path = None
+        self._agents_md_backup = None
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Codex CLI session as a subprocess."""
@@ -181,26 +210,28 @@ class CodexRunner:
 
         _check_auth()
 
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
-        cmd = ["codex", full_prompt]
-
-        if _using_api_key():
-            cmd.append("--ignore-user-config")
-
-        if request.skip_permissions:
-            cmd.append("--full-auto")
-
-        if request.model:
-            cmd.extend(["--model", request.model])
-
-        log.info("codex_interactive", cwd=str(request.cwd))
-
-        env, tmpdir = _make_codex_env()
+        self._setup_agents_md(request.cwd, request.prompt)
         try:
-            result = subprocess.run(cmd, cwd=request.cwd, env=env)
-            return result.returncode
+            cmd = ["codex", request.task]
+
+            if _using_api_key():
+                cmd.append("--ignore-user-config")
+
+            if request.skip_permissions:
+                cmd.append("--full-auto")
+
+            if request.model:
+                cmd.extend(["--model", request.model])
+
+            log.info("codex_interactive", cwd=str(request.cwd))
+
+            env, tmpdir = _make_codex_env()
+            try:
+                result = subprocess.run(cmd, cwd=request.cwd, env=env)
+                return result.returncode
+            finally:
+                if tmpdir is not None:
+                    tmpdir.cleanup()
         finally:
-            if tmpdir is not None:
-                tmpdir.cleanup()
+            self._restore_agents_md()
 

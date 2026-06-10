@@ -225,7 +225,7 @@ class TestCodexHeadless:
             assert "--skip-git-repo-check" in cmd
             assert "--" in cmd
 
-    async def test_combines_prompt_and_task(
+    async def test_separates_prompt_and_task_via_agents_md(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("CODEX_API_KEY", "test-key")
@@ -248,10 +248,9 @@ class TestCodexHeadless:
 
             cmd = mock_run.call_args[0][0]
             dash_idx = cmd.index("--")
-            full_prompt = cmd[dash_idx + 1]
-            assert "You are the CEO." in full_prompt
-            assert "Run the experiment" in full_prompt
-            assert "## Current Task" in full_prompt
+            user_message = cmd[dash_idx + 1]
+            assert user_message == "Run the experiment"
+            assert "You are the CEO." not in user_message
 
     async def test_no_sandbox_flags_when_permissions_not_skipped(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -446,6 +445,94 @@ class TestCodexStreaming:
             assert mock_run.call_args.kwargs.get("sanitize", False) is False
 
 
+class TestCodexAgentsMd:
+    """Tests for AGENTS.md-based system prompt isolation."""
+
+    async def test_headless_writes_agents_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """headless() writes prompt to AGENTS.md and cleans up after."""
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+
+        runner = CodexRunner()
+        agents_md = tmp_path / "AGENTS.md"
+
+        written_content = None
+
+        async def capture_agents_md(*args: object, **kwargs: object) -> AgentRunResult:
+            nonlocal written_content
+            written_content = agents_md.read_text()
+            return AgentRunResult(stdout="ok", return_code=0)
+
+        with patch(
+            "factory.runners.codex.run_subprocess", side_effect=capture_agents_md
+        ):
+            await runner.headless(AgentRunRequest(
+                prompt="You are the CEO.", task="Run it", cwd=tmp_path,
+            ))
+
+        assert written_content is not None
+        assert "You are the CEO." in written_content
+        assert not agents_md.exists()
+
+    async def test_headless_preserves_existing_agents_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """headless() appends to existing AGENTS.md and restores it after."""
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+
+        runner = CodexRunner()
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("# Existing project instructions\n")
+
+        written_content = None
+
+        async def capture_agents_md(*args: object, **kwargs: object) -> AgentRunResult:
+            nonlocal written_content
+            written_content = agents_md.read_text()
+            return AgentRunResult(stdout="ok", return_code=0)
+
+        with patch(
+            "factory.runners.codex.run_subprocess", side_effect=capture_agents_md
+        ):
+            await runner.headless(AgentRunRequest(
+                prompt="You are the CEO.", task="Run it", cwd=tmp_path,
+            ))
+
+        assert "# Existing project instructions" in written_content
+        assert "You are the CEO." in written_content
+        assert agents_md.read_text() == "# Existing project instructions\n"
+
+    def test_interactive_writes_and_restores_agents_md(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """interactive_run() writes AGENTS.md with prompt and restores it after."""
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("FACTORY_CODEX_DRY_RUN", raising=False)
+
+        runner = CodexRunner()
+        agents_md = tmp_path / "AGENTS.md"
+        agents_md.write_text("# Original\n")
+
+        written_content = None
+
+        def capture_and_return(*args: object, **kwargs: object) -> type:
+            nonlocal written_content
+            written_content = agents_md.read_text()
+            return type("Result", (), {"returncode": 0})()
+
+        with patch("subprocess.run", side_effect=capture_and_return):
+            runner.interactive_run(AgentRunRequest(
+                prompt="System prompt here.", task="Do task", cwd=tmp_path,
+            ))
+
+        assert "System prompt here." in written_content
+        assert "# Original" in written_content
+        assert agents_md.read_text() == "# Original\n"
+
+
 class TestCodexInteractive:
     def test_interactive_run_builds_correct_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -470,6 +557,7 @@ class TestCodexInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
+            assert cmd[1] == "Start session"
             assert "--ignore-user-config" in cmd
             assert "--full-auto" in cmd
             assert "--model" in cmd
