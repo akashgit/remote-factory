@@ -175,6 +175,78 @@ def is_issue_ref(ref: str) -> bool:
     return False
 
 
+_ISSUE_REF_PATTERNS = [
+    re.compile(r"[Aa]ddresses:?\s*#(\d+)"),
+    re.compile(r"\*\*Backlog item:\*\*\s*#(\d+)"),
+    re.compile(r"[Ii]ssue\s+#(\d+)"),
+]
+_BARE_REF = re.compile(r"(?<![/\w])#(\d+)\b")
+
+
+def extract_issue_refs(text: str) -> list[int]:
+    """Extract issue numbers from hypothesis or backlog text.
+
+    Priority order:
+    1. Explicit references: ``Addresses #NNN``, ``**Backlog item:** #NNN``, ``issue #NNN``
+    2. Bare ``#NNN`` only if exactly one match and no explicit match found
+    """
+    explicit: list[int] = []
+    for pattern in _ISSUE_REF_PATTERNS:
+        explicit.extend(int(m.group(1)) for m in pattern.finditer(text))
+    if explicit:
+        return sorted(set(explicit))
+
+    bare = sorted({int(m.group(1)) for m in _BARE_REF.finditer(text)})
+    if len(bare) == 1:
+        return bare
+    return []
+
+
+def resolve_reusable_issue(
+    hypothesis: str,
+    project_path: Path,
+) -> int | None:
+    """Check if *hypothesis* references an existing open issue that can be reused.
+
+    Returns the issue number if a single, open, relevant issue is found.
+    Returns ``None`` when a new issue should be created instead.
+    """
+    refs = extract_issue_refs(hypothesis)
+    if not refs:
+        return None
+
+    for number in refs:
+        try:
+            spec = fetch_issue(str(number), project_path)
+        except (RuntimeError, ValueError):
+            log.info("issue_resolve_skip", number=number, reason="fetch_failed")
+            continue
+
+        # Verify the issue is open
+        result = subprocess.run(
+            ["gh", "issue", "view", str(number), "--json", "state", "--jq", ".state"],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0 or result.stdout.strip() != "OPEN":
+            log.info("issue_resolve_skip", number=number, reason="not_open")
+            continue
+
+        # Verify relevance: at least one hypothesis keyword appears in the title
+        title_lower = spec.title.lower()
+        words = re.findall(r"[a-z]{4,}", hypothesis.lower())
+        if not any(w in title_lower for w in words):
+            log.info("issue_resolve_skip", number=number, reason="not_relevant",
+                     title=spec.title)
+            continue
+
+        log.info("issue_resolve_reuse", number=number, title=spec.title)
+        return number
+
+    return None
+
+
 def format_issue_as_spec(spec: IssueSpec) -> str:
     """Format an ``IssueSpec`` as a markdown build specification."""
     lines = [f"# {spec.title}", ""]

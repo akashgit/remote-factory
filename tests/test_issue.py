@@ -271,6 +271,125 @@ class TestFetchIssue:
 # ── CLI focus-as-issue integration ─────────────────────────
 
 
+# ── extract_issue_refs ──────────────────────────────────────
+
+
+class TestExtractIssueRefs:
+    def test_addresses_pattern(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Addresses #42: fix the login bug") == [42]
+
+    def test_addresses_without_colon(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Addresses #42") == [42]
+
+    def test_backlog_item_tag(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("**Backlog item:** #352 implement handoff") == [352]
+
+    def test_issue_keyword(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("This is related to issue #99") == [99]
+
+    def test_bare_single_ref(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Fix the chain bug from #18") == [18]
+
+    def test_bare_multiple_refs_ambiguous(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Related to #18 and #42") == []
+
+    def test_explicit_takes_priority_over_bare(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Addresses #42, also see #99") == [42]
+
+    def test_no_refs(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("Add structured logging to the API layer") == []
+
+    def test_multiple_explicit_refs(self) -> None:
+        from factory.issue import extract_issue_refs
+        result = extract_issue_refs("Addresses #42, also addresses #99")
+        assert result == [42, 99]
+
+    def test_does_not_match_path_fragments(self) -> None:
+        from factory.issue import extract_issue_refs
+        assert extract_issue_refs("See file path/to/#42/config") == []
+
+
+# ── resolve_reusable_issue ──────────────────────────────────
+
+
+class TestResolveReusableIssue:
+    def test_returns_number_for_open_relevant_issue(self, tmp_project: Path) -> None:
+        from factory.issue import resolve_reusable_issue
+        gh_response = json.dumps({
+            "number": 42, "title": "Add widget support",
+            "body": "Details.", "labels": [], "url": "",
+        })
+        state_response = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="OPEN\n", stderr="",
+        )
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=gh_response, stderr=""),
+                state_response,
+            ]
+            result = resolve_reusable_issue("Addresses #42: add widget support", tmp_project)
+        assert result == 42
+
+    def test_returns_none_for_closed_issue(self, tmp_project: Path) -> None:
+        from factory.issue import resolve_reusable_issue
+        gh_response = json.dumps({
+            "number": 42, "title": "Add widgets",
+            "body": "Done.", "labels": [], "url": "",
+        })
+        state_response = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="CLOSED\n", stderr="",
+        )
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=gh_response, stderr=""),
+                state_response,
+            ]
+            result = resolve_reusable_issue("Addresses #42: add widgets", tmp_project)
+        assert result is None
+
+    def test_returns_none_when_title_irrelevant(self, tmp_project: Path) -> None:
+        from factory.issue import resolve_reusable_issue
+        gh_response = json.dumps({
+            "number": 42, "title": "Fix login page CSS",
+            "body": "Details.", "labels": [], "url": "",
+        })
+        state_response = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="OPEN\n", stderr="",
+        )
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run") as mock_run,
+        ):
+            mock_run.side_effect = [
+                subprocess.CompletedProcess(args=[], returncode=0, stdout=gh_response, stderr=""),
+                state_response,
+            ]
+            result = resolve_reusable_issue("Add structured logging to API", tmp_project)
+        assert result is None
+
+    def test_returns_none_when_no_refs(self, tmp_project: Path) -> None:
+        from factory.issue import resolve_reusable_issue
+        result = resolve_reusable_issue("Add structured logging", tmp_project)
+        assert result is None
+
+
+# ── CLI focus-as-issue integration ─────────────────────────
+
+
 class TestFocusIssueIntegration:
     """Test that --focus with issue refs works correctly via _resolve_focus_issue."""
 
