@@ -10,8 +10,65 @@ import structlog
 log = structlog.get_logger()
 
 
+def _fetch_and_resolve_base(project_path: Path, base_branch: str) -> str:
+    """Fetch the latest remote state and return the best start point for a worktree.
+
+    Tries ``git fetch origin <base_branch>``. On success, returns
+    ``origin/<base_branch>`` so the worktree starts from the remote tip.
+    Falls back to the local ``<base_branch>`` for repos without a remote.
+    """
+    try:
+        fetch = subprocess.run(
+            ["git", "fetch", "origin", base_branch],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        log.warning("worktree_fetch_skipped", reason="timeout", base=base_branch)
+        return base_branch
+    if fetch.returncode != 0:
+        log.info("worktree_fetch_skipped", reason="no_remote", base=base_branch)
+        return base_branch
+
+    remote_ref = f"origin/{base_branch}"
+    local_rev = subprocess.run(
+        ["git", "rev-parse", base_branch],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    remote_rev = subprocess.run(
+        ["git", "rev-parse", remote_ref],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    if (
+        local_rev.returncode == 0
+        and remote_rev.returncode == 0
+        and local_rev.stdout.strip() != remote_rev.stdout.strip()
+    ):
+        behind = subprocess.run(
+            ["git", "rev-list", "--count", f"{base_branch}..{remote_ref}"],
+            cwd=project_path, capture_output=True, text=True,
+        )
+        count = behind.stdout.strip() if behind.returncode == 0 else "?"
+        log.warning(
+            "worktree_local_behind",
+            base=base_branch, behind_by=count,
+            local=local_rev.stdout.strip()[:8],
+            remote=remote_rev.stdout.strip()[:8],
+        )
+
+    log.info("worktree_fetch_ok", base=base_branch, start_point=remote_ref)
+    return remote_ref
+
+
 def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
     """Create an isolated worktree for a factory run.
+
+    Fetches the latest remote state before creating the worktree so the
+    branch starts from ``origin/<base_branch>`` rather than the (possibly
+    stale) local branch.  Falls back to the local branch for repos without
+    a remote.
 
     Returns (worktree_path, branch_name).
     """
@@ -21,10 +78,11 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     factory_dir = project_path / ".factory"
     wt_dir = factory_dir / "worktrees" / f"run-{run_id}"
 
-    log.info("worktree_create", branch=branch, path=str(wt_dir))
+    start_point = _fetch_and_resolve_base(project_path, base_branch)
+    log.info("worktree_create", branch=branch, path=str(wt_dir), start_point=start_point)
 
     subprocess.run(
-        ["git", "worktree", "add", str(wt_dir), "-b", branch, base_branch],
+        ["git", "worktree", "add", str(wt_dir), "-b", branch, start_point],
         cwd=project_path,
         check=True,
         capture_output=True,
