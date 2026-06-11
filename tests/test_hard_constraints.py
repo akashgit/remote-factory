@@ -226,6 +226,23 @@ class TestForceFlag:
         assert "keep" in tsv
         assert "OVERRIDDEN" not in tsv
 
+    def test_force_flag_no_constraints_configured(self, tmp_path: Path, capsys) -> None:
+        from factory.cli import cmd_finalize
+
+        project = _make_project_with_config(tmp_path, [])
+        args = Namespace(
+            path=str(project), id=1, verdict="keep",
+            hypothesis="test hyp", summary="test", notes="",
+            issue=None, pr=None, cost=None,
+            score_before=None, score_after=None,
+            force=True,
+        )
+        cmd_finalize(args)
+        tsv = (project / ".factory" / "results.tsv").read_text()
+        assert "keep" in tsv
+        captured = capsys.readouterr()
+        assert "hard constraints PASSED" not in captured.out
+
     def test_force_flag_with_revert_is_noop(self, tmp_path: Path) -> None:
         from factory.cli import cmd_finalize
 
