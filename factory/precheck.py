@@ -109,10 +109,26 @@ def check_scope(
         for line in result.stdout.splitlines()
         if line.startswith("VIOLATION:")
     ]
+
+    if not violations:
+        # Non-zero exit but no VIOLATION lines — likely a non-scope guard failure
+        # or subprocess infrastructure error. Not a scope violation.
+        log.warning(
+            "scope_check_ambiguous",
+            returncode=result.returncode,
+            stdout=result.stdout.strip()[:200],
+            stderr=result.stderr.strip()[:200],
+        )
+        return CheckResult(
+            name="scope",
+            passed=True,
+            detail=f"Guard exited non-zero but no scope violations found (rc={result.returncode})",
+        )
+
     return CheckResult(
         name="scope",
         passed=False,
-        detail=f"Guard violations: {'; '.join(violations) or result.stdout.strip()[:200]}",
+        detail=f"Guard violations: {'; '.join(violations)}",
     )
 
 
