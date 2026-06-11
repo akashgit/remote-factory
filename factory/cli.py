@@ -2632,6 +2632,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             shutil.rmtree(project_path, ignore_errors=True)
 
 
+_PR_URL_RE = re.compile(
+    r"^https://github\.com/(?P<owner>[^/]+)/(?P<repo>[^/]+)/pull/(?P<number>\d+)(?:/(?:files|commits))?/?$"
+)
+
+
+def _parse_pr_url(url: str) -> tuple[str, int] | None:
+    """Extract (owner/repo, pr_number) from a GitHub PR URL, or None."""
+    m = _PR_URL_RE.match(url)
+    if not m:
+        return None
+    return f"{m.group('owner')}/{m.group('repo')}", int(m.group("number"))
+
+
 def _is_github_url(path: str) -> bool:
     """Return True if path looks like a GitHub URL."""
     return path.startswith("https://github.com/") or path.startswith("git@github.com:")
@@ -2699,7 +2712,18 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
         print(f"Project directory: {project_path}")
         return project_path, idea_content
 
-    # 3. GitHub URL
+    # 3a. GitHub PR URL — clone base repo, then checkout the PR branch
+    pr_match = _parse_pr_url(raw)
+    if pr_match:
+        owner_repo, pr_number = pr_match
+        repo_url = f"https://github.com/{owner_repo}"
+        tmp_dir = tempfile.mkdtemp(prefix="factory-")
+        subprocess.run(["git", "clone", repo_url, tmp_dir], check=True)
+        subprocess.run(["gh", "pr", "checkout", str(pr_number)], check=True, cwd=tmp_dir)
+        print(f"Cloned {owner_repo} and checked out PR #{pr_number} → {tmp_dir}")
+        return Path(tmp_dir).resolve(), None
+
+    # 3b. GitHub URL
     if _is_github_url(raw):
         tmp_dir = tempfile.mkdtemp(prefix="factory-")
         subprocess.run(["git", "clone", raw, tmp_dir], check=True)
