@@ -235,6 +235,22 @@ def hypothesis_similarity(a: str, b: str) -> float:
     return score
 
 
+_INFRA_REVERT_MARKERS = frozenset({
+    "reason=precheck_failed",
+    "precheck_false_positive",
+    "precheck_bugs",
+    "reason=infrastructure",
+})
+
+
+def _is_infra_revert(notes: str) -> bool:
+    """Check if revert notes indicate infrastructure/precheck failure, not code defect."""
+    if not notes:
+        return False
+    notes_lower = notes.lower()
+    return any(marker in notes_lower for marker in _INFRA_REVERT_MARKERS)
+
+
 def find_anti_patterns(
     hypothesis: str,
     history: list[dict],
@@ -244,10 +260,18 @@ def find_anti_patterns(
 
     Returns a list of history entries that were reverted and have similarity
     above the threshold.  Each returned dict gets a ``"similarity"`` key added.
+
+    Experiments reverted for infrastructure/precheck reasons (indicated by
+    markers in the ``"notes"`` field) are excluded from matching — re-attempting
+    an experiment that failed due to tooling bugs is valid.
     """
     matches: list[dict] = []
     for entry in history:
         if entry.get("verdict") != "revert":
+            continue
+        # Skip experiments reverted for infrastructure/precheck reasons
+        notes = entry.get("notes", "")
+        if _is_infra_revert(notes):
             continue
         past_hyp = entry.get("hypothesis", "")
         sim = hypothesis_similarity(hypothesis, past_hyp)
