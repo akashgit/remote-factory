@@ -1115,6 +1115,37 @@ Log milestone:
 factory log "$PROJECT_PATH" "phase.strategy.completed" --data '{"verdict": "PROCEED"}'
 ```
 
+### Issue Reuse Protocol
+
+Before creating a new GitHub issue, check if the hypothesis text or backlog item tag references an existing issue number.
+
+1. Parse the hypothesis text and the `**Backlog item:**` tag (if present) for issue references. Prefer matches in this order:
+   a. Explicit references: `Addresses #NNN` (with or without a trailing colon), `**Backlog item:** #NNN`, or `issue #NNN`
+   b. If no explicit match and exactly one bare `#NNN` is present, fall back to it
+   c. If multiple bare `#NNN` references remain ambiguous, skip reuse and create a new issue (link the others in the body)
+2. If a reference is found, verify the issue is open:
+   ```bash
+   (cd "$PROJECT_PATH" && gh issue view <number> --json state --jq '.state') 2>/dev/null
+   ```
+   If the command fails or returns anything other than `OPEN`, treat as no existing issue and proceed to create a new one.
+3. Verify the issue is relevant: read the issue title via `gh issue view <number> --json title --jq .title`. Check that at least one keyword from the hypothesis appears in the issue title. If no keyword matches, the reference may be coincidental. Skip reuse and create a new issue.
+4. If the issue is open and relevant, reuse it: set `$ISSUE_NUM` to that number, post an update comment with the current experiment context, and **skip issue creation**:
+   ```bash
+   gh issue comment "$ISSUE_NUM" --body "**Updated for experiment $EXP_ID**
+
+   ## Current hypothesis
+   <hypothesis text>
+
+   ## What to build (this cycle)
+   <specific changes>
+
+   ## Acceptance criteria (this cycle)
+   - [ ] <outcomes>
+   - [ ] Tests pass
+   - [ ] Eval score does not regress"
+   ```
+5. Only create a new issue if no existing open, relevant reference is found
+
 ### Step 2: Execute (Per Approved Hypothesis)
 
 **Targeted Mode early exit:** If a Focus Directive (Targeted Mode) was set, you have exactly one hypothesis. After its experiment completes (keep or revert), skip directly to Step 3 (Final Archive). Do not process additional hypotheses. Do not add new backlog items (skip Step 2i).
@@ -1143,7 +1174,9 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2c. Create GitHub Issue
 
-For **code-only** hypotheses (`**Type:** code` or no Type field):
+Follow the **Issue Reuse Protocol** (see above) to check for an existing issue before creating a new one.
+
+For **code-only** hypotheses (`**Type:** code` or no Type field), when no existing issue is found:
 
 ```bash
 gh issue create \
@@ -1164,7 +1197,7 @@ gh issue create \
 - Do NOT touch files outside declared scope"
 ```
 
-For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), add execution sections:
+For **operational or mixed** hypotheses (`**Type:** operational` or `**Type:** mixed`), when no existing issue is found, add execution sections:
 
 ```bash
 gh issue create \
@@ -2058,6 +2091,10 @@ factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
 
 Save the printed experiment ID as `$EXP_ID`.
+
+Follow the **Issue Reuse Protocol** (see above) to check for an existing issue before creating a new one.
+
+When no existing issue is found:
 
 ```bash
 gh issue create \
