@@ -86,8 +86,8 @@ def _aggregate(fragments: list[EvalFragment], dimension: str) -> dict:
 
 
 register(_reg_python())
-register(_reg_rust())
 register(_reg_node())
+register(_reg_rust())
 register(_reg_go())
 
 __all__ = [
