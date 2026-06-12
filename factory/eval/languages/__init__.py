@@ -70,7 +70,7 @@ def _aggregate(fragments: list[EvalFragment], dimension: str) -> dict:
         }
 
     if dimension == "coverage":
-        coverages = [(f.details, f.passed) for f in fragments]
+        coverages = [(f.details, f.coverage_pct) for f in fragments]
         avg_pct = sum(pct for _, pct in coverages) / len(coverages)
         score = avg_pct / 100.0
         details = ", ".join(f.details for f in fragments)

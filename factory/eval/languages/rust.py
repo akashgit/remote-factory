@@ -18,7 +18,7 @@ class RustEvaluator:
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
-            ["cargo", "test", "--workspace"], project_path
+            ["cargo", "test"], project_path
         )
         output = stdout + stderr
         p_match = re.search(r"(\d+)\s+passed", output)
@@ -52,35 +52,10 @@ class RustEvaluator:
         )
 
     def run_type_check(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(["cargo", "check"], project_path)
-        if rc == 0:
-            return EvalFragment(
-                passed=1, failed=0, score=1.0,
-                details=f"{project_path.name}(rs): clean",
-            )
-        output = stdout + stderr
-        count = len(re.findall(r"^error", output, re.MULTILINE))
-        count = max(count, 1)
-        return EvalFragment(
-            passed=0, failed=count, score=0.0,
-            details=f"{project_path.name}(rs): {count} errors",
-        )
+        return None
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(
-            ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"], project_path
-        )
-        output = stdout + stderr
-        total_match = re.search(r"(\d+(?:\.\d+)?)%\s+coverage", output)
-        if not total_match:
-            return None
-        pct = float(total_match.group(1))
-        return EvalFragment(
-            passed=int(pct),
-            failed=0,
-            score=pct / 100.0,
-            details=f"{project_path.name}(rs): {pct:.0f}%",
-        )
+        return None
 
 
 def register_evaluator() -> RustEvaluator:

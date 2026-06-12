@@ -21,6 +21,7 @@ class EvalFragment:
     failed: int
     score: float
     details: str
+    coverage_pct: float | None = None
 
     def __post_init__(self) -> None:
         self.score = max(0.0, min(1.0, self.score))

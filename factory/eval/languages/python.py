@@ -85,9 +85,10 @@ class PythonEvaluator:
             return None
         pct = int(total_match.group(1))
         return EvalFragment(
-            passed=pct,
+            passed=0,
             failed=0,
             score=pct / 100.0,
+            coverage_pct=pct,
             details=f"{project_path.name}: {pct}%",
         )
 

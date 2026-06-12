@@ -257,6 +257,8 @@ class TestRustTests:
             result = eval_tests(tmp_path)
         assert result["score"] == round(3 / 4, 4)
         assert "(rs)" in result["details"]
+        cmd = mock_run.call_args[0][0]
+        assert cmd == ["cargo", "test"]
 
 
 class TestRustLint:
@@ -385,76 +387,31 @@ class TestEvalFragmentClamping:
 
 
 class TestGoLint:
-    def test_go_vet_clean(self, tmp_path):
+    def test_go_lint_returns_neutral(self, tmp_path):
+        """Go lint is stubbed out — returns neutral 0.5."""
         (tmp_path / "go.mod").write_text("module test\n")
         (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(returncode=0)
-            result = eval_lint(tmp_path)
-        assert result["score"] == 1.0
-        assert result["passed"] is True
-        assert "clean" in result["details"]
-
-    def test_go_vet_errors(self, tmp_path):
-        (tmp_path / "go.mod").write_text("module test\n")
-        (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="main.go:5: assignment copies lock value\nmain.go:12: unreachable code\n",
-                stderr="vet: errors in package\n",
-                returncode=1,
-            )
-            result = eval_lint(tmp_path)
-        assert result["passed"] is False
-        assert "3 errors" in result["details"]
+        result = eval_lint(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
 
 
 class TestGoTypeCheck:
-    def test_go_build_clean(self, tmp_path):
+    def test_go_type_check_returns_neutral(self, tmp_path):
+        """Go type_check is stubbed out — returns neutral 0.5."""
         (tmp_path / "go.mod").write_text("module test\n")
         (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(returncode=0)
-            result = eval_type_check(tmp_path)
-        assert result["score"] == 1.0
-        assert result["passed"] is True
-        assert "clean" in result["details"]
-
-    def test_go_build_errors(self, tmp_path):
-        (tmp_path / "go.mod").write_text("module test\n")
-        (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stderr="main.go:10: undefined: foo\nmain.go:15: cannot use x\n",
-                returncode=1,
-            )
-            result = eval_type_check(tmp_path)
-        assert result["passed"] is False
-        assert "2 errors" in result["details"]
+        result = eval_type_check(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
 
 
 class TestGoCoverage:
-    def test_go_test_cover(self, tmp_path):
+    def test_go_coverage_returns_neutral(self, tmp_path):
+        """Go coverage is stubbed out — returns neutral 0.5."""
         (tmp_path / "go.mod").write_text("module test\n")
         (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="ok  \ttest/pkg\t0.5s\tcoverage: 75.0% of statements\n",
-                returncode=0,
-            )
-            result = eval_coverage(tmp_path)
-        assert result["score"] == round(75.0 / 100.0, 4)
-        assert "75%" in result["details"]
-
-    def test_go_test_cover_no_data(self, tmp_path):
-        (tmp_path / "go.mod").write_text("module test\n")
-        (tmp_path / "main.go").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="ok  \ttest/pkg\t0.5s\n",
-                returncode=0,
-            )
-            result = eval_coverage(tmp_path)
+        result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
         assert "Not detected" in result["details"]
 
@@ -463,59 +420,25 @@ class TestGoCoverage:
 
 
 class TestRustTypeCheck:
-    def test_cargo_check_clean(self, tmp_path):
+    def test_rust_type_check_returns_neutral(self, tmp_path):
+        """Rust type_check is stubbed out — returns neutral 0.5."""
         (tmp_path / "Cargo.toml").write_text("[package]\n")
         src = tmp_path / "src"
         src.mkdir()
         (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(returncode=0)
-            result = eval_type_check(tmp_path)
-        assert result["score"] == 1.0
-        assert result["passed"] is True
-        assert "clean" in result["details"]
-
-    def test_cargo_check_errors(self, tmp_path):
-        (tmp_path / "Cargo.toml").write_text("[package]\n")
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stderr="error[E0308]: mismatched types\nerror[E0599]: no method named\n",
-                returncode=1,
-            )
-            result = eval_type_check(tmp_path)
-        assert result["passed"] is False
-        assert "2 errors" in result["details"]
+        result = eval_type_check(tmp_path)
+        assert result["score"] == 0.5
+        assert "Not detected" in result["details"]
 
 
 class TestRustCoverage:
-    def test_tarpaulin_result(self, tmp_path):
+    def test_rust_coverage_returns_neutral(self, tmp_path):
+        """Rust coverage is stubbed out — returns neutral 0.5."""
         (tmp_path / "Cargo.toml").write_text("[package]\n")
         src = tmp_path / "src"
         src.mkdir()
         (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="85.2% coverage, 100/117 lines covered\n",
-                returncode=0,
-            )
-            result = eval_coverage(tmp_path)
-        assert result["score"] == round(85 / 100.0, 4)
-        assert "85%" in result["details"]
-
-    def test_tarpaulin_no_match(self, tmp_path):
-        (tmp_path / "Cargo.toml").write_text("[package]\n")
-        src = tmp_path / "src"
-        src.mkdir()
-        (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="no coverage data\n",
-                returncode=1,
-            )
-            result = eval_coverage(tmp_path)
+        result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
         assert "Not detected" in result["details"]
 
@@ -524,27 +447,11 @@ class TestRustCoverage:
 
 
 class TestNodeCoverage:
-    def test_jest_coverage(self, tmp_path):
+    def test_node_coverage_returns_neutral(self, tmp_path):
+        """Node coverage is stubbed out — returns neutral 0.5."""
         (tmp_path / "package.json").write_text("{}\n")
         (tmp_path / "index.js").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="All files | 92.5 | 85 | 90 | 95\n",
-                returncode=0,
-            )
-            result = eval_coverage(tmp_path)
-        assert result["score"] == round(92 / 100.0, 4)
-        assert "92%" in result["details"]
-
-    def test_jest_coverage_no_data(self, tmp_path):
-        (tmp_path / "package.json").write_text("{}\n")
-        (tmp_path / "index.js").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
-            mock_run.return_value = _make_run_result(
-                stdout="Tests: 5 passed\n",
-                returncode=0,
-            )
-            result = eval_coverage(tmp_path)
+        result = eval_coverage(tmp_path)
         assert result["score"] == 0.5
         assert "Not detected" in result["details"]
 

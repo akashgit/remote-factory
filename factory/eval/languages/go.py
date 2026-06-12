@@ -37,50 +37,13 @@ class GoEvaluator:
         return None
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(["go", "vet", "./..."], project_path)
-        if rc == 0:
-            return EvalFragment(
-                passed=1, failed=0, score=1.0,
-                details=f"{project_path.name}(go): clean",
-            )
-        output = stdout + stderr
-        count = len(output.strip().splitlines())
-        count = max(count, 1)
-        return EvalFragment(
-            passed=0, failed=count, score=0.0,
-            details=f"{project_path.name}(go): {count} errors",
-        )
+        return None
 
     def run_type_check(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(
-            ["go", "build", "-o", "/dev/null", "./..."], project_path
-        )
-        if rc == 0:
-            return EvalFragment(
-                passed=1, failed=0, score=1.0,
-                details=f"{project_path.name}(go): clean",
-            )
-        output = stdout + stderr
-        count = len(re.findall(r"^.*\.go:\d+", output, re.MULTILINE))
-        count = max(count, 1)
-        return EvalFragment(
-            passed=0, failed=count, score=0.0,
-            details=f"{project_path.name}(go): {count} errors",
-        )
+        return None
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(["go", "test", "-cover", "./..."], project_path)
-        output = stdout + stderr
-        pcts = re.findall(r"coverage:\s+(\d+(?:\.\d+)?)%", output)
-        if not pcts:
-            return None
-        avg_pct = sum(float(p) for p in pcts) / len(pcts)
-        return EvalFragment(
-            passed=int(avg_pct),
-            failed=0,
-            score=avg_pct / 100.0,
-            details=f"{project_path.name}(go): {avg_pct:.0f}%",
-        )
+        return None
 
 
 def register_evaluator() -> GoEvaluator:

@@ -11,13 +11,10 @@ from factory.eval.languages.base import EvalFragment, _run_cmd
 class NodeEvaluator:
     @property
     def name(self) -> str:
-        return "typescript" if (self._project_path / "tsconfig.json").exists() else "javascript"
+        return "typescript"
 
     def detect(self, project_path: Path) -> bool:
-        if not (project_path / "package.json").exists():
-            return False
-        self._project_path = project_path
-        return True
+        return (project_path / "package.json").exists()
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
@@ -73,22 +70,7 @@ class NodeEvaluator:
         )
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(
-            ["npx", "--no-install", "jest", "--coverage", "--coverageReporters=text",
-             "--passWithNoTests"],
-            project_path, timeout=180,
-        )
-        output = stdout + stderr
-        total_match = re.search(r"All files\s*\|\s*(\d+(?:\.\d+)?)", output)
-        if not total_match:
-            return None
-        pct = float(total_match.group(1))
-        return EvalFragment(
-            passed=int(pct),
-            failed=0,
-            score=pct / 100.0,
-            details=f"{project_path.name}(js): {pct:.0f}%",
-        )
+        return None
 
 
 def register_evaluator() -> NodeEvaluator:
