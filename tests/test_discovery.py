@@ -36,6 +36,7 @@ class TestIntrospect:
         project = tmp_path / "myapp"
         project.mkdir()
         (project / "package.json").write_text('{"name":"myapp","scripts":{"test":"jest"}}')
+        (project / "tsconfig.json").write_text('{"compilerOptions":{}}')
         (project / "README.md").write_text("# My App\n")
         profile = introspect_project(project)
         assert profile.language == "typescript"

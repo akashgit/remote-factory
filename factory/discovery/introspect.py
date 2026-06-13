@@ -36,18 +36,11 @@ def _read_toml_rough(path: Path) -> dict[str, str]:
 
 def _detect_language(project_path: Path) -> str:
     """Detect primary language from project files."""
-    if (project_path / "pyproject.toml").exists() or (project_path / "setup.py").exists():
-        lang = "python"
-    elif (project_path / "package.json").exists():
-        lang = "typescript"
-    elif (project_path / "Cargo.toml").exists():
-        lang = "rust"
-    elif (project_path / "go.mod").exists():
-        lang = "go"
-    elif (project_path / "Package.swift").exists():
+    from factory.eval.languages import detect_primary_language
+
+    lang = detect_primary_language(project_path)
+    if lang == "unknown" and (project_path / "Package.swift").exists():
         lang = "swift"
-    else:
-        lang = "unknown"
     log.debug("detect_language", language=lang)
     return lang
 
