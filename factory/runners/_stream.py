@@ -5,7 +5,12 @@ from __future__ import annotations
 import asyncio
 import re
 import sys
+import time
 from typing import BinaryIO
+
+import structlog
+
+log = structlog.get_logger()
 
 # Robust multi-branch matcher for ANSI/VT escape sequences. Deliberately
 # preserves \r and \n (they are not ANSI escapes). Covers five classes:
@@ -69,6 +74,7 @@ async def tee_stream(
     stream: bool = True,
     prefix: bytes | None = None,
     sanitize: bool = False,
+    last_activity: list[float] | None = None,
 ) -> None:
     """Read from an async stream, optionally tee to a destination, and collect in buffer.
 
@@ -84,11 +90,15 @@ async def tee_stream(
             \\r/\\n) are skipped entirely, including the prefix, so redraw-only TUI
             frames do not flood the terminal with bare prefixes. Genuine blank
             lines (no escapes) are preserved.
+        last_activity: Single-element list holding a monotonic timestamp. Updated on
+            each successful readline() so the watchdog can detect inactivity.
     """
     while True:
         line = await src.readline()
         if not line:
             break
+        if last_activity is not None:
+            last_activity[0] = time.monotonic()
         buffer.append(line)  # ALWAYS raw — the captured buffer is never sanitized
         if stream:
             out = strip_ansi(line) if sanitize else line
@@ -100,12 +110,29 @@ async def tee_stream(
             dest.flush()
 
 
+async def _watchdog(
+    proc: asyncio.subprocess.Process,
+    last_activity: list[float],
+    inactivity_timeout: float,
+) -> None:
+    """Kill the subprocess if no output is produced for ``inactivity_timeout`` seconds."""
+    poll_interval = min(inactivity_timeout / 4, 30.0)
+    while proc.returncode is None:
+        await asyncio.sleep(poll_interval)
+        idle = time.monotonic() - last_activity[0]
+        if idle >= inactivity_timeout and proc.returncode is None:
+            log.warning("watchdog_killing_process", idle_seconds=round(idle, 1), threshold=inactivity_timeout)
+            proc.kill()
+            return
+
+
 async def stream_subprocess(
     proc: asyncio.subprocess.Process,
     *,
     stream: bool = True,
     prefix: str | None = None,
     sanitize: bool = False,
+    inactivity_timeout: float | None = None,
 ) -> tuple[bytes, bytes]:
     """Stream subprocess stdout/stderr to the terminal while collecting output.
 
@@ -115,6 +142,8 @@ async def stream_subprocess(
         prefix: Optional prefix for each line (e.g., "[bob:researcher]").
         sanitize: If True, strip ANSI/VT escape sequences from the bytes written to
             the terminal (both stdout and stderr). The returned buffers stay raw.
+        inactivity_timeout: If set, kill the subprocess after this many seconds
+            without any output on stdout or stderr.
 
     Returns:
         (stdout_bytes, stderr_bytes) tuple with all collected output.
@@ -124,10 +153,14 @@ async def stream_subprocess(
 
     prefix_bytes = f"{prefix} ".encode() if prefix else None
 
+    last_activity: list[float] | None = None
+    if inactivity_timeout is not None:
+        last_activity = [time.monotonic()]
+
     assert proc.stdout is not None
     assert proc.stderr is not None
 
-    await asyncio.gather(
+    coros = [
         tee_stream(
             proc.stdout,
             sys.stdout.buffer,
@@ -135,6 +168,7 @@ async def stream_subprocess(
             stream=stream,
             prefix=prefix_bytes,
             sanitize=sanitize,
+            last_activity=last_activity,
         ),
         tee_stream(
             proc.stderr,
@@ -143,8 +177,14 @@ async def stream_subprocess(
             stream=stream,
             prefix=prefix_bytes,
             sanitize=sanitize,
+            last_activity=last_activity,
         ),
-    )
+    ]
+
+    if inactivity_timeout is not None and last_activity is not None:
+        coros.append(_watchdog(proc, last_activity, inactivity_timeout))
+
+    await asyncio.gather(*coros)
 
     await proc.wait()
 
