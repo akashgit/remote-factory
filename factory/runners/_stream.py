@@ -124,9 +124,12 @@ async def _watchdog(
         idle = time.monotonic() - last_activity[0]
         if idle >= inactivity_timeout and proc.returncode is None:
             log.warning("watchdog_killing_process", idle_seconds=round(idle, 1), threshold=inactivity_timeout)
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                return
             if killed_by_watchdog is not None:
                 killed_by_watchdog[0] = True
-            proc.kill()
             return
 
 
