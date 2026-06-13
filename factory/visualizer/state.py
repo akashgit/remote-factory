@@ -68,7 +68,6 @@ MODE_PHASES: dict[str, list[tuple[str, str, bool]]] = {
 MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
     "improve": {
         "researcher": "Observe",
-        "distiller": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
         "reviewer": "Review",
@@ -78,7 +77,6 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
     "research": {
         "failure_analyst": "Analyze",
         "researcher": "Research",
-        "distiller": "Research",
         "strategist": "Hypothesize",
         "builder": "Build",
         "evaluator": "Run",
@@ -86,7 +84,6 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
     },
     "build": {
         "researcher": "Research",
-        "distiller": "Research",
         "strategist": "Plan",
         "builder": "Build",
         "evaluator": "Verify",
@@ -97,7 +94,6 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
     },
     "meta": {
         "researcher": "Observe",
-        "distiller": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
         "reviewer": "Review",
@@ -174,7 +170,6 @@ _AGENT_TO_PHASE: dict[str, str] = {
     "reviewer": "Review",
     "evaluator": "Eval",
     "archivist": "Archive",
-    "distiller": "Research",
 }
 
 

@@ -123,10 +123,10 @@ class TestParser:
         args = parser.parse_args(["ceo", "--mode", "interactive"])
         assert args.path is None
 
-    def test_ceo_agent_distiller_choice(self):
+    def test_ceo_agent_strategist_choice(self):
         parser = build_parser()
-        args = parser.parse_args(["agent", "distiller", "--task", "test", "--project", "/p"])
-        assert args.role == "distiller"
+        args = parser.parse_args(["agent", "strategist", "--task", "test", "--project", "/p"])
+        assert args.role == "strategist"
 
     def test_ceo_agent_failure_analyst_choice(self):
         parser = build_parser()
