@@ -2191,6 +2191,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
+    review_tag = getattr(args, "review_tag", None)
 
     result, code = _run(invoke_agent(
         role,
@@ -2202,6 +2203,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         runner_name=runner,
         use_profile=use_profile,
         tmux_persist=tmux_persist,
+        review_tag=review_tag,
     ))
     print(result)
     return code
@@ -4021,6 +4023,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Inject user profile (~/.factory/profile.md) into the agent prompt")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--review-tag", default=None,
+                    help="Tag for distinct review output files (writes <role>-<tag>-latest.md)")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")

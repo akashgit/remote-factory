@@ -1544,3 +1544,54 @@ class TestRunnerMetaCustomAuthCheck:
             install_hint="test", required_env_vars=["SOME_KEY"],
         )
         assert meta.check_auth() is False
+
+
+class TestSaveReview:
+    """Tests for _save_review with and without review_tag."""
+
+    def test_save_review_with_tag(self, tmp_path: Path) -> None:
+        from factory.agents.runner import _save_review
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        _save_review(project, "researcher", "some output", 0, review_tag="codebase")
+        reviews = project / ".factory" / "reviews"
+        assert (reviews / "researcher-codebase-latest.md").exists()
+        content = (reviews / "researcher-codebase-latest.md").read_text()
+        assert "some output" in content
+        assert "exit_code:** 0" in content
+        assert not (reviews / "researcher-latest.md").exists()
+
+    def test_save_review_without_tag(self, tmp_path: Path) -> None:
+        from factory.agents.runner import _save_review
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        _save_review(project, "researcher", "output text", 0)
+        reviews = project / ".factory" / "reviews"
+        assert (reviews / "researcher-latest.md").exists()
+        content = (reviews / "researcher-latest.md").read_text()
+        assert "output text" in content
+
+    async def test_invoke_agents_parallel_auto_tags(self, tmp_path: Path) -> None:
+        from factory.agents.runner import invoke_agents_parallel
+
+        project = tmp_path / "proj"
+        (project / ".factory" / "reviews").mkdir(parents=True)
+
+        with patch(
+            "factory.agents.runner.invoke_agent", new_callable=AsyncMock
+        ) as mock_invoke:
+            mock_invoke.return_value = ("agent output", 0)
+
+            tasks: list[tuple[str, str]] = [
+                ("researcher", "task A"),
+                ("researcher", "task B"),
+                ("researcher", "task C"),
+            ]
+            results = await invoke_agents_parallel(tasks, project)
+
+            assert len(results) == 3
+            assert mock_invoke.call_count == 3
+            tags = [call.kwargs["review_tag"] for call in mock_invoke.call_args_list]
+            assert tags == ["0", "1", "2"]

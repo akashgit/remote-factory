@@ -138,6 +138,7 @@ async def invoke_agent(
     session_name: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    review_tag: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -155,6 +156,8 @@ async def invoke_agent(
             If not provided, defaults to "factory: {project_name}/{role}".
         use_profile: If True, inject user profile into the agent prompt.
         tmux_persist: If True, run the agent interactively in a tmux window.
+        review_tag: Optional tag for distinct review output files.
+            When set, output is saved as ``<role>-<tag>-latest.md``.
 
     Returns (stdout, return_code).
 
@@ -168,7 +171,10 @@ async def invoke_agent(
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 
-    _emit_safe(project_path, "agent.started", agent=role, data={"task": task[:200]})
+    started_data: dict[str, object] = {"task": task[:200]}
+    if review_tag:
+        started_data["review_tag"] = review_tag
+    _emit_safe(project_path, "agent.started", agent=role, data=started_data)
 
     runner = get_runner(runner_name, project_path=project_path)
 
@@ -213,6 +219,8 @@ async def invoke_agent(
             _check_failure_threshold(project_path, role)
     else:
         completed_data: dict[str, object] = {"return_code": 0}
+        if review_tag:
+            completed_data["review_tag"] = review_tag
         if usage is not None:
             completed_data.update({
                 "input_tokens": usage.input_tokens,
@@ -229,7 +237,7 @@ async def invoke_agent(
         if _track_failures:
             _consecutive_failures = 0
 
-    _save_review(project_path, role, stdout, return_code)
+    _save_review(project_path, role, stdout, return_code, review_tag=review_tag)
 
     return stdout, return_code
 
@@ -262,8 +270,15 @@ def _emit_safe(project_path: Path, event_type: str, **kwargs: object) -> None:
         logger.debug("Failed to emit event %s", event_type, exc_info=True)
 
 
-def _save_review(project_path: Path, role: str, output: str, return_code: int) -> None:
+def _save_review(
+    project_path: Path, role: str, output: str, return_code: int,
+    review_tag: str | None = None,
+) -> None:
     """Save agent output to .factory/reviews/<role>-latest.md for CEO review.
+
+    When *review_tag* is provided the file is written as
+    ``<role>-<tag>-latest.md`` instead, allowing multiple concurrent agents
+    with the same role to produce distinct review files.
 
     Creates the reviews directory if needed. Errors are swallowed so they
     never block agent execution.
@@ -271,7 +286,8 @@ def _save_review(project_path: Path, role: str, output: str, return_code: int) -
     try:
         reviews_dir = project_path / ".factory" / "reviews"
         reviews_dir.mkdir(parents=True, exist_ok=True)
-        review_path = reviews_dir / f"{role}-latest.md"
+        filename = f"{role}-{review_tag}-latest.md" if review_tag else f"{role}-latest.md"
+        review_path = reviews_dir / filename
         from datetime import datetime, timezone
 
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -294,13 +310,39 @@ async def invoke_agents_parallel(
     model: str | None = None,
     runner_name: str | None = None,
     tmux_persist: bool = False,
+    review_tags: list[str | None] | None = None,
 ) -> list[tuple[str, int]]:
     """Invoke multiple agents concurrently. Returns list of (output, return_code).
+
+    Args:
+        review_tags: Optional list of review tags, one per task. When not
+            provided, auto-generates numeric tags (0, 1, 2, …) for any role
+            that appears more than once in *tasks* so their review files don't
+            clobber each other.
 
     Raises:
         ConsecutiveAgentFailureError: If all agents in the batch fail, indicating
             infrastructure problems (e.g., API key not propagating to subprocesses).
     """
+    # Auto-generate tags for duplicate roles when none are provided
+    if review_tags is None:
+        from collections import Counter
+
+        role_counts = Counter(role for role, _ in tasks)
+        duplicated_roles = {role for role, count in role_counts.items() if count > 1}
+        if duplicated_roles:
+            role_idx: dict[str, int] = {}
+            review_tags = []
+            for role, _ in tasks:
+                if role in duplicated_roles:
+                    idx = role_idx.get(role, 0)
+                    review_tags.append(str(idx))
+                    role_idx[role] = idx + 1
+                else:
+                    review_tags.append(None)
+        else:
+            review_tags = [None] * len(tasks)
+
     coros = [
         invoke_agent(
             role,
@@ -312,8 +354,9 @@ async def invoke_agents_parallel(
             runner_name=runner_name,
             _track_failures=False,  # Avoid race condition; track locally below
             tmux_persist=tmux_persist,
+            review_tag=tag,
         )
-        for role, task in tasks
+        for (role, task), tag in zip(tasks, review_tags)
     ]
     results = list(await asyncio.gather(*coros))
 
