@@ -148,7 +148,7 @@ class TestClassifyWithLLM:
             ],
             "suggestions": [
                 {"label": "Fix it", "explanation": "Target the issue.", "command": "factory ceo {path} --focus \"bug\""},
-                {"label": "Discuss", "explanation": "Talk first.", "command": "factory ceo {path} --mode interactive"},
+                {"label": "Discuss", "explanation": "Talk first.", "command": "factory ceo {path} --mode design"},
             ],
         }
         mock_runner = MagicMock()
@@ -168,7 +168,7 @@ class TestClassifyWithLLM:
         response = {
             "follow_ups": [],
             "suggestions": [
-                {"label": "Brainstorm first", "explanation": "Refine the idea.", "command": 'factory ceo "weather CLI" --mode interactive'},
+                {"label": "Brainstorm first", "explanation": "Refine the idea.", "command": 'factory ceo "weather CLI" --mode design'},
                 {"label": "Build directly", "explanation": "Start building.", "command": 'factory ceo "weather CLI"'},
             ],
         }
@@ -187,7 +187,7 @@ class TestClassifyWithLLM:
     def test_legacy_json_array_response(self) -> None:
         """Backward compatibility: plain JSON array still works."""
         suggestions = [
-            {"label": "Brainstorm first", "explanation": "Refine the idea.", "command": 'factory ceo "weather CLI" --mode interactive'},
+            {"label": "Brainstorm first", "explanation": "Refine the idea.", "command": 'factory ceo "weather CLI" --mode design'},
             {"label": "Build directly", "explanation": "Start building.", "command": 'factory ceo "weather CLI"'},
         ]
         mock_runner = MagicMock()
@@ -446,7 +446,7 @@ class TestAskFollowUps:
     def test_choice_follow_up(self) -> None:
         follow_ups = [
             {"key": "mode", "question": "Which mode?", "type": "choice",
-             "options": ["interactive", "build", "research"], "optional": False},
+             "options": ["design", "build", "research"], "optional": False},
         ]
         with patch("builtins.input", return_value="2"), \
              patch("sys.stderr"):
@@ -458,7 +458,7 @@ class TestAskFollowUps:
     def test_choice_follow_up_invalid_returns_none(self) -> None:
         follow_ups = [
             {"key": "mode", "question": "Which mode?", "type": "choice",
-             "options": ["interactive", "build"], "optional": False},
+             "options": ["design", "build"], "optional": False},
         ]
         with patch("builtins.input", return_value="5"), \
              patch("sys.stderr"):
@@ -518,22 +518,22 @@ class TestSubstituteAnswers:
     def test_drops_suggestion_with_unfilled_placeholder(self) -> None:
         suggestions = [
             {"label": "Fix", "command": "factory ceo {path} --focus {issue}"},
-            {"label": "Discuss", "command": "factory ceo {path} --mode interactive"},
+            {"label": "Discuss", "command": "factory ceo {path} --mode design"},
         ]
         answers = {"path": "/tmp/proj"}  # no issue
         result = _substitute_answers(suggestions, answers)
         assert len(result) == 1
         assert result[0]["label"] == "Discuss"
-        assert result[0]["command"] == "factory ceo /tmp/proj --mode interactive"
+        assert result[0]["command"] == "factory ceo /tmp/proj --mode design"
 
     def test_keeps_suggestion_without_placeholders(self) -> None:
         suggestions = [
-            {"label": "Build", "command": 'factory ceo "my idea" --mode interactive'},
+            {"label": "Build", "command": 'factory ceo "my idea" --mode design'},
         ]
         answers = {}
         result = _substitute_answers(suggestions, answers)
         assert len(result) == 1
-        assert result[0]["command"] == 'factory ceo "my idea" --mode interactive'
+        assert result[0]["command"] == 'factory ceo "my idea" --mode design'
 
     def test_drops_all_if_no_answers(self) -> None:
         suggestions = [
@@ -563,7 +563,7 @@ class TestWizardDispatch:
     def test_selects_default_option(self) -> None:
         llm_result = (
             [],
-            [{"label": "Option 1", "explanation": "First.", "command": 'factory ceo "test" --mode interactive'}],
+            [{"label": "Option 1", "explanation": "First.", "command": 'factory ceo "test" --mode design'}],
         )
         with patch("builtins.input", side_effect=["test idea", ""]), \
              patch("sys.stderr") as mock_stderr, \
@@ -582,7 +582,7 @@ class TestWizardDispatch:
             [],
             [
                 {"label": "Option 1", "explanation": "First.", "command": 'factory ceo "test"'},
-                {"label": "Option 2", "explanation": "Second.", "command": 'factory ceo "test" --mode interactive'},
+                {"label": "Option 2", "explanation": "Second.", "command": 'factory ceo "test" --mode design'},
             ],
         )
         with patch("builtins.input", side_effect=["test idea", "2"]), \
@@ -597,7 +597,7 @@ class TestWizardDispatch:
         assert code == 0
         mock_ceo.assert_called_once()
         ns = mock_ceo.call_args[0][0]
-        assert ns.mode == "interactive"
+        assert ns.mode == "design"
 
     def test_invalid_choice_returns_error(self) -> None:
         llm_result = (
@@ -646,7 +646,7 @@ class TestWizardDispatch:
             [{"key": "path", "question": "Path to project", "type": "path", "optional": False}],
             [
                 {"label": "Fix it", "explanation": "Go.", "command": 'factory ceo {path} --focus "fix bug"'},
-                {"label": "Discuss", "explanation": "Talk.", "command": "factory ceo {path} --mode interactive"},
+                {"label": "Discuss", "explanation": "Talk.", "command": "factory ceo {path} --mode design"},
             ],
         )
         with patch("builtins.input", side_effect=["fix a bug", str(tmp_path), ""]), \
@@ -672,7 +672,7 @@ class TestWizardDispatch:
             ],
             [
                 {"label": "Fix specific", "explanation": "Target.", "command": "factory ceo {path} --focus {issue}"},
-                {"label": "Discuss", "explanation": "Talk.", "command": "factory ceo {path} --mode interactive"},
+                {"label": "Discuss", "explanation": "Talk.", "command": "factory ceo {path} --mode design"},
             ],
         )
         # User provides path but skips optional issue
@@ -689,7 +689,7 @@ class TestWizardDispatch:
         mock_ceo.assert_called_once()
         # The selected command should be the "Discuss" one (only surviving)
         ns = mock_ceo.call_args[0][0]
-        assert ns.mode == "interactive"
+        assert ns.mode == "design"
 
     def test_follow_up_eof_exits_cleanly(self) -> None:
         llm_result = (
