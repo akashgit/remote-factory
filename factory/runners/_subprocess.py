@@ -60,6 +60,8 @@ async def run_subprocess(
         max_timeout=max_timeout,
     )
 
+    killed_by_watchdog: list[bool] = [False]
+
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -76,6 +78,7 @@ async def run_subprocess(
                 prefix=prefix,
                 sanitize=sanitize,
                 inactivity_timeout=timeout,
+                killed_by_watchdog=killed_by_watchdog,
             ),
             timeout=max_timeout,
         )
@@ -104,8 +107,7 @@ async def run_subprocess(
     return_code = proc.returncode or 0
 
     if return_code != 0:
-        # Distinguish inactivity kill (SIGKILL → -9) from other failures
-        if proc.returncode == -9:
+        if killed_by_watchdog[0]:
             log.warning(
                 f"{runner_name}_inactivity_timeout",
                 inactivity_timeout=timeout,
