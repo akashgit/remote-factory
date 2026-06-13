@@ -146,7 +146,7 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 **Review protocol (apply after every agent):**
 
 1. **Read** the agent's output file: `cat $PROJECT_PATH/.factory/reviews/<role>-latest.md`
-2. **Read** any artifacts the agent produced (e.g., `.factory/strategy/research.md`, `.factory/strategy/current.md`, PR diff)
+2. **Read** any artifacts the agent produced (e.g., `.factory/strategy/research-*.md` tagged files, `.factory/strategy/current.md`, PR diff)
 3. **Assess** against the criteria below
 4. **Write** your verdict to `.factory/reviews/ceo-verdict-<role>.md`:
    ```markdown
@@ -467,7 +467,7 @@ factory agent distiller --task "Distill a project specification from research an
 
 Raw idea: <RAW_IDEA>
 
-MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-similar.md, research-techstack.md, research-pitfalls.md). Extract specific findings before writing any spec content.
 
 Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
@@ -482,7 +482,7 @@ factory agent distiller --task "Distill an improvement specification for an exis
 Project: $PROJECT_PATH
 <If focus topic provided: Focus topic: <FOCUS_TOPIC>>
 
-MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-health.md, research-practices.md, research-backlog.md). Extract specific findings before writing any spec content.
 
 Every Core Feature or Proposed Change MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
@@ -519,7 +519,7 @@ include the Multi-Run section. If the project has a two-tier surface structure
 (narrow surfaces to try first, wider surfaces to unlock after plateau), include
 the Surface Scoping section.
 
-MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings before writing any spec content.
+MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-similar.md, research-techstack.md, research-pitfalls.md). Extract specific findings before writing any spec content.
 
 Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
@@ -538,7 +538,7 @@ Read `.factory/reviews/distiller-latest.md` and assess the draft:
 
 1. **Depth check:** Read each Core Feature entry. Every feature MUST have 3+ sentences across its What/How/Why sub-fields. If any feature is a one-liner without the structured sub-fields, REDIRECT with: "Feature '<name>' is a one-liner — expand to What/How/Why with 3+ sentences total."
 
-2. **Research grounding check:** Architecture decisions and feature rationale must reference specific findings from `.factory/strategy/research.md`. If the spec contains no citations or rationale grounded in research, REDIRECT with: "No research grounding found — architecture decisions must cite findings from research.md."
+2. **Research grounding check:** Architecture decisions and feature rationale must reference specific findings from the tagged research files (`.factory/strategy/research-*.md`). If the spec contains no citations or rationale grounded in research, REDIRECT with: "No research grounding found — architecture decisions must cite findings from research files."
 
 3. **Buildability check:** For each Core Feature, ask: could a Builder agent implement this feature from the spec alone, without asking clarifying questions? If any feature is too vague to implement (missing key details like data format, API shape, error handling approach), REDIRECT with: "Feature '<name>' is not buildable — a Builder would need to ask clarifying questions. Add implementation details."
 
@@ -590,7 +590,7 @@ The user wants to modify the project spec. Their feedback: <USER_FEEDBACK>
 Research specifically:
 - <targeted topic from feedback>
 
-Append findings to .factory/strategy/research.md (do not overwrite the existing report)." --project "$PROJECT_PATH" --timeout 180
+Append findings to the relevant .factory/strategy/research-*.md tagged file (do not overwrite existing reports)." --project "$PROJECT_PATH" --timeout 180
 ```
 
 **Re-spawn the Distiller with feedback:**
@@ -614,7 +614,7 @@ Raw idea: <RAW_IDEA>
 
 <paste any new research findings, or 'None — original research still applies'>
 
-Read the full research report at .factory/strategy/research.md for context.
+Read all tagged research files at .factory/strategy/research-*.md for context.
 
 Produce a complete updated specification." --project "$PROJECT_PATH" --timeout 300
 ```
@@ -634,7 +634,7 @@ When the user approves the spec:
    ```bash
    factory agent archivist --task "Record the ideation process for $PROJECT_PATH.
    Read .factory/strategy/current.md (the approved spec).
-   Read .factory/strategy/research.md (the research).
+   Read all tagged research files at .factory/strategy/research-*.md (the research).
    Write project inception notes to .factory/archive/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
    ```
 4. **Transition — route by project type:**
@@ -671,7 +671,7 @@ Read the `.factory/` directory yourself to determine whether to resume an interr
 
 | Phase | Completed When |
 |-------|---------------|
-| Research | `phase.research.completed` event exists, OR `ceo-verdict-researcher.md` exists, OR `strategy/research.md` exists |
+| Research | `phase.research.completed` event exists, OR `ceo-verdict-researcher.md` exists, OR any `strategy/research-*.md` file exists |
 | Strategy | `phase.strategy.completed` event exists, OR `ceo-verdict-strategist.md` exists, OR `strategy/current.md` exists |
 | Build | `phase.build.completed` event for that exp_id, OR `ceo-verdict-builder.md` exists |
 | Eval | `phase.eval.completed` event for that exp_id, OR `experiments/NNN/eval_after.json` exists |
@@ -752,7 +752,7 @@ Apply the **CEO Review Gate**:
 
 ```bash
 factory agent archivist --task "Record the Researcher's findings for the new project $PROJECT_PATH.
-Read .factory/strategy/research.md and .factory/reviews/ceo-verdict-researcher.md.
+Read .factory/strategy/research-techstack.md, .factory/strategy/research-domain.md, .factory/strategy/research-archive.md, and .factory/reviews/ceo-verdict-researcher.md.
 Write research notes to .factory/archive/sources/. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
@@ -768,7 +768,7 @@ Include your research review notes in the Strategist's task so it knows what the
 ```bash
 factory agent strategist --task "Create a build plan for the new project at $PROJECT_PATH.
 
-Read the research report at .factory/strategy/research.md.
+Read the research reports at .factory/strategy/research-techstack.md, .factory/strategy/research-domain.md, .factory/strategy/research-archive.md.
 Read the CEO's research review at .factory/reviews/ceo-verdict-researcher.md for priorities.
 Generate a phased build plan as GitHub issues:
 - Phase 1: Project scaffold + eval harness (always first)
@@ -1039,7 +1039,7 @@ Read the `.factory/` directory yourself to determine whether to resume an interr
 
 | Phase | Completed When |
 |-------|---------------|
-| Research | `phase.research.completed` event exists, OR `ceo-verdict-researcher.md` exists, OR `strategy/research.md` exists |
+| Research | `phase.research.completed` event exists, OR `ceo-verdict-researcher.md` exists, OR any `strategy/research-*.md` file exists |
 | Strategy | `phase.strategy.completed` event exists, OR `ceo-verdict-strategist.md` exists, OR `strategy/current.md` exists |
 | Build | `phase.build.completed` event for that exp_id, OR `ceo-verdict-builder.md` exists |
 | Eval | `phase.eval.completed` event for that exp_id, OR `experiments/NNN/eval_after.json` exists |
@@ -1097,7 +1097,7 @@ Apply the **CEO Review Gate**:
 **0c. MANDATORY Archivist — record research findings (DO NOT SKIP)**
 
 ```bash
-factory agent archivist --task "Record the Researcher's findings. Read .factory/strategy/observations.md, .factory/strategy/research.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to .factory/archive/sources/. Update the project dashboard. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
+factory agent archivist --task "Record the Researcher's findings. Read .factory/strategy/observations.md, .factory/strategy/research-local.md, .factory/strategy/research-external.md, .factory/strategy/research-context.md, and .factory/reviews/ceo-verdict-researcher.md. Write source notes to .factory/archive/sources/. Update the project dashboard. Then run: factory report-update $PROJECT_PATH" --project "$PROJECT_PATH"
 ```
 
 Then write checkpoint:
@@ -1136,7 +1136,7 @@ $(cat "$PROJECT_PATH/factory.md")
 
 $(cat "$PROJECT_PATH/.factory/strategy/observations.md" 2>/dev/null || echo 'No observations')
 
-$(cat "$PROJECT_PATH/.factory/strategy/research.md" 2>/dev/null || echo 'No research')
+$(cat "$PROJECT_PATH/.factory/strategy/research-local.md" 2>/dev/null; cat "$PROJECT_PATH/.factory/strategy/research-external.md" 2>/dev/null; cat "$PROJECT_PATH/.factory/strategy/research-context.md" 2>/dev/null)
 
 $(cat "$PROJECT_PATH/.factory/strategy/insights.md" 2>/dev/null || echo 'No cross-project insights')
 
@@ -2085,7 +2085,7 @@ Generate 1-3 hypotheses that target the dominant failure modes identified by the
 Prioritize by expected impact on the target metric.
 Each hypothesis must name specific files from mutable_surfaces to modify.
 
-$(cat $PROJECT_PATH/.factory/strategy/research.md 2>/dev/null || echo 'No prior research')
+$(cat "$PROJECT_PATH/.factory/strategy/research-failures.md" 2>/dev/null; cat "$PROJECT_PATH/.factory/strategy/research-priorart.md" 2>/dev/null)
 
 $(factory history $PROJECT_PATH 2>/dev/null || echo 'No experiments yet')
 
