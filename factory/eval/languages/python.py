@@ -10,9 +10,19 @@ from factory.eval.languages.base import EvalFragment, _run_cmd
 
 
 class PythonEvaluator:
+    def __init__(self) -> None:
+        self._cached_output: str | None = None
+
     @property
     def name(self) -> str:
         return "python"
+
+    def _detect_cov_target(self, project_path: Path) -> str:
+        src_dirs = [
+            c.name for c in sorted(project_path.iterdir())
+            if c.is_dir() and (c / "__init__.py").exists()
+        ]
+        return src_dirs[0] if src_dirs else "."
 
     def detect(self, project_path: Path) -> bool:
         return (
@@ -21,10 +31,17 @@ class PythonEvaluator:
         )
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
+        cov_target = self._detect_cov_target(project_path)
         rc, stdout, stderr = _run_cmd(
-            [sys.executable, "-m", "pytest", "-v", "--tb=no", "-q"], project_path
+            [
+                sys.executable, "-m", "pytest",
+                f"--cov={cov_target}", "--cov-report=term",
+                "-v", "--tb=no", "-q",
+            ],
+            project_path,
         )
         output = stdout + stderr
+        self._cached_output = output
         p_match = re.search(r"(\d+)\s+passed", output)
         f_match = re.search(r"(\d+)\s+failed", output)
         p = int(p_match.group(1)) if p_match else 0
@@ -70,16 +87,15 @@ class PythonEvaluator:
         )
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        src_dirs = [
-            c.name for c in sorted(project_path.iterdir())
-            if c.is_dir() and (c / "__init__.py").exists()
-        ]
-        cov_target = src_dirs[0] if src_dirs else "."
-        rc, stdout, stderr = _run_cmd(
-            [sys.executable, "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
-            project_path,
-        )
-        output = stdout + stderr
+        if self._cached_output is not None:
+            output = self._cached_output
+        else:
+            cov_target = self._detect_cov_target(project_path)
+            _, stdout, stderr = _run_cmd(
+                [sys.executable, "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
+                project_path,
+            )
+            output = stdout + stderr
         total_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
         if not total_match:
             return None

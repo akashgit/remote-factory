@@ -50,7 +50,6 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 <!-- It must output JSON to stdout matching the EvalResult format. -->
 
 ```bash
-python eval/score.py
 ```
 
 ### Threshold

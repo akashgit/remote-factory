@@ -506,6 +506,79 @@ class TestRunCmd:
         assert stderr == "some error output"
 
 
+# ── PythonEvaluator caching ────────────────────────────────────
+
+
+class TestPythonEvaluatorCaching:
+    def test_run_tests_caches_output(self, tmp_path):
+        from factory.eval.languages.python import PythonEvaluator
+
+        ev = PythonEvaluator()
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        pkg = tmp_path / "mypkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="5 passed in 0.5s\nTOTAL      100     20     80%\n",
+                returncode=0,
+            )
+            ev.run_tests(tmp_path)
+        assert ev._cached_output is not None
+        assert "5 passed" in ev._cached_output
+
+    def test_run_coverage_uses_cache(self, tmp_path):
+        from factory.eval.languages.python import PythonEvaluator
+
+        ev = PythonEvaluator()
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        pkg = tmp_path / "mypkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        ev._cached_output = "5 passed\nTOTAL      100     20     80%\n"
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            result = ev.run_coverage(tmp_path)
+            mock_run.assert_not_called()
+        assert result is not None
+        assert result.score == 0.8
+        assert result.coverage_pct == 80
+
+    def test_run_coverage_falls_back_without_cache(self, tmp_path):
+        from factory.eval.languages.python import PythonEvaluator
+
+        ev = PythonEvaluator()
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        pkg = tmp_path / "mypkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        assert ev._cached_output is None
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="TOTAL      200     40     80%\n", returncode=0
+            )
+            result = ev.run_coverage(tmp_path)
+            mock_run.assert_called_once()
+        assert result is not None
+        assert result.coverage_pct == 80
+
+    def test_run_tests_includes_cov_flags(self, tmp_path):
+        from factory.eval.languages.python import PythonEvaluator
+
+        ev = PythonEvaluator()
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        pkg = tmp_path / "mypkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="3 passed\nTOTAL      50     10     80%\n", returncode=0
+            )
+            ev.run_tests(tmp_path)
+            cmd = mock_run.call_args[0][0]
+            assert "--cov=mypkg" in cmd
+            assert "--cov-report=term" in cmd
+
+
 # ── _aggregate unknown dimension ────────────────────────────────
 
 

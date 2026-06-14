@@ -70,7 +70,7 @@ def test_export_produces_valid_json(tmp_project: Path, sample_config: FactoryCon
 
     # Verify config content
     assert data["config"]["goal"] == "Build a test project"
-    assert data["config"]["eval_command"] == "python eval/score.py"
+    assert data["config"]["eval_command"] == ""
 
     # Verify eval_profile content
     assert data["eval_profile"]["project_type"] == "python-cli"

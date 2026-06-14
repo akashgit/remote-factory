@@ -35,6 +35,19 @@ def _reset_agent_failure_counter() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _reset_evaluator_cache() -> None:
+    """Reset PythonEvaluator cached output between tests to prevent leakage."""
+    from factory.eval.languages import _REGISTRY
+    for ev in _REGISTRY:
+        if hasattr(ev, "_cached_output"):
+            ev._cached_output = None
+    yield  # type: ignore[misc]
+    for ev in _REGISTRY:
+        if hasattr(ev, "_cached_output"):
+            ev._cached_output = None
+
+
+@pytest.fixture(autouse=True)
 def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """Stub worktree functions for tests that don't exercise worktree logic.
 
@@ -83,7 +96,7 @@ def sample_config() -> FactoryConfig:
         goal="Build a test project",
         scope=["src/**/*.py", "tests/**/*.py"],
         guards=["Do not delete tests"],
-        eval_command="python eval/score.py",
+        eval_command="",
         eval_threshold=0.8,
         constraints=["Prefer small changes"],
     )
