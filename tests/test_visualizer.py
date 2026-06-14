@@ -95,7 +95,6 @@ class TestPhaseInference:
             ("reviewer", "Review"),
             ("evaluator", "Eval"),
             ("archivist", "Archive"),
-            ("distiller", "Research"),
         ]
         for agent, expected_phase in cases:
             events = [_event("agent.started", agent=agent, data={"task": "work"})]

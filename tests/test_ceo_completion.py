@@ -1160,8 +1160,8 @@ class TestCeoPromptResearchMode:
         """Phase 0 activates for both Interactive and Research Ideation."""
         assert "Research Ideation Mode (Phase 0)" in ceo_prompt
 
-    def test_research_ideation_distiller_instruction(self, ceo_prompt: str) -> None:
-        """Phase 0 includes research-specific Distiller invocation."""
+    def test_research_ideation_strategist_instruction(self, ceo_prompt: str) -> None:
+        """Phase 0 includes research-specific Strategist invocation."""
         phase0_idx = ceo_prompt.index("## Phase 0: Ideation")
         build_idx = ceo_prompt.index("## Mode: Build")
         phase0_section = ceo_prompt[phase0_idx:build_idx]

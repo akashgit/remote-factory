@@ -24,11 +24,6 @@ def archivist_prompt() -> str:
     return (PROMPTS_DIR / "archivist.md").read_text()
 
 
-@pytest.fixture
-def distiller_prompt() -> str:
-    return (PROMPTS_DIR / "distiller.md").read_text()
-
-
 # ── Strategist ────────────────────────────────────────────────────
 
 
@@ -357,11 +352,11 @@ class TestCeoPrompt:
         phase0_section = ceo_prompt[phase0_start:build_start]
         assert "factory agent researcher" in phase0_section
 
-    def test_phase_0_spawns_distiller(self, ceo_prompt: str) -> None:
+    def test_phase_0_spawns_strategist(self, ceo_prompt: str) -> None:
         phase0_start = ceo_prompt.index("## Phase 0: Ideation")
         build_start = ceo_prompt.index("## Mode: Build")
         phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "factory agent distiller" in phase0_section
+        assert "factory agent strategist" in phase0_section
 
     def test_phase_0_has_iteration_limit(self, ceo_prompt: str) -> None:
         assert "Maximum 5 iterations" in ceo_prompt
@@ -385,55 +380,55 @@ class TestCeoPrompt:
         assert "factory agent archivist" in phase0_section
 
 
-# ── Distiller ────────────────────────────────────────────────────
+# ── Strategist Ideation Mode ─────────────────────────────────────
 
 
-class TestDistillerPrompt:
-    def test_exists(self) -> None:
-        assert (PROMPTS_DIR / "distiller.md").exists()
+class TestStrategistIdeationMode:
+    def test_has_ideation_section(self, strategist_prompt: str) -> None:
+        assert "## Interactive / Ideation Mode" in strategist_prompt
 
-    def test_has_output_format(self, distiller_prompt: str) -> None:
-        assert "## Vision" in distiller_prompt
-        assert "## Core Features" in distiller_prompt
-        assert "## Architecture" in distiller_prompt
+    def test_has_output_format(self, strategist_prompt: str) -> None:
+        assert "## Vision" in strategist_prompt
+        assert "## Core Features" in strategist_prompt
+        assert "## Architecture" in strategist_prompt
 
-    def test_has_refinement_mode(self, distiller_prompt: str) -> None:
-        assert "## Refinement Mode" in distiller_prompt
-        assert "Prior Draft" in distiller_prompt
-        assert "User Feedback" in distiller_prompt
+    def test_has_refinement_mode(self, strategist_prompt: str) -> None:
+        assert "### Refinement Mode" in strategist_prompt
+        assert "Prior Draft" in strategist_prompt
+        assert "User Feedback" in strategist_prompt
 
-    def test_has_rules(self, distiller_prompt: str) -> None:
-        assert "## Constraints" in distiller_prompt
+    def test_has_ideation_constraints(self, strategist_prompt: str) -> None:
+        assert "### Ideation Constraints" in strategist_prompt
 
-    def test_has_non_goals(self, distiller_prompt: str) -> None:
-        assert "Non-Goals" in distiller_prompt
+    def test_has_non_goals(self, strategist_prompt: str) -> None:
+        assert "Non-Goals" in strategist_prompt
 
-    def test_has_open_questions(self, distiller_prompt: str) -> None:
-        assert "Open Questions" in distiller_prompt
+    def test_has_open_questions(self, strategist_prompt: str) -> None:
+        assert "Open Questions" in strategist_prompt
 
-    def test_references_research_file(self, distiller_prompt: str) -> None:
-        assert "research.md" in distiller_prompt
+    def test_references_research_file(self, strategist_prompt: str) -> None:
+        assert "research.md" in strategist_prompt
 
-    def test_has_research_configuration_section(self, distiller_prompt: str) -> None:
-        """Distiller output format includes Research Configuration section."""
-        assert "## Research Configuration" in distiller_prompt
+    def test_has_research_configuration_section(self, strategist_prompt: str) -> None:
+        """Strategist ideation output format includes Research Configuration section."""
+        assert "## Research Configuration" in strategist_prompt
 
-    def test_research_config_has_all_fields(self, distiller_prompt: str) -> None:
+    def test_research_config_has_all_fields(self, strategist_prompt: str) -> None:
         """Research Configuration section includes all required fields."""
-        assert "Research Target" in distiller_prompt
-        assert "Mutable Surfaces" in distiller_prompt
-        assert "Fixed Surfaces" in distiller_prompt
-        assert "Research Constraints" in distiller_prompt
-        assert "Cost Budget" in distiller_prompt
+        assert "Research Target" in strategist_prompt
+        assert "Mutable Surfaces" in strategist_prompt
+        assert "Fixed Surfaces" in strategist_prompt
+        assert "Research Constraints" in strategist_prompt
+        assert "Cost Budget" in strategist_prompt
 
-    def test_always_consider_research_mode_rule(self, distiller_prompt: str) -> None:
-        """Distiller includes instruction to evaluate research mode."""
-        assert "research mode" in distiller_prompt.lower()
+    def test_has_grounding_protocol(self, strategist_prompt: str) -> None:
+        """Strategist ideation includes the grounding protocol."""
+        assert "Grounding Protocol" in strategist_prompt
+        assert "MANDATORY" in strategist_prompt
 
-    def test_mandatory_research_config_rule(self, distiller_prompt: str) -> None:
-        """Distiller knows research config is mandatory when told it's a research project."""
-        assert "This is a research project" in distiller_prompt
-        assert "MANDATORY" in distiller_prompt
+    def test_mandatory_research_config_rule(self, strategist_prompt: str) -> None:
+        """Strategist knows research config is mandatory when told it's a research project."""
+        assert "This is a research project" in strategist_prompt
 
 
 # ── Factory Config Template ─────────────────────────────────────
