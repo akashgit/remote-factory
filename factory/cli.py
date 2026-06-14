@@ -2191,6 +2191,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
+    review_tag = getattr(args, "review_tag", None)
 
     result, code = _run(invoke_agent(
         role,
@@ -2202,6 +2203,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         runner_name=runner,
         use_profile=use_profile,
         tmux_persist=tmux_persist,
+        review_tag=review_tag,
     ))
     print(result)
     return code
@@ -2281,7 +2283,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     Default: interactive foreground session (user can see and interact).
     With --headless: pipe mode via claude -p (for scripting, cron, etc.).
-    With --mode interactive: brainstorm an idea via research + Distiller before building.
+    With --mode interactive: brainstorm an idea via research + Strategist before building.
     """
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
@@ -3220,13 +3222,13 @@ def _build_ceo_task(
             f"\n\n## Research Ideation Mode (Phase 0)\n\n"
             f"**Raw idea from user:** {research_ideation}\n\n"
             f"You are in research ideation mode. This is like interactive ideation, "
-            f"but the Distiller MUST collect research configuration:\n"
+            f"but the Strategist MUST collect research configuration:\n"
             f"- Research Target (objective, metric, target value, run_command, result_path)\n"
             f"- Mutable Surfaces (files the Builder can modify)\n"
             f"- Fixed Surfaces (ground truth / eval files that must never be touched)\n"
             f"- Research Constraints (additional rules)\n"
             f"- Cost Budget (optional)\n\n"
-            f"Follow the Phase 0: Ideation protocol, but tell the Distiller this is a "
+            f"Follow the Phase 0: Ideation protocol, but tell the Strategist this is a "
             f"research project. After the user approves, persist the spec AND the research "
             f"config to .factory/strategy/current.md, then proceed to Build mode. "
             f"During Review mode (factory.md creation), populate the research sections "
@@ -4004,7 +4006,7 @@ def build_parser() -> argparse.ArgumentParser:
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "distiller", "ceo",
+                                     "evaluator", "archivist", "ceo",
                                      "failure_analyst", "refiner"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
@@ -4021,6 +4023,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Inject user profile (~/.factory/profile.md) into the agent prompt")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--review-tag", default=None,
+                    help="Tag for distinct review output files (writes <role>-<tag>-latest.md)")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")

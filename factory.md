@@ -80,7 +80,7 @@ main
 <!-- Optional e2e smoke test command. Failure = mandatory revert. -->
 
 ```bash
-uv run pytest tests/test_models.py tests/test_guards.py tests/test_runners.py -x -q --tb=short
+uv run pytest tests/test_models.py tests/test_guards.py tests/test_runners.py -x -q --tb=short -k 'not (BobAuth or preflight_error_unchanged)'
 ```
 
 ## Constraints

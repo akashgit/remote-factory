@@ -36,14 +36,31 @@ async def run_subprocess(
     runner_name: str,
     role: str,
     sanitize: bool = False,
+    max_timeout: float = 3600.0,
 ) -> AgentRunResult:
     """Run a subprocess with streaming, timeout, and error handling.
 
     This is the shared execution path for all runners, eliminating
     ~30 lines of duplicated subprocess code per runner.
+
+    Args:
+        timeout: Inactivity timeout — kills the subprocess if no output is
+            produced for this many seconds.
+        max_timeout: Hard wall-clock backstop via ``asyncio.wait_for``.
+            Catches pathological trickle-output that keeps the inactivity
+            watchdog alive indefinitely. Defaults to 3600s (1 hour).
     """
     stream = should_stream()
     prefix = f"[{runner_name}:{role}]" if stream else None
+
+    log.info(
+        f"{runner_name}_subprocess_start",
+        role=role,
+        inactivity_timeout=timeout,
+        max_timeout=max_timeout,
+    )
+
+    killed_by_watchdog: list[bool] = [False]
 
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -55,15 +72,26 @@ async def run_subprocess(
             env=env,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            stream_subprocess(proc, stream=stream, prefix=prefix, sanitize=sanitize),
-            timeout=timeout,
+            stream_subprocess(
+                proc,
+                stream=stream,
+                prefix=prefix,
+                sanitize=sanitize,
+                inactivity_timeout=timeout,
+                killed_by_watchdog=killed_by_watchdog,
+            ),
+            timeout=max_timeout,
         )
     except asyncio.TimeoutError:
         proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
-        log.error(f"{runner_name}_timed_out", timeout=timeout)
+        log.error(
+            f"{runner_name}_max_timeout",
+            max_timeout=max_timeout,
+            inactivity_timeout=timeout,
+        )
         return AgentRunResult(
-            stdout=f"Agent timed out after {timeout}s",
+            stdout=f"Agent exceeded max wall-clock timeout ({max_timeout}s)",
             return_code=1,
         )
     except FileNotFoundError:
@@ -79,6 +107,17 @@ async def run_subprocess(
     return_code = proc.returncode or 0
 
     if return_code != 0:
+        if killed_by_watchdog[0]:
+            log.warning(
+                f"{runner_name}_inactivity_timeout",
+                inactivity_timeout=timeout,
+                role=role,
+            )
+            return AgentRunResult(
+                stdout=f"Agent killed after {timeout}s of inactivity",
+                return_code=1,
+                metadata={"stderr": stderr},
+            )
         log.warning(f"{runner_name}_nonzero_exit", code=return_code, stderr=stderr[:200])
 
     return AgentRunResult(

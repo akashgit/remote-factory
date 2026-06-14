@@ -89,8 +89,8 @@ def generate_agent_content(role: str) -> str:
     )
 
 
-_READ_ONLY_ROLES = frozenset({"researcher", "reviewer", "evaluator", "strategist", "failure_analyst"})
-_WORKSPACE_WRITE_ROLES = frozenset({"builder", "archivist", "distiller", "ceo"})
+_READ_ONLY_ROLES = frozenset({"researcher", "reviewer", "evaluator", "failure_analyst"})
+_WORKSPACE_WRITE_ROLES = frozenset({"builder", "archivist", "ceo", "strategist"})
 
 
 def _sandbox_mode(role: str) -> str:

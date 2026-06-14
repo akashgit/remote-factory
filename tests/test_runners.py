@@ -1,5 +1,6 @@
 """Tests for factory/runners/ — Runner protocol and implementations."""
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -173,12 +174,12 @@ class TestBobRunner:
 
         (tmp_path / ".factory").mkdir()
 
-        # Mock run_subprocess to return a timeout result
+        # Mock run_subprocess to return an inactivity timeout result
         with patch(
             "factory.runners.bob.run_subprocess", new_callable=AsyncMock
         ) as mock_run:
             mock_run.return_value = AgentRunResult(
-                stdout="Agent timed out after 0.1s",
+                stdout="Agent killed after 0.1s of inactivity",
                 return_code=1,
             )
 
@@ -192,7 +193,7 @@ class TestBobRunner:
             ))
 
         assert result.return_code == 1
-        assert "timed out" in result.stdout.lower()
+        assert "inactivity" in result.stdout.lower()
         assert result.usage is None
         bob_module._auth_checked = False
 
@@ -1236,6 +1237,62 @@ class TestAnsiSanitization:
             assert mock_run.call_args.kwargs.get("sanitize", False) is False
 
 
+class TestInactivityTimeout:
+    """Tests for the inactivity-based timeout watchdog."""
+
+    async def test_inactivity_timeout_kills_silent_process(self) -> None:
+        """A subprocess that stops producing output is killed after the inactivity timeout."""
+        proc = await asyncio.create_subprocess_exec(
+            "python3", "-c",
+            "import time; print('hello', flush=True); time.sleep(60)",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        from factory.runners._stream import stream_subprocess
+
+        stdout, stderr = await stream_subprocess(
+            proc, stream=False, inactivity_timeout=0.5,
+        )
+
+        assert proc.returncode == -9
+        assert b"hello" in stdout
+
+    async def test_active_output_prevents_timeout(self) -> None:
+        """A subprocess that keeps producing output is NOT killed even past old wall-clock limit."""
+        proc = await asyncio.create_subprocess_exec(
+            "python3", "-c",
+            "import time\nfor i in range(6):\n    print(f'tick {i}', flush=True)\n    time.sleep(0.2)\n",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        from factory.runners._stream import stream_subprocess
+
+        stdout, stderr = await stream_subprocess(
+            proc, stream=False, inactivity_timeout=0.8,
+        )
+
+        assert proc.returncode == 0
+        assert b"tick 5" in stdout
+
+    async def test_max_timeout_backstop(self) -> None:
+        """Hard wall-clock max_timeout catches trickle-output that keeps the watchdog alive."""
+        from factory.runners._subprocess import run_subprocess
+
+        result = await run_subprocess(
+            ["python3", "-c",
+             "import time\nwhile True:\n    print('.', flush=True)\n    time.sleep(0.1)\n"],
+            cwd=".",
+            env=dict(os.environ),
+            timeout=999.0,
+            runner_name="test",
+            role="test",
+            max_timeout=1.0,
+        )
+
+        assert result.return_code == 1
+        assert "max wall-clock timeout" in result.stdout.lower()
+
+
 class TestCeilingAccumulationAcrossInvocations:
     """Tests that per-cycle ceiling accumulates across invoke_agent calls."""
 
@@ -1544,3 +1601,54 @@ class TestRunnerMetaCustomAuthCheck:
             install_hint="test", required_env_vars=["SOME_KEY"],
         )
         assert meta.check_auth() is False
+
+
+class TestSaveReview:
+    """Tests for _save_review with and without review_tag."""
+
+    def test_save_review_with_tag(self, tmp_path: Path) -> None:
+        from factory.agents.runner import _save_review
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        _save_review(project, "researcher", "some output", 0, review_tag="codebase")
+        reviews = project / ".factory" / "reviews"
+        assert (reviews / "researcher-codebase-latest.md").exists()
+        content = (reviews / "researcher-codebase-latest.md").read_text()
+        assert "some output" in content
+        assert "exit_code:** 0" in content
+        assert not (reviews / "researcher-latest.md").exists()
+
+    def test_save_review_without_tag(self, tmp_path: Path) -> None:
+        from factory.agents.runner import _save_review
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        _save_review(project, "researcher", "output text", 0)
+        reviews = project / ".factory" / "reviews"
+        assert (reviews / "researcher-latest.md").exists()
+        content = (reviews / "researcher-latest.md").read_text()
+        assert "output text" in content
+
+    async def test_invoke_agents_parallel_auto_tags(self, tmp_path: Path) -> None:
+        from factory.agents.runner import invoke_agents_parallel
+
+        project = tmp_path / "proj"
+        (project / ".factory" / "reviews").mkdir(parents=True)
+
+        with patch(
+            "factory.agents.runner.invoke_agent", new_callable=AsyncMock
+        ) as mock_invoke:
+            mock_invoke.return_value = ("agent output", 0)
+
+            tasks: list[tuple[str, str]] = [
+                ("researcher", "task A"),
+                ("researcher", "task B"),
+                ("researcher", "task C"),
+            ]
+            results = await invoke_agents_parallel(tasks, project)
+
+            assert len(results) == 3
+            assert mock_invoke.call_count == 3
+            tags = [call.kwargs["review_tag"] for call in mock_invoke.call_args_list]
+            assert tags == ["0", "1", "2"]

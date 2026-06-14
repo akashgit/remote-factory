@@ -9,11 +9,12 @@ researcher:
 
 strategist:
   model: sonnet
-  tools: [Bash, Read, Grep, Glob]
+  tools: [Bash, Read, Write, Grep, Glob]
   description: >-
-    Generate prioritized improvement hypotheses for a software project.
-    Reads backlog, experiment history, and eval scores to produce a ranked
-    strategy. Use when the user wants a plan for what to improve next.
+    Dual-mode agent: generates prioritized improvement hypotheses (Improve mode)
+    or synthesizes research into buildable project specifications (Ideation mode).
+    Reads backlog, experiment history, and eval scores. Use when the user wants
+    a plan for what to improve next or needs an idea distilled into a spec.
 
 builder:
   model: sonnet
@@ -46,14 +47,6 @@ archivist:
     Record experiment results, research findings, and project knowledge to an
     Obsidian vault or local archive. Maintains institutional memory across cycles.
     Use when the user wants to archive findings or update project dashboards.
-
-distiller:
-  model: sonnet
-  tools: [Read, Write]
-  description: >-
-    Transform vague ideas into precise, buildable project specifications.
-    Combines user intent with research findings to produce structured specs.
-    Use when the user has a raw idea that needs refining into a concrete plan.
 
 ceo:
   model: opus

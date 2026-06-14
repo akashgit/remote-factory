@@ -19,7 +19,7 @@ from factory.agents.runner import AgentRole, _PROMPTS_DIR
 
 ALL_ROLES: list[AgentRole] = [
     "researcher", "strategist", "builder", "reviewer",
-    "evaluator", "archivist", "distiller", "ceo", "failure_analyst",
+    "evaluator", "archivist", "ceo", "failure_analyst",
 ]
 
 
@@ -61,15 +61,13 @@ class TestLoadAgentConfig:
         assert "WebSearch" in tools
         assert "WebFetch" in tools
 
-    def test_distiller_has_no_bash(self):
-        assert "Bash" not in load_agent_config()["distiller"].tools
+    def test_strategist_has_write(self):
+        tools = load_agent_config()["strategist"].tools
+        assert "Write" in tools
 
-    def test_all_agents_with_bash_except_distiller(self):
+    def test_all_agents_have_bash(self):
         for role, meta in load_agent_config().items():
-            if role == "distiller":
-                assert "Bash" not in meta.tools
-            else:
-                assert "Bash" in meta.tools, f"{role} should have Bash"
+            assert "Bash" in meta.tools, f"{role} should have Bash"
 
     def test_only_includes_roles_with_prompts(self):
         config = load_agent_config()

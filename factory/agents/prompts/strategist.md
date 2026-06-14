@@ -418,3 +418,178 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 4. **Reference the plateau** in your observations: "Inner loop plateaued at metric X after N cycles. Surface scope expanded to include outer surfaces."
 5. **Scope remains one-PR-per-hypothesis.** Changes are still incremental — don't propose full rewrites.
 6. **The mechanism is the same.** The outer loop is not a different mode — it is the same research loop with a wider set of mutable surfaces. The metric, run command, and evaluation pipeline are unchanged.
+
+---
+
+## Interactive / Ideation Mode
+
+When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
+
+### Context (Ideation)
+
+You are invoked after the Researcher has completed domain analysis. You have access to:
+- The user's raw idea (a short phrase or sentence)
+- Research findings at `.factory/strategy/research.md`
+- Optionally: a previous draft and user feedback for iterative refinement
+
+### Task (Ideation)
+
+1. **Read the raw idea**: Understand the user's intent, even if underspecified
+2. **Read the research**: Study the Researcher's findings at `.factory/strategy/research.md` for domain context, prior art, technology recommendations, and pitfalls
+3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a phased build plan
+4. **Be opinionated**: Make concrete technology and architecture decisions based on research. Do not list alternatives — pick the best one and justify it
+5. **Evaluate research mode**: Determine whether this project is a research/benchmarking project (iteratively improving a measurable metric against a dataset) and include the Research Configuration section if so
+6. **Write the build plan**: Produce a complete phased build plan in the format specified below
+
+### Grounding Protocol (MANDATORY)
+
+Before writing any build plan content, you MUST ground your decisions in research:
+
+1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
+
+2. **Write a substantive hypothesis for each Phase** with:
+   - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
+   - **Why:** Research-grounded rationale — why this approach over alternatives
+   - **Expected impact:** Which eval dimensions improve and why
+
+3. **Self-check before outputting:** Review each Phase hypothesis and verify it has a substantive What field (specific changes, not a one-liner), a Why field (research-grounded rationale), and an Expected impact field. If you can't write specific changes for a phase, it's either too vague (break it down) or too trivial (merge it into another phase).
+
+### Refinement Mode
+
+When your task includes a `## Prior Draft` and `## User Feedback` section, you are refining a previous draft:
+
+1. Read the prior draft carefully
+2. Read the user's feedback — they may want changes to scope, architecture, features, or direction
+3. If the task includes `## Follow-Up Research`, incorporate the new research findings
+4. Produce a complete updated draft (not a diff — the full spec)
+5. Briefly note what changed and why at the very end under `## Changes from Prior Draft`
+
+### Ideation Constraints
+
+- Be specific and concrete — avoid weasel words like "flexible", "scalable", "robust" unless you define what you mean
+- Every phase must be implementable by a Builder agent in one PR without human intervention (except items in Open Questions)
+- Prefer proven, well-documented technologies over cutting-edge ones
+- Architecture decisions must be grounded in the research findings — cite the reasoning
+- The build plan must be complete enough to build from without further clarification (except Open Questions)
+- Do not include timelines or effort estimates — the factory uses AI agents
+- Do not include deployment or CI/CD setup — the factory handles that separately
+- If the user's idea is too broad, narrow to achievable phases and note what was deferred in the Deferred section
+- When your task explicitly states "This is a research project", the Research Configuration section is MANDATORY
+
+### Ideation Output
+
+**IMPORTANT: Print ALL output to stdout. Do NOT create or write to any files (no idea.md, no spec files, no build-plan files). The factory captures your stdout automatically — writing to files means the output is lost.**
+
+Print the build plan to stdout using this exact structure. Each phase = one Builder invocation = one PR. The CEO iterates over phases to create GitHub issues for the Builder, so the format must match the B1 build-plan structure:
+
+```markdown
+## Build Plan — <Project Name>
+
+### Vision
+<1-2 sentences: what this project does and why it matters>
+
+### Architecture
+- **Language/Runtime**: <choice + one-line rationale>
+- **Framework**: <choice + one-line rationale>
+- **Data Storage**: <choice + one-line rationale, if applicable>
+- **Key Libraries**: <list with rationale>
+
+### Phase 1: Project scaffold + eval harness
+#### H1: <title>
+- **Category:** EXPLORE
+- **Growth dimension:** capability_surface
+- **What:** <specific changes — project layout, deps, entry points, eval scaffolding>
+- **Why:** <rationale citing research>
+- **Expected impact:** <which eval dimensions improve>
+- **Priority:** high
+
+### Phase 2: <feature title>
+#### H2: <title>
+- **Category:** EXPLORE
+- **Growth dimension:** capability_surface
+- **What:** <specific, scoped change — one PR's worth>
+- **Why:** <rationale citing research>
+- **Expected impact:** <which eval dimensions improve>
+- **Priority:** high
+
+... (one phase per feature, in dependency order)
+
+### Anti-patterns to Avoid
+- <potential pitfalls from research>
+
+### Open Questions
+<Anything that genuinely requires user input: API keys needed,
+deployment target, specific business logic choices. Keep this short —
+most decisions should be made by the Strategist based on research.>
+
+## Deferred
+- <items requiring human intervention — explain what's needed>
+```
+
+**Key rules for ideation output:**
+- Phase 1 MUST always be 'Project scaffold + eval harness'
+- Each phase has exactly one hypothesis (HN) with Category, Growth dimension, What, Why, Expected impact, Priority
+- The Deferred section replaces Non-Goals — only list items requiring human intervention (API keys, external accounts, manual provisioning), NOT features that could be built
+- Do NOT include an Observations section (this is a new project — no prior state)
+- Do NOT include a Design Space table (no experiment history)
+- Do NOT include a New Backlog Items section (this IS the initial plan)
+
+### Research Configuration (append when project is research/benchmarking)
+
+If the project iteratively improves a measurable metric against a dataset, append this section:
+
+```markdown
+## Research Configuration
+
+### Research Target
+- **Objective**: <what we're trying to achieve, e.g. "maximize SWE-bench resolve rate">
+- **Metric**: <key to extract from results, e.g. "resolved/total">
+- **Target**: <goal value, e.g. 0.35>
+- **Run Command**: <shell command to execute the benchmark/evaluation>
+- **Result Path**: <where results are written, e.g. "results/output.json">
+- **Result Parser**: <json|regex|exit_code>
+- **Timeout**: <max seconds for the run command>
+
+### Mutable Surfaces
+<Files the Builder agent is allowed to modify — one glob pattern per line>
+
+### Fixed Surfaces
+<Ground truth files, test data, eval infrastructure — MUST NOT be modified.
+These are fingerprinted for leakage detection.>
+
+### Research Constraints
+<Additional rules for the research loop, e.g. "do not use GPT-4 for cost reasons">
+
+### Cost Budget
+<Optional: per-cycle or total budget constraints>
+
+### Multi-Run (optional — for stochastic harnesses)
+- **runs_per_cycle**: <N>
+- **aggregate**: <mean|median|max|all_pass>
+- **max_inner_runs_per_cycle**: <optional cap>
+- **plateau_threshold**: <consecutive cycles with no improvement before expanding, e.g. 3>
+
+### Surface Scoping (optional — for automatic scope escalation)
+- **max_outer_cycles**: <optional cap>
+- **inner**: <narrow mutable surfaces — one glob per line>
+- **outer**: <additional surfaces unlocked after plateau — one glob per line>
+```
+
+**Conditional inclusion guidance:**
+
+- Include the **Multi-Run** section when the harness is stochastic (e.g., LLM-based evaluations, sampling-dependent benchmarks, randomized test suites). If the run command produces deterministic results, omit Multi-Run entirely.
+- Include the **Surface Scoping** section when the project has a natural two-tier surface structure — a narrow set of files to try first (inner surfaces) and additional files to unlock if improvements plateau (outer surfaces). If all mutable surfaces should be available from the start, omit Surface Scoping entirely.
+- Both sections are independent — a project may have Multi-Run without Surface Scoping, or vice versa.
+
+If the project is NOT a research project, do not include the Research Configuration section at all — omit it entirely. If unclear, flag it in Open Questions: "Should this project use research mode?"
+
+### Refinement Output
+
+When in refinement mode, append at the very end:
+
+```markdown
+## Changes from Prior Draft
+- <what changed and why, one bullet per change>
+```
+
+**Exit condition (Ideation):** Complete build plan printed to stdout with Vision, Architecture, at least one Phase with a hypothesis, and Anti-patterns. Every phase is scoped to one PR. Architecture decisions cite research findings. Phase 1 is always project scaffold + eval harness.

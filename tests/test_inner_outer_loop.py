@@ -562,11 +562,11 @@ class TestFactoryMdRoundTrip:
         assert config.outer_loop is None
 
 
-# ── Distiller format E2E round-trip ────────────────────────────
+# ── Spec format E2E round-trip ────────────────────────────
 
 
-class TestDistillerFormatRoundTrip:
-    """Prove that factory.md written in the Distiller's template format
+class TestSpecFormatRoundTrip:
+    """Prove that factory.md written in the spec template format
     parses correctly through reparse_config() and round-trips via JSON."""
 
     @pytest.fixture()
@@ -621,7 +621,7 @@ class TestDistillerFormatRoundTrip:
         assert (project / "factory.md").exists()
         assert (project / ".factory").is_dir()
 
-    async def test_distiller_format_parses_inner_loop(
+    async def test_spec_format_parses_inner_loop(
         self, math_benchmark_project: Path
     ) -> None:
         store = ExperimentStore(math_benchmark_project)
@@ -633,7 +633,7 @@ class TestDistillerFormatRoundTrip:
         assert config.inner_loop.max_inner_runs_per_cycle == 10
         assert config.inner_loop.plateau_threshold == 3
 
-    async def test_distiller_format_parses_outer_loop(
+    async def test_spec_format_parses_outer_loop(
         self, math_benchmark_project: Path
     ) -> None:
         store = ExperimentStore(math_benchmark_project)
