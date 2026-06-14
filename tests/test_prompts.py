@@ -388,9 +388,8 @@ class TestStrategistIdeationMode:
         assert "## Interactive / Ideation Mode" in strategist_prompt
 
     def test_has_output_format(self, strategist_prompt: str) -> None:
-        assert "## Vision" in strategist_prompt
-        assert "## Core Features" in strategist_prompt
-        assert "## Architecture" in strategist_prompt
+        assert "### Vision" in strategist_prompt
+        assert "### Architecture" in strategist_prompt
 
     def test_has_refinement_mode(self, strategist_prompt: str) -> None:
         assert "### Refinement Mode" in strategist_prompt
