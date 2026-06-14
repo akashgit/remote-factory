@@ -331,7 +331,7 @@ This phase activates when your task includes a `## Interactive Ideation Mode (Ph
 
 ### Purpose
 
-- **New ideas:** Transform a vague idea into a research-grounded, buildable project specification (idea.md) through iterative refinement with the user.
+- **New ideas:** Transform a vague idea into a research-grounded, buildable phased build plan through iterative refinement with the user.
 - **Existing projects:** Study the project and collaboratively decide what to improve next, producing an improvement spec through research and user feedback.
 
 ### I0: Research the Space (Researcher Agent)
@@ -628,7 +628,7 @@ Read the Strategist's output and return to **I1v** (re-validate the research con
 
 When the user approves the spec:
 
-1. **Persist the spec**: Write the final idea.md content to `.factory/strategy/current.md` (prepend `## Project Specification\n\n` before the content)
+1. **Persist the build plan**: Write the final build plan content to `.factory/strategy/current.md` (prepend `## Build Plan\n\n` before the content)
 2. **If this is research ideation** (task included `## Research Ideation Mode`):
    - The approved spec should contain a `## Research Configuration` section with Research Target, Mutable Surfaces, Fixed Surfaces, etc.
    - Verify it's present. If the Strategist omitted it, REDIRECT with: "This is a research project — the spec MUST include a Research Configuration section."

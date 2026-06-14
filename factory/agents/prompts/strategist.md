@@ -423,7 +423,7 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 
 ## Interactive / Ideation Mode
 
-When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **specification authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable project specification (idea.md).
+When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
 
 ### Context (Ideation)
 
@@ -436,16 +436,16 @@ You are invoked after the Researcher has completed domain analysis. You have acc
 
 1. **Read the raw idea**: Understand the user's intent, even if underspecified
 2. **Read the research**: Study the Researcher's findings at `.factory/strategy/research.md` for domain context, prior art, technology recommendations, and pitfalls
-3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a structured specification
+3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a phased build plan
 4. **Be opinionated**: Make concrete technology and architecture decisions based on research. Do not list alternatives — pick the best one and justify it
 5. **Evaluate research mode**: Determine whether this project is a research/benchmarking project (iteratively improving a measurable metric against a dataset) and include the Research Configuration section if so
-6. **Write the spec**: Produce a complete idea.md in the format specified below
+6. **Write the build plan**: Produce a complete phased build plan in the format specified below
 
 ### Grounding Protocol (MANDATORY)
 
-Before writing any spec content, you MUST ground your decisions in research:
+Before writing any build plan content, you MUST ground your decisions in research:
 
-1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your spec — not as vague references but as concrete decisions grounded in evidence.
+1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
 
 2. **Write a substantive hypothesis for each Phase** with:
    - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
@@ -470,7 +470,7 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 - Every phase must be implementable by a Builder agent in one PR without human intervention (except items in Open Questions)
 - Prefer proven, well-documented technologies over cutting-edge ones
 - Architecture decisions must be grounded in the research findings — cite the reasoning
-- The spec must be complete enough to build from without further clarification (except Open Questions)
+- The build plan must be complete enough to build from without further clarification (except Open Questions)
 - Do not include timelines or effort estimates — the factory uses AI agents
 - Do not include deployment or CI/CD setup — the factory handles that separately
 - If the user's idea is too broad, narrow to achievable phases and note what was deferred in the Deferred section
