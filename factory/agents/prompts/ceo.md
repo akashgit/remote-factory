@@ -468,9 +468,9 @@ Raw idea: <RAW_IDEA>
 
 MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-similar.md, research-techstack.md, research-pitfalls.md). Extract specific findings before writing any spec content.
 
-Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
+Every Phase hypothesis MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
-Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
+Produce a complete build plan. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
 **For existing projects** (`## Interactive Ideation Mode` with `existing_project: true`):
@@ -483,7 +483,7 @@ Project: $PROJECT_PATH
 
 MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-health.md, research-practices.md, research-backlog.md). Extract specific findings before writing any spec content.
 
-Every Core Feature or Proposed Change MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
+Every Proposed Change MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
 This is an EXISTING project, not a new idea. Produce an improvement spec with these sections:
 
@@ -520,9 +520,9 @@ the Surface Scoping section.
 
 MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-similar.md, research-techstack.md, research-pitfalls.md). Extract specific findings before writing any spec content.
 
-Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
+Every Phase hypothesis MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
-Produce a complete idea.md specification with research configuration." --project "$PROJECT_PATH" --timeout 300
+Produce a complete build plan with research configuration. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
 ### I1r: CEO Review — Draft Spec
@@ -531,15 +531,19 @@ Read `.factory/reviews/strategist-latest.md` and assess the draft:
 - Does it capture the user's intent?
 - Are the technology choices well-justified by research?
 - Is the scope achievable?
-- Are features specific enough for a Builder agent?
+- Are phases specific enough for a Builder agent?
 
 **Quantitative depth checks (MANDATORY — REDIRECT if any fail):**
 
-1. **Depth check:** Read each Core Feature entry. Every feature MUST have 3+ sentences across its What/How/Why sub-fields. If any feature is a one-liner without the structured sub-fields, REDIRECT with: "Feature '<name>' is a one-liner — expand to What/How/Why with 3+ sentences total."
+1. **Depth check:** Read each Phase/Hypothesis entry. Every hypothesis MUST have Category, What, Why, and Expected impact fields. The What field must be specific enough to implement without clarification. A one-line What field is too vague — REDIRECT with: "Phase N hypothesis has a one-line What field — expand with specific changes (files, dependencies, entry points)."
 
-2. **Research grounding check:** Architecture decisions and feature rationale must reference specific findings from the tagged research files (`.factory/strategy/research-*.md`). If the spec contains no citations or rationale grounded in research, REDIRECT with: "No research grounding found — architecture decisions must cite findings from research files."
+2. **Research grounding check:** The Architecture section and hypothesis rationale must reference specific findings from the tagged research files (`.factory/strategy/research-*.md`). If the plan contains no citations or rationale grounded in research, REDIRECT with: "No research grounding found — Architecture section and hypothesis rationale must cite findings from research files."
 
-3. **Buildability check:** For each Core Feature, ask: could a Builder agent implement this feature from the spec alone, without asking clarifying questions? If any feature is too vague to implement (missing key details like data format, API shape, error handling approach), REDIRECT with: "Feature '<name>' is not buildable — a Builder would need to ask clarifying questions. Add implementation details."
+3. **Buildability check:** For each Phase/Hypothesis, ask: could a Builder agent implement this phase from the plan alone, without asking clarifying questions? If any phase is too vague to implement (missing key details like data format, API shape, error handling approach), REDIRECT with: "Phase N is not buildable — a Builder would need to ask clarifying questions. Add implementation details to the What field."
+
+4. **Phase 1 check:** Phase 1 must be 'Project scaffold + eval harness'. If Phase 1 is something else, REDIRECT with: "Phase 1 must always be project scaffold + eval harness — reorder phases."
+
+5. **Deferred section check:** If a Deferred section exists, verify it only contains items requiring human intervention (API keys, external accounts, manual provisioning). If it contains features or integrations that could be built without a human, REDIRECT with: "Deferred section contains buildable items — move them to build phases."
 
 Write your review to `.factory/reviews/ceo-verdict-strategist.md`.
 
@@ -638,7 +642,7 @@ When the user approves the spec:
    ```
 4. **Transition — route by project type:**
 
-   **For new ideas** (no `existing_project: true` flag): Transition to **Build mode**. The spec is now persisted. **Skip steps B0 (Research) and B1 (Strategist)** — the approved spec already contains research-grounded architecture decisions and a concrete feature plan. Jump directly to B2 (Builder) using the approved spec from `.factory/strategy/current.md` as the implementation brief.
+   **For new ideas** (no `existing_project: true` flag): Transition to **Build mode**. The spec is now persisted. **Skip steps B0 (Research) and B1 (Strategist build plan generation)** — the approved build plan already contains research-grounded architecture decisions and phased hypotheses. Proceed from B2 (Archivist records the approved plan) then B3 (Builder implements each phase) using the approved plan from `.factory/strategy/current.md`.
 
    **For existing projects** (`existing_project: true`): Transition to **Improve mode** with the approved spec as the focus:
    1. Persist the improvement spec to `.factory/strategy/current.md`
