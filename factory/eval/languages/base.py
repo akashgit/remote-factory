@@ -42,6 +42,10 @@ class LanguageEvaluator(Protocol):
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None: ...
 
+    def run_tests_with_coverage(
+        self, project_path: Path
+    ) -> tuple[EvalFragment | None, EvalFragment | None]: ...
+
 
 def _run_cmd(
     cmd: list[str],

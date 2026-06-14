@@ -34,18 +34,6 @@ def _reset_agent_failure_counter() -> None:
     reset_failure_counter()
 
 
-@pytest.fixture(autouse=True)
-def _reset_evaluator_cache() -> None:
-    """Reset PythonEvaluator cached output between tests to prevent leakage."""
-    from factory.eval.languages import _REGISTRY
-    for ev in _REGISTRY:
-        if hasattr(ev, "_cached_outputs"):
-            ev._cached_outputs.clear()
-    yield  # type: ignore[misc]
-    for ev in _REGISTRY:
-        if hasattr(ev, "_cached_outputs"):
-            ev._cached_outputs.clear()
-
 
 @pytest.fixture(autouse=True)
 def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:

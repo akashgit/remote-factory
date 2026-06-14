@@ -17,6 +17,7 @@ from pathlib import Path
 import structlog
 
 from factory.eval.languages import _aggregate, detect_languages
+from factory.eval.languages.base import EvalFragment
 
 log = structlog.get_logger()
 
@@ -316,13 +317,32 @@ def eval_config_parser(project_path: Path) -> dict:
 # ── Public API ─────────────────────────────────────────────────────
 
 
+def _collect_test_and_coverage(project_path: Path) -> tuple[dict, dict]:
+    """Run tests and coverage together via run_tests_with_coverage(), return both result dicts."""
+    sub_projects = _find_sub_projects(project_path)
+    test_fragments: list[EvalFragment] = []
+    cov_fragments: list[EvalFragment] = []
+    for sp in sub_projects:
+        for evaluator in detect_languages(sp):
+            test_frag, cov_frag = evaluator.run_tests_with_coverage(sp)
+            if test_frag is not None:
+                test_fragments.append(test_frag)
+            if cov_frag is not None:
+                cov_fragments.append(cov_frag)
+
+    test_result = _aggregate(test_fragments, "tests") if test_fragments else _neutral("tests", "no test suite detected")
+    cov_result = _aggregate(cov_fragments, "coverage") if cov_fragments else _neutral("coverage", "no coverage tool detected")
+    return test_result, cov_result
+
+
 def compute_hygiene_results(project_path: Path) -> list[dict]:
     """Compute all 6 mandatory hygiene dimensions for a project."""
+    test_result, cov_result = _collect_test_and_coverage(project_path)
     return [
-        eval_tests(project_path),
+        test_result,
         eval_lint(project_path),
         eval_type_check(project_path),
-        eval_coverage(project_path),
+        cov_result,
         eval_guard_patterns(project_path),
         eval_config_parser(project_path),
     ]

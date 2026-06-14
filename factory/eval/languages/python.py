@@ -10,9 +10,6 @@ from factory.eval.languages.base import EvalFragment, _run_cmd
 
 
 class PythonEvaluator:
-    def __init__(self) -> None:
-        self._cached_outputs: dict[Path, str] = {}
-
     @property
     def name(self) -> str:
         return "python"
@@ -30,7 +27,9 @@ class PythonEvaluator:
             or (project_path / "setup.py").exists()
         )
 
-    def run_tests(self, project_path: Path) -> EvalFragment | None:
+    def run_tests_with_coverage(
+        self, project_path: Path
+    ) -> tuple[EvalFragment | None, EvalFragment | None]:
         cov_target = self._detect_cov_target(project_path)
         rc, stdout, stderr = _run_cmd(
             [
@@ -41,20 +40,39 @@ class PythonEvaluator:
             project_path,
         )
         output = stdout + stderr
-        self._cached_outputs[project_path] = output
+
+        # Parse test results
+        test_frag: EvalFragment | None = None
         p_match = re.search(r"(\d+)\s+passed", output)
         f_match = re.search(r"(\d+)\s+failed", output)
         p = int(p_match.group(1)) if p_match else 0
         f = int(f_match.group(1)) if f_match else 0
-        if p + f == 0:
-            return None
-        total = p + f
-        return EvalFragment(
-            passed=p,
-            failed=f,
-            score=p / total if total > 0 else 0.0,
-            details=f"{project_path.name}: {p} passed, {f} failed",
-        )
+        if p + f > 0:
+            total = p + f
+            test_frag = EvalFragment(
+                passed=p,
+                failed=f,
+                score=p / total if total > 0 else 0.0,
+                details=f"{project_path.name}: {p} passed, {f} failed",
+            )
+
+        # Parse coverage
+        cov_frag: EvalFragment | None = None
+        total_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
+        if total_match:
+            pct = int(total_match.group(1))
+            cov_frag = EvalFragment(
+                passed=0,
+                failed=0,
+                score=pct / 100.0,
+                coverage_pct=pct,
+                details=f"{project_path.name}: {pct}%",
+            )
+
+        return test_frag, cov_frag
+
+    def run_tests(self, project_path: Path) -> EvalFragment | None:
+        return self.run_tests_with_coverage(project_path)[0]
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
@@ -87,26 +105,7 @@ class PythonEvaluator:
         )
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        if project_path in self._cached_outputs:
-            output = self._cached_outputs[project_path]
-        else:
-            cov_target = self._detect_cov_target(project_path)
-            _, stdout, stderr = _run_cmd(
-                [sys.executable, "-m", "pytest", f"--cov={cov_target}", "--cov-report=term", "-q"],
-                project_path,
-            )
-            output = stdout + stderr
-        total_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
-        if not total_match:
-            return None
-        pct = int(total_match.group(1))
-        return EvalFragment(
-            passed=0,
-            failed=0,
-            score=pct / 100.0,
-            coverage_pct=pct,
-            details=f"{project_path.name}: {pct}%",
-        )
+        return self.run_tests_with_coverage(project_path)[1]
 
 
 def register_evaluator() -> PythonEvaluator:
