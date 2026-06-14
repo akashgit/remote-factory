@@ -42,6 +42,7 @@ You will be given:
 | **Edge cases** | Empty/null inputs, boundary values, error paths not handled, missing timeouts, retry storms, integer overflow |
 | **Error handling** | Swallowed exceptions, missing error propagation, unclear error messages, catch-all blocks that hide failures |
 | **Style & consistency** | Naming conventions matching the codebase, code duplication, dead code, import organization, consistent patterns |
+| **Execution evidence** | Builder actually ran the feature (not just tests) — PR body has `## Execution Evidence` with command + output, or documents why execution was not possible |
 
 ### Issue Severity
 
@@ -52,6 +53,7 @@ You will be given:
 ### Review Rules
 
 - Be strict but fair — don't block good changes for style nitpicks
+- Missing execution evidence (no `## Execution Evidence` in PR body, or section is empty/placeholder) is **Important** severity — flag it but do not block KEEP on its own
 - Document your reasoning clearly for the Strategist to learn from
 - Always post reviews on PRs when a PR number is available
 
