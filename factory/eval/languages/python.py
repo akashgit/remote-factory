@@ -11,7 +11,7 @@ from factory.eval.languages.base import EvalFragment, _run_cmd
 
 class PythonEvaluator:
     def __init__(self) -> None:
-        self._cached_output: str | None = None
+        self._cached_outputs: dict[Path, str] = {}
 
     @property
     def name(self) -> str:
@@ -41,7 +41,7 @@ class PythonEvaluator:
             project_path,
         )
         output = stdout + stderr
-        self._cached_output = output
+        self._cached_outputs[project_path] = output
         p_match = re.search(r"(\d+)\s+passed", output)
         f_match = re.search(r"(\d+)\s+failed", output)
         p = int(p_match.group(1)) if p_match else 0
@@ -87,8 +87,8 @@ class PythonEvaluator:
         )
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        if self._cached_output is not None:
-            output = self._cached_output
+        if project_path in self._cached_outputs:
+            output = self._cached_outputs[project_path]
         else:
             cov_target = self._detect_cov_target(project_path)
             _, stdout, stderr = _run_cmd(

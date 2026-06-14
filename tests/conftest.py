@@ -39,12 +39,12 @@ def _reset_evaluator_cache() -> None:
     """Reset PythonEvaluator cached output between tests to prevent leakage."""
     from factory.eval.languages import _REGISTRY
     for ev in _REGISTRY:
-        if hasattr(ev, "_cached_output"):
-            ev._cached_output = None
+        if hasattr(ev, "_cached_outputs"):
+            ev._cached_outputs.clear()
     yield  # type: ignore[misc]
     for ev in _REGISTRY:
-        if hasattr(ev, "_cached_output"):
-            ev._cached_output = None
+        if hasattr(ev, "_cached_outputs"):
+            ev._cached_outputs.clear()
 
 
 @pytest.fixture(autouse=True)

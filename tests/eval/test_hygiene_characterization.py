@@ -524,8 +524,8 @@ class TestPythonEvaluatorCaching:
                 returncode=0,
             )
             ev.run_tests(tmp_path)
-        assert ev._cached_output is not None
-        assert "5 passed" in ev._cached_output
+        assert tmp_path in ev._cached_outputs
+        assert "5 passed" in ev._cached_outputs[tmp_path]
 
     def test_run_coverage_uses_cache(self, tmp_path):
         from factory.eval.languages.python import PythonEvaluator
@@ -535,7 +535,7 @@ class TestPythonEvaluatorCaching:
         pkg = tmp_path / "mypkg"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("")
-        ev._cached_output = "5 passed\nTOTAL      100     20     80%\n"
+        ev._cached_outputs[tmp_path] = "5 passed\nTOTAL      100     20     80%\n"
         with patch("factory.eval.languages.base.subprocess.run") as mock_run:
             result = ev.run_coverage(tmp_path)
             mock_run.assert_not_called()
@@ -551,7 +551,7 @@ class TestPythonEvaluatorCaching:
         pkg = tmp_path / "mypkg"
         pkg.mkdir()
         (pkg / "__init__.py").write_text("")
-        assert ev._cached_output is None
+        assert tmp_path not in ev._cached_outputs
         with patch("factory.eval.languages.base.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result(
                 stdout="TOTAL      200     40     80%\n", returncode=0
