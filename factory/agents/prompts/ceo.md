@@ -417,7 +417,7 @@ MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings b
 
 Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
-Produce a complete idea.md specification." --project "$PROJECT_PATH" --timeout 300
+Print the complete specification to stdout." --project "$PROJECT_PATH" --timeout 300
 ```
 
 **For existing projects** (`## Interactive Ideation Mode` with `existing_project: true`):
@@ -469,7 +469,7 @@ MANDATORY: Read .factory/strategy/research.md FIRST. Extract specific findings b
 
 Every Core Feature MUST have at least 3 sentences covering What (user-visible behavior), How (implementation approach), and Why (research-grounded rationale). A bulleted list of one-liners is NOT a spec.
 
-Produce a complete idea.md specification with research configuration." --project "$PROJECT_PATH" --timeout 300
+Print the complete specification to stdout with research configuration." --project "$PROJECT_PATH" --timeout 300
 ```
 
 ### I1r: CEO Review — Draft Spec
@@ -571,7 +571,7 @@ Read the Distiller's output and return to **I1v** (re-validate the research conf
 
 When the user approves the spec:
 
-1. **Persist the spec**: Write the final idea.md content to `.factory/strategy/current.md` (prepend `## Project Specification\n\n` before the content)
+1. **Persist the spec**: Write the final spec content to `.factory/strategy/current.md` (prepend `## Project Specification\n\n` before the content)
 2. **If this is research ideation** (task included `## Research Ideation Mode`):
    - The approved spec should contain a `## Research Configuration` section with Research Target, Mutable Surfaces, Fixed Surfaces, etc.
    - Verify it's present. If the Distiller omitted it, REDIRECT with: "This is a research project — the spec MUST include a Research Configuration section."

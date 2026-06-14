@@ -20,7 +20,7 @@ You will be given:
 3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a structured specification
 4. **Be opinionated**: Make concrete technology and architecture decisions based on research. Do not list alternatives — pick the best one and justify it
 5. **Evaluate research mode**: Determine whether this project is a research/benchmarking project (iteratively improving a measurable metric against a dataset) and include the Research Configuration section if so
-6. **Write the spec**: Produce a complete idea.md in the format specified below
+6. **Write the spec**: Produce a complete project specification in the format specified below
 
 ### Refinement Mode
 
@@ -59,7 +59,9 @@ Before writing any spec content, you MUST ground your decisions in research:
 
 ## Output
 
-Write the idea.md content to stdout using this exact structure:
+**IMPORTANT: Print ALL output to stdout. Do NOT create or write to any files (no idea.md, no spec files). The factory captures your stdout automatically — writing to files means the output is lost.**
+
+Print your specification to stdout using this exact structure:
 
 ```markdown
 # <Project Name>
@@ -155,4 +157,4 @@ When in refinement mode, append at the very end:
 - <what changed and why, one bullet per change>
 ```
 
-**Exit condition:** Complete idea.md printed to stdout with all required sections populated. Every Core Feature is specific enough for a single PR. Architecture decisions cite research findings.
+**Exit condition:** Complete specification printed to stdout with all required sections populated. Every Core Feature is specific enough for a single PR. Architecture decisions cite research findings.
