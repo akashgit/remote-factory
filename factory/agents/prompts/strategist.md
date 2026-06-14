@@ -423,7 +423,7 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 
 ## Interactive / Ideation Mode
 
-When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **specification authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable project specification (idea.md).
+When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
 
 ### Context (Ideation)
 
@@ -436,23 +436,23 @@ You are invoked after the Researcher has completed domain analysis. You have acc
 
 1. **Read the raw idea**: Understand the user's intent, even if underspecified
 2. **Read the research**: Study the Researcher's findings at `.factory/strategy/research.md` for domain context, prior art, technology recommendations, and pitfalls
-3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a structured specification
+3. **Synthesize**: Combine the user's intent with research-grounded recommendations into a phased build plan
 4. **Be opinionated**: Make concrete technology and architecture decisions based on research. Do not list alternatives — pick the best one and justify it
 5. **Evaluate research mode**: Determine whether this project is a research/benchmarking project (iteratively improving a measurable metric against a dataset) and include the Research Configuration section if so
-6. **Write the spec**: Produce a complete idea.md in the format specified below
+6. **Write the build plan**: Produce a complete phased build plan in the format specified below
 
 ### Grounding Protocol (MANDATORY)
 
-Before writing any spec content, you MUST ground your decisions in research:
+Before writing any build plan content, you MUST ground your decisions in research:
 
-1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your spec — not as vague references but as concrete decisions grounded in evidence.
+1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
 
-2. **Write a minimum of 3 sentences per Core Feature** covering:
-   - **What:** The user-visible behavior — what the feature does from the user's perspective
-   - **How:** The implementation approach — libraries, data flow, key functions
-   - **Why:** The research-grounded rationale — why this approach over alternatives
+2. **Write a substantive hypothesis for each Phase** with:
+   - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
+   - **Why:** Research-grounded rationale — why this approach over alternatives
+   - **Expected impact:** Which eval dimensions improve and why
 
-3. **Self-check before outputting:** Review each Core Feature and verify it meets the 3-sentence minimum across What/How/Why. A feature description under 3 sentences is too thin. If you can't write 3+ sentences about a feature, it's either too vague (break it down) or too trivial (merge it into another feature).
+3. **Self-check before outputting:** Review each Phase hypothesis and verify it has a substantive What field (specific changes, not a one-liner), a Why field (research-grounded rationale), and an Expected impact field. If you can't write specific changes for a phase, it's either too vague (break it down) or too trivial (merge it into another phase).
 
 ### Refinement Mode
 
@@ -467,54 +467,70 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 ### Ideation Constraints
 
 - Be specific and concrete — avoid weasel words like "flexible", "scalable", "robust" unless you define what you mean
-- Every feature must be implementable by an AI coding agent without human intervention (except items in Open Questions)
+- Every phase must be implementable by a Builder agent in one PR without human intervention (except items in Open Questions)
 - Prefer proven, well-documented technologies over cutting-edge ones
 - Architecture decisions must be grounded in the research findings — cite the reasoning
-- The spec must be complete enough to build from without further clarification (except Open Questions)
+- The build plan must be complete enough to build from without further clarification (except Open Questions)
 - Do not include timelines or effort estimates — the factory uses AI agents
 - Do not include deployment or CI/CD setup — the factory handles that separately
-- If the user's idea is too broad for a single project, narrow it to an achievable MVP and note what was deferred in Non-Goals
+- If the user's idea is too broad, narrow to achievable phases and note what was deferred in the Deferred section
 - When your task explicitly states "This is a research project", the Research Configuration section is MANDATORY
 
 ### Ideation Output
 
-Write the idea.md content to stdout using this exact structure:
+Write the build plan content to stdout using this exact structure. Each phase = one Builder invocation = one PR. The CEO iterates over phases to create GitHub issues for the Builder, so the format must match the B1 build-plan structure:
 
 ```markdown
-# <Project Name>
+## Build Plan — <Project Name>
 
-## Vision
+### Vision
 <1-2 sentences: what this project does and why it matters>
 
-## Core Features
-<Bulleted list of concrete, buildable features. Each feature should be
-specific enough that a Builder agent can implement it in one PR.>
-
-- **<Feature Name>**
-  - **What:** <user-visible behavior — 1-2 sentences>
-  - **How:** <implementation approach — libraries, data flow, key functions — 1-2 sentences>
-  - **Why:** <rationale citing research or engineering tradeoffs — 1 sentence>
-- ...
-
-## Architecture
+### Architecture
 - **Language/Runtime**: <choice + one-line rationale>
 - **Framework**: <choice + one-line rationale>
 - **Data Storage**: <choice + one-line rationale, if applicable>
 - **Key Libraries**: <list with rationale>
 
-## User Interface
-<How users interact with this: CLI commands, API endpoints, web UI
-pages, etc. Be specific about the primary user flow.>
+### Phase 1: Project scaffold + eval harness
+#### H1: <title>
+- **Category:** EXPLORE
+- **Growth dimension:** capability_surface
+- **What:** <specific changes — project layout, deps, entry points, eval scaffolding>
+- **Why:** <rationale citing research>
+- **Expected impact:** <which eval dimensions improve>
+- **Priority:** high
 
-## Non-Goals (v1)
-<What this project explicitly does NOT do in the first version.
-Important for scoping.>
+### Phase 2: <feature title>
+#### H2: <title>
+- **Category:** EXPLORE
+- **Growth dimension:** capability_surface
+- **What:** <specific, scoped change — one PR's worth>
+- **Why:** <rationale citing research>
+- **Expected impact:** <which eval dimensions improve>
+- **Priority:** high
 
-## Open Questions
+... (one phase per feature, in dependency order)
+
+### Anti-patterns to Avoid
+- <potential pitfalls from research>
+
+### Open Questions
 <Anything that genuinely requires user input: API keys needed,
 deployment target, specific business logic choices. Keep this short —
 most decisions should be made by the Strategist based on research.>
+
+## Deferred
+- <items requiring human intervention — explain what's needed>
 ```
+
+**Key rules for ideation output:**
+- Phase 1 MUST always be 'Project scaffold + eval harness'
+- Each phase has exactly one hypothesis (HN) with Category, Growth dimension, What, Why, Expected impact, Priority
+- The Deferred section replaces Non-Goals — only list items requiring human intervention (API keys, external accounts, manual provisioning), NOT features that could be built
+- Do NOT include an Observations section (this is a new project — no prior state)
+- Do NOT include a Design Space table (no experiment history)
+- Do NOT include a New Backlog Items section (this IS the initial plan)
 
 ### Research Configuration (append when project is research/benchmarking)
 
@@ -574,4 +590,4 @@ When in refinement mode, append at the very end:
 - <what changed and why, one bullet per change>
 ```
 
-**Exit condition (Ideation):** Complete idea.md printed to stdout with all required sections populated. Every Core Feature is specific enough for a single PR. Architecture decisions cite research findings.
+**Exit condition (Ideation):** Complete build plan printed to stdout with Vision, Architecture, at least one Phase with a hypothesis, and Anti-patterns. Every phase is scoped to one PR. Architecture decisions cite research findings. Phase 1 is always project scaffold + eval harness.
