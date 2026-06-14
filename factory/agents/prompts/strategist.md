@@ -478,7 +478,9 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 
 ### Ideation Output
 
-Write the build plan content to stdout using this exact structure. Each phase = one Builder invocation = one PR. The CEO iterates over phases to create GitHub issues for the Builder, so the format must match the B1 build-plan structure:
+**IMPORTANT: Print ALL output to stdout. Do NOT create or write to any files (no idea.md, no spec files, no build-plan files). The factory captures your stdout automatically — writing to files means the output is lost.**
+
+Print the build plan to stdout using this exact structure. Each phase = one Builder invocation = one PR. The CEO iterates over phases to create GitHub issues for the Builder, so the format must match the B1 build-plan structure:
 
 ```markdown
 ## Build Plan — <Project Name>

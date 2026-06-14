@@ -470,7 +470,7 @@ MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-simi
 
 Every Phase hypothesis MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
-Produce a complete build plan. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
+Print the complete build plan to stdout. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
 **For existing projects** (`## Interactive Ideation Mode` with `existing_project: true`):
@@ -522,7 +522,7 @@ MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-simi
 
 Every Phase hypothesis MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
-Produce a complete build plan with research configuration. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
+Print the complete build plan to stdout with research configuration. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
 ### I1r: CEO Review — Draft Spec
