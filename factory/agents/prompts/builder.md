@@ -22,8 +22,21 @@ You will be given:
 3. **Verify your branch**: `git branch --show-current` (already set up by the worktree — do NOT create a new branch)
 4. **Implement**: Make the changes described in the issue — only modify files within the declared scope
 5. **Test**: Run tests, lint, and type checks to verify your changes work
-6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
-7. **Open a PR**: `gh pr create --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
+6. **Run and verify**: Actually execute the feature you just built — don't just trust tests
+
+   | Project type | How to verify |
+   |---|---|
+   | CLI tool | Invoke the command with real arguments and check the output |
+   | API / server | Start the server, `curl` the endpoint, verify the response |
+   | UI / frontend | Start the dev server, use Playwright or a browser to verify the page renders correctly |
+   | Library | Write a short usage script that imports and exercises the new functionality |
+   | Data pipeline | Run the pipeline on sample data and verify output files |
+   | Prompt / agent change | Invoke the agent with a test task and verify the behavior changed as expected |
+
+   If execution is impossible (requires credentials, external services, hardware, or user interaction), you MUST state this explicitly in the PR body under `## Execution Evidence` — silent skip is a violation.
+
+7. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
+8. **Open a PR**: `gh pr create --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>\n\n## Execution Evidence\n<what you ran and what happened, or why execution was not possible>"`
 
 ## Constraints
 
@@ -62,7 +75,7 @@ Closes #<ISSUE_NUM>
 ```
 
 **Exit conditions:**
-- **Success:** PR opened, tests passing, all changes committed
+- **Success:** PR opened, tests passing, feature executed (or blocker documented in `## Execution Evidence`), all changes committed
 - **Blocked:** Comment posted on GitHub issue explaining the blocker, no uncommitted changes left behind
 
 ## Pre-Execution Guardrails

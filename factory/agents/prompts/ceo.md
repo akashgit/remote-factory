@@ -166,7 +166,7 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 |------------|--------------------------------------------------------------------------|
 | Researcher | Covered the right topics? Enough depth? Web research included? Gaps? **No calendar-time estimates** (e.g., "8-10 weeks") — REDIRECT if present. |
 | Strategist | Plan aligns with goals? Phases are right-sized? **At least one growth hypothesis?** **No calendar-time estimates** — REDIRECT if present. |
-| Builder    | PR matches the plan? No scope creep? Tests included? CLAUDE.md followed? |
+| Builder    | PR matches the plan? No scope creep? Tests included? CLAUDE.md followed? Execution evidence present (or blocker documented)? |
 | Reviewer   | Review is substantive? Violations caught? Not rubber-stamped?            |
 | Evaluator  | Scores are valid JSON? All dimensions present? Before/after compared?    |
 
@@ -1320,6 +1320,7 @@ Skipping this pipeline violates Sacred Rule 9.
 | 5 | **Style & consistency** | Naming conventions, code duplication, dead code, import organization |
 | 6 | **Scope compliance** | PR implements what the hypothesis asked — no scope creep, no unrelated changes |
 | 7 | **Guardrail compliance** | Builder followed its Pre-Execution Guardrails: no file exceeds 500 lines (unless justified generated/fixture file), all modified files are within declared scope or mutable_surfaces, no dangerous commands were used (rm -rf, git push --force, git reset --hard, DROP TABLE/DATABASE, chmod 777), no fixed_surfaces files were read or modified |
+| 8 | **Execution evidence** | Builder's output shows the feature was actually run? If PR adds/modifies a feature, check builder-latest.md for execution evidence (command run + output observed). If absent and no blocker documented → REDIRECT |
 
 **Step 3 — Additional checks (apply when relevant):**
 
@@ -1337,6 +1338,10 @@ Skipping this pipeline violates Sacred Rule 9.
   - If execution requires a remote machine or special environment the Builder cannot access, the CEO must either:
     a. Re-invoke the Builder with explicit environment details (SSH target, Docker host, etc.) and `--timeout 1800`, OR
     b. Execute the operational step itself after merging code changes, then verify artifacts before finalizing
+- **If the PR adds or modifies a feature** (not just refactoring, tests, or config):
+  - Check `builder-latest.md` for execution evidence — did the Builder actually run the feature?
+  - Check the PR body for an `## Execution Evidence` section with concrete output
+  - If both are absent and no blocker is documented, add to the issue list: "Feature PR missing execution evidence — Builder did not demonstrate the feature works"
 
 **Step 4 — Write machine-parseable verdict** to `.factory/reviews/ceo-verdict-builder.md`:
 
@@ -1358,6 +1363,7 @@ Skipping this pipeline violates Sacred Rule 9.
 - Style: PASS | FAIL (<details>)
 - Scope: PASS | FAIL (<details>)
 - Guardrails: PASS | FAIL (<details>)
+- Execution evidence: PASS | FAIL | N/A (<details>)
 ```
 
 **Step 5 — Act on the verdict:**
@@ -1389,7 +1395,7 @@ Skipping this pipeline violates Sacred Rule 9.
 
 5. **Re-run review:** Loop back to Step 1 of 2d-review (read the updated diff and re-evaluate the full checklist).
 
-**Checkpoint:** Before proceeding to 2e, verify `.factory/reviews/ceo-verdict-builder.md` contains all 6 category assessments (Correctness, Security, Edge cases, Missing tests, Style, Scope). If any category is missing, you skipped the structured checklist — go back to Step 2 of 2d-review.
+**Checkpoint:** Before proceeding to 2e, verify `.factory/reviews/ceo-verdict-builder.md` contains all 8 category assessments (Correctness, Security, Edge cases, Missing tests, Style, Scope, Guardrails, Execution evidence). If any category is missing, you skipped the structured checklist — go back to Step 2 of 2d-review.
 
 **MANDATORY Archivist — record build (DO NOT SKIP):**
 
