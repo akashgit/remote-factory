@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from factory.runners._agents_md import AgentsMdState, restore_agents_md, setup_agents_md
 from factory.runners._subprocess import run_subprocess
 
 if TYPE_CHECKING:
@@ -184,11 +185,9 @@ class OpenCodeRunner:
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode CLI command and env dict."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
         cmd = [
             "opencode",
-            "-p", full_prompt,
+            "-p", request.task,
             "-c", str(request.cwd),
             "-q",
         ]
@@ -207,20 +206,23 @@ class OpenCodeRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
+        state: AgentsMdState | None = None
+        try:
+            state = setup_agents_md(request.cwd, request.prompt)
+            cmd, env, _ = self.build_command(request)
 
-        log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+            log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
 
-        return await run_subprocess(
-            cmd, cwd=str(request.cwd), env=env,
-            timeout=request.timeout, runner_name="opencode", role=request.role,
-        )
+            return await run_subprocess(
+                cmd, cwd=str(request.cwd), env=env,
+                timeout=request.timeout, runner_name="opencode", role=request.role,
+            )
+        finally:
+            restore_agents_md(state)
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
-        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
+        cmd = ["opencode", "-p", request.task, "-c", str(request.cwd)]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
@@ -235,10 +237,15 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        cmd, env, _ = self.build_interactive_command(request)
+        state: AgentsMdState | None = None
+        try:
+            state = setup_agents_md(request.cwd, request.prompt)
+            cmd, env, _ = self.build_interactive_command(request)
 
-        log.info("opencode_interactive", cwd=str(request.cwd))
+            log.info("opencode_interactive", cwd=str(request.cwd))
 
-        result = subprocess.run(cmd, cwd=request.cwd, env=env)
-        return result.returncode
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
+            return result.returncode
+        finally:
+            restore_agents_md(state)
 

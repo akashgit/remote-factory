@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from factory.runners._agents_md import AgentsMdState, restore_agents_md, setup_agents_md
 from factory.runners._subprocess import run_subprocess
 
 if TYPE_CHECKING:
@@ -117,8 +118,6 @@ class CodexRunner:
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the Codex CLI command, env dict, and temp files."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
         cmd = ["codex", "exec"]
 
         if _using_api_key():
@@ -131,7 +130,7 @@ class CodexRunner:
             cmd.extend(["--model", request.model])
 
         cmd.append("--skip-git-repo-check")
-        cmd.extend(["--", full_prompt])
+        cmd.extend(["--", request.task])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
@@ -148,12 +147,14 @@ class CodexRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
-
-        log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
-
-        retried = False
+        state: AgentsMdState | None = None
         try:
+            state = setup_agents_md(request.cwd, request.prompt)
+            cmd, env, _ = self.build_command(request)
+
+            log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
+
+            retried = False
             result = await run_subprocess(
                 cmd, cwd=str(request.cwd), env=env,
                 timeout=request.timeout, runner_name="codex", role=request.role,
@@ -169,14 +170,13 @@ class CodexRunner:
                 )
             return result
         finally:
+            restore_agents_md(state)
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-
-        cmd = ["codex", full_prompt]
+        cmd = ["codex", request.task]
 
         if _using_api_key():
             cmd.append("--ignore-user-config")
@@ -200,12 +200,15 @@ class CodexRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_interactive_command(request)
+        state: AgentsMdState | None = None
         try:
+            state = setup_agents_md(request.cwd, request.prompt)
+            cmd, env, _ = self.build_interactive_command(request)
             log.info("codex_interactive", cwd=str(request.cwd))
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
+            restore_agents_md(state)
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
