@@ -118,6 +118,7 @@ def _find_opencode_bin_dir() -> str | None:
     if oc_path:
         return str(Path(oc_path).parent)
     candidates = [
+        Path.home() / ".opencode" / "bin",
         Path.home() / "go" / "bin",
         Path(os.environ.get("GOPATH", "")) / "bin" if os.environ.get("GOPATH") else None,
     ]
