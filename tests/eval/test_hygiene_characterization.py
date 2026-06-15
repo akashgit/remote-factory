@@ -573,6 +573,130 @@ class TestPythonCombinedMethod:
 # ── _aggregate unknown dimension ────────────────────────────────
 
 
+# ── GoEvaluator.run_tests_with_coverage ────────────────────────
+
+
+class TestGoRunTestsWithCoverage:
+    def test_returns_test_fragment_and_none(self, tmp_path):
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        (tmp_path / "main.go").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="ok  \ttest/pkg1\t0.5s\n", returncode=0
+            )
+            test_frag, cov_frag = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed >= 1
+        assert test_frag.score == 1.0
+        assert cov_frag is None
+
+
+# ── NodeEvaluator.run_tests_with_coverage ──────────────────────
+
+
+class TestNodeRunTestsWithCoverage:
+    def test_returns_test_fragment_and_none(self, tmp_path):
+        from factory.eval.languages.node import NodeEvaluator
+
+        ev = NodeEvaluator()
+        (tmp_path / "package.json").write_text("{}\n")
+        (tmp_path / "index.js").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="Tests: 5 passed, 1 failed\n", returncode=1
+            )
+            test_frag, cov_frag = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 5
+        assert test_frag.failed == 1
+        assert cov_frag is None
+
+
+# ── RustEvaluator.run_tests_with_coverage ──────────────────────
+
+
+class TestRustRunTestsWithCoverage:
+    def test_returns_test_fragment_and_none(self, tmp_path):
+        from factory.eval.languages.rust import RustEvaluator
+
+        ev = RustEvaluator()
+        (tmp_path / "Cargo.toml").write_text("[package]\n")
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "lib.rs").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="test result: ok. 3 passed; 0 failed; 0 ignored\n",
+                returncode=0,
+            )
+            test_frag, cov_frag = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 3
+        assert test_frag.failed == 0
+        assert cov_frag is None
+
+
+# ── _collect_test_and_coverage ─────────────────────────────────
+
+
+class TestCollectTestAndCoverage:
+    def test_returns_correct_tuple(self, tmp_path):
+        from factory.eval.hygiene import _collect_test_and_coverage
+
+        test_frag = EvalFragment(passed=5, failed=0, score=1.0, details="test: passed")
+        cov_frag = EvalFragment(passed=1, failed=0, score=0.8, details="80%", coverage_pct=80)
+
+        class FakeEvaluator:
+            name = "fake"
+
+            def detect(self, p):
+                return True
+
+            def run_tests_with_coverage(self, p):
+                return test_frag, cov_frag
+
+        with (
+            patch("factory.eval.hygiene.detect_languages", return_value=[FakeEvaluator()]),
+            patch("factory.eval.hygiene._find_sub_projects", return_value=[tmp_path]),
+        ):
+            test_result, cov_result = _collect_test_and_coverage(tmp_path)
+
+        assert test_result["name"] == "tests"
+        assert test_result["score"] == 1.0
+        assert test_result["passed"] is True
+        assert cov_result["name"] == "coverage"
+        assert cov_result["score"] == 0.8
+
+    def test_returns_neutral_when_no_fragments(self, tmp_path):
+        from factory.eval.hygiene import _collect_test_and_coverage
+
+        class EmptyEvaluator:
+            name = "empty"
+
+            def detect(self, p):
+                return True
+
+            def run_tests_with_coverage(self, p):
+                return None, None
+
+        with (
+            patch("factory.eval.hygiene.detect_languages", return_value=[EmptyEvaluator()]),
+            patch("factory.eval.hygiene._find_sub_projects", return_value=[tmp_path]),
+        ):
+            test_result, cov_result = _collect_test_and_coverage(tmp_path)
+
+        assert test_result["score"] == 0.5
+        assert "Not detected" in test_result["details"]
+        assert cov_result["score"] == 0.5
+        assert "Not detected" in cov_result["details"]
+
+
+# ── _aggregate unknown dimension ────────────────────────────────
+
+
 class TestAggregateUnknownDimension:
     def test_raises_value_error(self):
         fragment = EvalFragment(passed=1, failed=0, score=1.0, details="test")
