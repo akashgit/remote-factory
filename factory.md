@@ -83,6 +83,10 @@ main
 uv run pytest tests/test_models.py tests/test_guards.py tests/test_runners.py -x -q --tb=short -k 'not (BobAuth or preflight_error_unchanged)'
 ```
 
+## Test Timeout
+
+600
+
 ## Constraints
 <!-- Soft rules that guide behavior but don't block commits. -->
 

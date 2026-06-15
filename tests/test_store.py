@@ -743,3 +743,61 @@ class TestEnsureFactoryDir:
         assert store.factory_dir.is_dir()
         assert not store.factory_dir.is_symlink()
         assert (store.factory_dir / "config.json").exists()
+
+
+class TestParseTestTimeout:
+    """Tests for parsing ## Test Timeout section from factory.md."""
+
+    async def test_parse_test_timeout(self, store):
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nTest project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n\n"
+            "## Test Timeout\n\n900\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.test_timeout == 900
+
+    async def test_default_test_timeout(self, store):
+        """Default timeout should be 600 when section is missing."""
+        factory_md = store.project_path / "factory.md"
+        factory_md.write_text(
+            "# Factory\n\n## Goal\nNormal project\n\n"
+            "## Scope\n- src/\n\n"
+            "## Guards\n- no deletes\n\n"
+            "## Eval\n```\npython eval.py\n```\n\n"
+            "## Threshold\n0.8\n\n"
+            "## Constraints\n- small changes\n"
+        )
+        store.factory_dir.mkdir(exist_ok=True)
+        config = await store.reparse_config()
+        assert config.test_timeout == 600
+
+    async def test_test_timeout_roundtrip_config_json(self, store, sample_config):
+        """test_timeout should survive write → read via config.json."""
+        config = sample_config.model_copy(update={"test_timeout": 1200})
+        await store.init(config)
+        loaded = await store.read_config()
+        assert loaded.test_timeout == 1200
+
+    async def test_negative_or_zero_test_timeout_falls_back_to_default(self, store):
+        """Negative or zero timeout values should fall back to 600 (PR #559 fix)."""
+        for invalid_value in ["0", "-5", "-100"]:
+            factory_md = store.project_path / "factory.md"
+            factory_md.write_text(
+                "# Factory\n\n## Goal\nTest project\n\n"
+                "## Scope\n- src/\n\n"
+                "## Guards\n- no deletes\n\n"
+                "## Eval\n```\npython eval.py\n```\n\n"
+                "## Threshold\n0.8\n\n"
+                "## Constraints\n- small changes\n\n"
+                f"## Test Timeout\n\n{invalid_value}\n"
+            )
+            store.factory_dir.mkdir(exist_ok=True)
+            config = await store.reparse_config()
+            assert config.test_timeout == 600, f"Expected 600 for input '{invalid_value}'"

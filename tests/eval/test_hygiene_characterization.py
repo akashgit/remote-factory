@@ -1090,7 +1090,7 @@ class TestCollectTestAndCoverage:
             def detect(self, p):
                 return True
 
-            def run_tests_with_coverage(self, p):
+            def run_tests_with_coverage(self, p, timeout: int = 300):
                 return test_frag, cov_frag
 
         with (
@@ -1114,7 +1114,7 @@ class TestCollectTestAndCoverage:
             def detect(self, p):
                 return True
 
-            def run_tests_with_coverage(self, p):
+            def run_tests_with_coverage(self, p, timeout: int = 300):
                 return None, None
 
         with (

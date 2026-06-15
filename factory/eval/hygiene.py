@@ -317,14 +317,14 @@ def eval_config_parser(project_path: Path) -> dict:
 # ── Public API ─────────────────────────────────────────────────────
 
 
-def _collect_test_and_coverage(project_path: Path) -> tuple[dict, dict]:
+def _collect_test_and_coverage(project_path: Path, timeout: int = 300) -> tuple[dict, dict]:
     """Run tests and coverage together via run_tests_with_coverage(), return both result dicts."""
     sub_projects = _find_sub_projects(project_path)
     test_fragments: list[EvalFragment] = []
     cov_fragments: list[EvalFragment] = []
     for sp in sub_projects:
         for evaluator in detect_languages(sp):
-            test_frag, cov_frag = evaluator.run_tests_with_coverage(sp)
+            test_frag, cov_frag = evaluator.run_tests_with_coverage(sp, timeout=timeout)
             if test_frag is not None:
                 test_fragments.append(test_frag)
             if cov_frag is not None:
@@ -335,9 +335,9 @@ def _collect_test_and_coverage(project_path: Path) -> tuple[dict, dict]:
     return test_result, cov_result
 
 
-def compute_hygiene_results(project_path: Path) -> list[dict]:
+def compute_hygiene_results(project_path: Path, test_timeout: int = 600) -> list[dict]:
     """Compute all 6 mandatory hygiene dimensions for a project."""
-    test_result, cov_result = _collect_test_and_coverage(project_path)
+    test_result, cov_result = _collect_test_and_coverage(project_path, timeout=test_timeout)
     return [
         test_result,
         eval_lint(project_path),

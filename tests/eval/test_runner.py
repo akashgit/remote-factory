@@ -94,3 +94,10 @@ class TestRunEval:
         growth_weight = sum(r.weight for r in result.results if r.name in growth_names)
         assert abs(hygiene_weight - 0.50) < 0.01
         assert abs(growth_weight - 0.50) < 0.01
+
+    async def test_accepts_test_timeout_parameter(self, tmp_path):
+        """run_eval should accept test_timeout parameter for hygiene test runs."""
+        result = await run_eval("true", tmp_path, threshold=0.0, test_timeout=900)
+        names = {r.name for r in result.results}
+        assert "tests" in names
+        assert len(names) >= 12

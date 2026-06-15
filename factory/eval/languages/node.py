@@ -17,14 +17,14 @@ class NodeEvaluator:
         return (project_path / "package.json").exists()
 
     def run_tests_with_coverage(
-        self, project_path: Path,
+        self, project_path: Path, timeout: int = 300,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
         rc, stdout, stderr = _run_cmd(
             [
                 "npx", "jest", "--ci", "--coverage",
                 "--coverageReporters=text-summary", "--passWithNoTests",
             ],
-            project_path, timeout=180,
+            project_path, timeout=timeout,
         )
         output = stdout + stderr
 
@@ -56,8 +56,8 @@ class NodeEvaluator:
 
         return test_frag, cov_frag
 
-    def run_tests(self, project_path: Path) -> EvalFragment | None:
-        test_frag, _ = self.run_tests_with_coverage(project_path)
+    def run_tests(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        test_frag, _ = self.run_tests_with_coverage(project_path, timeout=timeout)
         return test_frag
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
@@ -94,8 +94,8 @@ class NodeEvaluator:
             details=f"{project_path.name}(ts): {count} errors",
         )
 
-    def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        _, cov_frag = self.run_tests_with_coverage(project_path)
+    def run_coverage(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        _, cov_frag = self.run_tests_with_coverage(project_path, timeout=timeout)
         return cov_frag
 
 

@@ -139,3 +139,8 @@ class TestComputeHygieneResults:
             assert "weight" in r
             assert "passed" in r
             assert "details" in r
+
+    def test_accepts_test_timeout_parameter(self, tmp_path):
+        """compute_hygiene_results should accept test_timeout parameter."""
+        results = compute_hygiene_results(tmp_path, test_timeout=900)
+        assert len(results) == 6

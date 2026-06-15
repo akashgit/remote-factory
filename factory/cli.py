@@ -815,6 +815,7 @@ def cmd_eval(args: argparse.Namespace) -> int:
         project_eval=config.project_eval or None,
         eval_weights=config.eval_weights,
         skip_project_eval=skip_project_eval,
+        test_timeout=config.test_timeout,
     ))
     _emit_cli_event(project_path, "eval.completed", {
         "composite": score.total,

@@ -19,10 +19,11 @@ class GoEvaluator:
         return (project_path / "go.mod").exists()
 
     def run_tests_with_coverage(
-        self, project_path: Path,
+        self, project_path: Path, timeout: int = 300,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
         rc, stdout, stderr = _run_cmd(
             ["go", "test", "-v", "-json", "-cover", "./..."], project_path,
+            timeout=timeout,
         )
         output = stdout + stderr
 
@@ -93,8 +94,8 @@ class GoEvaluator:
             )
         return None
 
-    def run_tests(self, project_path: Path) -> EvalFragment | None:
-        test_frag, _ = self.run_tests_with_coverage(project_path)
+    def run_tests(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        test_frag, _ = self.run_tests_with_coverage(project_path, timeout=timeout)
         return test_frag
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
@@ -129,8 +130,8 @@ class GoEvaluator:
             details=f"{project_path.name}(go): {count} errors",
         )
 
-    def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        _, cov_frag = self.run_tests_with_coverage(project_path)
+    def run_coverage(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        _, cov_frag = self.run_tests_with_coverage(project_path, timeout=timeout)
         return cov_frag
 
 

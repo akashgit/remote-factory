@@ -210,6 +210,7 @@ class FactoryConfig(BaseModel):
     clean_pr: bool = False
     clean_pr_include: list[str] = []
     clean_pr_exclude: list[str] = []
+    test_timeout: int = Field(ge=1, default=600)
 
 
 # ── eval ──────────────────────────────────────────────────────────

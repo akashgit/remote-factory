@@ -18,13 +18,14 @@ class RustEvaluator:
         return (project_path / "Cargo.toml").exists()
 
     def run_tests_with_coverage(
-        self, project_path: Path,
+        self, project_path: Path, timeout: int = 300,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
         if not shutil.which("cargo-tarpaulin"):
-            return self.run_tests(project_path), None
+            return self.run_tests(project_path, timeout=timeout), None
 
         rc, stdout, stderr = _run_cmd(
             ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"], project_path,
+            timeout=timeout,
         )
         output = stdout + stderr
 
@@ -56,8 +57,8 @@ class RustEvaluator:
 
         return test_frag, cov_frag
 
-    def run_tests(self, project_path: Path) -> EvalFragment | None:
-        rc, stdout, stderr = _run_cmd(["cargo", "test"], project_path)
+    def run_tests(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        rc, stdout, stderr = _run_cmd(["cargo", "test"], project_path, timeout=timeout)
         output = stdout + stderr
         p_match = re.search(r"(\d+)\s+passed", output)
         f_match = re.search(r"(\d+)\s+failed", output)
@@ -105,8 +106,8 @@ class RustEvaluator:
             details=f"{project_path.name}(rs): {count} errors",
         )
 
-    def run_coverage(self, project_path: Path) -> EvalFragment | None:
-        _, cov_frag = self.run_tests_with_coverage(project_path)
+    def run_coverage(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
+        _, cov_frag = self.run_tests_with_coverage(project_path, timeout=timeout)
         return cov_frag
 
 
