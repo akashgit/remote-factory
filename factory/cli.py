@@ -950,10 +950,19 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         notes=notes,
     )
     _run(store.finalize(args.id, record))
+    delta = None
+    if score_before is not None and score_after is not None:
+        delta = round(score_after - score_before, 6)
     _emit_cli_event(project_path, "experiment.finalize", {
         "exp_id": args.id,
         "verdict": verdict,
         "hypothesis": (args.hypothesis or "")[:200],
+        "pr_number": args.pr,
+        "issue_number": args.issue,
+        "score_before": score_before,
+        "score_after": score_after,
+        "delta": delta,
+        "cost_usd": cost,
     })
     print(f"Finalized experiment {args.id} — verdict={verdict}")
     return 0
@@ -1048,6 +1057,7 @@ def cmd_backlog_remove(args: argparse.Namespace) -> int:
     project_path = Path(args.path)
     item_text = args.item
     if remove_backlog_item(project_path, item_text):
+        _emit_cli_event(project_path, "backlog.removed", {"item": item_text})
         print(f"Removed backlog item: {item_text}")
         return 0
     print(f"Backlog item not found: {item_text}", file=sys.stderr)
@@ -1075,6 +1085,7 @@ def cmd_backlog_add(args: argparse.Namespace) -> int:
     project_path = Path(args.path)
     item_text = args.item
     if add_backlog_item(project_path, item_text):
+        _emit_cli_event(project_path, "backlog.added", {"item": item_text})
         print(f"Added backlog item: {item_text}")
         return 0
     print(f"Backlog item already exists: {item_text}", file=sys.stderr)

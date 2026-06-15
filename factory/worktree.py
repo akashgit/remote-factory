@@ -43,12 +43,34 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     wt_factory.symlink_to(factory_dir)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
+
+    try:
+        from factory.events import emit_event
+        emit_event(project_path, "worktree.created", data={
+            "run_id": run_id,
+            "worktree_path": str(wt_dir),
+            "branch": branch,
+            "base_branch": base_branch,
+        })
+    except Exception:
+        pass
+
     return wt_dir, branch
 
 
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
+
+    run_id = branch.removeprefix("factory/run-")
+    try:
+        from factory.events import emit_event
+        emit_event(project_path, "worktree.removed", data={
+            "run_id": run_id,
+            "branch": branch,
+        })
+    except Exception:
+        pass
 
     if worktree_path.exists():
         shutil.rmtree(worktree_path)
