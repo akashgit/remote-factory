@@ -185,9 +185,10 @@ class OpenCodeRunner:
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode CLI command and env dict."""
+        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
         cmd = [
             "opencode",
-            "-p", request.task,
+            "-p", full_prompt,
             "-c", str(request.cwd),
             "-q",
         ]
@@ -206,19 +207,14 @@ class OpenCodeRunner:
 
         _check_auth()
 
-        state: AgentsMdState | None = None
-        try:
-            state = setup_agents_md(request.cwd, request.prompt)
-            cmd, env, _ = self.build_command(request)
+        cmd, env, _ = self.build_command(request)
 
-            log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+        log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
 
-            return await run_subprocess(
-                cmd, cwd=str(request.cwd), env=env,
-                timeout=request.timeout, runner_name="opencode", role=request.role,
-            )
-        finally:
-            restore_agents_md(state)
+        return await run_subprocess(
+            cmd, cwd=str(request.cwd), env=env,
+            timeout=request.timeout, runner_name="opencode", role=request.role,
+        )
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""

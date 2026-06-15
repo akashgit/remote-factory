@@ -2,16 +2,17 @@
 
 Codex and OpenCode read AGENTS.md as system-level instructions. These helpers
 write the factory prompt into AGENTS.md (backing up any existing content) and
-restore it in a finally block, guarded by a file lock to prevent races.
+restore it in a finally block.
+
+Only used for interactive_run() — headless mode concatenates prompt+task inline.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import structlog
-from filelock import FileLock
 
 log = structlog.get_logger()
 
@@ -23,7 +24,6 @@ class AgentsMdState:
     """Tracks the AGENTS.md file state for later restoration."""
 
     path: Path
-    lock: FileLock = field(repr=False)
     backup: str | None = None
 
 
@@ -34,34 +34,26 @@ def setup_agents_md(cwd: Path, prompt: str) -> AgentsMdState:
     crashed run — discard it (no backup). Otherwise back up and prepend.
     """
     agents_path = cwd / "AGENTS.md"
-    lock_path = cwd / ".factory" / ".agents_md.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(lock_path)
-    lock.acquire()
 
     backup: str | None = None
     content = f"{SENTINEL}\n{prompt}\n"
 
-    try:
-        if agents_path.is_file():
-            existing = agents_path.read_text(encoding="utf-8")
-            if existing.startswith(SENTINEL):
-                log.debug("agents_md_stale_discarded", path=str(agents_path))
-            else:
-                backup = existing
-                content = f"{backup}\n{SENTINEL}\n{prompt}\n"
+    if agents_path.is_file():
+        existing = agents_path.read_text(encoding="utf-8")
+        if existing.startswith(SENTINEL):
+            log.debug("agents_md_stale_discarded", path=str(agents_path))
+        else:
+            backup = existing
+            content = f"{backup}\n{SENTINEL}\n{prompt}\n"
 
-        agents_path.write_text(content, encoding="utf-8")
-        log.debug("agents_md_written", path=str(agents_path), has_backup=backup is not None)
-    except BaseException:
-        lock.release()
-        raise
+    agents_path.write_text(content, encoding="utf-8")
+    log.debug("agents_md_written", path=str(agents_path), has_backup=backup is not None)
 
-    return AgentsMdState(path=agents_path, backup=backup, lock=lock)
+    return AgentsMdState(path=agents_path, backup=backup)
 
 
 def restore_agents_md(state: AgentsMdState | None) -> None:
-    """Restore AGENTS.md to its pre-setup state and release the lock."""
+    """Restore AGENTS.md to its pre-setup state."""
     if state is None:
         return
     try:
@@ -73,5 +65,3 @@ def restore_agents_md(state: AgentsMdState | None) -> None:
             log.debug("agents_md_removed", path=str(state.path))
     except OSError:
         log.debug("agents_md_restore_failed", path=str(state.path), exc_info=True)
-    finally:
-        state.lock.release()

@@ -1848,9 +1848,9 @@ class TestOpenCodeBuildInteractiveCommand:
 
 
 class TestOpenCodeAgentsMd:
-    """Tests for AGENTS.md lifecycle in OpenCodeRunner."""
+    """Tests for AGENTS.md lifecycle in OpenCodeRunner (interactive only)."""
 
-    async def test_headless_writes_and_cleans_agents_md(
+    async def test_headless_does_not_touch_agents_md(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
@@ -1872,31 +1872,6 @@ class TestOpenCodeAgentsMd:
 
         assert not agents_path.exists()
 
-    async def test_headless_preserves_existing_agents_md(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
-
-        agents_path = tmp_path / "AGENTS.md"
-        agents_path.write_text("# Existing content\n", encoding="utf-8")
-
-        runner = OpenCodeRunner()
-
-        with patch(
-            "factory.runners.opencode.run_subprocess", new_callable=AsyncMock
-        ) as mock_run:
-            mock_run.return_value = AgentRunResult(stdout="ok", return_code=0)
-
-            await runner.headless(AgentRunRequest(
-                prompt="You are the CEO.",
-                task="Run the experiment",
-                cwd=tmp_path,
-            ))
-
-        assert agents_path.exists()
-        assert agents_path.read_text(encoding="utf-8") == "# Existing content\n"
-
     def test_interactive_writes_and_restores_agents_md(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -1917,30 +1892,3 @@ class TestOpenCodeAgentsMd:
             ))
 
         assert agents_path.read_text(encoding="utf-8") == "# Pre-existing\n"
-
-    async def test_headless_agents_md_contains_prompt_during_run(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("OPENAI_API_KEY", "test-key")
-        monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
-
-        agents_path = tmp_path / "AGENTS.md"
-        captured_content: list[str] = []
-
-        async def capture_run(*args: object, **kwargs: object) -> AgentRunResult:
-            if agents_path.exists():
-                captured_content.append(agents_path.read_text(encoding="utf-8"))
-            return AgentRunResult(stdout="ok", return_code=0)
-
-        runner = OpenCodeRunner()
-
-        with patch("factory.runners.opencode.run_subprocess", side_effect=capture_run):
-            await runner.headless(AgentRunRequest(
-                prompt="You are the CEO.",
-                task="Run the experiment",
-                cwd=tmp_path,
-            ))
-
-        assert len(captured_content) == 1
-        assert "You are the CEO." in captured_content[0]
-        assert "<!-- factory:system-prompt -->" in captured_content[0]

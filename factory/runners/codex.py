@@ -129,8 +129,9 @@ class CodexRunner:
         if request.model:
             cmd.extend(["--model", request.model])
 
+        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
         cmd.append("--skip-git-repo-check")
-        cmd.extend(["--", request.task])
+        cmd.extend(["--", full_prompt])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
@@ -147,9 +148,7 @@ class CodexRunner:
 
         _check_auth()
 
-        state: AgentsMdState | None = None
         try:
-            state = setup_agents_md(request.cwd, request.prompt)
             cmd, env, _ = self.build_command(request)
 
             log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
@@ -170,7 +169,6 @@ class CodexRunner:
                 )
             return result
         finally:
-            restore_agents_md(state)
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
