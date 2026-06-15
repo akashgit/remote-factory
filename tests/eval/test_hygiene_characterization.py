@@ -145,7 +145,7 @@ class TestPythonCoverage:
         (pkg / "__init__.py").write_text("")
         with patch("factory.eval.languages.base.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result(
-                stdout="TOTAL      100     20     80%\n", returncode=0
+                stdout="3 passed\nTOTAL      100     20     80%\n", returncode=0
             )
             result = eval_coverage(tmp_path)
         assert result["name"] == "coverage"
@@ -166,7 +166,7 @@ class TestPythonCoverage:
 
         with patch("factory.eval.languages.base.subprocess.run") as mock_run:
             mock_run.return_value = _make_run_result(
-                stdout="TOTAL      100     20     80%\n", returncode=0
+                stdout="3 passed\nTOTAL      100     20     80%\n", returncode=0
             )
             eval_coverage(tmp_path)
             cmd = mock_run.call_args[0][0]
@@ -562,6 +562,24 @@ class TestPythonCombinedMethod:
             cmd = mock_run.call_args[0][0]
             assert "--cov=mypkg" in cmd
             assert "--cov-report=term" in cmd
+
+    def test_coverage_without_tests_returns_no_coverage(self, tmp_path):
+        """If pytest produces coverage but no test results (collection error), both are None."""
+        from factory.eval.languages.python import PythonEvaluator
+
+        ev = PythonEvaluator()
+        (tmp_path / "pyproject.toml").write_text("[project]\n")
+        pkg = tmp_path / "mypkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(
+                stdout="no tests ran\nTOTAL      100     20     80%\n",
+                returncode=1,
+            )
+            test_frag, cov_frag = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is None
+        assert cov_frag is None
 
     def test_no_instance_state(self):
         from factory.eval.languages.python import PythonEvaluator

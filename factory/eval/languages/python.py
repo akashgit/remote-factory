@@ -52,14 +52,14 @@ class PythonEvaluator:
             test_frag = EvalFragment(
                 passed=p,
                 failed=f,
-                score=p / total if total > 0 else 0.0,
+                score=p / total,
                 details=f"{project_path.name}: {p} passed, {f} failed",
             )
 
-        # Parse coverage
+        # Parse coverage only if tests were collected
         cov_frag: EvalFragment | None = None
         total_match = re.search(r"TOTAL\s+\d+\s+\d+\s+(\d+)%", output)
-        if total_match:
+        if total_match and test_frag is not None:
             pct = int(total_match.group(1))
             cov_frag = EvalFragment(
                 passed=0,
@@ -72,6 +72,7 @@ class PythonEvaluator:
         return test_frag, cov_frag
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
+        """Prefer run_tests_with_coverage() to avoid a redundant pytest invocation."""
         return self.run_tests_with_coverage(project_path)[0]
 
     def run_lint(self, project_path: Path) -> EvalFragment | None:
@@ -105,6 +106,7 @@ class PythonEvaluator:
         )
 
     def run_coverage(self, project_path: Path) -> EvalFragment | None:
+        """Prefer run_tests_with_coverage() to avoid a redundant pytest invocation."""
         return self.run_tests_with_coverage(project_path)[1]
 
 
