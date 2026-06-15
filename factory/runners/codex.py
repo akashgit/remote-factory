@@ -172,15 +172,8 @@ class CodexRunner:
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
-    def interactive_run(self, request: AgentRunRequest) -> int:
-        """Run an interactive Codex CLI session as a subprocess."""
-        if is_codex_dry_run():
-            print("[DRY-RUN] Would exec: codex (interactive)")
-            print(f"[DRY-RUN] Task: {request.task[:200]}...")
-            return 0
-
-        _check_auth()
-
+    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the CLI command, env dict, and temp files for an interactive invocation."""
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
         cmd = ["codex", full_prompt]
@@ -194,13 +187,25 @@ class CodexRunner:
         if request.model:
             cmd.extend(["--model", request.model])
 
-        log.info("codex_interactive", cwd=str(request.cwd))
-
         env, tmpdir = _make_codex_env()
+        self._tmpdir = tmpdir
+        return cmd, env, []
+
+    def interactive_run(self, request: AgentRunRequest) -> int:
+        """Run an interactive Codex CLI session as a subprocess."""
+        if is_codex_dry_run():
+            print("[DRY-RUN] Would exec: codex (interactive)")
+            print(f"[DRY-RUN] Task: {request.task[:200]}...")
+            return 0
+
+        _check_auth()
+
+        cmd, env, _ = self.build_interactive_command(request)
         try:
+            log.info("codex_interactive", cwd=str(request.cwd))
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
-            if tmpdir is not None:
-                tmpdir.cleanup()
+            if hasattr(self, "_tmpdir") and self._tmpdir is not None:
+                self._tmpdir.cleanup()
 

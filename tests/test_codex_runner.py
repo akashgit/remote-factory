@@ -446,6 +446,95 @@ class TestCodexStreaming:
             assert mock_run.call_args.kwargs.get("sanitize", False) is False
 
 
+class TestCodexBuildInteractiveCommand:
+    """Tests for CodexRunner.build_interactive_command()."""
+
+    def test_base_command_structure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
+                prompt="You are the CEO.",
+                task="Start session",
+                cwd=tmp_path,
+                model="gpt-5.4",
+                skip_permissions=True,
+            ))
+
+        assert cmd[0] == "codex"
+        full_prompt = cmd[1]
+        assert "You are the CEO." in full_prompt
+        assert "Start session" in full_prompt
+        assert "## Current Task" in full_prompt
+        assert "exec" not in cmd
+        assert "--" not in cmd
+        assert "--skip-git-repo-check" not in cmd
+        assert "--ignore-user-config" in cmd
+        assert "--full-auto" in cmd
+        assert "--model" in cmd
+        assert "gpt-5.4" in cmd
+        assert temp_files == []
+        assert "VIRTUAL_ENV" not in env
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
+    def test_no_permission_flags_without_skip(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
+            ))
+
+        assert "--full-auto" not in cmd
+        assert "--sandbox" not in cmd
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
+    def test_no_model_flag_when_none(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path, model=None,
+            ))
+
+        assert "--model" not in cmd
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
+    def test_env_from_make_codex_env(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            _, env, _ = runner.build_interactive_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path,
+            ))
+
+        assert "VIRTUAL_ENV" not in env
+        assert env["OPENAI_API_KEY"] == "test-key"
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
+
 class TestCodexInteractive:
     def test_interactive_run_builds_correct_command(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

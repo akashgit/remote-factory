@@ -1652,3 +1652,199 @@ class TestSaveReview:
             assert mock_invoke.call_count == 3
             tags = [call.kwargs["review_tag"] for call in mock_invoke.call_args_list]
             assert tags == ["0", "1", "2"]
+
+
+class TestClaudeBuildInteractiveCommand:
+    """Tests for ClaudeRunner.build_interactive_command()."""
+
+    def test_base_command_structure(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="You are the CEO.",
+            task="Start session",
+            cwd=tmp_path,
+        ))
+
+        assert cmd[0] == "claude"
+        assert "--append-system-prompt-file" in cmd
+        assert "Start session" in cmd
+        assert "-p" not in cmd
+        assert "--output-format" not in cmd
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_permission_flag(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=True,
+        ))
+
+        assert "--dangerously-skip-permissions" in cmd
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_no_permission_flag_when_not_skipped(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
+        ))
+
+        assert "--dangerously-skip-permissions" not in cmd
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_model_flag_and_env(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, model="claude-opus-4-7",
+        ))
+
+        assert "--model" in cmd
+        assert "claude-opus-4-7" in cmd
+        assert env["FACTORY_MODEL"] == "claude-opus-4-7"
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_session_name_flag(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, session_name="my-session",
+        ))
+
+        assert "--name" in cmd
+        assert "my-session" in cmd
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+        runner = ClaudeRunner()
+        _, env, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "VIRTUAL_ENV" not in env
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_temp_file_in_list(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test prompt content", task="Test", cwd=tmp_path,
+        ))
+
+        assert len(temp_files) == 1
+        assert temp_files[0].exists()
+        assert temp_files[0].read_text() == "Test prompt content"
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+
+class TestBobBuildInteractiveCommand:
+    """Tests for BobRunner.build_interactive_command()."""
+
+    def test_base_command_structure(self, tmp_path: Path) -> None:
+        runner = BobRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="You are the CEO.",
+            task="Start session",
+            cwd=tmp_path,
+        ))
+
+        assert cmd[0] == "bob"
+        assert "--chat-mode=code" in cmd
+        assert "-i" in cmd
+        i_idx = cmd.index("-i")
+        full_prompt = cmd[i_idx + 1]
+        assert "You are the CEO." in full_prompt
+        assert "Start session" in full_prompt
+        assert "## Current Task" in full_prompt
+
+    def test_yolo_flag(self, tmp_path: Path) -> None:
+        runner = BobRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=True,
+        ))
+
+        assert "--yolo" in cmd
+
+    def test_no_yolo_without_skip(self, tmp_path: Path) -> None:
+        runner = BobRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
+        ))
+
+        assert "--yolo" not in cmd
+
+    def test_env_uses_dict(self, tmp_path: Path) -> None:
+        runner = BobRunner()
+        _, env, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert isinstance(env, dict)
+        assert "PATH" in env
+
+    def test_uses_i_flag_not_p(self, tmp_path: Path) -> None:
+        runner = BobRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "-i" in cmd
+        assert "-p" not in cmd
+
+
+class TestOpenCodeBuildInteractiveCommand:
+    """Tests for OpenCodeRunner.build_interactive_command()."""
+
+    def test_base_command_structure(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="You are the CEO.",
+            task="Start session",
+            cwd=tmp_path,
+        ))
+
+        assert cmd[0] == "opencode"
+        assert "-p" in cmd
+        p_idx = cmd.index("-p")
+        full_prompt = cmd[p_idx + 1]
+        assert "You are the CEO." in full_prompt
+        assert "Start session" in full_prompt
+        assert "-c" in cmd
+        c_idx = cmd.index("-c")
+        assert cmd[c_idx + 1] == str(tmp_path)
+        assert "-q" not in cmd
+
+    def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+        runner = OpenCodeRunner()
+        _, env, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "VIRTUAL_ENV" not in env
+
+    def test_no_quiet_flag(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, _ = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "-q" not in cmd
+
+    def test_empty_temp_files(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert temp_files == []

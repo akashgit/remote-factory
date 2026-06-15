@@ -239,6 +239,22 @@ class BobRunner:
 
         return result
 
+    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the CLI command, env dict, and temp files for an interactive invocation."""
+        chat_mode = _BOB_CHAT_MODE
+        full_task = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+
+        cmd = [
+            "bob",
+            f"--chat-mode={chat_mode}",
+            "-i", full_task,
+        ]
+        if request.skip_permissions:
+            cmd.append("--yolo")
+
+        env = _make_env_with_bob_path()
+        return cmd, env, []
+
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Bob Shell session as a subprocess."""
         project_path = request.project_path or self._find_project_path(request.cwd)
@@ -259,24 +275,11 @@ class BobRunner:
             print(f"ERROR: {e}")
             return 1
 
-        chat_mode = _BOB_CHAT_MODE
-        full_task = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        cmd, env, _ = self.build_interactive_command(request)
 
-        cmd = [
-            "bob",
-            f"--chat-mode={chat_mode}",
-            "-i", full_task,
-        ]
-        if request.skip_permissions:
-            cmd.append("--yolo")
+        log.info("bob_interactive", cwd=str(request.cwd), chat_mode=_BOB_CHAT_MODE)
 
-        log.info("bob_interactive", cwd=str(request.cwd), chat_mode=chat_mode)
-
-        bob_bin_dir = _get_bob_bin_dir()
-        if bob_bin_dir and not os.environ.get("PATH", "").startswith(bob_bin_dir):
-            os.environ["PATH"] = f"{bob_bin_dir}:{os.environ.get('PATH', '')}"
-
-        result = _subprocess.run(cmd, cwd=request.cwd)
+        result = _subprocess.run(cmd, cwd=request.cwd, env=env)
         return result.returncode
 
     def _find_project_path(self, cwd: Path) -> Path:

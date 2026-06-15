@@ -216,6 +216,18 @@ class OpenCodeRunner:
             timeout=request.timeout, runner_name="opencode", role=request.role,
         )
 
+    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+        """Build the CLI command, env dict, and temp files for an interactive invocation."""
+        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+
+        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
+
+        env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+        _prepend_opencode_path(env)
+        _source_openai_key_from_shell(env)
+
+        return cmd, env, []
+
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode session as a subprocess."""
         if is_opencode_dry_run():
@@ -223,14 +235,9 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
-        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
+        cmd, env, _ = self.build_interactive_command(request)
 
         log.info("opencode_interactive", cwd=str(request.cwd))
-
-        env = dict(os.environ)
-        _prepend_opencode_path(env)
-        _source_openai_key_from_shell(env)
 
         result = subprocess.run(cmd, cwd=request.cwd, env=env)
         return result.returncode
