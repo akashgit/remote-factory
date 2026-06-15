@@ -11,6 +11,16 @@ import structlog
 
 log = structlog.get_logger()
 
+_webhook_dispatcher = None
+
+
+def _get_webhook_dispatcher():
+    global _webhook_dispatcher  # noqa: PLW0603
+    if _webhook_dispatcher is None:
+        from factory.notify.webhook import WebhookDispatcher
+        _webhook_dispatcher = WebhookDispatcher()
+    return _webhook_dispatcher
+
 
 def emit_event(
     project_path: Path,
@@ -38,6 +48,14 @@ def emit_event(
         f.write(json.dumps(event) + "\n")
 
     log.debug("event_emitted", type=event_type, project=project_path.name, agent=agent)
+
+    try:
+        dispatcher = _get_webhook_dispatcher()
+        if dispatcher.is_configured:
+            dispatcher.dispatch(event)
+    except Exception:
+        pass
+
     return event
 
 
