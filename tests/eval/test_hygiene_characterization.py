@@ -508,7 +508,10 @@ class TestRustCoverage:
         src = tmp_path / "src"
         src.mkdir()
         (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+        with (
+            patch("factory.eval.languages.rust.shutil.which", return_value="/usr/bin/cargo-tarpaulin"),
+            patch("factory.eval.languages.base.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = _make_run_result(
                 stdout="test result: ok. 5 passed; 0 failed; 0 ignored\n85.50% coverage, 171/200 lines covered\n",
                 returncode=0,
@@ -664,7 +667,10 @@ class TestRustTestsWithCoverage:
         from factory.eval.languages.rust import RustEvaluator
         (tmp_path / "Cargo.toml").write_text("[package]\n")
         evaluator = RustEvaluator()
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+        with (
+            patch("factory.eval.languages.rust.shutil.which", return_value="/usr/bin/cargo-tarpaulin"),
+            patch("factory.eval.languages.base.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = _make_run_result(
                 stdout="test result: ok. 5 passed; 1 failed; 0 ignored\n75.00% coverage, 150/200 lines covered\n",
                 returncode=1,
@@ -836,6 +842,191 @@ class TestGoRunTestsWithCoverage:
         assert test_frag.passed >= 1
         assert test_frag.score == 1.0
         assert cov_frag is None
+
+
+# ── Go JSON test output parsing ────────────────────────────────
+
+
+class TestGoJsonTestOutput:
+    """Tests for _parse_json_test_output() in the Go evaluator."""
+
+    def test_json_parsing_partial_credit(self, tmp_path):
+        """JSON lines with pass/fail actions produce partial credit score."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"pass","Test":"TestFoo"}\n'
+            '{"Action":"fail","Test":"TestBar"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=1)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 1
+        assert test_frag.failed == 1
+        assert test_frag.score == 0.5
+
+    def test_json_parsing_all_pass(self, tmp_path):
+        """All passing tests via JSON output."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"pass","Test":"TestOne"}\n'
+            '{"Action":"pass","Test":"TestTwo"}\n'
+            '{"Action":"pass","Test":"TestThree"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=0)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 3
+        assert test_frag.failed == 0
+        assert test_frag.score == 1.0
+
+    def test_json_parsing_all_fail(self, tmp_path):
+        """All failing tests via JSON output."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"fail","Test":"TestA"}\n'
+            '{"Action":"fail","Test":"TestB"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=1)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 0
+        assert test_frag.failed == 2
+        assert test_frag.score == 0.0
+
+    def test_json_parsing_skips_malformed_lines(self, tmp_path):
+        """Malformed JSON lines are skipped, valid ones counted."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"pass","Test":"TestGood"}\n'
+            'not valid json\n'
+            '{invalid json too}\n'
+            '{"Action":"fail","Test":"TestAlsoGood"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=1)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 1
+        assert test_frag.failed == 1
+        assert test_frag.score == 0.5
+
+    def test_json_parsing_ignores_package_level_events(self, tmp_path):
+        """Events without Test field (package-level) are ignored."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"pass","Package":"test/pkg"}\n'
+            '{"Action":"fail","Package":"test/other"}\n'
+            '{"Action":"output","Output":"=== RUN   TestFoo\\n"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=0)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        # No Test field means JSON parser returns None, falls back to text parser
+        assert test_frag is not None
+        assert test_frag.passed == 1  # text parser fallback: max(ok_count, 1)
+
+    def test_json_parsing_empty_stdout_fallback(self, tmp_path):
+        """Empty stdout falls back to text parser."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout="", returncode=0)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        # Empty stdout, rc=0 → text parser returns passed=max(0,1)=1
+        assert test_frag is not None
+        assert test_frag.passed == 1
+        assert test_frag.score == 1.0
+
+    def test_json_parsing_skips_empty_lines(self, tmp_path):
+        """Empty/whitespace lines in JSON output are skipped."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"pass","Test":"TestOne"}\n'
+            '\n'
+            '   \n'
+            '{"Action":"pass","Test":"TestTwo"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=0)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 2
+        assert test_frag.failed == 0
+
+    def test_json_parsing_other_actions_ignored(self, tmp_path):
+        """Actions other than pass/fail (run, output, pause, cont) are ignored."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        json_output = (
+            '{"Action":"run","Test":"TestFoo"}\n'
+            '{"Action":"output","Test":"TestFoo","Output":"some output"}\n'
+            '{"Action":"pass","Test":"TestFoo"}\n'
+            '{"Action":"pause","Test":"TestBar"}\n'
+            '{"Action":"cont","Test":"TestBar"}\n'
+            '{"Action":"fail","Test":"TestBar"}\n'
+        )
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=json_output, returncode=1)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 1
+        assert test_frag.failed == 1
+        assert test_frag.score == 0.5
+
+    def test_text_fallback_on_pure_text_output(self, tmp_path):
+        """Pure text output (no valid JSON) falls back to text parser."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        # No JSON at all, just text output
+        text_output = "ok  \ttest/pkg1\t0.5s\nok  \ttest/pkg2\t0.3s\n"
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=text_output, returncode=0)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 2
+        assert test_frag.score == 1.0
+
+    def test_text_fallback_fail_output(self, tmp_path):
+        """Text output with FAIL detected."""
+        from factory.eval.languages.go import GoEvaluator
+
+        ev = GoEvaluator()
+        (tmp_path / "go.mod").write_text("module test\n")
+        text_output = "FAIL\ttest/pkg\t0.5s\n"
+        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+            mock_run.return_value = _make_run_result(stdout=text_output, returncode=1)
+            test_frag, _ = ev.run_tests_with_coverage(tmp_path)
+        assert test_frag is not None
+        assert test_frag.passed == 0
+        assert test_frag.failed == 1
+        assert test_frag.score == 0.0
 
 
 # ── NodeEvaluator.run_tests_with_coverage ──────────────────────

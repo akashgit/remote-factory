@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
 from pathlib import Path
 
@@ -19,25 +21,14 @@ class GoEvaluator:
     def run_tests_with_coverage(
         self, project_path: Path,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
-        rc, stdout, stderr = _run_cmd(["go", "test", "-cover", "./..."], project_path)
+        rc, stdout, stderr = _run_cmd(
+            ["go", "test", "-v", "-json", "-cover", "./..."], project_path,
+        )
         output = stdout + stderr
 
-        test_frag: EvalFragment | None = None
-        if rc == 0:
-            ok_count = len(re.findall(r"^ok\s+", output, re.MULTILINE))
-            test_frag = EvalFragment(
-                passed=max(ok_count, 1),
-                failed=0,
-                score=1.0,
-                details=f"{project_path.name}(go): passed",
-            )
-        elif "FAIL" in output:
-            test_frag = EvalFragment(
-                passed=0,
-                failed=1,
-                score=0.0,
-                details=f"{project_path.name}(go): failed",
-            )
+        test_frag = self._parse_json_test_output(stdout, project_path)
+        if test_frag is None:
+            test_frag = self._parse_text_test_output(rc, output, project_path)
 
         cov_frag: EvalFragment | None = None
         cov_matches = re.findall(r"coverage:\s+([\d.]+)%\s+of\s+statements", output)
@@ -53,6 +44,54 @@ class GoEvaluator:
             )
 
         return test_frag, cov_frag
+
+    def _parse_json_test_output(
+        self, stdout: str, project_path: Path,
+    ) -> EvalFragment | None:
+        passed = 0
+        failed = 0
+        for line in stdout.splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            action = event.get("Action")
+            test_name = event.get("Test")
+            if test_name and action == "pass":
+                passed += 1
+            elif test_name and action == "fail":
+                failed += 1
+        if passed + failed > 0:
+            total = passed + failed
+            return EvalFragment(
+                passed=passed,
+                failed=failed,
+                score=passed / total,
+                details=f"{project_path.name}(go): {passed} passed, {failed} failed",
+            )
+        return None
+
+    def _parse_text_test_output(
+        self, rc: int, output: str, project_path: Path,
+    ) -> EvalFragment | None:
+        if rc == 0:
+            ok_count = len(re.findall(r"^ok\s+", output, re.MULTILINE))
+            return EvalFragment(
+                passed=max(ok_count, 1),
+                failed=0,
+                score=1.0,
+                details=f"{project_path.name}(go): passed",
+            )
+        elif "FAIL" in output:
+            return EvalFragment(
+                passed=0,
+                failed=1,
+                score=0.0,
+                details=f"{project_path.name}(go): failed",
+            )
+        return None
 
     def run_tests(self, project_path: Path) -> EvalFragment | None:
         test_frag, _ = self.run_tests_with_coverage(project_path)
@@ -75,7 +114,7 @@ class GoEvaluator:
 
     def run_type_check(self, project_path: Path) -> EvalFragment | None:
         rc, stdout, stderr = _run_cmd(
-            ["go", "build", "-o", "/dev/null", "./..."], project_path,
+            ["go", "build", "-o", os.devnull, "./..."], project_path,
         )
         output = stdout + stderr
         if rc == 0:
