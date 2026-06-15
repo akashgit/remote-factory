@@ -19,6 +19,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - factory/dashboard/static/*
 - tests/**/*.py
 - templates/**
+- README.md
 - docs/**
 - .github/workflows/*.yml
 - factory.md
