@@ -258,7 +258,7 @@ class TestRustTests:
         assert result["score"] == round(3 / 4, 4)
         assert "(rs)" in result["details"]
         cmd = mock_run.call_args[0][0]
-        assert cmd == ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"]
+        assert cmd == ["cargo", "test"]
 
 
 class TestRustLint:
