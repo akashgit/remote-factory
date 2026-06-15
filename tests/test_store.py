@@ -784,3 +784,20 @@ class TestParseTestTimeout:
         await store.init(config)
         loaded = await store.read_config()
         assert loaded.test_timeout == 1200
+
+    async def test_negative_or_zero_test_timeout_falls_back_to_default(self, store):
+        """Negative or zero timeout values should fall back to 600 (PR #559 fix)."""
+        for invalid_value in ["0", "-5", "-100"]:
+            factory_md = store.project_path / "factory.md"
+            factory_md.write_text(
+                "# Factory\n\n## Goal\nTest project\n\n"
+                "## Scope\n- src/\n\n"
+                "## Guards\n- no deletes\n\n"
+                "## Eval\n```\npython eval.py\n```\n\n"
+                "## Threshold\n0.8\n\n"
+                "## Constraints\n- small changes\n\n"
+                f"## Test Timeout\n\n{invalid_value}\n"
+            )
+            store.factory_dir.mkdir(exist_ok=True)
+            config = await store.reparse_config()
+            assert config.test_timeout == 600, f"Expected 600 for input '{invalid_value}'"

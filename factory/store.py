@@ -361,6 +361,9 @@ class ExperimentStore:
             test_timeout = int(float(str(test_timeout_raw).strip())) if test_timeout_raw else 600
         except (ValueError, TypeError):
             test_timeout = 600
+        # Clamp to minimum 1 to avoid ValidationError from FactoryConfig's Field(ge=1)
+        if test_timeout < 1:
+            test_timeout = 600
 
         config = FactoryConfig(
             goal=str(parsed.get("goal", "")),
