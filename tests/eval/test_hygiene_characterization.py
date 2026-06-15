@@ -508,7 +508,10 @@ class TestRustCoverage:
         src = tmp_path / "src"
         src.mkdir()
         (src / "lib.rs").write_text("")
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+        with (
+            patch("factory.eval.languages.rust.shutil.which", return_value="/usr/bin/cargo-tarpaulin"),
+            patch("factory.eval.languages.base.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = _make_run_result(
                 stdout="test result: ok. 5 passed; 0 failed; 0 ignored\n85.50% coverage, 171/200 lines covered\n",
                 returncode=0,
@@ -664,7 +667,10 @@ class TestRustTestsWithCoverage:
         from factory.eval.languages.rust import RustEvaluator
         (tmp_path / "Cargo.toml").write_text("[package]\n")
         evaluator = RustEvaluator()
-        with patch("factory.eval.languages.base.subprocess.run") as mock_run:
+        with (
+            patch("factory.eval.languages.rust.shutil.which", return_value="/usr/bin/cargo-tarpaulin"),
+            patch("factory.eval.languages.base.subprocess.run") as mock_run,
+        ):
             mock_run.return_value = _make_run_result(
                 stdout="test result: ok. 5 passed; 1 failed; 0 ignored\n75.00% coverage, 150/200 lines covered\n",
                 returncode=1,

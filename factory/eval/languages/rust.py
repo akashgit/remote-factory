@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
 
 from factory.eval.languages.base import EvalFragment, _run_cmd
@@ -19,6 +20,9 @@ class RustEvaluator:
     def run_tests_with_coverage(
         self, project_path: Path,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
+        if not shutil.which("cargo-tarpaulin"):
+            return self.run_tests(project_path), None
+
         rc, stdout, stderr = _run_cmd(
             ["cargo", "tarpaulin", "--out", "stdout", "--skip-clean"], project_path,
         )
