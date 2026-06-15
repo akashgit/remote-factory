@@ -157,6 +157,12 @@ CODEX_API_KEY = "..."
 ```
 Then run: `factory ceo /path/to/project --profile codex`
 
+**OpenCode specifics:**
+- Requires `OPENAI_API_KEY` environment variable
+- The factory targets `opencode-ai/opencode` v0.x (uses `-p`, `-q`, `-c` flags). Install from source: `go install github.com/opencode-ai/opencode@latest`, or via the [GitHub release tarball](https://github.com/opencode-ai/opencode/releases)
+- Do NOT use the `curl` installer at `opencode.ai/install` — it installs the `anomalyco/opencode` fork (v1.x) which has an incompatible CLI interface
+- Dry-run mode: `FACTORY_OPENCODE_DRY_RUN=1`
+
 **Important:** Target projects should add `.factory/` to their `.gitignore`. The factory writes experiment data, usage logs, and potentially sensitive auth files (`.factory/.bob_auth`) to this directory. These are project-local artifacts that should not be committed to version control.
 
 ## Running the factory
