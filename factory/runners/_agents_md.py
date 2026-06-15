@@ -42,16 +42,20 @@ def setup_agents_md(cwd: Path, prompt: str) -> AgentsMdState:
     backup: str | None = None
     content = f"{SENTINEL}\n{prompt}\n"
 
-    if agents_path.is_file():
-        existing = agents_path.read_text(encoding="utf-8")
-        if existing.startswith(SENTINEL):
-            log.debug("agents_md_stale_discarded", path=str(agents_path))
-        else:
-            backup = existing
-            content = f"{backup}\n{SENTINEL}\n{prompt}\n"
+    try:
+        if agents_path.is_file():
+            existing = agents_path.read_text(encoding="utf-8")
+            if existing.startswith(SENTINEL):
+                log.debug("agents_md_stale_discarded", path=str(agents_path))
+            else:
+                backup = existing
+                content = f"{backup}\n{SENTINEL}\n{prompt}\n"
 
-    agents_path.write_text(content, encoding="utf-8")
-    log.debug("agents_md_written", path=str(agents_path), has_backup=backup is not None)
+        agents_path.write_text(content, encoding="utf-8")
+        log.debug("agents_md_written", path=str(agents_path), has_backup=backup is not None)
+    except BaseException:
+        lock.release()
+        raise
 
     return AgentsMdState(path=agents_path, backup=backup, lock=lock)
 

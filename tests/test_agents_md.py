@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from factory.runners._agents_md import SENTINEL, AgentsMdState, restore_agents_md, setup_agents_md
+from factory.runners._agents_md import SENTINEL, restore_agents_md, setup_agents_md
 
 
 class TestSetupAgentsMd:
@@ -97,6 +97,42 @@ class TestRestoreAgentsMd:
         restore_agents_md(state)
 
         assert not state.lock.is_locked
+
+
+class TestSetupErrorHandling:
+    def test_lock_released_on_write_error(self, tmp_path: Path) -> None:
+        """If write_text raises during setup, the lock must still be released."""
+        agents_path = tmp_path / "AGENTS.md"
+        agents_path.mkdir()  # make it a directory so write_text raises
+
+        import pytest
+
+        with pytest.raises(OSError):
+            setup_agents_md(tmp_path, "prompt")
+
+        lock_path = tmp_path / ".factory" / ".agents_md.lock"
+        from filelock import FileLock
+
+        lock = FileLock(lock_path, timeout=0.1)
+        lock.acquire()
+        lock.release()
+
+    def test_lock_released_on_read_error(self, tmp_path: Path) -> None:
+        """If read_text raises during setup, the lock must still be released."""
+        agents_path = tmp_path / "AGENTS.md"
+        agents_path.symlink_to("/nonexistent/path")
+
+        import pytest
+
+        with pytest.raises(OSError):
+            setup_agents_md(tmp_path, "prompt")
+
+        lock_path = tmp_path / ".factory" / ".agents_md.lock"
+        from filelock import FileLock
+
+        lock = FileLock(lock_path, timeout=0.1)
+        lock.acquire()
+        lock.release()
 
 
 class TestLocking:
