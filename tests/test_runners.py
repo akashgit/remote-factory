@@ -1427,8 +1427,8 @@ class TestCeilingAccumulationAcrossInvocations:
 class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
-    def test_interactive_run_passes_task_only(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() passes -p with the task only (prompt goes to AGENTS.md)."""
+    def test_interactive_run_launches_tui(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() launches TUI without -p (prompt goes to AGENTS.md, user types task)."""
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1444,9 +1444,7 @@ class TestOpenCodeInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            assert "-p" in cmd
-            p_idx = cmd.index("-p")
-            assert cmd[p_idx + 1] == "Start session"
+            assert "-p" not in cmd
             assert "You are the CEO." not in " ".join(cmd)
 
     def test_interactive_run_passes_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1812,9 +1810,8 @@ class TestOpenCodeBuildInteractiveCommand:
         ))
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        p_idx = cmd.index("-p")
-        assert cmd[p_idx + 1] == "Start session"
+        assert "-p" not in cmd
+        assert "Start session" not in cmd
         assert "You are the CEO." not in " ".join(cmd)
         assert "-c" in cmd
         c_idx = cmd.index("-c")

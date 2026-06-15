@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -218,8 +219,14 @@ class OpenCodeRunner:
         )
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
-        """Build the CLI command, env dict, and temp files for an interactive invocation."""
-        cmd = ["opencode", "-p", request.task, "-c", str(request.cwd)]
+        """Build the CLI command, env dict, and temp files for an interactive invocation.
+
+        Unlike headless (which uses -p for single-shot mode), interactive launches
+        the TUI without -p so the user gets a persistent chat session. The system
+        prompt is delivered via AGENTS.md; the task is printed to stderr so the
+        user knows what to do.
+        """
+        cmd = ["opencode", "-c", str(request.cwd)]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
@@ -240,6 +247,7 @@ class OpenCodeRunner:
             cmd, env, _ = self.build_interactive_command(request)
 
             log.info("opencode_interactive", cwd=str(request.cwd))
+            print(f"\n  Task: {request.task}\n", file=sys.stderr)
 
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
