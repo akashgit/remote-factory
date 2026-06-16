@@ -143,12 +143,17 @@ async def run_in_tmux(
     timeout: float = _DEFAULT_TMUX_TIMEOUT,
     model: str | None = None,
     dangerously_skip_permissions: bool = True,
+    runner_cmd: list[str] | None = None,
+    runner_env: dict[str, str] | None = None,
 ) -> tuple[str, int, None]:
-    """Launch claude interactively in a tmux window and wait for completion.
+    """Launch a runner interactively in a tmux window and wait for completion.
 
     Output is captured via the `script` command. Completion is signaled via
-    a sentinel file touched by Claude Code Stop/StopFailure hooks. A trap
-    handler provides crash-resilience for abnormal exits.
+    the wrapper script's trap EXIT handler. For Claude, Stop/StopFailure
+    hooks are added as an optional optimization for faster detection.
+
+    When ``runner_cmd`` is provided, it is used as the command to run.
+    Otherwise falls back to building a Claude command (backwards compat).
 
     Returns (stdout, return_code, None). Usage is always None for tmux mode.
     """
@@ -163,29 +168,39 @@ async def run_in_tmux(
     sentinel_file = tmpdir / "sentinel"
     wrapper_script = tmpdir / "wrapper.sh"
 
-    prompt_file = tmpdir / "prompt.md"
-    prompt_file.write_text(prompt)
+    is_claude = runner_cmd is None or (runner_cmd and runner_cmd[0] == "claude")
 
-    settings_file = _generate_settings(sentinel_file, tmpdir, project_path)
+    if runner_cmd is not None:
+        cmd = list(runner_cmd)
+    else:
+        prompt_file = tmpdir / "prompt.md"
+        prompt_file.write_text(prompt)
+        settings_file = _generate_settings(sentinel_file, tmpdir, project_path)
+        cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file)]
+        if dangerously_skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+        if model:
+            cmd.extend(["--model", model])
+        cmd.append(task)
 
-    cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file)]
-    if dangerously_skip_permissions:
-        cmd.append("--dangerously-skip-permissions")
-    if model:
-        cmd.extend(["--model", model])
-    cmd.append(task)
-
-    claude_cmd = shlex.join(cmd)
+    full_cmd = shlex.join(cmd)
     logfile_q = shlex.quote(str(logfile))
     if platform.system() == "Darwin":
-        script_line = f"script -q {logfile_q} {claude_cmd}\n"
+        script_line = f"script -q {logfile_q} {full_cmd}\n"
     else:
-        script_line = f"script -q -c {shlex.quote(claude_cmd)} {logfile_q}\n"
+        script_line = f"script -q -c {shlex.quote(full_cmd)} {logfile_q}\n"
 
     sentinel_q = shlex.quote(str(sentinel_file))
     exitcode_q = shlex.quote(str(exitcode_file))
+
+    env_lines = ""
+    if runner_env:
+        for k, v in runner_env.items():
+            env_lines += f"export {shlex.quote(k)}={shlex.quote(v)}\n"
+
     wrapper_script.write_text(
         "#!/bin/bash\n"
+        f"{env_lines}"
         f"cleanup() {{ local rc=$?; echo $rc > {exitcode_q}; touch {sentinel_q}; }}\n"
         "trap cleanup EXIT\n"
         f"{script_line}"
@@ -228,10 +243,11 @@ async def run_in_tmux(
             _cleanup(tmpdir)
             return f"Agent timed out after {timeout}s", 1, None
 
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "Enter"],
-            capture_output=True,
-        )
+        if is_claude:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "Enter"],
+                capture_output=True,
+            )
         await _wait_for_window_exit(session, window)
         if _window_exists(session, window):
             subprocess.run(

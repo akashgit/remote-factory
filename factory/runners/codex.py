@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import subprocess
 import tempfile
@@ -14,7 +15,7 @@ import structlog
 from factory.runners._subprocess import run_subprocess
 
 if TYPE_CHECKING:
-    from factory.models import AgentRunRequest, AgentRunResult
+    from factory.models import AgentRunRequest, AgentRunResult, AgentUsage
     from factory.runners.protocol import RunnerMeta
 
 log = structlog.get_logger()
@@ -97,6 +98,54 @@ def is_codex_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
+def _parse_codex_ndjson_usage(raw_output: str) -> AgentUsage | None:
+    """Parse Codex NDJSON output for token usage events."""
+    from factory.models import AgentUsage
+
+    input_tokens = 0
+    output_tokens = 0
+    reasoning_tokens = 0
+    model = ""
+
+    for line in raw_output.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if not isinstance(event, dict):
+            continue
+
+        event_type = event.get("type", "")
+
+        if event_type == "usage":
+            usage = event.get("usage", {})
+            input_tokens += usage.get("input_tokens", 0)
+            output_tokens += usage.get("output_tokens", 0)
+            reasoning_tokens += usage.get("reasoning_tokens", 0)
+            if event.get("model"):
+                model = event["model"]
+
+    if input_tokens == 0 and output_tokens == 0:
+        return None
+
+    return AgentUsage(
+        input_tokens=input_tokens,
+        output_tokens=output_tokens + reasoning_tokens,
+        model=model,
+    )
+
+
+def _write_agents_md(project_root: Path, role_prompt: str) -> Path:
+    """Write an AGENTS.md file at the project root for Codex agent discovery."""
+    agents_md = project_root / "AGENTS.md"
+    agents_md.write_text(role_prompt)
+    return agents_md
+
+
 class CodexRunner:
     """Runner implementation for OpenAI Codex CLI."""
 
@@ -111,13 +160,17 @@ class CodexRunner:
             binary="codex",
             install_hint="npm install -g @openai/codex",
             required_env_vars=["OPENAI_API_KEY"],
-            supports_usage_telemetry=False,
+            supports_usage_telemetry=True,
             supports_session_name=False,
         )
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the Codex CLI command, env dict, and temp files."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        temp_files: list[Path] = []
+
+        project_root = request.project_path or request.cwd
+        agents_md = _write_agents_md(project_root, request.prompt)
+        temp_files.append(agents_md)
 
         cmd = ["codex", "exec"]
 
@@ -131,24 +184,45 @@ class CodexRunner:
             cmd.extend(["--model", request.model])
 
         cmd.append("--skip-git-repo-check")
-        cmd.extend(["--", full_prompt])
+        cmd.append("--json")
+        cmd.extend(["--", request.task])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
-        return cmd, env, []
+        return cmd, env, temp_files
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless Codex CLI invocation via ``codex exec``."""
+        from factory.models import AgentRunResult
+
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
-            log.warning("codex_tmux_not_supported")
+            from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
+
+            if tmux_available():
+                project_path = find_project_path(request.cwd)
+                int_cmd, int_env, int_temp = self.build_interactive_command(request)
+                try:
+                    stdout, rc, usage = await run_in_tmux(
+                        request.prompt, request.task, request.cwd, request.role,
+                        project_path,
+                        runner_cmd=int_cmd,
+                        runner_env=int_env,
+                    )
+                    return AgentRunResult(stdout=stdout, return_code=rc, usage=usage)
+                finally:
+                    for f in int_temp:
+                        f.unlink(missing_ok=True)
+            else:
+                log.warning("tmux_not_available")
+
         if is_codex_dry_run():
             from factory.runners._subprocess import make_dry_run_result
             return make_dry_run_result("codex", request.role, request.cwd, request.task)
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
+        cmd, env, temp_files = self.build_command(request)
 
         log.info("codex_headless", cwd=str(request.cwd), model=request.model, role=request.role)
 
@@ -167,29 +241,43 @@ class CodexRunner:
                     cmd, cwd=str(request.cwd), env=env,
                     timeout=request.timeout, runner_name="codex", role=request.role,
                 )
-            return result
+
+            usage = _parse_codex_ndjson_usage(result.stdout)
+
+            return AgentRunResult(
+                stdout=result.stdout,
+                return_code=result.return_code,
+                usage=usage,
+                metadata=result.metadata,
+            )
         finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        temp_files: list[Path] = []
 
-        cmd = ["codex", full_prompt]
+        project_root = request.project_path or request.cwd
+        agents_md = _write_agents_md(project_root, request.prompt)
+        temp_files.append(agents_md)
+
+        cmd = ["codex", request.task]
 
         if _using_api_key():
             cmd.append("--ignore-user-config")
 
         if request.skip_permissions:
-            cmd.append("--full-auto")
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if request.model:
             cmd.extend(["--model", request.model])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
-        return cmd, env, []
+        return cmd, env, temp_files
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Codex CLI session as a subprocess."""
@@ -200,12 +288,14 @@ class CodexRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_interactive_command(request)
+        cmd, env, temp_files = self.build_interactive_command(request)
         try:
             log.info("codex_interactive", cwd=str(request.cwd))
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
 
