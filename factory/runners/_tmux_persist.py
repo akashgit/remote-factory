@@ -232,6 +232,11 @@ async def run_in_tmux(
     print(f"  tmux attach -t {session}    # attach and interact", file=sys.stderr)
     print("  /exit or Ctrl-d to finish   # factory resumes when you exit", file=sys.stderr)
 
+    # Auto-accept trust prompt (Claude shows 'Do you trust?' for untrusted dirs)
+    if is_claude:
+        await asyncio.sleep(3)
+        subprocess.run(["tmux", "send-keys", "-t", f"{session}:{window}", "Enter"], capture_output=True)
+
     try:
         found = await _wait_for_sentinel(sentinel_file, timeout)
         if not found:

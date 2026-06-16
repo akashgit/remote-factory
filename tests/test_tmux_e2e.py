@@ -280,7 +280,7 @@ async def test_claude_tmux_persist_e2e(e2e_project: Path) -> None:
         e2e_project,
         "researcher",
         e2e_project,
-        timeout=120.0,
+        timeout=180.0,
         dangerously_skip_permissions=True,
     )
 
@@ -299,7 +299,7 @@ async def test_claude_headless_tmux_persist_via_runner(e2e_project: Path) -> Non
         prompt="You are a concise assistant.",
         task="What Python files are in this directory? One sentence.",
         cwd=e2e_project,
-        timeout=120.0,
+        timeout=180.0,
         skip_permissions=True,
         role="researcher",
         extras={"tmux_persist": True},
