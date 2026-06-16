@@ -139,11 +139,26 @@ def _parse_codex_ndjson_usage(raw_output: str) -> AgentUsage | None:
     )
 
 
-def _write_agents_md(project_root: Path, role_prompt: str) -> Path:
-    """Write an AGENTS.md file at the project root for Codex agent discovery."""
+def _write_agents_md(project_root: Path, role_prompt: str) -> tuple[Path, Path | None]:
+    """Write an AGENTS.md file at the project root for Codex agent discovery.
+
+    If AGENTS.md already exists, backs it up so it can be restored on cleanup.
+    Returns (agents_md_path, backup_path_or_None).
+    """
     agents_md = project_root / "AGENTS.md"
+    backup: Path | None = None
+    if agents_md.exists():
+        backup = project_root / ".AGENTS.md.factory-backup"
+        agents_md.rename(backup)
     agents_md.write_text(role_prompt)
-    return agents_md
+    return agents_md, backup
+
+
+def _cleanup_agents_md(agents_md: Path, backup: Path | None) -> None:
+    """Remove factory-written AGENTS.md and restore backup if one existed."""
+    agents_md.unlink(missing_ok=True)
+    if backup is not None and backup.exists():
+        backup.rename(agents_md)
 
 
 class CodexRunner:
@@ -169,7 +184,7 @@ class CodexRunner:
         temp_files: list[Path] = []
 
         project_root = request.project_path or request.cwd
-        agents_md = _write_agents_md(project_root, request.prompt)
+        agents_md, self._agents_md_backup = _write_agents_md(project_root, request.prompt)
         temp_files.append(agents_md)
 
         cmd = ["codex", "exec"]
@@ -211,8 +226,16 @@ class CodexRunner:
                     )
                     return AgentRunResult(stdout=stdout, return_code=rc, usage=usage)
                 finally:
+                    backup = getattr(self, "_agents_md_backup", None)
                     for f in int_temp:
-                        f.unlink(missing_ok=True)
+                        if f.name == "AGENTS.md":
+                            _cleanup_agents_md(f, backup)
+                        else:
+                            f.unlink(missing_ok=True)
+                    self._agents_md_backup = None
+                    if hasattr(self, "_tmpdir") and self._tmpdir is not None:
+                        self._tmpdir.cleanup()
+                        self._tmpdir = None
             else:
                 log.warning("tmux_not_available")
 
@@ -251,17 +274,23 @@ class CodexRunner:
                 metadata=result.metadata,
             )
         finally:
+            backup = getattr(self, "_agents_md_backup", None)
             for f in temp_files:
-                f.unlink(missing_ok=True)
+                if f.name == "AGENTS.md":
+                    _cleanup_agents_md(f, backup)
+                else:
+                    f.unlink(missing_ok=True)
+            self._agents_md_backup = None
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
+                self._tmpdir = None
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
         temp_files: list[Path] = []
 
         project_root = request.project_path or request.cwd
-        agents_md = _write_agents_md(project_root, request.prompt)
+        agents_md, self._agents_md_backup = _write_agents_md(project_root, request.prompt)
         temp_files.append(agents_md)
 
         cmd = ["codex", request.task]
@@ -294,8 +323,14 @@ class CodexRunner:
             result = subprocess.run(cmd, cwd=request.cwd, env=env)
             return result.returncode
         finally:
+            backup = getattr(self, "_agents_md_backup", None)
             for f in temp_files:
-                f.unlink(missing_ok=True)
+                if f.name == "AGENTS.md":
+                    _cleanup_agents_md(f, backup)
+                else:
+                    f.unlink(missing_ok=True)
+            self._agents_md_backup = None
             if hasattr(self, "_tmpdir") and self._tmpdir is not None:
                 self._tmpdir.cleanup()
+                self._tmpdir = None
 
