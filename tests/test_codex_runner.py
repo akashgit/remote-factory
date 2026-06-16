@@ -467,7 +467,7 @@ class TestCodexBuildInteractiveCommand:
         assert "exec" not in cmd
         assert "--" not in cmd
         assert "--skip-git-repo-check" not in cmd
-        assert "--ignore-user-config" in cmd
+        assert "--ignore-user-config" not in cmd
         assert "--dangerously-bypass-approvals-and-sandbox" in cmd
         assert "--model" in cmd
         assert "gpt-5.4" in cmd
@@ -559,7 +559,7 @@ class TestCodexInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
-            assert "--ignore-user-config" in cmd
+            assert "--ignore-user-config" not in cmd
             assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd

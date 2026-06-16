@@ -299,9 +299,6 @@ class CodexRunner:
 
         cmd = ["codex", request.task]
 
-        if _using_api_key():
-            cmd.append("--ignore-user-config")
-
         if request.skip_permissions:
             cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
