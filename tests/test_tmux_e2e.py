@@ -20,9 +20,12 @@ from pathlib import Path
 
 import pytest
 
+import asyncio
+
 from factory.runners._tmux_persist import run_in_tmux, tmux_available
 from factory.runners.codex import _parse_codex_ndjson_usage, _write_agents_md, CodexRunner
 from factory.runners.claude import ClaudeRunner
+from factory.runners.opencode import OpenCodeRunner, _write_opencode_md, _cleanup_opencode_md
 from factory.models import AgentRunRequest
 
 
@@ -68,6 +71,12 @@ skip_no_claude = pytest.mark.skipif(not _HAS_CLAUDE, reason="claude CLI not avai
 skip_no_codex = pytest.mark.skipif(
     not (_HAS_CODEX and _CODEX_AUTHED),
     reason="codex CLI not available or not authenticated",
+)
+
+_HAS_OPENCODE = shutil.which("opencode") is not None
+skip_no_opencode = pytest.mark.skipif(
+    not (_HAS_OPENCODE and _HAS_OPENAI_KEY),
+    reason="opencode CLI not available or OPENAI_API_KEY not set",
 )
 
 
@@ -392,3 +401,123 @@ async def test_codex_headless_ndjson_usage(e2e_project: Path, codex_env: None) -
     assert result.return_code == 0, f"Codex headless failed: {result.stdout[:300]}"
     if result.usage is not None:
         assert result.usage.input_tokens > 0 or result.usage.output_tokens > 0
+
+
+# ── OpenCode helpers (fast, no API calls) ─────────────────────────
+
+
+class TestWriteOpencodeMd:
+    def test_writes_file(self, tmp_path: Path) -> None:
+        opencode_md, backup = _write_opencode_md(tmp_path, "You are a researcher.")
+        assert opencode_md == tmp_path / "OpenCode.md"
+        assert opencode_md.read_text() == "You are a researcher."
+        assert backup is None
+        opencode_md.unlink()
+
+    def test_backs_up_existing(self, tmp_path: Path) -> None:
+        (tmp_path / "OpenCode.md").write_text("user content")
+        opencode_md, backup = _write_opencode_md(tmp_path, "factory prompt")
+        assert opencode_md.read_text() == "factory prompt"
+        assert backup is not None
+        assert backup.exists()
+        _cleanup_opencode_md(opencode_md, backup)
+        assert (tmp_path / "OpenCode.md").read_text() == "user content"
+        assert not (tmp_path / ".OpenCode.md.factory-backup").exists()
+
+    def test_cleanup_deletes_when_no_backup(self, tmp_path: Path) -> None:
+        opencode_md, backup = _write_opencode_md(tmp_path, "prompt")
+        _cleanup_opencode_md(opencode_md, backup)
+        assert not (tmp_path / "OpenCode.md").exists()
+
+
+class TestOpenCodeBuildCommandCreatesOpencodeMd:
+    def test_opencode_md_in_temp_files(self, tmp_path: Path) -> None:
+        runner = OpenCodeRunner()
+        cmd, _, temp_files = runner.build_command(AgentRunRequest(
+            prompt="You are a researcher.", task="Say hi", cwd=tmp_path,
+            project_path=tmp_path,
+        ))
+        assert len(temp_files) == 1
+        assert temp_files[0].name == "OpenCode.md"
+        assert "You are a researcher." in temp_files[0].read_text()
+        assert cmd == ["opencode", "-p", "Say hi", "-c", str(tmp_path), "-q"]
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+
+# ── OpenCode real E2E tests (slow, require actual CLI) ────────────
+
+
+@pytest.fixture
+def opencode_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure OPENAI_API_KEY is set for OpenCode tests."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        key = _DOTENV.get("OPENAI_API_KEY")
+        if key:
+            monkeypatch.setenv("OPENAI_API_KEY", key)
+
+
+@pytest.mark.slow
+@skip_no_opencode
+async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None) -> None:
+    """OpenCode headless invocation returns a response and cleans up OpenCode.md."""
+    runner = OpenCodeRunner()
+    request = AgentRunRequest(
+        prompt="You are a concise assistant.",
+        task="What does hello.py do? One sentence.",
+        cwd=e2e_project,
+        timeout=30.0,
+        role="researcher",
+        project_path=e2e_project,
+    )
+    result = await runner.headless(request)
+
+    assert result.return_code == 0, f"OpenCode headless failed: {result.stdout[:300]}"
+    assert len(result.stdout.strip()) > 0, "OpenCode produced no output"
+    assert not (e2e_project / "OpenCode.md").exists(), "OpenCode.md should be cleaned up"
+
+
+@pytest.mark.slow
+@skip_no_opencode
+async def test_opencode_interactive_creates_opencode_md(e2e_project: Path, opencode_env: None) -> None:
+    """OpenCode interactive build_interactive_command creates OpenCode.md with system prompt.
+
+    Note: OpenCode's Go TUI cannot run inside tmux (exits with code 1 — requires
+    a real TTY). Interactive mode only works via subprocess.run() with a real terminal.
+    This test verifies the command construction and OpenCode.md lifecycle, not the TUI itself.
+    """
+    runner = OpenCodeRunner()
+    request = AgentRunRequest(
+        prompt="You are the Factory CEO. Your role is to orchestrate agents.",
+        task="Describe your role.",
+        cwd=e2e_project,
+        timeout=30.0,
+        role="ceo",
+        project_path=e2e_project,
+    )
+    int_cmd, int_env, temp_files = runner.build_interactive_command(request)
+
+    try:
+        # Verify OpenCode.md was created with the system prompt
+        opencode_md = e2e_project / "OpenCode.md"
+        assert opencode_md.exists(), "OpenCode.md should be created before launch"
+        content = opencode_md.read_text()
+        assert "Factory CEO" in content, f"System prompt not in OpenCode.md: {content[:100]}"
+        assert "orchestrate agents" in content
+
+        # Verify the command structure is correct
+        assert int_cmd == ["opencode", "-c", str(e2e_project)]
+        assert "OPENAI_API_KEY" in int_env or os.environ.get("OPENAI_API_KEY")
+
+        # Verify temp_files tracks OpenCode.md for cleanup
+        assert len(temp_files) == 1
+        assert temp_files[0].name == "OpenCode.md"
+    finally:
+        for f in temp_files:
+            if f.name == "OpenCode.md":
+                _cleanup_opencode_md(f, getattr(runner, "_opencode_md_backup", None))
+            else:
+                f.unlink(missing_ok=True)
+
+    # Verify cleanup happened
+    assert not (e2e_project / "OpenCode.md").exists(), "OpenCode.md should be cleaned up"
