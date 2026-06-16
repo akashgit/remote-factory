@@ -385,7 +385,7 @@ class TestCeoPrompt:
 
 class TestStrategistIdeationMode:
     def test_has_ideation_section(self, strategist_prompt: str) -> None:
-        assert "## Interactive / Ideation Mode" in strategist_prompt
+        assert "## Design / Ideation Mode" in strategist_prompt
 
     def test_has_output_format(self, strategist_prompt: str) -> None:
         assert "### Vision" in strategist_prompt

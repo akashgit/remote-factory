@@ -164,18 +164,18 @@ def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
     if _safe_is_dir(expanded):
         factory_dir = expanded / ".factory"
         label_improve = "Improve this project"
-        label_interactive = "Discuss what to work on first"
-        cmd_interactive = f'factory ceo {shlex.quote(stripped)} --mode interactive'
+        label_design = "Discuss what to work on first"
+        cmd_design = f'factory ceo {shlex.quote(stripped)} --mode design'
         if _safe_is_dir(factory_dir):
             cmd_improve = f'factory ceo {shlex.quote(stripped)} --mode improve'
             return [
                 {"label": label_improve, "explanation": "Run the improve loop on this project.", "command": cmd_improve},
-                {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
+                {"label": label_design, "explanation": "Study the project and discuss priorities.", "command": cmd_design},
             ]
         cmd_improve = f'factory ceo {shlex.quote(stripped)}'
         return [
             {"label": "Set up and improve this project", "explanation": "Initialize factory and start improving.", "command": cmd_improve},
-            {"label": label_interactive, "explanation": "Study the project and discuss priorities.", "command": cmd_interactive},
+            {"label": label_design, "explanation": "Study the project and discuss priorities.", "command": cmd_design},
         ]
 
     if _safe_is_file(expanded):
@@ -188,7 +188,7 @@ def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
     if _is_github_url(stripped):
         return [
             {"label": "Clone and improve", "explanation": "Clone the repository and run the improve loop.", "command": f'factory ceo {shlex.quote(stripped)} --mode improve --clean-pr'},
-            {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo {shlex.quote(stripped)} --mode interactive --clean-pr'},
+            {"label": "Clone and discuss", "explanation": "Clone and discuss what to work on.", "command": f'factory ceo {shlex.quote(stripped)} --mode design --clean-pr'},
         ]
 
     return None
@@ -204,13 +204,13 @@ Given the user's input, return a JSON object with two keys: "follow_ups" and "su
 
 | Command | When to use |
 |---|---|
-| `factory ceo "<idea>" --mode interactive` | Brainstorm and refine before building (vague ideas) |
+| `factory ceo "<idea>" --mode design` | Brainstorm and refine before building (vague ideas) |
 | `factory ceo "<idea>"` | Build directly (clear, specific descriptions) |
 | `factory ceo "<idea>" --mode research` | Research-driven optimization (metric-focused projects) |
 | `factory ceo {path} --mode improve` | Improve an existing project at a known path |
 | `factory ceo {path} --mode improve --focus "{issue}"` | Fix or add one specific thing in an existing project |
 | `factory ceo {path} --mode improve --focus {issue}` | Target a specific GitHub issue number |
-| `factory ceo {path} --mode interactive` | Discuss what to work on in an existing project |
+| `factory ceo {path} --mode design` | Discuss what to work on in an existing project |
 | `factory ceo {path} --mode meta` | Self-improve the factory's own agents |
 
 ## Information requirements per mode
@@ -260,8 +260,8 @@ Return ONLY a JSON object (no markdown, no explanation):
     },
     {
       "label": "Discuss first",
-      "explanation": "Interactive mode to explore what needs fixing",
-      "command": "factory ceo {path} --mode interactive"
+      "explanation": "Design mode to explore what needs fixing",
+      "command": "factory ceo {path} --mode design"
     }
   ]
 }
@@ -286,7 +286,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 6. For new ideas, commands should use the literal user text in quotes — no placeholders
 7. For existing projects, use {path} placeholder and add a path follow-up
 8. If the user mentions fixing/improving an EXISTING project, do NOT wrap input as a new idea
-9. Every generated command MUST include an explicit `--mode` flag (improve, interactive, research, meta, or build)
+9. Every generated command MUST include an explicit `--mode` flag (improve, design, research, meta, or build)
 10. When the input is a GitHub URL (clone scenario), always append `--clean-pr` to the generated command
 
 User input: """
@@ -399,14 +399,14 @@ def _classify_with_llm(
 
 _CLI_REF = """\
   Build something new:
-    factory ceo "a fasta CLI that converts protein sequences to embeddings using ESM2" --mode interactive
-    factory ceo "an autograd engine in pure numpy with a pytorch-like API" --mode interactive
+    factory ceo "a fasta CLI that converts protein sequences to embeddings using ESM2" --mode design
+    factory ceo "an autograd engine in pure numpy with a pytorch-like API" --mode design
     factory ceo "a system that solves IMO geometry problems using lean4 proofs" --mode research
 
   Work on an existing project:
     factory ceo ~/projects/my-app --mode improve --focus "add OAuth2 login with Google and GitHub providers"
     factory ceo ~/projects/my-app --mode improve --focus 42
-    factory ceo ~/projects/my-app --mode interactive
+    factory ceo ~/projects/my-app --mode design
 
   Self-improve the factory:
     factory ceo /path/to/factory --mode meta\
@@ -2295,7 +2295,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     Default: interactive foreground session (user can see and interact).
     With --headless: pipe mode via claude -p (for scripting, cron, etc.).
-    With --mode interactive: brainstorm an idea via research + Strategist before building.
+    With --mode design: brainstorm an idea via research + Strategist before building.
     """
     from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
@@ -2306,6 +2306,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     raw_path = getattr(args, "path", None)
     mode = getattr(args, "mode", "auto")
+    if mode == "interactive":
+        mode = "design"
     headless = getattr(args, "headless", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
@@ -2395,26 +2397,26 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print(result)
         return code
 
-    _interactive_is_existing = (
-        mode == "interactive"
+    _design_is_existing = (
+        mode == "design"
         and raw_path
         and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
-    if mode == "interactive":
+    if mode == "design":
         if headless:
-            print("Error: --mode interactive requires foreground mode "
+            print("Error: --mode design requires foreground mode "
                   "(incompatible with --headless)", file=sys.stderr)
             return 1
         if prompt_file:
-            print("Error: --mode interactive and --prompt are mutually exclusive. "
-                  "Interactive mode generates the spec; --prompt provides one.",
+            print("Error: --mode design and --prompt are mutually exclusive. "
+                  "Design mode generates the spec; --prompt provides one.",
                   file=sys.stderr)
             return 1
-        if focus and not _interactive_is_existing:
-            print("Error: --mode interactive and --focus are mutually exclusive "
+        if focus and not _design_is_existing:
+            print("Error: --mode design and --focus are mutually exclusive "
                   "for new ideas. To discuss a topic on an existing project, "
-                  "pass the project path: factory ceo /path --mode interactive --focus \"topic\"",
+                  "pass the project path: factory ceo /path --mode design --focus \"topic\"",
                   file=sys.stderr)
             return 1
 
@@ -2425,26 +2427,26 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
-    interactive_idea: str | None = None
-    interactive_existing: bool = False
+    design_idea: str | None = None
+    design_existing: bool = False
     research_ideation: str | None = None
     deferred_spec: str | None = None
     needs_materialize = False
-    if mode == "interactive" and _interactive_is_existing:
+    if mode == "design" and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
-        interactive_existing = True
-    elif mode == "interactive":
+        design_existing = True
+    elif mode == "design":
         resolved_file = Path(raw_path).expanduser()
         if resolved_file.is_file():
-            interactive_idea = resolved_file.read_text()
+            design_idea = resolved_file.read_text()
             slug = _slugify(dir_name) if dir_name else _slugify(resolved_file.stem.split("—")[0].strip())
-            project_path = _dedupe_project_path(_get_projects_dir() / slug, interactive_idea)
-            deferred_spec = interactive_idea
+            project_path = _dedupe_project_path(_get_projects_dir() / slug, design_idea)
+            deferred_spec = design_idea
             needs_materialize = True
             print(f"Idea file: {resolved_file.name}")
             print(f"Project directory: {project_path}")
         else:
-            interactive_idea = raw_path
+            design_idea = raw_path
             slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
             project_path = _dedupe_project_path(_get_projects_dir() / slug, raw_path)
             deferred_spec = raw_path
@@ -2511,14 +2513,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode not in ("improve", "research") and not interactive_existing:
+    if focus and mode not in ("improve", "research") and not design_existing:
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
-    if interactive_existing:
-        banner_mode = "interactive"
-    elif mode in ("interactive", "research") and (interactive_idea or research_ideation):
+    if design_existing:
+        banner_mode = "design"
+    elif mode in ("design", "research") and (design_idea or research_ideation):
         banner_mode = "ideation"
     else:
         banner_mode = mode
@@ -2544,9 +2546,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    if interactive_existing:
+    if design_existing:
         ceo_mode = "build"
-    elif mode == "interactive" or research_ideation:
+    elif mode == "design" or research_ideation:
         ceo_mode = "build"
     else:
         ceo_mode = mode
@@ -2567,8 +2569,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
         min_growth=min_growth, max_new=max_new, branch=branch,
         discover_only=discover_only, no_github=no_github,
-        interactive_idea=interactive_idea,
-        interactive_existing=interactive_existing,
+        design_idea=design_idea,
+        design_existing=design_existing,
         research_ideation=research_ideation,
         messages=pending,
         issue_number=issue_number,
@@ -2579,7 +2581,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     session_name = _derive_session_name(
         focus=focus,
-        interactive_idea=interactive_idea,
+        design_idea=design_idea,
         research_ideation=research_ideation,
         raw_path=raw_path,
         project_path=project_path,
@@ -2767,7 +2769,7 @@ def _extract_short_description(text: str, max_words: int = 6) -> str:
 def _derive_session_name(
     *,
     focus: str | None = None,
-    interactive_idea: str | None = None,
+    design_idea: str | None = None,
     research_ideation: str | None = None,
     raw_path: str | None = None,
     project_path: Path,
@@ -2777,7 +2779,7 @@ def _derive_session_name(
 
     Priority:
     1. Focus directive (most specific)
-    2. Interactive idea / research ideation (new project from idea)
+    2. Design idea / research ideation (new project from idea)
     3. Raw idea text (new project from raw prompt, not a path/URL)
     4. Fallback: mode + project directory name
     """
@@ -2788,7 +2790,7 @@ def _derive_session_name(
         label = focus.lower()[:max_len - len(prefix)]
         return f"{prefix}{label}"
 
-    idea = interactive_idea or research_ideation
+    idea = design_idea or research_ideation
     if idea:
         desc = _extract_short_description(idea)
         if desc:
@@ -3176,8 +3178,8 @@ def _build_ceo_task(
     branch: str | None = None,
     discover_only: bool = False,
     no_github: bool = False,
-    interactive_idea: str | None = None,
-    interactive_existing: bool = False,
+    design_idea: str | None = None,
+    design_existing: bool = False,
     research_ideation: str | None = None,
     messages: list[Message] | None = None,
     issue_number: int | None = None,
@@ -3195,11 +3197,11 @@ def _build_ceo_task(
             ts = msg.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             task += f"**[{ts}]** {msg.text}\n\n"
 
-    if interactive_existing:
+    if design_existing:
         task += (
-            f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
+            f"\n\n## Design Mode (Phase 0)\n\n"
             f"**existing_project: true**\n\n"
-            f"You are in interactive ideation mode on an **existing project** at `{project_path}`.\n\n"
+            f"You are in design mode on an **existing project** at `{project_path}`.\n\n"
             f"Before running any experiments, research the project (local study + external "
             f"best practices), distill an improvement spec through user feedback, then "
             f"transition to Improve mode. Follow the Phase 0: Ideation protocol in your "
@@ -3217,11 +3219,11 @@ def _build_ceo_task(
                 "look at the backlog, eval scores, open issues, and recent history — "
                 "then present your findings and recommendations.\n"
             )
-    elif interactive_idea:
+    elif design_idea:
         task += (
-            f"\n\n## Interactive Ideation Mode (Phase 0)\n\n"
-            f"**Raw idea from user:** {interactive_idea}\n\n"
-            f"You are in interactive ideation mode. Before building anything, "
+            f"\n\n## Design Mode (Phase 0)\n\n"
+            f"**Raw idea from user:** {design_idea}\n\n"
+            f"You are in design mode. Before building anything, "
             f"you must refine this idea into a complete spec through research "
             f"and iterative user feedback. Follow the Phase 0: Ideation protocol "
             f"in your system prompt.\n\n"
@@ -3233,7 +3235,7 @@ def _build_ceo_task(
         task += (
             f"\n\n## Research Ideation Mode (Phase 0)\n\n"
             f"**Raw idea from user:** {research_ideation}\n\n"
-            f"You are in research ideation mode. This is like interactive ideation, "
+            f"You are in research ideation mode. This is like design ideation, "
             f"but the Strategist MUST collect research configuration:\n"
             f"- Research Target (objective, metric, target value, run_command, result_path)\n"
             f"- Mutable Surfaces (files the Builder can modify)\n"
@@ -4042,7 +4044,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
     p.add_argument("path", nargs="?", default=None,
                     help="Project path, GitHub URL, idea file path, or prompt. "
-                         "In interactive mode, pass a raw idea string")
+                         "In design mode, pass a raw idea string")
     p.add_argument(
         "--prompt", default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
@@ -4050,10 +4052,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "interactive", "research", "review"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, meta, interactive (research + brainstorm → spec → build), "
+             "build, discover, improve, meta, design (research + brainstorm → spec → build), "
              "research (autonomous research optimization), or review (on-demand PR review)",
     )
     p.add_argument(
@@ -4094,7 +4096,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--refine", default=None, metavar="REQUEST",
         help="Refinement mode: classify and implement a user-directed change. "
-             "Mutually exclusive with --mode interactive, --mode research, --mode meta, --prompt, --focus",
+             "Mutually exclusive with --mode design, --mode research, --mode meta, --prompt, --focus",
     )
     p.add_argument("--use-profile", action="store_true", default=False,
                     help="Inject user profile (~/.factory/profile.md) into agent prompts")

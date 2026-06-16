@@ -56,18 +56,18 @@ factory ceo ~/ideas/weather-dashboard.md      # longer spec as markdown
 factory ceo https://github.com/user/repo      # clone and improve
 ```
 
-### Interactive — you have a rough idea
+### Design — you have a rough idea
 
 When you want to brainstorm before committing to a design:
 
 ```bash
-factory ceo "distributed eval runner" --mode interactive
+factory ceo "distributed eval runner" --mode design
 ```
 
-Interactive mode runs a three-step loop before any code is written:
+Design mode runs a three-step loop before any code is written:
 
 1. **Research** — the Researcher surveys similar projects, tech stacks, and pitfalls
-2. **Distill** — the Distiller synthesizes the research into a structured spec (features, architecture, non-goals)
+2. **Distill** — the Strategist synthesizes the research into a structured plan (features, architecture, phased build steps)
 3. **Iterate** — the CEO presents the draft to you for feedback. Revise until you approve.
 
 Once you sign off, the spec is persisted and re:factory proceeds to Build mode. Incompatible with `--headless` and `--focus`.
@@ -80,7 +80,7 @@ For projects where the goal is to improve a measurable metric against a dataset 
 factory ceo "SWE-bench solver agent" --mode research
 ```
 
-Research ideation works like interactive mode but the Distiller collects additional configuration:
+Research ideation works like design mode but the Strategist collects additional configuration:
 
 - **Research Target** — the metric to improve, the command to run evaluation, where results are written
 - **Mutable Surfaces** — files the Builder is allowed to modify

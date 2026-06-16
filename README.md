@@ -38,7 +38,7 @@ The **welcome wizard** launches automatically — a conversational agent that as
 You can also skip the wizard and call commands directly:
 
 ```bash
-uv run factory ceo "Build a personal homepage with a blog" --mode interactive
+uv run factory ceo "Build a personal homepage with a blog" --mode design
 ```
 
 See the [full setup guide](docs/setup.md) for authentication and environment variables.
@@ -49,7 +49,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 
 | I want to… | Command |
 |---|---|
-| **Start from a raw idea** | `uv run factory ceo "my idea" --mode interactive` |
+| **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
 | **Build from a spec or repo** | `uv run factory ceo spec.md` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
@@ -59,32 +59,32 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 
 ---
 
-## Interactive Workflow
+## Design Workflow
 
-Use interactive mode when you want to brainstorm before building. Start a conversation with the CEO to refine an idea, then build:
+Use design mode when you want to brainstorm before building. Start a conversation with the CEO to refine an idea, then build:
 
 ```bash
 # From a raw idea — discuss and refine into a buildable spec
-uv run factory ceo "distributed task runner" --mode interactive
+uv run factory ceo "distributed task runner" --mode design
 
 # From a spec file — read and discuss before building
-uv run factory ceo ~/ideas/my-app-spec.md --mode interactive
+uv run factory ceo ~/ideas/my-app-spec.md --mode design
 ```
 
-Interactive mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
+Design mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
 
 ```bash
-uv run factory ceo ~/factory-projects/my-app --mode interactive
+uv run factory ceo ~/factory-projects/my-app --mode design
 
 # Seed the conversation with a topic
-uv run factory ceo ~/factory-projects/my-app --mode interactive --focus "auth layer"
+uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 ```
 
 ---
 
 ## Build Workflow
 
-When you already have a spec file, a GitHub repo, or a clear description, re:factory builds directly — no interactive step needed:
+When you already have a spec file, a GitHub repo, or a clear description, re:factory builds directly — no design step needed:
 
 ```bash
 uv run factory ceo ~/ideas/spec.md
@@ -92,7 +92,7 @@ uv run factory ceo https://github.com/user/repo
 uv run factory ceo "Build a personal homepage with a blog"
 ```
 
-The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. Override the output directory with `--dir my-site`. (If you start with a raw idea via `--mode interactive`, the CEO refines it into a spec first, then transitions into this same build pipeline automatically.)
+The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. Override the output directory with `--dir my-site`. (If you start with a raw idea via `--mode design`, the CEO refines it into a spec first, then transitions into this same build pipeline automatically. `--mode interactive` remains accepted as an alias.)
 
 After the first build, a backlog appears at `.factory/strategy/backlog.md` — deferred features that feed future improvement cycles. Manage it with `uv run factory backlog-list`, `uv run factory backlog-add`, and `uv run factory backlog-remove`.
 
@@ -275,7 +275,7 @@ re:factory improves itself. Every keep/revert decision becomes training data —
 | **HLS design space explorer** | Per-function AI agents + ILP solver for HLS optimization — 92% execution time reduction | Build |
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
 | **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
-| **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Interactive + Improve |
+| **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Design + Improve |
 | **re:factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
 
 Built something with re:factory? Open a PR to add it here.
@@ -287,7 +287,7 @@ Built something with re:factory? Open a PR to add it here.
 ```bash
 # Core workflow
 uv run factory ceo <path|url|idea>              # Build or improve
-uv run factory ceo <path> --mode interactive    # Discuss, then execute
+uv run factory ceo <path> --mode design         # Discuss, then execute
 uv run factory ceo <path> --focus "..."         # One target, one experiment
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
 uv run factory ceo <path> --loop                # Continuous loop (research projects)

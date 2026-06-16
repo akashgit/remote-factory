@@ -34,7 +34,7 @@ Nine specialist Claude Code subprocesses, each with a narrow responsibility:
 | **Reviewer** | Guard rules + structured code review | `factory agent reviewer --task "..."` |
 | **Evaluator** | Run evals, compare before/after scores | `factory agent evaluator --task "..."` |
 | **Archivist** | Write learnings to `.factory/archive/`, update performance reports | `factory agent archivist --task "..."` |
-| **Distiller** | Synthesize research + raw idea into a buildable project spec | `factory agent distiller --task "..."` |
+| **Strategist (Design mode)** | Synthesize research + raw idea into a buildable project plan during ideation | `factory agent strategist --task "..."` |
 | **Refiner** | Classify and scope post-cycle refinement requests (T1/T2/T3 tiers) | `factory agent refiner --task "..."` |
 | **Failure Analyst** | Classify run failures by root cause (research mode only) | `factory agent failure_analyst --task "..."` |
 
@@ -61,7 +61,7 @@ The CEO detects project state and routes to the appropriate mode:
 | Flag | Mode | What it does |
 |------|------|-------------|
 | `--focus "item"` | **Targeted** | Pins one backlog item, one hypothesis, one experiment, then exits |
-| `--mode interactive` | **Interactive** | Research → Distiller spec → user feedback loop → build |
+| `--mode design` | **Design** | Research → Strategist plan → user feedback loop → build |
 | `--mode research` | **Research** | Failure analysis → targeted research → hypothesis → build → metric evaluation with leakage guards and monotonic improvement |
 | `--mode meta` | **Meta** | Full Improve loop on re:factory itself, then ACE playbook evolution |
 | `--refine "request"` | **Refine** | Refiner scopes → Builder implements → full review pipeline → keep/revert |
@@ -70,7 +70,7 @@ State detection logic lives in `factory/state.py`.
 
 ![State Machine](diagrams/state-machine.svg)
 
-> **Note:** Explicit flags (`--mode interactive`, `--mode research`, `--mode meta`, `--focus`) override auto-detection. All modes return to `has_factory` on completion.
+> **Note:** Explicit flags (`--mode design`, `--mode research`, `--mode meta`, `--focus`) override auto-detection. `--mode interactive` remains accepted as a backward-compatible alias. All modes return to `has_factory` on completion.
 
 ## Data Flow
 
@@ -82,13 +82,13 @@ factory/discovery/profile.py      → Build EvalProfile with dimensions and weig
 factory/discovery/generate.py     → Generate eval/score.py script
 ```
 
-### Ideation Pipeline (Interactive Mode)
+### Ideation Pipeline (Design Mode)
 
 ```
 1. Researcher surveys   → .factory/strategy/research.md (domain landscape)
-2. Distiller synthesizes → idea.md spec (features, architecture, non-goals)
+2. Strategist synthesizes → phased build plan (features, architecture, phased execution)
 3. CEO presents draft    → user reviews, gives feedback
-4. Iterate (2-3)         → Distiller revises, optional follow-up research
+4. Iterate (2-3)         → Strategist revises, optional follow-up research
 5. User approves         → spec persisted to .factory/strategy/current.md
 6. Transition            → proceed to Build mode
 ```

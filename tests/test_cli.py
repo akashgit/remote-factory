@@ -37,6 +37,7 @@ def _mock_foreground():
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
          patch("factory.cli._read_target_branch", return_value="main"), \
+         patch("factory.cli._is_scaffold_only", return_value=False), \
          patch("factory.cli._ensure_dashboard"):
         yield mock_run
 
@@ -112,7 +113,13 @@ class TestParser:
         assert args.project == "."
         assert args.data is None
 
-    def test_ceo_mode_interactive(self):
+    def test_ceo_mode_design(self):
+        parser = build_parser()
+        args = parser.parse_args(["ceo", "distributed eval runner", "--mode", "design"])
+        assert args.mode == "design"
+        assert args.path == "distributed eval runner"
+
+    def test_ceo_mode_interactive_backward_compat(self):
         parser = build_parser()
         args = parser.parse_args(["ceo", "distributed eval runner", "--mode", "interactive"])
         assert args.mode == "interactive"
@@ -120,7 +127,7 @@ class TestParser:
 
     def test_ceo_path_optional(self):
         parser = build_parser()
-        args = parser.parse_args(["ceo", "--mode", "interactive"])
+        args = parser.parse_args(["ceo", "--mode", "design"])
         assert args.path is None
 
     def test_ceo_agent_strategist_choice(self):
@@ -134,34 +141,34 @@ class TestParser:
         assert args.role == "failure_analyst"
 
 
-class TestCmdCeoInteractive:
-    def test_interactive_headless_incompatible(self, capsys):
-        result = main(["ceo", "an idea", "--mode", "interactive", "--headless"])
+class TestCmdCeoDesign:
+    def test_design_headless_incompatible(self, capsys):
+        result = main(["ceo", "an idea", "--mode", "design", "--headless"])
         assert result == 1
         assert "incompatible" in capsys.readouterr().err.lower()
 
-    def test_interactive_prompt_incompatible(self, capsys):
-        result = main(["ceo", "an idea", "--mode", "interactive", "--prompt", "file.md"])
+    def test_design_prompt_incompatible(self, capsys):
+        result = main(["ceo", "an idea", "--mode", "design", "--prompt", "file.md"])
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err.lower()
 
-    def test_interactive_focus_incompatible_new_idea(self, capsys):
-        """--focus + --mode interactive is rejected for new ideas (non-directory paths)."""
-        result = main(["ceo", "an idea", "--mode", "interactive", "--focus", "UI"])
+    def test_design_focus_incompatible_new_idea(self, capsys):
+        """--focus + --mode design is rejected for new ideas (non-directory paths)."""
+        result = main(["ceo", "an idea", "--mode", "design", "--focus", "UI"])
         assert result == 1
         err = capsys.readouterr().err.lower()
         assert "new ideas" in err
 
-    def test_interactive_focus_allowed_existing_project(self, tmp_path):
-        """--focus + --mode interactive is allowed when path is an existing directory."""
+    def test_design_focus_allowed_existing_project(self, tmp_path):
+        """--focus + --mode design is allowed when path is an existing directory."""
         (tmp_path / ".git").mkdir()
         with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "interactive", "--focus", "auth layer"])
+            main(["ceo", str(tmp_path), "--mode", "design", "--focus", "auth layer"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "## Design Mode (Phase 0)" in task
         assert "auth layer" in task
 
     def test_no_path_fails(self, capsys):
@@ -170,61 +177,70 @@ class TestCmdCeoInteractive:
         err = capsys.readouterr().err.lower()
         assert "provide" in err or "error" in err
 
-    def test_interactive_foreground_uses_subprocess_run(self, tmp_path):
-        """--mode interactive launches via subprocess.run (foreground)."""
+    def test_design_foreground_uses_subprocess_run(self, tmp_path):
+        """--mode design launches via subprocess.run (foreground)."""
         with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "interactive"])
+            main(["ceo", str(tmp_path), "--mode", "design"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
-    def test_interactive_existing_has_ideation_block(self, tmp_path):
-        """--mode interactive on an existing directory injects Ideation Mode block."""
+    def test_design_existing_has_ideation_block(self, tmp_path):
+        """--mode design on an existing directory injects Design Mode block."""
         with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "interactive"])
+            main(["ceo", str(tmp_path), "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "## Design Mode (Phase 0)" in task
         assert "existing_project: true" in task
 
-    def test_interactive_new_idea_has_ideation_block(self):
-        """--mode interactive with a non-directory path injects Ideation Mode block."""
+    def test_design_new_idea_has_ideation_block(self):
+        """--mode design with a non-directory path injects Design Mode block."""
         with _mock_foreground() as mock_run:
-            main(["ceo", "build a cool CLI tool", "--mode", "interactive"])
+            main(["ceo", "build a cool CLI tool", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        assert "## Design Mode (Phase 0)" in task
         assert "## Project Specification" not in task
 
-    def test_interactive_task_contains_idea_text(self):
-        """--mode interactive with raw idea text includes it in the Phase 0 block."""
+    def test_design_task_contains_idea_text(self):
+        """--mode design with raw idea text includes it in the Phase 0 block."""
         with _mock_foreground() as mock_run:
-            main(["ceo", "distributed eval runner", "--mode", "interactive"])
+            main(["ceo", "distributed eval runner", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_interactive_existing_mode_is_build(self, tmp_path):
-        """--mode interactive on existing dir sets Mode: build in the CEO task."""
+    def test_design_existing_mode_is_build(self, tmp_path):
+        """--mode design on existing dir sets Mode: build in the CEO task."""
         with _mock_foreground() as mock_run:
-            main(["ceo", str(tmp_path), "--mode", "interactive"])
+            main(["ceo", str(tmp_path), "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
 
-    def test_interactive_new_idea_mode_is_build(self):
-        """--mode interactive with new idea sets Mode: build in the CEO task."""
+    def test_design_new_idea_mode_is_build(self):
+        """--mode design with new idea sets Mode: build in the CEO task."""
         with _mock_foreground() as mock_run:
-            main(["ceo", "weather CLI", "--mode", "interactive"])
+            main(["ceo", "weather CLI", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
+
+    def test_interactive_backward_compat_alias(self, tmp_path):
+        """--mode interactive is accepted as a backward-compatible alias for design."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "interactive"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Design Mode (Phase 0)" in task
 
 
 def _make_config(*, research_target: dict | None = None) -> dict:
@@ -345,14 +361,14 @@ class TestCmdCeoResearchIdeation:
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
 
-    def test_research_ideation_no_interactive_block(self):
-        """--mode research should NOT inject Interactive Ideation block."""
+    def test_research_ideation_no_design_block(self):
+        """--mode research should NOT inject Design Mode block."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Interactive Ideation Mode" not in task
+        assert "## Design Mode" not in task
 
     def test_research_ideation_mentions_research_config(self):
         """--mode research ideation task mentions research config fields."""
@@ -1404,45 +1420,45 @@ class TestResearchMode:
         assert mode == "improve"
 
 
-class TestBuildCeoTaskInteractive:
-    """Unit tests for _build_ceo_task interactive_existing parameter."""
+class TestBuildCeoTaskDesign:
+    """Unit tests for _build_ceo_task design_existing parameter."""
 
     def test_existing_project_emits_ideation_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        task = _build_ceo_task(tmp_path, "build", design_existing=True)
+        assert "## Design Mode (Phase 0)" in task
         assert "existing_project: true" in task
         assert "existing project" in task
 
     def test_existing_project_with_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", interactive_existing=True, focus="auth layer")
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        task = _build_ceo_task(tmp_path, "build", design_existing=True, focus="auth layer")
+        assert "## Design Mode (Phase 0)" in task
         assert "auth layer" in task
         assert "Focus topic" in task
 
     def test_existing_project_without_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        task = _build_ceo_task(tmp_path, "build", design_existing=True)
         assert "No specific topic was provided" in task
 
     def test_new_idea_emits_ideation_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", interactive_idea="weather CLI")
-        assert "## Interactive Ideation Mode (Phase 0)" in task
+        task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        assert "## Design Mode (Phase 0)" in task
         assert "weather CLI" in task
 
     def test_existing_uses_same_header_as_new_idea(self, tmp_path):
         """Both new ideas and existing projects use the same Phase 0 header."""
-        existing_task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
-        new_task = _build_ceo_task(tmp_path, "build", interactive_idea="weather CLI")
-        assert "## Interactive Ideation Mode (Phase 0)" in existing_task
-        assert "## Interactive Ideation Mode (Phase 0)" in new_task
+        existing_task = _build_ceo_task(tmp_path, "build", design_existing=True)
+        new_task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        assert "## Design Mode (Phase 0)" in existing_task
+        assert "## Design Mode (Phase 0)" in new_task
 
     def test_existing_project_has_existing_flag(self, tmp_path):
         """Existing project task includes the existing_project flag for CEO conditionals."""
-        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        task = _build_ceo_task(tmp_path, "build", design_existing=True)
         assert "existing_project: true" in task
 
     def test_existing_mode_is_build(self, tmp_path):
         """When ceo_mode is build (as set by cli.py), task shows Mode: build."""
-        task = _build_ceo_task(tmp_path, "build", interactive_existing=True)
+        task = _build_ceo_task(tmp_path, "build", design_existing=True)
         assert "Mode: build" in task
 
 
@@ -1713,15 +1729,15 @@ class TestEnsureRepo:
         assert count_before == count_after
 
 
-class TestInteractiveFileInput:
-    """Tests for interactive mode with file path input (Bug 1 fix)."""
+class TestDesignFileInput:
+    """Tests for design mode with file path input (Bug 1 fix)."""
 
-    def test_file_content_becomes_interactive_idea(self, tmp_path):
-        """When --mode interactive receives a file path, the file content should be used as the idea."""
+    def test_file_content_becomes_design_idea(self, tmp_path):
+        """When --mode design receives a file path, the file content should be used as the idea."""
         spec_file = tmp_path / "my-cool-app.md"
         spec_file.write_text("Build a weather dashboard with real-time updates")
         with _mock_foreground() as mock_run:
-            main(["ceo", str(spec_file), "--mode", "interactive"])
+            main(["ceo", str(spec_file), "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
@@ -1732,16 +1748,16 @@ class TestInteractiveFileInput:
         spec_file = tmp_path / "weather-dashboard.md"
         spec_file.write_text("Build a weather dashboard")
         with _mock_foreground():
-            main(["ceo", str(spec_file), "--mode", "interactive"])
+            main(["ceo", str(spec_file), "--mode", "design"])
         output = capsys.readouterr().out
         assert "weather-dashboard" in output
         assert "Idea file: weather-dashboard.md" in output
 
     def test_raw_idea_persists_spec(self, tmp_path):
-        """When --mode interactive receives a raw string, the spec should be persisted."""
+        """When --mode design receives a raw string, the spec should be persisted."""
         with _mock_foreground(), \
              patch("factory.cli._get_projects_dir", return_value=tmp_path):
-            main(["ceo", "Build a CLI todo app", "--mode", "interactive"])
+            main(["ceo", "Build a CLI todo app", "--mode", "design"])
         matches = [p for p in tmp_path.iterdir() if p.is_dir()]
         assert len(matches) == 1
         spec_path = matches[0] / ".factory" / "strategy" / "current.md"

@@ -421,9 +421,9 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 
 ---
 
-## Interactive / Ideation Mode
+## Design / Ideation Mode
 
-When invoked during the factory's Interactive or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
+When invoked during the factory's Design or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
 
 ### Context (Ideation)
 

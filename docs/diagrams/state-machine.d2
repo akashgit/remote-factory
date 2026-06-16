@@ -70,8 +70,8 @@ modes: {
     label: Research
     style: { fill: "#80CBC4"; stroke: "#00695C"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
   }
-  interactive: {
-    label: Interactive
+  design: {
+    label: Design
     style: { fill: "#B39DDB"; stroke: "#4527A0"; font-color: "#0D1B2A"; font-size: 13; bold: true; border-radius: 6 }
   }
   meta: {
@@ -106,7 +106,7 @@ states.has_factory -> modes.improve {
 note: {
   label: |md
     Explicit flags override auto-detection:
-    `--mode interactive` · `--mode research` · `--mode meta` · `--focus "item"`
+    `--mode design` · `--mode research` · `--mode meta` · `--focus "item"`
     All modes return to **has_factory** on completion.
   |
   shape: text

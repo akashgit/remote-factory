@@ -17,8 +17,8 @@ You give it a spec file, a rough idea, or an existing codebase. re:factory resea
 # Build — have a fleshed-out idea? Pass the file.
 factory ceo ~/ideas/weather-dashboard.md
 
-# Interactive — just starting to think about it? Brainstorm first.
-factory ceo "distributed eval runner" --mode interactive
+# Design — just starting to think about it? Brainstorm first.
+factory ceo "distributed eval runner" --mode design
 
 # Research — have a metric to optimize? re:factory runs experiments.
 factory ceo "SWE-bench solver agent" --mode research
@@ -50,7 +50,7 @@ graph LR
     style G fill:#e53935,color:#fff,stroke:#c62828
 ```
 
-A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Distiller, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In interactive mode, the Distiller synthesizes research into a buildable spec through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and also handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In design mode, the Strategist synthesizes research into a buildable plan through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
 
 ## Workflows
 
@@ -81,13 +81,13 @@ factory ceo ~/my-project --focus "add authentication middleware"
 
 When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits. The entire pipeline is scoped to that single target.
 
-### Interactive — brainstorm before building
+### Design — brainstorm before building
 
 ```bash
-factory ceo "distributed eval runner" --mode interactive
+factory ceo "distributed eval runner" --mode design
 ```
 
-Have a rough idea? Interactive mode researches the space, drafts a structured spec via the Distiller agent, and lets you iterate on it before any code is written.
+Have a rough idea? Design mode researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.
 
 ### Research — optimize a metric iteratively
 
@@ -163,7 +163,7 @@ graph TB
     subgraph agents ["Specialist Agents"]
         R["Researcher"] ~~~ S["Strategist"] ~~~ BU["Builder"]
         RE["Reviewer"] ~~~ EV["Evaluator"] ~~~ AR["Archivist"]
-        DI["Distiller"] ~~~ FA["Failure Analyst"]
+        RF["Refiner"] ~~~ FA["Failure Analyst"]
     end
     subgraph ceo ["CEO Agent"]
         C["Detect state → Route mode → Spawn agents → Keep/Revert → Archive"]
