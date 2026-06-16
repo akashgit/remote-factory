@@ -217,8 +217,7 @@ class TestCodexHeadless:
             assert cmd[0] == "codex"
             assert cmd[1] == "exec"
             assert "--ignore-user-config" in cmd
-            assert "--sandbox" in cmd
-            assert "workspace-write" in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--ask-for-approval" not in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
