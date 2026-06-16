@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -186,18 +188,24 @@ class OpenCodeRunner:
         """Build the OpenCode CLI command and env dict."""
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-opencode-prompt-", delete=False,
+        )
+        prompt_file.write(full_prompt)
+        prompt_file.close()
+        prompt_path = Path(prompt_file.name)
+
         cmd = [
-            "opencode",
-            "-p", full_prompt,
-            "-c", str(request.cwd),
-            "-q",
+            "bash", "-c",
+            f"opencode -p \"$(cat {shlex.quote(str(prompt_path))})\" "
+            f"-c {shlex.quote(str(request.cwd))} -q",
         ]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, []
+        return cmd, env, [prompt_path]
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode invocation."""
@@ -207,26 +215,41 @@ class OpenCodeRunner:
 
         _check_auth()
 
-        cmd, env, _ = self.build_command(request)
+        cmd, env, temp_files = self.build_command(request)
 
-        log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+        try:
+            log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
 
-        return await run_subprocess(
-            cmd, cwd=str(request.cwd), env=env,
-            timeout=request.timeout, runner_name="opencode", role=request.role,
-        )
+            return await run_subprocess(
+                cmd, cwd=str(request.cwd), env=env,
+                timeout=request.timeout, runner_name="opencode", role=request.role,
+            )
+        finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
         full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
 
-        cmd = ["opencode", "-p", full_prompt, "-c", str(request.cwd)]
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-opencode-prompt-", delete=False,
+        )
+        prompt_file.write(full_prompt)
+        prompt_file.close()
+        prompt_path = Path(prompt_file.name)
+
+        cmd = [
+            "bash", "-c",
+            f"opencode -p \"$(cat {shlex.quote(str(prompt_path))})\" "
+            f"-c {shlex.quote(str(request.cwd))}",
+        ]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, []
+        return cmd, env, [prompt_path]
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode session as a subprocess."""
@@ -235,10 +258,14 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        cmd, env, _ = self.build_interactive_command(request)
+        cmd, env, temp_files = self.build_interactive_command(request)
 
-        log.info("opencode_interactive", cwd=str(request.cwd))
+        try:
+            log.info("opencode_interactive", cwd=str(request.cwd))
 
-        result = subprocess.run(cmd, cwd=request.cwd, env=env)
-        return result.returncode
+            result = subprocess.run(cmd, cwd=request.cwd, env=env)
+            return result.returncode
+        finally:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
 
