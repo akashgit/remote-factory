@@ -147,9 +147,13 @@ def _write_agents_md(project_root: Path, role_prompt: str) -> tuple[Path, Path |
     """
     agents_md = project_root / "AGENTS.md"
     backup: Path | None = None
+    backup_path = project_root / ".AGENTS.md.factory-backup"
     if agents_md.exists():
-        backup = project_root / ".AGENTS.md.factory-backup"
-        agents_md.rename(backup)
+        if backup_path.exists():
+            backup = backup_path
+        else:
+            agents_md.rename(backup_path)
+            backup = backup_path
     agents_md.write_text(role_prompt)
     return agents_md, backup
 
@@ -210,6 +214,10 @@ class CodexRunner:
         """Run a headless Codex CLI invocation via ``codex exec``."""
         from factory.models import AgentRunResult
 
+        if is_codex_dry_run():
+            from factory.runners._subprocess import make_dry_run_result
+            return make_dry_run_result("codex", request.role, request.cwd, request.task)
+
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
             from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
@@ -238,10 +246,6 @@ class CodexRunner:
                         self._tmpdir = None
             else:
                 log.warning("tmux_not_available")
-
-        if is_codex_dry_run():
-            from factory.runners._subprocess import make_dry_run_result
-            return make_dry_run_result("codex", request.role, request.cwd, request.task)
 
         _check_auth()
 

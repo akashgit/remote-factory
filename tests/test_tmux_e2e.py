@@ -139,14 +139,16 @@ class TestParseCodexNdjsonUsage:
 
 class TestWriteAgentsMd:
     def test_writes_file(self, tmp_path: Path) -> None:
-        path = _write_agents_md(tmp_path, "You are a researcher.")
-        assert path == tmp_path / "AGENTS.md"
-        assert path.read_text() == "You are a researcher."
+        agents_md, backup = _write_agents_md(tmp_path, "You are a researcher.")
+        assert agents_md == tmp_path / "AGENTS.md"
+        assert agents_md.read_text() == "You are a researcher."
+        assert backup is None
 
     def test_overwrites_existing(self, tmp_path: Path) -> None:
         (tmp_path / "AGENTS.md").write_text("old content")
-        path = _write_agents_md(tmp_path, "new content")
-        assert path.read_text() == "new content"
+        agents_md, backup = _write_agents_md(tmp_path, "new content")
+        assert agents_md.read_text() == "new content"
+        assert backup is not None
 
 
 class TestCodexMetaTelemetry:
