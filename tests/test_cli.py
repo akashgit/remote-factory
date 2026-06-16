@@ -37,6 +37,7 @@ def _mock_foreground():
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
          patch("factory.cli._read_target_branch", return_value="main"), \
+         patch("factory.cli._is_scaffold_only", return_value=False), \
          patch("factory.cli._ensure_dashboard"):
         yield mock_run
 
