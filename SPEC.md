@@ -22,7 +22,7 @@ work, binds that work to a project context, dispatches coding agents under an
 execution contract, validates the result through guardrails, records evidence,
 and converts the outcome into an explicit decision and durable memory.
 
-The system solves six operational problems:
+The system solves five operational problems:
 
 - It turns agentic coding into a repeatable SDLC lifecycle instead of ad hoc
   prompts or scripts.
@@ -30,13 +30,10 @@ The system solves six operational problems:
   product packaging.
 - It makes each change measurable and reversible through evidence, guardrails,
   and explicit decisions.
-- It keeps project state durable enough to support resume, review, learning, and
-  future multi-user reconciliation.
-- It allows the same lifecycle semantics to be exposed through different
-  deployment profiles, with the CLI-local profile as the primary product
-  surface.
-- It creates a vocabulary for future local, plugin-native, hybrid, and managed
-  implementations without changing the meaning of a project cycle.
+- It keeps project state durable enough to support resume, review, and
+  learning.
+- It allows the same lifecycle semantics to be realized through different
+  deployment profiles without changing the meaning of a project cycle.
 
 Important boundary:
 
@@ -54,17 +51,18 @@ Important boundary:
 
 - Represent software work as normalized work items.
 - Bind work items to a durable project context.
-- Support projects that contain one repository or multiple repository bindings.
+- Support projects that bind the repository or execution context needed for
+  work.
 - Dispatch agents through explicit execution contracts.
 - Preserve evidence for diffs, logs, evals, reviews, reports, and artifacts.
 - Validate outcomes through guardrails before a decision is accepted.
 - Record decisions as first-class lifecycle outputs.
 - Maintain durable memory for project learning and future planning.
-- Support state backends that can reconcile records from multiple users or
-  external systems.
+- Preserve durable state for resume, review, and learning, with optional
+  reconciliation to external systems where supported.
 - Treat the CLI-local profile as the primary compatibility surface.
 - Allow other deployment profiles to bundle different runtimes, state backends,
-  guardrails, and artifact emitters while preserving common lifecycle semantics.
+  guardrails, and output surfaces while preserving common lifecycle semantics.
 
 ### 2.2 Non-Goals
 
@@ -82,13 +80,13 @@ Important boundary:
 
 1. `Deployment Profile`
    - Names a product surface and selected component implementations.
-   - Declares runtime, state backend, guardrails, artifact emitters, and policy
+   - Declares runtime, state handling, guardrails, output surfaces, and policy
      sources.
    - Does not redefine the core domain model.
 2. `Project Resolver`
    - Converts user input or configuration into a project context.
-   - Binds one or more repositories to the project.
-   - Binds one or more state locations to the project.
+   - Binds the repository, checkout, and state locations required by the
+     selected implementation.
 3. `Work Item Source`
    - Reads work from prompts, backlog entries, issues, tickets, or research
      targets.
@@ -108,15 +106,14 @@ Important boundary:
    - Evaluates tests, lint, type checks, eval metrics, CI state, review policy,
      scope rules, leakage rules, security policy, or other checks.
 8. `State Backend`
-   - Persists project records, evidence references, decisions, memory, and
-     conflicts.
-   - MAY mirror or reconcile state with external systems.
+   - Persists project records, evidence references, decisions, and memory.
+   - MAY mirror or reconcile state with external systems when supported.
 9. `Memory System`
    - Preserves durable learnings, observations, playbook evidence, reports, and
      handoff records.
-10. `Artifact Emitter`
-    - Produces distribution artifacts such as agent files, plugin manifests, or
-      managed-runtime descriptors.
+10. `Output Surface`
+    - Publishes or materializes implementation-defined lifecycle outputs such as
+      reviews, reports, generated assets, or external updates.
 
 ### 3.2 Abstraction Levels
 
@@ -132,8 +129,8 @@ re:factory is easiest to port when kept in these layers:
 4. `Execution Layer`
    - Worker runtime, repository checkout/worktree behavior, and agent protocol.
 5. `State Layer`
-   - Project records, event streams, materialized views, external bindings, and
-     conflict records.
+   - Project records, event streams, materialized views, and external bindings
+     when present.
 6. `Guardrail and Evidence Layer`
    - Checks, artifacts, logs, scores, reviews, and reports.
 7. `Memory and Observability Layer`
@@ -162,14 +159,17 @@ Logical fields:
 - `project_id`: stable project identifier.
 - `name`: human-readable project name.
 - `goal`: project objective or mission statement.
-- `repo_bindings`: list of repositories bound to the project.
-- `state_bindings`: list of state substrates bound to the project.
+- `repo_bindings`: repository or checkout bindings associated with the project.
+- `state_bindings`: durable or external state substrates associated with the
+  project.
 - `policy_refs`: references to project policy/configuration.
 - `memory_refs`: references to durable project memory.
 
 Rules:
 
-- A project MAY bind one repository or multiple repositories.
+- A project MUST bind the execution context needed for the work.
+- Implementations MAY realize that execution context as one repository binding
+  or multiple repository bindings.
 - Work items, decisions, and memory belong to the project.
 - Diffs, branches, and checkouts belong to repository bindings.
 - Runtime and deployment profile are not project-owned.
@@ -223,7 +223,7 @@ Logical fields:
 - `title`
 - `body`
 - `labels`
-- `repo_ids`
+- `repo_ids` (OPTIONAL)
 - `external_refs`
 - `metadata`
 
@@ -306,15 +306,16 @@ work-item identity, runtime identity, and external references.
 A `Decision` is the lifecycle outcome accepted from evidence and guardrail
 results.
 
-Decision kinds include:
+Common decision kinds include:
 
 - `keep`
 - `revert`
-- `merge`
 - `park`
 - `retry`
 - `escalate`
 - `error`
+
+Implementations MAY expose additional publication or escalation outcomes.
 
 Decisions MUST include rationale and SHOULD reference supporting evidence.
 
@@ -345,16 +346,17 @@ Logical fields:
 - `runtime`
 - `state_backend`
 - `guardrails`
-- `artifact_emitters`
+- `output_surfaces`
 - `policy_sources`
 
 The `cli-local` deployment profile is the primary product surface for this
 specification. Other profiles MAY expose different surfaces, but SHOULD
-preserve CLI-compatible lifecycle semantics.
+preserve the lifecycle semantics of this specification.
 
-### 4.12 State Record and Conflict
+### 4.12 Shared State Records (OPTIONAL)
 
-A `StateRecord` is a merge-ready representation of project state.
+Implementations that support shared, externally reconciled, or multi-actor
+state MAY represent project state as `StateRecord`s.
 
 Logical fields:
 
@@ -370,8 +372,11 @@ Logical fields:
 - `updated_at`
 - `payload`
 
-A `StateConflict` records an unresolved state merge problem. Important state
-MUST NOT be silently overwritten when conflicting edits are detected.
+A `StateConflict` records an unresolved merge problem when such
+implementations detect one.
+
+Implementations that do not expose shared-state semantics do not need to model
+state records or conflicts as first-class domain objects.
 
 ## 5. Lifecycle Specification
 
@@ -442,38 +447,30 @@ It consists of:
 - local worker runtime
 - local project state backend
 - local guardrail providers
-- artifact emitters for local agent/plugin artifacts
+- implementation-defined local output surfaces
 
 ### 6.2 Extension Profiles
 
-Other deployment profiles MAY exist:
-
-- `plugin-native`
-- `hybrid`
-- `managed`
+Other deployment profiles MAY exist. This specification does not require any
+fixed catalog beyond `cli-local`.
 
 Extension profiles MUST document selected component implementations and
 SHOULD preserve the lifecycle semantics in this specification.
 
-## 7. State and Merge Semantics
+## 7. Shared-State Semantics (OPTIONAL)
+
+This section applies only to implementations that support shared, externally
+reconciled, or multi-actor state.
 
 State backends SHOULD prefer append-only events and immutable evidence over
 destructive updates.
 
 Materialized views SHOULD be rebuildable from durable records.
 
-Merge policies are record-kind specific:
+Record kinds MAY define different merge policies.
 
-- Evidence and artifacts are append-only.
-- Work-item status uses source-aware reconciliation.
-- Decisions and verdicts are single-owner or conflict-blocking.
-- Memory and playbook rules use evidence ledgers with reinforce/contradict
-  counts.
-- Configuration and execution contracts use optimistic concurrency with explicit
-  conflict records.
-
-Multi-user implementations MUST represent unresolved important conflicts as
-state records rather than silently applying last-writer-wins.
+When an implementation supports multi-user state, it MUST represent unresolved
+important conflicts explicitly rather than silently applying last-writer-wins.
 
 ## 8. Guardrails and Trust Policy
 
@@ -499,7 +496,7 @@ A conforming implementation MUST:
 
 - represent work as work items
 - bind work to project context
-- distinguish projects from repository bindings
+- distinguish project-level lifecycle state from checkout or runtime state
 - execute work under an execution contract
 - record evidence for validation and decisions
 - run or consume guardrail outcomes before accepting decisions
