@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import os
-import shlex
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -185,27 +183,19 @@ class OpenCodeRunner:
         )
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
-        """Build the OpenCode CLI command and env dict."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        """Build the OpenCode CLI command and env dict.
 
-        prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-opencode-prompt-", delete=False,
-        )
-        prompt_file.write(full_prompt)
-        prompt_file.close()
-        prompt_path = Path(prompt_file.name)
-
-        cmd = [
-            "bash", "-c",
-            f"opencode -p \"$(cat {shlex.quote(str(prompt_path))})\" "
-            f"-c {shlex.quote(str(request.cwd))} -q",
-        ]
+        OpenCode has no system-prompt slot and -p is subject to ARG_MAX, so we
+        pass only the short task string.  The full factory system prompt is
+        intentionally dropped (known limitation, gap G2).
+        """
+        cmd = ["opencode", "-p", request.task, "-c", str(request.cwd), "-q"]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, [prompt_path]
+        return cmd, env, []
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode invocation."""
@@ -229,27 +219,19 @@ class OpenCodeRunner:
                 f.unlink(missing_ok=True)
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
-        """Build the CLI command, env dict, and temp files for an interactive invocation."""
-        full_prompt = f"{request.prompt}\n\n---\n\n## Current Task\n\n{request.task}"
+        """Build the CLI command, env dict, and temp files for an interactive invocation.
 
-        prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-opencode-prompt-", delete=False,
-        )
-        prompt_file.write(full_prompt)
-        prompt_file.close()
-        prompt_path = Path(prompt_file.name)
-
-        cmd = [
-            "bash", "-c",
-            f"opencode -p \"$(cat {shlex.quote(str(prompt_path))})\" "
-            f"-c {shlex.quote(str(request.cwd))}",
-        ]
+        Interactive mode launches the TUI — no -p flag needed since the user
+        drives the session directly.  OpenCode has no system-prompt slot, so the
+        factory prompt is intentionally omitted.
+        """
+        cmd = ["opencode", "-c", str(request.cwd)]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, [prompt_path]
+        return cmd, env, []
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode session as a subprocess."""
