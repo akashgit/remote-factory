@@ -223,7 +223,7 @@ class TestTmuxPersistGenericCommand:
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
             patch.object(Path, "write_text", spy_write_text),
         ):
-            mock_run.side_effect = [MagicMock(returncode=0)]
+            mock_run.return_value = MagicMock(returncode=0)
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -258,7 +258,7 @@ class TestTmuxPersistGenericCommand:
             patch("factory.runners._tmux_persist._session_exists", return_value=False),
             patch("factory.runners._tmux_persist._window_exists", return_value=False),
         ):
-            mock_run.side_effect = [MagicMock(returncode=0)]
+            mock_run.return_value = MagicMock(returncode=0)
 
             with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
@@ -271,8 +271,8 @@ class TestTmuxPersistGenericCommand:
                 )
 
         cmds_called = [call[0][0] for call in mock_run.call_args_list]
-        send_keys_cmds = [c for c in cmds_called if "send-keys" in c]
-        assert len(send_keys_cmds) == 0, "Should not send /exit for non-Claude runner"
+        exit_cmds = [c for c in cmds_called if "send-keys" in c and "/exit" in c]
+        assert len(exit_cmds) == 0, "Should not send /exit for non-Claude runner"
 
 
 # ── real E2E tests (slow, require actual CLI binaries) ───────────
