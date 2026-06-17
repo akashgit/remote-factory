@@ -1427,8 +1427,13 @@ class TestCeilingAccumulationAcrossInvocations:
 class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
-    def test_interactive_run_launches_tui_with_task(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """interactive_run() launches opencode TUI with -p task so it starts working immediately."""
+    def test_interactive_run_launches_tui(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """interactive_run() launches opencode TUI without -p (user types the task).
+
+        OpenCode's -p flag runs headless (exits after one response), so
+        interactive mode must launch the bare TUI. The task is injected
+        by the user or via tmux send-keys after boot.
+        """
         monkeypatch.setenv("OPENAI_API_KEY", "test-key")
         monkeypatch.delenv("FACTORY_OPENCODE_DRY_RUN", raising=False)
         runner = OpenCodeRunner()
@@ -1444,8 +1449,7 @@ class TestOpenCodeInteractive:
             assert code == 0
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "opencode"
-            assert "-p" in cmd
-            assert "Start session" in cmd
+            assert "-p" not in cmd
             assert "-c" in cmd
             assert str(tmp_path) in cmd
 
@@ -1811,8 +1815,7 @@ class TestOpenCodeBuildInteractiveCommand:
         ))
 
         assert cmd[0] == "opencode"
-        assert "-p" in cmd
-        assert "Start session" in cmd
+        assert "-p" not in cmd
         assert "-c" in cmd
         assert str(tmp_path) in cmd
         assert "-q" not in cmd

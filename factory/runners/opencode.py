@@ -288,8 +288,9 @@ class OpenCodeRunner:
         """Build the CLI command, env dict, and temp files for an interactive invocation.
 
         System prompt is delivered via OpenCode.md at the project root.
-        The task is passed via -p so the agent starts working immediately
-        (without -p, the TUI just opens and waits for user input).
+        OpenCode's -p flag runs headless (one-shot, exits), so interactive mode
+        launches the TUI without -p. The task must be injected after boot via
+        tmux send-keys or user input.
         """
         temp_files: list[Path] = []
 
@@ -297,7 +298,7 @@ class OpenCodeRunner:
         opencode_md, self._opencode_md_backup = _write_opencode_md(project_root, request.prompt)
         temp_files.append(opencode_md)
 
-        cmd = ["opencode", "-p", request.task, "-c", str(request.cwd)]
+        cmd = ["opencode", "-c", str(request.cwd)]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
