@@ -25,7 +25,7 @@ import asyncio
 from factory.runners._tmux_persist import run_in_tmux, tmux_available
 from factory.runners.codex import _parse_codex_ndjson_usage, _write_agents_md, CodexRunner
 from factory.runners.claude import ClaudeRunner
-from factory.runners.opencode import OpenCodeRunner
+from factory.runners.opencode import OpenCodeRunner, _write_opencode_md, _cleanup_opencode_md
 from factory.models import AgentRunRequest
 
 
@@ -158,6 +158,39 @@ class TestWriteAgentsMd:
         agents_md, backup = _write_agents_md(tmp_path, "new content")
         assert agents_md.read_text() == "new content"
         assert backup is not None
+
+
+class TestWriteOpencodeMd:
+    def test_writes_file(self, tmp_path: Path) -> None:
+        opencode_md, backup = _write_opencode_md(tmp_path, "You are a researcher.")
+        assert opencode_md == tmp_path / "OpenCode.md"
+        assert opencode_md.read_text() == "You are a researcher."
+        assert backup is None
+        opencode_md.unlink()
+
+    def test_overwrites_existing(self, tmp_path: Path) -> None:
+        (tmp_path / "OpenCode.md").write_text("old content")
+        opencode_md, backup = _write_opencode_md(tmp_path, "new content")
+        assert opencode_md.read_text() == "new content"
+        assert backup is not None
+        assert backup.name == ".OpenCode.md.factory-backup"
+        assert backup.read_text() == "old content"
+        opencode_md.unlink()
+        backup.unlink()
+
+    def test_cleanup_removes_file(self, tmp_path: Path) -> None:
+        opencode_md, backup = _write_opencode_md(tmp_path, "prompt")
+        assert opencode_md.exists()
+        _cleanup_opencode_md(opencode_md, backup)
+        assert not opencode_md.exists()
+
+    def test_cleanup_restores_backup(self, tmp_path: Path) -> None:
+        (tmp_path / "OpenCode.md").write_text("original")
+        opencode_md, backup = _write_opencode_md(tmp_path, "factory prompt")
+        assert opencode_md.read_text() == "factory prompt"
+        _cleanup_opencode_md(opencode_md, backup)
+        assert opencode_md.exists()
+        assert opencode_md.read_text() == "original"
 
 
 class TestCodexMetaTelemetry:
@@ -420,7 +453,7 @@ def opencode_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.slow
 @skip_no_opencode
 async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None) -> None:
-    """OpenCode headless invocation returns a response."""
+    """OpenCode headless invocation returns a response and cleans up OpenCode.md."""
     runner = OpenCodeRunner()
     request = AgentRunRequest(
         prompt="You are a concise assistant.",
@@ -434,6 +467,7 @@ async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None)
 
     assert result.return_code == 0, f"OpenCode headless failed: {result.stdout[:300]}"
     assert len(result.stdout.strip()) > 0, "OpenCode produced no output"
+    assert not (e2e_project / "OpenCode.md").exists(), "OpenCode.md not cleaned up after headless"
 
 
 @pytest.mark.slow
@@ -442,9 +476,9 @@ async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None)
 async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: None) -> None:
     """Launch OpenCode TUI in tmux, submit a task, verify response.
 
-    OpenCode v0.0.55 (Go binary) has no system prompt injection mechanism —
-    it ignores OpenCode.md, AGENTS.md, and has no --system flag.  This test
-    only verifies that the TUI launches and responds to a task.
+    OpenCode reads OpenCode.md as project context via contextPaths config.
+    This test verifies the TUI launches with the system prompt file present
+    and responds to a task.
     """
     runner = OpenCodeRunner()
     request = AgentRunRequest(
@@ -456,7 +490,9 @@ async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: No
         project_path=e2e_project,
     )
     int_cmd, int_env, temp_files = runner.build_interactive_command(request)
-    assert temp_files == []
+    assert len(temp_files) == 1
+    assert temp_files[0].name == "OpenCode.md"
+    assert "You are a concise assistant." in temp_files[0].read_text()
 
     session_name = f"factory-oc-e2e-{os.getpid()}"
     try:
@@ -516,3 +552,9 @@ async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: No
 
     finally:
         subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
+        backup = getattr(runner, "_opencode_md_backup", None)
+        for f in temp_files:
+            if f.name == "OpenCode.md":
+                _cleanup_opencode_md(f, backup)
+            else:
+                f.unlink(missing_ok=True)
