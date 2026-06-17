@@ -161,31 +161,6 @@ def is_opencode_dry_run() -> bool:
     return val.lower() in ("1", "true", "yes")
 
 
-def _write_opencode_md(project_root: Path, role_prompt: str) -> tuple[Path, Path | None]:
-    """Write an OpenCode.md file at the project root for OpenCode system prompt delivery.
-
-    If OpenCode.md already exists, backs it up so it can be restored on cleanup.
-    Returns (opencode_md_path, backup_path_or_None).
-    """
-    opencode_md = project_root / "OpenCode.md"
-    backup: Path | None = None
-    backup_path = project_root / ".OpenCode.md.factory-backup"
-    if opencode_md.exists():
-        if backup_path.exists():
-            backup = backup_path
-        else:
-            opencode_md.rename(backup_path)
-            backup = backup_path
-    opencode_md.write_text(role_prompt)
-    return opencode_md, backup
-
-
-def _cleanup_opencode_md(opencode_md: Path, backup: Path | None) -> None:
-    """Remove factory-written OpenCode.md and restore backup if one existed."""
-    opencode_md.unlink(missing_ok=True)
-    if backup is not None and backup.exists():
-        backup.rename(opencode_md)
-
 
 class OpenCodeRunner:
     """Runner implementation for OpenCode CLI."""
@@ -211,70 +186,68 @@ class OpenCodeRunner:
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the OpenCode CLI command and env dict.
 
-        System prompt is delivered via OpenCode.md at the project root (OpenCode
-        reads this file automatically as its system instructions).  Only the
-        short task string is passed via -p.
+        OpenCode v0.0.55 (Go binary) has no mechanism for custom system prompt
+        injection — it does not read OpenCode.md, AGENTS.md, nor support a
+        --system flag.  The role prompt is dropped; only the task is passed via -p.
         """
-        temp_files: list[Path] = []
-
-        project_root = request.project_path or request.cwd
-        opencode_md, self._opencode_md_backup = _write_opencode_md(project_root, request.prompt)
-        temp_files.append(opencode_md)
-
         cmd = ["opencode", "-p", request.task, "-c", str(request.cwd), "-q"]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, temp_files
+        return cmd, env, []
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode invocation."""
+        from factory.models import AgentRunResult
+
         if is_opencode_dry_run():
             from factory.runners._subprocess import make_dry_run_result
             return make_dry_run_result("opencode", request.role, request.cwd, request.task)
 
         _check_auth()
 
-        cmd, env, temp_files = self.build_command(request)
+        tmux_persist = request.extras.get("tmux_persist", False)
+        if tmux_persist:
+            from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
 
-        try:
-            log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+            if tmux_available():
+                project_path = find_project_path(request.cwd)
+                int_cmd, int_env, _ = self.build_interactive_command(request)
+                stdout, rc, usage = await run_in_tmux(
+                    request.prompt, request.task, request.cwd, request.role,
+                    project_path,
+                    runner_cmd=int_cmd,
+                    runner_env=int_env,
+                    needs_real_tty=True,
+                )
+                return AgentRunResult(stdout=stdout, return_code=rc, usage=usage)
+            else:
+                log.warning("tmux_not_available")
 
-            return await run_subprocess(
-                cmd, cwd=str(request.cwd), env=env,
-                timeout=request.timeout, runner_name="opencode", role=request.role,
-            )
-        finally:
-            backup = getattr(self, "_opencode_md_backup", None)
-            for f in temp_files:
-                if f.name == "OpenCode.md":
-                    _cleanup_opencode_md(f, backup)
-                else:
-                    f.unlink(missing_ok=True)
-            self._opencode_md_backup = None
+        cmd, env, _ = self.build_command(request)
+
+        log.info("opencode_headless", cwd=str(request.cwd), role=request.role)
+
+        return await run_subprocess(
+            cmd, cwd=str(request.cwd), env=env,
+            timeout=request.timeout, runner_name="opencode", role=request.role,
+        )
 
     def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation.
 
-        System prompt is delivered via OpenCode.md at the project root.
-        Interactive mode launches the TUI — no -p flag needed since the user
-        drives the session directly.
+        OpenCode v0.0.55 has no system prompt injection mechanism, so we just
+        launch the TUI without writing any temp files.
         """
-        temp_files: list[Path] = []
-
-        project_root = request.project_path or request.cwd
-        opencode_md, self._opencode_md_backup = _write_opencode_md(project_root, request.prompt)
-        temp_files.append(opencode_md)
-
         cmd = ["opencode", "-c", str(request.cwd)]
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         _prepend_opencode_path(env)
         _source_openai_key_from_shell(env)
 
-        return cmd, env, temp_files
+        return cmd, env, []
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive OpenCode session as a subprocess."""
@@ -283,19 +256,10 @@ class OpenCodeRunner:
             print(f"[DRY-RUN] Task: {request.task[:200]}...")
             return 0
 
-        cmd, env, temp_files = self.build_interactive_command(request)
+        cmd, env, _ = self.build_interactive_command(request)
 
-        try:
-            log.info("opencode_interactive", cwd=str(request.cwd))
+        log.info("opencode_interactive", cwd=str(request.cwd))
 
-            result = subprocess.run(cmd, cwd=request.cwd, env=env)
-            return result.returncode
-        finally:
-            backup = getattr(self, "_opencode_md_backup", None)
-            for f in temp_files:
-                if f.name == "OpenCode.md":
-                    _cleanup_opencode_md(f, backup)
-                else:
-                    f.unlink(missing_ok=True)
-            self._opencode_md_backup = None
+        result = subprocess.run(cmd, cwd=request.cwd, env=env)
+        return result.returncode
 

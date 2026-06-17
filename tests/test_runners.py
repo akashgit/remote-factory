@@ -1814,12 +1814,7 @@ class TestOpenCodeBuildInteractiveCommand:
         assert str(tmp_path) in cmd
         assert "-p" not in cmd
         assert "-q" not in cmd
-        assert len(temp_files) == 1
-        assert temp_files[0].name == "OpenCode.md"
-        assert "You are the CEO." in temp_files[0].read_text()
-
-        for f in temp_files:
-            f.unlink(missing_ok=True)
+        assert temp_files == []
 
     def test_env_strips_virtual_env(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
@@ -1838,16 +1833,10 @@ class TestOpenCodeBuildInteractiveCommand:
 
         assert "-q" not in cmd
 
-    def test_opencode_md_created_and_cleaned(self, tmp_path: Path) -> None:
+    def test_no_temp_files(self, tmp_path: Path) -> None:
         runner = OpenCodeRunner()
         _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
             prompt="Test prompt", task="Test", cwd=tmp_path,
         ))
 
-        assert len(temp_files) == 1
-        assert temp_files[0].name == "OpenCode.md"
-        assert "Test prompt" in temp_files[0].read_text()
-
-        for f in temp_files:
-            f.unlink(missing_ok=True)
-        assert not (tmp_path / "OpenCode.md").exists()
+        assert temp_files == []

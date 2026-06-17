@@ -25,7 +25,7 @@ import asyncio
 from factory.runners._tmux_persist import run_in_tmux, tmux_available
 from factory.runners.codex import _parse_codex_ndjson_usage, _write_agents_md, CodexRunner
 from factory.runners.claude import ClaudeRunner
-from factory.runners.opencode import OpenCodeRunner, _write_opencode_md, _cleanup_opencode_md
+from factory.runners.opencode import OpenCodeRunner
 from factory.models import AgentRunRequest
 
 
@@ -405,48 +405,6 @@ async def test_codex_headless_ndjson_usage(e2e_project: Path, codex_env: None) -
         assert result.usage.input_tokens > 0 or result.usage.output_tokens > 0
 
 
-# ── OpenCode helpers (fast, no API calls) ─────────────────────────
-
-
-class TestWriteOpencodeMd:
-    def test_writes_file(self, tmp_path: Path) -> None:
-        opencode_md, backup = _write_opencode_md(tmp_path, "You are a researcher.")
-        assert opencode_md == tmp_path / "OpenCode.md"
-        assert opencode_md.read_text() == "You are a researcher."
-        assert backup is None
-        opencode_md.unlink()
-
-    def test_backs_up_existing(self, tmp_path: Path) -> None:
-        (tmp_path / "OpenCode.md").write_text("user content")
-        opencode_md, backup = _write_opencode_md(tmp_path, "factory prompt")
-        assert opencode_md.read_text() == "factory prompt"
-        assert backup is not None
-        assert backup.exists()
-        _cleanup_opencode_md(opencode_md, backup)
-        assert (tmp_path / "OpenCode.md").read_text() == "user content"
-        assert not (tmp_path / ".OpenCode.md.factory-backup").exists()
-
-    def test_cleanup_deletes_when_no_backup(self, tmp_path: Path) -> None:
-        opencode_md, backup = _write_opencode_md(tmp_path, "prompt")
-        _cleanup_opencode_md(opencode_md, backup)
-        assert not (tmp_path / "OpenCode.md").exists()
-
-
-class TestOpenCodeBuildCommandCreatesOpencodeMd:
-    def test_opencode_md_in_temp_files(self, tmp_path: Path) -> None:
-        runner = OpenCodeRunner()
-        cmd, _, temp_files = runner.build_command(AgentRunRequest(
-            prompt="You are a researcher.", task="Say hi", cwd=tmp_path,
-            project_path=tmp_path,
-        ))
-        assert len(temp_files) == 1
-        assert temp_files[0].name == "OpenCode.md"
-        assert "You are a researcher." in temp_files[0].read_text()
-        assert cmd == ["opencode", "-p", "Say hi", "-c", str(tmp_path), "-q"]
-        for f in temp_files:
-            f.unlink(missing_ok=True)
-
-
 # ── OpenCode real E2E tests (slow, require actual CLI) ────────────
 
 
@@ -462,7 +420,7 @@ def opencode_env(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.mark.slow
 @skip_no_opencode
 async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None) -> None:
-    """OpenCode headless invocation returns a response and cleans up OpenCode.md."""
+    """OpenCode headless invocation returns a response."""
     runner = OpenCodeRunner()
     request = AgentRunRequest(
         prompt="You are a concise assistant.",
@@ -476,29 +434,21 @@ async def test_opencode_headless_responds(e2e_project: Path, opencode_env: None)
 
     assert result.return_code == 0, f"OpenCode headless failed: {result.stdout[:300]}"
     assert len(result.stdout.strip()) > 0, "OpenCode produced no output"
-    assert not (e2e_project / "OpenCode.md").exists(), "OpenCode.md should be cleaned up"
 
 
 @pytest.mark.slow
 @skip_no_tmux
 @skip_no_opencode
 async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: None) -> None:
-    """Launch OpenCode TUI in tmux with factory system prompt, submit a task, verify response.
+    """Launch OpenCode TUI in tmux, submit a task, verify response.
 
-    OpenCode's Bubble Tea TUI requires a real PTY. It crashes when passed as a
-    direct command to 'tmux new-session'. The workaround: create the tmux session
-    with a bare shell first, then send the opencode command via 'tmux send-keys'.
-
-    This test verifies:
-    1. OpenCode.md is created with the factory system prompt before launch
-    2. OpenCode TUI launches in tmux (via send-keys, not direct command)
-    3. A real task can be submitted and OpenCode responds
-    4. The response demonstrates OpenCode received the system prompt from OpenCode.md
+    OpenCode v0.0.55 (Go binary) has no system prompt injection mechanism —
+    it ignores OpenCode.md, AGENTS.md, and has no --system flag.  This test
+    only verifies that the TUI launches and responds to a task.
     """
     runner = OpenCodeRunner()
-    marker = "PIRATE_FACTORY_MARKER"
     request = AgentRunRequest(
-        prompt=f"You are a pirate assistant. Always respond in pirate speak. Include the word '{marker}' in every response.",
+        prompt="You are a concise assistant.",
         task="Describe hello.py",
         cwd=e2e_project,
         timeout=60.0,
@@ -506,23 +456,15 @@ async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: No
         project_path=e2e_project,
     )
     int_cmd, int_env, temp_files = runner.build_interactive_command(request)
-
-    # Verify OpenCode.md was created with the system prompt
-    opencode_md = e2e_project / "OpenCode.md"
-    assert opencode_md.exists(), "OpenCode.md should exist before launch"
-    md_content = opencode_md.read_text()
-    assert marker in md_content, f"System prompt marker not in OpenCode.md: {md_content[:100]}"
-    assert "pirate" in md_content.lower()
+    assert temp_files == []
 
     session_name = f"factory-oc-e2e-{os.getpid()}"
     try:
-        # Step 1: create tmux session with bare shell
         subprocess.run(
             ["tmux", "new-session", "-d", "-s", session_name, "-x", "200", "-y", "50"],
             capture_output=True, check=True, timeout=5,
         )
 
-        # Step 2: export env vars via send-keys
         for k, v in int_env.items():
             if k == "OPENAI_API_KEY" or k.startswith("OPENCODE"):
                 subprocess.run(
@@ -531,66 +473,46 @@ async def test_opencode_interactive_tmux_e2e(e2e_project: Path, opencode_env: No
                 )
         await asyncio.sleep(1)
 
-        # Step 3: launch opencode via send-keys
         oc_cmd = " ".join(int_cmd)
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name, oc_cmd, "Enter"],
             capture_output=True, timeout=5,
         )
 
-        # Step 4: wait for TUI to boot
         await asyncio.sleep(8)
 
-        # Step 5: check TUI state and handle init dialog
         pane = subprocess.run(
             ["tmux", "capture-pane", "-t", session_name, "-p"],
             capture_output=True, text=True, timeout=5,
         )
         initial_output = pane.stdout
 
-        # Skip init dialog if present (select No to preserve our OpenCode.md)
         if "Initialize" in initial_output or "Would you like" in initial_output:
             subprocess.run(["tmux", "send-keys", "-t", session_name, "Right"], capture_output=True)
             await asyncio.sleep(0.5)
             subprocess.run(["tmux", "send-keys", "-t", session_name, "Enter"], capture_output=True)
             await asyncio.sleep(3)
 
-        # Step 6: submit a real task
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name,
-             "What does hello.py do? Respond in character.", "Enter"],
+             "What does hello.py do?", "Enter"],
             capture_output=True, timeout=5,
         )
 
-        # Step 7: wait for response (OpenCode may need time to read file + generate)
         await asyncio.sleep(15)
 
-        # Step 8: capture and verify response
         pane_after = subprocess.run(
             ["tmux", "capture-pane", "-t", session_name, "-p"],
             capture_output=True, text=True, timeout=5,
         )
         response = pane_after.stdout
 
-        # Verify TUI launched and produced output
         assert len(response.strip()) > 0, "OpenCode TUI produced no output"
 
-        # Verify OpenCode actually responded (not stuck on a prompt)
         response_lower = response.lower()
         assert "hello" in response_lower or "function" in response_lower or "def " in response_lower \
             or "GPT" in response or "Cost" in response, \
             f"OpenCode did not respond to the task: {response[:500]}"
 
-        # NOTE: OpenCode v0.0.55 does NOT inject OpenCode.md as a system prompt.
-        # It treats it as a reference file accessible via tools, not as persona
-        # instructions. The pirate prompt is NOT followed. This is a known
-        # limitation of this OpenCode version. Future versions with 'opencode run'
-        # may support proper system prompt injection.
-
     finally:
         subprocess.run(["tmux", "kill-session", "-t", session_name], capture_output=True)
-        for f in temp_files:
-            if f.name == "OpenCode.md":
-                _cleanup_opencode_md(f, getattr(runner, "_opencode_md_backup", None))
-            else:
-                f.unlink(missing_ok=True)
