@@ -133,6 +133,17 @@ async def _wait_for_window_exit(session: str, window: str) -> None:
         await asyncio.sleep(_WINDOW_POLL_INTERVAL)
 
 
+def _capture_pane(session: str, window: str) -> str:
+    """Capture tmux pane content via capture-pane -p."""
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-t", f"{session}:{window}", "-p", "-S", "-"],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout
+    return ""
+
+
 async def run_in_tmux(
     prompt: str,
     task: str,
@@ -145,6 +156,7 @@ async def run_in_tmux(
     dangerously_skip_permissions: bool = True,
     runner_cmd: list[str] | None = None,
     runner_env: dict[str, str] | None = None,
+    needs_real_tty: bool = False,
 ) -> tuple[str, int, None]:
     """Launch a runner interactively in a tmux window and wait for completion.
 
@@ -155,6 +167,12 @@ async def run_in_tmux(
     When ``runner_cmd`` is provided, it is used as the command to run.
     Otherwise falls back to building a Claude command (backwards compat).
 
+    When ``needs_real_tty`` is True, the runner is launched via ``tmux
+    send-keys`` instead of as the tmux window command.  This gives the
+    process a real ``/dev/tty``, which TUI frameworks like Bubble Tea
+    (used by OpenCode) require.  Output is captured via ``tmux
+    capture-pane`` instead of the ``script`` command.
+
     Returns (stdout, return_code, None). Usage is always None for tmux mode.
     """
     run_id = uuid.uuid4().hex[:8]
@@ -163,10 +181,10 @@ async def run_in_tmux(
     window = f"{role}-{run_id}"
 
     tmpdir = Path(tempfile.mkdtemp(prefix="factory-tmux-"))
-    logfile = tmpdir / "output.log"
     exitcode_file = tmpdir / "exitcode"
     sentinel_file = tmpdir / "sentinel"
-    wrapper_script = tmpdir / "wrapper.sh"
+    sentinel_q = shlex.quote(str(sentinel_file))
+    exitcode_q = shlex.quote(str(exitcode_file))
 
     is_claude = runner_cmd is None or (runner_cmd and runner_cmd[0] == "claude")
 
@@ -184,14 +202,22 @@ async def run_in_tmux(
         cmd.append(task)
 
     full_cmd = shlex.join(cmd)
+
+    if needs_real_tty:
+        return await _run_in_tmux_sendkeys(
+            full_cmd, cwd, role, project_path, session, window, tmpdir,
+            exitcode_file, sentinel_file, exitcode_q, sentinel_q,
+            runner_env=runner_env, timeout=timeout,
+        )
+
+    logfile = tmpdir / "output.log"
+    wrapper_script = tmpdir / "wrapper.sh"
+
     logfile_q = shlex.quote(str(logfile))
     if platform.system() == "Darwin":
         script_line = f"script -q {logfile_q} {full_cmd}\n"
     else:
         script_line = f"script -q -c {shlex.quote(full_cmd)} {logfile_q}\n"
-
-    sentinel_q = shlex.quote(str(sentinel_file))
-    exitcode_q = shlex.quote(str(exitcode_file))
 
     env_lines = ""
     if runner_env:
@@ -232,10 +258,9 @@ async def run_in_tmux(
     print(f"  tmux attach -t {session}    # attach and interact", file=sys.stderr)
     print("  /exit or Ctrl-d to finish   # factory resumes when you exit", file=sys.stderr)
 
-    # Auto-accept trust prompt (Claude shows 'Do you trust?' for untrusted dirs)
-    if is_claude:
-        await asyncio.sleep(3)
-        subprocess.run(["tmux", "send-keys", "-t", f"{session}:{window}", "Enter"], capture_output=True)
+    # Auto-accept trust prompt (Claude and Codex show 'Do you trust?' for untrusted dirs)
+    await asyncio.sleep(3)
+    subprocess.run(["tmux", "send-keys", "-t", f"{session}:{window}", "Enter"], capture_output=True)
 
     try:
         found = await _wait_for_sentinel(sentinel_file, timeout)
@@ -277,6 +302,87 @@ async def run_in_tmux(
                 ["tmux", "kill-window", "-t", f"{session}:{window}"],
                 capture_output=True,
             )
+        _cleanup(tmpdir)
+        raise
+
+
+async def _run_in_tmux_sendkeys(
+    full_cmd: str,
+    cwd: Path,
+    role: str,
+    project_path: Path,
+    session: str,
+    window: str,
+    tmpdir: Path,
+    exitcode_file: Path,
+    sentinel_file: Path,
+    exitcode_q: str,
+    sentinel_q: str,
+    *,
+    runner_env: dict[str, str] | None = None,
+    timeout: float = _DEFAULT_TMUX_TIMEOUT,
+) -> tuple[str, int, None]:
+    """Launch a runner via tmux send-keys for proper PTY allocation.
+
+    TUI frameworks like Bubble Tea (OpenCode) require /dev/tty access.
+    When tmux runs a command directly (``tmux new-session -d cmd``), the
+    process doesn't get a proper PTY.  This helper creates the session
+    with a bare shell, then sends the command via ``send-keys``.
+    """
+    has_session = _session_exists(session)
+    if has_session:
+        result = subprocess.run(
+            ["tmux", "new-window", "-t", session, "-n", window, "-c", str(cwd)],
+            capture_output=True,
+        )
+    else:
+        result = subprocess.run(
+            ["tmux", "new-session", "-d", "-s", session, "-n", window,
+             "-x", "200", "-y", "50", "-c", str(cwd)],
+            capture_output=True,
+        )
+
+    if result.returncode != 0:
+        logger.warning("Failed to create tmux window for %s: %s", role, result.stderr.decode()[:200])
+        _cleanup(tmpdir)
+        return f"Failed to create tmux window for {role}", 1, None
+
+    logger.info("tmux_launched_sendkeys session=%s window=%s role=%s", session, window, role)
+    print(f"Agent '{role}' launched in tmux session: {session}", file=sys.stderr)
+    print(f"  tmux attach -t {session}    # attach and interact", file=sys.stderr)
+
+    target = f"{session}:{window}"
+
+    if runner_env:
+        env_exports = " && ".join(
+            f"export {shlex.quote(k)}={shlex.quote(v)}" for k, v in runner_env.items()
+        )
+        subprocess.run(["tmux", "send-keys", "-t", target, env_exports, "Enter"], capture_output=True)
+        await asyncio.sleep(0.3)
+
+    cmd_with_sentinel = f"{full_cmd}; echo $? > {exitcode_q}; touch {sentinel_q}"
+    subprocess.run(["tmux", "send-keys", "-t", target, cmd_with_sentinel, "Enter"], capture_output=True)
+
+    try:
+        found = await _wait_for_sentinel(sentinel_file, timeout)
+        if not found:
+            subprocess.run(["tmux", "kill-window", "-t", target], capture_output=True)
+            logger.error("tmux agent timed out after %ss: role=%s", timeout, role)
+            _cleanup(tmpdir)
+            return f"Agent timed out after {timeout}s", 1, None
+
+        stdout = _strip_ansi(_capture_pane(session, window))
+
+        await _wait_for_window_exit(session, window)
+        if _window_exists(session, window):
+            subprocess.run(["tmux", "kill-window", "-t", target], capture_output=True)
+
+        return_code = await _wait_for_exitcode(exitcode_file)
+        _cleanup(tmpdir)
+        return stdout, return_code, None
+    except asyncio.CancelledError:
+        if _window_exists(session, window):
+            subprocess.run(["tmux", "kill-window", "-t", target], capture_output=True)
         _cleanup(tmpdir)
         raise
 
