@@ -188,7 +188,7 @@ Logical fields:
 - `repo_id`: stable identifier within the project.
 - `path`: local path, if available.
 - `remote`: remote repository identifier or URL, if available.
-- `role`: implementation-defined role such as `primary`, `api`, or `docs`.
+- `role`: implementation-defined role such as `primary`.
 - `default_branch`: default integration branch, if known.
 - `checkout`: checkout or worktree metadata, if applicable.
 
