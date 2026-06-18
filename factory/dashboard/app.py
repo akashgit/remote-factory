@@ -631,6 +631,36 @@ def create_app(projects_dir: Path) -> FastAPI:
         )
         return HTMLResponse((_STATIC_DIR / "research.html").read_text())
 
+    @app.get("/api/projects/{name}/cycles")
+    async def project_cycles(name: str, limit: int = 20) -> list[dict[str, Any]]:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/cycles",
+            project=name,
+        )
+        from factory.sessions import get_cycles
+
+        path = projects_dir / name
+        return get_cycles(path, limit=limit)
+
+    @app.get("/api/projects/{name}/cycles/{cycle_id}")
+    async def project_cycle_detail(name: str, cycle_id: str) -> JSONResponse:
+        _validate_path_segment(name)
+        _validate_path_segment(cycle_id, "cycle_id")
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/cycles/{cycle_id}",
+            project=name,
+        )
+        from factory.sessions import get_cycle
+
+        path = projects_dir / name
+        cycle = get_cycle(path, cycle_id)
+        if cycle is None:
+            raise HTTPException(status_code=404, detail="Cycle not found")
+        return JSONResponse(cycle)
+
     @app.get("/api/projects/{name}/sessions")
     async def project_sessions(
         name: str,

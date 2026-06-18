@@ -460,29 +460,22 @@ def get_cycles(
     try:
         rows = conn.execute(
             """SELECT s.*,
-                      (SELECT COUNT(*) FROM sessions c WHERE c.parent_id = s.id) AS child_count,
-                      (SELECT GROUP_CONCAT(DISTINCT c2.agent_role)
-                       FROM sessions c2 WHERE c2.parent_id = s.id) AS child_roles_str,
-                      (SELECT COALESCE(SUM(c3.total_cost_usd), 0)
-                       FROM sessions c3 WHERE c3.root_id = s.id AND c3.id != s.id) AS children_cost,
-                      (SELECT COALESCE(SUM(c4.duration_ms), 0)
-                       FROM sessions c4 WHERE c4.root_id = s.id AND c4.id != s.id) AS children_duration
-               FROM sessions s
-               WHERE s.kind = 'default' AND s.parent_id IS NULL
-               ORDER BY s.created_at DESC LIMIT ?""",
+                (SELECT COUNT(*) FROM sessions c WHERE c.parent_id = s.id) as child_count,
+                s.total_cost_usd + COALESCE(
+                    (SELECT SUM(c.total_cost_usd) FROM sessions c WHERE c.parent_id = s.id), 0
+                ) as total_cost,
+                s.duration_ms + COALESCE(
+                    (SELECT SUM(c.duration_ms) FROM sessions c WHERE c.parent_id = s.id), 0
+                ) as total_duration,
+                (SELECT GROUP_CONCAT(DISTINCT c.agent_role)
+                    FROM sessions c WHERE c.parent_id = s.id) as child_roles
+            FROM sessions s
+            WHERE s.kind = 'default' OR s.parent_id IS NULL
+            ORDER BY s.created_at DESC
+            LIMIT ?""",
             (limit,),
         ).fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            roles_str = d.pop("child_roles_str", None)
-            d["child_roles"] = roles_str.split(",") if roles_str else []
-            d["total_cycle_cost"] = (d.get("total_cost_usd") or 0.0) + d.pop("children_cost", 0.0)
-            d["total_cycle_duration"] = (
-                (d.get("duration_ms") or 0.0) + d.pop("children_duration", 0.0)
-            )
-            result.append(d)
-        return result
+        return [dict(r) for r in rows]
     finally:
         conn.close()
 
@@ -507,8 +500,8 @@ def get_cycle(
     return {
         **root,
         "children": children,
-        "total_cycle_cost": total_cost,
-        "total_cycle_duration": total_duration,
+        "total_cost": total_cost,
+        "total_duration": total_duration,
     }
 
 

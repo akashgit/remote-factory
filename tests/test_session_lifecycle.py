@@ -171,3 +171,74 @@ def test_standalone_session_backward_compat(tmp_path: Path) -> None:
     assert session["kind"] == "default"
     assert session["parent_id"] is None
     assert session["root_id"] == sid
+
+
+async def test_invoke_agent_threads_env_var(tmp_path: Path) -> None:
+    """invoke_agent sets FACTORY_PARENT_SESSION_ID in env for subprocess."""
+    import os
+
+    root_id = begin_cycle_session(tmp_path, cycle_id="env-test")
+
+    captured_env: dict[str, str | None] = {}
+
+    async def mock_headless(request):
+        captured_env["FACTORY_PARENT_SESSION_ID"] = os.environ.get("FACTORY_PARENT_SESSION_ID")
+        return AgentRunResult(
+            stdout="done",
+            return_code=0,
+            usage=AgentUsage(input_tokens=10, output_tokens=5, total_cost_usd=0.01, duration_ms=100.0),
+            metadata={},
+        )
+
+    mock_runner = AsyncMock()
+    mock_runner.headless = mock_headless
+
+    old_env = os.environ.pop("FACTORY_PARENT_SESSION_ID", None)
+    try:
+        with patch("factory.agents.runner.resolve_prompt", return_value="test"), \
+             patch("factory.agents.runner.get_runner", return_value=mock_runner):
+            from factory.agents.runner import invoke_agent
+
+            await invoke_agent("builder", "do stuff", tmp_path, parent_session_id=root_id)
+
+        assert captured_env.get("FACTORY_PARENT_SESSION_ID") is not None
+        assert captured_env["FACTORY_PARENT_SESSION_ID"].startswith("sess_")
+        assert "FACTORY_PARENT_SESSION_ID" not in os.environ
+    finally:
+        if old_env is not None:
+            os.environ["FACTORY_PARENT_SESSION_ID"] = old_env
+
+
+async def test_invoke_agent_reads_env_var_fallback(tmp_path: Path) -> None:
+    """invoke_agent reads FACTORY_PARENT_SESSION_ID from env when parent_session_id is None."""
+    import os
+
+    root_id = begin_cycle_session(tmp_path, cycle_id="fallback-test")
+
+    mock_result = AgentRunResult(
+        stdout="done",
+        return_code=0,
+        usage=AgentUsage(input_tokens=10, output_tokens=5, total_cost_usd=0.01, duration_ms=100.0),
+        metadata={},
+    )
+    mock_runner = AsyncMock()
+    mock_runner.headless = AsyncMock(return_value=mock_result)
+
+    old_env = os.environ.get("FACTORY_PARENT_SESSION_ID")
+    os.environ["FACTORY_PARENT_SESSION_ID"] = root_id
+    try:
+        with patch("factory.agents.runner.resolve_prompt", return_value="test"), \
+             patch("factory.agents.runner.get_runner", return_value=mock_runner):
+            from factory.agents.runner import invoke_agent
+
+            await invoke_agent("researcher", "research stuff", tmp_path)
+
+        children = get_children(tmp_path, root_id)
+        assert len(children) == 1
+        assert children[0]["agent_role"] == "researcher"
+        assert children[0]["parent_id"] == root_id
+    finally:
+        if old_env is not None:
+            os.environ["FACTORY_PARENT_SESSION_ID"] = old_env
+        else:
+            os.environ.pop("FACTORY_PARENT_SESSION_ID", None)

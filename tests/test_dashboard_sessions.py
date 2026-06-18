@@ -166,13 +166,66 @@ class TestSessionsPathValidation:
         assert resp.status_code in (400, 404, 422)
 
 
+class TestCyclesAPI:
+    def test_list_cycles_returns_200(self, session_client: TestClient):
+        resp = session_client.get("/api/projects/proj-sess/cycles")
+        assert resp.status_code == 200
+        cycles = resp.json()
+        assert isinstance(cycles, list)
+        assert len(cycles) == 1
+
+    def test_list_cycles_returns_root_only(self, session_client: TestClient):
+        resp = session_client.get("/api/projects/proj-sess/cycles")
+        cycles = resp.json()
+        for c in cycles:
+            assert c["kind"] == "default"
+            assert c["parent_id"] is None
+
+    def test_list_cycles_includes_child_info(self, session_client: TestClient):
+        resp = session_client.get("/api/projects/proj-sess/cycles")
+        cycle = resp.json()[0]
+        assert cycle["child_count"] == 2
+        assert set(cycle["child_roles"].split(",")) == {"builder", "reviewer"}
+        assert "total_cost" in cycle
+        assert "total_duration" in cycle
+
+    def test_get_cycle_detail(self, session_client: TestClient):
+        cycles_resp = session_client.get("/api/projects/proj-sess/cycles")
+        cycle_id = cycles_resp.json()[0]["id"]
+
+        resp = session_client.get(f"/api/projects/proj-sess/cycles/{cycle_id}")
+        assert resp.status_code == 200
+        cycle = resp.json()
+        assert cycle["id"] == cycle_id
+        assert "children" in cycle
+        assert len(cycle["children"]) == 2
+        assert "total_cost" in cycle
+
+    def test_get_cycle_not_found(self, session_client: TestClient):
+        resp = session_client.get("/api/projects/proj-sess/cycles/sess_nonexist")
+        assert resp.status_code == 404
+
+    def test_get_cycle_invalid_id(self, session_client: TestClient):
+        resp = session_client.get("/api/projects/proj-sess/cycles/../etc")
+        assert resp.status_code in (400, 404, 422)
+
+    def test_list_cycles_empty_project(self, tmp_path: Path):
+        proj = tmp_path / "proj-empty"
+        (proj / ".factory").mkdir(parents=True)
+        app = create_app(tmp_path)
+        client = TestClient(app)
+        resp = client.get("/api/projects/proj-empty/cycles")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 class TestSessionsHTMLView:
     def test_sessions_view_returns_html(self, session_client: TestClient):
         resp = session_client.get("/sessions/proj-sess")
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "Sessions" in resp.text
-        assert "Session Tree" in resp.text
+        assert "Cycles" in resp.text
 
     def test_sessions_view_invalid_name(self, session_client: TestClient):
         resp = session_client.get("/sessions/../etc")
