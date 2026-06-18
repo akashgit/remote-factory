@@ -1,196 +1,213 @@
+"""Tests for factory_tracing.spans — span hierarchy, attributes, and error status."""
 from __future__ import annotations
 
-import json
-
 import pytest
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
+from factory_tracing import provider as _provider_mod
 from factory_tracing.spans import (
-    trace_factory_cycle,
-    trace_agent_invocation,
     record_agent_result,
+    trace_agent_invocation,
+    trace_factory_cycle,
 )
 
 
-def test_trace_agent_invocation_creates_span_with_correct_name(test_provider):
-    _, exporter = test_provider
+@pytest.fixture(autouse=True)
+def tracing_setup():
+    """Set up InMemorySpanExporter and tear down the provider singleton after each test."""
+    exporter = InMemorySpanExporter()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(exporter))
+    _provider_mod._provider = tp
+    yield exporter
+    tp.shutdown()
+    _provider_mod._provider = None
 
-    with trace_agent_invocation("researcher"):
+
+def _attrs(span) -> dict:
+    return dict(span.attributes) if span.attributes else {}
+
+
+# --- trace_factory_cycle ---
+
+
+def test_cycle_creates_root_span(tracing_setup):
+    with trace_factory_cycle("run-1", "my-project", "improve"):
         pass
+    spans = tracing_setup.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "factory.cycle"
 
-    spans = exporter.get_finished_spans()
+
+def test_cycle_sets_factory_attributes(tracing_setup):
+    with trace_factory_cycle("run-42", "acme", "build"):
+        pass
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
+    assert attrs["factory.run.id"] == "run-42"
+    assert attrs["factory.project.name"] == "acme"
+    assert attrs["factory.mode"] == "build"
+
+
+def test_cycle_sets_langfuse_attributes(tracing_setup):
+    with trace_factory_cycle("run-1", "proj", "improve"):
+        pass
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
+    assert attrs["langfuse.observation.type"] == "span"
+    assert attrs["langfuse.session.id"] == "run-1"
+
+
+def test_cycle_status_ok_on_success(tracing_setup):
+    with trace_factory_cycle("r", "p", "m"):
+        pass
+    assert tracing_setup.get_finished_spans()[0].status.status_code == StatusCode.OK
+
+
+def test_cycle_status_error_on_exception(tracing_setup):
+    with pytest.raises(ValueError, match="boom"):
+        with trace_factory_cycle("r", "p", "m"):
+            raise ValueError("boom")
+    span = tracing_setup.get_finished_spans()[0]
+    assert span.status.status_code == StatusCode.ERROR
+    assert "boom" in span.status.description
+
+
+# --- trace_agent_invocation ---
+
+
+def test_agent_span_name_includes_role(tracing_setup):
+    with trace_agent_invocation("researcher", "find bugs", "run-1", "proj"):
+        pass
+    spans = tracing_setup.get_finished_spans()
     assert len(spans) == 1
     assert spans[0].name == "invoke_agent researcher"
 
 
-def test_trace_agent_invocation_sets_required_attributes(test_provider):
-    _, exporter = test_provider
-
-    with trace_agent_invocation("builder", run_id="run-5", project_name="proj"):
+def test_agent_sets_gen_ai_attributes(tracing_setup):
+    with trace_agent_invocation("builder", "implement feature", "run-1", "proj"):
         pass
-
-    span = exporter.get_finished_spans()[0]
-    attrs = dict(span.attributes)
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
     assert attrs["gen_ai.operation.name"] == "invoke_agent"
     assert attrs["gen_ai.agent.name"] == "builder"
     assert attrs["gen_ai.system"] == "anthropic"
+
+
+def test_agent_sets_factory_and_langfuse_attributes(tracing_setup):
+    with trace_agent_invocation("reviewer", "review code", "run-5", "acme"):
+        pass
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
     assert attrs["factory.run.id"] == "run-5"
-    assert attrs["factory.project.name"] == "proj"
+    assert attrs["factory.project.name"] == "acme"
+    assert attrs["factory.task.summary"] == "review code"
+    assert attrs["langfuse.observation.type"] == "span"
     assert attrs["langfuse.session.id"] == "run-5"
-    assert json.loads(attrs["langfuse.trace.tags"]) == ["builder"]
 
 
-def test_agent_span_is_child_of_cycle_span(test_provider):
-    _, exporter = test_provider
+def test_agent_langfuse_tags_contains_role(tracing_setup):
+    with trace_agent_invocation("strategist", "plan", "r", "p"):
+        pass
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
+    tags = attrs["langfuse.trace.tags"]
+    assert "strategist" in tags
 
+
+def test_agent_status_error_on_exception(tracing_setup):
+    with pytest.raises(RuntimeError):
+        with trace_agent_invocation("builder", "task", "r", "p"):
+            raise RuntimeError("fail")
+    span = tracing_setup.get_finished_spans()[0]
+    assert span.status.status_code == StatusCode.ERROR
+
+
+# --- span hierarchy ---
+
+
+def test_agent_is_child_of_cycle(tracing_setup):
     with trace_factory_cycle("run-1", "proj", "improve"):
-        with trace_agent_invocation("researcher"):
+        with trace_agent_invocation("researcher", "search", "run-1", "proj"):
             pass
-
-    spans = exporter.get_finished_spans()
-    agent_span = next(s for s in spans if s.name == "invoke_agent researcher")
+    spans = tracing_setup.get_finished_spans()
+    assert len(spans) == 2
+    agent_span = next(s for s in spans if s.name.startswith("invoke_agent"))
     cycle_span = next(s for s in spans if s.name == "factory.cycle")
-
     assert agent_span.parent is not None
     assert agent_span.parent.span_id == cycle_span.context.span_id
     assert agent_span.context.trace_id == cycle_span.context.trace_id
 
 
-def test_multiple_parallel_agents_share_parent(test_provider):
-    _, exporter = test_provider
-
+def test_multiple_agents_share_same_parent(tracing_setup):
     with trace_factory_cycle("run-1", "proj", "improve"):
-        with trace_agent_invocation("researcher"):
+        with trace_agent_invocation("researcher", "search", "run-1", "proj"):
             pass
-        with trace_agent_invocation("builder"):
+        with trace_agent_invocation("builder", "build", "run-1", "proj"):
             pass
-
-    spans = exporter.get_finished_spans()
+    spans = tracing_setup.get_finished_spans()
+    assert len(spans) == 3
     cycle_span = next(s for s in spans if s.name == "factory.cycle")
     agent_spans = [s for s in spans if s.name.startswith("invoke_agent")]
-
     assert len(agent_spans) == 2
     for agent_span in agent_spans:
         assert agent_span.parent.span_id == cycle_span.context.span_id
 
 
-def test_record_agent_result_sets_usage(test_provider):
-    _, exporter = test_provider
+def test_all_spans_share_same_trace_id(tracing_setup):
+    with trace_factory_cycle("run-1", "proj", "improve"):
+        with trace_agent_invocation("researcher", "search", "run-1", "proj"):
+            pass
+        with trace_agent_invocation("builder", "build", "run-1", "proj"):
+            pass
+    spans = tracing_setup.get_finished_spans()
+    trace_ids = {s.context.trace_id for s in spans}
+    assert len(trace_ids) == 1
 
-    with trace_agent_invocation("builder") as span:
+
+# --- record_agent_result ---
+
+
+def test_record_sets_exit_code_and_duration(tracing_setup):
+    with trace_agent_invocation("builder", "task", "r", "p") as span:
+        record_agent_result(span, exit_code=0, duration_ms=1500.0)
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
+    assert attrs["subprocess.returncode"] == 0
+    assert attrs["subprocess.duration_ms"] == 1500.0
+
+
+def test_record_sets_usage_when_provided(tracing_setup):
+    with trace_agent_invocation("builder", "task", "r", "p") as span:
         record_agent_result(
             span,
             exit_code=0,
-            input_tokens=500,
-            output_tokens=200,
-            cost_usd=0.015,
+            duration_ms=2000.0,
+            input_tokens=1000,
+            output_tokens=500,
+            cost_usd=0.05,
         )
-
-    finished = exporter.get_finished_spans()[0]
-    attrs = dict(finished.attributes)
-    assert attrs["gen_ai.usage.input_tokens"] == 500
-    assert attrs["gen_ai.usage.output_tokens"] == 200
-    assert attrs["gen_ai.usage.cost"] == 0.015
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
+    assert attrs["gen_ai.usage.input_tokens"] == 1000
+    assert attrs["gen_ai.usage.output_tokens"] == 500
+    assert attrs["gen_ai.usage.cost"] == 0.05
 
 
-def test_record_agent_result_error_status(test_provider):
-    _, exporter = test_provider
-
-    with trace_agent_invocation("builder") as span:
-        record_agent_result(span, exit_code=1)
-
-    finished = exporter.get_finished_spans()[0]
-    assert finished.status.status_code == StatusCode.ERROR
-
-
-def test_trace_factory_cycle_sets_attributes(test_provider):
-    _, exporter = test_provider
-
-    with trace_factory_cycle("run-42", "acme", "fix"):
-        pass
-
-    span = exporter.get_finished_spans()[0]
-    attrs = dict(span.attributes)
-    assert attrs["factory.run.id"] == "run-42"
-    assert attrs["factory.project.name"] == "acme"
-    assert attrs["factory.mode"] == "fix"
-    assert json.loads(attrs["langfuse.trace.tags"]) == ["fix"]
-
-
-def test_langfuse_observation_type_is_set(test_provider):
-    _, exporter = test_provider
-
-    with trace_factory_cycle("run-1", "proj", "improve"):
-        with trace_agent_invocation("researcher"):
-            pass
-
-    spans = exporter.get_finished_spans()
-    for span in spans:
-        assert span.attributes["langfuse.observation.type"] == "span"
-
-
-def test_factory_cycle_session_id_defaults_to_run_id(test_provider):
-    _, exporter = test_provider
-
-    with trace_factory_cycle("run-abc", "proj", "improve"):
-        pass
-
-    span = exporter.get_finished_spans()[0]
-    assert span.attributes["langfuse.session.id"] == "run-abc"
-
-
-def test_factory_cycle_session_id_override(test_provider):
-    _, exporter = test_provider
-
-    with trace_factory_cycle("run-1", "proj", "improve", session_id="session-99"):
-        pass
-
-    span = exporter.get_finished_spans()[0]
-    assert span.attributes["langfuse.session.id"] == "session-99"
-
-
-def test_record_agent_result_omits_zero_usage(test_provider):
-    _, exporter = test_provider
-
-    with trace_agent_invocation("builder") as span:
-        record_agent_result(span, exit_code=0)
-
-    finished = exporter.get_finished_spans()[0]
-    attrs = dict(finished.attributes)
+def test_record_omits_usage_when_not_provided(tracing_setup):
+    with trace_agent_invocation("builder", "task", "r", "p") as span:
+        record_agent_result(span, exit_code=0, duration_ms=100.0)
+    attrs = _attrs(tracing_setup.get_finished_spans()[0])
     assert "gen_ai.usage.input_tokens" not in attrs
     assert "gen_ai.usage.output_tokens" not in attrs
     assert "gen_ai.usage.cost" not in attrs
 
 
-def test_agent_invocation_yields_span(test_provider):
-    _, exporter = test_provider
-
-    with trace_agent_invocation("builder") as span:
-        span.set_attribute("custom.key", "custom-value")
-
-    finished = exporter.get_finished_spans()[0]
-    assert finished.attributes["custom.key"] == "custom-value"
+def test_record_error_status_on_nonzero_exit(tracing_setup):
+    with trace_agent_invocation("builder", "task", "r", "p") as span:
+        record_agent_result(span, exit_code=1, duration_ms=500.0)
+    span_data = tracing_setup.get_finished_spans()[0]
+    assert span_data.status.status_code == StatusCode.ERROR
 
 
-def test_all_spans_share_same_trace_id(test_provider):
-    _, exporter = test_provider
-
-    with trace_factory_cycle("run-1", "proj", "improve"):
-        with trace_agent_invocation("researcher"):
-            pass
-        with trace_agent_invocation("builder"):
-            pass
-
-    spans = exporter.get_finished_spans()
-    trace_ids = {s.context.trace_id for s in spans}
-    assert len(trace_ids) == 1
-
-
-def test_record_agent_result_ok_status_on_zero_exit(test_provider):
-    _, exporter = test_provider
-
-    with trace_agent_invocation("builder") as span:
-        record_agent_result(span, exit_code=0)
-
-    finished = exporter.get_finished_spans()[0]
-    assert finished.status.status_code == StatusCode.OK
+def test_record_ok_status_on_zero_exit(tracing_setup):
+    with trace_agent_invocation("builder", "task", "r", "p") as span:
+        record_agent_result(span, exit_code=0, duration_ms=500.0)
+    span_data = tracing_setup.get_finished_spans()[0]
+    assert span_data.status.status_code == StatusCode.OK

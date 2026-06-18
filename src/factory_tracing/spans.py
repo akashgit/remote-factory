@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import json
 from contextlib import contextmanager
 from typing import Iterator
 
-from opentelemetry import trace
 from opentelemetry.trace import Span, StatusCode
 
 from .provider import get_tracer
@@ -15,16 +13,15 @@ def trace_factory_cycle(
     run_id: str,
     project_name: str,
     mode: str,
-    session_id: str | None = None,
 ) -> Iterator[Span]:
-    tracer = get_tracer("factory-tracing")
+    """Root span for a full CEO improvement cycle."""
+    tracer = get_tracer()
     with tracer.start_as_current_span("factory.cycle") as span:
         span.set_attribute("factory.run.id", run_id)
         span.set_attribute("factory.project.name", project_name)
         span.set_attribute("factory.mode", mode)
         span.set_attribute("langfuse.observation.type", "span")
-        span.set_attribute("langfuse.session.id", session_id or run_id)
-        span.set_attribute("langfuse.trace.tags", json.dumps([mode]))
+        span.set_attribute("langfuse.session.id", run_id)
         try:
             yield span
         except Exception as exc:
@@ -32,28 +29,30 @@ def trace_factory_cycle(
             span.record_exception(exc)
             raise
         else:
+            if span.status.status_code == StatusCode.ERROR:
+                return
             span.set_status(StatusCode.OK)
 
 
 @contextmanager
 def trace_agent_invocation(
     role: str,
-    task_summary: str = "",
-    run_id: str = "",
-    project_name: str = "",
+    task_summary: str,
+    run_id: str,
+    project_name: str,
 ) -> Iterator[Span]:
-    tracer = get_tracer("factory-tracing")
+    """Child span for a single agent invocation within a cycle."""
+    tracer = get_tracer()
     with tracer.start_as_current_span(f"invoke_agent {role}") as span:
         span.set_attribute("gen_ai.operation.name", "invoke_agent")
         span.set_attribute("gen_ai.agent.name", role)
         span.set_attribute("gen_ai.system", "anthropic")
         span.set_attribute("factory.run.id", run_id)
         span.set_attribute("factory.project.name", project_name)
+        span.set_attribute("factory.task.summary", task_summary)
         span.set_attribute("langfuse.observation.type", "span")
         span.set_attribute("langfuse.session.id", run_id)
-        span.set_attribute("langfuse.trace.tags", json.dumps([role]))
-        if task_summary:
-            span.set_attribute("factory.task.summary", task_summary)
+        span.set_attribute("langfuse.trace.tags", (role,))
         try:
             yield span
         except Exception as exc:
@@ -61,23 +60,31 @@ def trace_agent_invocation(
             span.record_exception(exc)
             raise
         else:
-            if span.status.status_code != StatusCode.ERROR:
-                span.set_status(StatusCode.OK)
+            if span.status.status_code == StatusCode.ERROR:
+                return
+            span.set_status(StatusCode.OK)
 
 
 def record_agent_result(
     span: Span,
     exit_code: int,
-    input_tokens: int = 0,
-    output_tokens: int = 0,
-    cost_usd: float = 0.0,
+    duration_ms: float,
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+    cost_usd: float | None = None,
 ) -> None:
+    """Record subprocess result and optional usage metrics on an agent span."""
     span.set_attribute("subprocess.returncode", exit_code)
-    if input_tokens > 0:
+    span.set_attribute("subprocess.duration_ms", duration_ms)
+
+    if input_tokens is not None:
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-    if output_tokens > 0:
+    if output_tokens is not None:
         span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
-    if cost_usd > 0.0:
+    if cost_usd is not None:
         span.set_attribute("gen_ai.usage.cost", cost_usd)
+
     if exit_code != 0:
-        span.set_status(StatusCode.ERROR, f"exit code {exit_code}")
+        span.set_status(StatusCode.ERROR, f"agent exited with code {exit_code}")
+    else:
+        span.set_status(StatusCode.OK)
