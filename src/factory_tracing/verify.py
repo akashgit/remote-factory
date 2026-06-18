@@ -1,4 +1,4 @@
-"""End-to-end verification: run a real multi-agent factory cycle and validate content in Langfuse.
+"""End-to-end verification: run a real multi-agent factory cycle and validate ALL 10 criteria in Langfuse.
 
 This module is dev/verification tooling — it MAY import langfuse and dotenv.
 It must NOT be imported by production tracing code (config, provider, spans, propagation, integration).
@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import json
 import os
-import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -18,32 +17,38 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 from .config import TracingConfig
-from .executor import run_traced_agent
+from .executor import run_traced_agent, AgentResult
 from .propagation import build_traced_env
 from .provider import get_tracer_provider, shutdown_tracing
-from .spans import record_agent_result, trace_agent_invocation, trace_factory_cycle
+from .spans import trace_factory_cycle
 
 
-AGENT_PROMPTS = {
-    "researcher": "List 3 key benefits of distributed tracing in multi-agent AI systems. Be concise, use bullet points.",
-    "strategist": "Based on these research findings: {prev_output}. Propose a 2-step implementation plan. Be concise.",
-}
+RESEARCHER_PROMPT = (
+    "Read the file pyproject.toml in this project and list the package dependencies. "
+    "Then explain what the package does based on the code structure."
+)
+
+STRATEGIST_PROMPT_TEMPLATE = (
+    "Based on these findings about the project: {researcher_output}. "
+    "Read src/factory_tracing/executor.py and propose one specific improvement. Be concise."
+)
 
 
 @dataclass
-class ContentCheck:
+class CriterionResult:
+    id: str
     name: str
     passed: bool
-    expected: str
-    actual: str
+    detail: str
 
 
 @dataclass
-class AgentTrace:
+class AgentSummary:
     role: str
+    num_turns: int
+    num_tools: int
     prompt_snippet: str
     response_snippet: str
-    llm_calls: int
     tokens_in: int
     tokens_out: int
 
@@ -53,11 +58,14 @@ class VerificationResult:
     trace_id: str
     langfuse_url: str
     span_count: int
-    agents_traced: list[AgentTrace] = field(default_factory=list)
-    total_llm_calls: int = 0
-    total_tokens: dict = field(default_factory=lambda: {"input": 0, "output": 0, "cache_read": 0})
-    total_duration_seconds: float = 0.0
-    content_checks: list[ContentCheck] = field(default_factory=list)
+    agent_count: int
+    llm_call_count: int
+    tool_call_count: int
+    duration_seconds: float
+    tokens_in: int
+    tokens_out: int
+    agents: list[AgentSummary] = field(default_factory=list)
+    criteria: list[CriterionResult] = field(default_factory=list)
     success: bool = False
 
 
@@ -65,44 +73,14 @@ def _short_uuid() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def _parse_claude_output(stdout: str) -> dict:
-    try:
-        return json.loads(stdout)
-    except (json.JSONDecodeError, ValueError):
-        return {}
-
-
-def _extract_response_text(parsed: dict) -> str:
-    result = parsed.get("result", "")
-    if isinstance(result, str):
-        return result
-    if isinstance(result, list):
-        parts = []
-        for block in result:
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-        return "\n".join(parts)
-    return str(result) if result else ""
-
-
-def _extract_usage(parsed: dict) -> dict:
-    usage = parsed.get("usage", {})
-    if not usage:
-        usage = parsed.get("result", {}).get("usage", {}) if isinstance(parsed.get("result"), dict) else {}
-    return {
-        "input_tokens": usage.get("input_tokens", 0) or 0,
-        "output_tokens": usage.get("output_tokens", 0) or 0,
-        "cache_read_tokens": usage.get("cache_read_input_tokens", 0) or 0,
-        "cost_usd": usage.get("cost_usd", 0.0) or 0.0,
-    }
-
-
-def _snippet(text: str, max_len: int = 120) -> str:
+def _snippet(text: str, max_len: int = 100) -> str:
+    if not text:
+        return "(empty)"
     s = text.replace("\n", " ").strip()
     return s[:max_len] + "..." if len(s) > max_len else s
 
 
-def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int = 5, delay: float = 3.0) -> dict:
+def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int = 8, delay: float = 3.0) -> dict:
     url = f"{config.langfuse_host.rstrip('/')}/api/public/traces/{trace_id}"
     credentials = base64.b64encode(
         f"{config.langfuse_public_key}:{config.langfuse_secret_key}".encode()
@@ -116,267 +94,451 @@ def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int
                 "Accept": "application/json",
             })
             with urllib.request.urlopen(req, timeout=15) as resp:
-                return json.loads(resp.read().decode())
+                data = json.loads(resp.read().decode())
+                observations = data.get("observations") or []
+                if len(observations) >= 2 or attempt >= max_retries - 1:
+                    return data
         except Exception as exc:
             last_error = exc
-            if attempt < max_retries - 1:
-                time.sleep(delay)
+        if attempt < max_retries - 1:
+            time.sleep(delay)
 
     raise RuntimeError(f"Failed to fetch trace {trace_id} after {max_retries} attempts: {last_error}")
 
 
-def _get_obs_attribute(obs: dict, key: str) -> object:
-    if key in ("model", "gen_ai.request.model"):
-        top_model = obs.get("model")
-        if top_model:
-            return top_model
+def _find_children(observations: list[dict], parent_id: str | None) -> list[dict]:
+    return [o for o in observations if o.get("parentObservationId") == parent_id]
+
+
+def _obs_has_content(obs: dict) -> tuple[bool, bool]:
+    inp = obs.get("input")
+    out = obs.get("output")
+    has_in = inp is not None
+    has_out = out is not None
+    return has_in, has_out
+
+
+def _check_c1(observations: list[dict]) -> CriterionResult:
+    """C1: Real factory cycle — at least 2 agents, each with multiple LLM calls and tool use."""
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    if len(agent_obs) < 2:
+        return CriterionResult("C1", "real_factory_cycle", False,
+                               f"Only {len(agent_obs)} agent(s) found, need >= 2")
+
+    agents_with_tools = 0
+    for agent in agent_obs:
+        agent_id = agent.get("id")
+        children = _find_children(observations, agent_id)
+        llm_children = [c for c in children if (c.get("name") or "") == "llm_call"]
+        tool_children = [c for c in children if (c.get("name") or "").startswith("tool:")]
+        if len(llm_children) >= 1 and len(tool_children) >= 1:
+            agents_with_tools += 1
+
+    if agents_with_tools < 2:
+        return CriterionResult("C1", "real_factory_cycle", False,
+                               f"{agents_with_tools}/2 agents have both LLM calls and tool use")
+
+    return CriterionResult("C1", "real_factory_cycle", True,
+                           f"{len(agent_obs)} agents, {agents_with_tools} with tools")
+
+
+def _check_c2(observations: list[dict], trace_data: dict) -> CriterionResult:
+    """C2: Every observation has non-null input AND output."""
+    total = len(observations)
+    missing = []
+    for obs in observations:
+        has_in, has_out = _obs_has_content(obs)
+        if not has_in or not has_out:
+            name = obs.get("name", "?")
+            parts = []
+            if not has_in:
+                parts.append("input=null")
+            if not has_out:
+                parts.append("output=null")
+            missing.append(f"{name} ({', '.join(parts)})")
+
+    trace_input = trace_data.get("input")
+    trace_output = trace_data.get("output")
+    trace_ok = trace_input is not None and trace_output is not None
+    if not trace_ok:
+        parts = []
+        if trace_input is None:
+            parts.append("trace.input=null")
+        if trace_output is None:
+            parts.append("trace.output=null")
+        missing.append(f"trace ({', '.join(parts)})")
+
+    if missing:
+        return CriterionResult("C2", "all_spans_have_io", False,
+                               f"{len(missing)} missing: {'; '.join(missing[:5])}")
+
+    return CriterionResult("C2", "all_spans_have_io", True,
+                           f"{total}/{total} observations + trace have input+output")
+
+
+def _check_c3(observations: list[dict]) -> CriterionResult:
+    """C3: Every llm_call span has meaningful input, output, model, and token counts."""
+    llm_spans = [o for o in observations if (o.get("name") or "") == "llm_call"]
+    if not llm_spans:
+        return CriterionResult("C3", "llm_content", False, "No llm_call spans found")
+
+    issues = []
+    for i, llm in enumerate(llm_spans):
+        inp = llm.get("input")
+        out = llm.get("output")
+        model = llm.get("model") or llm.get("modelId")
+
+        inp_str = json.dumps(inp) if inp is not None else ""
+        out_str = json.dumps(out) if out is not None else ""
+
+        if not inp or not inp_str.strip() or inp_str in ('""', "null", '"{}"'):
+            issues.append(f"llm_call #{i} missing input")
+        elif "[conversation context]" in inp_str and "prompt" not in inp_str:
+            pass
+
+        if not out or not out_str.strip() or out_str in ('""', "null", '"{}"'):
+            issues.append(f"llm_call #{i} missing output")
+
+        usage = llm.get("usage") or llm.get("usageDetails") or {}
+        input_tokens = usage.get("input") or usage.get("inputTokens") or usage.get("input_tokens") or 0
+        output_tokens = usage.get("output") or usage.get("outputTokens") or usage.get("output_tokens") or 0
+
+        if not model and not _get_metadata_attr(llm, "gen_ai.request.model"):
+            issues.append(f"llm_call #{i} missing model")
+        if input_tokens == 0 and output_tokens == 0:
+            meta_in = _get_metadata_attr(llm, "gen_ai.usage.input_tokens")
+            meta_out = _get_metadata_attr(llm, "gen_ai.usage.output_tokens")
+            if not meta_in and not meta_out:
+                issues.append(f"llm_call #{i} zero tokens")
+
+    if issues:
+        return CriterionResult("C3", "llm_content", False, "; ".join(issues[:5]))
+
+    return CriterionResult("C3", "llm_content", True,
+                           f"{len(llm_spans)} llm_call spans all have content, model, tokens")
+
+
+def _check_c4(observations: list[dict]) -> CriterionResult:
+    """C4: Every tool:* span has non-null input (args) and output (result)."""
+    tool_spans = [o for o in observations if (o.get("name") or "").startswith("tool:")]
+    if not tool_spans:
+        return CriterionResult("C4", "tool_io", False, "No tool:* spans found")
+
+    issues = []
+    for i, tool in enumerate(tool_spans):
+        name = tool.get("name", "?")
+        has_in, has_out = _obs_has_content(tool)
+        if not has_in:
+            issues.append(f"{name} #{i} input=null")
+        if not has_out:
+            issues.append(f"{name} #{i} output=null")
+
+    if issues:
+        return CriterionResult("C4", "tool_io", False, "; ".join(issues[:5]))
+
+    return CriterionResult("C4", "tool_io", True,
+                           f"{len(tool_spans)} tool spans all have input+output")
+
+
+def _check_c5(observations: list[dict]) -> CriterionResult:
+    """C5: Hierarchy — factory.cycle root, invoke_agent children, llm/tool grandchildren."""
+    obs_ids = {o.get("id") for o in observations if o.get("id")}
+    issues = []
+
+    roots = [o for o in observations if not o.get("parentObservationId")]
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    llm_tool_obs = [o for o in observations
+                    if (o.get("name") or "") == "llm_call" or (o.get("name") or "").startswith("tool:")]
+
+    for agent in agent_obs:
+        parent = agent.get("parentObservationId")
+        if parent is not None:
+            parent_obs = next((o for o in observations if o.get("id") == parent), None)
+            if parent_obs and (parent_obs.get("name") or "") != "factory.cycle":
+                issues.append(f"invoke_agent not child of factory.cycle (parent: {parent_obs.get('name')})")
+
+    for obs in llm_tool_obs:
+        parent = obs.get("parentObservationId")
+        if parent is None:
+            issues.append(f"{obs.get('name')} has no parent (orphaned)")
+        else:
+            parent_obs = next((o for o in observations if o.get("id") == parent), None)
+            if parent_obs and not (parent_obs.get("name") or "").startswith("invoke_agent"):
+                issues.append(f"{obs.get('name')} parent is {parent_obs.get('name')}, expected invoke_agent")
+
+    if issues:
+        return CriterionResult("C5", "hierarchy", False, "; ".join(issues[:5]))
+
+    return CriterionResult("C5", "hierarchy", True,
+                           f"Correct tree: {len(roots)} root(s), {len(agent_obs)} agents, "
+                           f"{len(llm_tool_obs)} llm/tool spans")
+
+
+def _check_c6(observations: list[dict]) -> CriterionResult:
+    """C6: At least one invoke_agent has >= 3 child spans (multi-turn)."""
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    max_children = 0
+    best_agent = ""
+    for agent in agent_obs:
+        children = _find_children(observations, agent.get("id"))
+        if len(children) > max_children:
+            max_children = len(children)
+            best_agent = agent.get("name", "?")
+
+    if max_children >= 3:
+        return CriterionResult("C6", "multi_turn", True,
+                               f"{best_agent} has {max_children} child spans")
+
+    return CriterionResult("C6", "multi_turn", False,
+                           f"Max child count is {max_children} (need >= 3)")
+
+
+def _check_c7(observations: list[dict]) -> CriterionResult:
+    """C7: Strategist input contains substring from researcher output."""
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    researcher = next((o for o in agent_obs if "researcher" in (o.get("name") or "")), None)
+    strategist = next((o for o in agent_obs if "strategist" in (o.get("name") or "")), None)
+
+    if not researcher or not strategist:
+        return CriterionResult("C7", "agent_flow", False,
+                               f"Missing: researcher={'found' if researcher else 'missing'}, "
+                               f"strategist={'found' if strategist else 'missing'}")
+
+    researcher_output = researcher.get("output")
+    strategist_input = strategist.get("input")
+
+    if not researcher_output or not strategist_input:
+        return CriterionResult("C7", "agent_flow", False,
+                               f"researcher.output={'set' if researcher_output else 'null'}, "
+                               f"strategist.input={'set' if strategist_input else 'null'}")
+
+    res_text = json.dumps(researcher_output) if not isinstance(researcher_output, str) else researcher_output
+    strat_text = json.dumps(strategist_input) if not isinstance(strategist_input, str) else strategist_input
+
+    words = [w for w in res_text.split() if len(w) > 5 and w.isalpha()]
+    matches = [w for w in words[:30] if w.lower() in strat_text.lower()]
+
+    if matches:
+        return CriterionResult("C7", "agent_flow", True,
+                               f"Strategist input references researcher output "
+                               f"(matched: {', '.join(matches[:3])})")
+
+    return CriterionResult("C7", "agent_flow", False,
+                           "No researcher output substring found in strategist input")
+
+
+def _check_c8(observations: list[dict]) -> CriterionResult:
+    """C8: No claude_code.* spans, exactly one invoke_agent per role, no orphans."""
+    issues = []
+
+    claude_spans = [o for o in observations if (o.get("name") or "").startswith("claude_code.")]
+    if claude_spans:
+        issues.append(f"{len(claude_spans)} claude_code.* span(s) found")
+
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    role_counts: dict[str, int] = {}
+    for agent in agent_obs:
+        name = agent.get("name", "")
+        role_counts[name] = role_counts.get(name, 0) + 1
+    for name, count in role_counts.items():
+        if count > 1:
+            issues.append(f"Duplicate: {name} appears {count} times")
+
+    obs_ids = {o.get("id") for o in observations if o.get("id")}
+    for obs in observations:
+        parent = obs.get("parentObservationId")
+        if parent is not None and parent not in obs_ids:
+            issues.append(f"Orphan: {obs.get('name')} has parentId {parent} not in observation set")
+
+    if issues:
+        return CriterionResult("C8", "no_duplicates", False, "; ".join(issues[:5]))
+
+    return CriterionResult("C8", "no_duplicates", True,
+                           f"No duplicates, no claude_code spans, no orphans")
+
+
+def _check_c9(trace_data: dict) -> CriterionResult:
+    """C9: Trace-level metadata — input, output, name all non-null."""
+    issues = []
+    trace_input = trace_data.get("input")
+    trace_output = trace_data.get("output")
+    trace_name = trace_data.get("name")
+
+    if trace_input is None:
+        issues.append("trace.input=null")
+    if trace_output is None:
+        issues.append("trace.output=null")
+    if trace_name != "factory.cycle":
+        issues.append(f"trace.name='{trace_name}' (expected 'factory.cycle')")
+
+    if issues:
+        return CriterionResult("C9", "trace_metadata", False, "; ".join(issues))
+
+    return CriterionResult("C9", "trace_metadata", True,
+                           f"name='{trace_name}', input+output set")
+
+
+def _get_metadata_attr(obs: dict, key: str):
     metadata = obs.get("metadata")
     if isinstance(metadata, dict):
         attrs = metadata.get("attributes", {})
         if isinstance(attrs, dict):
             if key in attrs:
-                val = attrs[key]
-                if isinstance(val, str) and val.isdigit():
-                    return int(val)
-                return val
-            short_key = key.split(".")[-1]
-            if short_key in attrs:
-                val = attrs[short_key]
-                if isinstance(val, str) and val.isdigit():
-                    return int(val)
-                return val
+                return attrs[key]
     return None
 
 
-def _find_children(observations: list[dict], parent_id: str) -> list[dict]:
-    return [o for o in observations if o.get("parentObservationId") == parent_id]
+def _count_by_type(observations: list[dict]) -> tuple[int, int, int]:
+    agents = len([o for o in observations if (o.get("name") or "").startswith("invoke_agent")])
+    llm_calls = len([o for o in observations if (o.get("name") or "") == "llm_call"])
+    tool_calls = len([o for o in observations if (o.get("name") or "").startswith("tool:")])
+    return agents, llm_calls, tool_calls
 
 
-def _invoke_agent(
-    role: str,
-    prompt: str,
-    run_id: str,
-    project_name: str,
-    traced_env: dict,
-) -> tuple[dict, int, float]:
-    """Invoke a Claude agent subprocess using run_traced_agent for full content capture."""
-    agent_result = run_traced_agent(
-        prompt=prompt,
-        role=role,
-        run_id=run_id,
-        project_name=project_name,
-        env=traced_env,
-    )
-    parsed = {
-        "result": agent_result.response_text,
-        "model": agent_result.model,
-        "usage": {
-            "input_tokens": agent_result.input_tokens,
-            "output_tokens": agent_result.output_tokens,
-            "cost_usd": agent_result.cost_usd,
-        },
-    }
-    return parsed, agent_result.exit_code, agent_result.duration_ms
+def _build_agent_summaries(observations: list[dict], agent_results: dict[str, AgentResult]) -> list[AgentSummary]:
+    summaries = []
+    agent_obs = [o for o in observations if (o.get("name") or "").startswith("invoke_agent")]
+    agent_obs.sort(key=lambda o: o.get("startTime", ""))
 
+    for agent in agent_obs:
+        name = agent.get("name", "")
+        role = name.replace("invoke_agent ", "").strip()
+        agent_id = agent.get("id")
+        children = _find_children(observations, agent_id) if agent_id else []
+        tool_children = [c for c in children if (c.get("name") or "").startswith("tool:")]
 
-def _validate_content(trace_data: dict, expected_roles: list[str]) -> list[ContentCheck]:
-    checks: list[ContentCheck] = []
-    observations = trace_data.get("observations") or []
-    obs_names = [o.get("name", "") for o in observations]
-
-    has_cycle = any("factory.cycle" in (n or "") for n in obs_names)
-    checks.append(ContentCheck(
-        name="root_span_exists",
-        passed=has_cycle,
-        expected="factory.cycle span present",
-        actual="found" if has_cycle else "missing",
-    ))
-
-    agent_obs = [o for o in observations if "invoke_agent" in (o.get("name") or "")]
-    for role in expected_roles:
-        matching = [o for o in agent_obs if role in (o.get("name") or "")]
-        found = len(matching) > 0
-        checks.append(ContentCheck(
-            name=f"agent_span_{role}",
-            passed=found,
-            expected=f"invoke_agent {role} span present",
-            actual=f"found ({len(matching)})" if found else "missing",
+        ar = agent_results.get(role)
+        summaries.append(AgentSummary(
+            role=role,
+            num_turns=ar.num_turns if ar else len(children),
+            num_tools=len(tool_children),
+            prompt_snippet=_snippet(ar.response_text[:200] if ar else "", 100) if ar else "(no data)",
+            response_snippet=_snippet(ar.response_text if ar else "", 100),
+            tokens_in=ar.input_tokens if ar else 0,
+            tokens_out=ar.output_tokens if ar else 0,
         ))
-
-        if matching:
-            agent_name = _get_obs_attribute(matching[0], "gen_ai.agent.name")
-            name_matches = agent_name == role
-            checks.append(ContentCheck(
-                name=f"agent_name_{role}",
-                passed=name_matches,
-                expected=f"gen_ai.agent.name == '{role}'",
-                actual=str(agent_name) if agent_name else "missing",
-            ))
-
-    for role in expected_roles:
-        matching_agents = [o for o in agent_obs if role in (o.get("name") or "")]
-        if not matching_agents:
-            continue
-        agent_id = matching_agents[0].get("id")
-        if not agent_id:
-            continue
-        children = _find_children(observations, agent_id)
-        content_children = [c for c in children if c.get("input") is not None or c.get("output") is not None]
-        checks.append(ContentCheck(
-            name=f"nesting_{role}",
-            passed=len(content_children) > 0,
-            expected=f"child spans with content under invoke_agent {role}",
-            actual=f"{len(content_children)} child spans with content" if content_children else "no children with content",
-        ))
-
-    llm_spans = [o for o in observations if "llm_call" in (o.get("name") or "")]
-    checks.append(ContentCheck(
-        name="llm_call_count",
-        passed=len(llm_spans) >= 2,
-        expected="at least 2 llm_call spans",
-        actual=str(len(llm_spans)),
-    ))
-
-    for i, llm in enumerate(llm_spans[:3]):
-        llm_input = llm.get("input")
-        llm_output = llm.get("output")
-        has_input = llm_input is not None and str(llm_input).strip() not in ("", "null", "undefined")
-        has_output = llm_output is not None and str(llm_output).strip() not in ("", "null", "undefined")
-        checks.append(ContentCheck(
-            name=f"llm_has_input_{i}",
-            passed=has_input,
-            expected=f"llm_call {i} has non-null input",
-            actual=_snippet(str(llm_input), 80) if has_input else "null/empty",
-        ))
-        checks.append(ContentCheck(
-            name=f"llm_has_output_{i}",
-            passed=has_output,
-            expected=f"llm_call {i} has non-null output",
-            actual=_snippet(str(llm_output), 80) if has_output else "null/empty",
-        ))
-
-    tool_spans = [o for o in observations if o.get("name", "").startswith("tool:")]
-    for i, tool in enumerate(tool_spans[:3]):
-        tool_input = tool.get("input")
-        tool_output = tool.get("output")
-        has_input = tool_input is not None
-        has_output = tool_output is not None
-        tool_name = tool.get("name", "")
-        checks.append(ContentCheck(
-            name=f"tool_has_io_{tool_name}_{i}",
-            passed=has_input and has_output,
-            expected=f"{tool_name} has input and output",
-            actual=f"input={'yes' if has_input else 'NULL'}, output={'yes' if has_output else 'NULL'}",
-        ))
-
-    all_spans_null = [o for o in observations if o.get("input") is None and o.get("output") is None]
-    pct_populated = 1.0 - (len(all_spans_null) / max(len(observations), 1))
-    checks.append(ContentCheck(
-        name="content_coverage",
-        passed=pct_populated >= 0.5,
-        expected=">=50% of spans have input or output populated",
-        actual=f"{pct_populated:.0%} ({len(observations) - len(all_spans_null)}/{len(observations)} spans)",
-    ))
-
-    for role in expected_roles:
-        matching_agents = [o for o in agent_obs if role in (o.get("name") or "")]
-        if not matching_agents:
-            continue
-        agent = matching_agents[0]
-        agent_input = agent.get("input")
-        agent_output = agent.get("output")
-        has_input = agent_input is not None and str(agent_input).strip() not in ("", "null", "undefined")
-        has_output = agent_output is not None and str(agent_output).strip() not in ("", "null", "undefined")
-        checks.append(ContentCheck(
-            name=f"agent_has_input_{role}",
-            passed=has_input,
-            expected=f"invoke_agent {role} has non-null input in Langfuse",
-            actual=_snippet(str(agent_input), 80) if has_input else "null/empty",
-        ))
-        checks.append(ContentCheck(
-            name=f"agent_has_output_{role}",
-            passed=has_output,
-            expected=f"invoke_agent {role} has non-null output in Langfuse",
-            actual=_snippet(str(agent_output), 80) if has_output else "null/empty",
-        ))
-
-    return checks
+    return summaries
 
 
-def run_verification(num_agents: int = 2) -> VerificationResult:
+def _print_report(result: VerificationResult) -> None:
+    print(f"\n{'=' * 70}")
+    print("Factory Tracing Verification — 10 Criteria")
+    print(f"{'=' * 70}")
+    print(f"Trace: {result.trace_id}")
+    print(f"URL:   {result.langfuse_url}")
+    print(f"Spans: {result.span_count} | Agents: {result.agent_count} | "
+          f"LLM calls: {result.llm_call_count} | Tool calls: {result.tool_call_count}")
+    print(f"Duration: {result.duration_seconds:.1f}s | "
+          f"Tokens: in={result.tokens_in} out={result.tokens_out}")
+
+    if result.agents:
+        print(f"\nAgent Summary:")
+        for agent in result.agents:
+            print(f"  [{agent.role}] {agent.num_turns} turns, {agent.num_tools} tools")
+            print(f"    prompt:   {agent.prompt_snippet}")
+            print(f"    response: {agent.response_snippet}")
+
+    print(f"\nCriteria:")
+    for c in result.criteria:
+        status = "PASS" if c.passed else "FAIL"
+        print(f"  [{status}] {c.id:<4} {c.name:<22} {c.detail}")
+
+    passed = sum(1 for c in result.criteria if c.passed)
+    total = len(result.criteria)
+    if result.success:
+        print(f"\nResult: PASSED ({passed}/{total})")
+    else:
+        print(f"\nResult: FAILED ({passed}/{total} passed)")
+    print(f"{'=' * 70}")
+
+
+def run_verification() -> VerificationResult:
     load_dotenv()
     config = TracingConfig.from_env()
 
     if not config.enabled:
-        return VerificationResult(
-            trace_id="",
-            langfuse_url="",
-            span_count=0,
-            content_checks=[ContentCheck(
-                name="tracing_enabled", passed=False,
-                expected="FACTORY_TRACING_ENABLED=true", actual="not set",
-            )],
+        result = VerificationResult(
+            trace_id="", langfuse_url="", span_count=0,
+            agent_count=0, llm_call_count=0, tool_call_count=0,
+            duration_seconds=0, tokens_in=0, tokens_out=0,
+            criteria=[CriterionResult("C0", "tracing_enabled", False,
+                                      "FACTORY_TRACING_ENABLED is not set to true")],
             success=False,
         )
+        _print_report(result)
+        return result
 
     provider = get_tracer_provider(config)
     if provider is None:
-        return VerificationResult(
-            trace_id="",
-            langfuse_url="",
-            span_count=0,
-            content_checks=[ContentCheck(
-                name="provider_init", passed=False,
-                expected="TracerProvider initialized", actual="failed",
-            )],
+        result = VerificationResult(
+            trace_id="", langfuse_url="", span_count=0,
+            agent_count=0, llm_call_count=0, tool_call_count=0,
+            duration_seconds=0, tokens_in=0, tokens_out=0,
+            criteria=[CriterionResult("C0", "provider_init", False,
+                                      "TracerProvider failed to initialize")],
             success=False,
         )
+        _print_report(result)
+        return result
 
-    roles = list(AGENT_PROMPTS.keys())[:num_agents]
     run_id = f"verify-{_short_uuid()}"
     trace_id_hex = ""
-    agents_traced: list[AgentTrace] = []
-    total_in = 0
-    total_out = 0
-    total_cache = 0
-    total_llm = 0
+    agent_results: dict[str, AgentResult] = {}
     cycle_start = time.monotonic()
-    prev_output = ""
+    project_cwd = os.getcwd()
+
+    print("Running 2-agent verification cycle with tool-forcing prompts...")
+    print(f"  CWD: {project_cwd}")
+    print(f"  Run: {run_id}")
 
     try:
         with trace_factory_cycle(run_id=run_id, project_name="factory-tracing-verify", mode="verify") as cycle_span:
             trace_id_hex = format(cycle_span.get_span_context().trace_id, "032x")
+            print(f"  Trace: {trace_id_hex}")
 
-            for role in roles:
-                prompt_template = AGENT_PROMPTS[role]
-                prompt = prompt_template.format(prev_output=_snippet(prev_output, 200)) if "{prev_output}" in prompt_template else prompt_template
+            traced_env = build_traced_env(base_env=dict(os.environ))
 
-                traced_env = build_traced_env(base_env=dict(os.environ))
+            print("\n  [1/2] Invoking researcher agent...")
+            researcher_result = run_traced_agent(
+                prompt=RESEARCHER_PROMPT,
+                role="researcher",
+                run_id=run_id,
+                project_name="factory-tracing-verify",
+                cwd=project_cwd,
+                env=traced_env,
+            )
+            agent_results["researcher"] = researcher_result
+            print(f"        exit={researcher_result.exit_code}, "
+                  f"turns={researcher_result.num_turns}, "
+                  f"tokens={researcher_result.input_tokens}/{researcher_result.output_tokens}")
 
-                agent_result = run_traced_agent(
-                    prompt=prompt,
-                    role=role,
-                    run_id=run_id,
-                    project_name="factory-tracing-verify",
-                    env=traced_env,
-                )
+            researcher_output = _snippet(researcher_result.response_text, 500)
+            strategist_prompt = STRATEGIST_PROMPT_TEMPLATE.format(researcher_output=researcher_output)
 
-                total_in += agent_result.input_tokens
-                total_out += agent_result.output_tokens
+            print("  [2/2] Invoking strategist agent...")
+            strategist_result = run_traced_agent(
+                prompt=strategist_prompt,
+                role="strategist",
+                run_id=run_id,
+                project_name="factory-tracing-verify",
+                cwd=project_cwd,
+                env=traced_env,
+            )
+            agent_results["strategist"] = strategist_result
+            print(f"        exit={strategist_result.exit_code}, "
+                  f"turns={strategist_result.num_turns}, "
+                  f"tokens={strategist_result.input_tokens}/{strategist_result.output_tokens}")
 
-                agents_traced.append(AgentTrace(
-                    role=role,
-                    prompt_snippet=_snippet(prompt),
-                    response_snippet=_snippet(agent_result.response_text),
-                    llm_calls=0,
-                    tokens_in=agent_result.input_tokens,
-                    tokens_out=agent_result.output_tokens,
-                ))
-
-                prev_output = agent_result.response_text
-
-            cycle_span.set_attribute("langfuse.span.input", json.dumps({"agents": roles, "run_id": run_id}))
-            cycle_span.set_attribute("langfuse.span.output", json.dumps({"result": _snippet(prev_output, 500), "agents_completed": len(agents_traced)}))
+            cycle_span.set_attribute("langfuse.span.input", json.dumps({
+                "agents": ["researcher", "strategist"],
+                "run_id": run_id,
+                "project_cwd": project_cwd,
+            }))
+            cycle_span.set_attribute("langfuse.span.output", json.dumps({
+                "researcher": _snippet(researcher_result.response_text, 300),
+                "strategist": _snippet(strategist_result.response_text, 300),
+                "agents_completed": 2,
+            }))
     finally:
         shutdown_tracing()
 
@@ -386,119 +548,55 @@ def run_verification(num_agents: int = 2) -> VerificationResult:
     print("\nWaiting for spans to flush to Langfuse...")
     time.sleep(5)
 
-    trace_data: dict = {}
-    content_checks: list[ContentCheck] = []
-    span_count = 0
     try:
         trace_data = _query_langfuse_trace(config, trace_id_hex)
-        observations = trace_data.get("observations") or []
-        span_count = len(observations) + 1
-
-        llm_spans = [o for o in observations if "claude_code.llm_request" in (o.get("name") or "")]
-        total_llm = len(llm_spans)
-
-        agent_obs = [o for o in observations if "invoke_agent" in (o.get("name") or "")]
-        for agent_trace in agents_traced:
-            matching = [o for o in agent_obs if agent_trace.role in (o.get("name") or "")]
-            if matching:
-                agent_id = matching[0].get("id")
-                if agent_id:
-                    children = _find_children(observations, agent_id)
-                    agent_trace.llm_calls = len([c for c in children if "claude_code.llm_request" in (c.get("name") or "")])
-
-        content_checks = _validate_content(trace_data, roles)
-
     except Exception as exc:
-        content_checks = [ContentCheck(
-            name="langfuse_query", passed=False,
-            expected="successful query", actual=f"Failed: {exc}",
-        )]
+        result = VerificationResult(
+            trace_id=trace_id_hex, langfuse_url=langfuse_url, span_count=0,
+            agent_count=0, llm_call_count=0, tool_call_count=0,
+            duration_seconds=round(total_duration, 1), tokens_in=0, tokens_out=0,
+            criteria=[CriterionResult("C0", "langfuse_query", False, f"Failed: {exc}")],
+            success=False,
+        )
+        _print_report(result)
+        return result
 
-    success = all(c.passed for c in content_checks)
+    observations = trace_data.get("observations") or []
+    agent_count, llm_call_count, tool_call_count = _count_by_type(observations)
+    agent_summaries = _build_agent_summaries(observations, agent_results)
+
+    criteria = [
+        _check_c1(observations),
+        _check_c2(observations, trace_data),
+        _check_c3(observations),
+        _check_c4(observations),
+        _check_c5(observations),
+        _check_c6(observations),
+        _check_c7(observations),
+        _check_c8(observations),
+        _check_c9(trace_data),
+        CriterionResult("C10", "automated", True, "All checks ran automatically"),
+    ]
+
+    success = all(c.passed for c in criteria)
+
+    total_in = sum(ar.input_tokens for ar in agent_results.values())
+    total_out = sum(ar.output_tokens for ar in agent_results.values())
 
     result = VerificationResult(
         trace_id=trace_id_hex,
         langfuse_url=langfuse_url,
-        span_count=span_count,
-        agents_traced=agents_traced,
-        total_llm_calls=total_llm,
-        total_tokens={"input": total_in, "output": total_out, "cache_read": total_cache},
-        total_duration_seconds=round(total_duration, 2),
-        content_checks=content_checks,
+        span_count=len(observations),
+        agent_count=agent_count,
+        llm_call_count=llm_call_count,
+        tool_call_count=tool_call_count,
+        duration_seconds=round(total_duration, 1),
+        tokens_in=total_in,
+        tokens_out=total_out,
+        agents=agent_summaries,
+        criteria=criteria,
         success=success,
     )
 
-    _print_report(result, trace_data)
+    _print_report(result)
     return result
-
-
-def _print_span_tree(observations: list[dict], parent_id: str | None, indent: int = 0) -> None:
-    children = [o for o in observations if o.get("parentObservationId") == parent_id]
-    children.sort(key=lambda o: o.get("startTime", ""))
-    for obs in children:
-        name = obs.get("name", "?")
-        model = _get_obs_attribute(obs, "gen_ai.request.model") or ""
-        input_t = _get_obs_attribute(obs, "gen_ai.usage.input_tokens") or 0
-        output_t = _get_obs_attribute(obs, "gen_ai.usage.output_tokens") or 0
-        prefix = "  " * indent + ("├─ " if indent > 0 else "")
-        info_parts = []
-        if model:
-            info_parts.append(f"model={model}")
-        if input_t or output_t:
-            info_parts.append(f"tokens={input_t}/{output_t}")
-        info = f" ({', '.join(info_parts)})" if info_parts else ""
-        print(f"  {prefix}{name}{info}")
-        _print_span_tree(observations, obs.get("id"), indent + 1)
-
-
-def _print_report(result: VerificationResult, trace_data: dict) -> None:
-    print(f"\n{'='*70}")
-    print("Factory Tracing — Multi-Agent Verification Report")
-    print(f"{'='*70}")
-    print(f"Trace ID:       {result.trace_id}")
-    print(f"Langfuse:       {result.langfuse_url}")
-    print(f"Span count:     {result.span_count}")
-    print(f"Duration:       {result.total_duration_seconds}s")
-    print(f"Total tokens:   in={result.total_tokens['input']}  out={result.total_tokens['output']}  cache={result.total_tokens['cache_read']}")
-    print(f"Total LLM calls: {result.total_llm_calls}")
-
-    if result.agents_traced:
-        print(f"\n{'─'*70}")
-        print("Agent Details:")
-        for agent in result.agents_traced:
-            print(f"\n  [{agent.role}]")
-            print(f"    Prompt:   {agent.prompt_snippet}")
-            print(f"    Response: {agent.response_snippet}")
-            print(f"    LLM calls: {agent.llm_calls}  tokens: in={agent.tokens_in} out={agent.tokens_out}")
-
-    observations = trace_data.get("observations") or [] if trace_data else []
-    if observations:
-        print(f"\n{'─'*70}")
-        print("Span Tree:")
-        print(f"  factory.cycle (root)")
-        root_children = [o for o in observations if not o.get("parentObservationId")]
-        if root_children:
-            for obs in root_children:
-                _print_span_tree(observations, None, 0)
-                break
-        else:
-            _print_span_tree(observations, None, 0)
-
-    print(f"\n{'─'*70}")
-    print("Content Quality Checks:")
-    for c in result.content_checks:
-        status = "PASS" if c.passed else "FAIL"
-        print(f"  [{status}] {c.name}")
-        print(f"         expected: {c.expected}")
-        print(f"         actual:   {c.actual}")
-
-    print(f"\n{'─'*70}")
-    print(f"Summary: {len(result.agents_traced)} agents traced, {result.total_llm_calls} LLM calls, "
-          f"{result.total_tokens['input'] + result.total_tokens['output']} total tokens, "
-          f"{result.total_duration_seconds}s")
-
-    passed = sum(1 for c in result.content_checks if c.passed)
-    total = len(result.content_checks)
-    overall = "ALL CHECKS PASSED" if result.success else f"FAILED ({passed}/{total} passed)"
-    print(f"Overall: {overall}")
-    print(f"{'='*70}\n")
