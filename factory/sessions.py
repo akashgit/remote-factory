@@ -190,7 +190,7 @@ def get_sessions(
     role: str | None = None,
     limit: int = 50,
 ) -> list[dict]:
-    """List sessions, optionally filtered by root_id (cycle) or role."""
+    """List sessions with child_count, optionally filtered by root_id (cycle) or role."""
     if not _db_path(project_path).exists():
         return []
 
@@ -198,10 +198,10 @@ def get_sessions(
     params: list[object] = []
 
     if cycle_id:
-        conditions.append("root_id = ?")
+        conditions.append("s.root_id = ?")
         params.append(cycle_id)
     if role:
-        conditions.append("agent_role = ?")
+        conditions.append("s.agent_role = ?")
         params.append(role)
 
     where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
@@ -210,7 +210,10 @@ def get_sessions(
     conn = _connect(project_path)
     try:
         rows = conn.execute(
-            f"SELECT * FROM sessions {where} ORDER BY created_at DESC LIMIT ?",
+            f"""SELECT s.*,
+                       (SELECT COUNT(*) FROM sessions c WHERE c.parent_id = s.id) AS child_count
+                FROM sessions s {where}
+                ORDER BY s.created_at DESC LIMIT ?""",
             params,
         ).fetchall()
         return [dict(r) for r in rows]
@@ -240,14 +243,20 @@ def get_session(project_path: Path, session_id: str) -> dict | None:
 
 
 def get_children(project_path: Path, session_id: str) -> list[dict]:
-    """Get child sessions of a given session."""
+    """Get child sessions with child_count and last message preview."""
     if not _db_path(project_path).exists():
         return []
 
     conn = _connect(project_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM sessions WHERE parent_id = ? ORDER BY created_at",
+            """SELECT s.*,
+                      (SELECT COUNT(*) FROM sessions c WHERE c.parent_id = s.id) AS child_count,
+                      (SELECT si.preview FROM session_items si
+                       WHERE si.session_id = s.id ORDER BY si.position DESC LIMIT 1) AS last_message_preview
+               FROM sessions s
+               WHERE s.parent_id = ?
+               ORDER BY s.created_at""",
             (session_id,),
         ).fetchall()
         return [dict(r) for r in rows]

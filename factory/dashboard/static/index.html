@@ -849,6 +849,7 @@ function renderProjects(projects) {
         <span class="dot ${p.active ? 'live' : 'idle'}"></span>
         ${esc(p.name)}
         ${p.name === selectedProject && currentMode ? `<span class="mode-badge">${esc(currentMode)}</span>` : ''}
+        <button class="project-info-btn" onclick="event.stopPropagation(); window.location.href='/sessions/${encodeURIComponent(p.name)}'" title="Agent sessions">sessions</button>
         <button class="project-info-btn" onclick="event.stopPropagation(); openProjectDetails('${esc(p.name)}')" title="Project details">info</button>
       </div>
       ${p.goal ? `<div class="project-goal">${esc(p.goal)}</div>` : ''}

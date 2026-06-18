@@ -631,6 +631,63 @@ def create_app(projects_dir: Path) -> FastAPI:
         )
         return HTMLResponse((_STATIC_DIR / "research.html").read_text())
 
+    @app.get("/api/projects/{name}/sessions")
+    async def project_sessions(
+        name: str,
+        cycle: str | None = None,
+        role: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions",
+            project=name,
+        )
+        from factory.sessions import get_sessions
+
+        path = projects_dir / name
+        return get_sessions(path, cycle_id=cycle, role=role, limit=limit)
+
+    @app.get("/api/projects/{name}/sessions/{session_id}")
+    async def project_session_detail(name: str, session_id: str) -> JSONResponse:
+        _validate_path_segment(name)
+        _validate_path_segment(session_id, "session_id")
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/{session_id}",
+            project=name,
+        )
+        from factory.sessions import get_session
+
+        path = projects_dir / name
+        session = get_session(path, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return JSONResponse(session)
+
+    @app.get("/api/projects/{name}/sessions/{session_id}/children")
+    async def project_session_children(name: str, session_id: str) -> list[dict[str, Any]]:
+        _validate_path_segment(name)
+        _validate_path_segment(session_id, "session_id")
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/{session_id}/children",
+            project=name,
+        )
+        from factory.sessions import get_children
+
+        path = projects_dir / name
+        return get_children(path, session_id)
+
+    @app.get("/sessions/{name}", response_class=HTMLResponse)
+    async def sessions_view(name: str) -> HTMLResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request", endpoint="/sessions/{name}", project=name
+        )
+        return HTMLResponse((_STATIC_DIR / "sessions.html").read_text())
+
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:
         log.info("dashboard_request", endpoint="/api/events/stream")
