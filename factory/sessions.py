@@ -228,17 +228,44 @@ def _ingest_transcript(
             if item_type == "user":
                 msg = item.get("message", {})
                 content_parts = msg.get("content", [])
-                text = ""
+
+                tool_results: list[dict] = []
+                text_parts: list[str] = []
+
                 for part in content_parts:
-                    if isinstance(part, dict):
-                        if part.get("type") == "text":
-                            text += part.get("text", "")
-                        elif part.get("type") == "tool_result":
-                            text += f'[Tool Result: {part.get("tool_use_id", "")[:12]}...]'
-                if not text:
-                    continue
-                _insert_item(conn, session_id, position, "message", "user", text)
-                position += 1
+                    if isinstance(part, str):
+                        text_parts.append(part)
+                    elif isinstance(part, dict):
+                        if part.get("type") == "tool_result":
+                            raw_content = part.get("content", [])
+                            if isinstance(raw_content, list):
+                                full_text = "".join(str(c) for c in raw_content)
+                            else:
+                                full_text = str(raw_content)
+                            tool_results.append({
+                                "tool_use_id": part.get("tool_use_id", ""),
+                                "content": full_text,
+                                "is_error": part.get("is_error", False),
+                            })
+                        elif part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+
+                if tool_results:
+                    for tr in tool_results:
+                        content = tr["content"]
+                        if not content.strip():
+                            continue
+                        data = json.dumps(tr)
+                        _insert_item(
+                            conn, session_id, position, "tool_output", "tool",
+                            data, preview=content[:150],
+                        )
+                        position += 1
+                elif text_parts:
+                    text = "".join(text_parts)
+                    if text.strip():
+                        _insert_item(conn, session_id, position, "message", "user", text)
+                        position += 1
 
             elif item_type == "assistant":
                 msg = item.get("message", {})
@@ -255,9 +282,9 @@ def _ingest_transcript(
                     elif ptype == "tool_use":
                         tool_name = part.get("name", "unknown")
                         tool_input = part.get("input", {})
-                        data = json.dumps({"name": tool_name, "input": tool_input}, indent=2)
+                        data = json.dumps({"name": tool_name, "input": tool_input})
                         input_str = json.dumps(tool_input)
-                        preview = f"{tool_name}({input_str[:100]}...)"
+                        preview = f"{tool_name}({input_str[:100]})"
                         _insert_item(
                             conn, session_id, position, "tool_call", "assistant",
                             data, preview=preview,
@@ -313,8 +340,9 @@ def _insert_item(
 
 
 def backfill_transcripts(project_path: Path) -> int:
-    """Re-ingest transcripts for sessions that only have the old single-blob item.
+    """Re-ingest transcripts for all sessions with a claude_session_id.
 
+    Deletes existing items and re-parses from the JSONL transcript.
     Returns the number of sessions backfilled.
     """
     if not _db_path(project_path).exists():
@@ -325,8 +353,7 @@ def backfill_transcripts(project_path: Path) -> int:
         rows = conn.execute(
             """SELECT s.id, s.claude_session_id
                FROM sessions s
-               WHERE s.claude_session_id IS NOT NULL
-                 AND (SELECT COUNT(*) FROM session_items si WHERE si.session_id = s.id) = 1"""
+               WHERE s.claude_session_id IS NOT NULL"""
         ).fetchall()
 
         count = 0

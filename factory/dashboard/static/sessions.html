@@ -10,7 +10,7 @@
   --bg:#0d1117;--surface:#161b22;--border:#30363d;
   --text:#e6edf3;--text-dim:#7d8590;--accent:#58a6ff;
   --green:#3fb950;--red:#f85149;--yellow:#d29922;
-  --cyan:#39d2e0;
+  --cyan:#39d2e0;--orange:#f0883e;--purple:#bc8cff;
   --role-ceo:#58a6ff;--role-researcher:#3fb950;--role-strategist:#d29922;
   --role-builder:#f0883e;--role-reviewer:#bc8cff;--role-evaluator:#f778ba;
   --role-archivist:#7d8590;--role-refiner:#39d2e0;
@@ -37,6 +37,7 @@ header{display:flex;align-items:center;justify-content:space-between;padding:12p
 
 .content{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 110px);overflow:hidden}
 
+/* ── Tree Panel ── */
 .tree-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
 .tree-header{padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
 .tree-body{overflow-y:auto;flex:1;padding:4px}
@@ -62,50 +63,56 @@ header{display:flex;align-items:center;justify-content:space-between;padding:12p
 .status-dot.failed{background:var(--red)}
 @keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(210,153,34,0.4)}50%{opacity:0.7;box-shadow:0 0 0 4px rgba(210,153,34,0)}}
 .node-meta{font-size:10px;color:var(--text-dim);margin-left:auto;display:flex;gap:8px;flex-shrink:0;white-space:nowrap}
+.node-preview{font-size:10px;color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;display:block;margin-top:2px;padding-left:28px}
+.item-count-badge{font-size:9px;padding:0 5px;border-radius:8px;background:var(--border);color:var(--text-dim);font-weight:600;flex-shrink:0}
 
+/* ── Detail / Chat Panel ── */
 .detail-panel{display:flex;flex-direction:column;overflow:hidden}
 .detail-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px}
 
-.detail-header{padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
-.detail-title{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
-.detail-title .role-badge{font-size:12px;padding:2px 10px}
+.chat-header{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.chat-header-top{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.chat-header-top .role-badge{font-size:12px;padding:2px 10px}
 .model-name{font-size:12px;color:var(--text-dim)}
 .status-badge{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600}
 .status-badge.running{background:#3d2e1f;color:var(--yellow)}
 .status-badge.completed{background:#1a3a2a;color:var(--green)}
 .status-badge.failed{background:#3d1f1f;color:var(--red)}
-.detail-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12px}
-.detail-stat{display:flex;flex-direction:column;gap:1px}
-.detail-stat .ds-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px}
-.detail-stat .ds-value{font-weight:600}
+.chat-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12px}
+.chat-stat{display:flex;flex-direction:column;gap:1px}
+.chat-stat .cs-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px}
+.chat-stat .cs-value{font-weight:600}
+.chat-children{padding:8px 0 0;display:flex;gap:6px;flex-wrap:wrap}
+.child-chip{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:11px;cursor:pointer;padding:3px 10px;border-radius:12px;border:1px solid var(--border);background:var(--bg);transition:all 0.15s}
+.child-chip:hover{background:var(--surface);border-color:var(--accent)}
 
-.detail-body{overflow-y:auto;flex:1;padding:12px 20px}
+/* ── Chat Body ── */
+.chat-body{display:flex;flex-direction:column;gap:8px;padding:16px 20px;overflow-y:auto;flex:1}
 
-.item-block{margin-bottom:8px;border-radius:6px;border:1px solid var(--border);overflow:hidden}
-.item-block.role-user{background:rgba(88,166,255,0.06);border-left:3px solid var(--accent)}
-.item-block.role-assistant.type-message{background:rgba(63,185,80,0.06);border-left:3px solid var(--green)}
-.item-block.type-tool_call{background:rgba(210,153,34,0.06);border-left:3px solid var(--yellow)}
-.item-block.type-tool_output{background:rgba(125,133,144,0.06);border-left:3px solid #555}
-.item-block.type-thinking{background:rgba(188,140,255,0.05);border-left:3px solid var(--role-reviewer);font-style:italic}
+.chat-msg{max-width:85%;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.6;position:relative}
+.chat-msg.assistant{align-self:flex-start;background:rgba(63,185,80,0.06);border-left:2px solid var(--green);border-top-left-radius:2px}
+.chat-msg.user{align-self:flex-end;background:rgba(88,166,255,0.06);border-right:2px solid var(--accent);border-top-right-radius:2px}
+.chat-msg.tool-call{align-self:flex-start;background:rgba(240,136,62,0.08);border-left:2px solid var(--orange);border-top-left-radius:2px}
+.chat-msg.tool-output{align-self:flex-start;background:rgba(125,133,144,0.06);border-left:2px solid #555;border-top-left-radius:2px}
+.chat-msg.thinking{align-self:flex-start;background:rgba(188,140,255,0.06);border-left:2px solid var(--purple);border-top-left-radius:2px}
 
-.item-header{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-dim)}
-.item-type-badge{font-size:10px;padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.3px}
-.item-type-badge.user-msg{background:#1f3a5f;color:var(--accent)}
-.item-type-badge.assistant-msg{background:#1a3a2a;color:var(--green)}
-.item-type-badge.tool_call{background:#3d2e1f;color:var(--yellow)}
-.item-type-badge.tool_output{background:#2a2a2a;color:var(--text-dim)}
-.item-type-badge.thinking{background:#2d1f3d;color:var(--role-reviewer)}
-.tool-name{font-weight:700;color:var(--yellow);font-size:12px}
+.chat-role-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);margin-bottom:4px}
+.chat-msg.user .chat-role-label{text-align:right}
 
-.item-content{padding:0 12px 10px;font-size:13px;line-height:1.6}
-.item-content pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
+.tool-header{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.tool-icon{font-size:12px}
+.tool-name{font-weight:700;color:var(--orange);font-size:12px}
+
+.chat-msg pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
+.chat-msg code{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:12px;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
+.chat-msg .tool-output-content{font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace;font-size:12px}
+.chat-msg .tool-output-pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
+
+.thinking-content{font-style:italic;color:var(--text-dim)}
 
 details{border:none}
 details summary{cursor:pointer;color:var(--accent);font-size:12px;padding:4px 0;user-select:none}
 details summary:hover{text-decoration:underline}
-
-.child-link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:12px;cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);margin-top:4px}
-.child-link:hover{background:var(--surface);border-color:var(--accent)}
 
 @media(max-width:800px){
   .content{grid-template-columns:1fr;grid-template-rows:300px 1fr}
@@ -155,6 +162,7 @@ document.title = 'Sessions — ' + projectName;
 var currentSessions = [];
 var selectedSession = null;
 var breadcrumbTrail = [];
+var sessionItemCounts = {};
 
 var ROLE_COLORS = {
   ceo: '#58a6ff', researcher: '#3fb950', strategist: '#d29922',
@@ -279,7 +287,6 @@ function renderTree(sessions) {
 
     if (!root && children.length === 0) return;
 
-    var isOpen = true;
     html += '<div class="cycle-group open" data-root="' + esc(rid) + '">';
 
     if (root) {
@@ -319,15 +326,20 @@ function renderSessionNode(s) {
   var sel = selectedSession === s.id ? ' selected' : '';
   var running = s.status === 'running' ? ' running' : '';
   var statusCls = s.status || 'completed';
+  var itemCount = sessionItemCounts[s.id];
+  var countBadge = itemCount != null ? '<span class="item-count-badge">' + itemCount + '</span>' : '';
 
-  return '<div class="session-node' + sel + running + '" data-id="' + esc(s.id) + '" onclick="selectSession(\'' + esc(s.id) + '\')">' +
+  var html = '<div class="session-node' + sel + running + '" data-id="' + esc(s.id) + '" onclick="selectSession(\'' + esc(s.id) + '\')">' +
     '<span class="status-dot ' + esc(statusCls) + '"></span>' +
     renderRoleBadge(s.agent_role) +
+    countBadge +
     '<span class="node-meta">' +
       '<span>' + formatCost(s.total_cost_usd) + '</span>' +
       '<span>' + formatDuration(s.duration_ms) + '</span>' +
     '</span>' +
   '</div>';
+
+  return html;
 }
 
 function renderRoleBadge(role) {
@@ -340,11 +352,10 @@ function toggleCycle(el) {
   group.classList.toggle('open');
 }
 
-// ── Session Detail ──
+// ── Session Detail (Chat UI) ──
 async function selectSession(sessionId) {
   selectedSession = sessionId;
 
-  // Update tree selection
   document.querySelectorAll('.session-node').forEach(function(n) {
     n.classList.toggle('selected', n.dataset.id === sessionId);
   });
@@ -360,8 +371,21 @@ async function selectSession(sessionId) {
     var childResp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/sessions/' + encodeURIComponent(sessionId) + '/children');
     var children = childResp.ok ? await childResp.json() : [];
 
+    sessionItemCounts[sessionId] = (session.items || []).length;
+    var node = document.querySelector('.session-node[data-id="' + sessionId + '"]');
+    if (node) {
+      var existing = node.querySelector('.item-count-badge');
+      if (!existing) {
+        var badge = document.createElement('span');
+        badge.className = 'item-count-badge';
+        badge.textContent = sessionItemCounts[sessionId];
+        var roleBadge = node.querySelector('.role-badge');
+        if (roleBadge) roleBadge.after(badge);
+      }
+    }
+
     updateBreadcrumb(session);
-    renderDetail(session, children);
+    renderChat(session, children);
   } catch (e) {
     panel.innerHTML = '<div class="detail-empty">Failed to load session</div>';
   }
@@ -395,126 +419,170 @@ function updateBreadcrumb(session) {
   }).join('');
 }
 
-function renderDetail(session, children) {
+function renderChat(session, children) {
   var panel = document.getElementById('detail-panel');
   var html = '';
 
-  // Header
-  html += '<div class="detail-header">';
-  html += '<div class="detail-title">';
+  // ── Chat Header ──
+  html += '<div class="chat-header">';
+  html += '<div class="chat-header-top">';
   html += renderRoleBadge(session.agent_role);
   if (session.model) html += '<span class="model-name">' + esc(session.model) + '</span>';
   html += '<span class="status-badge ' + esc(session.status || 'completed') + '">' + esc(session.status || 'unknown') + '</span>';
   html += '</div>';
 
-  html += '<div class="detail-stats">';
-  html += renderDetailStat('Input', formatTokens(session.input_tokens));
-  html += renderDetailStat('Output', formatTokens(session.output_tokens));
-  html += renderDetailStat('Cache', formatTokens(session.cache_read_tokens));
-  html += renderDetailStat('Cost', formatCost(session.total_cost_usd));
-  html += renderDetailStat('Duration', formatDuration(session.duration_ms));
-  html += renderDetailStat('Turns', String(session.num_turns || 0));
-  if (session.stop_reason) html += renderDetailStat('Stop', session.stop_reason);
-  if (session.terminal_reason) html += renderDetailStat('Terminal', session.terminal_reason);
-  html += '</div>';
+  html += '<div class="chat-stats">';
+  html += renderChatStat('Input', formatTokens(session.input_tokens));
+  html += renderChatStat('Output', formatTokens(session.output_tokens));
+  html += renderChatStat('Cache', formatTokens(session.cache_read_tokens));
+  html += renderChatStat('Cost', formatCost(session.total_cost_usd));
+  html += renderChatStat('Duration', formatDuration(session.duration_ms));
+  html += renderChatStat('Turns', String(session.num_turns || 0));
+  if (session.stop_reason) html += renderChatStat('Stop', session.stop_reason);
+  if (session.terminal_reason) html += renderChatStat('Terminal', session.terminal_reason);
   html += '</div>';
 
-  // Children links
   if (children.length > 0) {
-    html += '<div style="padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface)">';
-    html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Child Sessions</div>';
+    html += '<div class="chat-children">';
     children.forEach(function(c) {
       var statusDot = '<span class="status-dot ' + esc(c.status || 'completed') + '" style="width:6px;height:6px"></span>';
-      html += '<span class="child-link" onclick="selectSession(\'' + esc(c.id) + '\')">' +
+      html += '<span class="child-chip" onclick="selectSession(\'' + esc(c.id) + '\')">' +
         statusDot + ' ' + renderRoleBadge(c.agent_role) + ' ' +
         formatCost(c.total_cost_usd) + ' ' + formatDuration(c.duration_ms) +
-        '</span> ';
+        '</span>';
     });
     html += '</div>';
   }
 
-  // Items
-  html += '<div class="detail-body">';
+  html += '</div>';
+
+  // ── Chat Body ──
+  html += '<div class="chat-body">';
   var items = session.items || [];
   if (items.length === 0) {
     html += '<div style="text-align:center;padding:40px;color:var(--text-dim)">No conversation items recorded</div>';
   } else {
-    items.forEach(function(item, idx) {
-      html += renderItem(item, children);
+    items.forEach(function(item) {
+      html += renderChatMessage(item);
     });
   }
   html += '</div>';
 
   panel.innerHTML = html;
+
+  var chatBody = panel.querySelector('.chat-body');
+  if (chatBody) chatBody.scrollTop = 0;
 }
 
-function renderDetailStat(label, value) {
-  return '<div class="detail-stat"><span class="ds-label">' + esc(label) + '</span><span class="ds-value">' + esc(value) + '</span></div>';
+function renderChatStat(label, value) {
+  return '<div class="chat-stat"><span class="cs-label">' + esc(label) + '</span><span class="cs-value">' + esc(value) + '</span></div>';
 }
 
-function renderItem(item, children) {
+function renderChatMessage(item) {
   var type = item.type || 'message';
   var role = item.role || '';
-  var roleClass = role ? ' role-' + role : '';
-  var typeClass = ' type-' + type;
-
-  var html = '<div class="item-block' + roleClass + typeClass + '">';
-
-  // Header with role-appropriate badge
-  html += '<div class="item-header">';
-  if (type === 'message' && role === 'user') {
-    html += '<span class="item-type-badge user-msg">User</span>';
-  } else if (type === 'message' && role === 'assistant') {
-    html += '<span class="item-type-badge assistant-msg">Assistant</span>';
-  } else if (type === 'tool_call') {
-    html += '<span class="item-type-badge tool_call">Tool Call</span>';
-  } else if (type === 'tool_output') {
-    html += '<span class="item-type-badge tool_output">Output</span>';
-  } else if (type === 'thinking') {
-    html += '<span class="item-type-badge thinking">Thinking</span>';
-  } else {
-    html += '<span class="item-type-badge">' + esc(type) + '</span>';
-    if (role) html += '<span style="text-transform:capitalize">' + esc(role) + '</span>';
-  }
-  html += '</div>';
-
-  // Content — rendered per type
-  html += '<div class="item-content">';
   var data = item.data || '';
 
-  if (type === 'tool_call') {
-    var toolName = 'unknown';
-    var toolInput = data;
-    try {
-      var parsed = JSON.parse(data);
-      toolName = parsed.name || 'unknown';
-      toolInput = JSON.stringify(parsed.input || {}, null, 2);
-    } catch (e) {}
-    html += '<span class="tool-name">' + esc(toolName) + '</span>';
-    html += '<details><summary>Show arguments</summary>';
-    html += '<pre>' + esc(toolInput) + '</pre>';
-    html += '</details>';
-
-  } else if (type === 'tool_output') {
-    var preview = item.preview || (typeof data === 'string' ? data.substring(0, 150) : '');
-    html += '<details><summary>' + esc(preview) + (data.length > 150 ? '...' : '') + '</summary>';
-    html += '<pre>' + esc(data) + '</pre>';
-    html += '</details>';
-
-  } else if (type === 'thinking') {
-    var thinkPreview = item.preview || (typeof data === 'string' ? data.substring(0, 150) : '');
-    html += '<details><summary>' + esc(thinkPreview) + (data.length > 150 ? '...' : '') + '</summary>';
-    html += '<div style="font-style:italic;color:var(--text-dim)">' + renderMessageContent(data) + '</div>';
-    html += '</details>';
-
-  } else if (typeof data === 'string') {
-    html += renderMessageContent(data);
-  } else {
-    html += '<pre>' + esc(JSON.stringify(data, null, 2)) + '</pre>';
+  if (type === 'message' && role === 'assistant') {
+    return renderChatBubble('assistant', 'Assistant', renderMessageContent(data));
   }
 
-  html += '</div></div>';
-  return html;
+  if (type === 'message' && role === 'user') {
+    return renderChatBubble('user', 'User', renderMessageContent(data));
+  }
+
+  if (type === 'tool_call') {
+    return renderToolCall(item);
+  }
+
+  if (type === 'tool_output') {
+    return renderToolOutput(item);
+  }
+
+  if (type === 'thinking') {
+    return renderThinking(item);
+  }
+
+  return renderChatBubble('assistant', type + ' / ' + role, '<pre>' + esc(data) + '</pre>');
+}
+
+function renderChatBubble(cls, label, body) {
+  return '<div class="chat-msg ' + cls + '">' +
+    '<div class="chat-role-label">' + esc(label) + '</div>' +
+    '<div>' + body + '</div>' +
+    '</div>';
+}
+
+function renderToolCall(item) {
+  var data = item.data || '{}';
+  var name = 'unknown';
+  var input = {};
+  try {
+    var parsed = JSON.parse(data);
+    name = parsed.name || 'unknown';
+    input = parsed.input || {};
+  } catch (e) {}
+
+  var body = '';
+  if (name === 'Bash') {
+    body = '<code>' + esc(input.command || JSON.stringify(input)) + '</code>';
+  } else if (name === 'Read') {
+    body = '<code>' + esc(input.file_path || '') + '</code>';
+  } else if (name === 'Write' || name === 'Edit') {
+    body = '<code>' + esc(input.file_path || '') + '</code>';
+    if (name === 'Edit' && input.old_string) {
+      body += '<details><summary>Diff</summary><pre>' + esc(input.old_string) + '\n---\n' + esc(input.new_string || '') + '</pre></details>';
+    }
+  } else {
+    body = '<details><summary>Input</summary><pre>' + esc(JSON.stringify(input, null, 2)) + '</pre></details>';
+  }
+
+  return '<div class="chat-msg tool-call">' +
+    '<div class="chat-role-label">' +
+      '<span class="tool-header"><span class="tool-icon">&#9881;</span> <span class="tool-name">' + esc(name) + '</span></span>' +
+    '</div>' +
+    '<div>' + body + '</div>' +
+    '</div>';
+}
+
+function renderToolOutput(item) {
+  var data = item.data || '';
+
+  var content = data;
+  try {
+    var parsed = JSON.parse(data);
+    if (parsed && typeof parsed === 'object' && parsed.content != null) {
+      content = parsed.content;
+    }
+  } catch (e) {}
+
+  var lines = content.split('\n');
+  var body = '';
+
+  if (lines.length <= 5) {
+    body = '<pre class="tool-output-pre">' + esc(content) + '</pre>';
+  } else {
+    var preview = lines.slice(0, 3).join('\n');
+    body = '<details><summary><span class="tool-output-content">' + esc(preview) + '\n... (' + (lines.length - 3) + ' more lines)</span></summary>' +
+      '<pre class="tool-output-pre">' + esc(content) + '</pre></details>';
+  }
+
+  return '<div class="chat-msg tool-output">' +
+    '<div class="chat-role-label">Output</div>' +
+    '<div>' + body + '</div>' +
+    '</div>';
+}
+
+function renderThinking(item) {
+  var data = item.data || '';
+  var preview = item.preview || (typeof data === 'string' ? data.substring(0, 80) : '');
+
+  return '<div class="chat-msg thinking">' +
+    '<div class="chat-role-label">Thinking</div>' +
+    '<details><summary>' + esc(preview) + (data.length > 80 ? '...' : '') + '</summary>' +
+    '<div class="thinking-content">' + renderMessageContent(data) + '</div>' +
+    '</details>' +
+    '</div>';
 }
 
 function renderMessageContent(text) {
@@ -539,7 +607,10 @@ function renderMessageContent(text) {
     if (inCode) {
       result += esc(line) + '\n';
     } else {
-      result += '<div>' + esc(line) + '</div>';
+      var escaped = esc(line);
+      escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+      result += '<div>' + (escaped || '&nbsp;') + '</div>';
     }
   }
 
@@ -563,9 +634,7 @@ function connectSSE() {
     } catch (err) {}
   };
 
-  evtSource.onerror = function() {
-    // Will auto-reconnect
-  };
+  evtSource.onerror = function() {};
 }
 
 // ── Init ──
