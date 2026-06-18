@@ -57,31 +57,18 @@ def _run_status() -> int:
     return 0
 
 
-def _run_verify() -> int:
+def _run_verify(num_agents: int = 2) -> int:
     from .verify import run_verification
 
     print("factory-tracing verify")
     print("=" * 40)
-    print("Running end-to-end verification...\n")
+    print(f"Running multi-agent verification ({num_agents} agents)...\n")
 
-    result = run_verification()
+    result = run_verification(num_agents=num_agents)
 
-    if result.trace_id:
-        print(f"Trace ID:     {result.trace_id}")
-        print(f"Langfuse URL: {result.langfuse_url}")
-        print(f"Span count:   {result.span_count}")
-
-    print("\nChecks:")
-    for check in result.checks:
-        status = "PASS" if check.passed else "FAIL"
-        print(f"  [{status}] {check.name}: {check.detail}")
-
-    print()
     if result.success:
-        print("Result: VERIFIED — end-to-end tracing pipeline is working")
         return 0
     else:
-        print("Result: FAILED — see check details above")
         return 1
 
 
@@ -91,13 +78,17 @@ def main(argv: list[str] | None = None) -> int:
         description="Distributed tracing management for the factory",
     )
     subparsers = parser.add_subparsers(dest="command")
-    subparsers.add_parser("verify", help="Run end-to-end verification against Langfuse")
+    verify_parser = subparsers.add_parser("verify", help="Run multi-agent end-to-end verification against Langfuse")
+    verify_parser.add_argument(
+        "--agents", type=int, default=2, metavar="N",
+        help="Number of agents to invoke in the verification cycle (default: 2)",
+    )
     subparsers.add_parser("status", help="Check configuration and Langfuse connectivity")
 
     args = parser.parse_args(argv)
 
     if args.command == "verify":
-        return _run_verify()
+        return _run_verify(num_agents=args.agents)
     elif args.command == "status":
         return _run_status()
     else:
