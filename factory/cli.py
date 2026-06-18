@@ -2203,6 +2203,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
+    background = _resolve_background(args)
     review_tag = getattr(args, "review_tag", None)
     parent_span = getattr(args, "parent_session", None) or os.environ.get("FACTORY_PARENT_SPAN_ID")
     if parent_span:
@@ -2218,6 +2219,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         runner_name=runner,
         use_profile=use_profile,
         tmux_persist=tmux_persist,
+        background=background,
         review_tag=review_tag,
     ))
     print(result)
@@ -2311,7 +2313,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
-    headless = getattr(args, "headless", False)
+    headless = getattr(args, "headless", False) or getattr(args, "bg", False)
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
     dir_name = getattr(args, "dir", None)
@@ -2503,6 +2505,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     runner_name = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
+    background = _resolve_background(args)
     clean_pr_flag = getattr(args, "clean_pr", None)
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
@@ -2607,6 +2610,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 session_name=session_name,
                 use_profile=use_profile,
                 tmux_persist=tmux_persist,
+                background=background,
             ))
             print(result)
             if code == 0:
@@ -2620,6 +2624,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 already_improved=mode in ("improve", "meta") or discover_only,
                 model=model, no_github=no_github, use_profile=use_profile,
                 tmux_persist=tmux_persist,
+                background=background,
             )
         finally:
             remove_worktree(project_path, wt_path, wt_branch)
@@ -2674,6 +2679,16 @@ def _resolve_tmux_persist(args: argparse.Namespace) -> bool:
     cli_flag = getattr(args, "tmux_persist", False)
     cli_value = "true" if cli_flag else None
     val = resolve("tmux_persist", cli_value=cli_value, env_var="FACTORY_TMUX_PERSIST", default="false")
+    return bool(val and val.lower() in ("1", "true", "yes"))
+
+
+def _resolve_background(args: argparse.Namespace) -> bool:
+    """Resolve background: CLI flag > FACTORY_BG env var > config.toml > False."""
+    from factory.user_config import resolve
+
+    cli_flag = getattr(args, "bg", False)
+    cli_value = "true" if cli_flag else None
+    val = resolve("bg", cli_value=cli_value, env_var="FACTORY_BG", default="false")
     return bool(val and val.lower() in ("1", "true", "yes"))
 
 
@@ -3400,6 +3415,7 @@ def _chain_modes(
     no_github: bool = False,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    background: bool = False,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -3427,7 +3443,7 @@ def _chain_modes(
             project_path, next_mode, focus=focus,
             min_growth=min_growth, max_new=max_new, branch=branch,
             no_github=no_github, model=model, use_profile=use_profile,
-            tmux_persist=tmux_persist,
+            tmux_persist=tmux_persist, background=background,
         )
         if code != 0:
             return code
@@ -3451,6 +3467,7 @@ def _run_single_cycle(
     use_profile: bool = False,
     clean_pr: bool = False,
     tmux_persist: bool = False,
+    background: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3488,6 +3505,7 @@ def _run_single_cycle(
             model=model,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
+            background=background,
         ))
 
         if code == 0:
@@ -3519,6 +3537,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     model = _resolve_model(args)
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
+    background = _resolve_background(args)
 
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
@@ -3593,6 +3612,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             use_profile=use_profile_flag,
             clean_pr=clean_pr_resolved,
             tmux_persist=tmux_persist,
+            background=background,
             **budget_kwargs,
         )
         if code != 0:
@@ -3602,6 +3622,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             min_growth=min_growth, max_new=max_new, branch=branch,
             model=model, no_github=no_github, use_profile=use_profile_flag,
             tmux_persist=tmux_persist,
+            background=background,
         )
 
     # Heartbeat loop mode
@@ -3633,6 +3654,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 use_profile=use_profile_flag,
                 clean_pr=clean_pr_resolved,
                 tmux_persist=tmux_persist,
+                background=background,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -3640,6 +3662,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 min_growth=min_growth, max_new=max_new, branch=branch,
                 model=model, no_github=no_github, use_profile=use_profile_flag,
                 tmux_persist=tmux_persist,
+                background=background,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -4040,6 +4063,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Inject user profile (~/.factory/profile.md) into the agent prompt")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--bg", action="store_true", default=False,
+                    help="Dispatch agent as a background session via claude agent view (claude only)")
     p.add_argument("--review-tag", default=None,
                     help="Tag for distinct review output files (writes <role>-<tag>-latest.md)")
     p.add_argument("--parent-session", default=None,
@@ -4112,6 +4137,8 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="Disable clean PR mode")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--bg", action="store_true", default=False,
+                    help="Dispatch agent as a background session via claude agent view (claude only)")
     p.add_argument("--pr", type=int, default=None,
                     help="PR number for --mode review (required when mode=review)")
     p.add_argument("--repo", default=None,
@@ -4179,6 +4206,8 @@ def build_parser() -> argparse.ArgumentParser:
                                     help="Disable clean PR mode")
     p.add_argument("--tmux-persist", action="store_true", default=False,
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--bg", action="store_true", default=False,
+                    help="Dispatch agent as a background session via claude agent view (claude only)")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")

@@ -201,6 +201,9 @@ class OpenCodeRunner:
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless OpenCode invocation."""
+        background = request.extras.get("background", False)
+        if background:
+            log.warning("opencode_bg_not_supported", hint="--bg is a claude-only feature")
         if is_opencode_dry_run():
             from factory.runners._subprocess import make_dry_run_result
             return make_dry_run_result("opencode", request.role, request.cwd, request.task)

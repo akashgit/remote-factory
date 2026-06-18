@@ -142,6 +142,9 @@ class CodexRunner:
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
             log.warning("codex_tmux_not_supported")
+        background = request.extras.get("background", False)
+        if background:
+            log.warning("codex_bg_not_supported", hint="--bg is a claude-only feature")
         if is_codex_dry_run():
             from factory.runners._subprocess import make_dry_run_result
             return make_dry_run_result("codex", request.role, request.cwd, request.task)
