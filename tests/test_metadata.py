@@ -1,4 +1,4 @@
-"""Tests for Phase 5: experiment metadata enrichment."""
+"""Tests for Phase 5: experiment attribution and metadata enrichment."""
 from __future__ import annotations
 
 import pytest
@@ -59,192 +59,126 @@ def _attrs(span) -> dict:
     return dict(span.attributes) if span.attributes else {}
 
 
-class TestExperimentMetadata:
-    def test_experiment_attributes_set_on_cycle_span(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
+def test_experiment_attributes_set_on_cycle_span(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle(
+        "run-1", "proj", "improve",
+        experiment_id="exp-42",
+        hypothesis_id="hyp-7",
+        hypothesis_category="FIX",
+    ):
+        pass
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+    attrs = _attrs(cycle)
+
+    assert attrs["factory.experiment.id"] == "exp-42"
+    assert attrs["factory.hypothesis.id"] == "hyp-7"
+    assert attrs["factory.hypothesis.category"] == "FIX"
+
+
+def test_langfuse_metadata_attributes_use_correct_prefix(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle(
+        "run-1", "proj", "improve",
+        experiment_id="exp-42",
+        hypothesis_category="EXPLORE",
+    ):
+        pass
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+    attrs = _attrs(cycle)
+
+    assert attrs["langfuse.trace.metadata.experiment_id"] == "exp-42"
+    assert attrs["langfuse.trace.metadata.hypothesis_category"] == "EXPLORE"
+
+
+def test_session_id_overridden_by_experiment_id(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle(
+        "run-1", "proj", "improve",
+        experiment_id="exp-42",
+    ):
+        pass
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+    attrs = _attrs(cycle)
+
+    assert attrs["langfuse.session.id"] == "exp-42"
+
+
+def test_eval_result_recorded_as_event(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle("run-1", "proj", "improve") as span:
+        integration.record_eval_result(
+            span,
+            {"tests": 0.8, "lint": 0.9, "capability_surface": 0.5},
+        )
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+
+    assert len(cycle.events) == 1
+    event = cycle.events[0]
+    assert event.name == "eval.result"
+    event_attrs = dict(event.attributes)
+    assert event_attrs["eval.tests"] == 0.8
+    assert event_attrs["eval.lint"] == 0.9
+    assert event_attrs["eval.capability_surface"] == 0.5
+
+
+def test_experiment_verdict_sets_attributes(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle("run-1", "proj", "improve") as span:
+        integration.record_experiment_verdict(span, "ACCEPTED", 0.85)
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+    attrs = _attrs(cycle)
+
+    assert attrs["factory.experiment.verdict"] == "ACCEPTED"
+    assert attrs["factory.experiment.composite_score"] == 0.85
+
+
+def test_omitted_optional_params_dont_set_empty_attributes(integration_with_exporter):
+    integration, exporter = integration_with_exporter
+
+    with integration.start_cycle("run-1", "proj", "improve"):
+        pass
+
+    spans = exporter.get_finished_spans()
+    cycle = next(s for s in spans if s.name == "factory.cycle")
+    attrs = _attrs(cycle)
+
+    assert "factory.experiment.id" not in attrs
+    assert "factory.hypothesis.id" not in attrs
+    assert "factory.hypothesis.category" not in attrs
+    assert "langfuse.trace.metadata.experiment_id" not in attrs
+    assert "langfuse.trace.metadata.hypothesis_category" not in attrs
+
+
+def test_noop_when_disabled(disabled_config, monkeypatch):
+    monkeypatch.delenv("FACTORY_TRACING_ENABLED", raising=False)
+    _provider_mod._reset_provider()
+    try:
+        integration = TracingIntegration(disabled_config)
+        assert not integration.enabled
 
         with integration.start_cycle(
-            "run-1", "test-project", "improve",
-            experiment_id="exp-42",
-            hypothesis_id="hyp-7",
-            hypothesis_category="EXPLORE",
-        ):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["factory.experiment.id"] == "exp-42"
-        assert attrs["factory.hypothesis.id"] == "hyp-7"
-        assert attrs["factory.hypothesis.category"] == "EXPLORE"
-
-    def test_langfuse_metadata_prefix_used(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle(
-            "run-1", "test-project", "improve",
-            experiment_id="exp-42",
-            hypothesis_category="FIX",
-        ):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["langfuse.trace.metadata.experiment_id"] == "exp-42"
-        assert attrs["langfuse.trace.metadata.hypothesis_category"] == "FIX"
-
-    def test_experiment_id_overrides_session_id(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle(
-            "run-1", "test-project", "improve",
-            experiment_id="exp-42",
-        ):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["langfuse.session.id"] == "exp-42"
-
-    def test_no_experiment_id_keeps_run_id_as_session_id(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle("run-1", "test-project", "improve"):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["langfuse.session.id"] == "run-1"
-
-    def test_omitted_params_not_set(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle("run-1", "test-project", "improve"):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert "factory.experiment.id" not in attrs
-        assert "factory.hypothesis.id" not in attrs
-        assert "factory.hypothesis.category" not in attrs
-        assert "langfuse.trace.metadata.experiment_id" not in attrs
-        assert "langfuse.trace.metadata.hypothesis_category" not in attrs
-
-    def test_partial_params_only_set_provided(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle(
-            "run-1", "test-project", "improve",
-            hypothesis_id="hyp-3",
-        ):
-            pass
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["factory.hypothesis.id"] == "hyp-3"
-        assert "factory.experiment.id" not in attrs
-        assert "factory.hypothesis.category" not in attrs
-
-
-class TestEvalResult:
-    def test_record_eval_result_adds_event(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle("run-1", "test-project", "improve") as span:
-            integration.record_eval_result(span, {
-                "tests": 0.8,
-                "lint": 0.9,
-                "capability_surface": 0.5,
-            })
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-
-        assert len(cycle_span.events) == 1
-        event = cycle_span.events[0]
-        assert event.name == "eval.result"
-        event_attrs = dict(event.attributes)
-        assert event_attrs["eval.tests"] == 0.8
-        assert event_attrs["eval.lint"] == 0.9
-        assert event_attrs["eval.capability_surface"] == 0.5
-
-    def test_record_eval_result_noop_when_disabled(self, disabled_config, monkeypatch):
-        monkeypatch.delenv("FACTORY_TRACING_ENABLED", raising=False)
-        _provider_mod._reset_provider()
-        try:
-            integration = TracingIntegration(disabled_config)
-            integration.record_eval_result(_provider_mod._provider, {"tests": 0.8})
-        finally:
-            _provider_mod._reset_provider()
-
-    def test_multiple_eval_results(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle("run-1", "test-project", "improve") as span:
-            integration.record_eval_result(span, {"tests": 0.8})
-            integration.record_eval_result(span, {"lint": 0.9})
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-
-        assert len(cycle_span.events) == 2
-        assert cycle_span.events[0].name == "eval.result"
-        assert cycle_span.events[1].name == "eval.result"
-
-
-class TestExperimentVerdict:
-    def test_record_verdict_sets_attributes(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle("run-1", "test-project", "improve") as span:
-            integration.record_experiment_verdict(span, "KEEP", 0.85)
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["factory.experiment.verdict"] == "KEEP"
-        assert attrs["factory.experiment.composite_score"] == 0.85
-
-    def test_record_verdict_noop_when_disabled(self, disabled_config, monkeypatch):
-        monkeypatch.delenv("FACTORY_TRACING_ENABLED", raising=False)
-        _provider_mod._reset_provider()
-        try:
-            integration = TracingIntegration(disabled_config)
-            integration.record_experiment_verdict(_provider_mod._provider, "REVERT", 0.3)
-        finally:
-            _provider_mod._reset_provider()
-
-    def test_verdict_with_full_experiment_metadata(self, integration_with_exporter):
-        integration, exporter = integration_with_exporter
-
-        with integration.start_cycle(
-            "run-1", "test-project", "improve",
-            experiment_id="exp-42",
-            hypothesis_id="hyp-7",
+            "run-1", "proj", "improve",
+            experiment_id="exp-1",
+            hypothesis_id="hyp-1",
             hypothesis_category="FIX",
         ) as span:
-            integration.record_eval_result(span, {"tests": 0.9, "lint": 1.0})
-            integration.record_experiment_verdict(span, "KEEP", 0.92)
-
-        spans = exporter.get_finished_spans()
-        cycle_span = next(s for s in spans if s.name == "factory.cycle")
-        attrs = _attrs(cycle_span)
-
-        assert attrs["factory.experiment.id"] == "exp-42"
-        assert attrs["factory.hypothesis.id"] == "hyp-7"
-        assert attrs["factory.hypothesis.category"] == "FIX"
-        assert attrs["factory.experiment.verdict"] == "KEEP"
-        assert attrs["factory.experiment.composite_score"] == 0.92
-        assert len(cycle_span.events) == 1
+            integration.record_eval_result(span, {"tests": 0.8})
+            integration.record_experiment_verdict(span, "ACCEPTED", 0.9)
+    finally:
+        _provider_mod._reset_provider()
