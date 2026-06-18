@@ -10,6 +10,10 @@
   --bg:#0d1117;--surface:#161b22;--border:#30363d;
   --text:#e6edf3;--text-dim:#7d8590;--accent:#58a6ff;
   --green:#3fb950;--red:#f85149;--yellow:#d29922;
+  --cyan:#39d2e0;
+  --role-ceo:#58a6ff;--role-researcher:#3fb950;--role-strategist:#d29922;
+  --role-builder:#f0883e;--role-reviewer:#bc8cff;--role-evaluator:#f778ba;
+  --role-archivist:#7d8590;--role-refiner:#39d2e0;
 }
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5}
 header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface)}
@@ -17,10 +21,93 @@ header{display:flex;align-items:center;justify-content:space-between;padding:12p
 .header-info{display:flex;align-items:center;gap:16px}
 .back-link{color:var(--accent);text-decoration:none;font-size:13px}
 .back-link:hover{text-decoration:underline}
-main{max-width:1200px;margin:24px auto;padding:0 24px;display:flex;flex-direction:column;gap:20px}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px}
-.placeholder{text-align:center;padding:60px 20px;color:var(--text-dim)}
-.placeholder h2{color:var(--text);margin-bottom:8px;font-size:18px}
+
+.summary-bar{display:flex;gap:16px;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface);flex-wrap:wrap;align-items:center}
+.summary-stat{display:flex;align-items:center;gap:6px;font-size:12px}
+.summary-stat .label{color:var(--text-dim)}
+.summary-stat .value{font-weight:700}
+.summary-divider{width:1px;height:20px;background:var(--border)}
+.role-costs{display:flex;gap:12px;flex-wrap:wrap}
+.role-cost{font-size:11px;display:flex;align-items:center;gap:4px}
+
+.breadcrumb{padding:8px 24px;font-size:12px;color:var(--text-dim);border-bottom:1px solid var(--border);display:none}
+.breadcrumb a{color:var(--accent);text-decoration:none;cursor:pointer}
+.breadcrumb a:hover{text-decoration:underline}
+.breadcrumb .sep{margin:0 6px;color:var(--border)}
+
+.content{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 110px);overflow:hidden}
+
+.tree-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.tree-header{padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.tree-body{overflow-y:auto;flex:1;padding:4px}
+
+.cycle-group{margin-bottom:4px}
+.cycle-header{padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;border-radius:4px;color:var(--text-dim)}
+.cycle-header:hover{background:var(--surface)}
+.cycle-arrow{font-size:10px;transition:transform 0.15s;width:12px;text-align:center;flex-shrink:0}
+.cycle-group.open .cycle-arrow{transform:rotate(90deg)}
+.cycle-children{display:none;padding-left:12px}
+.cycle-group.open .cycle-children{display:block}
+
+.session-node{padding:6px 12px;font-size:12px;cursor:pointer;display:flex;align-items:center;gap:8px;border-radius:4px;border:1px solid transparent;margin-bottom:1px}
+.session-node:hover{background:var(--surface);border-color:var(--border)}
+.session-node.selected{background:var(--surface);border-color:var(--accent)}
+.session-node.running{animation:nodePulse 2s infinite}
+@keyframes nodePulse{0%,100%{opacity:1}50%{opacity:0.7}}
+
+.role-badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;text-transform:capitalize;color:#fff}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-dot.running{background:var(--yellow);box-shadow:0 0 6px var(--yellow);animation:pulse 1.5s infinite}
+.status-dot.completed{background:var(--green)}
+.status-dot.failed{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(210,153,34,0.4)}50%{opacity:0.7;box-shadow:0 0 0 4px rgba(210,153,34,0)}}
+.node-meta{font-size:10px;color:var(--text-dim);margin-left:auto;display:flex;gap:8px;flex-shrink:0;white-space:nowrap}
+
+.detail-panel{display:flex;flex-direction:column;overflow:hidden}
+.detail-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px}
+
+.detail-header{padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.detail-title{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.detail-title .role-badge{font-size:12px;padding:2px 10px}
+.model-name{font-size:12px;color:var(--text-dim)}
+.status-badge{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600}
+.status-badge.running{background:#3d2e1f;color:var(--yellow)}
+.status-badge.completed{background:#1a3a2a;color:var(--green)}
+.status-badge.failed{background:#3d1f1f;color:var(--red)}
+.detail-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12px}
+.detail-stat{display:flex;flex-direction:column;gap:1px}
+.detail-stat .ds-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px}
+.detail-stat .ds-value{font-weight:600}
+
+.detail-body{overflow-y:auto;flex:1;padding:12px 20px}
+
+.item-block{margin-bottom:8px;border-radius:6px;border:1px solid var(--border);overflow:hidden}
+.item-block.role-user{background:rgba(88,166,255,0.04)}
+.item-block.role-assistant{background:rgba(63,185,80,0.04)}
+.item-block.type-tool_call{background:rgba(210,153,34,0.04)}
+.item-block.type-tool_output{background:rgba(125,133,144,0.04)}
+
+.item-header{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-dim)}
+.item-type-badge{font-size:10px;padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.3px}
+.item-type-badge.message{background:#1f3a5f;color:var(--accent)}
+.item-type-badge.tool_call{background:#3d2e1f;color:var(--yellow)}
+.item-type-badge.tool_output{background:#2a2a2a;color:var(--text-dim)}
+
+.item-content{padding:0 12px 10px;font-size:13px;line-height:1.6}
+.item-content pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
+
+details{border:none}
+details summary{cursor:pointer;color:var(--accent);font-size:12px;padding:4px 0;user-select:none}
+details summary:hover{text-decoration:underline}
+
+.child-link{display:inline-flex;align-items:center;gap:4px;color:var(--accent);font-size:12px;cursor:pointer;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--bg);margin-top:4px}
+.child-link:hover{background:var(--surface);border-color:var(--accent)}
+
+@media(max-width:800px){
+  .content{grid-template-columns:1fr;grid-template-rows:300px 1fr}
+  .tree-panel{border-right:none;border-bottom:1px solid var(--border)}
+  .summary-bar{flex-direction:column;gap:8px}
+}
 </style>
 </head>
 <body>
@@ -31,18 +118,425 @@ main{max-width:1200px;margin:24px auto;padding:0 24px;display:flex;flex-directio
     <a href="/" class="back-link">&larr; Dashboard</a>
   </div>
 </header>
-<main>
-  <div class="panel placeholder">
-    <h2>Sessions</h2>
-    <p>Sessions page coming in Phase 3</p>
+
+<div class="summary-bar" id="summary-bar">
+  <div class="summary-stat"><span class="label">Sessions:</span><span class="value" id="sum-total">0</span></div>
+  <div class="summary-stat"><span class="label">Cost:</span><span class="value" id="sum-cost">$0.00</span></div>
+  <div class="summary-stat"><span class="label">Duration:</span><span class="value" id="sum-duration">0s</span></div>
+  <div class="summary-divider"></div>
+  <div class="role-costs" id="role-costs"></div>
+</div>
+
+<div class="breadcrumb" id="breadcrumb"></div>
+
+<div class="content">
+  <div class="tree-panel">
+    <div class="tree-header">Session Tree</div>
+    <div class="tree-body" id="tree-body">
+      <div style="text-align:center;padding:40px 20px;color:var(--text-dim)">Loading sessions...</div>
+    </div>
   </div>
-</main>
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-empty" id="detail-empty">Select a session from the tree</div>
+  </div>
+</div>
+
 <script>
 var projectName = decodeURIComponent(
   window.location.pathname.split('/').filter(Boolean).pop() || ''
 );
 document.getElementById('project-name').textContent = 'Sessions — ' + projectName;
 document.title = 'Sessions — ' + projectName;
+
+var currentSessions = [];
+var selectedSession = null;
+var breadcrumbTrail = [];
+
+var ROLE_COLORS = {
+  ceo: '#58a6ff', researcher: '#3fb950', strategist: '#d29922',
+  builder: '#f0883e', reviewer: '#bc8cff', evaluator: '#f778ba',
+  archivist: '#7d8590', refiner: '#39d2e0'
+};
+
+function esc(str) {
+  if (!str) return '';
+  var d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function roleColor(role) {
+  return ROLE_COLORS[(role || '').toLowerCase()] || '#7d8590';
+}
+
+function formatCost(usd) {
+  if (usd == null || usd === 0) return '$0.00';
+  if (usd < 0.01) return '<$0.01';
+  return '$' + usd.toFixed(2);
+}
+
+function formatDuration(ms) {
+  if (ms == null || ms === 0) return '0s';
+  var sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + 's';
+  var min = Math.floor(sec / 60);
+  var rem = sec % 60;
+  if (min < 60) return min + 'm' + rem + 's';
+  var hr = Math.floor(min / 60);
+  return hr + 'h' + (min % 60) + 'm';
+}
+
+function formatTokens(n) {
+  if (n == null || n === 0) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+// ── Data Loading ──
+async function loadSessions() {
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/sessions?limit=200');
+    if (!resp.ok) { renderEmptyTree(); return; }
+    currentSessions = await resp.json();
+  } catch (e) { renderEmptyTree(); return; }
+
+  if (currentSessions.length === 0) {
+    renderEmptyTree();
+    return;
+  }
+
+  renderTree(currentSessions);
+  renderSummary(currentSessions);
+}
+
+function renderEmptyTree() {
+  document.getElementById('tree-body').innerHTML =
+    '<div style="text-align:center;padding:40px 20px;color:var(--text-dim)">' +
+    '<div style="font-weight:600;margin-bottom:4px">No Sessions</div>' +
+    '<div style="font-size:12px">Run <code style="background:var(--border);padding:2px 6px;border-radius:4px">factory ceo &lt;path&gt;</code> to start recording agent sessions.</div>' +
+    '</div>';
+}
+
+// ── Summary Bar ──
+function renderSummary(sessions) {
+  var total = sessions.length;
+  var cost = 0;
+  var duration = 0;
+  var roleCosts = {};
+
+  sessions.forEach(function(s) {
+    cost += s.total_cost_usd || 0;
+    duration += s.duration_ms || 0;
+    var role = (s.agent_role || 'unknown').toLowerCase();
+    if (!roleCosts[role]) roleCosts[role] = 0;
+    roleCosts[role] += s.total_cost_usd || 0;
+  });
+
+  document.getElementById('sum-total').textContent = total;
+  document.getElementById('sum-cost').textContent = formatCost(cost);
+  document.getElementById('sum-duration').textContent = formatDuration(duration);
+
+  var rcEl = document.getElementById('role-costs');
+  var html = '';
+  Object.keys(roleCosts).sort().forEach(function(role) {
+    if (roleCosts[role] > 0) {
+      html += '<div class="role-cost"><span class="role-badge" style="background:' + roleColor(role) + '">' + esc(role) + '</span>' + formatCost(roleCosts[role]) + '</div>';
+    }
+  });
+  rcEl.innerHTML = html;
+}
+
+// ── Session Tree ──
+function renderTree(sessions) {
+  var groups = {};
+  var rootOrder = [];
+
+  sessions.forEach(function(s) {
+    var rid = s.root_id;
+    if (!groups[rid]) {
+      groups[rid] = { root: null, children: [] };
+      rootOrder.push(rid);
+    }
+    if (s.id === rid || !s.parent_id) {
+      groups[rid].root = s;
+    } else {
+      groups[rid].children.push(s);
+    }
+  });
+
+  var el = document.getElementById('tree-body');
+  var html = '';
+
+  rootOrder.forEach(function(rid) {
+    var g = groups[rid];
+    var root = g.root;
+    var children = g.children;
+
+    if (!root && children.length === 0) return;
+
+    var isOpen = true;
+    html += '<div class="cycle-group open" data-root="' + esc(rid) + '">';
+
+    if (root) {
+      var rootTs = root.created_at ? new Date(root.created_at * 1000).toLocaleString() : '';
+      html += '<div class="cycle-header" onclick="toggleCycle(this)">';
+      html += '<span class="cycle-arrow">&#9656;</span>';
+      html += renderRoleBadge(root.agent_role);
+      html += '<span style="flex:1">' + esc(root.title || 'Cycle') + '</span>';
+      html += '<span style="font-size:10px;color:var(--text-dim)">' + esc(rootTs) + '</span>';
+      html += '</div>';
+
+      html += '<div class="cycle-children">';
+      html += renderSessionNode(root);
+      children.forEach(function(c) {
+        html += renderSessionNode(c);
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="cycle-header" onclick="toggleCycle(this)">';
+      html += '<span class="cycle-arrow">&#9656;</span>';
+      html += '<span style="flex:1">Cycle ' + esc(rid.substring(0, 8)) + '</span>';
+      html += '</div>';
+      html += '<div class="cycle-children">';
+      children.forEach(function(c) {
+        html += renderSessionNode(c);
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+function renderSessionNode(s) {
+  var sel = selectedSession === s.id ? ' selected' : '';
+  var running = s.status === 'running' ? ' running' : '';
+  var statusCls = s.status || 'completed';
+
+  return '<div class="session-node' + sel + running + '" data-id="' + esc(s.id) + '" onclick="selectSession(\'' + esc(s.id) + '\')">' +
+    '<span class="status-dot ' + esc(statusCls) + '"></span>' +
+    renderRoleBadge(s.agent_role) +
+    '<span class="node-meta">' +
+      '<span>' + formatCost(s.total_cost_usd) + '</span>' +
+      '<span>' + formatDuration(s.duration_ms) + '</span>' +
+    '</span>' +
+  '</div>';
+}
+
+function renderRoleBadge(role) {
+  var r = (role || 'unknown').toLowerCase();
+  return '<span class="role-badge" style="background:' + roleColor(r) + '">' + esc(r) + '</span>';
+}
+
+function toggleCycle(el) {
+  var group = el.closest('.cycle-group');
+  group.classList.toggle('open');
+}
+
+// ── Session Detail ──
+async function selectSession(sessionId) {
+  selectedSession = sessionId;
+
+  // Update tree selection
+  document.querySelectorAll('.session-node').forEach(function(n) {
+    n.classList.toggle('selected', n.dataset.id === sessionId);
+  });
+
+  var panel = document.getElementById('detail-panel');
+  panel.innerHTML = '<div class="detail-empty">Loading session...</div>';
+
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/sessions/' + encodeURIComponent(sessionId));
+    if (!resp.ok) { panel.innerHTML = '<div class="detail-empty">Session not found</div>'; return; }
+    var session = await resp.json();
+
+    var childResp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/sessions/' + encodeURIComponent(sessionId) + '/children');
+    var children = childResp.ok ? await childResp.json() : [];
+
+    updateBreadcrumb(session);
+    renderDetail(session, children);
+  } catch (e) {
+    panel.innerHTML = '<div class="detail-empty">Failed to load session</div>';
+  }
+}
+
+function updateBreadcrumb(session) {
+  var bc = document.getElementById('breadcrumb');
+  var existing = breadcrumbTrail.findIndex(function(b) { return b.id === session.id; });
+  if (existing >= 0) {
+    breadcrumbTrail = breadcrumbTrail.slice(0, existing + 1);
+  } else {
+    if (session.parent_id && breadcrumbTrail.length === 0) {
+      breadcrumbTrail = [{ id: session.id, role: session.agent_role }];
+    } else {
+      breadcrumbTrail.push({ id: session.id, role: session.agent_role });
+    }
+  }
+
+  if (breadcrumbTrail.length <= 1) {
+    bc.style.display = 'none';
+    return;
+  }
+
+  bc.style.display = 'block';
+  bc.innerHTML = breadcrumbTrail.map(function(b, i) {
+    var role = (b.role || 'unknown').toLowerCase();
+    if (i === breadcrumbTrail.length - 1) {
+      return '<span style="color:var(--text)">' + esc(role) + '</span>';
+    }
+    return '<a onclick="selectSession(\'' + esc(b.id) + '\')">' + esc(role) + '</a><span class="sep">&rsaquo;</span>';
+  }).join('');
+}
+
+function renderDetail(session, children) {
+  var panel = document.getElementById('detail-panel');
+  var html = '';
+
+  // Header
+  html += '<div class="detail-header">';
+  html += '<div class="detail-title">';
+  html += renderRoleBadge(session.agent_role);
+  if (session.model) html += '<span class="model-name">' + esc(session.model) + '</span>';
+  html += '<span class="status-badge ' + esc(session.status || 'completed') + '">' + esc(session.status || 'unknown') + '</span>';
+  html += '</div>';
+
+  html += '<div class="detail-stats">';
+  html += renderDetailStat('Input', formatTokens(session.input_tokens));
+  html += renderDetailStat('Output', formatTokens(session.output_tokens));
+  html += renderDetailStat('Cache', formatTokens(session.cache_read_tokens));
+  html += renderDetailStat('Cost', formatCost(session.total_cost_usd));
+  html += renderDetailStat('Duration', formatDuration(session.duration_ms));
+  html += renderDetailStat('Turns', String(session.num_turns || 0));
+  if (session.stop_reason) html += renderDetailStat('Stop', session.stop_reason);
+  if (session.terminal_reason) html += renderDetailStat('Terminal', session.terminal_reason);
+  html += '</div>';
+  html += '</div>';
+
+  // Children links
+  if (children.length > 0) {
+    html += '<div style="padding:8px 20px;border-bottom:1px solid var(--border);background:var(--surface)">';
+    html += '<div style="font-size:11px;color:var(--text-dim);margin-bottom:4px">Child Sessions</div>';
+    children.forEach(function(c) {
+      var statusDot = '<span class="status-dot ' + esc(c.status || 'completed') + '" style="width:6px;height:6px"></span>';
+      html += '<span class="child-link" onclick="selectSession(\'' + esc(c.id) + '\')">' +
+        statusDot + ' ' + renderRoleBadge(c.agent_role) + ' ' +
+        formatCost(c.total_cost_usd) + ' ' + formatDuration(c.duration_ms) +
+        '</span> ';
+    });
+    html += '</div>';
+  }
+
+  // Items
+  html += '<div class="detail-body">';
+  var items = session.items || [];
+  if (items.length === 0) {
+    html += '<div style="text-align:center;padding:40px;color:var(--text-dim)">No conversation items recorded</div>';
+  } else {
+    items.forEach(function(item, idx) {
+      html += renderItem(item, children);
+    });
+  }
+  html += '</div>';
+
+  panel.innerHTML = html;
+}
+
+function renderDetailStat(label, value) {
+  return '<div class="detail-stat"><span class="ds-label">' + esc(label) + '</span><span class="ds-value">' + esc(value) + '</span></div>';
+}
+
+function renderItem(item, children) {
+  var type = item.type || 'message';
+  var role = item.role || '';
+  var roleClass = role ? ' role-' + role : '';
+  var typeClass = ' type-' + type;
+
+  var html = '<div class="item-block' + roleClass + typeClass + '">';
+
+  // Header
+  html += '<div class="item-header">';
+  html += '<span class="item-type-badge ' + esc(type) + '">' + esc(type) + '</span>';
+  if (role) html += '<span style="text-transform:capitalize">' + esc(role) + '</span>';
+  html += '</div>';
+
+  // Content
+  html += '<div class="item-content">';
+
+  var data = item.data || '';
+  if (typeof data === 'string') {
+    if (type === 'tool_call' || type === 'tool_output') {
+      var preview = (item.preview || data.substring(0, 100)) + (data.length > 100 ? '...' : '');
+      html += '<details><summary>' + esc(preview) + '</summary>';
+      html += '<pre>' + esc(data) + '</pre>';
+      html += '</details>';
+    } else {
+      html += renderMessageContent(data);
+    }
+  } else {
+    html += '<pre>' + esc(JSON.stringify(data, null, 2)) + '</pre>';
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+function renderMessageContent(text) {
+  if (!text) return '<span style="color:var(--text-dim)">(empty)</span>';
+
+  var lines = text.split('\n');
+  var result = '';
+  var inCode = false;
+
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (line.startsWith('```')) {
+      if (inCode) {
+        result += '</pre>';
+        inCode = false;
+      } else {
+        result += '<pre>';
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      result += esc(line) + '\n';
+    } else {
+      result += '<div>' + esc(line) + '</div>';
+    }
+  }
+
+  if (inCode) result += '</pre>';
+  return result;
+}
+
+// ── SSE Integration ──
+function connectSSE() {
+  var evtSource = new EventSource('/api/events/stream');
+
+  evtSource.onmessage = function(e) {
+    try {
+      var event = JSON.parse(e.data);
+      var type = event.type || '';
+      if (event.project !== projectName) return;
+
+      if (type === 'agent.started' || type === 'agent.completed' || type === 'agent.failed') {
+        loadSessions();
+      }
+    } catch (err) {}
+  };
+
+  evtSource.onerror = function() {
+    // Will auto-reconnect
+  };
+}
+
+// ── Init ──
+loadSessions();
+connectSSE();
 </script>
 </body>
 </html>

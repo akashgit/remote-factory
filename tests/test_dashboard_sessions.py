@@ -172,7 +172,7 @@ class TestSessionsHTMLView:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "Sessions" in resp.text
-        assert "Phase 3" in resp.text
+        assert "Session Tree" in resp.text
 
     def test_sessions_view_invalid_name(self, session_client: TestClient):
         resp = session_client.get("/sessions/../etc")
