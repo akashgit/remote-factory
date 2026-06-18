@@ -21,6 +21,9 @@ dev = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.scripts]
+factory-tracing = "factory_tracing.cli:_cli_entry"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
