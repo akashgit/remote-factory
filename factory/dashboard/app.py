@@ -762,7 +762,7 @@ def create_app(projects_dir: Path) -> FastAPI:
             "--dangerously-skip-permissions",
         ]
         if role_prompt:
-            cmd.extend(["--append-system-prompt", role_prompt])
+            cmd.extend(["--system-prompt", role_prompt])
 
         try:
             proc = await asyncio.create_subprocess_exec(
