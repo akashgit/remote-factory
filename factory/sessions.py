@@ -215,6 +215,64 @@ def _find_transcript(claude_session_id: str, project_path: Path) -> Path | None:
     return None
 
 
+def _discover_claude_session_id(
+    role: str,
+    created_at: int,
+    project_path: Path,
+) -> str | None:
+    """Find the claude_session_id for a running session by scanning transcripts.
+
+    Looks for JSONL files in the Claude Code project directory that were
+    modified after the session's created_at timestamp and contain a matching
+    agent-name entry.
+    """
+    claude_dir = Path.home() / ".claude" / "projects"
+    if not claude_dir.exists():
+        return None
+
+    dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
+    candidates: list[Path] = []
+
+    for search_dir in [claude_dir / dir_name]:
+        if not search_dir.exists():
+            continue
+        for f in search_dir.iterdir():
+            if not f.name.endswith(".jsonl") or f.is_dir():
+                continue
+            if f.stat().st_mtime >= created_at - 5:
+                candidates.append(f)
+
+    if not candidates:
+        for pdir in claude_dir.iterdir():
+            if not pdir.is_dir():
+                continue
+            for f in pdir.iterdir():
+                if f.name.endswith(".jsonl") and f.stat().st_mtime >= created_at - 5:
+                    candidates.append(f)
+
+    target_name = f"factory: {project_path.resolve().name}/{role}"
+    for f in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            with open(f) as fh:
+                for i, line in enumerate(fh):
+                    if i > 5:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    item = json.loads(line)
+                    if item.get("type") == "agent-name":
+                        if target_name in (item.get("agentName") or ""):
+                            return f.stem
+                    elif item.get("type") == "custom-title":
+                        if target_name in (item.get("customTitle") or ""):
+                            return f.stem
+        except Exception:
+            continue
+
+    return None
+
+
 def _ingest_transcript(
     conn: sqlite3.Connection,
     session_id: str,
@@ -559,14 +617,27 @@ def get_session(project_path: Path, session_id: str) -> dict | None:
             return None
         result = dict(row)
 
-        if result["status"] == "running" and result.get("claude_session_id"):
-            conn.execute(
-                "DELETE FROM session_items WHERE session_id = ?", (session_id,),
-            )
-            _ingest_transcript(
-                conn, session_id, result["claude_session_id"], project_path,
-            )
-            conn.commit()
+        if result["status"] == "running":
+            csid = result.get("claude_session_id")
+            if not csid:
+                csid = _discover_claude_session_id(
+                    result.get("agent_role", ""),
+                    result.get("created_at", 0),
+                    project_path,
+                )
+                if csid:
+                    conn.execute(
+                        "UPDATE sessions SET claude_session_id = ? WHERE id = ?",
+                        (csid, session_id),
+                    )
+                    result["claude_session_id"] = csid
+            if csid:
+                conn.execute(
+                    "DELETE FROM session_items WHERE session_id = ?",
+                    (session_id,),
+                )
+                _ingest_transcript(conn, session_id, csid, project_path)
+                conn.commit()
 
         items = conn.execute(
             "SELECT * FROM session_items WHERE session_id = ? ORDER BY position",
