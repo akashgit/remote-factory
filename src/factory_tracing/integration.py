@@ -44,12 +44,27 @@ class TracingIntegration:
 
     @contextmanager
     def start_cycle(
-        self, run_id: str, project_name: str, mode: str
+        self,
+        run_id: str,
+        project_name: str,
+        mode: str,
+        experiment_id: str | None = None,
+        hypothesis_id: str | None = None,
+        hypothesis_category: str | None = None,
     ) -> Iterator[Span | _NoOpSpan]:
         if not self.enabled:
             yield _NOOP_SPAN
             return
         with trace_factory_cycle(run_id, project_name, mode) as span:
+            if experiment_id is not None:
+                span.set_attribute("factory.experiment.id", experiment_id)
+                span.set_attribute("langfuse.trace.metadata.experiment_id", experiment_id)
+                span.set_attribute("langfuse.session.id", experiment_id)
+            if hypothesis_id is not None:
+                span.set_attribute("factory.hypothesis.id", hypothesis_id)
+            if hypothesis_category is not None:
+                span.set_attribute("factory.hypothesis.category", hypothesis_category)
+                span.set_attribute("langfuse.trace.metadata.hypothesis_category", hypothesis_category)
             yield span
 
     @contextmanager
@@ -84,6 +99,27 @@ class TracingIntegration:
             output_tokens=output_tokens,
             cost_usd=cost_usd,
         )
+
+    def record_eval_result(
+        self,
+        span: Span | _NoOpSpan,
+        scores: dict,
+    ) -> None:
+        if not self.enabled or isinstance(span, _NoOpSpan):
+            return
+        prefixed = {f"eval.{k}": v for k, v in scores.items()}
+        span.add_event("eval.result", attributes=prefixed)  # type: ignore[arg-type]
+
+    def record_experiment_verdict(
+        self,
+        span: Span | _NoOpSpan,
+        verdict: str,
+        composite_score: float,
+    ) -> None:
+        if not self.enabled or isinstance(span, _NoOpSpan):
+            return
+        span.set_attribute("factory.experiment.verdict", verdict)  # type: ignore[union-attr]
+        span.set_attribute("factory.experiment.composite_score", composite_score)  # type: ignore[union-attr]
 
     def shutdown(self) -> None:
         if self.enabled:
