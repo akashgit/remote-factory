@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -9,16 +10,12 @@ from opentelemetry.trace import Span, StatusCode
 from .provider import get_tracer
 
 
-def _span_status_code(span: Span) -> StatusCode:
-    status = getattr(span, "_status", None) or getattr(span, "status", None)
-    if status is not None and hasattr(status, "status_code"):
-        return status.status_code
-    return StatusCode.UNSET
-
-
 @contextmanager
 def trace_factory_cycle(
-    run_id: str, project_name: str, mode: str
+    run_id: str,
+    project_name: str,
+    mode: str,
+    session_id: str | None = None,
 ) -> Iterator[Span]:
     tracer = get_tracer("factory-tracing")
     with tracer.start_as_current_span("factory.cycle") as span:
@@ -26,7 +23,8 @@ def trace_factory_cycle(
         span.set_attribute("factory.project.name", project_name)
         span.set_attribute("factory.mode", mode)
         span.set_attribute("langfuse.observation.type", "span")
-        span.set_attribute("langfuse.session.id", run_id)
+        span.set_attribute("langfuse.session.id", session_id or run_id)
+        span.set_attribute("langfuse.trace.tags", json.dumps([mode]))
         try:
             yield span
         except Exception as exc:
@@ -34,8 +32,7 @@ def trace_factory_cycle(
             span.record_exception(exc)
             raise
         else:
-            if _span_status_code(span) != StatusCode.ERROR:
-                span.set_status(StatusCode.OK)
+            span.set_status(StatusCode.OK)
 
 
 @contextmanager
@@ -54,7 +51,7 @@ def trace_agent_invocation(
         span.set_attribute("factory.project.name", project_name)
         span.set_attribute("langfuse.observation.type", "span")
         span.set_attribute("langfuse.session.id", run_id)
-        span.set_attribute("langfuse.trace.tags", [role])
+        span.set_attribute("langfuse.trace.tags", json.dumps([role]))
         if task_summary:
             span.set_attribute("factory.task.summary", task_summary)
         try:
@@ -64,26 +61,23 @@ def trace_agent_invocation(
             span.record_exception(exc)
             raise
         else:
-            if _span_status_code(span) != StatusCode.ERROR:
+            if span.status.status_code != StatusCode.ERROR:
                 span.set_status(StatusCode.OK)
 
 
 def record_agent_result(
     span: Span,
     exit_code: int,
-    duration_ms: float | None = None,
-    input_tokens: int | None = None,
-    output_tokens: int | None = None,
-    cost_usd: float | None = None,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_usd: float = 0.0,
 ) -> None:
     span.set_attribute("subprocess.returncode", exit_code)
-    if duration_ms is not None:
-        span.set_attribute("subprocess.duration_ms", duration_ms)
-    if input_tokens is not None:
+    if input_tokens > 0:
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-    if output_tokens is not None:
+    if output_tokens > 0:
         span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
-    if cost_usd is not None:
+    if cost_usd > 0.0:
         span.set_attribute("gen_ai.usage.cost", cost_usd)
     if exit_code != 0:
         span.set_status(StatusCode.ERROR, f"exit code {exit_code}")
