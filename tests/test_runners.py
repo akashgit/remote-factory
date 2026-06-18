@@ -1424,6 +1424,48 @@ class TestCeilingAccumulationAcrossInvocations:
         assert now_before <= runner.cycle_start <= now_after
 
 
+class TestRunnerBgWarnings:
+    """Tests for background warning messages from non-claude runners."""
+
+    async def test_opencode_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """OpenCodeRunner logs a warning when extras['background']=True."""
+        monkeypatch.setenv("FACTORY_OPENCODE_DRY_RUN", "1")
+
+        runner = OpenCodeRunner()
+        with patch("factory.runners.opencode.log") as mock_log:
+            await runner.headless(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path,
+                role="researcher", extras={"background": True},
+            ))
+            mock_log.warning.assert_any_call("opencode_bg_not_supported", hint="--bg is a claude-only feature")
+
+    async def test_bob_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """BobRunner logs a warning when extras['background']=True."""
+        monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")
+        (tmp_path / ".factory").mkdir()
+
+        runner = BobRunner()
+        with patch("factory.runners.bob.log") as mock_log:
+            await runner.headless(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path,
+                role="researcher", extras={"background": True},
+            ))
+            mock_log.warning.assert_any_call("bob_bg_not_supported", hint="--bg is a claude-only feature")
+
+    async def test_codex_bg_warning(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """CodexRunner logs a warning when extras['background']=True."""
+        monkeypatch.setenv("FACTORY_CODEX_DRY_RUN", "1")
+
+        from factory.runners.codex import CodexRunner
+        runner = CodexRunner()
+        with patch("factory.runners.codex.log") as mock_log:
+            await runner.headless(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path,
+                role="researcher", extras={"background": True},
+            ))
+            mock_log.warning.assert_any_call("codex_bg_not_supported", hint="--bg is a claude-only feature")
+
+
 class TestOpenCodeInteractive:
     """Tests for OpenCodeRunner.interactive_run() — prompt delivery."""
 
