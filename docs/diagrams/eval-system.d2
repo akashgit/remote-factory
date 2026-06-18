@@ -1,0 +1,148 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+title: {
+  label: Three-Tier Eval System
+  near: top-center
+  shape: text
+  style: { font-size: 18; bold: true; font-color: "#0D1B2A" }
+}
+
+eval_cmd: {
+  label: "factory eval <path>"
+  shape: parallelogram
+  style: { fill: "#C5CAE9"; stroke: "#3F51B5"; font-color: "#0D1B2A"; font-size: 14 }
+}
+
+hygiene: {
+  label: "Tier 1: Hygiene (auto-discovered)"
+  style: { fill: "#BBDEFB"; stroke: "#1565C0"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-rows: 2
+
+  tests: {
+    label: tests
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  lint: {
+    label: lint
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  type_check: {
+    label: type_check
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  coverage: {
+    label: coverage
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  guards: {
+    label: guard_patterns
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  config: {
+    label: config_parser
+    style: { fill: "#90CAF9"; stroke: "#1565C0"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+}
+
+growth: {
+  label: "Tier 2: Growth (computed locally)"
+  style: { fill: "#C8E6C9"; stroke: "#2E7D32"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-rows: 2
+
+  capability: {
+    label: capability_surface
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  diversity: {
+    label: experiment_diversity
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  observability: {
+    label: observability
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  research_g: {
+    label: research_grounding
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  effectiveness: {
+    label: factory_effectiveness
+    style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+}
+
+project_eval: {
+  label: "Tier 3: Project (user-defined, optional)"
+  style: { fill: "#E1BEE7"; stroke: "#7B1FA2"; border-radius: 8; font-color: "#0D1B2A"; bold: true; font-size: 12 }
+  grid-columns: 3
+
+  d1: {
+    label: "benchmark"
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  d2: {
+    label: "latency"
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; border-radius: 4 }
+  }
+  d3: {
+    label: "..."
+    style: { fill: "#CE93D8"; stroke: "#7B1FA2"; font-color: "#0D1B2A"; font-size: 12; italic: true; border-radius: 4 }
+  }
+}
+
+mixer: {
+  label: "Weight Mixer"
+  shape: hexagon
+  style: { fill: "#FFCC80"; stroke: "#EF6C00"; font-color: "#0D1B2A"; font-size: 14; bold: true }
+}
+
+composite: {
+  label: "Composite Score (0.0–1.0)"
+  shape: diamond
+  style: { fill: "#FFF176"; stroke: "#F9A825"; font-color: "#0D1B2A"; font-size: 14; bold: true }
+}
+
+pass: {
+  label: PASS
+  style: { fill: "#A5D6A7"; stroke: "#2E7D32"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+fail: {
+  label: FAIL
+  style: { fill: "#EF9A9A"; stroke: "#C62828"; font-color: "#0D1B2A"; font-size: 14; bold: true; border-radius: 6 }
+}
+
+eval_cmd -> hygiene
+eval_cmd -> growth
+eval_cmd -> project_eval
+
+hygiene -> mixer: "50% (or 30%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+growth -> mixer: "50% (or 20%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+project_eval -> mixer: "0% (or 50%)" {
+  style: { font-size: 11; font-color: "#0D1B2A" }
+}
+
+mixer -> composite
+composite -> pass: ">= threshold" {
+  style: { stroke: "#2E7D32"; stroke-width: 2; font-size: 12; font-color: "#0D1B2A" }
+}
+composite -> fail: "< threshold" {
+  style: { stroke: "#C62828"; stroke-width: 2; font-size: 12; font-color: "#0D1B2A" }
+}
+
+weights_note: {
+  label: "Weights: 50/50/0 (no project eval) or 30/20/50 (with project eval)"
+  near: bottom-center
+  shape: text
+  style: { font-size: 11; italic: true; font-color: "#0D1B2A" }
+}

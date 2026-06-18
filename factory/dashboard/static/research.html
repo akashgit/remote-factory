@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Research — Factory Dashboard</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--text-dim:#7d8590;--accent:#58a6ff;
+  --green:#3fb950;--red:#f85149;--yellow:#d29922;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface)}
+.logo{font-weight:700;font-size:16px;letter-spacing:2px;color:var(--accent)}
+.header-info{display:flex;align-items:center;gap:16px}
+.back-link{color:var(--accent);text-decoration:none;font-size:13px}
+.back-link:hover{text-decoration:underline}
+main{max-width:1200px;margin:24px auto;padding:0 24px;display:flex;flex-direction:column;gap:20px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:20px}
+.panel h2{font-size:15px;font-weight:600;margin-bottom:12px;color:var(--text)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+th{color:var(--text-dim);font-weight:500;font-size:12px;text-transform:uppercase;letter-spacing:0.5px}
+.delta-pos{color:var(--green)}.delta-neg{color:var(--red)}
+.status-completed{color:var(--green)}.status-failed{color:var(--red)}.status-running{color:var(--yellow)}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:500;background:var(--border);color:var(--text-dim)}
+.no-data{text-align:center;padding:40px;color:var(--text-dim)}
+.no-data h2{color:var(--text);margin-bottom:8px}
+.chart-container{position:relative;height:300px}
+code{background:var(--border);padding:2px 6px;border-radius:4px;font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">FACTORY</div>
+  <div class="header-info">
+    <span id="project-name" style="font-weight:600"></span>
+    <a href="/" class="back-link">&larr; Dashboard</a>
+  </div>
+</header>
+<main>
+  <div class="panel no-data" id="no-data" style="display:none">
+    <h2>No Research Data</h2>
+    <p>No research runs found for this project. Run <code>factory ceo /path --mode research</code> to start.</p>
+  </div>
+  <div id="content" style="display:none">
+    <div class="panel">
+      <h2>Per-Cycle Metrics</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th><th>Score</th><th>&Delta;</th>
+            <th>Status</th><th>Duration (s)</th><th>Dominant Failure</th>
+          </tr>
+        </thead>
+        <tbody id="cycle-tbody"></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Failure Distribution</h2>
+      <div class="chart-container"><canvas id="failure-chart"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Ratchet Progress</h2>
+      <div class="chart-container"><canvas id="ratchet-chart"></canvas></div>
+    </div>
+  </div>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/chart.js" integrity="sha384-jb8JQMbMoBUzgWatfe6COACi2ljcDdZQ2OxczGA3bGNeWe+6DChMTBJemed7ZnvJ" crossorigin="anonymous"></script>
+<script>
+var projectName = decodeURIComponent(
+  window.location.pathname.split('/').filter(Boolean).pop() || ''
+);
+document.getElementById('project-name').textContent = 'Research — ' + projectName;
+document.title = 'Research — ' + projectName;
+
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+async function loadData() {
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/research-runs');
+    if (!resp.ok) { document.getElementById('no-data').style.display = ''; return; }
+    var data = await resp.json();
+  } catch (e) { document.getElementById('no-data').style.display = ''; return; }
+
+  if (!data.cycles || data.cycles.length === 0) {
+    document.getElementById('no-data').style.display = '';
+    return;
+  }
+  document.getElementById('content').style.display = '';
+  renderTable(data.cycles);
+  renderFailureChart(data.failure_distribution);
+  renderRatchetChart(data.ratchet);
+}
+
+function renderTable(cycles) {
+  var tbody = document.getElementById('cycle-tbody');
+  cycles.forEach(function(c) {
+    var tr = document.createElement('tr');
+    var delta = c.delta != null ? (c.delta >= 0 ? '+' : '') + c.delta.toFixed(4) : '—';
+    var deltaClass = c.delta != null ? (c.delta >= 0 ? 'delta-pos' : 'delta-neg') : '';
+    var allowedStatuses = ['completed', 'failed', 'running', 'unknown'];
+    var statusSuffix = allowedStatuses.indexOf(c.status) !== -1 ? c.status : 'unknown';
+    var statusClass = 'status-' + statusSuffix;
+    var score = c.metric_value != null ? c.metric_value.toFixed(4) : '—';
+    var dur = c.duration != null ? Math.round(c.duration) : '—';
+    var failHtml = c.dominant_failure
+      ? '<span class="badge">' + escapeHtml(c.dominant_failure) + '</span>'
+      : '—';
+    tr.innerHTML =
+      '<td>' + escapeHtml(c.name) + '</td>' +
+      '<td>' + score + '</td>' +
+      '<td class="' + deltaClass + '">' + delta + '</td>' +
+      '<td class="' + statusClass + '">' + escapeHtml(c.status || '—') + '</td>' +
+      '<td>' + dur + '</td>' +
+      '<td>' + failHtml + '</td>';
+    tbody.appendChild(tr);
+  });
+}
+
+function renderFailureChart(distribution) {
+  var categories = Object.keys(distribution);
+  var counts = Object.values(distribution);
+  if (categories.length === 0) return;
+  var ctx = document.getElementById('failure-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: categories,
+      datasets: [{
+        label: 'Failures',
+        data: counts,
+        backgroundColor: '#f85149cc',
+        borderColor: '#f85149',
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#7d8590' }, grid: { color: '#30363d' } },
+        y: { beginAtZero: true, ticks: { color: '#7d8590', stepSize: 1 }, grid: { color: '#30363d' } }
+      }
+    }
+  });
+}
+
+function renderRatchetChart(ratchet) {
+  if (!ratchet.labels.length) return;
+  var ctx = document.getElementById('ratchet-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: ratchet.labels,
+      datasets: [
+        {
+          label: 'Score',
+          data: ratchet.scores,
+          borderColor: '#58a6ff',
+          backgroundColor: '#58a6ff33',
+          fill: false,
+          tension: 0.1,
+          pointRadius: 4,
+          pointBackgroundColor: '#58a6ff'
+        },
+        {
+          label: 'Best (Ratchet)',
+          data: ratchet.best,
+          borderColor: '#3fb950',
+          backgroundColor: '#3fb95033',
+          fill: true,
+          borderDash: [5, 3],
+          tension: 0,
+          pointRadius: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#e6edf3' } } },
+      scales: {
+        x: { ticks: { color: '#7d8590' }, grid: { color: '#30363d' } },
+        y: { ticks: { color: '#7d8590' }, grid: { color: '#30363d' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+loadData();
+</script>
+</body>
+</html>
