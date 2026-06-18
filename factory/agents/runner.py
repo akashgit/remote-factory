@@ -361,6 +361,64 @@ def _save_review(
         logger.debug("Failed to save review for %s", role, exc_info=True)
 
 
+def begin_cycle_session(
+    project_path: Path,
+    cycle_id: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Create a root CEO session for a factory cycle.
+
+    Returns the session_id to use as parent_session_id for all
+    invoke_agent() calls in this cycle.
+    """
+    from factory.sessions import begin_session
+
+    return begin_session(
+        project_path,
+        "ceo",
+        title=cycle_id,
+        model=model,
+    )
+
+
+def complete_cycle_session(
+    project_path: Path,
+    session_id: str,
+) -> None:
+    """Aggregate child session stats and mark the root CEO session completed."""
+    from factory.sessions import complete_session, get_children
+
+    children = get_children(project_path, session_id)
+
+    total_cost = 0.0
+    total_input = 0
+    total_output = 0
+    total_duration = 0.0
+
+    for child in children:
+        total_cost += child.get("total_cost_usd", 0.0) or 0.0
+        total_input += child.get("input_tokens", 0) or 0
+        total_output += child.get("output_tokens", 0) or 0
+        total_duration += child.get("duration_ms", 0.0) or 0.0
+
+    class _AggregateUsage:
+        def __init__(self) -> None:
+            self.input_tokens = total_input
+            self.output_tokens = total_output
+            self.cache_read_tokens = 0
+            self.total_cost_usd = total_cost
+            self.duration_ms = total_duration
+            self.num_turns = 0
+            self.model = None
+
+    complete_session(
+        project_path,
+        session_id,
+        status="completed",
+        usage=_AggregateUsage(),
+    )
+
+
 async def invoke_agents_parallel(
     tasks: list[tuple[AgentRole, str]],
     project_path: Path,

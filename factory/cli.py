@@ -2187,6 +2187,38 @@ def cmd_usage(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """List sessions for a project."""
+    from factory.sessions import get_sessions
+
+    project_path = Path(args.path).resolve()
+    cycle_id = getattr(args, "cycle", None)
+    role = getattr(args, "role", None)
+
+    sessions = get_sessions(project_path, cycle_id=cycle_id, role=role)
+
+    if not sessions:
+        print("No sessions found.")
+        return 0
+
+    header = f"{'ID':<15} {'Role':<12} {'Status':<10} {'Cost':>10} {'Duration':>10} {'Created':<20}"
+    print(header)
+    print("-" * len(header))
+
+    for s in sessions:
+        cost = f"${s.get('total_cost_usd', 0.0):.4f}"
+        dur_ms = s.get("duration_ms", 0.0) or 0.0
+        duration = f"{dur_ms / 1000:.1f}s" if dur_ms else "-"
+        created_ts = s.get("created_at", 0)
+        created = datetime.fromtimestamp(created_ts).strftime("%Y-%m-%d %H:%M") if created_ts else "-"
+        role_str = s.get("agent_role", "-") or "-"
+        status = s.get("status", "-") or "-"
+        sid = s.get("id", "-")
+        print(f"{sid:<15} {role_str:<12} {status:<10} {cost:>10} {duration:>10} {created:<20}")
+
+    return 0
+
+
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
     from factory.agents.runner import invoke_agent
@@ -2204,6 +2236,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     review_tag = getattr(args, "review_tag", None)
+    parent_session = getattr(args, "parent_session", None) or os.environ.get("FACTORY_PARENT_SESSION_ID")
 
     result, code = _run(invoke_agent(
         role,
@@ -2216,6 +2249,7 @@ def cmd_agent(args: argparse.Namespace) -> int:
         use_profile=use_profile,
         tmux_persist=tmux_persist,
         review_tag=review_tag,
+        parent_session_id=parent_session,
     ))
     print(result)
     return code
@@ -4017,6 +4051,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--project", default=".", help="Project path")
     p.add_argument("--data", default=None, help="JSON string of additional event data")
 
+    # sessions — list sessions for a project
+    p = sub.add_parser("sessions", help="List agent sessions for a project")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--cycle", default=None, help="Filter by root session ID (cycle)")
+    p.add_argument("--role", default=None, help="Filter by agent role")
+
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
@@ -4039,6 +4079,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
     p.add_argument("--review-tag", default=None,
                     help="Tag for distinct review output files (writes <role>-<tag>-latest.md)")
+    p.add_argument("--parent-session", default=None,
+                    help="Parent session ID for linking specialist sessions to a CEO cycle session")
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
@@ -4274,6 +4316,7 @@ def main(argv: list[str] | None = None) -> int:
         "emit": cmd_emit,
         "usage": cmd_usage,
         "runners": cmd_runners_list,
+        "sessions": cmd_sessions,
         "agent": cmd_agent,
         "ceo": cmd_ceo,
         "run": cmd_run,
