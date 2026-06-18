@@ -746,29 +746,27 @@ def create_app(projects_dir: Path) -> FastAPI:
             raise HTTPException(status_code=500, detail="claude CLI not found on PATH")
 
         role = session.get("agent_role", "")
-        role_context = ""
+        role_prompt: str | None = None
         if role:
             try:
                 from factory.agents.runner import resolve_prompt
                 role_prompt = resolve_prompt(role, project_path=path)
-                role_context = (
-                    f"[SYSTEM: You are the Factory {role.title()} agent. "
-                    f"Your role prompt follows. Stay in character.]\n\n"
-                    f"{role_prompt}\n\n"
-                    f"[USER MESSAGE]\n"
-                )
             except Exception:
                 pass
 
-        full_message = role_context + message if role_context else message
+        cmd = [
+            claude_bin,
+            "--resume", claude_session_id,
+            "-p", message,
+            "--output-format", "json",
+            "--dangerously-skip-permissions",
+        ]
+        if role_prompt:
+            cmd.extend(["--append-system-prompt", role_prompt])
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                claude_bin,
-                "--resume", claude_session_id,
-                "-p", full_message,
-                "--output-format", "json",
-                "--dangerously-skip-permissions",
+                *cmd,
                 cwd=str(path),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
