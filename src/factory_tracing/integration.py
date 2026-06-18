@@ -10,6 +10,7 @@ from typing import Iterator
 from opentelemetry.trace import Span
 
 from .config import TracingConfig
+from .executor import AgentResult, run_traced_agent
 from .propagation import build_traced_env
 from .provider import get_tracer_provider, shutdown_tracing
 from .spans import record_agent_result, trace_agent_invocation, trace_factory_cycle
@@ -141,6 +142,26 @@ class TracingIntegration:
             return
         span.set_attribute("factory.experiment.verdict", verdict)  # type: ignore[union-attr]
         span.set_attribute("factory.experiment.composite_score", composite_score)  # type: ignore[union-attr]
+
+    def run_agent(
+        self,
+        prompt: str,
+        role: str,
+        run_id: str = "",
+        project_name: str = "",
+        cwd: str | None = None,
+        model: str = "anthropic",
+    ) -> AgentResult:
+        env = self.build_subprocess_env() if self.enabled else None
+        return run_traced_agent(
+            prompt=prompt,
+            role=role,
+            run_id=run_id or self._run_id,
+            project_name=project_name,
+            cwd=cwd,
+            model=model,
+            env=env,
+        )
 
     def shutdown(self) -> None:
         if self.enabled:

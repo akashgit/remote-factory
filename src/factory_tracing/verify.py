@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
 from .config import TracingConfig
+from .executor import run_traced_agent
 from .propagation import build_traced_env
 from .provider import get_tracer_provider, shutdown_tracing
 from .spans import record_agent_result, trace_agent_invocation, trace_factory_cycle
@@ -158,28 +159,24 @@ def _invoke_agent(
     project_name: str,
     traced_env: dict,
 ) -> tuple[dict, int, float]:
-    """Invoke a Claude agent subprocess and record results. Returns (parsed_output, exit_code, duration_ms)."""
-    start_time = time.monotonic()
-    try:
-        result = subprocess.run(
-            ["claude", "-p", prompt, "--output-format", "json"],
-            env=traced_env,
-            capture_output=True,
-            text=True,
-            timeout=180,
-        )
-        exit_code = result.returncode
-        stdout = result.stdout
-    except FileNotFoundError:
-        exit_code = 127
-        stdout = ""
-    except subprocess.TimeoutExpired:
-        exit_code = 124
-        stdout = ""
-
-    duration_ms = (time.monotonic() - start_time) * 1000.0
-    parsed = _parse_claude_output(stdout)
-    return parsed, exit_code, duration_ms
+    """Invoke a Claude agent subprocess using run_traced_agent for full content capture."""
+    agent_result = run_traced_agent(
+        prompt=prompt,
+        role=role,
+        run_id=run_id,
+        project_name=project_name,
+        env=traced_env,
+    )
+    parsed = {
+        "result": agent_result.response_text,
+        "model": agent_result.model,
+        "usage": {
+            "input_tokens": agent_result.input_tokens,
+            "output_tokens": agent_result.output_tokens,
+            "cost_usd": agent_result.cost_usd,
+        },
+    }
+    return parsed, agent_result.exit_code, agent_result.duration_ms
 
 
 def _validate_content(trace_data: dict, expected_roles: list[str]) -> list[ContentCheck]:
