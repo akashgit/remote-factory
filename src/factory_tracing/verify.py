@@ -73,11 +73,26 @@ def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int
 
 
 def _get_obs_attribute(obs: dict, key: str) -> object:
-    """Extract an attribute from an observation's metadata or attributes."""
-    for source in ("metadata", "attributes"):
-        container = obs.get(source)
-        if isinstance(container, dict) and key in container:
-            return container[key]
+    """Extract an attribute from an observation's metadata.attributes or top-level model field."""
+    if key in ("model", "gen_ai.request.model"):
+        top_model = obs.get("model")
+        if top_model:
+            return top_model
+    metadata = obs.get("metadata")
+    if isinstance(metadata, dict):
+        attrs = metadata.get("attributes", {})
+        if isinstance(attrs, dict):
+            if key in attrs:
+                val = attrs[key]
+                if isinstance(val, str) and val.isdigit():
+                    return int(val)
+                return val
+            short_key = key.split(".")[-1]
+            if short_key in attrs:
+                val = attrs[short_key]
+                if isinstance(val, str) and val.isdigit():
+                    return int(val)
+                return val
     return None
 
 
