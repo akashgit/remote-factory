@@ -323,7 +323,7 @@ async def run_in_background(
     logger.info("Launching background agent: role=%s, cwd=%s", role, cwd)
 
     env = dict(os.environ)
-    env["_FACTORY_IN_BG_SESSION"] = "1"
+    env["FACTORY_BG"] = "1"
 
     try:
         result = subprocess.run(
