@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from contextlib import contextmanager
 from typing import Iterator
@@ -23,6 +24,8 @@ def trace_factory_cycle(
         span.set_attribute("factory.mode", mode)
         span.set_attribute("langfuse.observation.type", "span")
         span.set_attribute("langfuse.session.id", run_id)
+        span.set_attribute("langfuse.span.input", json.dumps({"project": project_name, "mode": mode, "run_id": run_id}))
+        span.set_attribute("gen_ai.prompt", json.dumps({"project": project_name, "mode": mode}))
         try:
             yield span
         except Exception as exc:

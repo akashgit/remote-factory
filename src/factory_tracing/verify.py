@@ -221,80 +221,84 @@ def _validate_content(trace_data: dict, expected_roles: list[str]) -> list[Conte
         if not agent_id:
             continue
         children = _find_children(observations, agent_id)
-        cc_children = [c for c in children if "claude_code" in (c.get("name") or "")]
-        has_children = len(cc_children) > 0
+        content_children = [c for c in children if c.get("input") is not None or c.get("output") is not None]
         checks.append(ContentCheck(
             name=f"nesting_{role}",
-            passed=has_children,
-            expected=f"claude_code spans nested under invoke_agent {role}",
-            actual=f"{len(cc_children)} claude_code spans found as children" if has_children else "no claude_code children",
+            passed=len(content_children) > 0,
+            expected=f"child spans with content under invoke_agent {role}",
+            actual=f"{len(content_children)} child spans with content" if content_children else "no children with content",
         ))
 
-    cc_interaction_spans = [o for o in observations if "claude_code.interaction" in (o.get("name") or "")]
-    for span in cc_interaction_spans:
-        user_prompt = _get_obs_attribute(span, "user_prompt") or ""
-        has_prompt = bool(user_prompt) and len(str(user_prompt)) > 5
-        checks.append(ContentCheck(
-            name="interaction_has_prompt",
-            passed=has_prompt,
-            expected="user_prompt attribute non-empty",
-            actual=_snippet(str(user_prompt), 80) if user_prompt else "empty/missing",
-        ))
-        break  # check at least one
-
-    llm_spans = [o for o in observations if "claude_code.llm_request" in (o.get("name") or "")]
+    llm_spans = [o for o in observations if "llm_call" in (o.get("name") or "")]
     checks.append(ContentCheck(
         name="llm_call_count",
-        passed=len(llm_spans) > 2,
-        expected="more than 2 LLM requests",
+        passed=len(llm_spans) >= 2,
+        expected="at least 2 llm_call spans",
         actual=str(len(llm_spans)),
     ))
 
     for i, llm in enumerate(llm_spans[:3]):
-        model = _get_obs_attribute(llm, "gen_ai.request.model") or ""
-        has_model = bool(model)
+        llm_input = llm.get("input")
+        llm_output = llm.get("output")
+        has_input = llm_input is not None and str(llm_input).strip() not in ("", "null", "undefined")
+        has_output = llm_output is not None and str(llm_output).strip() not in ("", "null", "undefined")
         checks.append(ContentCheck(
-            name=f"llm_has_model_{i}",
-            passed=has_model,
-            expected="model name present",
-            actual=str(model) if model else "missing",
-        ))
-
-        input_tokens = _get_obs_attribute(llm, "gen_ai.usage.input_tokens")
-        has_input = isinstance(input_tokens, (int, float)) and input_tokens > 0
-        checks.append(ContentCheck(
-            name=f"llm_input_tokens_{i}",
+            name=f"llm_has_input_{i}",
             passed=has_input,
-            expected="input_tokens > 0",
-            actual=str(input_tokens) if input_tokens else "0 or missing",
+            expected=f"llm_call {i} has non-null input",
+            actual=_snippet(str(llm_input), 80) if has_input else "null/empty",
+        ))
+        checks.append(ContentCheck(
+            name=f"llm_has_output_{i}",
+            passed=has_output,
+            expected=f"llm_call {i} has non-null output",
+            actual=_snippet(str(llm_output), 80) if has_output else "null/empty",
         ))
 
-        output_tokens = _get_obs_attribute(llm, "gen_ai.usage.output_tokens")
-        has_output = isinstance(output_tokens, (int, float)) and output_tokens > 0
+    tool_spans = [o for o in observations if o.get("name", "").startswith("tool:")]
+    for i, tool in enumerate(tool_spans[:3]):
+        tool_input = tool.get("input")
+        tool_output = tool.get("output")
+        has_input = tool_input is not None
+        has_output = tool_output is not None
+        tool_name = tool.get("name", "")
         checks.append(ContentCheck(
-            name=f"llm_output_tokens_{i}",
-            passed=has_output,
-            expected="output_tokens > 0",
-            actual=str(output_tokens) if output_tokens else "0 or missing",
+            name=f"tool_has_io_{tool_name}_{i}",
+            passed=has_input and has_output,
+            expected=f"{tool_name} has input and output",
+            actual=f"input={'yes' if has_input else 'NULL'}, output={'yes' if has_output else 'NULL'}",
         ))
+
+    all_spans_null = [o for o in observations if o.get("input") is None and o.get("output") is None]
+    pct_populated = 1.0 - (len(all_spans_null) / max(len(observations), 1))
+    checks.append(ContentCheck(
+        name="content_coverage",
+        passed=pct_populated >= 0.5,
+        expected=">=50% of spans have input or output populated",
+        actual=f"{pct_populated:.0%} ({len(observations) - len(all_spans_null)}/{len(observations)} spans)",
+    ))
 
     for role in expected_roles:
         matching_agents = [o for o in agent_obs if role in (o.get("name") or "")]
         if not matching_agents:
             continue
-        agent_id = matching_agents[0].get("id")
-        if not agent_id:
-            continue
-        other_agents = [o for o in agent_obs if role not in (o.get("name") or "")]
-        for other in other_agents:
-            other_id = other.get("id")
-            if not other_id:
-                continue
-            misplaced = [
-                c for c in observations
-                if c.get("parentObservationId") == other_id and "claude_code" in (c.get("name") or "")
-            ]
-            # Just a diagnostic — not a hard fail since we can't control CC's span structure fully
+        agent = matching_agents[0]
+        agent_input = agent.get("input")
+        agent_output = agent.get("output")
+        has_input = agent_input is not None and str(agent_input).strip() not in ("", "null", "undefined")
+        has_output = agent_output is not None and str(agent_output).strip() not in ("", "null", "undefined")
+        checks.append(ContentCheck(
+            name=f"agent_has_input_{role}",
+            passed=has_input,
+            expected=f"invoke_agent {role} has non-null input in Langfuse",
+            actual=_snippet(str(agent_input), 80) if has_input else "null/empty",
+        ))
+        checks.append(ContentCheck(
+            name=f"agent_has_output_{role}",
+            passed=has_output,
+            expected=f"invoke_agent {role} has non-null output in Langfuse",
+            actual=_snippet(str(agent_output), 80) if has_output else "null/empty",
+        ))
 
     return checks
 
@@ -347,51 +351,32 @@ def run_verification(num_agents: int = 2) -> VerificationResult:
                 prompt_template = AGENT_PROMPTS[role]
                 prompt = prompt_template.format(prev_output=_snippet(prev_output, 200)) if "{prev_output}" in prompt_template else prompt_template
 
-                with trace_agent_invocation(
+                traced_env = build_traced_env(base_env=dict(os.environ))
+
+                agent_result = run_traced_agent(
+                    prompt=prompt,
                     role=role,
-                    task_summary=prompt,
                     run_id=run_id,
                     project_name="factory-tracing-verify",
-                ) as agent_span:
-                    traced_env = build_traced_env(base_env=dict(os.environ))
+                    env=traced_env,
+                )
 
-                    parsed, exit_code, duration_ms = _invoke_agent(
-                        role=role,
-                        prompt=prompt,
-                        run_id=run_id,
-                        project_name="factory-tracing-verify",
-                        traced_env=traced_env,
-                    )
+                total_in += agent_result.input_tokens
+                total_out += agent_result.output_tokens
 
-                    usage = _extract_usage(parsed)
-                    response_text = _extract_response_text(parsed)
-                    model = parsed.get("model") or None
+                agents_traced.append(AgentTrace(
+                    role=role,
+                    prompt_snippet=_snippet(prompt),
+                    response_snippet=_snippet(agent_result.response_text),
+                    llm_calls=0,
+                    tokens_in=agent_result.input_tokens,
+                    tokens_out=agent_result.output_tokens,
+                ))
 
-                    record_agent_result(
-                        agent_span,
-                        exit_code=exit_code,
-                        duration_ms=duration_ms,
-                        input_tokens=usage["input_tokens"],
-                        output_tokens=usage["output_tokens"],
-                        cost_usd=usage["cost_usd"],
-                        response_text=response_text or None,
-                        model=model,
-                    )
+                prev_output = agent_result.response_text
 
-                    total_in += usage["input_tokens"]
-                    total_out += usage["output_tokens"]
-                    total_cache += usage["cache_read_tokens"]
-
-                    agents_traced.append(AgentTrace(
-                        role=role,
-                        prompt_snippet=_snippet(prompt),
-                        response_snippet=_snippet(response_text),
-                        llm_calls=0,
-                        tokens_in=usage["input_tokens"],
-                        tokens_out=usage["output_tokens"],
-                    ))
-
-                    prev_output = response_text
+            cycle_span.set_attribute("langfuse.span.input", json.dumps({"agents": roles, "run_id": run_id}))
+            cycle_span.set_attribute("langfuse.span.output", json.dumps({"result": _snippet(prev_output, 500), "agents_completed": len(agents_traced)}))
     finally:
         shutdown_tracing()
 
