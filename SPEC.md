@@ -268,6 +268,7 @@ Examples:
 
 - local subprocess agent
 - interactive terminal or tmux-backed agent
+- background session agent (fire-and-poll, observable via agent management interface)
 - plugin asset worker
 - managed remote agent
 
@@ -410,6 +411,16 @@ contract.
 The system selects a worker runtime and starts an execution attempt.
 Dispatch MUST preserve enough state to support observability and recovery.
 
+Dispatch modes include:
+
+- **synchronous** — the caller blocks until the worker completes (default)
+- **interactive** — the worker runs in a user-facing terminal session
+- **background** — the worker is launched as a detached session; the caller
+  polls for completion and collects output when the session finishes
+
+Dispatch mode is a runtime concern. It MUST NOT change the semantics of the
+execution contract, evidence records, or decision lifecycle.
+
 ### 5.4 Execute
 
 The worker runtime performs the scoped work. It SHOULD emit logs, status, and
@@ -453,7 +464,7 @@ The `cli-local` profile is the primary compatibility surface.
 It consists of:
 
 - CLI command surface
-- local worker runtime
+- local worker runtime (supports multiple dispatch modes as implementation-defined options)
 - local project state backend
 - local guardrail providers
 - implementation-defined local output surfaces
