@@ -5,10 +5,12 @@ It must NOT be imported by production tracing code (config, provider, spans, pro
 """
 from __future__ import annotations
 
-import asyncio
+import base64
 import json
 import subprocess
 import time
+import urllib.error
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 
@@ -47,20 +49,21 @@ def _parse_claude_output(stdout: str) -> dict:
         return {}
 
 
-def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int = 3, delay: float = 2.0):
-    from langfuse import Langfuse
-
-    client = Langfuse(
-        public_key=config.langfuse_public_key,
-        secret_key=config.langfuse_secret_key,
-        host=config.langfuse_host,
-    )
+def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int = 3, delay: float = 2.0) -> dict:
+    url = f"{config.langfuse_host.rstrip('/')}/api/public/traces/{trace_id}"
+    credentials = base64.b64encode(
+        f"{config.langfuse_public_key}:{config.langfuse_secret_key}".encode()
+    ).decode()
 
     last_error = None
     for attempt in range(max_retries):
         try:
-            trace = client.fetch_trace(trace_id)
-            return trace
+            req = urllib.request.Request(url, method="GET", headers={
+                "Authorization": f"Basic {credentials}",
+                "Accept": "application/json",
+            })
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                return json.loads(resp.read().decode())
         except Exception as exc:
             last_error = exc
             if attempt < max_retries - 1:
@@ -69,15 +72,12 @@ def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int
     raise RuntimeError(f"Failed to fetch trace {trace_id} after {max_retries} attempts: {last_error}")
 
 
-def _validate_trace(trace_data, trace_id: str) -> list[CheckResult]:
+def _validate_trace(trace_data: dict, trace_id: str) -> list[CheckResult]:
     checks = []
 
-    observations = getattr(trace_data, "observations", None) or []
-    if hasattr(trace_data, "data"):
-        data = trace_data.data
-        observations = getattr(data, "observations", None) or []
+    observations = trace_data.get("observations") or []
 
-    obs_names = [getattr(o, "name", "") for o in observations]
+    obs_names = [o.get("name", "") for o in observations]
 
     has_cycle = any("factory.cycle" in (n or "") for n in obs_names)
     checks.append(CheckResult(
@@ -100,9 +100,7 @@ def _validate_trace(trace_data, trace_id: str) -> list[CheckResult]:
         detail="claude_code span found" if has_cc_span else "claude_code span NOT found (Claude Code OTel may not be available)",
     ))
 
-    data_obj = getattr(trace_data, "data", trace_data)
-    fetched_id = getattr(data_obj, "id", None) or ""
-    ids_match = trace_id in fetched_id or fetched_id in trace_id
+    fetched_id = trace_data.get("id", "")
     checks.append(CheckResult(
         name="trace_id_consistent",
         passed=bool(fetched_id),
@@ -196,9 +194,7 @@ def run_verification() -> VerificationResult:
     try:
         trace_data = _query_langfuse_trace(config, trace_id_hex)
         checks = _validate_trace(trace_data, trace_id_hex)
-        span_count = 0
-        data_obj = getattr(trace_data, "data", trace_data)
-        observations = getattr(data_obj, "observations", None) or []
+        observations = trace_data.get("observations") or []
         span_count = len(observations) + 1
     except Exception as exc:
         checks = [CheckResult(
