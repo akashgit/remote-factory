@@ -544,7 +544,11 @@ def get_sessions(
 
 
 def get_session(project_path: Path, session_id: str) -> dict | None:
-    """Get a single session with its items."""
+    """Get a single session with its items.
+
+    For running sessions with a claude_session_id, re-ingests the
+    transcript on every read so the dashboard shows live progress.
+    """
     if not _db_path(project_path).exists():
         return None
 
@@ -554,6 +558,16 @@ def get_session(project_path: Path, session_id: str) -> dict | None:
         if not row:
             return None
         result = dict(row)
+
+        if result["status"] == "running" and result.get("claude_session_id"):
+            conn.execute(
+                "DELETE FROM session_items WHERE session_id = ?", (session_id,),
+            )
+            _ingest_transcript(
+                conn, session_id, result["claude_session_id"], project_path,
+            )
+            conn.commit()
+
         items = conn.execute(
             "SELECT * FROM session_items WHERE session_id = ? ORDER BY position",
             (session_id,),
