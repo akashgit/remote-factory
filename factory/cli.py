@@ -2317,6 +2317,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     if mode == "interactive":
         mode = "design"
     bg = getattr(args, "bg", False)
+    bg_agents = _resolve_bg_agents(args)
+    if bg and bg_agents:
+        print("Error: --bg and --bg-agents are mutually exclusive.", file=sys.stderr)
+        return 1
     headless = getattr(args, "headless", False) or bg
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
@@ -2603,6 +2607,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         mode=banner_mode,
     )
 
+    if bg_agents:
+        os.environ["FACTORY_BG"] = "1"
+
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
@@ -2698,6 +2705,16 @@ def _resolve_background(args: argparse.Namespace) -> bool:
     cli_flag = getattr(args, "bg", False)
     cli_value = "true" if cli_flag else None
     val = resolve("bg", cli_value=cli_value, env_var="FACTORY_BG", default="false")
+    return bool(val and val.lower() in ("1", "true", "yes"))
+
+
+def _resolve_bg_agents(args: argparse.Namespace) -> bool:
+    """Resolve bg_agents: CLI flag > FACTORY_BG_AGENTS env var > config.toml > False."""
+    from factory.user_config import resolve
+
+    cli_flag = getattr(args, "bg_agents", False)
+    cli_value = "true" if cli_flag else None
+    val = resolve("bg_agents", cli_value=cli_value, env_var="FACTORY_BG_AGENTS", default="false")
     return bool(val and val.lower() in ("1", "true", "yes"))
 
 
@@ -3547,9 +3564,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     background = _resolve_background(args)
+    bg_agents = _resolve_bg_agents(args)
     if background and tmux_persist:
         print("Error: --bg and --tmux-persist are mutually exclusive.", file=sys.stderr)
         return 1
+    if background and bg_agents:
+        print("Error: --bg and --bg-agents are mutually exclusive.", file=sys.stderr)
+        return 1
+
+    if bg_agents:
+        os.environ["FACTORY_BG"] = "1"
 
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
@@ -4151,6 +4175,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
     p.add_argument("--bg", action="store_true", default=False,
                     help="Dispatch agent as a background session via claude agent view (claude only)")
+    p.add_argument("--bg-agents", action="store_true", default=False,
+                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
     p.add_argument("--pr", type=int, default=None,
                     help="PR number for --mode review (required when mode=review)")
     p.add_argument("--repo", default=None,
@@ -4220,6 +4246,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Run agent interactively in a tmux window instead of headless (claude only)")
     p.add_argument("--bg", action="store_true", default=False,
                     help="Dispatch agent as a background session via claude agent view (claude only)")
+    p.add_argument("--bg-agents", action="store_true", default=False,
+                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")

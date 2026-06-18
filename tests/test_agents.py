@@ -589,3 +589,49 @@ class TestBackgroundDispatch:
         output = "some other output"
         assert _parse_bg_session_id(output) is None
 
+
+class TestBgAgents:
+    """Tests for --bg-agents flag resolution and mutual exclusivity."""
+
+    def test_resolve_bg_agents_flag(self, monkeypatch):
+        """_resolve_bg_agents resolves CLI flag correctly."""
+        import argparse
+        import factory.user_config
+        from factory.cli import _resolve_bg_agents
+
+        monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)
+        monkeypatch.setattr(factory.user_config, "_cached_config", {})
+
+        args = argparse.Namespace(bg_agents=True)
+        assert _resolve_bg_agents(args) is True
+
+        args = argparse.Namespace(bg_agents=False)
+        assert _resolve_bg_agents(args) is False
+
+    def test_resolve_bg_agents_env_var(self, monkeypatch):
+        """_resolve_bg_agents resolves FACTORY_BG_AGENTS env var."""
+        import argparse
+        import factory.user_config
+        from factory.cli import _resolve_bg_agents
+
+        monkeypatch.setattr(factory.user_config, "_cached_config", {})
+        monkeypatch.setenv("FACTORY_BG_AGENTS", "1")
+        args = argparse.Namespace(bg_agents=False)
+        assert _resolve_bg_agents(args) is True
+
+    def test_bg_and_bg_agents_mutually_exclusive(self, monkeypatch):
+        """--bg and --bg-agents cannot be used together."""
+        import argparse
+        import factory.user_config
+        from factory.cli import _resolve_background, _resolve_bg_agents
+
+        monkeypatch.delenv("FACTORY_BG", raising=False)
+        monkeypatch.delenv("FACTORY_BG_AGENTS", raising=False)
+        monkeypatch.setattr(factory.user_config, "_cached_config", {})
+
+        args = argparse.Namespace(bg=True, bg_agents=True)
+        bg = _resolve_background(args)
+        bg_agents = _resolve_bg_agents(args)
+        assert bg is True
+        assert bg_agents is True
+

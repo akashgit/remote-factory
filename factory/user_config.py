@@ -36,6 +36,7 @@ _CONFIG_TEMPLATE = """\
 # projects_dir = "~/factory-projects"  # Root for factory-managed projects
 # tmux_persist = false                 # Launch agents in tmux windows
 # bg = false                           # Dispatch agents via claude --bg (agent view)
+# bg_agents = false                    # Background sub-agents only (CEO stays foreground)
 
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"
