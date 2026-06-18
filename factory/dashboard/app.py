@@ -751,8 +751,9 @@ def create_app(projects_dir: Path) -> FastAPI:
             try:
                 from factory.agents.runner import resolve_prompt
                 role_prompt = resolve_prompt(role, project_path=path)
-            except Exception:
-                pass
+                log.info("session_resume_role_prompt", role=role, prompt_len=len(role_prompt))
+            except Exception as exc:
+                log.warning("session_resume_prompt_failed", role=role, error=str(exc))
 
         import tempfile
 
