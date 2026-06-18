@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -168,6 +169,9 @@ async def invoke_agent(
     """
     global _consecutive_failures
 
+    if parent_session_id is None:
+        parent_session_id = os.environ.get("FACTORY_PARENT_SESSION_ID")
+
     prompt = resolve_prompt(role, project_path, use_profile=use_profile)
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
@@ -198,64 +202,73 @@ async def invoke_agent(
         extras={"tmux_persist": tmux_persist},
     )
 
+    old_parent_env = os.environ.get("FACTORY_PARENT_SESSION_ID")
+    if sid:
+        os.environ["FACTORY_PARENT_SESSION_ID"] = sid
     try:
-        result = await runner.headless(request)
-        stdout = result.stdout
-        return_code = result.return_code
-        usage = result.usage
-    except Exception as e:
-        logger.error("%s agent failed: %s", role, e)
-        _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
-        _complete_session_safe(project_path, sid, status="failed")
-        if _track_failures:
-            _consecutive_failures += 1
-            _check_failure_threshold(project_path, role)
-        return f"Error: {e}", 1
+        try:
+            result = await runner.headless(request)
+            stdout = result.stdout
+            return_code = result.return_code
+            usage = result.usage
+        except Exception as e:
+            logger.error("%s agent failed: %s", role, e)
+            _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
+            _complete_session_safe(project_path, sid, status="failed")
+            if _track_failures:
+                _consecutive_failures += 1
+                _check_failure_threshold(project_path, role)
+            return f"Error: {e}", 1
 
-    if return_code != 0:
-        logger.warning("%s agent exited with code %d", role, return_code)
-        _emit_safe(
-            project_path, "agent.failed", agent=role,
-            data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
-        )
-        _complete_session_safe(
-            project_path, sid, status="failed",
-            usage=usage, metadata=result.metadata, output=stdout,
-        )
-        if _track_failures:
-            _consecutive_failures += 1
-            _check_failure_threshold(project_path, role)
-    else:
-        completed_data: dict[str, object] = {"return_code": 0}
-        if review_tag:
-            completed_data["review_tag"] = review_tag
-        if usage is not None:
-            completed_data.update({
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "cache_read_tokens": usage.cache_read_tokens,
-                "total_cost_usd": usage.total_cost_usd,
-                "duration_ms": usage.duration_ms,
-                "num_turns": usage.num_turns,
-                "model": usage.model,
-            })
-        for meta_key in ("session_id", "stop_reason", "terminal_reason"):
-            if result.metadata.get(meta_key) is not None:
-                completed_data[meta_key] = result.metadata[meta_key]
-        _emit_safe(
-            project_path, "agent.completed", agent=role,
-            data=completed_data,
-        )
-        _complete_session_safe(
-            project_path, sid, status="completed",
-            usage=usage, metadata=result.metadata, output=stdout,
-        )
-        if _track_failures:
-            _consecutive_failures = 0
+        if return_code != 0:
+            logger.warning("%s agent exited with code %d", role, return_code)
+            _emit_safe(
+                project_path, "agent.failed", agent=role,
+                data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
+            )
+            _complete_session_safe(
+                project_path, sid, status="failed",
+                usage=usage, metadata=result.metadata, output=stdout,
+            )
+            if _track_failures:
+                _consecutive_failures += 1
+                _check_failure_threshold(project_path, role)
+        else:
+            completed_data: dict[str, object] = {"return_code": 0}
+            if review_tag:
+                completed_data["review_tag"] = review_tag
+            if usage is not None:
+                completed_data.update({
+                    "input_tokens": usage.input_tokens,
+                    "output_tokens": usage.output_tokens,
+                    "cache_read_tokens": usage.cache_read_tokens,
+                    "total_cost_usd": usage.total_cost_usd,
+                    "duration_ms": usage.duration_ms,
+                    "num_turns": usage.num_turns,
+                    "model": usage.model,
+                })
+            for meta_key in ("session_id", "stop_reason", "terminal_reason"):
+                if result.metadata.get(meta_key) is not None:
+                    completed_data[meta_key] = result.metadata[meta_key]
+            _emit_safe(
+                project_path, "agent.completed", agent=role,
+                data=completed_data,
+            )
+            _complete_session_safe(
+                project_path, sid, status="completed",
+                usage=usage, metadata=result.metadata, output=stdout,
+            )
+            if _track_failures:
+                _consecutive_failures = 0
 
-    _save_review(project_path, role, stdout, return_code, review_tag=review_tag)
+        _save_review(project_path, role, stdout, return_code, review_tag=review_tag)
 
-    return stdout, return_code
+        return stdout, return_code
+    finally:
+        if old_parent_env is not None:
+            os.environ["FACTORY_PARENT_SESSION_ID"] = old_parent_env
+        elif sid:
+            os.environ.pop("FACTORY_PARENT_SESSION_ID", None)
 
 
 def _check_failure_threshold(project_path: Path, last_agent: str) -> None:
