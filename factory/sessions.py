@@ -195,6 +195,26 @@ def complete_session(
     log.debug("session_completed", session_id=session_id, status=status)
 
 
+def _find_transcript(claude_session_id: str, project_path: Path) -> Path | None:
+    """Locate a Claude Code transcript file, trying multiple path patterns.
+
+    Tries the direct project path hash first, then scans all project dirs
+    as a fallback (handles worktree vs project dir mismatches).
+    """
+    claude_dir = Path.home() / ".claude" / "projects"
+    dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
+    direct = claude_dir / dir_name / f"{claude_session_id}.jsonl"
+    if direct.exists():
+        return direct
+    if claude_dir.exists():
+        for pdir in claude_dir.iterdir():
+            if pdir.is_dir():
+                candidate = pdir / f"{claude_session_id}.jsonl"
+                if candidate.exists():
+                    return candidate
+    return None
+
+
 def _ingest_transcript(
     conn: sqlite3.Connection,
     session_id: str,
@@ -205,12 +225,8 @@ def _ingest_transcript(
 
     Returns True if items were ingested, False if transcript was not found.
     """
-    claude_dir = Path.home() / ".claude" / "projects"
-    project_str = str(project_path.resolve())
-    dir_name = project_str.replace("/", "-").replace(".", "-")
-    transcript_file = claude_dir / dir_name / f"{claude_session_id}.jsonl"
-
-    if not transcript_file.exists():
+    transcript_file = _find_transcript(claude_session_id, project_path)
+    if transcript_file is None:
         return False
 
     position = 0
@@ -360,11 +376,7 @@ def backfill_transcripts(project_path: Path) -> int:
         for row in rows:
             sid = row["id"]
             claude_sid = row["claude_session_id"]
-            claude_dir = Path.home() / ".claude" / "projects"
-            project_str = str(project_path.resolve())
-            dir_name = project_str.replace("/", "-").replace(".", "-")
-            transcript_file = claude_dir / dir_name / f"{claude_sid}.jsonl"
-            if not transcript_file.exists():
+            if _find_transcript(claude_sid, project_path) is None:
                 continue
             conn.execute(
                 "DELETE FROM session_items WHERE session_id = ?", (sid,),
@@ -433,6 +445,71 @@ def reingest_session(
     finally:
         conn.close()
     return get_session(project_path, session_id)
+
+
+def get_cycles(
+    project_path: Path,
+    *,
+    limit: int = 20,
+) -> list[dict]:
+    """List root sessions (CEO cycles) with aggregated stats from children."""
+    if not _db_path(project_path).exists():
+        return []
+
+    conn = _connect(project_path)
+    try:
+        rows = conn.execute(
+            """SELECT s.*,
+                      (SELECT COUNT(*) FROM sessions c WHERE c.parent_id = s.id) AS child_count,
+                      (SELECT GROUP_CONCAT(DISTINCT c2.agent_role)
+                       FROM sessions c2 WHERE c2.parent_id = s.id) AS child_roles_str,
+                      (SELECT COALESCE(SUM(c3.total_cost_usd), 0)
+                       FROM sessions c3 WHERE c3.root_id = s.id AND c3.id != s.id) AS children_cost,
+                      (SELECT COALESCE(SUM(c4.duration_ms), 0)
+                       FROM sessions c4 WHERE c4.root_id = s.id AND c4.id != s.id) AS children_duration
+               FROM sessions s
+               WHERE s.kind = 'default' AND s.parent_id IS NULL
+               ORDER BY s.created_at DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            roles_str = d.pop("child_roles_str", None)
+            d["child_roles"] = roles_str.split(",") if roles_str else []
+            d["total_cycle_cost"] = (d.get("total_cost_usd") or 0.0) + d.pop("children_cost", 0.0)
+            d["total_cycle_duration"] = (
+                (d.get("duration_ms") or 0.0) + d.pop("children_duration", 0.0)
+            )
+            result.append(d)
+        return result
+    finally:
+        conn.close()
+
+
+def get_cycle(
+    project_path: Path,
+    cycle_id: str,
+) -> dict | None:
+    """Get a cycle with its root session and all children, plus aggregated stats."""
+    root = get_session(project_path, cycle_id)
+    if root is None:
+        return None
+
+    children = get_children(project_path, cycle_id)
+
+    total_cost = (root.get("total_cost_usd") or 0.0)
+    total_duration = (root.get("duration_ms") or 0.0)
+    for child in children:
+        total_cost += child.get("total_cost_usd") or 0.0
+        total_duration += child.get("duration_ms") or 0.0
+
+    return {
+        **root,
+        "children": children,
+        "total_cycle_cost": total_cost,
+        "total_cycle_duration": total_duration,
+    }
 
 
 def get_sessions(
