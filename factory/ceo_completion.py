@@ -418,7 +418,7 @@ async def run_ceo_with_completion_guard(
         return await invoke_agent(
             "ceo", initial_task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
-            background=True,
+            background=True, session_name=session_name, use_profile=use_profile,
         )
 
     # Check escape hatch

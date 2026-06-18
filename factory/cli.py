@@ -2313,7 +2313,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
-    headless = getattr(args, "headless", False) or getattr(args, "bg", False)
+    bg = getattr(args, "bg", False)
+    headless = getattr(args, "headless", False) or bg
     prompt_file = getattr(args, "prompt", None)
     focus = getattr(args, "focus", None)
     dir_name = getattr(args, "dir", None)
@@ -2410,8 +2411,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     if mode == "design":
         if headless:
-            print("Error: --mode design requires foreground mode "
-                  "(incompatible with --headless)", file=sys.stderr)
+            flag = "--bg" if bg else "--headless"
+            print(f"Error: --mode design requires foreground mode "
+                  f"(incompatible with {flag})", file=sys.stderr)
             return 1
         if prompt_file:
             print("Error: --mode design and --prompt are mutually exclusive. "
@@ -2460,8 +2462,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     elif mode == "research" and not _safe_is_dir(resolved := Path(raw_path).expanduser()) and not _safe_is_file(resolved):
         # New research project from idea — enter research ideation
         if headless:
+            flag = "--bg" if bg else "--headless"
             print("Error: --mode research for new projects requires foreground mode "
-                  "(incompatible with --headless)", file=sys.stderr)
+                  f"(incompatible with {flag})", file=sys.stderr)
             return 1
         if focus:
             print("Error: --focus cannot be used with research ideation for new projects. "

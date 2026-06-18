@@ -92,6 +92,7 @@ class ClaudeRunner:
 
             stdout, rc, usage = await run_in_background(
                 request.prompt, request.task, request.cwd, request.role,
+                timeout=request.timeout,
                 model=request.model,
                 dangerously_skip_permissions=request.skip_permissions,
             )
