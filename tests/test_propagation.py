@@ -53,6 +53,18 @@ class TestClaudeCodeOtelVars:
             assert env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
             assert env["OTEL_SERVICE_NAME"] == "factory-agent"
 
+    def test_content_capture_env_vars_set(self, test_provider, monkeypatch):
+        provider, _exporter = test_provider
+        monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
+        tracer = provider.get_tracer("test")
+        with tracer.start_as_current_span("test-span"):
+            env = build_traced_env(base_env={})
+            assert env["OTEL_LOG_USER_PROMPTS"] == "1"
+            assert env["OTEL_LOG_TOOL_DETAILS"] == "1"
+            assert env["OTEL_LOG_TOOL_CONTENT"] == "1"
+
     def test_otel_endpoint_set_correctly(self, test_provider, monkeypatch):
         provider, _exporter = test_provider
         monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")

@@ -130,6 +130,43 @@ class TestTracingIntegrationEnabled:
         trace_ids = {s.context.trace_id for s in spans}
         assert len(trace_ids) == 1
 
+    def test_record_result_with_response_text(self, integration_with_exporter):
+        integration, exporter = integration_with_exporter
+
+        with integration.start_cycle("run-1", "proj", "build"):
+            with integration.start_agent("builder", "task", "run-1", "proj") as span:
+                integration.record_agent_result(
+                    span, exit_code=0, duration_ms=100.0,
+                    response_text="done",
+                )
+
+        agent_span = next(
+            s for s in exporter.get_finished_spans()
+            if s.name.startswith("invoke_agent")
+        )
+        attrs = _attrs(agent_span)
+        assert attrs["gen_ai.completion"] == "done"
+
+    def test_set_span_io(self, integration_with_exporter):
+        integration, exporter = integration_with_exporter
+
+        with integration.start_cycle("run-1", "proj", "build"):
+            with integration.start_agent("builder", "task", "run-1", "proj") as span:
+                integration.set_span_io(span, input_text="hello", output_text="world")
+
+        agent_span = next(
+            s for s in exporter.get_finished_spans()
+            if s.name.startswith("invoke_agent")
+        )
+        attrs = _attrs(agent_span)
+        assert attrs["gen_ai.prompt"] == "hello"
+        assert attrs["gen_ai.completion"] == "world"
+
+    def test_stores_run_id(self, integration_with_exporter):
+        integration, exporter = integration_with_exporter
+        with integration.start_cycle("run-42", "proj", "build"):
+            assert integration._run_id == "run-42"
+
     def test_build_subprocess_env_delegates(self, integration_with_exporter):
         integration, exporter = integration_with_exporter
         base = {"PATH": "/usr/bin"}

@@ -35,6 +35,7 @@ class TracingIntegration:
     def __init__(self, config: TracingConfig | None = None) -> None:
         self._config = config or TracingConfig.from_env()
         self._provider = None
+        self._run_id: str = ""
         if self._config.enabled:
             self._provider = get_tracer_provider(self._config)
 
@@ -55,6 +56,7 @@ class TracingIntegration:
         if not self.enabled:
             yield _NOOP_SPAN
             return
+        self._run_id = run_id
         with trace_factory_cycle(run_id, project_name, mode) as span:
             if experiment_id is not None:
                 span.set_attribute("factory.experiment.id", experiment_id)
@@ -88,6 +90,9 @@ class TracingIntegration:
         input_tokens: int | None = None,
         output_tokens: int | None = None,
         cost_usd: float | None = None,
+        response_text: str | None = None,
+        start_time: float | None = None,
+        model: str | None = None,
     ) -> None:
         if not self.enabled or isinstance(span, _NoOpSpan):
             return
@@ -98,7 +103,23 @@ class TracingIntegration:
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=cost_usd,
+            response_text=response_text,
+            start_time=start_time,
+            model=model,
         )
+
+    def set_span_io(
+        self,
+        span: Span | _NoOpSpan,
+        input_text: str | None = None,
+        output_text: str | None = None,
+    ) -> None:
+        if not self.enabled or isinstance(span, _NoOpSpan):
+            return
+        if input_text is not None:
+            span.set_attribute("gen_ai.prompt", input_text)  # type: ignore[union-attr]
+        if output_text is not None:
+            span.set_attribute("gen_ai.completion", output_text)  # type: ignore[union-attr]
 
     def record_eval_result(
         self,

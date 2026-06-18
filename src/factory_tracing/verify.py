@@ -72,6 +72,15 @@ def _query_langfuse_trace(config: TracingConfig, trace_id: str, max_retries: int
     raise RuntimeError(f"Failed to fetch trace {trace_id} after {max_retries} attempts: {last_error}")
 
 
+def _get_obs_attribute(obs: dict, key: str) -> object:
+    """Extract an attribute from an observation's metadata or attributes."""
+    for source in ("metadata", "attributes"):
+        container = obs.get(source)
+        if isinstance(container, dict) and key in container:
+            return container[key]
+    return None
+
+
 def _validate_trace(trace_data: dict, trace_id: str) -> list[CheckResult]:
     checks = []
 
@@ -105,6 +114,45 @@ def _validate_trace(trace_data: dict, trace_id: str) -> list[CheckResult]:
         name="trace_id_consistent",
         passed=bool(fetched_id),
         detail=f"Trace ID: {fetched_id}" if fetched_id else "Could not verify trace ID",
+    ))
+
+    llm_spans = [o for o in observations if "claude_code.llm_request" in (o.get("name") or "")]
+    if llm_spans:
+        llm = llm_spans[0]
+        llm_model = _get_obs_attribute(llm, "gen_ai.request.model") or ""
+        has_model = bool(llm_model)
+        checks.append(CheckResult(
+            name="llm_span_has_model",
+            passed=has_model,
+            detail=f"claude_code.llm_request model={llm_model}" if has_model else "claude_code.llm_request has no model name",
+        ))
+
+        llm_input_tokens = _get_obs_attribute(llm, "gen_ai.usage.input_tokens")
+        has_llm_tokens = isinstance(llm_input_tokens, (int, float)) and llm_input_tokens > 0
+        checks.append(CheckResult(
+            name="llm_span_has_tokens",
+            passed=has_llm_tokens,
+            detail=f"claude_code.llm_request input_tokens={llm_input_tokens}" if has_llm_tokens else "claude_code.llm_request has zero/missing input_tokens",
+        ))
+
+    agent_obs_list = [o for o in observations if "invoke_agent" in (o.get("name") or "")]
+    if agent_obs_list:
+        agent_obs = agent_obs_list[0]
+        agent_tokens = _get_obs_attribute(agent_obs, "gen_ai.usage.input_tokens")
+        has_agent_tokens = isinstance(agent_tokens, (int, float)) and agent_tokens > 0
+        checks.append(CheckResult(
+            name="agent_span_has_tokens",
+            passed=has_agent_tokens,
+            detail=f"invoke_agent input_tokens={agent_tokens}" if has_agent_tokens else "invoke_agent has zero/missing gen_ai.usage.input_tokens",
+        ))
+
+    total_usage = trace_data.get("usage") or trace_data.get("totalUsage") or {}
+    trace_input = total_usage.get("input", 0) or total_usage.get("inputTokens", 0) or 0
+    has_trace_usage = trace_input > 0
+    checks.append(CheckResult(
+        name="trace_has_token_usage",
+        passed=has_trace_usage,
+        detail=f"Trace token usage: input={trace_input}" if has_trace_usage else "Trace shows zero token usage",
     ))
 
     return checks
@@ -149,6 +197,7 @@ def run_verification() -> VerificationResult:
             ) as agent_span:
                 traced_env = build_traced_env(base_env=dict(__import__("os").environ))
 
+                start_time = time.monotonic()
                 try:
                     result = subprocess.run(
                         ["claude", "-p", "Reply with the single word VERIFIED", "--output-format", "json"],
@@ -170,19 +219,25 @@ def run_verification() -> VerificationResult:
                 input_tokens = 0
                 output_tokens = 0
                 cost_usd = 0.0
+                response_text = ""
+                model = None
                 if isinstance(parsed, dict):
                     usage = parsed.get("usage", {}) or parsed.get("result", {}).get("usage", {}) or {}
                     input_tokens = usage.get("input_tokens", 0) or 0
                     output_tokens = usage.get("output_tokens", 0) or 0
                     cost_usd = usage.get("cost_usd", 0.0) or 0.0
+                    response_text = parsed.get("result", "") if isinstance(parsed.get("result"), str) else ""
+                    model = parsed.get("model") or None
 
                 record_agent_result(
                     agent_span,
                     exit_code=exit_code,
-                    duration_ms=0.0,
+                    start_time=start_time,
                     input_tokens=input_tokens,
                     output_tokens=output_tokens,
                     cost_usd=cost_usd,
+                    response_text=response_text or None,
+                    model=model,
                 )
     finally:
         shutdown_tracing()
@@ -191,6 +246,7 @@ def run_verification() -> VerificationResult:
 
     time.sleep(3)
 
+    trace_data: dict = {}
     try:
         trace_data = _query_langfuse_trace(config, trace_id_hex)
         checks = _validate_trace(trace_data, trace_id_hex)
@@ -207,10 +263,54 @@ def run_verification() -> VerificationResult:
     required_checks = {"root_span_exists", "agent_span_exists", "trace_id_consistent"}
     success = all(c.passed for c in checks if c.name in required_checks)
 
-    return VerificationResult(
+    result = VerificationResult(
         trace_id=trace_id_hex,
         langfuse_url=langfuse_url,
         span_count=span_count,
         checks=checks,
         success=success,
     )
+
+    _print_report(result, trace_data)
+
+    return result
+
+
+def _print_report(result: VerificationResult, trace_data: dict) -> None:
+    print(f"\n{'='*60}")
+    print("Factory Tracing Verification Report")
+    print(f"{'='*60}")
+    print(f"Trace ID:    {result.trace_id}")
+    print(f"Langfuse:    {result.langfuse_url}")
+    print(f"Span count:  {result.span_count}")
+    print()
+
+    observations = trace_data.get("observations") or [] if trace_data else []
+    if observations:
+        print("Span Details:")
+        for obs in observations:
+            name = obs.get("name", "?")
+            metadata = obs.get("metadata") or {}
+            model = _get_obs_attribute(obs, "gen_ai.request.model") or metadata.get("model", "")
+            input_t = _get_obs_attribute(obs, "gen_ai.usage.input_tokens") or 0
+            output_t = _get_obs_attribute(obs, "gen_ai.usage.output_tokens") or 0
+            start = obs.get("startTime", "")
+            end = obs.get("endTime", "")
+            print(f"  - {name}")
+            if model:
+                print(f"    model: {model}")
+            if input_t or output_t:
+                print(f"    tokens: in={input_t} out={output_t}")
+            if start and end:
+                print(f"    time: {start} -> {end}")
+        print()
+
+    print("Checks:")
+    for c in result.checks:
+        status = "PASS" if c.passed else "FAIL"
+        print(f"  [{status}] {c.name}: {c.detail}")
+
+    print()
+    overall = "SUCCESS" if result.success else "FAILED"
+    print(f"Overall: {overall}")
+    print(f"{'='*60}\n")

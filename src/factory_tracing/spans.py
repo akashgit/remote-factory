@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -40,6 +41,7 @@ def trace_agent_invocation(
     task_summary: str,
     run_id: str,
     project_name: str,
+    model: str = "anthropic",
 ) -> Iterator[Span]:
     """Child span for a single agent invocation within a cycle."""
     tracer = get_tracer()
@@ -47,9 +49,12 @@ def trace_agent_invocation(
         span.set_attribute("gen_ai.operation.name", "invoke_agent")
         span.set_attribute("gen_ai.agent.name", role)
         span.set_attribute("gen_ai.system", "anthropic")
+        span.set_attribute("gen_ai.request.model", model)
         span.set_attribute("factory.run.id", run_id)
         span.set_attribute("factory.project.name", project_name)
         span.set_attribute("factory.task.summary", task_summary)
+        if task_summary:
+            span.set_attribute("gen_ai.prompt", task_summary)
         span.set_attribute("langfuse.observation.type", "span")
         span.set_attribute("langfuse.session.id", run_id)
         span.set_attribute("langfuse.trace.tags", (role,))
@@ -68,14 +73,26 @@ def trace_agent_invocation(
 def record_agent_result(
     span: Span,
     exit_code: int,
-    duration_ms: float,
+    duration_ms: float = 0.0,
     input_tokens: int | None = None,
     output_tokens: int | None = None,
     cost_usd: float | None = None,
+    response_text: str | None = None,
+    start_time: float | None = None,
+    model: str | None = None,
 ) -> None:
     """Record subprocess result and optional usage metrics on an agent span."""
+    if start_time is not None:
+        duration_ms = (time.monotonic() - start_time) * 1000.0
+
     span.set_attribute("subprocess.returncode", exit_code)
     span.set_attribute("subprocess.duration_ms", duration_ms)
+
+    if response_text is not None:
+        span.set_attribute("gen_ai.completion", response_text)
+
+    if model is not None:
+        span.set_attribute("gen_ai.request.model", model)
 
     if input_tokens is not None:
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)

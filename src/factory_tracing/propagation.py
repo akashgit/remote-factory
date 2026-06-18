@@ -42,4 +42,8 @@ def build_traced_env(base_env: dict | None = None) -> dict:
     )
     env["OTEL_SERVICE_NAME"] = "factory-agent"
 
+    env["OTEL_LOG_USER_PROMPTS"] = "1"
+    env["OTEL_LOG_TOOL_DETAILS"] = "1"
+    env["OTEL_LOG_TOOL_CONTENT"] = "1"
+
     return env
