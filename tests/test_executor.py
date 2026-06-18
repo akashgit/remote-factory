@@ -290,7 +290,8 @@ class TestAgentSpanHasFinalResult:
         agent_span = next(s for s in spans if "invoke_agent" in s.name)
         attrs = _attrs(agent_span)
         assert attrs["gen_ai.prompt"] == "do something"
-        assert attrs["langfuse.span.input"] == "do something"
+        langfuse_input = json.loads(attrs["langfuse.span.input"])
+        assert langfuse_input["prompt"] == "do something"
 
     def test_agent_span_has_token_counts(self, tracing_setup):
         _run_with_events([INIT_EVENT, RESULT_EVENT])

@@ -38,8 +38,8 @@ class TestBuildTracedEnvWithActiveSpan:
             assert traceparent_trace_id == span_trace_id
 
 
-class TestClaudeCodeOtelVars:
-    def test_claude_code_otel_vars_set(self, test_provider, monkeypatch):
+class TestPropagationEnvVars:
+    def test_service_name_set(self, test_provider, monkeypatch):
         provider, _exporter = test_provider
         monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")
         monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
@@ -47,13 +47,9 @@ class TestClaudeCodeOtelVars:
         tracer = provider.get_tracer("test")
         with tracer.start_as_current_span("test-span"):
             env = build_traced_env(base_env={})
-            assert env["CLAUDE_CODE_ENABLE_TELEMETRY"] == "1"
-            assert env["CLAUDE_CODE_ENHANCED_TELEMETRY_BETA"] == "1"
-            assert env["OTEL_TRACES_EXPORTER"] == "otlp"
-            assert env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
             assert env["OTEL_SERVICE_NAME"] == "factory-agent"
 
-    def test_content_capture_env_vars_set(self, test_provider, monkeypatch):
+    def test_no_claude_native_otel_vars(self, test_provider, monkeypatch):
         provider, _exporter = test_provider
         monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")
         monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
@@ -61,32 +57,8 @@ class TestClaudeCodeOtelVars:
         tracer = provider.get_tracer("test")
         with tracer.start_as_current_span("test-span"):
             env = build_traced_env(base_env={})
-            assert env["OTEL_LOG_USER_PROMPTS"] == "1"
-            assert env["OTEL_LOG_TOOL_DETAILS"] == "1"
-            assert env["OTEL_LOG_TOOL_CONTENT"] == "1"
-
-    def test_otel_endpoint_set_correctly(self, test_provider, monkeypatch):
-        provider, _exporter = test_provider
-        monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")
-        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
-        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
-        tracer = provider.get_tracer("test")
-        with tracer.start_as_current_span("test-span"):
-            env = build_traced_env(base_env={})
-            assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "http://langfuse.test:3000/api/public/otel"
-
-    def test_auth_header_set(self, test_provider, monkeypatch):
-        provider, _exporter = test_provider
-        monkeypatch.setenv("LANGFUSE_HOST", "http://langfuse.test:3000")
-        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
-        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
-        tracer = provider.get_tracer("test")
-        with tracer.start_as_current_span("test-span"):
-            env = build_traced_env(base_env={})
-            expected_b64 = base64.b64encode(b"pk-test:sk-test").decode()
-            headers = env["OTEL_EXPORTER_OTLP_HEADERS"]
-            assert f"Authorization=Basic {expected_b64}" in headers
-            assert "x-langfuse-ingestion-version=4" in headers
+            assert "CLAUDE_CODE_ENABLE_TELEMETRY" not in env
+            assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in env
 
 
 class TestNoActiveSpan:

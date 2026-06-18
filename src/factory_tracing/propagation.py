@@ -31,19 +31,6 @@ def build_traced_env(base_env: dict | None = None) -> dict:
         f"{config.langfuse_public_key}:{config.langfuse_secret_key}".encode()
     ).decode()
 
-    env["CLAUDE_CODE_ENABLE_TELEMETRY"] = "1"
-    env["CLAUDE_CODE_ENHANCED_TELEMETRY_BETA"] = "1"
-    env["OTEL_TRACES_EXPORTER"] = "otlp"
-    env["OTEL_EXPORTER_OTLP_PROTOCOL"] = "http/protobuf"
-    env["OTEL_EXPORTER_OTLP_ENDPOINT"] = f"{langfuse_host}/api/public/otel"
-    env["OTEL_EXPORTER_OTLP_HEADERS"] = (
-        f"Authorization=Basic {auth_string},"
-        f"x-langfuse-ingestion-version=4"
-    )
     env["OTEL_SERVICE_NAME"] = "factory-agent"
-
-    env["OTEL_LOG_USER_PROMPTS"] = "1"
-    env["OTEL_LOG_TOOL_DETAILS"] = "1"
-    env["OTEL_LOG_TOOL_CONTENT"] = "1"
 
     return env

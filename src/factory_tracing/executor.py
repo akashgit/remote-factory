@@ -57,7 +57,7 @@ def run_traced_agent(
         agent_span.set_attribute("factory.project.name", project_name)
         agent_span.set_attribute("factory.task.summary", prompt)
         agent_span.set_attribute("gen_ai.prompt", _truncate(prompt))
-        agent_span.set_attribute("langfuse.span.input", _truncate(prompt))
+        agent_span.set_attribute("langfuse.span.input", json.dumps({"prompt": _truncate(prompt), "role": role}))
         agent_span.set_attribute("langfuse.observation.type", "span")
         agent_span.set_attribute("langfuse.session.id", run_id)
         agent_span.set_attribute("langfuse.trace.tags", (role,))
@@ -73,7 +73,7 @@ def run_traced_agent(
         )
 
         agent_span.set_attribute("gen_ai.completion", _truncate(result.response_text))
-        agent_span.set_attribute("langfuse.span.output", _truncate(result.response_text))
+        agent_span.set_attribute("langfuse.span.output", json.dumps({"response": _truncate(result.response_text), "model": result.model, "tokens": {"input": result.input_tokens, "output": result.output_tokens}, "cost_usd": result.cost_usd}))
         agent_span.set_attribute("subprocess.returncode", result.exit_code)
         agent_span.set_attribute("subprocess.duration_ms", result.duration_ms)
         agent_span.set_attribute("gen_ai.usage.input_tokens", result.input_tokens)
@@ -248,7 +248,7 @@ def _handle_assistant_event(event, agent_span, tracer, open_tool_spans, model, p
         )
         tool_span.set_attribute("tool.name", tool_name)
         tool_span.set_attribute("gen_ai.prompt", _truncate(json.dumps(tool_input)))
-        tool_span.set_attribute("langfuse.span.input", _truncate(json.dumps(tool_input)))
+        tool_span.set_attribute("langfuse.span.input", json.dumps({"tool": tool_name, "input": tool_input}))
         tool_span.set_attribute("langfuse.observation.type", "span")
 
         if tool_use_id:
@@ -261,10 +261,11 @@ def _handle_assistant_event(event, agent_span, tracer, open_tool_spans, model, p
             context=_span_context(agent_span),
         )
         llm_span.set_attribute("gen_ai.request.model", model)
-        llm_span.set_attribute("gen_ai.prompt", _truncate(prompt) if turn_count == 0 else "[conversation context]")
+        llm_input = _truncate(prompt) if turn_count == 0 else "[conversation context]"
+        llm_span.set_attribute("gen_ai.prompt", llm_input)
         llm_span.set_attribute("gen_ai.completion", _truncate(text_content))
-        llm_span.set_attribute("langfuse.span.input", _truncate(prompt) if turn_count == 0 else "[conversation context]")
-        llm_span.set_attribute("langfuse.span.output", _truncate(text_content))
+        llm_span.set_attribute("langfuse.span.input", json.dumps({"prompt": llm_input}))
+        llm_span.set_attribute("langfuse.span.output", json.dumps({"completion": _truncate(text_content)}))
         llm_span.set_attribute("langfuse.observation.type", "span")
         if usage:
             if "input_tokens" in usage:
@@ -299,7 +300,7 @@ def _handle_user_event(event, open_tool_spans):
         if tool_use_id and tool_use_id in open_tool_spans:
             tool_span = open_tool_spans.pop(tool_use_id)
             tool_span.set_attribute("gen_ai.completion", _truncate(result_content))
-            tool_span.set_attribute("langfuse.span.output", _truncate(result_content))
+            tool_span.set_attribute("langfuse.span.output", json.dumps({"result": _truncate(result_content)}))
             tool_span.set_status(StatusCode.OK)
             tool_span.end()
 
