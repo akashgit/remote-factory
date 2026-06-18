@@ -323,7 +323,7 @@ async def run_in_background(
     logger.info("Launching background agent: role=%s, cwd=%s", role, cwd)
 
     env = dict(os.environ)
-    env["FACTORY_BG"] = "1"
+    env["_FACTORY_IN_BG_SESSION"] = "1"
 
     try:
         result = subprocess.run(
@@ -368,5 +368,11 @@ async def run_in_background(
             return session_output, 0 if is_success else 1, None
 
     logger.error("Background agent timed out after %ss: role=%s", timeout, role)
-    subprocess.run(["claude", "stop", session_id], capture_output=True)
+    stop_result = subprocess.run(["claude", "stop", session_id], capture_output=True)
+    if stop_result.returncode != 0:
+        logger.warning(
+            "Failed to stop background session %s: %s",
+            session_id,
+            stop_result.stderr[:200],
+        )
     return f"Agent timed out after {timeout}s", 1, None

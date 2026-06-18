@@ -2204,6 +2204,9 @@ def cmd_agent(args: argparse.Namespace) -> int:
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     background = _resolve_background(args)
+    if background and tmux_persist:
+        print("Error: --bg and --tmux-persist are mutually exclusive.", file=sys.stderr)
+        return 1
     review_tag = getattr(args, "review_tag", None)
     parent_span = getattr(args, "parent_session", None) or os.environ.get("FACTORY_PARENT_SPAN_ID")
     if parent_span:
@@ -2509,6 +2512,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     background = _resolve_background(args)
+    if background and tmux_persist:
+        print("Error: --bg and --tmux-persist are mutually exclusive.", file=sys.stderr)
+        return 1
     clean_pr_flag = getattr(args, "clean_pr", None)
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
@@ -3541,6 +3547,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
     background = _resolve_background(args)
+    if background and tmux_persist:
+        print("Error: --bg and --tmux-persist are mutually exclusive.", file=sys.stderr)
+        return 1
 
     if prompt_file:
         context = _read_prompt_file(project_path, prompt_file)
