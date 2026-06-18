@@ -114,6 +114,18 @@ details{border:none}
 details summary{cursor:pointer;color:var(--accent);font-size:12px;padding:4px 0;user-select:none}
 details summary:hover{text-decoration:underline}
 
+/* ── Chat Input ── */
+.chat-input-area{padding:12px 20px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:8px;align-items:flex-end;flex-shrink:0}
+.chat-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:13px;resize:none;min-height:40px;max-height:120px;outline:none}
+.chat-input:focus{border-color:var(--accent)}
+.chat-input:disabled{opacity:0.5}
+.chat-send-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.chat-send-btn:disabled{opacity:0.4;cursor:not-allowed}
+.chat-send-btn:hover:not(:disabled){filter:brightness(1.1)}
+.interactive-badge{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:600;flex-shrink:0}
+.interactive-badge.interactive{background:rgba(88,166,255,0.15);color:var(--accent)}
+.interactive-badge.view-only{background:rgba(125,133,144,0.15);color:var(--text-dim)}
+
 @media(max-width:800px){
   .content{grid-template-columns:1fr;grid-template-rows:300px 1fr}
   .tree-panel{border-right:none;border-bottom:1px solid var(--border)}
@@ -328,10 +340,14 @@ function renderSessionNode(s) {
   var statusCls = s.status || 'completed';
   var itemCount = sessionItemCounts[s.id];
   var countBadge = itemCount != null ? '<span class="item-count-badge">' + itemCount + '</span>' : '';
+  var interactiveBadge = s.claude_session_id
+    ? '<span class="interactive-badge interactive" title="Interactive — send follow-up messages">&#9993;</span>'
+    : '';
 
   var html = '<div class="session-node' + sel + running + '" data-id="' + esc(s.id) + '" onclick="selectSession(\'' + esc(s.id) + '\')">' +
     '<span class="status-dot ' + esc(statusCls) + '"></span>' +
     renderRoleBadge(s.agent_role) +
+    interactiveBadge +
     countBadge +
     '<span class="node-meta">' +
       '<span>' + formatCost(s.total_cost_usd) + '</span>' +
@@ -429,6 +445,11 @@ function renderChat(session, children) {
   html += renderRoleBadge(session.agent_role);
   if (session.model) html += '<span class="model-name">' + esc(session.model) + '</span>';
   html += '<span class="status-badge ' + esc(session.status || 'completed') + '">' + esc(session.status || 'unknown') + '</span>';
+  if (session.claude_session_id) {
+    html += '<span class="interactive-badge interactive">interactive</span>';
+  } else {
+    html += '<span class="interactive-badge view-only">view only</span>';
+  }
   html += '</div>';
 
   html += '<div class="chat-stats">';
@@ -468,10 +489,18 @@ function renderChat(session, children) {
   }
   html += '</div>';
 
+  // ── Chat Input ──
+  if (session.claude_session_id) {
+    html += '<div class="chat-input-area">';
+    html += '<textarea id="chat-input" class="chat-input" placeholder="Send a follow-up message..." rows="1" onkeydown="handleChatKey(event)"></textarea>';
+    html += '<button id="chat-send-btn" class="chat-send-btn" onclick="sendMessage()">Send</button>';
+    html += '</div>';
+  }
+
   panel.innerHTML = html;
 
   var chatBody = panel.querySelector('.chat-body');
-  if (chatBody) chatBody.scrollTop = 0;
+  if (chatBody) chatBody.scrollTop = chatBody.scrollHeight;
 }
 
 function renderChatStat(label, value) {
@@ -616,6 +645,72 @@ function renderMessageContent(text) {
 
   if (inCode) result += '</pre>';
   return result;
+}
+
+// ── Send Message ──
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function appendChatBubble(cls, label, text) {
+  var chatBody = document.querySelector('.chat-body');
+  if (!chatBody) return;
+  var div = document.createElement('div');
+  div.className = 'chat-msg ' + cls;
+  div.innerHTML = '<div class="chat-role-label">' + esc(label) + '</div><div>' + renderMessageContent(text) + '</div>';
+  chatBody.appendChild(div);
+  chatBody.scrollTop = chatBody.scrollHeight;
+}
+
+async function sendMessage() {
+  var input = document.getElementById('chat-input');
+  var btn = document.getElementById('chat-send-btn');
+  if (!input || !btn) return;
+  var message = input.value.trim();
+  if (!message || !selectedSession) return;
+
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  appendChatBubble('user', 'User', message);
+  input.value = '';
+
+  var loadingDiv = document.createElement('div');
+  loadingDiv.className = 'chat-msg assistant';
+  loadingDiv.innerHTML = '<div class="chat-role-label">Assistant</div><div style="color:var(--text-dim)">Processing...</div>';
+  var chatBody = document.querySelector('.chat-body');
+  if (chatBody) {
+    chatBody.appendChild(loadingDiv);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  try {
+    var resp = await fetch(
+      '/api/projects/' + encodeURIComponent(projectName) +
+      '/sessions/' + encodeURIComponent(selectedSession) + '/message',
+      { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: message}) }
+    );
+    if (!resp.ok) {
+      var err = await resp.json().catch(function() { return {}; });
+      alert('Error: ' + (err.detail || 'Request failed with status ' + resp.status));
+      if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
+      return;
+    }
+    await selectSession(selectedSession);
+  } catch (e) {
+    alert('Failed to send message: ' + e.message);
+    if (loadingDiv.parentNode) loadingDiv.parentNode.removeChild(loadingDiv);
+  } finally {
+    input = document.getElementById('chat-input');
+    btn = document.getElementById('chat-send-btn');
+    if (input) { input.disabled = false; input.focus(); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
 }
 
 // ── SSE Integration ──

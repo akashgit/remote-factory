@@ -680,6 +680,96 @@ def create_app(projects_dir: Path) -> FastAPI:
         path = projects_dir / name
         return get_children(path, session_id)
 
+    @app.post("/api/projects/{name}/sessions/{session_id}/message")
+    async def send_session_message(name: str, session_id: str, request: Request) -> JSONResponse:
+        import shutil
+
+        _validate_path_segment(name)
+        _validate_path_segment(session_id, "session_id")
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/{session_id}/message",
+            project=name,
+        )
+
+        body = await request.json()
+        message = body.get("message", "").strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        from factory.sessions import get_session as _get_session, reingest_session
+
+        path = projects_dir / name
+        session = _get_session(path, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        claude_session_id = session.get("claude_session_id")
+        if not claude_session_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot resume: session has no claude_session_id",
+            )
+
+        claude_bin = shutil.which("claude")
+        if not claude_bin:
+            raise HTTPException(status_code=500, detail="claude CLI not found on PATH")
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                claude_bin,
+                "--resume", claude_session_id,
+                "-p", message,
+                "--output-format", "json",
+                "--dangerously-skip-permissions",
+                cwd=str(path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+        except asyncio.TimeoutError:
+            if proc:  # type: ignore[possibly-undefined]
+                proc.kill()
+                await proc.wait()
+            raise HTTPException(status_code=504, detail="Resume timed out after 120s")
+        except FileNotFoundError:
+            raise HTTPException(status_code=500, detail="claude CLI not found on PATH")
+
+        if proc.returncode != 0:
+            log.warning(
+                "session_resume_failed",
+                session_id=session_id,
+                returncode=proc.returncode,
+                stderr=stderr.decode()[:500],
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"claude exited with code {proc.returncode}",
+            )
+
+        result_data: dict[str, Any] = {}
+        try:
+            result_data = json.loads(stdout.decode())
+        except (json.JSONDecodeError, ValueError):
+            log.debug("session_resume_json_parse_failed")
+
+        usage_update: dict[str, Any] | None = None
+        if result_data:
+            usage_block = result_data.get("usage", {})
+            usage_update = {
+                "input_tokens": usage_block.get("input_tokens", 0),
+                "output_tokens": usage_block.get("output_tokens", 0),
+                "cache_read_tokens": usage_block.get("cache_read_input_tokens", 0),
+                "cost_usd": result_data.get("cost_usd", 0.0) or 0.0,
+                "num_turns": result_data.get("num_turns", 0) or 0,
+            }
+
+        updated = reingest_session(path, session_id, usage_update=usage_update)
+        if updated is None:
+            raise HTTPException(status_code=500, detail="Failed to reingest session")
+
+        return JSONResponse(updated)
+
     @app.post("/api/projects/{name}/sessions/backfill")
     async def backfill_sessions(name: str) -> JSONResponse:
         _validate_path_segment(name)

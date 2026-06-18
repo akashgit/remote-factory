@@ -379,6 +379,62 @@ def backfill_transcripts(project_path: Path) -> int:
         conn.close()
 
 
+def reingest_session(
+    project_path: Path,
+    session_id: str,
+    *,
+    usage_update: dict | None = None,
+) -> dict | None:
+    """Delete existing items and re-parse the transcript for a session.
+
+    If *usage_update* is provided, it should be a dict with keys like
+    ``input_tokens``, ``output_tokens``, ``cache_read_tokens``,
+    ``cost_usd``, ``num_turns`` — these are added to the session's
+    existing totals.
+
+    Returns the updated session dict, or None if the session has no claude_session_id.
+    """
+    if not _db_path(project_path).exists():
+        return None
+
+    conn = _connect(project_path)
+    try:
+        row = conn.execute(
+            "SELECT claude_session_id FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if not row or not row["claude_session_id"]:
+            return None
+
+        if usage_update:
+            now = int(time.time())
+            conn.execute(
+                """UPDATE sessions SET
+                    input_tokens = input_tokens + ?,
+                    output_tokens = output_tokens + ?,
+                    cache_read_tokens = cache_read_tokens + ?,
+                    total_cost_usd = total_cost_usd + ?,
+                    num_turns = num_turns + ?,
+                    updated_at = ?
+                   WHERE id = ?""",
+                (
+                    usage_update.get("input_tokens", 0),
+                    usage_update.get("output_tokens", 0),
+                    usage_update.get("cache_read_tokens", 0),
+                    usage_update.get("cost_usd", 0.0),
+                    usage_update.get("num_turns", 0),
+                    now,
+                    session_id,
+                ),
+            )
+
+        conn.execute("DELETE FROM session_items WHERE session_id = ?", (session_id,))
+        _ingest_transcript(conn, session_id, row["claude_session_id"], project_path)
+        conn.commit()
+    finally:
+        conn.close()
+    return get_session(project_path, session_id)
+
+
 def get_sessions(
     project_path: Path,
     *,
