@@ -82,16 +82,20 @@ header{display:flex;align-items:center;justify-content:space-between;padding:12p
 .detail-body{overflow-y:auto;flex:1;padding:12px 20px}
 
 .item-block{margin-bottom:8px;border-radius:6px;border:1px solid var(--border);overflow:hidden}
-.item-block.role-user{background:rgba(88,166,255,0.04)}
-.item-block.role-assistant{background:rgba(63,185,80,0.04)}
-.item-block.type-tool_call{background:rgba(210,153,34,0.04)}
-.item-block.type-tool_output{background:rgba(125,133,144,0.04)}
+.item-block.role-user{background:rgba(88,166,255,0.06);border-left:3px solid var(--accent)}
+.item-block.role-assistant.type-message{background:rgba(63,185,80,0.06);border-left:3px solid var(--green)}
+.item-block.type-tool_call{background:rgba(210,153,34,0.06);border-left:3px solid var(--yellow)}
+.item-block.type-tool_output{background:rgba(125,133,144,0.06);border-left:3px solid #555}
+.item-block.type-thinking{background:rgba(188,140,255,0.05);border-left:3px solid var(--role-reviewer);font-style:italic}
 
 .item-header{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-dim)}
 .item-type-badge{font-size:10px;padding:1px 6px;border-radius:3px;text-transform:uppercase;letter-spacing:0.3px}
-.item-type-badge.message{background:#1f3a5f;color:var(--accent)}
+.item-type-badge.user-msg{background:#1f3a5f;color:var(--accent)}
+.item-type-badge.assistant-msg{background:#1a3a2a;color:var(--green)}
 .item-type-badge.tool_call{background:#3d2e1f;color:var(--yellow)}
 .item-type-badge.tool_output{background:#2a2a2a;color:var(--text-dim)}
+.item-type-badge.thinking{background:#2d1f3d;color:var(--role-reviewer)}
+.tool-name{font-weight:700;color:var(--yellow);font-size:12px}
 
 .item-content{padding:0 12px 10px;font-size:13px;line-height:1.6}
 .item-content pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace}
@@ -456,25 +460,55 @@ function renderItem(item, children) {
 
   var html = '<div class="item-block' + roleClass + typeClass + '">';
 
-  // Header
+  // Header with role-appropriate badge
   html += '<div class="item-header">';
-  html += '<span class="item-type-badge ' + esc(type) + '">' + esc(type) + '</span>';
-  if (role) html += '<span style="text-transform:capitalize">' + esc(role) + '</span>';
+  if (type === 'message' && role === 'user') {
+    html += '<span class="item-type-badge user-msg">User</span>';
+  } else if (type === 'message' && role === 'assistant') {
+    html += '<span class="item-type-badge assistant-msg">Assistant</span>';
+  } else if (type === 'tool_call') {
+    html += '<span class="item-type-badge tool_call">Tool Call</span>';
+  } else if (type === 'tool_output') {
+    html += '<span class="item-type-badge tool_output">Output</span>';
+  } else if (type === 'thinking') {
+    html += '<span class="item-type-badge thinking">Thinking</span>';
+  } else {
+    html += '<span class="item-type-badge">' + esc(type) + '</span>';
+    if (role) html += '<span style="text-transform:capitalize">' + esc(role) + '</span>';
+  }
   html += '</div>';
 
-  // Content
+  // Content — rendered per type
   html += '<div class="item-content">';
-
   var data = item.data || '';
-  if (typeof data === 'string') {
-    if (type === 'tool_call' || type === 'tool_output') {
-      var preview = (item.preview || data.substring(0, 100)) + (data.length > 100 ? '...' : '');
-      html += '<details><summary>' + esc(preview) + '</summary>';
-      html += '<pre>' + esc(data) + '</pre>';
-      html += '</details>';
-    } else {
-      html += renderMessageContent(data);
-    }
+
+  if (type === 'tool_call') {
+    var toolName = 'unknown';
+    var toolInput = data;
+    try {
+      var parsed = JSON.parse(data);
+      toolName = parsed.name || 'unknown';
+      toolInput = JSON.stringify(parsed.input || {}, null, 2);
+    } catch (e) {}
+    html += '<span class="tool-name">' + esc(toolName) + '</span>';
+    html += '<details><summary>Show arguments</summary>';
+    html += '<pre>' + esc(toolInput) + '</pre>';
+    html += '</details>';
+
+  } else if (type === 'tool_output') {
+    var preview = item.preview || (typeof data === 'string' ? data.substring(0, 150) : '');
+    html += '<details><summary>' + esc(preview) + (data.length > 150 ? '...' : '') + '</summary>';
+    html += '<pre>' + esc(data) + '</pre>';
+    html += '</details>';
+
+  } else if (type === 'thinking') {
+    var thinkPreview = item.preview || (typeof data === 'string' ? data.substring(0, 150) : '');
+    html += '<details><summary>' + esc(thinkPreview) + (data.length > 150 ? '...' : '') + '</summary>';
+    html += '<div style="font-style:italic;color:var(--text-dim)">' + renderMessageContent(data) + '</div>';
+    html += '</details>';
+
+  } else if (typeof data === 'string') {
+    html += renderMessageContent(data);
   } else {
     html += '<pre>' + esc(JSON.stringify(data, null, 2)) + '</pre>';
   }

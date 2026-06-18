@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -98,10 +99,17 @@ def begin_session(
     session_id = _generate_id()
     now = int(time.time())
     kind = "sub_agent" if parent_id else "default"
-    effective_root = root_id or session_id
 
     conn = _connect(project_path)
     try:
+        if parent_id and not root_id:
+            parent_row = conn.execute(
+                "SELECT root_id FROM sessions WHERE id = ?", (parent_id,)
+            ).fetchone()
+            effective_root = parent_row["root_id"] if parent_row else session_id
+        else:
+            effective_root = root_id or session_id
+
         conn.execute(
             """INSERT INTO sessions
                (id, parent_id, root_id, kind, title, agent_role, status, model, created_at, updated_at)
@@ -168,7 +176,11 @@ def complete_session(
                 now, session_id,
             ),
         )
-        if output:
+        ingested = False
+        if claude_session_id and isinstance(claude_session_id, str):
+            ingested = _ingest_transcript(conn, session_id, claude_session_id, project_path)
+
+        if not ingested and output:
             item_id = _generate_id("item")
             conn.execute(
                 """INSERT INTO session_items
@@ -181,6 +193,166 @@ def complete_session(
         conn.close()
 
     log.debug("session_completed", session_id=session_id, status=status)
+
+
+def _ingest_transcript(
+    conn: sqlite3.Connection,
+    session_id: str,
+    claude_session_id: str,
+    project_path: Path,
+) -> bool:
+    """Read Claude Code's conversation transcript and parse into session_items.
+
+    Returns True if items were ingested, False if transcript was not found.
+    """
+    claude_dir = Path.home() / ".claude" / "projects"
+    project_str = str(project_path.resolve())
+    dir_name = project_str.replace("/", "-")
+    if dir_name.startswith("-"):
+        dir_name = dir_name  # keep leading dash
+    transcript_file = claude_dir / dir_name / f"{claude_session_id}.jsonl"
+
+    if not transcript_file.exists():
+        return False
+
+    position = 0
+    with open(transcript_file) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            item_type = item.get("type", "")
+
+            if item_type == "user":
+                msg = item.get("message", {})
+                content_parts = msg.get("content", [])
+                text = ""
+                for part in content_parts:
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text += part.get("text", "")
+                        elif part.get("type") == "tool_result":
+                            text += f'[Tool Result: {part.get("tool_use_id", "")[:12]}...]'
+                if not text:
+                    continue
+                _insert_item(conn, session_id, position, "message", "user", text)
+                position += 1
+
+            elif item_type == "assistant":
+                msg = item.get("message", {})
+                content = msg.get("content", [])
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    ptype = part.get("type", "")
+                    if ptype == "text":
+                        text = part.get("text", "")
+                        if text.strip():
+                            _insert_item(conn, session_id, position, "message", "assistant", text)
+                            position += 1
+                    elif ptype == "tool_use":
+                        tool_name = part.get("name", "unknown")
+                        tool_input = part.get("input", {})
+                        data = json.dumps({"name": tool_name, "input": tool_input}, indent=2)
+                        input_str = json.dumps(tool_input)
+                        preview = f"{tool_name}({input_str[:100]}...)"
+                        _insert_item(
+                            conn, session_id, position, "tool_call", "assistant",
+                            data, preview=preview,
+                        )
+                        position += 1
+                    elif ptype == "thinking":
+                        text = part.get("thinking", "")
+                        if text.strip():
+                            _insert_item(
+                                conn, session_id, position, "thinking", "assistant",
+                                text, preview=text[:150],
+                            )
+                            position += 1
+
+            elif item_type == "tool_result":
+                content = item.get("content", [])
+                text = ""
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "text":
+                        text += part.get("text", "")
+                    elif isinstance(part, str):
+                        text += part
+                if text.strip():
+                    _insert_item(
+                        conn, session_id, position, "tool_output", "tool",
+                        text, preview=text[:150],
+                    )
+                    position += 1
+
+    return position > 0
+
+
+def _insert_item(
+    conn: sqlite3.Connection,
+    session_id: str,
+    position: int,
+    item_type: str,
+    role: str,
+    data: str,
+    *,
+    preview: str | None = None,
+) -> None:
+    item_id = _generate_id("item")
+    now = int(time.time())
+    if preview is None:
+        preview = data[:200] if data else None
+    conn.execute(
+        """INSERT OR IGNORE INTO session_items
+           (id, session_id, position, type, role, data, preview, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (item_id, session_id, position, item_type, role, data, preview, now),
+    )
+
+
+def backfill_transcripts(project_path: Path) -> int:
+    """Re-ingest transcripts for sessions that only have the old single-blob item.
+
+    Returns the number of sessions backfilled.
+    """
+    if not _db_path(project_path).exists():
+        return 0
+
+    conn = _connect(project_path)
+    try:
+        rows = conn.execute(
+            """SELECT s.id, s.claude_session_id
+               FROM sessions s
+               WHERE s.claude_session_id IS NOT NULL
+                 AND (SELECT COUNT(*) FROM session_items si WHERE si.session_id = s.id) = 1"""
+        ).fetchall()
+
+        count = 0
+        for row in rows:
+            sid = row["id"]
+            claude_sid = row["claude_session_id"]
+            # Check if transcript exists before deleting old items
+            claude_dir = Path.home() / ".claude" / "projects"
+            project_str = str(project_path.resolve())
+            dir_name = project_str.replace("/", "-")
+            transcript_file = claude_dir / dir_name / f"{claude_sid}.jsonl"
+            if not transcript_file.exists():
+                continue
+            conn.execute(
+                "DELETE FROM session_items WHERE session_id = ?", (sid,),
+            )
+            ingested = _ingest_transcript(conn, sid, claude_sid, project_path)
+            if ingested:
+                count += 1
+
+        conn.commit()
+        return count
+    finally:
+        conn.close()
 
 
 def get_sessions(

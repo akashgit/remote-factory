@@ -680,6 +680,20 @@ def create_app(projects_dir: Path) -> FastAPI:
         path = projects_dir / name
         return get_children(path, session_id)
 
+    @app.post("/api/projects/{name}/sessions/backfill")
+    async def backfill_sessions(name: str) -> JSONResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/backfill",
+            project=name,
+        )
+        from factory.sessions import backfill_transcripts
+
+        path = projects_dir / name
+        count = backfill_transcripts(path)
+        return JSONResponse({"backfilled": count})
+
     @app.get("/sessions/{name}", response_class=HTMLResponse)
     async def sessions_view(name: str) -> HTMLResponse:
         _validate_path_segment(name)
