@@ -134,27 +134,17 @@ def end_span(
     meta = dict(metadata or {})
     meta["status"] = status
 
-    usage_details: dict[str, int] = {}
     if usage is not None:
         _g = usage.get if isinstance(usage, dict) else lambda k, d=None: getattr(usage, k, d)
-        input_t = _g("input_tokens", 0) or 0
-        output_t = _g("output_tokens", 0) or 0
-        usage_details = {
-            "input": input_t,
-            "output": output_t,
-            "cache_read_input_tokens": _g("cache_read_tokens", 0) or 0,
-            "total": input_t + output_t,
-        }
+        meta["input_tokens"] = _g("input_tokens", 0) or 0
+        meta["output_tokens"] = _g("output_tokens", 0) or 0
+        meta["cache_read_tokens"] = _g("cache_read_tokens", 0) or 0
         meta["total_cost_usd"] = _g("total_cost_usd", 0.0) or 0.0
         meta["duration_ms"] = _g("duration_ms", 0.0) or 0.0
         meta["num_turns"] = _g("num_turns", 0) or 0
         meta["model"] = _g("model", None)
 
-    obs.update(
-        output=output,
-        metadata=meta,
-        usage_details=usage_details or None,
-    )
+    obs.update(output=output, metadata=meta)
     obs.end()
     _observations.pop(span_id, None)
     log.debug("langfuse_span_ended", span_id=span_id, status=status)
