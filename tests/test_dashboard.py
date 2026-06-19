@@ -107,7 +107,7 @@ class TestDashboardAPI:
         assert resp.status_code == 200
         assert "text/html" in resp.headers["content-type"]
         assert "Factory" in resp.text
-        assert "FACTORY" in resp.text
+        assert "min-height: 0" in resp.text
 
     def test_list_projects(self, client: TestClient):
         resp = client.get("/api/projects")
