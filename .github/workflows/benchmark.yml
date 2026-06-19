@@ -22,6 +22,11 @@ on:
         required: false
         default: '1800'
         type: string
+      pr_number:
+        description: 'PR number to post results to (optional)'
+        required: false
+        default: ''
+        type: string
   pull_request:
     types: [opened, synchronize]
     paths:
