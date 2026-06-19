@@ -56,16 +56,15 @@ jobs:
           - benchmark: terminalbench
             default_instance: 'fix-git'
             enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
-    if: true
 
     steps:
       - name: Skip if not enabled
-        if: matrix.enabled != 'true'
+        if: ${{ !matrix.enabled }}
         run: echo "Skipping ${{ matrix.benchmark }} (not selected)" && exit 0
 
       - name: Gate
         id: gate
-        if: matrix.enabled == 'true'
+        if: ${{ matrix.enabled }}
         run: echo "run=true" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
