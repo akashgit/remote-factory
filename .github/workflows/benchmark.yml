@@ -30,6 +30,10 @@ on:
   release:
     types: [created]
 
+concurrency:
+  group: benchmark-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -104,11 +108,13 @@ jobs:
       - name: Determine timeout
         id: timeout
         if: steps.gate.outputs.run == 'true'
+        env:
+          BENCHMARK_TIMEOUT: ${{ inputs.timeout }}
         run: |
           if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
-            echo 'value=${{ inputs.timeout }}' >> $GITHUB_OUTPUT
+            echo "value=$BENCHMARK_TIMEOUT" >> "$GITHUB_OUTPUT"
           else
-            echo 'value=600' >> $GITHUB_OUTPUT
+            echo 'value=600' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run ${{ matrix.benchmark }} benchmark
@@ -138,63 +144,120 @@ jobs:
         if: always() && steps.gate.outputs.run == 'true'
         run: |
           echo "## ${{ matrix.benchmark }} Results" >> $GITHUB_STEP_SUMMARY
-          for f in benchmarks/results/*.json; do
-            if [ -f "$f" ]; then
-              echo '```json' >> $GITHUB_STEP_SUMMARY
-              cat "$f" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-            fi
-          done
+          if [ -d "benchmarks/results" ]; then
+            for f in benchmarks/results/*.json; do
+              if [ -f "$f" ]; then
+                echo '```json' >> $GITHUB_STEP_SUMMARY
+                cat "$f" >> $GITHUB_STEP_SUMMARY
+                echo '```' >> $GITHUB_STEP_SUMMARY
+              fi
+            done
+          fi
+
+  report:
+    needs: benchmark
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all benchmark artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-results-*
+          merge-multiple: true
+          path: results/
 
       - name: Post PR comment
-        if: always() && github.event_name == 'pull_request' && steps.gate.outputs.run == 'true'
+        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const marker = '<!-- benchmark-results -->';
 
-            let body = '## Benchmark Results: ${{ matrix.benchmark }}\n\n';
+            if (!fs.existsSync('results/')) {
+              console.log('No results directory found, skipping PR comment');
+              return;
+            }
 
-            const files = fs.readdirSync('benchmarks/results/');
+            let body = marker + '\n## Benchmark Results\n\n';
+            const files = fs.readdirSync('results/');
+            let hasResults = false;
+
             for (const file of files) {
               if (file.endsWith('.json')) {
-                const data = JSON.parse(fs.readFileSync('benchmarks/results/' + file, 'utf8'));
+                hasResults = true;
+                const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
                 const status = data.resolved ? '✅ RESOLVED' : '❌ NOT RESOLVED';
+                body += '### ' + data.benchmark + '\n\n';
                 body += '| Field | Value |\n|---|---|\n';
                 body += '| Benchmark | ' + data.benchmark + ' |\n';
                 body += '| Instance | `' + data.instance_id + '` |\n';
                 body += '| Result | ' + status + ' |\n';
                 body += '| Score | ' + data.score + ' |\n';
                 body += '| Duration | ' + data.duration_seconds + 's |\n\n';
-                body += '<details><summary>Full JSON</summary>\n\n```json\n' + JSON.stringify(data, null, 2) + '\n```\n</details>\n';
+                body += '<details><summary>Full JSON</summary>\n\n```json\n' + JSON.stringify(data, null, 2) + '\n```\n</details>\n\n';
               }
             }
 
-            await github.rest.issues.createComment({
+            if (!hasResults) {
+              body += '_No benchmark results found._\n';
+            }
+
+            const { data: comments } = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
+              repo: context.repo.repo
             });
 
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body
+              });
+            }
+
       - name: Update release notes
-        if: always() && github.event_name == 'release' && steps.gate.outputs.run == 'true'
+        if: github.event_name == 'release'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
 
+            if (!fs.existsSync('results/')) {
+              console.log('No results directory found, skipping release notes update');
+              return;
+            }
+
             let benchmarkSection = '\n\n## Benchmark Results\n\n';
             benchmarkSection += '| Benchmark | Instance | Result | Score | Duration |\n';
             benchmarkSection += '|-----------|----------|--------|-------|----------|\n';
 
-            const files = fs.readdirSync('benchmarks/results/');
+            const files = fs.readdirSync('results/');
+            let hasResults = false;
+
             for (const file of files) {
               if (file.endsWith('.json')) {
-                const data = JSON.parse(fs.readFileSync('benchmarks/results/' + file, 'utf8'));
+                hasResults = true;
+                const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
                 const status = data.resolved ? '✅' : '❌';
                 benchmarkSection += '| ' + data.benchmark + ' | `' + data.instance_id + '` | ' + status + ' | ' + data.score + ' | ' + data.duration_seconds + 's |\n';
               }
+            }
+
+            if (!hasResults) {
+              console.log('No JSON results found, skipping release notes update');
+              return;
             }
 
             const release = await github.rest.repos.getRelease({
