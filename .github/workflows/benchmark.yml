@@ -1,0 +1,129 @@
+name: Benchmark CI
+
+on:
+  workflow_dispatch:
+    inputs:
+      benchmark:
+        description: 'Benchmark to run'
+        required: true
+        type: choice
+        options:
+          - swebench
+          - featurebench
+          - terminalbench
+          - all
+      instance_id:
+        description: 'Instance ID (leave default for smoke test)'
+        required: false
+        default: 'auto'
+        type: string
+      timeout:
+        description: 'Solver timeout in seconds'
+        required: false
+        default: '1800'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - benchmark: swebench
+            default_instance: 'sympy__sympy-20590'
+            enabled: ${{ inputs.benchmark == 'swebench' || inputs.benchmark == 'all' }}
+          - benchmark: featurebench
+            default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
+            enabled: ${{ inputs.benchmark == 'featurebench' || inputs.benchmark == 'all' }}
+          - benchmark: terminalbench
+            default_instance: 'fix-git'
+            enabled: ${{ inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
+    if: true
+
+    steps:
+      - name: Skip if not enabled
+        if: matrix.enabled != 'true'
+        run: echo "Skipping ${{ matrix.benchmark }} (not selected)" && exit 0
+
+      - name: Gate
+        id: gate
+        if: matrix.enabled == 'true'
+        run: echo "run=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+
+      - name: Authenticate to Google Cloud
+        if: steps.gate.outputs.run == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Install uv
+        if: steps.gate.outputs.run == 'true'
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Node.js
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Claude Code
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          export PATH="$(npm prefix -g)/bin:$PATH"
+          echo "PATH=$(npm prefix -g)/bin:$PATH" >> "$GITHUB_ENV"
+          claude --version
+
+      - name: Determine instance ID
+        id: config
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          INSTANCE="${{ inputs.instance_id }}"
+          if [ "$INSTANCE" = "auto" ]; then
+            INSTANCE="${{ matrix.default_instance }}"
+          fi
+          echo "instance=$INSTANCE" >> "$GITHUB_OUTPUT"
+
+      - name: Run ${{ matrix.benchmark }} benchmark
+        if: steps.gate.outputs.run == 'true'
+        env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+          CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
+          CLAUDE_CODE_SUBAGENT_MODEL: "claude-opus-4-6[1m]"
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1"
+          ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-4-6[1m]"
+          CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
+          MAX_THINKING_TOKENS: "128000"
+          CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
+        run: |
+          chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
+          benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ inputs.timeout }}
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.run == 'true'
+        with:
+          name: benchmark-results-${{ matrix.benchmark }}
+          path: benchmarks/results/
+
+      - name: Print summary
+        if: always() && steps.gate.outputs.run == 'true'
+        run: |
+          echo "## ${{ matrix.benchmark }} Results" >> $GITHUB_STEP_SUMMARY
+          for f in benchmarks/results/*.json; do
+            if [ -f "$f" ]; then
+              echo '```json' >> $GITHUB_STEP_SUMMARY
+              cat "$f" >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            fi
+          done
