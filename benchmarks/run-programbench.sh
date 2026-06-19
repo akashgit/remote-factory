@@ -127,10 +127,10 @@ RESULTS_DIR="$(mktemp -d /tmp/programbench-results-XXXXXX)"
 echo "    Results directory: ${RESULTS_DIR}"
 
 GCLOUD_MOUNT_ARGS=()
-GCLOUD_ADC="${HOME}/.config/gcloud/application_default_credentials.json"
+GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
 if [ -f "${GCLOUD_ADC}" ]; then
-    GCLOUD_MOUNT_ARGS=(-v "${HOME}/.config/gcloud:/home/agent/.config/gcloud:ro")
-    echo "    Mounting gcloud credentials"
+    GCLOUD_MOUNT_ARGS=(-v "${GCLOUD_ADC}:/tmp/gcloud-adc.json:ro")
+    echo "    Mounting gcloud credentials from ${GCLOUD_ADC}"
 fi
 
 docker run -d --name "${CONTAINER_NAME}" \
@@ -202,7 +202,7 @@ timeout "${SOLVER_TIMEOUT}" docker exec \
     -e CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING="${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING}" \
     -e MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS}" \
     -e CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL}" \
-    -e GOOGLE_APPLICATION_CREDENTIALS=/home/agent/.config/gcloud/application_default_credentials.json \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \

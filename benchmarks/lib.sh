@@ -79,7 +79,8 @@ ensure_uvx() {
 #        check_gcloud_creds warning    (warn if missing)
 check_gcloud_creds() {
     local mode="${1:-warning}"
-    if [ ! -f "${HOME}/.config/gcloud/application_default_credentials.json" ]; then
+    local creds_file="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
+    if [ ! -f "${creds_file}" ]; then
         if [ "${mode}" = "required" ]; then
             echo "    ERROR: gcloud application default credentials not found."
             echo "    Run: gcloud auth application-default login"
