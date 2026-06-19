@@ -182,7 +182,7 @@ class CodexRunner:
             cmd.append("--ignore-user-config")
 
         if request.skip_permissions:
-            cmd.append("--full-auto")
+            cmd.append("--dangerously-bypass-approvals-and-sandbox")
 
         if request.model:
             cmd.extend(["--model", request.model])

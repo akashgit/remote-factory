@@ -473,7 +473,7 @@ class TestCodexBuildInteractiveCommand:
         assert "--" not in cmd
         assert "--skip-git-repo-check" not in cmd
         assert "--ignore-user-config" in cmd
-        assert "--full-auto" in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" in cmd
         assert "--model" in cmd
         assert "gpt-5.4" in cmd
         assert temp_files == []
@@ -493,7 +493,7 @@ class TestCodexBuildInteractiveCommand:
                 prompt="Test", task="Test", cwd=tmp_path, skip_permissions=False,
             ))
 
-        assert "--full-auto" not in cmd
+        assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
         assert "--sandbox" not in cmd
 
         if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
@@ -560,7 +560,7 @@ class TestCodexInteractive:
             cmd = mock_run.call_args[0][0]
             assert cmd[0] == "codex"
             assert "--ignore-user-config" in cmd
-            assert "--full-auto" in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" in cmd
             assert "--model" in cmd
             assert "gpt-5.4" in cmd
 
@@ -584,7 +584,7 @@ class TestCodexInteractive:
             )
 
             cmd = mock_run.call_args[0][0]
-            assert "--full-auto" not in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
 
     def test_interactive_run_passes_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
