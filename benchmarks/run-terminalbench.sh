@@ -130,7 +130,7 @@ cd "${HARNESS_DIR}"
 
 HARBOR_EXIT=0
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
-    GCLOUD_ADC="${HOME}/.config/gcloud/application_default_credentials.json"
+    GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
     echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
