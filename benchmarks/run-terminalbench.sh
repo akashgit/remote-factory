@@ -126,6 +126,8 @@ echo "    Timeout mult:    ${TIMEOUT_MULTIPLIER}x"
 echo "    Task:            ${TASK_NAME}"
 echo ""
 
+EXTRA_INSTRUCTIONS="${HARNESS_DIR}/benchmarks/terminalbench-extra-instructions.md"
+
 cd "${HARNESS_DIR}"
 
 HARBOR_EXIT=0
@@ -140,6 +142,7 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --extra-instruction-path "${EXTRA_INSTRUCTIONS}" \
         --ae "CLAUDE_CODE_USE_VERTEX=1" \
         --ae "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         --ae "CLOUD_ML_REGION=${CLOUD_ML_REGION:-us-east5}" \
@@ -163,6 +166,7 @@ else
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --extra-instruction-path "${EXTRA_INSTRUCTIONS}" \
         --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
