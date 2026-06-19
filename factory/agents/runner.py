@@ -160,7 +160,7 @@ async def invoke_agent(
         started_data["review_tag"] = review_tag
     _emit_safe(project_path, "agent.started", agent=role, data=started_data)
 
-    sid = _begin_span_safe(project_path, role, model=model)
+    sid = _begin_span_safe(project_path, role, model=model, task=task)
 
     runner = get_runner(runner_name, project_path=project_path)
 
@@ -283,6 +283,7 @@ def _begin_span_safe(
     role: str,
     *,
     model: str | None = None,
+    task: str | None = None,
 ) -> str | None:
     """Begin a Langfuse span, swallowing errors so agent invocation is never blocked."""
     try:
@@ -291,6 +292,11 @@ def _begin_span_safe(
         if not is_enabled():
             return None
         trace_id = os.environ.get("FACTORY_TRACE_ID")
+        parent_span_id = os.environ.get("FACTORY_PARENT_SPAN_ID")
+        logger.debug(
+            "Langfuse env: FACTORY_TRACE_ID=%s FACTORY_PARENT_SPAN_ID=%s",
+            trace_id, parent_span_id,
+        )
         if not trace_id:
             result = begin_trace(project_path.name, cycle_id=f"standalone-{role}")
             if result is None:
@@ -298,8 +304,8 @@ def _begin_span_safe(
             trace_id, root_span_id = result
             os.environ["FACTORY_TRACE_ID"] = trace_id
             os.environ["FACTORY_PARENT_SPAN_ID"] = root_span_id
-        parent_span_id = os.environ.get("FACTORY_PARENT_SPAN_ID")
-        return begin_span(trace_id, parent_span_id, role, model=model)
+            parent_span_id = root_span_id
+        return begin_span(trace_id, parent_span_id, role, model=model, task=task)
     except Exception:
         logger.debug("Failed to begin span for %s", role, exc_info=True)
         return None
