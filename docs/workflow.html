@@ -1,0 +1,2556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Software Factory — CEO Workflow</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2129;
+  --bg-sidebar: #0d1117;
+  --border: #30363d;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --text-dim: #484f58;
+  --accent: #58a6ff;
+  --design: #a371f7;
+  --build: #58a6ff;
+  --discover: #3fb950;
+  --review: #3fb950;
+  --improve: #d29922;
+  --research: #f85149;
+  --meta: #d2a8ff;
+  --refine: #79c0ff;
+  --agent-bg: #21262d;
+  --decision-bg: #1a1e24;
+  --keep: #238636;
+  --revert: #da3633;
+  --redirect: #d29922;
+  --abort: #f85149;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --sidebar-w: 280px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* Sidebar */
+.sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.sidebar-header {
+  padding: 0 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-header h1 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+.sidebar-header .subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.sidebar-section {
+  padding: 16px 0 8px;
+}
+
+.sidebar-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  padding: 0 20px 8px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 14px;
+  color: var(--text-muted);
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+
+.nav-item:hover { background: var(--bg-card); color: var(--text); }
+.nav-item.active { background: var(--bg-card); color: var(--text); border-left-color: var(--accent); }
+
+.nav-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nav-sub {
+  padding-left: 48px;
+  font-size: 12px;
+  color: var(--text-dim);
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.nav-sub:hover { color: var(--text-muted); }
+.nav-sub.active { color: var(--text); }
+
+/* Main content */
+.main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  padding: 32px 48px;
+  max-width: 960px;
+}
+
+/* Mode header */
+.mode-header {
+  display: none;
+  margin-bottom: 32px;
+}
+
+.mode-header.active { display: block; }
+
+.mode-title {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.mode-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mode-desc {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 15px;
+  max-width: 640px;
+}
+
+/* Flow container */
+.flow { display: none; }
+.flow.active { display: block; }
+
+/* Step card */
+.step-card {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.step-card:hover {
+  border-color: #484f58;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.step-number {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  min-width: 36px;
+  text-align: center;
+}
+
+.step-title {
+  font-weight: 600;
+  font-size: 15px;
+  flex: 1;
+}
+
+.step-agent-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--agent-bg);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.step-chevron {
+  color: var(--text-dim);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+.step-card.expanded .step-chevron { transform: rotate(90deg); }
+
+.step-details {
+  display: none;
+  padding: 0 18px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.step-card.expanded .step-details { display: block; }
+
+.step-details p {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-top: 12px;
+  line-height: 1.6;
+}
+
+.step-details .detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+  margin-top: 14px;
+  margin-bottom: 4px;
+}
+
+.step-details .artifacts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.artifact-tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--agent-bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+/* Connector arrow */
+.connector {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  position: relative;
+}
+
+.connector::before {
+  content: '';
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  position: absolute;
+}
+
+.connector::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid var(--border);
+  border-bottom: 2px solid var(--border);
+  transform: rotate(45deg);
+  position: absolute;
+  bottom: 2px;
+}
+
+.connector.branch { height: 40px; }
+
+.connector.branch::before { background: var(--redirect); }
+.connector.branch::after { border-color: var(--redirect); }
+
+/* Decision diamond */
+.decision-gate {
+  position: relative;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.decision-diamond {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--decision-bg);
+  border: 2px solid var(--redirect);
+  border-radius: 8px;
+  transform: none;
+  position: relative;
+  cursor: pointer;
+}
+
+.decision-diamond .diamond-icon {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--redirect);
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+
+.decision-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--redirect);
+}
+
+.decision-outcomes {
+  display: none;
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+}
+
+.decision-gate.expanded .decision-outcomes { display: block; }
+
+.outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.outcome-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.outcome-dot.proceed { background: var(--keep); }
+.outcome-dot.redirect { background: var(--redirect); }
+.outcome-dot.abort { background: var(--abort); }
+.outcome-dot.keep { background: var(--keep); }
+.outcome-dot.revert { background: var(--revert); }
+
+.outcome-text { color: var(--text-muted); }
+.outcome-text strong { color: var(--text); font-weight: 600; }
+
+/* Loop indicator */
+.loop-wrapper {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 20px 16px;
+  margin: 8px 0;
+  position: relative;
+}
+
+.loop-label {
+  position: absolute;
+  top: -10px;
+  left: 20px;
+  background: var(--bg);
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Agent tooltip */
+.agent-tooltip {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  max-width: 300px;
+  font-size: 13px;
+  color: var(--text-muted);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  pointer-events: none;
+  z-index: 1000;
+  display: none;
+}
+
+.agent-tooltip .tooltip-title {
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+/* Mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.mode-tab {
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.mode-tab:hover { background: var(--bg-card); color: var(--text); }
+
+.mode-tab.active {
+  color: #fff;
+  border-color: transparent;
+}
+
+/* Info sections (sacred rules, agents, FEEC) */
+.info-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.info-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+}
+
+.info-card h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.info-card p, .info-card li {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.info-card ul {
+  list-style: none;
+  padding: 0;
+}
+
+.info-card li::before {
+  content: '→ ';
+  color: var(--text-dim);
+}
+
+.rule-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--agent-bg);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+/* State machine diagram */
+.state-diagram {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.state-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.state-box {
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  min-width: 180px;
+}
+
+.state-arrow {
+  color: var(--text-dim);
+  font-size: 20px;
+}
+
+.state-target {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Pipeline viz */
+.pipeline-flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin: 20px 0;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 14px;
+  width: 100%;
+  max-width: 600px;
+}
+
+.pipeline-step .p-num {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+}
+
+.pipeline-arrow {
+  height: 20px;
+  width: 2px;
+  background: var(--border);
+  position: relative;
+}
+
+/* Agent roster grid */
+.agent-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.agent-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  transition: border-color 0.2s;
+}
+
+.agent-card:hover { border-color: #484f58; }
+
+.agent-card .agent-role {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.agent-card .agent-purpose {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.agent-card .agent-cmd {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* FEEC priority */
+.feec-bar {
+  display: flex;
+  align-items: stretch;
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 16px 0;
+  height: 48px;
+}
+
+.feec-segment {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  position: relative;
+  cursor: pointer;
+}
+
+.feec-segment:hover { filter: brightness(1.2); }
+
+.feec-detail {
+  display: none;
+  margin-top: 12px;
+}
+
+.feec-detail.active { display: block; }
+
+/* Full pipeline view */
+.full-pipeline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 20px 0;
+}
+
+.pipe-node {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.pipe-node:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+
+.pipe-arrow-h {
+  color: var(--text-dim);
+  font-size: 18px;
+}
+
+/* Parallel block */
+.parallel-block {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0;
+  padding: 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.parallel-item {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  text-align: center;
+}
+
+.parallel-item .par-title {
+  font-weight: 600;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+
+.parallel-item .par-desc {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.parallel-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* Progress bar */
+.progress-bar {
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin-bottom: 24px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sidebar { width: 220px; min-width: 220px; }
+  :root { --sidebar-w: 220px; }
+  .main { padding: 24px; }
+  .agent-grid { grid-template-columns: 1fr; }
+  .parallel-block { flex-direction: column; }
+}
+
+@media (max-width: 680px) {
+  .sidebar { display: none; }
+  :root { --sidebar-w: 0px; }
+  .main { margin-left: 0; padding: 16px; }
+}
+
+/* Hard gate indicator */
+.hard-gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--abort);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border: 1px solid var(--abort);
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+/* Section divider */
+.section-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 32px 0;
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<nav class="sidebar" id="sidebar">
+  <div class="sidebar-header">
+    <h1>Software Factory</h1>
+    <div class="subtitle">CEO Agent Workflow v2</div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Pipeline</div>
+    <div class="nav-item active" data-mode="overview">
+      <div class="nav-dot" style="background:var(--accent)"></div>
+      Overview
+    </div>
+    <div class="nav-item" data-mode="state-machine">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      State Machine
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Modes</div>
+    <div class="nav-item" data-mode="design">
+      <div class="nav-dot" style="background:var(--design)"></div>
+      Design
+    </div>
+    <div class="nav-item" data-mode="build">
+      <div class="nav-dot" style="background:var(--build)"></div>
+      Build
+    </div>
+    <div class="nav-item" data-mode="discover">
+      <div class="nav-dot" style="background:var(--discover)"></div>
+      Discover
+    </div>
+    <div class="nav-item" data-mode="review-mode">
+      <div class="nav-dot" style="background:var(--review)"></div>
+      Review
+    </div>
+    <div class="nav-item" data-mode="improve">
+      <div class="nav-dot" style="background:var(--improve)"></div>
+      Improve
+    </div>
+    <div class="nav-item" data-mode="research">
+      <div class="nav-dot" style="background:var(--research)"></div>
+      Research
+    </div>
+    <div class="nav-item" data-mode="meta">
+      <div class="nav-dot" style="background:var(--meta)"></div>
+      Meta
+    </div>
+    <div class="nav-item" data-mode="refine">
+      <div class="nav-dot" style="background:var(--refine)"></div>
+      Refine
+    </div>
+  </div>
+
+  <div class="sidebar-section">
+    <div class="sidebar-section-title">Details</div>
+    <div class="nav-item" data-mode="experiment">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      Experiment Lifecycle
+    </div>
+    <div class="nav-item" data-mode="review-pipeline">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      Review Pipeline
+    </div>
+    <div class="nav-item" data-mode="agents">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      Agent Roster
+    </div>
+    <div class="nav-item" data-mode="feec">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      FEEC Priority
+    </div>
+    <div class="nav-item" data-mode="sacred">
+      <div class="nav-dot" style="background:var(--text-dim)"></div>
+      Sacred Rules
+    </div>
+  </div>
+</nav>
+
+<!-- Tooltip -->
+<div class="agent-tooltip" id="tooltip"></div>
+
+<!-- Main Content -->
+<div class="main" id="main">
+
+<!-- ==================== OVERVIEW ==================== -->
+<div class="flow active" id="flow-overview">
+  <div class="mode-header active">
+    <div class="mode-title">Factory CEO Workflow</div>
+    <div class="mode-desc">An autonomous orchestrator that evolves software projects through systematic experimentation. The CEO detects project state, routes to the appropriate mode, spawns specialist agents, and manages the full experiment lifecycle.</div>
+  </div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Full Pipeline</h3>
+  <div class="full-pipeline">
+    <div class="pipe-node" style="background:var(--text-dim)" onclick="switchMode('state-machine')">Detect</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--text-dim)" onclick="switchMode('state-machine')">Route</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--design)" onclick="switchMode('design')">Design</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--build)" onclick="switchMode('build')">Build</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--discover)" onclick="switchMode('discover')">Discover</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--review)" onclick="switchMode('review-mode')">Review</div>
+    <span class="pipe-arrow-h">→</span>
+    <div class="pipe-node" style="background:var(--improve)" onclick="switchMode('improve')">Improve</div>
+    <span class="pipe-arrow-h">↻</span>
+  </div>
+  <p style="font-size:13px;color:var(--text-muted);margin-top:8px;margin-bottom:32px">Click any mode to see its step-by-step flow. The pipeline progresses left-to-right, with Improve looping continuously.</p>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Mode Overview</h3>
+
+  <div class="info-grid" style="grid-template-columns:1fr 1fr; margin-bottom:32px">
+    <div class="info-card" style="border-left:3px solid var(--design);cursor:pointer" onclick="switchMode('design')">
+      <h3><span style="color:var(--design)">Design</span> <span class="mode-badge" style="background:var(--design);color:#fff;font-size:10px">Phase 0</span></h3>
+      <p>Transform ideas into buildable specs through research and iterative refinement with the user.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--build);cursor:pointer" onclick="switchMode('build')">
+      <h3 style="color:var(--build)">Build</h3>
+      <p>Build a project from scratch with phased implementation, E2E verification, and archival.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--discover);cursor:pointer" onclick="switchMode('discover')">
+      <h3 style="color:var(--discover)">Discover</h3>
+      <p>Auto-discover eval dimensions and generate the eval harness for a project.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--review);cursor:pointer" onclick="switchMode('review-mode')">
+      <h3 style="color:var(--review)">Review</h3>
+      <p>Verify evals work, mark as reviewed, initialize factory config, run baseline.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--improve);cursor:pointer" onclick="switchMode('improve')">
+      <h3 style="color:var(--improve)">Improve</h3>
+      <p>Core evolution loop: observe → hypothesize → execute experiments → archive results.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--research);cursor:pointer" onclick="switchMode('research')">
+      <h3 style="color:var(--research)">Research</h3>
+      <p>Improve a measurable research target through failure analysis and targeted fixes.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--meta);cursor:pointer" onclick="switchMode('meta')">
+      <h3 style="color:var(--meta)">Meta</h3>
+      <p>Full Improve loop on the factory itself plus ACE playbook evolution.</p>
+    </div>
+    <div class="info-card" style="border-left:3px solid var(--refine);cursor:pointer" onclick="switchMode('refine')">
+      <h3 style="color:var(--refine)">Refine</h3>
+      <p>Lightweight pipeline for user-directed refinements — no Researcher or Strategist needed.</p>
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Core Concepts</h3>
+  <div class="info-grid" style="grid-template-columns:1fr 1fr 1fr">
+    <div class="info-card" style="cursor:pointer" onclick="switchMode('agents')">
+      <h3>8 Agents</h3>
+      <p>Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Failure Analyst, Refiner</p>
+    </div>
+    <div class="info-card" style="cursor:pointer" onclick="switchMode('feec')">
+      <h3>FEEC Priority</h3>
+      <p>Fix → Exploit → Explore → Combine hypothesis ordering</p>
+    </div>
+    <div class="info-card" style="cursor:pointer" onclick="switchMode('sacred')">
+      <h3>9 Sacred Rules</h3>
+      <p>Inviolable constraints enforced by the guard system</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== STATE MACHINE ==================== -->
+<div class="flow" id="flow-state-machine">
+  <div class="mode-header active">
+    <div class="mode-title">State Machine</div>
+    <div class="mode-desc">The CEO detects project state and routes to the appropriate mode. Five states map to five primary modes, with override exceptions for design, meta, and refine.</div>
+  </div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Detection → Routing</h3>
+
+  <div class="step-card expanded">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--text-dim);color:#fff">1</span>
+      <span class="step-title">Detect Project State</span>
+      <span class="step-agent-badge">factory detect</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Evaluates 5 states in priority order by checking the filesystem and Git state.</p>
+      <div class="state-diagram">
+        <div class="state-row">
+          <div class="state-box">Path missing / no .git</div>
+          <span class="state-arrow">→</span>
+          <div class="state-target" style="background:var(--build)">no_repo</div>
+        </div>
+        <div class="state-row">
+          <div class="state-box">eval_profile.json exists, human_reviewed=false</div>
+          <span class="state-arrow">→</span>
+          <div class="state-target" style="background:var(--review)">evals_pending_review</div>
+        </div>
+        <div class="state-row">
+          <div class="state-box">.factory/config.json exists</div>
+          <span class="state-arrow">→</span>
+          <div class="state-target" style="background:var(--improve)">has_factory</div>
+        </div>
+        <div class="state-row">
+          <div class="state-box">Open 'plan' issues on GitHub</div>
+          <span class="state-arrow">→</span>
+          <div class="state-target" style="background:var(--build)">incomplete</div>
+        </div>
+        <div class="state-row">
+          <div class="state-box">None of the above</div>
+          <span class="state-arrow">→</span>
+          <div class="state-target" style="background:var(--discover)">no_factory</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card expanded">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--text-dim);color:#fff">2</span>
+      <span class="step-title">Route to Mode</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <div class="state-diagram">
+        <div class="state-row">
+          <div class="state-target" style="background:var(--build);min-width:140px">no_repo / incomplete</div>
+          <span class="state-arrow">→</span>
+          <div class="pipe-node" style="background:var(--build)" onclick="switchMode('build')">Build Mode</div>
+        </div>
+        <div class="state-row">
+          <div class="state-target" style="background:var(--discover);min-width:140px">no_factory</div>
+          <span class="state-arrow">→</span>
+          <div class="pipe-node" style="background:var(--discover)" onclick="switchMode('discover')">Discover Mode</div>
+        </div>
+        <div class="state-row">
+          <div class="state-target" style="background:var(--review);min-width:140px">evals_pending_review</div>
+          <span class="state-arrow">→</span>
+          <div class="pipe-node" style="background:var(--review)" onclick="switchMode('review-mode')">Review Mode</div>
+        </div>
+        <div class="state-row">
+          <div class="state-target" style="background:var(--improve);min-width:140px">has_factory</div>
+          <span class="state-arrow">→</span>
+          <div class="pipe-node" style="background:var(--improve)" onclick="switchMode('improve')">Improve Mode</div>
+        </div>
+      </div>
+      <div class="detail-label" style="margin-top:16px">Override Exceptions</div>
+      <p><strong>Design Mode:</strong> Task includes <code style="font-family:var(--font-mono);font-size:12px;background:var(--agent-bg);padding:1px 4px;border-radius:3px">## Design Mode (Phase 0)</code> → Phase 0 first<br>
+      <strong>Meta Mode:</strong> <code style="font-family:var(--font-mono);font-size:12px;background:var(--agent-bg);padding:1px 4px;border-radius:3px">--mode meta</code> flag → Improve + ACE<br>
+      <strong>Research Mode:</strong> <code style="font-family:var(--font-mono);font-size:12px;background:var(--agent-bg);padding:1px 4px;border-radius:3px">research_target</code> configured → Research loop<br>
+      <strong>Refine Mode:</strong> <code style="font-family:var(--font-mono);font-size:12px;background:var(--agent-bg);padding:1px 4px;border-radius:3px">--refine</code> flag → Lightweight pipeline</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DESIGN MODE ==================== -->
+<div class="flow" id="flow-design">
+  <div class="mode-header active">
+    <div class="mode-title">
+      <span class="mode-badge" style="background:var(--design);color:#fff">Phase 0</span>
+      Design Mode
+    </div>
+    <div class="mode-desc">Transform vague ideas into research-grounded, buildable specs through iterative refinement. Works for both new ideas and existing projects.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--design)"></div></div>
+
+  <div class="step-card" data-agent="researcher">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--design);color:#fff">I0</span>
+      <span class="step-title">Research the Space</span>
+      <span class="step-agent-badge" data-agent-name="Researcher">Researcher ×3</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Spawn 3 focused researchers in parallel to cover the domain.</p>
+      <div class="parallel-block">
+        <div class="parallel-item">
+          <div class="par-title">Similar Projects</div>
+          <div class="par-desc">Prior art, market, differentiation</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Tech Stack</div>
+          <div class="par-desc">Best stack, architecture, frameworks</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Pitfalls</div>
+          <div class="par-desc">Common mistakes, MVP scope, lessons</div>
+        </div>
+      </div>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">research-similar.md</span>
+        <span class="artifact-tag">research-techstack.md</span>
+        <span class="artifact-tag">research-pitfalls.md</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">I0r: CEO Review — Research</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Research is comprehensive, continue to Strategist</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Re-invoke specific researchers by tag with gaps</span></div>
+      <div class="outcome"><div class="outcome-dot abort"></div><span class="outcome-text"><strong>ABORT</strong> — Fundamental failure</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card" data-agent="strategist">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--design);color:#fff">I1</span>
+      <span class="step-title">Distill Specification</span>
+      <span class="step-agent-badge" data-agent-name="Strategist">Strategist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Strategist synthesizes research into a structured build plan or improvement spec. Phase 1 must always be "project scaffold + eval harness".</p>
+      <div class="detail-label">CEO Review — 5 Mandatory Checks</div>
+      <p>1. <strong>Depth:</strong> Every hypothesis has Category, What, Why, Expected impact<br>
+      2. <strong>Research grounding:</strong> Architecture cites research findings<br>
+      3. <strong>Buildability:</strong> Builder could implement from plan alone<br>
+      4. <strong>Phase 1:</strong> Must be scaffold + eval harness<br>
+      5. <strong>Deferred:</strong> Only human-intervention items</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">ceo-verdict-strategist.md</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--design);color:#fff">I2</span>
+      <span class="step-title">Present to User</span>
+      <span class="step-agent-badge">Interactive</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Present the spec to the user for feedback. They can approve, request changes, or ask for more research.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="loop-wrapper">
+    <span class="loop-label">Max 5 iterations</span>
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--design);color:#fff">I3</span>
+        <span class="step-title">Iterate on Feedback</span>
+        <span class="step-agent-badge" data-agent-name="Strategist">Strategist</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details">
+        <p>Optional targeted follow-up Researcher if new domain introduced. Re-spawn Strategist with prior draft + user feedback. Loop back to I2.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--design);color:#fff">I4</span>
+      <span class="step-title">Finalize &amp; Transition</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Persist build plan to <code style="font-family:var(--font-mono);font-size:12px">.factory/strategy/current.md</code>. Spawn Archivist to record ideation process.</p>
+      <div class="detail-label">Transition</div>
+      <p><strong>New ideas →</strong> Build mode (skip B0+B1)<br><strong>Existing projects →</strong> Improve mode with focus</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== BUILD MODE ==================== -->
+<div class="flow" id="flow-build">
+  <div class="mode-header active">
+    <div class="mode-title">Build Mode</div>
+    <div class="mode-desc">Build a project from scratch or complete an incomplete build. Triggered by no_repo or incomplete project state.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--build)"></div></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B-0</span>
+      <span class="step-title">Assess Sprint State</span>
+      <span class="step-agent-badge">Crash Recovery</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>CEO reads <code style="font-family:var(--font-mono);font-size:12px">.factory/</code> directory to determine RESUME vs FRESH start. Checks phase completion signals (events, verdict files, artifacts) with temporal disambiguation.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B0</span>
+      <span class="step-title">Research</span>
+      <span class="step-agent-badge" data-agent-name="Researcher">Researcher ×3</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>3 parallel researchers cover tech stack, domain, and archive/prior art.</p>
+      <div class="parallel-block">
+        <div class="parallel-item">
+          <div class="par-title">Tech Stack</div>
+          <div class="par-desc">Best technologies &amp; frameworks</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Domain</div>
+          <div class="par-desc">Domain-specific best practices</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Archive</div>
+          <div class="par-desc">Prior knowledge &amp; lessons</div>
+        </div>
+      </div>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">research-techstack.md</span>
+        <span class="artifact-tag">research-domain.md</span>
+        <span class="artifact-tag">research-archive.md</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">B0r: CEO Review — Research</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Move to strategy</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Re-invoke by tag (max 2 retries)</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B0a</span>
+      <span class="step-title">Archive Research</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Mandatory archivist checkpoint after research phase.</p>
+      <div class="detail-label">Checkpoint</div>
+      <div class="artifacts"><span class="artifact-tag">archivist after research</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B1</span>
+      <span class="step-title">Strategy — Build Plan</span>
+      <span class="step-agent-badge" data-agent-name="Strategist">Strategist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Create phased build plan. Phase 1 = scaffold + eval harness (always). Build everything possible — only defer human-intervention items.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts"><span class="artifact-tag">.factory/strategy/current.md</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">B1r: CEO Review — Strategy</span>
+      <span class="hard-gate">HARD GATE</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Write PLAN APPROVED, Builder may start</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Plan doesn't meet criteria</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B2</span>
+      <span class="step-title">Archive Plan</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Mandatory archivist records approved build plan.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="loop-wrapper">
+    <span class="loop-label">For each phase in plan</span>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--build);color:#fff">B3</span>
+        <span class="step-title">Build — Implement Phase</span>
+        <span class="step-agent-badge" data-agent-name="Builder">Builder</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Builder implements one phase at a time. Code changes committed, tests run, PR opened.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="decision-gate" onclick="toggleDecision(this)">
+      <div class="decision-diamond">
+        <div class="diamond-icon"></div>
+        <span class="decision-label">B3r: CEO Review — Build</span>
+      </div>
+      <div class="decision-outcomes">
+        <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Work matches plan</span></div>
+        <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Scope creep or issues</span></div>
+        <div class="outcome"><div class="outcome-dot abort"></div><span class="outcome-text"><strong>ABORT</strong> — Fundamental failure</span></div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--build);color:#fff">B4</span>
+        <span class="step-title">Archive Build Phase</span>
+        <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Record build progress for this phase.</p></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B5</span>
+      <span class="step-title">E2E Verification Gate</span>
+      <span class="step-agent-badge">CEO Direct</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Figure out how to run the project, try to run it, verify core flow. If blocked: missing env vars → ask user, missing deps → install, config errors → spawn Builder to fix.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">ceo-verdict-e2e.md</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--build);color:#fff">B6</span>
+      <span class="step-title">Re-detect State &amp; Transition</span>
+      <span class="step-agent-badge">factory detect</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p><strong>no_factory →</strong> Continue to Discover mode<br>
+      <strong>still incomplete →</strong> Builder continues next phase</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== DISCOVER MODE ==================== -->
+<div class="flow" id="flow-discover">
+  <div class="mode-header active">
+    <div class="mode-title">Discover Mode</div>
+    <div class="mode-desc">Auto-discover eval dimensions and generate the eval harness. Triggered by no_factory project state. Pure CLI operations — no agents spawned.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--discover)"></div></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--discover);color:#fff">1</span>
+      <span class="step-title">Run Discovery</span>
+      <span class="step-agent-badge">factory discover</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Internally runs: <code style="font-family:var(--font-mono);font-size:12px">introspect_project()</code> → <code style="font-family:var(--font-mono);font-size:12px">build_eval_profile()</code> → <code style="font-family:var(--font-mono);font-size:12px">write_eval_script()</code> → <code style="font-family:var(--font-mono);font-size:12px">generate_eval_spec()</code></p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">eval_profile.json</span>
+        <span class="artifact-tag">eval/score.py</span>
+        <span class="artifact-tag">eval_spec.json</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--discover);color:#fff">2</span>
+      <span class="step-title">Verify Output</span>
+      <span class="step-agent-badge">CEO Direct</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Read eval_profile.json and eval/score.py to verify correctness.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--discover);color:#fff">3</span>
+      <span class="step-title">Re-detect → Review Mode</span>
+      <span class="step-agent-badge">factory detect</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>State should now be <code style="font-family:var(--font-mono);font-size:12px">evals_pending_review</code>. Transition to Review mode.</p></div>
+  </div>
+</div>
+
+<!-- ==================== REVIEW MODE ==================== -->
+<div class="flow" id="flow-review-mode">
+  <div class="mode-header active">
+    <div class="mode-title">Review Mode</div>
+    <div class="mode-desc">Verify auto-discovered evals work, mark as reviewed, initialize the factory store, and run the baseline evaluation.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--review)"></div></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--review);color:#fff">1</span>
+      <span class="step-title">Test All Eval Dimensions</span>
+      <span class="step-agent-badge">python eval/score.py</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Run eval to test all dimensions. Fix broken dimensions if any — install missing tools, adjust commands, remove broken dimensions.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--review);color:#fff">2</span>
+      <span class="step-title">Mark as Reviewed</span>
+      <span class="step-agent-badge">CEO Direct</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Set <code style="font-family:var(--font-mono);font-size:12px">human_reviewed: true</code> in eval_profile.json.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--review);color:#fff">3</span>
+      <span class="step-title">Create factory.md &amp; Initialize</span>
+      <span class="step-agent-badge">factory init</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Create factory.md from template. Fill in Goal, Scope, Guards, Eval command, Threshold, Smoke Test. Then run <code style="font-family:var(--font-mono);font-size:12px">factory init</code> to create .factory/ structure.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">factory.md</span>
+        <span class="artifact-tag">.factory/config.json</span>
+        <span class="artifact-tag">results.tsv</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--review);color:#fff">4</span>
+      <span class="step-title">Baseline Eval &amp; Commit</span>
+      <span class="step-agent-badge">factory eval</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Run baseline evaluation. Commit factory.md, eval/score.py, and .factory/. State is now <code style="font-family:var(--font-mono);font-size:12px">has_factory</code>.</p>
+      <p style="margin-top:8px"><strong>If research_target configured →</strong> Research mode<br><strong>Otherwise →</strong> Improve mode</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== IMPROVE MODE ==================== -->
+<div class="flow" id="flow-improve">
+  <div class="mode-header active">
+    <div class="mode-title">Improve Mode</div>
+    <div class="mode-desc">The core evolution loop — systematic experiment cycles. Observe the project, hypothesize improvements, execute experiments with full review pipeline, archive results.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--improve)"></div></div>
+
+  <!-- Step 0: Observe -->
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">0a</span>
+      <span class="step-title">Observe — Local Study</span>
+      <span class="step-agent-badge">factory study</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Run <code style="font-family:var(--font-mono);font-size:12px">factory study</code> to analyze codebase and write observations. Cross-project insights gathered.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts"><span class="artifact-tag">observations.md</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">0b</span>
+      <span class="step-title">Deep Research</span>
+      <span class="step-agent-badge" data-agent-name="Researcher">Researcher ×3</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>3 parallel researchers: local analysis, external best practices, context/archive.</p>
+      <div class="parallel-block">
+        <div class="parallel-item">
+          <div class="par-title">Local</div>
+          <div class="par-desc">Code analysis, weak areas</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">External</div>
+          <div class="par-desc">Web research, best practices</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Context</div>
+          <div class="par-desc">Archive, history, patterns</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">CEO Review — Research</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Research sufficient</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Re-invoke with gaps</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">0c</span>
+      <span class="step-title">Archive Research</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Mandatory archivist checkpoint: "archivist after research".</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- Step 1: Hypothesize -->
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">1</span>
+      <span class="step-title">Hypothesize — Strategist</span>
+      <span class="step-agent-badge" data-agent-name="Strategist">Strategist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Generate prioritized hypotheses with FEEC ordering from backlog, observations, research, and experiment history. Must include at least one growth hypothesis.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts"><span class="artifact-tag">.factory/strategy/current.md</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">CEO Review — Strategy</span>
+      <span class="hard-gate">HARD GATE</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PLAN APPROVED</strong> — Specific, scoped, has growth hypothesis</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Missing growth, duplicate of reverted, too vague</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- Step 2: Execute loop -->
+  <div class="loop-wrapper">
+    <span class="loop-label">For each approved hypothesis</span>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2a</span>
+        <span class="step-title">Baseline Eval</span>
+        <span class="step-agent-badge" data-agent-name="Evaluator">Evaluator</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Run eval before changes, save score_before.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2b</span>
+        <span class="step-title">Begin Experiment</span>
+        <span class="step-agent-badge">factory begin</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p><code style="font-family:var(--font-mono);font-size:12px">factory begin --hypothesis "..."</code> → creates experiment directory, returns $EXP_ID.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2c</span>
+        <span class="step-title">Create GitHub Issue</span>
+        <span class="step-agent-badge">gh issue create</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Create a GitHub issue for the hypothesis. Code-only vs operational/mixed templates.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2d</span>
+        <span class="step-title">Implement — Builder</span>
+        <span class="step-agent-badge" data-agent-name="Builder">Builder</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Builder implements the hypothesis. Timeout: 600s (code) / 1800s (operational). Opens DRAFT PR.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="decision-gate" onclick="toggleDecision(this)">
+      <div class="decision-diamond">
+        <div class="diamond-icon"></div>
+        <span class="decision-label">2d-review: Code Quality Review</span>
+      </div>
+      <div class="decision-outcomes">
+        <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>CLEAN</strong> — All 7 categories pass</span></div>
+        <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>ISSUES_FOUND</strong> → Review-until-clean loop (max 3)</span></div>
+        <div class="outcome"><div class="outcome-dot abort"></div><span class="outcome-text"><strong>ABORT</strong> — Close PR, finalize as error</span></div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2e</span>
+        <span class="step-title">Guard Check</span>
+        <span class="step-agent-badge" data-agent-name="Reviewer">Reviewer</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p><code style="font-family:var(--font-mono);font-size:12px">factory guard --check-scope</code>. PASS → continue. FAIL → mandatory revert.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2f</span>
+        <span class="step-title">Post-change Eval</span>
+        <span class="step-agent-badge" data-agent-name="Evaluator">Evaluator</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Run eval after changes, save score_after. Compare with score_before.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2f-e2e</span>
+        <span class="step-title">E2E Verification</span>
+        <span class="step-agent-badge">Smoke Test</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Run smoke test from factory.md. PASS → continue. FAIL → REDIRECT Builder. BLOCKED → ask user or skip.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="decision-gate" onclick="toggleDecision(this)">
+      <div class="decision-diamond">
+        <div class="diamond-icon"></div>
+        <span class="decision-label">2g: Hard Precheck Gate</span>
+        <span class="hard-gate">NON-OVERRIDABLE</span>
+      </div>
+      <div class="decision-outcomes">
+        <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PASS</strong> — All 4-7 checks pass → Final Review</span></div>
+        <div class="outcome"><div class="outcome-dot revert"></div><span class="outcome-text"><strong>FAIL</strong> — Mandatory REVERT, no CEO override</span></div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="decision-gate" onclick="toggleDecision(this)">
+      <div class="decision-diamond">
+        <div class="diamond-icon"></div>
+        <span class="decision-label">2h-final: Final Headless Review</span>
+      </div>
+      <div class="decision-outcomes">
+        <div class="outcome"><div class="outcome-dot keep"></div><span class="outcome-text"><strong>CLEAN</strong> — KEEP approval → gh pr ready, factory finalize --keep</span></div>
+        <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>ISSUES_FOUND</strong> — Route fixes (max 3 iterations)</span></div>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--improve);color:#fff">2h</span>
+        <span class="step-title">Archive Outcome</span>
+        <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Mandatory archivist records experiment outcome. Checkpoint: "archivist after experiment N".</p></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- Step 3-5 -->
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">3</span>
+      <span class="step-title">Final Archive</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Blocking final archivist. Verify all phases have checkpoint entries. Update project dashboard, write cycle summary, run <code style="font-family:var(--font-mono);font-size:12px">factory report-update</code>.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">4</span>
+      <span class="step-title">Notify &amp; Commit</span>
+      <span class="step-agent-badge">factory notify + git</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p><code style="font-family:var(--font-mono);font-size:12px">factory notify</code> → Telegram digest. <code style="font-family:var(--font-mono);font-size:12px">factory summary</code> → session summary. <code style="font-family:var(--font-mono);font-size:12px">git add .factory/ && git commit</code>.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--improve);color:#fff">5</span>
+      <span class="step-title">Post-Cycle Refinement Loop</span>
+      <span class="step-agent-badge">Foreground Only</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Present results to user. Classify input: DONE → exit, QUESTION → answer, REFINEMENT → enter Refine mode pipeline.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== RESEARCH MODE ==================== -->
+<div class="flow" id="flow-research">
+  <div class="mode-header active">
+    <div class="mode-title">Research Mode</div>
+    <div class="mode-desc">Improve a measurable research target through failure analysis and targeted fixes. Uses run_command instead of eval_command, enforces mutable/fixed surface constraints, and requires monotonic improvement.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--research)"></div></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--research);color:#fff">R0</span>
+      <span class="step-title">Baseline</span>
+      <span class="step-agent-badge" data-agent-name="Evaluator">Evaluator</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Read research_target config, constraint surfaces. Run pre-flight validation. Execute baseline run_command, parse results. Multi-run aggregation if configured (mean, median, max, all_pass).</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts">
+        <span class="artifact-tag">runs/000-baseline/summary.json</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--research);color:#fff">R1</span>
+      <span class="step-title">Analyze Failures</span>
+      <span class="step-agent-badge" data-agent-name="Failure Analyst">Failure Analyst</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Classify failures specifically, compute failure distribution, suggest interventions within mutable surfaces.</p>
+      <div class="detail-label">Artifacts</div>
+      <div class="artifacts"><span class="artifact-tag">failure_analysis.md</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">R1-review: CEO Review — Analysis</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PROCEED</strong> — Failures classified, suggestions valid</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Vague classifications</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--research);color:#fff">R1.5</span>
+      <span class="step-title">Research Solutions</span>
+      <span class="step-agent-badge" data-agent-name="Researcher">Researcher ×2</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Not optional. 2 parallel researchers: one for failure solutions (web research), one for prior art (archive, past experiments).</p>
+      <div class="parallel-block" style="max-width:400px">
+        <div class="parallel-item">
+          <div class="par-title">Failures</div>
+          <div class="par-desc">Web research for solutions</div>
+        </div>
+        <div class="parallel-item">
+          <div class="par-title">Prior Art</div>
+          <div class="par-desc">Archive &amp; past experiments</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--research);color:#fff">R2</span>
+      <span class="step-title">Hypothesize</span>
+      <span class="step-agent-badge" data-agent-name="Strategist">Strategist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>1-3 hypotheses targeting dominant failures. CEO review includes surface constraint check and ground truth leakage scan.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">R2-review: CEO Review — Strategy</span>
+      <span class="hard-gate">HARD GATE</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>PLAN APPROVED</strong> — Within surfaces, no leakage, ≤3 hypotheses</span></div>
+      <div class="outcome"><div class="outcome-dot redirect"></div><span class="outcome-text"><strong>REDIRECT</strong> — Surface violation or leakage detected</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="loop-wrapper">
+    <span class="loop-label">For each hypothesis</span>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--research);color:#fff">R3</span>
+        <span class="step-title">Implement</span>
+        <span class="step-agent-badge" data-agent-name="Builder">Builder</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details">
+        <p>Begin experiment, create issue, Builder implements. MUST only modify mutable_surfaces, MUST NOT modify fixed_surfaces. Violation = automatic revert.</p>
+      </div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--research);color:#fff">R4</span>
+        <span class="step-title">Run Harness</span>
+        <span class="step-agent-badge" data-agent-name="Evaluator">Evaluator</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details"><p>Execute run_command on modified code. Single-run or multi-run with aggregation.</p></div>
+    </div>
+
+    <div class="connector"></div>
+
+    <div class="decision-gate" onclick="toggleDecision(this)">
+      <div class="decision-diamond">
+        <div class="diamond-icon"></div>
+        <span class="decision-label">R5: Verdict</span>
+      </div>
+      <div class="decision-outcomes">
+        <div class="outcome"><div class="outcome-dot keep"></div><span class="outcome-text"><strong>KEEP</strong> — Metric improved + no hygiene regression + precheck passed</span></div>
+        <div class="outcome"><div class="outcome-dot revert"></div><span class="outcome-text"><strong>REVERT</strong> — Metric regressed OR hygiene regressed OR precheck failed</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--research);color:#fff">End</span>
+      <span class="step-title">Termination</span>
+      <span class="step-agent-badge">CEO Decision</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p><strong>Exit when:</strong> Target met (metric ≥ target), budget exhausted, or all hypotheses processed. Plateau detection triggers outer loop (expand mutable_surfaces, shift to architectural hypotheses).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== META MODE ==================== -->
+<div class="flow" id="flow-meta">
+  <div class="mode-header active">
+    <div class="mode-title">Meta Mode</div>
+    <div class="mode-desc">Full Improve loop on the factory itself plus ACE playbook evolution. Run weekly, or when agents repeat the same reverted mistakes.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--meta)"></div></div>
+
+  <div class="step-card expanded">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--meta);color:#fff">P1</span>
+      <span class="step-title">Improve the Factory</span>
+      <span class="step-agent-badge">Full Improve Loop</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Run the entire Improve mode pipeline (Steps 0-5) with the factory repo as the project. All Improve mode rules apply: FEEC priority, growth dimension requirements, CEO review gates, mandatory archival.</p>
+      <p style="margin-top:8px;cursor:pointer;color:var(--improve)" onclick="switchMode('improve')">→ See Improve Mode for full details</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--meta);color:#fff">M1</span>
+      <span class="step-title">Collect Cross-Project Data</span>
+      <span class="step-agent-badge">factory insights</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Gather experiment outcomes across all projects for ACE analysis.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--meta);color:#fff">M2</span>
+      <span class="step-title">ACE Playbook Evolution</span>
+      <span class="step-agent-badge">factory ace</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Analyzes experiment outcomes across all projects. Evolves per-agent playbooks with DO/DON'T rules. Writes to <code style="font-family:var(--font-mono);font-size:12px">~/.factory/playbooks/&lt;role&gt;.md</code>.</p>
+      <div class="detail-label">Process</div>
+      <p>Reflector parses ceo:keep/ceo:revert notes → analyzes agent failure patterns → generates playbook bullets → Curator merges into role playbooks.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--meta);color:#fff">M3</span>
+      <span class="step-title">Record Evolution</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Record which bullets were added, removed, or had counters updated across all role playbooks.</p></div>
+  </div>
+</div>
+
+<!-- ==================== REFINE MODE ==================== -->
+<div class="flow" id="flow-refine">
+  <div class="mode-header active">
+    <div class="mode-title">Refine Mode</div>
+    <div class="mode-desc">Lightweight pipeline for user-directed refinements. No Researcher or Strategist — the user IS the strategist. Refiner classifies and scopes before Builder starts.</div>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" style="width:0%;background:var(--refine)"></div></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--refine);color:#fff">R0</span>
+      <span class="step-title">Refiner — Classify &amp; Scope</span>
+      <span class="step-agent-badge" data-agent-name="Refiner">Refiner</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Classifies the refinement request into Tier 1 (trivial), Tier 2 (moderate), or Tier 3 (complex, needs full Improve).</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">R1: Tier Gate</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot proceed"></div><span class="outcome-text"><strong>Tier 1/2</strong> — Continue with Refine pipeline</span></div>
+      <div class="outcome"><div class="outcome-dot abort"></div><span class="outcome-text"><strong>Tier 3</strong> — EXIT with message to use --focus for full Improve</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--refine);color:#fff">R2</span>
+      <span class="step-title">Begin Experiment</span>
+      <span class="step-agent-badge">factory begin</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Create experiment and GitHub issue for the refinement.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--refine);color:#fff">R4</span>
+      <span class="step-title">Implement — Builder</span>
+      <span class="step-agent-badge" data-agent-name="Builder">Builder</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Builder implements the refinement issue.</p></div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--refine);color:#fff">R5-10</span>
+      <span class="step-title">Full Review Pipeline</span>
+      <span class="step-agent-badge">Same as Improve</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Identical to Improve mode: CEO Structured Review (7-category) → Review-until-clean → Guard Check → Post-change Eval → E2E Verification → Hard Precheck → Final Headless Review.</p>
+      <p style="margin-top:8px;cursor:pointer;color:var(--improve)" onclick="switchMode('review-pipeline')">→ See Review Pipeline for full details</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="decision-gate" onclick="toggleDecision(this)">
+    <div class="decision-diamond">
+      <div class="diamond-icon"></div>
+      <span class="decision-label">R11: Keep/Revert Verdict</span>
+    </div>
+    <div class="decision-outcomes">
+      <div class="outcome"><div class="outcome-dot keep"></div><span class="outcome-text"><strong>KEEP</strong> — factory finalize --verdict keep</span></div>
+      <div class="outcome"><div class="outcome-dot revert"></div><span class="outcome-text"><strong>REVERT</strong> — factory finalize --verdict revert</span></div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--refine);color:#fff">R12</span>
+      <span class="step-title">Archive &amp; Return</span>
+      <span class="step-agent-badge" data-agent-name="Archivist">Archivist</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details"><p>Single batch archivist. <code style="font-family:var(--font-mono);font-size:12px">factory refine-complete</code> → return to post-cycle refinement loop.</p></div>
+  </div>
+</div>
+
+<!-- ==================== EXPERIMENT LIFECYCLE ==================== -->
+<div class="flow" id="flow-experiment">
+  <div class="mode-header active">
+    <div class="mode-title">Experiment Lifecycle</div>
+    <div class="mode-desc">The inner loop of every experiment: create → execute → finalize. Managed by ExperimentStore.</div>
+  </div>
+
+  <div class="step-card expanded">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">1</span>
+      <span class="step-title">factory begin</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Creates <code style="font-family:var(--font-mono);font-size:12px">experiments/NNN/hypothesis.md</code>, returns EXP_ID, registers project in global registry.</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">2</span>
+      <span class="step-title">Eval Before</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p><code style="font-family:var(--font-mono);font-size:12px">save_eval(exp_id, "before", score)</code> → writes <code style="font-family:var(--font-mono);font-size:12px">experiments/NNN/eval_before.json</code></p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">3</span>
+      <span class="step-title">Builder Implements</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Commits code, opens PR. <code style="font-family:var(--font-mono);font-size:12px">save_diff(exp_id)</code> → writes <code style="font-family:var(--font-mono);font-size:12px">experiments/NNN/changes.diff</code></p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">4</span>
+      <span class="step-title">Review Pipeline</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Full 3-component review: structured checklist → review-until-clean → final headless review.</p>
+      <p style="margin-top:8px;cursor:pointer;color:var(--accent)" onclick="switchMode('review-pipeline')">→ See Review Pipeline</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">5</span>
+      <span class="step-title">Eval After</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p><code style="font-family:var(--font-mono);font-size:12px">save_eval(exp_id, "after", score)</code> → writes <code style="font-family:var(--font-mono);font-size:12px">experiments/NNN/eval_after.json</code></p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">6</span>
+      <span class="step-title">factory finalize</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Writes <code style="font-family:var(--font-mono);font-size:12px">experiments/NNN/verdict.json</code>, appends to <code style="font-family:var(--font-mono);font-size:12px">results.tsv</code>, updates global registry stats. If verdict=keep and not --force, runs precheck gate which can override to revert.</p>
+      <div class="detail-label">results.tsv Columns</div>
+      <p style="font-family:var(--font-mono);font-size:11px">id | timestamp | hypothesis | change_summary | issue_number | pr_number | score_before | score_after | delta | verdict | cost_usd | notes | research_citations</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== REVIEW PIPELINE ==================== -->
+<div class="flow" id="flow-review-pipeline">
+  <div class="mode-header active">
+    <div class="mode-title">Review Pipeline</div>
+    <div class="mode-desc">Mandatory for every experiment — no exceptions. Three components ensure code quality before any keep verdict.</div>
+  </div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Component 1: Structured Checklist</h3>
+
+  <div class="step-card expanded">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">C1</span>
+      <span class="step-title">7-Category Code Quality Review</span>
+      <span class="step-agent-badge">CEO Direct</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>CEO reads PR diff (<code style="font-family:var(--font-mono);font-size:12px">gh pr diff</code>) and evaluates against:</p>
+      <div class="info-grid" style="grid-template-columns:1fr 1fr;margin-top:12px">
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">1. Correctness</h3><p>Bugs, logic errors</p></div>
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">2. Security</h3><p>Injection, secrets</p></div>
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">3. Edge Cases</h3><p>Empty inputs, timeouts</p></div>
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">4. Missing Tests</h3><p>Untested code paths</p></div>
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">5. Style</h3><p>Naming, dead code</p></div>
+        <div class="info-card" style="padding:10px 14px"><h3 style="font-size:13px">6. Scope</h3><p>Matches hypothesis</p></div>
+        <div class="info-card" style="padding:10px 14px;grid-column:span 2"><h3 style="font-size:13px">7. Guardrails</h3><p>File size, scope boundaries, dangerous commands</p></div>
+      </div>
+      <div class="detail-label" style="margin-top:12px">Verdict</div>
+      <p><strong>CLEAN →</strong> proceed to guard check<br><strong>ISSUES_FOUND: N →</strong> enter review-until-clean loop<br><strong>ABORT →</strong> close PR, finalize as error</p>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Component 2: Review-Until-Clean</h3>
+
+  <div class="loop-wrapper">
+    <span class="loop-label">Max 3 iterations</span>
+    <div class="step-card">
+      <div class="step-header" onclick="toggleStep(this)">
+        <span class="step-number" style="background:var(--accent);color:#fff">C2</span>
+        <span class="step-title">Review-Until-Clean Loop</span>
+        <span class="step-agent-badge" data-agent-name="Builder">Builder (fixes)</span>
+        <span class="step-chevron">▶</span>
+      </div>
+      <div class="step-details">
+        <p>1. Check iteration cap (≥3 → stop)<br>
+        2. Check convergence (issues not decreasing → stop)<br>
+        3. Route fixes to Builder: "Fix ALL listed issues. No new functionality."<br>
+        4. Update state, increment iteration<br>
+        5. Re-run structured review (back to C1)</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Component 3: Final Headless Review</h3>
+
+  <div class="step-card">
+    <div class="step-header" onclick="toggleStep(this)">
+      <span class="step-number" style="background:var(--accent);color:#fff">C3</span>
+      <span class="step-title">Final Headless Review</span>
+      <span class="step-agent-badge">Headless Claude</span>
+      <span class="step-chevron">▶</span>
+    </div>
+    <div class="step-details">
+      <p>Runs AFTER all mechanical checks (guard, eval, e2e, precheck). Spawns headless Claude Code to review the complete PR diff for bugs, security, edge cases, error handling, style, dead code.</p>
+      <p style="margin-top:8px"><strong>CLEAN →</strong> KEEP approval<br><strong>ISSUES_FOUND →</strong> If iteration ≥3 → KEEP with notes. Otherwise → route fixes, re-run C3 only.</p>
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">Precheck Gate — 7 Non-Overridable Checks</h3>
+
+  <div class="info-grid">
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">1</span>
+      <div><strong style="font-size:13px">score_direction</strong><p>Score not regressed AND meets threshold</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">2</span>
+      <div><strong style="font-size:13px">scope</strong><p>factory guard --check-scope passes</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">3</span>
+      <div><strong style="font-size:13px">fixed_surfaces</strong><p>factory guard --check-surfaces passes</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">4</span>
+      <div><strong style="font-size:13px">ground_truth_leakage</strong><p>No content from fixed surfaces leaked</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">5</span>
+      <div><strong style="font-size:13px">anti_pattern</strong><p>Hypothesis &lt;60% similar to reverted experiments</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">6</span>
+      <div><strong style="font-size:13px">smoke_test</strong><p>Smoke test command from factory.md passes</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:12px;align-items:center">
+      <span class="rule-number">7</span>
+      <div><strong style="font-size:13px">hard_constraints</strong><p>User-defined checks from factory.md (each must exit 0)</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== AGENTS ==================== -->
+<div class="flow" id="flow-agents">
+  <div class="mode-header active">
+    <div class="mode-title">Agent Roster</div>
+    <div class="mode-desc">8 specialist agents spawned via factory agent &lt;role&gt;. Each gets a fresh context window with its resolved prompt + any evolved playbook auto-injected.</div>
+  </div>
+
+  <div class="agent-grid">
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--accent)">Researcher</div>
+      <div class="agent-purpose">Observe: local analysis (factory study) + web research + archive synthesis. Only role that supports parallel spawning via shell backgrounding + --review-tag.</div>
+      <div class="agent-cmd">factory agent researcher --task "..." --review-tag &lt;tag&gt;</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--design)">Strategist</div>
+      <div class="agent-purpose">Hypothesize: generate prioritized experiments from observations. In Phase 0 (Ideation): synthesize research + raw idea into buildable spec.</div>
+      <div class="agent-cmd">factory agent strategist --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--build)">Builder</div>
+      <div class="agent-purpose">Implement: code changes on feature branch, open PR. Enforces scope constraints. Respects mutable/fixed surfaces.</div>
+      <div class="agent-cmd">factory agent builder --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--review)">Reviewer</div>
+      <div class="agent-purpose">Guard: enforce sacred rules, scope constraints, and code quality on PRs. Substantive review, not rubber-stamp.</div>
+      <div class="agent-cmd">factory agent reviewer --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--improve)">Evaluator</div>
+      <div class="agent-purpose">Measure: run evals before/after changes, report composite + breakdown. Runs both eval_command and run_command (research).</div>
+      <div class="agent-cmd">factory agent evaluator --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--meta)">Archivist</div>
+      <div class="agent-purpose">Record: write learnings to .factory/archive/. MANDATORY at every checkpoint — this is Sacred Rule 7. No exceptions.</div>
+      <div class="agent-cmd">factory agent archivist --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--research)">Failure Analyst</div>
+      <div class="agent-purpose">Classify failures from research runs by stage and root cause. Produces structured analysis for the Strategist.</div>
+      <div class="agent-cmd">factory agent failure_analyst --task "..."</div>
+    </div>
+    <div class="agent-card">
+      <div class="agent-role" style="color:var(--refine)">Refiner</div>
+      <div class="agent-purpose">Classify and scope refinement requests into tiers. Routes Tier 3 requests to full Improve mode.</div>
+      <div class="agent-cmd">factory agent refiner --task "..."</div>
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:16px;text-transform:uppercase;letter-spacing:0.5px">CEO Review Protocol</h3>
+  <div class="info-card">
+    <p>After <strong>every</strong> agent completes, the CEO reviews its output:</p>
+    <p style="margin-top:8px">1. <strong>Read</strong> the agent's output file (.factory/reviews/&lt;role&gt;-latest.md)<br>
+    2. <strong>Assess</strong> against role-specific criteria<br>
+    3. <strong>Write</strong> verdict to .factory/reviews/ceo-verdict-&lt;role&gt;.md<br>
+    4. <strong>Act:</strong> PROCEED → next step | REDIRECT → re-invoke (max 2) | ABORT → log failure</p>
+  </div>
+</div>
+
+<!-- ==================== FEEC ==================== -->
+<div class="flow" id="flow-feec">
+  <div class="mode-header active">
+    <div class="mode-title">FEEC Priority Heuristic</div>
+    <div class="mode-desc">Hypotheses are categorized and ranked: Fix → Exploit → Explore → Combine. Backlog items follow the same ordering.</div>
+  </div>
+
+  <div class="feec-bar">
+    <div class="feec-segment" style="background:#da3633;flex:3" onclick="showFeec('fix')">FIX</div>
+    <div class="feec-segment" style="background:#d29922;flex:3" onclick="showFeec('exploit')">EXPLOIT</div>
+    <div class="feec-segment" style="background:#58a6ff;flex:2" onclick="showFeec('explore')">EXPLORE</div>
+    <div class="feec-segment" style="background:#a371f7;flex:2" onclick="showFeec('combine')">COMBINE</div>
+  </div>
+
+  <div class="feec-detail active" id="feec-fix">
+    <div class="info-card" style="border-left:3px solid #da3633">
+      <h3>Fix <span style="font-weight:400;color:var(--text-muted);font-size:12px">— Priority 0 (Highest)</span></h3>
+      <p>Resolve crashes, errors, regressions. Keywords: fix, error, bug, crash, fail, regression, broken, repair.</p>
+    </div>
+  </div>
+  <div class="feec-detail" id="feec-exploit">
+    <div class="info-card" style="border-left:3px solid #d29922">
+      <h3>Exploit <span style="font-weight:400;color:var(--text-muted);font-size:12px">— Priority 1</span></h3>
+      <p>Build on recent successes. Keywords: improve, increase, extend, enhance, build on, optimize, boost.</p>
+    </div>
+  </div>
+  <div class="feec-detail" id="feec-explore">
+    <div class="info-card" style="border-left:3px solid #58a6ff">
+      <h3>Explore <span style="font-weight:400;color:var(--text-muted);font-size:12px">— Priority 2</span></h3>
+      <p>Try something new. Default/catch-all when no keywords match.</p>
+    </div>
+  </div>
+  <div class="feec-detail" id="feec-combine">
+    <div class="info-card" style="border-left:3px solid #a371f7">
+      <h3>Combine <span style="font-weight:400;color:var(--text-muted);font-size:12px">— Priority 3 (Lowest)</span></h3>
+      <p>Merge successful patterns. Keywords: combine, merge, integrate, unify, consolidate.</p>
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">Safety Mechanisms</h3>
+  <div class="info-grid" style="grid-template-columns:1fr 1fr">
+    <div class="info-card">
+      <h3>Stuck Detection</h3>
+      <p>3+ consecutive same-category reverts → MUST pivot to a different FEEC category.</p>
+    </div>
+    <div class="info-card">
+      <h3>Anti-Pattern Guard</h3>
+      <p>Hypothesis similarity &gt;60% to reverted experiment → blocked by precheck. Uses Jaccard similarity on 3+ char word tokens.</p>
+    </div>
+    <div class="info-card">
+      <h3>3-Tier History</h3>
+      <p>Last 3: full detail. 4-10: one-line summaries. 11+: aggregate stats only.</p>
+    </div>
+    <div class="info-card">
+      <h3>Plateau Detection</h3>
+      <p>Last N scored experiments show no improvement → trigger outer loop (expand surfaces, shift to architectural hypotheses).</p>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== SACRED RULES ==================== -->
+<div class="flow" id="flow-sacred">
+  <div class="mode-header active">
+    <div class="mode-title">Sacred Rules</div>
+    <div class="mode-desc">9 inviolable constraints. Checked by factory guard. Violation = automatic revert.</div>
+  </div>
+
+  <div class="info-grid">
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">1</span>
+      <div><h3 style="font-size:14px">Do not delete or overwrite existing tests</h3><p>Tests may be extended, never removed.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">2</span>
+      <div><h3 style="font-size:14px">Do not modify files outside declared scope</h3><p>factory.md defines modifiable files.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">3</span>
+      <div><h3 style="font-size:14px">Do not introduce secrets or credentials</h3><p>No API keys, tokens, or passwords in repo.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">4</span>
+      <div><h3 style="font-size:14px">Do not lower the eval threshold</h3><p>The bar only goes up.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">5</span>
+      <div><h3 style="font-size:14px">Do not skip the eval step</h3><p>Every change must be scored before keep.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">6</span>
+      <div><h3 style="font-size:14px">Do not merge PRs</h3><p>Leave open for human review after KEEP approval.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">7</span>
+      <div><h3 style="font-size:14px">Do not skip archival checkpoints</h3><p>Archivist must fire at every checkpoint.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">8</span>
+      <div><h3 style="font-size:14px">Do not do another agent's job</h3><p>CEO orchestrates, delegates, reviews. Never implements.</p></div>
+    </div>
+    <div class="info-card" style="display:flex;gap:14px;align-items:flex-start">
+      <span class="rule-number" style="background:var(--revert);color:#fff;border-color:var(--revert)">9</span>
+      <div><h3 style="font-size:14px">Do not skip the review pipeline</h3><p>Full 2d-review pipeline for every experiment with a PR.</p></div>
+    </div>
+  </div>
+
+  <div class="section-divider"></div>
+
+  <h3 style="font-size:14px;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.5px">Keep/Revert Quality Bar</h3>
+  <div class="info-card">
+    <p>ALL must be true to KEEP:</p>
+    <p style="margin-top:8px">
+      1. <strong>Works correctly</strong> — tests pass<br>
+      2. <strong>Observable</strong> — changes are logged/traced<br>
+      3. <strong>Evaluated</strong> — scores measured before and after<br>
+      4. <strong>Documented</strong> — clear commit messages, PR description<br>
+      5. <strong>Maintainable</strong> — clean code, no hacks
+    </p>
+  </div>
+</div>
+
+</div><!-- end .main -->
+
+<script>
+const AGENTS = {
+  'Researcher': 'Observe: local analysis + web research + archive synthesis. Supports parallel spawning via --review-tag.',
+  'Strategist': 'Hypothesize: generate prioritized experiments. In ideation mode: synthesize research into buildable spec.',
+  'Builder': 'Implement: code changes on feature branch, open PR. Enforces scope and surface constraints.',
+  'Reviewer': 'Guard: enforce sacred rules, scope constraints, and code quality on PRs.',
+  'Evaluator': 'Measure: run evals before/after changes, report composite + dimension breakdown.',
+  'Archivist': 'Record: write learnings to .factory/archive/. MANDATORY at every checkpoint (Sacred Rule 7).',
+  'Failure Analyst': 'Classify failures from research runs by stage and root cause.',
+  'Refiner': 'Classify and scope refinement requests into tiers (1=trivial, 2=moderate, 3=needs full Improve).'
+};
+
+function toggleStep(header) {
+  header.parentElement.classList.toggle('expanded');
+}
+
+function toggleDecision(gate) {
+  gate.classList.toggle('expanded');
+}
+
+function switchMode(mode) {
+  document.querySelectorAll('.flow').forEach(f => f.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  const flow = document.getElementById('flow-' + mode);
+  if (flow) flow.classList.add('active');
+
+  const nav = document.querySelector(`.nav-item[data-mode="${mode}"]`);
+  if (nav) nav.classList.add('active');
+
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+function showFeec(cat) {
+  document.querySelectorAll('.feec-detail').forEach(d => d.classList.remove('active'));
+  const el = document.getElementById('feec-' + cat);
+  if (el) el.classList.add('active');
+}
+
+// Nav clicks
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    const mode = item.dataset.mode;
+    if (mode) switchMode(mode);
+  });
+});
+
+// Agent tooltips
+const tooltip = document.getElementById('tooltip');
+document.querySelectorAll('[data-agent-name]').forEach(badge => {
+  badge.addEventListener('mouseenter', (e) => {
+    const name = badge.dataset.agentName;
+    if (AGENTS[name]) {
+      tooltip.innerHTML = `<div class="tooltip-title">${name}</div>${AGENTS[name]}`;
+      tooltip.style.display = 'block';
+      const rect = badge.getBoundingClientRect();
+      tooltip.style.left = rect.left + 'px';
+      tooltip.style.top = (rect.bottom + 8) + 'px';
+    }
+  });
+  badge.addEventListener('mouseleave', () => {
+    tooltip.style.display = 'none';
+  });
+});
+
+// Mode tab colors
+const MODE_COLORS = {
+  'design': 'var(--design)',
+  'build': 'var(--build)',
+  'discover': 'var(--discover)',
+  'review-mode': 'var(--review)',
+  'improve': 'var(--improve)',
+  'research': 'var(--research)',
+  'meta': 'var(--meta)',
+  'refine': 'var(--refine)'
+};
+</script>
+</body>
+</html>
