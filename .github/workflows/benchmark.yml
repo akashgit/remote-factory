@@ -27,11 +27,12 @@ on:
         required: false
         default: ''
         type: string
-  pull_request:
-    types: [opened, synchronize]
-    paths:
-      - 'factory/**'
-      - 'benchmarks/**'
+  # pull_request trigger disabled — use workflow_dispatch with pr_number instead
+  # pull_request:
+  #   types: [opened, synchronize]
+  #   paths:
+  #     - 'factory/**'
+  #     - 'benchmarks/**'
   release:
     types: [created]
 
