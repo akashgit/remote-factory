@@ -22,11 +22,6 @@ except ImportError:
 _client: object | None = None
 _observations: dict[str, Any] = {}
 
-_TRACE_NAME_ATTR = "langfuse.trace.name"
-_TRACE_INPUT_ATTR = "langfuse.trace.input"
-_TRACE_OUTPUT_ATTR = "langfuse.trace.output"
-
-
 def is_enabled() -> bool:
     """Check if Langfuse is configured and lazily initialise the client."""
     global _client
@@ -51,28 +46,6 @@ def _get_client() -> Any:
     return _client
 
 
-def _set_trace_attributes(
-    obs: Any,
-    *,
-    name: str | None = None,
-    input: Any = None,
-    output: Any = None,
-) -> None:
-    """Set trace-level name/input/output via OTel span attributes."""
-    otel_span = getattr(obs, "_otel_span", None)
-    if otel_span is None or not otel_span.is_recording():
-        return
-    attrs: dict[str, Any] = {}
-    if name is not None:
-        attrs[_TRACE_NAME_ATTR] = name
-    if input is not None:
-        attrs[_TRACE_INPUT_ATTR] = json.dumps(input) if not isinstance(input, str) else input
-    if output is not None:
-        attrs[_TRACE_OUTPUT_ATTR] = json.dumps(output) if not isinstance(output, str) else output
-    if attrs:
-        otel_span.set_attributes(attrs)
-
-
 def begin_trace(
     project_name: str,
     cycle_id: str | None = None,
@@ -90,8 +63,8 @@ def begin_trace(
         input=trace_input,
         metadata={"model": model, "project": project_name},
     )
-    _set_trace_attributes(obs, name=trace_name, input=trace_input)
     _observations[obs.id] = obs
+    client.flush()
     log.debug("langfuse_trace_started", trace_id=obs.trace_id, span_id=obs.id)
     return (obs.trace_id, obs.id)
 
