@@ -11,6 +11,7 @@ on:
           - swebench
           - featurebench
           - terminalbench
+          - programbench
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -62,6 +63,9 @@ jobs:
           - benchmark: terminalbench
             default_instance: 'fix-git'
             enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
+          - benchmark: programbench
+            default_instance: 'cmatrix'
+            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all' }}
 
     steps:
       - name: Skip if not enabled

@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve]
 #
 # Arguments:
-#   benchmark      Required. One of: swebench, featurebench, terminalbench
+#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench
 #   instance_id    Required. Benchmark-specific instance identifier
 #
 # Options:
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ $# -lt 2 ]; then
     echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve]"
     echo ""
-    echo "Benchmarks: swebench, featurebench, terminalbench"
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench"
     exit 1
 fi
 
@@ -57,16 +57,11 @@ done
 # ── Validate benchmark ──
 
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench)
-        ;;
-    programbench)
-        echo "ERROR: ProgramBench requires a self-hosted runner and is not available in this CI setup."
-        echo "See the programbench-factory repository for ProgramBench support."
-        exit 1
+    swebench|featurebench|terminalbench|programbench)
         ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench"
         exit 1
         ;;
 esac
@@ -90,5 +85,9 @@ case "${BENCHMARK}" in
     terminalbench)
         [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
         exec "${SCRIPT_DIR}/run-terminalbench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
+        ;;
+    programbench)
+        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
+        exec "${SCRIPT_DIR}/run-programbench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
         ;;
 esac
