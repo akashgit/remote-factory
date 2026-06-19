@@ -512,13 +512,13 @@ class TestCmdHistory:
 
 
 class TestCmdRun:
-    def test_run_success(self, tmp_path):
+    def test_run_success(self, tmp_path, mock_worktree):
         """cmd_run returns 0 when CEO agent succeeds."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()):
             result = main(["run", str(tmp_path)])
         assert result == 0
 
-    def test_run_agent_failure(self, tmp_path):
+    def test_run_agent_failure(self, tmp_path, mock_worktree):
         """cmd_run returns 1 when CEO agent fails."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
             result = main(["run", str(tmp_path)])
@@ -706,7 +706,7 @@ class TestRunModeFlag:
 
 
 class TestRunWithGitHubUrl:
-    def test_run_clones_https_url(self, capsys):
+    def test_run_clones_https_url(self, capsys, mock_worktree):
         """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes CEO."""
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
@@ -722,7 +722,7 @@ class TestRunWithGitHubUrl:
         out = capsys.readouterr().out
         assert "Cloned https://github.com/user/repo" in out
 
-    def test_run_clones_ssh_url(self, capsys):
+    def test_run_clones_ssh_url(self, capsys, mock_worktree):
         """cmd_run clones a GitHub SSH URL into a temp dir."""
         url = "git@github.com:user/repo.git"
         with patch("factory.cli.subprocess.run") as mock_clone, \
@@ -738,7 +738,7 @@ class TestRunWithGitHubUrl:
         out = capsys.readouterr().out
         assert f"Cloned {url}" in out
 
-    def test_run_local_path_no_clone(self, tmp_path):
+    def test_run_local_path_no_clone(self, tmp_path, mock_worktree):
         """cmd_run with a local path does not clone — just invokes CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -747,7 +747,7 @@ class TestRunWithGitHubUrl:
         assert result == 0
         mock_agent.assert_called_once()
 
-    def test_run_discover_mode(self, tmp_path):
+    def test_run_discover_mode(self, tmp_path, mock_worktree):
         """cmd_run with --mode=discover passes discover task to CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -758,7 +758,7 @@ class TestRunWithGitHubUrl:
         task = call_args[0][1]  # second positional arg is the task
         assert "Discover mode" in task
 
-    def test_run_meta_mode(self, tmp_path):
+    def test_run_meta_mode(self, tmp_path, mock_worktree):
         """cmd_run with --mode=meta passes meta task to CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -812,7 +812,7 @@ class TestHeartbeatParserFlags:
 
 
 class TestHeartbeatLoop:
-    def test_no_loop_single_run(self, tmp_path):
+    def test_no_loop_single_run(self, tmp_path, mock_worktree):
         """Without --loop, cmd_run executes exactly one cycle."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -820,7 +820,7 @@ class TestHeartbeatLoop:
         assert result == 0
         mock_agent.assert_called_once()
 
-    def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
+    def test_loop_exits_after_max_cycles(self, tmp_path, capsys, mock_worktree):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -836,7 +836,7 @@ class TestHeartbeatLoop:
         assert "[factory] Cycle 3 started at" in out
         assert "[factory] Shutting down gracefully after 3 cycles." in out
 
-    def test_loop_single_cycle(self, tmp_path, capsys):
+    def test_loop_single_cycle(self, tmp_path, capsys, mock_worktree):
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli._chain_modes", return_value=0):
@@ -848,7 +848,7 @@ class TestHeartbeatLoop:
         assert "[factory] Cycle 1 started at" in out
         assert "[factory] Shutting down gracefully after 1 cycles." in out
 
-    def test_loop_graceful_sigterm(self, tmp_path, capsys):
+    def test_loop_graceful_sigterm(self, tmp_path, capsys, mock_worktree):
         """SIGTERM during sleep causes clean exit."""
         captured_handlers: dict[int, object] = {}
         original_signal = signal.signal
@@ -872,7 +872,7 @@ class TestHeartbeatLoop:
         out = capsys.readouterr().out
         assert "[factory] Shutting down gracefully after 1 cycles." in out
 
-    def test_loop_graceful_sigint(self, tmp_path, capsys):
+    def test_loop_graceful_sigint(self, tmp_path, capsys, mock_worktree):
         """SIGINT during sleep causes clean exit."""
         captured_handlers: dict[int, object] = {}
         original_signal = signal.signal
@@ -896,7 +896,7 @@ class TestHeartbeatLoop:
         out = capsys.readouterr().out
         assert "[factory] Shutting down gracefully after 1 cycles." in out
 
-    def test_loop_logs_sleep_message(self, tmp_path, capsys):
+    def test_loop_logs_sleep_message(self, tmp_path, capsys, mock_worktree):
         """Verify the sleep log message appears between cycles."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli._chain_modes", return_value=0):
@@ -1069,7 +1069,7 @@ class TestCmdCeoReview:
 
 
 class TestCmdCeo:
-    def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
+    def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys, mock_worktree):
         """cmd_ceo --headless spawns CEO agent via invoke_agent."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -1080,7 +1080,7 @@ class TestCmdCeo:
         assert call_args[0][0] == "ceo"
         assert str(tmp_path) in call_args[0][1]
 
-    def test_ceo_headless_meta_mode_task(self, tmp_path):
+    def test_ceo_headless_meta_mode_task(self, tmp_path, mock_worktree):
         """cmd_ceo --headless with --mode=meta includes meta instructions."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -1089,7 +1089,7 @@ class TestCmdCeo:
         task = mock_agent.call_args[0][1]
         assert "Meta mode" in task
 
-    def test_ceo_headless_clones_github_url(self, capsys):
+    def test_ceo_headless_clones_github_url(self, capsys, mock_worktree):
         """cmd_ceo --headless clones a GitHub URL then invokes CEO."""
         url = "https://github.com/user/repo"
         with patch("factory.cli.subprocess.run") as mock_clone, \
@@ -1103,7 +1103,7 @@ class TestCmdCeo:
             ["git", "clone", url, "/tmp/factory-ceo"], check=True,
         )
 
-    def test_ceo_headless_timeout_is_2_hours(self, tmp_path):
+    def test_ceo_headless_timeout_is_2_hours(self, tmp_path, mock_worktree):
         """CEO agent gets 7200s timeout in headless mode."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
              patch("factory.cli._chain_modes", return_value=0):
@@ -1373,7 +1373,7 @@ class TestResearchMode:
         args = parser.parse_args(["tmux", "/some/path", "--mode", "research"])
         assert args.mode == "research"
 
-    def test_research_mode_task_text(self, tmp_path):
+    def test_research_mode_task_text(self, tmp_path, mock_worktree):
         """--mode research includes research-specific instructions in the CEO task."""
         (tmp_path / ".git").mkdir()
         factory_dir = tmp_path / ".factory"

@@ -35,8 +35,8 @@ def _reset_agent_failure_counter() -> None:
 
 
 
-@pytest.fixture(autouse=True)
-def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
+@pytest.fixture
+def mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
     """Stub worktree functions for tests that don't exercise worktree logic.
 
     Tests in test_worktree.py opt out via the 'real_worktree' marker.
