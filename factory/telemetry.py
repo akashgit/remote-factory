@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -18,6 +19,7 @@ except ImportError:
     _HAS_LANGFUSE = False
 
 _client: object | None = None
+_observations: dict[str, Any] = {}
 
 
 def is_enabled() -> bool:
@@ -38,26 +40,30 @@ def is_enabled() -> bool:
         return False
 
 
-def _get_client() -> Langfuse:
+def _get_client() -> Any:
     if _client is None:
         raise RuntimeError("Langfuse not initialised — call is_enabled() first")
-    return _client  # type: ignore[return-value]
+    return _client
 
 
 def begin_trace(
     project_name: str,
-    cycle_id: str,
+    cycle_id: str | None = None,
     model: str | None = None,
-) -> str:
-    """Create a root trace and return its trace_id."""
+) -> str | None:
+    """Create a root trace (as a span observation) and return its ID."""
+    if not is_enabled():
+        return None
     client = _get_client()
-    trace = client.trace(
-        name=f"factory:{project_name}",
-        session_id=cycle_id,
-        metadata={"model": model} if model else None,
+    obs = client.start_observation(
+        name=f"factory:{project_name}/{cycle_id or 'cycle'}",
+        as_type="span",
+        input={"project": project_name, "cycle_id": cycle_id},
+        metadata={"model": model, "project": project_name},
     )
-    log.debug("langfuse_trace_started", trace_id=trace.id, project=project_name)
-    return trace.id
+    _observations[obs.id] = obs
+    log.debug("langfuse_trace_started", trace_id=obs.trace_id, obs_id=obs.id)
+    return obs.id
 
 
 def begin_span(
@@ -65,17 +71,29 @@ def begin_span(
     parent_span_id: str | None,
     role: str,
     model: str | None = None,
-) -> str:
-    """Create a child span under a trace/parent and return its span_id."""
-    client = _get_client()
-    span = client.span(
-        trace_id=trace_id,
-        parent_observation_id=parent_span_id,
+) -> str | None:
+    """Create a child span under a parent and return its span_id."""
+    if not is_enabled():
+        return None
+    parent = _observations.get(parent_span_id or trace_id)
+    if parent is None:
+        client = _get_client()
+        parent = client.start_observation(
+            name=f"agent:{role}",
+            as_type="span",
+            metadata={"role": role, "model": model},
+        )
+        _observations[parent.id] = parent
+        return parent.id
+
+    obs = parent.start_observation(
         name=f"agent:{role}",
-        metadata={"model": model} if model else None,
+        as_type="span",
+        metadata={"role": role, "model": model},
     )
-    log.debug("langfuse_span_started", span_id=span.id, role=role)
-    return span.id
+    _observations[obs.id] = obs
+    log.debug("langfuse_span_started", span_id=obs.id, role=role)
+    return obs.id
 
 
 def end_span(
@@ -83,42 +101,54 @@ def end_span(
     span_id: str,
     *,
     status: str = "completed",
-    usage: dict | None = None,
-    metadata: dict | None = None,
+    usage: object | None = None,
+    metadata: dict[str, object] | None = None,
     output: str | None = None,
 ) -> None:
     """End a span, recording usage and metadata."""
-    client = _get_client()
-    u = usage or {}
-    m = dict(metadata or {})
+    if not is_enabled() or not span_id:
+        return
+    obs = _observations.get(span_id)
+    if obs is None:
+        return
 
-    langfuse_usage = {}
-    if u.get("input_tokens"):
-        langfuse_usage["input"] = u["input_tokens"]
-    if u.get("output_tokens"):
-        langfuse_usage["output"] = u["output_tokens"]
+    meta = dict(metadata or {})
+    meta["status"] = status
 
-    for key in ("total_cost_usd", "duration_ms", "num_turns", "model"):
-        if u.get(key) is not None:
-            m[key] = u[key]
+    usage_details: dict[str, int] = {}
+    if usage is not None:
+        input_t = getattr(usage, "input_tokens", 0) or 0
+        output_t = getattr(usage, "output_tokens", 0) or 0
+        usage_details = {
+            "input": input_t,
+            "output": output_t,
+            "cache_read_input_tokens": getattr(usage, "cache_read_tokens", 0) or 0,
+            "total": input_t + output_t,
+        }
+        meta["total_cost_usd"] = getattr(usage, "total_cost_usd", 0.0) or 0.0
+        meta["duration_ms"] = getattr(usage, "duration_ms", 0.0) or 0.0
+        meta["num_turns"] = getattr(usage, "num_turns", 0) or 0
+        meta["model"] = getattr(usage, "model", None)
 
-    m["status"] = status
-
-    client.span(
-        id=span_id,
-        trace_id=trace_id,
-        end_time=None,
-        metadata=m or None,
+    obs.update(
         output=output,
-        usage=langfuse_usage or None,
+        metadata=meta,
+        usage_details=usage_details or None,
     )
+    obs.end()
+    _observations.pop(span_id, None)
     log.debug("langfuse_span_ended", span_id=span_id, status=status)
 
 
 def end_trace(trace_id: str) -> None:
     """Mark a root trace as finished."""
-    client = _get_client()
-    client.trace(id=trace_id, metadata={"status": "completed"})
+    if not is_enabled() or not trace_id:
+        return
+    obs = _observations.get(trace_id)
+    if obs is not None:
+        obs.update(output={"status": "completed"})
+        obs.end()
+        _observations.pop(trace_id, None)
     log.debug("langfuse_trace_ended", trace_id=trace_id)
 
 
@@ -160,13 +190,20 @@ def ingest_transcript_to_span(
     Tool calls and their results are paired by tool_use_id into single
     span observations.  Returns True if any observations were created.
     """
+    if not is_enabled():
+        return False
+
     transcript_file = _find_transcript(claude_session_id, project_path)
     if transcript_file is None:
         log.debug("langfuse_transcript_not_found", claude_session_id=claude_session_id)
         return False
 
-    client = _get_client()
-    pending_tools: dict[str, str] = {}
+    parent = _observations.get(span_id)
+    if parent is None:
+        log.debug("langfuse_parent_span_not_found", span_id=span_id)
+        return False
+
+    pending_tools: dict[str, Any] = {}
     count = 0
 
     with open(transcript_file) as f:
@@ -195,7 +232,11 @@ def ingest_transcript_to_span(
                         if part.get("type") == "tool_result":
                             tool_use_id = part.get("tool_use_id", "")
                             raw = part.get("content", [])
-                            text = "".join(str(c) for c in raw) if isinstance(raw, list) else str(raw)
+                            text = (
+                                "".join(str(c) for c in raw)
+                                if isinstance(raw, list)
+                                else str(raw)
+                            )
                             tool_results.append({
                                 "tool_use_id": tool_use_id,
                                 "content": text,
@@ -207,30 +248,22 @@ def ingest_transcript_to_span(
                 for tr in tool_results:
                     tool_use_id = tr["tool_use_id"]
                     if tool_use_id in pending_tools:
-                        obs_id = pending_tools.pop(tool_use_id)
-                        client.span(
-                            id=obs_id,
-                            trace_id=trace_id,
-                            output=tr["content"][:4000],
-                            metadata={"is_error": tr["is_error"]},
-                        )
+                        tool_obs = pending_tools.pop(tool_use_id)
+                        tool_obs.update(output=tr["content"][:4000])
+                        tool_obs.end()
                         count += 1
                     else:
-                        client.event(
-                            trace_id=trace_id,
-                            parent_observation_id=span_id,
+                        parent.create_event(
                             name="tool_output",
                             output=tr["content"][:4000],
-                            metadata={"tool_use_id": tool_use_id, "is_error": tr["is_error"]},
+                            metadata={"tool_use_id": tool_use_id},
                         )
                         count += 1
 
                 if not tool_results and text_parts:
                     text = "".join(text_parts)
                     if text.strip():
-                        client.event(
-                            trace_id=trace_id,
-                            parent_observation_id=span_id,
+                        parent.create_event(
                             name="user_message",
                             input=text[:4000],
                         )
@@ -246,9 +279,7 @@ def ingest_transcript_to_span(
                     if ptype == "text":
                         text = part.get("text", "")
                         if text.strip():
-                            client.event(
-                                trace_id=trace_id,
-                                parent_observation_id=span_id,
+                            parent.create_event(
                                 name="assistant_message",
                                 output=text[:4000],
                             )
@@ -257,21 +288,20 @@ def ingest_transcript_to_span(
                         tool_name = part.get("name", "unknown")
                         tool_input = part.get("input", {})
                         tool_use_id = part.get("id", "")
-                        obs = client.span(
-                            trace_id=trace_id,
-                            parent_observation_id=span_id,
+                        tool_obs = parent.start_observation(
                             name=f"tool:{tool_name}",
+                            as_type="tool",
                             input=tool_input,
                         )
                         if tool_use_id:
-                            pending_tools[tool_use_id] = obs.id
+                            pending_tools[tool_use_id] = tool_obs
+                        else:
+                            tool_obs.end()
                         count += 1
                     elif ptype == "thinking":
                         text = part.get("thinking", "")
                         if text.strip():
-                            client.event(
-                                trace_id=trace_id,
-                                parent_observation_id=span_id,
+                            parent.create_event(
                                 name="thinking",
                                 metadata={"thinking": text[:4000]},
                             )
@@ -288,27 +318,19 @@ def ingest_transcript_to_span(
                         text += part
                 if text.strip():
                     if tool_use_id and tool_use_id in pending_tools:
-                        obs_id = pending_tools.pop(tool_use_id)
-                        client.span(
-                            id=obs_id,
-                            trace_id=trace_id,
-                            output=text[:4000],
-                        )
+                        tool_obs = pending_tools.pop(tool_use_id)
+                        tool_obs.update(output=text[:4000])
+                        tool_obs.end()
                     else:
-                        client.event(
-                            trace_id=trace_id,
-                            parent_observation_id=span_id,
+                        parent.create_event(
                             name="tool_output",
                             output=text[:4000],
                         )
                     count += 1
 
-    for orphan_id in pending_tools.values():
-        client.span(
-            id=orphan_id,
-            trace_id=trace_id,
-            metadata={"status": "no_result"},
-        )
+    for tool_obs in pending_tools.values():
+        tool_obs.update(metadata={"status": "no_result"})
+        tool_obs.end()
 
     log.debug("langfuse_transcript_ingested", count=count, session=claude_session_id)
     return count > 0
