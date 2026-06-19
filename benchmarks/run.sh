@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# benchmarks/run.sh — Unified entry point for all benchmark runners.
+# benchmarks/run.sh — Unified entry point for all benchmark runners. — Unified entry point for all benchmark runners.
 #
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve]
 #
