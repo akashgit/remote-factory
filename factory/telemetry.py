@@ -46,6 +46,48 @@ def _get_client() -> Any:
     return _client
 
 
+def _update_trace_via_api(
+    trace_id: str,
+    name: str,
+    input_data: object | None = None,
+) -> None:
+    """Set trace name and input via the Langfuse ingestion API.
+
+    The v4 Python SDK doesn't expose trace-level name/input directly,
+    so we use the public ingestion batch endpoint.
+    """
+    import urllib.request
+    from datetime import datetime, timezone
+
+    host = os.environ.get("LANGFUSE_HOST", "")
+    pub_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
+    sec_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
+    if not host or not pub_key:
+        return
+    try:
+        import base64
+        auth = base64.b64encode(f"{pub_key}:{sec_key}".encode()).decode()
+        body = {
+            "batch": [{
+                "id": f"trace-name-{trace_id[:8]}",
+                "type": "trace-create",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "body": {"id": trace_id, "name": name},
+            }],
+        }
+        if input_data is not None:
+            body["batch"][0]["body"]["input"] = input_data
+        req = urllib.request.Request(
+            f"{host}/api/public/ingestion",
+            data=json.dumps(body).encode(),
+            headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        log.debug("langfuse_trace_update_failed", trace_id=trace_id, exc_info=True)
+
+
 def begin_trace(
     project_name: str,
     cycle_id: str | None = None,
@@ -64,7 +106,7 @@ def begin_trace(
         metadata={"model": model, "project": project_name},
     )
     _observations[obs.id] = obs
-    client.flush()
+    _update_trace_via_api(obs.trace_id, trace_name, trace_input)
     log.debug("langfuse_trace_started", trace_id=obs.trace_id, span_id=obs.id)
     return (obs.trace_id, obs.id)
 
