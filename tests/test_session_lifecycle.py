@@ -1,90 +1,60 @@
-"""Tests for CEO session lifecycle — begin/complete cycle sessions with child linking."""
+"""Tests for CEO cycle lifecycle — begin/complete traces and agent spans via telemetry."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from factory.agents.runner import begin_cycle_session, complete_cycle_session
 from factory.models import AgentRunResult, AgentUsage
-from factory.sessions import get_children, get_session, get_sessions
 
 
-def test_begin_cycle_session_creates_root(tmp_path: Path) -> None:
-    sid = begin_cycle_session(tmp_path, cycle_id="improve-2026-06-18")
-
-    session = get_session(tmp_path, sid)
-    assert session is not None
-    assert session["agent_role"] == "ceo"
-    assert session["kind"] == "default"
-    assert session["title"] == "improve-2026-06-18"
-    assert session["status"] == "running"
-    assert session["root_id"] == sid
-
-
-def test_begin_cycle_session_without_cycle_id(tmp_path: Path) -> None:
-    sid = begin_cycle_session(tmp_path)
-
-    session = get_session(tmp_path, sid)
-    assert session is not None
-    assert session["title"] is None
-    assert session["agent_role"] == "ceo"
+@pytest.fixture
+def _mock_telemetry():
+    """Patch telemetry module to return predictable IDs."""
+    with patch("factory.telemetry.is_enabled", return_value=True), \
+         patch("factory.telemetry.begin_trace", return_value="trace-001"), \
+         patch("factory.telemetry.begin_span", return_value="span-001"), \
+         patch("factory.telemetry.end_span") as mock_end_span, \
+         patch("factory.telemetry.end_trace") as mock_end_trace, \
+         patch("factory.telemetry.flush") as mock_flush, \
+         patch("factory.telemetry.ingest_transcript_to_span", return_value=True) as mock_ingest:
+        yield {
+            "end_span": mock_end_span,
+            "end_trace": mock_end_trace,
+            "flush": mock_flush,
+            "ingest": mock_ingest,
+        }
 
 
-def test_begin_cycle_session_with_model(tmp_path: Path) -> None:
-    sid = begin_cycle_session(tmp_path, model="claude-opus-4-6")
-
-    session = get_session(tmp_path, sid)
-    assert session is not None
-    assert session["model"] == "claude-opus-4-6"
+def test_begin_cycle_session_returns_trace_id(tmp_path: Path, _mock_telemetry) -> None:
+    trace_id = begin_cycle_session(tmp_path, cycle_id="improve-2026-06-18")
+    assert trace_id == "trace-001"
 
 
-def test_complete_cycle_session_aggregates_children(tmp_path: Path) -> None:
-    from factory.sessions import begin_session, complete_session
-
-    root_id = begin_cycle_session(tmp_path, cycle_id="test-cycle")
-
-    child1 = begin_session(tmp_path, "researcher", parent_id=root_id, root_id=root_id)
-    usage1 = AgentUsage(
-        input_tokens=100, output_tokens=50, total_cost_usd=0.05, duration_ms=1000.0,
-    )
-    complete_session(tmp_path, child1, usage=usage1)
-
-    child2 = begin_session(tmp_path, "builder", parent_id=root_id, root_id=root_id)
-    usage2 = AgentUsage(
-        input_tokens=200, output_tokens=100, total_cost_usd=0.10, duration_ms=2000.0,
-    )
-    complete_session(tmp_path, child2, usage=usage2)
-
-    complete_cycle_session(tmp_path, root_id)
-
-    session = get_session(tmp_path, root_id)
-    assert session is not None
-    assert session["status"] == "completed"
-    assert session["total_cost_usd"] == pytest.approx(0.15)
-    assert session["input_tokens"] == 300
-    assert session["output_tokens"] == 150
-    assert session["duration_ms"] == pytest.approx(3000.0)
+def test_begin_cycle_session_returns_none_when_disabled(tmp_path: Path) -> None:
+    with patch("factory.telemetry.is_enabled", return_value=False):
+        trace_id = begin_cycle_session(tmp_path, cycle_id="test")
+    assert trace_id is None
 
 
-def test_complete_cycle_session_no_children(tmp_path: Path) -> None:
-    root_id = begin_cycle_session(tmp_path)
-
-    complete_cycle_session(tmp_path, root_id)
-
-    session = get_session(tmp_path, root_id)
-    assert session is not None
-    assert session["status"] == "completed"
-    assert session["total_cost_usd"] == 0.0
-    assert session["input_tokens"] == 0
+def test_complete_cycle_session_calls_end_trace_and_flush(tmp_path: Path, _mock_telemetry) -> None:
+    complete_cycle_session(tmp_path, "trace-001")
+    _mock_telemetry["end_trace"].assert_called_once_with("trace-001")
+    _mock_telemetry["flush"].assert_called_once()
 
 
-async def test_invoke_agent_links_to_parent(tmp_path: Path) -> None:
-    """invoke_agent with parent_session_id creates a child session linked to the root."""
-    root_id = begin_cycle_session(tmp_path, cycle_id="e2e-test")
+def test_complete_cycle_session_noop_when_none(tmp_path: Path, _mock_telemetry) -> None:
+    complete_cycle_session(tmp_path, None)
+    _mock_telemetry["end_trace"].assert_not_called()
+    _mock_telemetry["flush"].assert_not_called()
 
+
+async def test_invoke_agent_creates_span_and_threads_env(tmp_path: Path, _mock_telemetry) -> None:
+    """invoke_agent creates a span and sets FACTORY_PARENT_SPAN_ID for child processes."""
     mock_result = AgentRunResult(
         stdout="Task completed",
         return_code=0,
@@ -96,149 +66,78 @@ async def test_invoke_agent_links_to_parent(tmp_path: Path) -> None:
         metadata={
             "session_id": "claude-abc123",
             "stop_reason": "end_turn",
-            "terminal_reason": "end_turn",
         },
     )
-
-    mock_runner = AsyncMock()
-    mock_runner.headless = AsyncMock(return_value=mock_result)
-
-    with patch("factory.agents.runner.resolve_prompt", return_value="test prompt"), \
-         patch("factory.agents.runner.get_runner", return_value=mock_runner):
-        from factory.agents.runner import invoke_agent
-
-        (_PROMPTS_DIR := tmp_path / ".factory" / "agents").mkdir(parents=True, exist_ok=True)
-
-        stdout, code = await invoke_agent(
-            "builder",
-            "Build something",
-            tmp_path,
-            parent_session_id=root_id,
-        )
-
-    assert code == 0
-    assert stdout == "Task completed"
-
-    children = get_children(tmp_path, root_id)
-    assert len(children) == 1
-    assert children[0]["agent_role"] == "builder"
-    assert children[0]["parent_id"] == root_id
-
-    child_session = get_session(tmp_path, children[0]["id"])
-    assert child_session is not None
-    assert child_session["status"] == "completed"
-    assert child_session["input_tokens"] == 500
-    assert child_session["output_tokens"] == 200
-    assert child_session["total_cost_usd"] == pytest.approx(0.08)
-    assert child_session["claude_session_id"] == "claude-abc123"
-
-    complete_cycle_session(tmp_path, root_id)
-    root = get_session(tmp_path, root_id)
-    assert root is not None
-    assert root["status"] == "completed"
-    assert root["total_cost_usd"] == pytest.approx(0.08)
-    assert root["input_tokens"] == 500
-
-
-def test_sessions_filter_by_cycle(tmp_path: Path) -> None:
-    """get_sessions with cycle_id returns only sessions in that cycle."""
-    from factory.sessions import begin_session
-
-    root1 = begin_cycle_session(tmp_path, cycle_id="cycle-1")
-    begin_session(tmp_path, "builder", parent_id=root1, root_id=root1)
-
-    root2 = begin_cycle_session(tmp_path, cycle_id="cycle-2")
-    begin_session(tmp_path, "researcher", parent_id=root2, root_id=root2)
-
-    cycle1_sessions = get_sessions(tmp_path, cycle_id=root1)
-    assert len(cycle1_sessions) == 2
-    roles = {s["agent_role"] for s in cycle1_sessions}
-    assert roles == {"ceo", "builder"}
-
-    cycle2_sessions = get_sessions(tmp_path, cycle_id=root2)
-    assert len(cycle2_sessions) == 2
-    roles = {s["agent_role"] for s in cycle2_sessions}
-    assert roles == {"ceo", "researcher"}
-
-
-def test_standalone_session_backward_compat(tmp_path: Path) -> None:
-    """Sessions created without parent_session_id are standalone (backward compat)."""
-    from factory.sessions import begin_session
-
-    sid = begin_session(tmp_path, "builder")
-    session = get_session(tmp_path, sid)
-    assert session is not None
-    assert session["kind"] == "default"
-    assert session["parent_id"] is None
-    assert session["root_id"] == sid
-
-
-async def test_invoke_agent_threads_env_var(tmp_path: Path) -> None:
-    """invoke_agent sets FACTORY_PARENT_SESSION_ID in env for subprocess."""
-    import os
-
-    root_id = begin_cycle_session(tmp_path, cycle_id="env-test")
 
     captured_env: dict[str, str | None] = {}
 
     async def mock_headless(request):
-        captured_env["FACTORY_PARENT_SESSION_ID"] = os.environ.get("FACTORY_PARENT_SESSION_ID")
-        return AgentRunResult(
-            stdout="done",
-            return_code=0,
-            usage=AgentUsage(input_tokens=10, output_tokens=5, total_cost_usd=0.01, duration_ms=100.0),
-            metadata={},
-        )
+        captured_env["FACTORY_PARENT_SPAN_ID"] = os.environ.get("FACTORY_PARENT_SPAN_ID")
+        captured_env["FACTORY_TRACE_ID"] = os.environ.get("FACTORY_TRACE_ID")
+        return mock_result
 
     mock_runner = AsyncMock()
     mock_runner.headless = mock_headless
 
-    old_env = os.environ.pop("FACTORY_PARENT_SESSION_ID", None)
+    old_trace = os.environ.get("FACTORY_TRACE_ID")
+    old_span = os.environ.get("FACTORY_PARENT_SPAN_ID")
+    os.environ["FACTORY_TRACE_ID"] = "trace-001"
+    os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
     try:
-        with patch("factory.agents.runner.resolve_prompt", return_value="test"), \
+        with patch("factory.agents.runner.resolve_prompt", return_value="test prompt"), \
              patch("factory.agents.runner.get_runner", return_value=mock_runner):
             from factory.agents.runner import invoke_agent
 
-            await invoke_agent("builder", "do stuff", tmp_path, parent_session_id=root_id)
-
-        assert captured_env.get("FACTORY_PARENT_SESSION_ID") is not None
-        assert captured_env["FACTORY_PARENT_SESSION_ID"].startswith("sess_")
-        assert "FACTORY_PARENT_SESSION_ID" not in os.environ
+            stdout, code = await invoke_agent(
+                "builder",
+                "Build something",
+                tmp_path,
+            )
     finally:
-        if old_env is not None:
-            os.environ["FACTORY_PARENT_SESSION_ID"] = old_env
-
-
-async def test_invoke_agent_reads_env_var_fallback(tmp_path: Path) -> None:
-    """invoke_agent reads FACTORY_PARENT_SESSION_ID from env when parent_session_id is None."""
-    import os
-
-    root_id = begin_cycle_session(tmp_path, cycle_id="fallback-test")
-
-    mock_result = AgentRunResult(
-        stdout="done",
-        return_code=0,
-        usage=AgentUsage(input_tokens=10, output_tokens=5, total_cost_usd=0.01, duration_ms=100.0),
-        metadata={},
-    )
-    mock_runner = AsyncMock()
-    mock_runner.headless = AsyncMock(return_value=mock_result)
-
-    old_env = os.environ.get("FACTORY_PARENT_SESSION_ID")
-    os.environ["FACTORY_PARENT_SESSION_ID"] = root_id
-    try:
-        with patch("factory.agents.runner.resolve_prompt", return_value="test"), \
-             patch("factory.agents.runner.get_runner", return_value=mock_runner):
-            from factory.agents.runner import invoke_agent
-
-            await invoke_agent("researcher", "research stuff", tmp_path)
-
-        children = get_children(tmp_path, root_id)
-        assert len(children) == 1
-        assert children[0]["agent_role"] == "researcher"
-        assert children[0]["parent_id"] == root_id
-    finally:
-        if old_env is not None:
-            os.environ["FACTORY_PARENT_SESSION_ID"] = old_env
+        if old_trace is not None:
+            os.environ["FACTORY_TRACE_ID"] = old_trace
         else:
-            os.environ.pop("FACTORY_PARENT_SESSION_ID", None)
+            os.environ.pop("FACTORY_TRACE_ID", None)
+        if old_span is not None:
+            os.environ["FACTORY_PARENT_SPAN_ID"] = old_span
+        else:
+            os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
+
+    assert code == 0
+    assert stdout == "Task completed"
+    assert captured_env["FACTORY_PARENT_SPAN_ID"] == "span-001"
+    assert captured_env["FACTORY_TRACE_ID"] == "trace-001"
+
+    _mock_telemetry["ingest"].assert_called_once_with(
+        "trace-001", "span-001", "claude-abc123", tmp_path,
+    )
+    _mock_telemetry["end_span"].assert_called_once()
+
+
+async def test_invoke_agent_restores_env_on_failure(tmp_path: Path, _mock_telemetry) -> None:
+    """FACTORY_PARENT_SPAN_ID is restored even when the agent fails."""
+    mock_runner = AsyncMock()
+    mock_runner.headless = AsyncMock(side_effect=RuntimeError("boom"))
+
+    old_trace = os.environ.get("FACTORY_TRACE_ID")
+    old_span = os.environ.get("FACTORY_PARENT_SPAN_ID")
+    os.environ["FACTORY_TRACE_ID"] = "trace-002"
+    os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
+    try:
+        with patch("factory.agents.runner.resolve_prompt", return_value="test"), \
+             patch("factory.agents.runner.get_runner", return_value=mock_runner):
+            from factory.agents.runner import invoke_agent
+
+            stdout, code = await invoke_agent("builder", "fail", tmp_path, _track_failures=False)
+
+        assert code == 1
+        assert "FACTORY_PARENT_SPAN_ID" not in os.environ
+    finally:
+        if old_trace is not None:
+            os.environ["FACTORY_TRACE_ID"] = old_trace
+        else:
+            os.environ.pop("FACTORY_TRACE_ID", None)
+        if old_span is not None:
+            os.environ["FACTORY_PARENT_SPAN_ID"] = old_span
+        else:
+            os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
