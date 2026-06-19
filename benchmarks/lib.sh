@@ -123,3 +123,4 @@ setup_vertex_env() {
         export CLOUD_ML_REGION="${CLOUD_ML_REGION:-global}"
     fi
 }
+
