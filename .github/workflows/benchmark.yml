@@ -22,9 +22,17 @@ on:
         required: false
         default: '1800'
         type: string
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'factory/**'
+      - 'benchmarks/**'
+  release:
+    types: [created]
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   id-token: write
 
 jobs:
@@ -37,13 +45,13 @@ jobs:
         include:
           - benchmark: swebench
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ inputs.benchmark == 'swebench' || inputs.benchmark == 'all' }}
+            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all' }}
           - benchmark: featurebench
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ inputs.benchmark == 'featurebench' || inputs.benchmark == 'all' }}
+            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all' }}
           - benchmark: terminalbench
             default_instance: 'fix-git'
-            enabled: ${{ inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
+            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
     if: true
 
     steps:
@@ -88,10 +96,20 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: |
           INSTANCE="${{ inputs.instance_id }}"
-          if [ "$INSTANCE" = "auto" ]; then
+          if [ "$INSTANCE" = "auto" ] || [ -z "$INSTANCE" ]; then
             INSTANCE="${{ matrix.default_instance }}"
           fi
           echo "instance=$INSTANCE" >> "$GITHUB_OUTPUT"
+
+      - name: Determine timeout
+        id: timeout
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
+            echo 'value=${{ inputs.timeout }}' >> $GITHUB_OUTPUT
+          else
+            echo 'value=600' >> $GITHUB_OUTPUT
+          fi
 
       - name: Run ${{ matrix.benchmark }} benchmark
         if: steps.gate.outputs.run == 'true'
@@ -107,7 +125,7 @@ jobs:
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
-          benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ inputs.timeout }}
+          benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }}
 
       - name: Upload results
         uses: actions/upload-artifact@v4
@@ -127,3 +145,67 @@ jobs:
               echo '```' >> $GITHUB_STEP_SUMMARY
             fi
           done
+
+      - name: Post PR comment
+        if: always() && github.event_name == 'pull_request' && steps.gate.outputs.run == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let body = '## Benchmark Results: ${{ matrix.benchmark }}\n\n';
+
+            const files = fs.readdirSync('benchmarks/results/');
+            for (const file of files) {
+              if (file.endsWith('.json')) {
+                const data = JSON.parse(fs.readFileSync('benchmarks/results/' + file, 'utf8'));
+                const status = data.resolved ? '✅ RESOLVED' : '❌ NOT RESOLVED';
+                body += '| Field | Value |\n|---|---|\n';
+                body += '| Benchmark | ' + data.benchmark + ' |\n';
+                body += '| Instance | `' + data.instance_id + '` |\n';
+                body += '| Result | ' + status + ' |\n';
+                body += '| Score | ' + data.score + ' |\n';
+                body += '| Duration | ' + data.duration_seconds + 's |\n\n';
+                body += '<details><summary>Full JSON</summary>\n\n```json\n' + JSON.stringify(data, null, 2) + '\n```\n</details>\n';
+              }
+            }
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Update release notes
+        if: always() && github.event_name == 'release' && steps.gate.outputs.run == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            let benchmarkSection = '\n\n## Benchmark Results\n\n';
+            benchmarkSection += '| Benchmark | Instance | Result | Score | Duration |\n';
+            benchmarkSection += '|-----------|----------|--------|-------|----------|\n';
+
+            const files = fs.readdirSync('benchmarks/results/');
+            for (const file of files) {
+              if (file.endsWith('.json')) {
+                const data = JSON.parse(fs.readFileSync('benchmarks/results/' + file, 'utf8'));
+                const status = data.resolved ? '✅' : '❌';
+                benchmarkSection += '| ' + data.benchmark + ' | `' + data.instance_id + '` | ' + status + ' | ' + data.score + ' | ' + data.duration_seconds + 's |\n';
+              }
+            }
+
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id
+            });
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: context.payload.release.id,
+              body: (release.data.body || '') + benchmarkSection
+            });
