@@ -13,7 +13,6 @@ log = structlog.get_logger()
 
 try:
     from langfuse import Langfuse
-    from langfuse._client.attributes import LangfuseOtelSpanAttributes
     from langfuse.types import TraceContext
 
     _HAS_LANGFUSE = True
@@ -64,12 +63,6 @@ def begin_trace(
         input={"project": project_name, "cycle_id": cycle_id},
         metadata={"model": model, "project": project_name},
     )
-    try:
-        obs._otel_span.set_attributes({
-            LangfuseOtelSpanAttributes.TRACE_NAME: trace_name,
-        })
-    except Exception:
-        pass
     _observations[obs.id] = obs
     log.debug("langfuse_trace_started", trace_id=obs.trace_id, span_id=obs.id)
     return (obs.trace_id, obs.id)
