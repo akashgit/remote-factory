@@ -1,0 +1,184 @@
+# LangFuse Local Development Configuration
+# Optimized for local development with Podman/Docker
+#
+# Usage (from project root):
+#   scripts/langfuse start     - Start LangFuse
+#   scripts/langfuse stop      - Stop LangFuse
+#   scripts/langfuse reset     - Full reset (wipes data, restarts)
+#
+# Web UI: http://localhost:3000
+# Default credentials: dev@localhost.local / devpassword123
+#
+# Custom credentials via environment variables:
+#   LANGFUSE_USERNAME     - Login email (default: dev@localhost.local)
+#   LANGFUSE_PASSWORD     - Login password (default: devpassword123)
+#   LANGFUSE_SECRET_KEY   - API secret key (default: sk-lf-dev-local-key)
+#   LANGFUSE_PUBLIC_KEY   - API public key (default: pk-lf-dev-local-key)
+#
+# Port configuration:
+#   LANGFUSE_MINIO_PORT   - MinIO S3 API port (default: 9010)
+#                           Changed from 9090 to avoid conflict with Cockpit on RHEL/Fedora
+
+services:
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3.147.0
+    restart: unless-stopped
+    depends_on: &langfuse-depends-on
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3030:3030"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$(hostname -i):3030/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      SALT: langfuse-dev-salt-do-not-use-in-prod
+      ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      TELEMETRY_ENABLED: "false"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "true"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:${LANGFUSE_MINIO_PORT:-9010}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_AUTH: redisdevpassword
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3.147.0
+    restart: unless-stopped
+    depends_on: *langfuse-depends-on
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://$(hostname -i):3000/api/public/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: langfuse-nextauth-secret-for-dev
+      # Auto-initialize organization, project, and user for development
+      # These can be overridden via environment variables (see header comments)
+      LANGFUSE_INIT_ORG_ID: dev-org
+      LANGFUSE_INIT_ORG_NAME: Development Organization
+      LANGFUSE_INIT_PROJECT_ID: dev-project
+      LANGFUSE_INIT_PROJECT_NAME: Red Hat Agents Development
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-pk-lf-dev-local-key}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-sk-lf-dev-local-key}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_USERNAME:-dev@localhost.local}
+      LANGFUSE_INIT_USER_NAME: Developer
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_PASSWORD:-devpassword123}
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:26.1.2.11
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ./clickhouse-disable-logs.xml:/etc/clickhouse-server/config.d/disable-logs.xml:ro
+    ports:
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:e3f3dae77e33e315e56da348d614832c226cd3a8a9600e0b6eb65c083ec5f666
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "${LANGFUSE_MINIO_PORT:-9010}:9000"
+      - "127.0.0.1:9091:9001"
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  redis:
+    image: docker.io/redis:7.4.7
+    restart: unless-stopped
+    command: >
+      --requirepass redisdevpassword
+      --maxmemory-policy noeviction
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redisdevpassword", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres:17.8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
+  langfuse_clickhouse_data:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_minio_data:
+    driver: local
+

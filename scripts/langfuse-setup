@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Start/stop local Langfuse for factory telemetry development.
+#
+# Usage:
+#   scripts/langfuse-setup start   — start Langfuse (docker compose up -d)
+#   scripts/langfuse-setup stop    — stop Langfuse
+#   scripts/langfuse-setup status  — show status and credentials
+#
+# Web UI: http://localhost:3000
+# Login:  dev@localhost.local / devpassword123
+#
+# Factory env vars (add to shell or .env):
+#   export LANGFUSE_HOST=http://localhost:3000
+#   export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+#   export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+COMPOSE_FILE="$SCRIPT_DIR/infra/langfuse/docker-compose.yml"
+
+compose_cmd() {
+    if command -v docker-compose &>/dev/null; then
+        docker-compose -f "$COMPOSE_FILE" "$@"
+    elif docker compose version &>/dev/null 2>&1; then
+        docker compose -f "$COMPOSE_FILE" "$@"
+    elif command -v podman-compose &>/dev/null; then
+        podman-compose -f "$COMPOSE_FILE" "$@"
+    else
+        echo "Error: docker-compose, docker compose, or podman-compose required"
+        exit 1
+    fi
+}
+
+case "${1:-status}" in
+    start)
+        echo "Starting Langfuse..."
+        compose_cmd up -d
+        echo ""
+        echo "Langfuse starting at http://localhost:3000"
+        echo "Login: dev@localhost.local / devpassword123"
+        echo ""
+        echo "Set these env vars for factory telemetry:"
+        echo "  export LANGFUSE_HOST=http://localhost:3000"
+        echo "  export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key"
+        echo "  export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key"
+        ;;
+    stop)
+        echo "Stopping Langfuse..."
+        compose_cmd down
+        ;;
+    status)
+        echo "=== Langfuse Status ==="
+        compose_cmd ps 2>/dev/null || echo "Not running"
+        echo ""
+        echo "Web UI: http://localhost:3000"
+        echo "Login:  dev@localhost.local / devpassword123"
+        echo ""
+        echo "Factory env vars:"
+        echo "  LANGFUSE_HOST=http://localhost:3000"
+        echo "  LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key"
+        echo "  LANGFUSE_SECRET_KEY=sk-lf-dev-local-key"
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|status}"
+        exit 1
+        ;;
+esac
