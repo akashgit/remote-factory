@@ -83,28 +83,34 @@ A real factory agent run should produce multiple observations:
 If the trace has an `agent:ceo` span, specialist spans (agent:researcher, agent:builder, etc.) must be children of the CEO span — NOT siblings at the root level.
 - FAIL if specialist spans are at root level when a CEO span exists
 
-### Check 12: Transcript Equivalence (Apple-to-Apple)
-For each agent span, find its Claude Code JSONL transcript file and count items independently:
+### Check 12: Content Equivalence (Apple-to-Apple)
+Run the SAME agent task through BOTH the SQLite system (PR #569 branch) and the Langfuse system (this branch). Then compare the ACTUAL CONTENT captured by each:
 
-```bash
-# Find transcript: ~/.claude/projects/<project-hash>/<claude_session_id>.jsonl
-# The claude_session_id is in the span metadata (uuid or session_id field)
-```
+**Methodology:**
+1. Run `factory agent researcher --task "<task>" --project <path>` on the SQLite branch
+2. Run the exact same command on the Langfuse branch with LANGFUSE env vars set
+3. Extract all items from SQLite (session_items table)
+4. Extract all observations from Langfuse (via API)
+5. Normalize both to a common format and compare CONTENT, not just counts
 
-Count items in the transcript using the SQLite parser logic:
-- `user` items with `tool_result` content → count as tool_outputs
-- `user` items with text content → count as messages  
-- `assistant` items with `text` content → count as messages
-- `assistant` items with `tool_use` content → count as tool_calls
-- `assistant` items with `thinking` content → count as thinking
+**What to compare (unordered — Langfuse batching changes order):**
+- Every user message text in SQLite must appear in a Langfuse `user_message` event input
+- Every assistant message text in SQLite must appear in a Langfuse `assistant_message` event output
+- Every tool call in SQLite (tool name + input params) must appear in a Langfuse TOOL observation with matching input
+- Every tool output in SQLite must appear as the output of the matching Langfuse TOOL observation
+- Every thinking block in SQLite must appear in a Langfuse `thinking` event output
+- Session metadata must match: input_tokens, output_tokens, stop_reason
 
-Expected Langfuse observations = messages + tool_calls + thinking (tool_call and tool_output pair into one TOOL observation).
+**Content matching rules:**
+- Compare first 50 chars of text content for messages (exact substring match)
+- Compare tool names exactly
+- Compare tool input JSON (key fields like command, file_path)
+- Compare tool output (first 30 chars substring match)
+- FAIL if any message/tool/thinking in SQLite is missing from Langfuse
+- FAIL if metadata values differ (tokens, stop_reason)
 
-Compare:
-- Langfuse EVENT count should equal messages + thinking from transcript
-- Langfuse TOOL count should equal tool_calls from transcript
-- FAIL if Langfuse has fewer observations than expected from the transcript
-- FAIL if Langfuse TOOL count doesn't match tool_call count from transcript
+**Note on structural difference:**
+SQLite stores tool_call and tool_output as SEPARATE items. Langfuse pairs them into a single TOOL observation with input AND output. This is expected and correct — do NOT fail on this difference. Compare the content, not the structure.
 
 ## Output Format
 
