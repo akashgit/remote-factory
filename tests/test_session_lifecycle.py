@@ -13,11 +13,13 @@ from factory.models import AgentRunResult, AgentUsage
 
 
 @pytest.fixture
-def _mock_telemetry():
+def _mock_telemetry(monkeypatch):
     """Patch telemetry module to return predictable IDs."""
+    monkeypatch.delenv("FACTORY_TRACE_ID", raising=False)
+    monkeypatch.delenv("FACTORY_PARENT_SPAN_ID", raising=False)
     with patch("factory.telemetry.is_enabled", return_value=True), \
-         patch("factory.telemetry.begin_trace", return_value="trace-001"), \
-         patch("factory.telemetry.begin_span", return_value="span-001"), \
+         patch("factory.telemetry.begin_trace", return_value=("trace-001", "span-001")), \
+         patch("factory.telemetry.begin_span", return_value="span-002"), \
          patch("factory.telemetry.end_span") as mock_end_span, \
          patch("factory.telemetry.end_trace") as mock_end_trace, \
          patch("factory.telemetry.flush") as mock_flush, \
@@ -30,9 +32,9 @@ def _mock_telemetry():
         }
 
 
-def test_begin_cycle_session_returns_trace_id(tmp_path: Path, _mock_telemetry) -> None:
-    trace_id = begin_cycle_session(tmp_path, cycle_id="improve-2026-06-18")
-    assert trace_id == "trace-001"
+def test_begin_cycle_session_returns_span_id(tmp_path: Path, _mock_telemetry) -> None:
+    span_id = begin_cycle_session(tmp_path, cycle_id="improve-2026-06-18")
+    assert span_id == "span-001"
 
 
 def test_begin_cycle_session_returns_none_when_disabled(tmp_path: Path) -> None:
@@ -41,9 +43,12 @@ def test_begin_cycle_session_returns_none_when_disabled(tmp_path: Path) -> None:
     assert trace_id is None
 
 
-def test_complete_cycle_session_calls_end_trace_and_flush(tmp_path: Path, _mock_telemetry) -> None:
-    complete_cycle_session(tmp_path, "trace-001")
-    _mock_telemetry["end_trace"].assert_called_once_with("trace-001")
+def test_complete_cycle_session_calls_end_trace_and_flush(
+    tmp_path: Path, _mock_telemetry, monkeypatch,
+) -> None:
+    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    complete_cycle_session(tmp_path, "span-001")
+    _mock_telemetry["end_trace"].assert_called_once_with("trace-001", span_id="span-001")
     _mock_telemetry["flush"].assert_called_once()
 
 
@@ -105,11 +110,11 @@ async def test_invoke_agent_creates_span_and_threads_env(tmp_path: Path, _mock_t
 
     assert code == 0
     assert stdout == "Task completed"
-    assert captured_env["FACTORY_PARENT_SPAN_ID"] == "span-001"
+    assert captured_env["FACTORY_PARENT_SPAN_ID"] == "span-002"
     assert captured_env["FACTORY_TRACE_ID"] == "trace-001"
 
     _mock_telemetry["ingest"].assert_called_once_with(
-        "trace-001", "span-001", "claude-abc123", tmp_path,
+        "trace-001", "span-002", "claude-abc123", tmp_path,
     )
     _mock_telemetry["end_span"].assert_called_once()
 

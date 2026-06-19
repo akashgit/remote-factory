@@ -16,9 +16,17 @@ import factory.telemetry as telemetry_mod
 def _reset_telemetry():
     """Reset telemetry module state between tests."""
     old_client = telemetry_mod._client
+    old_obs = telemetry_mod._observations.copy()
+    old_names = telemetry_mod._trace_names.copy()
     telemetry_mod._client = None
+    telemetry_mod._observations.clear()
+    telemetry_mod._trace_names.clear()
     yield
     telemetry_mod._client = old_client
+    telemetry_mod._observations.clear()
+    telemetry_mod._observations.update(old_obs)
+    telemetry_mod._trace_names.clear()
+    telemetry_mod._trace_names.update(old_names)
 
 
 class TestIsEnabled:
@@ -46,74 +54,89 @@ class TestIsEnabled:
 
 
 class TestBeginTrace:
-    def test_creates_trace_and_returns_id(self) -> None:
+    def test_creates_trace_and_returns_tuple(self) -> None:
         mock_client = MagicMock()
-        mock_trace = MagicMock()
-        mock_trace.id = "trace-abc"
-        mock_client.trace.return_value = mock_trace
+        mock_obs = MagicMock()
+        mock_obs.id = "span-abc"
+        mock_obs.trace_id = "trace-abc"
+        mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        result = telemetry_mod.begin_trace("my-project", "cycle-1", model="opus")
-        assert result == "trace-abc"
-        mock_client.trace.assert_called_once_with(
-            name="factory:my-project",
-            session_id="cycle-1",
-            metadata={"model": "opus"},
+        with patch.object(telemetry_mod, "_update_trace_via_api"):
+            result = telemetry_mod.begin_trace("my-project", "cycle-1", model="opus")
+
+        assert result == ("trace-abc", "span-abc")
+        mock_client.start_observation.assert_called_once_with(
+            name="factory:my-project/cycle-1",
+            as_type="span",
+            input={"project": "my-project", "cycle_id": "cycle-1"},
+            metadata={"model": "opus", "project": "my-project"},
         )
 
-    def test_no_metadata_when_no_model(self) -> None:
+    def test_metadata_includes_none_model_when_omitted(self) -> None:
         mock_client = MagicMock()
-        mock_trace = MagicMock()
-        mock_trace.id = "trace-xyz"
-        mock_client.trace.return_value = mock_trace
+        mock_obs = MagicMock()
+        mock_obs.id = "span-xyz"
+        mock_obs.trace_id = "trace-xyz"
+        mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        telemetry_mod.begin_trace("proj", "c1")
-        mock_client.trace.assert_called_once_with(
-            name="factory:proj",
-            session_id="c1",
-            metadata=None,
+        with patch.object(telemetry_mod, "_update_trace_via_api"):
+            telemetry_mod.begin_trace("proj", "c1")
+
+        mock_client.start_observation.assert_called_once_with(
+            name="factory:proj/c1",
+            as_type="span",
+            input={"project": "proj", "cycle_id": "c1"},
+            metadata={"model": None, "project": "proj"},
         )
 
 
 class TestBeginSpan:
     def test_creates_span_with_parent(self) -> None:
         mock_client = MagicMock()
-        mock_span = MagicMock()
-        mock_span.id = "span-123"
-        mock_client.span.return_value = mock_span
+        mock_parent = MagicMock()
+        mock_child = MagicMock()
+        mock_child.id = "span-123"
+        mock_child.trace_id = "trace-1"
+        mock_parent.start_observation.return_value = mock_child
         telemetry_mod._client = mock_client
+        telemetry_mod._observations["parent-span"] = mock_parent
 
         result = telemetry_mod.begin_span("trace-1", "parent-span", "builder", model="sonnet")
         assert result == "span-123"
-        mock_client.span.assert_called_once_with(
-            trace_id="trace-1",
-            parent_observation_id="parent-span",
+        mock_parent.start_observation.assert_called_once_with(
             name="agent:builder",
-            metadata={"model": "sonnet"},
+            as_type="span",
+            input=None,
+            metadata={"role": "builder", "model": "sonnet"},
         )
 
     def test_creates_span_without_parent(self) -> None:
         mock_client = MagicMock()
-        mock_span = MagicMock()
-        mock_span.id = "span-456"
-        mock_client.span.return_value = mock_span
+        mock_obs = MagicMock()
+        mock_obs.id = "span-456"
+        mock_obs.trace_id = "trace-1"
+        mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
         result = telemetry_mod.begin_span("trace-1", None, "researcher")
         assert result == "span-456"
-        mock_client.span.assert_called_once_with(
-            trace_id="trace-1",
-            parent_observation_id=None,
+        mock_client.start_observation.assert_called_once_with(
+            trace_context={"trace_id": "trace-1"},
             name="agent:researcher",
-            metadata=None,
+            as_type="span",
+            input=None,
+            metadata={"role": "researcher", "model": None},
         )
 
 
 class TestEndSpan:
     def test_records_usage_and_metadata(self) -> None:
         mock_client = MagicMock()
+        mock_obs = MagicMock()
         telemetry_mod._client = mock_client
+        telemetry_mod._observations["span-1"] = mock_obs
 
         telemetry_mod.end_span(
             "trace-1", "span-1",
@@ -123,43 +146,52 @@ class TestEndSpan:
             output="result text",
         )
 
-        mock_client.span.assert_called_once()
-        call_kwargs = mock_client.span.call_args[1]
-        assert call_kwargs["id"] == "span-1"
-        assert call_kwargs["trace_id"] == "trace-1"
+        mock_obs.update.assert_called_once()
+        call_kwargs = mock_obs.update.call_args[1]
         assert call_kwargs["output"] == "result text"
-        assert call_kwargs["usage"] == {"input": 100, "output": 50}
         assert call_kwargs["metadata"]["status"] == "completed"
+        assert call_kwargs["metadata"]["input_tokens"] == 100
+        assert call_kwargs["metadata"]["output_tokens"] == 50
         assert call_kwargs["metadata"]["total_cost_usd"] == 0.05
         assert call_kwargs["metadata"]["extra"] == "data"
+        mock_obs.end.assert_called_once()
+        assert "span-1" not in telemetry_mod._observations
 
     def test_handles_no_usage(self) -> None:
         mock_client = MagicMock()
+        mock_obs = MagicMock()
         telemetry_mod._client = mock_client
+        telemetry_mod._observations["span-1"] = mock_obs
 
         telemetry_mod.end_span("trace-1", "span-1", status="failed")
 
-        call_kwargs = mock_client.span.call_args[1]
-        assert call_kwargs["usage"] is None
+        call_kwargs = mock_obs.update.call_args[1]
         assert call_kwargs["metadata"]["status"] == "failed"
+        mock_obs.end.assert_called_once()
 
 
 class TestEndTrace:
     def test_marks_trace_completed(self) -> None:
         mock_client = MagicMock()
+        mock_obs = MagicMock()
         telemetry_mod._client = mock_client
+        telemetry_mod._observations["span-1"] = mock_obs
+        telemetry_mod._trace_names["trace-1"] = ("factory:proj/c1", {"project": "proj"})
 
-        telemetry_mod.end_trace("trace-1")
-        mock_client.trace.assert_called_once_with(
-            id="trace-1", metadata={"status": "completed"},
-        )
+        with patch.object(telemetry_mod, "_update_trace_via_api"):
+            telemetry_mod.end_trace("trace-1", span_id="span-1")
+
+        mock_obs.update.assert_called_once_with(output={"status": "completed"})
+        mock_obs.end.assert_called_once()
+        assert "span-1" not in telemetry_mod._observations
 
 
 class TestFlush:
     def test_flushes_when_client_exists(self) -> None:
         mock_client = MagicMock()
         telemetry_mod._client = mock_client
-        telemetry_mod.flush()
+        with patch.object(telemetry_mod, "_update_trace_via_api"):
+            telemetry_mod.flush()
         mock_client.flush.assert_called_once()
 
     def test_noop_when_no_client(self) -> None:
@@ -179,10 +211,11 @@ class TestIngestTranscript:
 
     def test_ingests_transcript_events(self, tmp_path: Path) -> None:
         mock_client = MagicMock()
-        mock_span_obj = MagicMock()
-        mock_span_obj.id = "obs-tool-1"
-        mock_client.span.return_value = mock_span_obj
+        mock_parent = MagicMock()
+        mock_tool_obs = MagicMock()
+        mock_parent.start_observation.return_value = mock_tool_obs
         telemetry_mod._client = mock_client
+        telemetry_mod._observations["span-1"] = mock_parent
 
         transcript = [
             {"type": "user", "message": {"content": [{"type": "text", "text": "Hello"}]}},
@@ -209,8 +242,8 @@ class TestIngestTranscript:
                 "trace-1", "span-1", "sess-123", tmp_path,
             )
             assert result is True
-            assert mock_client.event.call_count >= 2
-            assert mock_client.span.call_count >= 1
+            assert mock_parent.create_event.call_count >= 2
+            assert mock_parent.start_observation.call_count >= 1
         finally:
             transcript_file.unlink(missing_ok=True)
             try:
