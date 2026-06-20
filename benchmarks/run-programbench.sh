@@ -144,21 +144,54 @@ echo ""
 
 # ── Step 5: Install Claude Code inside container ──
 
-log "Step 5: Installing Claude Code inside container"
-echo "    Installing Node.js 22 and Claude Code..."
+log "Step 5: Installing Claude Code and Factory inside container"
+echo "    Installing Node.js 22, Claude Code, and Factory..."
 
 docker exec "${CONTAINER_NAME}" bash -c '
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&
-    apt-get install -y nodejs &&
+    apt-get install -y nodejs git rsync &&
     npm install -g @anthropic-ai/claude-code
 '
 
-echo "    Claude Code installed."
+docker exec "${CONTAINER_NAME}" bash -c '
+    curl -LsSf https://astral.sh/uv/install.sh | sh &&
+    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
+    uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
+    which factory
+'
+
+echo "    Claude Code and Factory installed."
+echo ""
+
+# ── Step 5.5: Prepare workspace for Factory ──
+
+log "Step 5.5: Preparing workspace for Factory"
+
+docker exec "${CONTAINER_NAME}" bash -c '
+    cd /workspace &&
+    git init &&
+    git config user.email "solver@factory" &&
+    git config user.name "Factory Solver" &&
+    git add -A &&
+    git commit -m "initial cleanroom state" --allow-empty
+'
+
+docker exec "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
+---
+goal: Reverse-engineer the compiled binary and produce equivalent source code
+---
+FACTORYEOF'
+
+docker exec "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
+'
+
+echo "    Workspace prepared for Factory."
 echo ""
 
 # ── Step 6: Run solver ──
 
-log "Step 6: Running Claude Code solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 6: Running Factory CEO solver (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT='You are reverse-engineering a compiled binary at /workspace/executable.
@@ -190,6 +223,8 @@ fi
 
 export_claude_env
 
+set +e
+
 SOLVER_EXIT=0
 timeout "${SOLVER_TIMEOUT}" docker exec \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
@@ -206,9 +241,11 @@ timeout "${SOLVER_TIMEOUT}" docker exec \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \
-    bash -c 'cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json --model "${ANTHROPIC_MODEL}"' \
+    bash -c 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt' \
     2>&1 | tee /dev/stderr | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
+
+set -e
 
 if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
@@ -219,6 +256,42 @@ fi
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
+# ── Step 6.5: Recover factory worktree changes ──
+
+log "Step 6.5: Recovering factory worktree changes"
+
+docker exec "${CONTAINER_NAME}" bash -c '
+    set +e
+    cd /workspace
+
+    FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
+    if [ -n "$FACTORY_BRANCH" ]; then
+        echo "Merging factory branch: $FACTORY_BRANCH"
+        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null \
+            || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+    else
+        echo "No factory branch found, checking reflog..."
+        LATEST=$(git reflog --all --pretty=format:"%H %s" \
+            | grep -i "factory\|cherry-pick\|fix\|build" | head -1 | awk "{print \$1}")
+        if [ -n "$LATEST" ]; then
+            echo "Cherry-picking reflog commit: $LATEST"
+            git cherry-pick "$LATEST" --no-edit 2>/dev/null || true
+        fi
+    fi
+
+    for wt in .factory/worktrees/*/; do
+        if [ -d "$wt" ]; then
+            echo "Recovering files from worktree: $wt"
+            rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
+        fi
+    done
+
+    exit 0
+'
+
+echo "    Worktree recovery complete."
+echo ""
+
 # ── Step 7: Package submission ──
 
 log "Step 7: Packaging submission"
@@ -227,7 +300,10 @@ docker exec "${CONTAINER_NAME}" bash -c '
     cd /workspace
     if [ -f compile.sh ]; then bash compile.sh; fi
     mkdir -p /results
-    tar -czf /results/submission.tar.gz --exclude=.git --exclude=target --exclude=executable.bak --exclude=./executable .
+    tar -czf /results/submission.tar.gz \
+        --exclude=.git --exclude=target \
+        --exclude=executable.bak --exclude=./executable \
+        --exclude=.factory --exclude=eval --exclude=factory.md .
 '
 
 docker cp "${CONTAINER_NAME}:/results/submission.tar.gz" "${RESULTS_DIR}/submission.tar.gz"
