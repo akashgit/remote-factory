@@ -176,6 +176,8 @@ docker exec "${CONTAINER_NAME}" bash -c '
     cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
     chown -R agent:agent /home/agent
 '
+docker exec "${CONTAINER_NAME}" chmod 644 /tmp/gcloud-adc.json 2>/dev/null || true
+
 echo "    Agent user created."
 echo ""
 
