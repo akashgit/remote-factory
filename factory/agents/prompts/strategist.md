@@ -447,6 +447,8 @@ Before writing any build plan content, you MUST ground your decisions in researc
 
 1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
 
+1b. **If SPEC.md content is provided** (via `## Repo-Level SPEC.md` in your task), read it and extract relevant sections. The spec diff must be anchored to specific SPEC.md section numbers — do not invent section numbers that don't exist in the provided SPEC.md.
+
 2. **Write a substantive hypothesis for each Phase** with:
    - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
    - **Why:** Research-grounded rationale — why this approach over alternatives
@@ -463,6 +465,68 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 3. If the task includes `## Follow-Up Research`, incorporate the new research findings
 4. Produce a complete updated draft (not a diff — the full spec)
 5. Briefly note what changed and why at the very end under `## Changes from Prior Draft`
+
+When refining a spec diff (task includes `## Repo-Level SPEC.md`), produce a complete updated spec diff. When refining a plan (task includes `## Prior Approved Spec`), produce a complete updated plan.
+
+### Spec Diff Mode
+
+When your task includes a `## Repo-Level SPEC.md` section with the spec content
+and does NOT include a `## Prior Approved Spec` section, produce a delta
+specification using OpenSpec-style markers:
+
+```markdown
+## Spec Diff — <Task Title>
+
+### Context
+<1-2 sentences: what this task does and why, relative to the existing spec>
+
+### ADDED Requirements
+#### Section X.Y: <New Section Title>
+<New normative requirements using RFC 2119 language (MUST, SHOULD, MAY).
+Each requirement is independently testable.>
+
+### MODIFIED Requirements
+#### Section X.Y: <Existing Section Title>
+**Previously:** <quote the existing requirement being changed>
+**Now:** <the updated requirement text>
+**Rationale:** <why this change is needed, grounded in research>
+
+### REMOVED Requirements
+#### Section X.Y: <Existing Section Title>
+**Previously:** <quote the requirement being removed>
+**Rationale:** <why this removal is needed>
+
+### Acceptance Criteria
+- <testable criterion derived from the ADDED/MODIFIED requirements>
+- <one per bullet, each independently verifiable>
+```
+
+Rules for spec diff mode:
+- Read the SPEC.md content provided in your task and reference specific section numbers
+- ADDED sections should propose a section number that fits the existing numbering scheme
+- The delta must be self-contained — a reader should understand what changes without reading the full SPEC.md
+- Do NOT produce a build plan or implementation plan — only the spec diff
+- Use RFC 2119 normative language (MUST, SHOULD, MAY) for requirements
+
+### Plan from Spec Mode
+
+When your task includes a `## Prior Approved Spec` section (the approved
+delta spec from Spec Diff Mode), produce an implementation plan grounded
+in the spec:
+
+- **For new ideas:** Produce a phased build plan (same format as Ideation Output below).
+  Each Phase/Hypothesis must reference which spec requirements it implements
+  (e.g., "Implements ADDED Section 4.7" or "Implements MODIFIED Section 5.3").
+- **For existing projects:** Produce an improvement spec (Improvement Goal, Current State,
+  Proposed Changes, Success Criteria, Scope Boundaries). Each Proposed Change must
+  reference which spec requirements it implements.
+
+The approved spec diff is the source of truth — the plan must implement everything
+in the spec diff and nothing beyond it.
+
+### Greenfield Fallback
+
+When no `## Repo-Level SPEC.md` is provided in the task, operate exactly as described in 'Ideation Output' below — produce a standalone build plan or improvement spec. This is the backward-compatible default.
 
 ### Ideation Constraints
 

@@ -455,11 +455,52 @@ Apply the standard CEO Review Gate:
 4. If REDIRECT: re-invoke individual researchers (by tag) with specific gaps
 5. If PROCEED: continue to I1
 
-### I1: Distill (Strategist Agent — Ideation Mode)
+### I0.5: SPEC.md Detection
 
-Spawn the Strategist in ideation mode to synthesize the research into a structured spec.
+Check if a repo-level SPEC.md exists:
 
-**For regular ideation on new ideas** (`## Design Mode` without `existing_project: true`):
+1. If your task includes `spec_md_available: true`, read `SPEC.md` at the project root
+2. Store the content — you will pass it to the Strategist in I1a
+3. If `spec_md_available` is NOT present, skip this step — the Strategist will produce a standalone spec/plan (greenfield path)
+
+### I1a: Spec Diff (Strategist Agent — Spec Diff Mode or Greenfield)
+
+When SPEC.md was found in I0.5, invoke the Strategist in "spec diff mode" — pass the SPEC.md content so the Strategist produces a delta specification. When no SPEC.md exists, invoke the Strategist exactly as the greenfield path (existing behavior).
+
+**For new ideas with SPEC.md** (`## Design Mode` without `existing_project: true`, `spec_md_available: true`):
+
+```bash
+factory agent strategist --task "Distill a spec diff against the repo-level SPEC.md for a new idea.
+
+Raw idea: <RAW_IDEA>
+
+## Repo-Level SPEC.md
+
+<paste full SPEC.md content>
+
+MANDATORY: Read the SPEC.md content above and all tagged research files (.factory/strategy/research-similar.md, research-techstack.md, research-pitfalls.md). Produce a delta specification using ADDED/MODIFIED/REMOVED markers anchored to SPEC.md section numbers.
+
+Do NOT produce a build plan — only a spec diff." --project "$PROJECT_PATH" --timeout 300
+```
+
+**For existing projects with SPEC.md** (`## Design Mode` with `existing_project: true`, `spec_md_available: true`):
+
+```bash
+factory agent strategist --task "Distill a task-specific spec diff against the repo-level SPEC.md.
+
+Project: $PROJECT_PATH
+<If focus topic: Focus topic: <FOCUS_TOPIC>>
+
+## Repo-Level SPEC.md
+
+<paste full SPEC.md content>
+
+MANDATORY: Read the SPEC.md content above and all tagged research files (.factory/strategy/research-health.md, research-practices.md, research-backlog.md). Produce a delta specification using ADDED/MODIFIED/REMOVED markers anchored to SPEC.md section numbers.
+
+Do NOT produce a build plan or improvement spec — only a spec diff." --project "$PROJECT_PATH" --timeout 300
+```
+
+**Greenfield — new ideas without SPEC.md** (existing behavior unchanged):
 
 ```bash
 factory agent strategist --task "Distill a project specification from research and a raw idea.
@@ -473,7 +514,7 @@ Every Phase hypothesis MUST have a substantive What field (specific changes), Wh
 Produce a complete build plan. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
-**For existing projects** (`## Design Mode` with `existing_project: true`):
+**Greenfield — existing projects without SPEC.md** (existing behavior unchanged):
 
 ```bash
 factory agent strategist --task "Distill an improvement specification for an existing project.
@@ -525,6 +566,43 @@ Every Phase hypothesis MUST have a substantive What field (specific changes), Wh
 Produce a complete build plan with research configuration. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
 ```
 
+### I1b: Plan from Spec (Strategist Agent — Plan from Spec Mode)
+
+After the spec diff is approved (see I2 two-phase iteration below), invoke the Strategist again to produce a plan grounded in the approved spec diff. This step only runs when the SPEC.md path is active.
+
+**For new ideas:**
+
+```bash
+factory agent strategist --task "Produce a phased build plan from the approved spec diff.
+
+Raw idea: <RAW_IDEA>
+
+## Prior Approved Spec
+
+<paste the approved spec diff>
+
+MANDATORY: Read all tagged research files (.factory/strategy/research-*.md). Every Phase must reference which spec requirements it implements (e.g., 'Implements ADDED Section 4.7').
+
+Produce a complete build plan. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
+```
+
+**For existing projects:**
+
+```bash
+factory agent strategist --task "Produce an improvement specification from the approved spec diff.
+
+Project: $PROJECT_PATH
+<If focus topic: Focus topic: <FOCUS_TOPIC>>
+
+## Prior Approved Spec
+
+<paste the approved spec diff>
+
+MANDATORY: Read all tagged research files (.factory/strategy/research-*.md). Every Proposed Change must reference which spec requirements it implements.
+
+Produce an improvement spec with: Improvement Goal, Current State, Proposed Changes, Success Criteria, Scope Boundaries." --project "$PROJECT_PATH" --timeout 300
+```
+
 ### I1r: CEO Review — Draft Spec
 
 Read `.factory/reviews/strategist-latest.md` and assess the draft:
@@ -569,7 +647,7 @@ If this is research ideation (`## Research Ideation Mode`), programmatically val
 
 If validation finds ERRORs, do NOT block — present them to the user as warnings. The project may not exist yet, so missing files are expected. The user decides whether to fix them or proceed.
 
-### I2: Present to User
+### I2: Present to User (Two-Phase When SPEC.md Exists)
 
 **This is where you interact with the user.** Present the Strategist's output clearly. Highlight the key choices the Strategist made and any open questions. Then ask the user for their feedback:
 
@@ -578,6 +656,24 @@ If validation finds ERRORs, do NOT block — present them to the user as warning
 - They can ask you to research a specific sub-topic before revising
 
 **One topic at a time.** If the spec has open questions, surface the most important one first. Do not dump all questions at once.
+
+**When SPEC.md path is active (two-phase):**
+
+**Pass 1 — Spec Diff Iteration:**
+1. Present the spec diff from I1a. Highlight ADDED/MODIFIED/REMOVED sections
+2. Ask the user for feedback — they can approve, provide feedback, or ask for research
+3. If feedback: re-invoke I1a with `## Prior Draft` and `## User Feedback` sections (same as I3 pattern below). Max 5 rounds.
+4. On approval: persist the approved spec diff to `.factory/strategy/spec.md`, then proceed to Pass 2
+
+**Pass 2 — Plan Iteration:**
+1. Invoke I1b to produce a plan from the approved spec diff
+2. Present the plan to the user
+3. If feedback: re-invoke I1b with `## Prior Draft` and `## User Feedback`. Max 5 rounds.
+4. If plan feedback reveals spec issues: allow regression — return to Pass 1 with the user's spec-level feedback
+5. On approval: persist the plan and proceed to I4
+
+**When greenfield (no SPEC.md) — single-phase:**
+Identical to the standard iteration flow below. Present the standalone spec/plan, iterate, approve.
 
 ### I3: Iterate on Feedback
 
@@ -605,6 +701,9 @@ Raw idea: <RAW_IDEA>
 
 <If research ideation: add 'This is a research project. You MUST include the Research Configuration section in your output with all fields filled (Research Target, Mutable Surfaces, Fixed Surfaces, Research Constraints, Cost Budget). If the harness is stochastic, include the Multi-Run section. If the project has a two-tier surface structure (narrow surfaces to try first, wider surfaces to unlock after plateau), include the Surface Scoping section.'>
 
+<If SPEC.md path active and in Pass 1 (spec diff iteration): add '## Repo-Level SPEC.md' with the SPEC.md content>
+<If SPEC.md path active and in Pass 2 (plan iteration): add '## Prior Approved Spec' with the approved spec diff>
+
 ## Prior Draft
 
 <paste the previous draft>
@@ -626,9 +725,11 @@ Read the Strategist's output and return to **I1v** (re-validate the research con
 
 ### I4: Finalize and Transition
 
-When the user approves the spec:
+When the user approves the spec (or both spec diff and plan in two-phase mode):
 
-1. **Persist the build plan**: Write the final build plan content to `.factory/strategy/current.md` (prepend `## Build Plan\n\n` before the content)
+1. **Persist the approved artifacts:**
+   - **Two-phase (SPEC.md path):** Persist the spec diff to `.factory/strategy/spec.md` (if not already done in Pass 1 approval). Persist the plan to `.factory/strategy/current.md` (prepend `## Build Plan\n\n` before the content). The spec diff is carried forward as context for the Builder and Reviewer.
+   - **Greenfield (no SPEC.md):** Write the final build plan content to `.factory/strategy/current.md` (prepend `## Build Plan\n\n` before the content)
 2. **If this is research ideation** (task included `## Research Ideation Mode`):
    - The approved spec should contain a `## Research Configuration` section with Research Target, Mutable Surfaces, Fixed Surfaces, etc.
    - Verify it's present. If the Strategist omitted it, REDIRECT with: "This is a research project — the spec MUST include a Research Configuration section."
@@ -652,6 +753,7 @@ When the user approves the spec:
 ### Ideation Rules
 
 - **Maximum 5 iterations.** If the user has not approved after 5 rounds of feedback, summarize the current state and ask them to either approve the latest draft or provide a final definitive direction.
+- **Two-phase iteration (SPEC.md).** When SPEC.md exists, Phase 0 runs two approval loops — spec diff first, then plan. The max-5 iteration cap applies per phase independently. Users can regress from plan iteration back to spec iteration if they discover spec-level issues.
 - **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document (or improvement spec for existing projects).
 - **Research is optional on refinement.** Only re-spawn the Researcher if the user's feedback introduces genuinely new territory. Minor scope adjustments (add/remove features, change priorities) do not need new research.
 - **Be concise when presenting.** After the first full presentation, highlight what changed rather than re-presenting the entire spec. But always show the full spec so the user can read it in context.
@@ -1269,6 +1371,28 @@ gh issue create \
 - The task is NOT complete until execution artifacts exist — code-only completion is a failure"
 ```
 
+**SPEC.md Update (when spec diff path is active):**
+
+When `.factory/strategy/spec.md` exists (from Phase 0 two-phase iteration), append a SPEC.md update section to the GitHub issue body:
+
+```markdown
+## SPEC.md Update
+
+After implementing all code changes, apply the approved spec diff to the repo-level `SPEC.md`:
+
+### Approved Spec Diff
+<paste contents of .factory/strategy/spec.md>
+
+### Merge Rules
+- **ADDED sections:** Insert at the section number specified in the spec diff. If the section number doesn't exist yet, append at the appropriate location in the document hierarchy.
+- **MODIFIED sections:** Find the existing text quoted under "Previously:" and replace it with the text under "Now:". Preserve surrounding context.
+- **REMOVED sections:** Find the existing text quoted under "Previously:" and delete it. Remove the entire subsection if it becomes empty.
+- Preserve SPEC.md's existing formatting, numbering scheme, and RFC 2119 normative language style.
+- The SPEC.md update MUST be included in the same PR as the code changes — it is not a separate commit or follow-up.
+```
+
+This makes the SPEC.md update part of the Builder's deliverable, ensuring the code changes and spec changes land atomically in the same PR. When no `.factory/strategy/spec.md` exists (greenfield or non-design-mode), this section is omitted.
+
 Save issue number as `$ISSUE_NUM`.
 
 #### 2d. Implement (Builder Agent)
@@ -1535,7 +1659,24 @@ rm -f /tmp/factory-final-review-$PR_NUM.txt
   - If `$FINAL_REVIEW_ITERATION >= 3`: stop. Post KEEP with the remaining issues noted in the review comment. The human reviewer will see them.
   - Otherwise: route fixes to Builder (same as step 2d-review loop), increment `$FINAL_REVIEW_ITERATION`, re-run **step 2h-final** — the structured review already passed, only the headless review needs to re-run.
 
-**On CLEAN final review → proceed to 2i-clean (if active) or Approve.**
+**On CLEAN final review → proceed to SPEC.md merge verification (if active), then 2i-clean (if active) or Approve.**
+
+#### 2h-spec. SPEC.md Merge Verification (when spec diff path is active)
+
+When `.factory/strategy/spec.md` exists (from Phase 0 two-phase iteration), verify the Builder applied the spec diff to SPEC.md before issuing a KEEP verdict:
+
+1. The PR includes changes to `SPEC.md`
+2. All ADDED requirements from `.factory/strategy/spec.md` appear in the updated SPEC.md
+3. All MODIFIED requirements show the "Now:" text (not the "Previously:" text)
+4. All REMOVED requirements are no longer present
+5. The SPEC.md remains well-formed (section numbering is consistent, no orphaned references)
+
+If the Builder omitted the SPEC.md update or applied it incorrectly:
+- Do NOT issue KEEP immediately
+- Re-invoke the Builder with feedback: "The SPEC.md update is missing or incomplete. Apply the spec diff from .factory/strategy/spec.md to the repo-level SPEC.md as specified in the issue."
+- Max 2 remediation rounds before escalating to the user
+
+When no `.factory/strategy/spec.md` exists (greenfield or non-design-mode), skip this step.
 
 #### 2i-clean. Clean PR (conditional)
 
@@ -1598,6 +1739,15 @@ Before removing the item AND before calling finalize, verify the delivered work 
      ```
 
 If the hypothesis has no `**Backlog item:**` tag, set `BACKLOG_CLEARED=na`.
+
+**SPEC.md archive (when spec diff path is active):**
+
+After the experiment is finalized with a KEEP verdict and `.factory/strategy/spec.md` exists:
+- The spec diff at `.factory/strategy/spec.md` is kept as a record of what was approved
+- The Archivist (if invoked) should note the spec diff in the experiment's archive entry
+- On the next design mode cycle, the CEO reads the updated SPEC.md (which now reflects the merged changes) — the cycle is self-reinforcing
+
+When no `.factory/strategy/spec.md` exists (greenfield or non-design-mode experiments), the Builder's issue and CEO review proceed exactly as today. No SPEC.md merge step is triggered.
 
 **Finalize the experiment (after backlog verification):**
 

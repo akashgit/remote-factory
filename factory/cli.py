@@ -3277,6 +3277,14 @@ def _build_ceo_task(
             f".factory/strategy/current.md and proceed to Build mode.\n"
         )
 
+    if (design_existing or design_idea) and (project_path / "SPEC.md").is_file():
+        task += (
+            "\n**spec_md_available: true**\n\n"
+            "A repo-level SPEC.md exists at the project root. During Phase 0, read it "
+            "and pass it to the Strategist for spec-diff generation. Follow the two-phase "
+            "iteration protocol: approve the spec diff first, then approve the plan.\n"
+        )
+
     if research_ideation:
         task += (
             f"\n\n## Research Ideation Mode (Phase 0)\n\n"
