@@ -43,6 +43,8 @@ TOTAL=1
 cleanup() {
     local exit_code=$?
     if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        log "Copying factory events log for debugging"
+        docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
         log "Stopping and removing container ${CONTAINER_NAME}"
         docker stop "${CONTAINER_NAME}" 2>/dev/null || true
         docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
@@ -144,21 +146,100 @@ echo ""
 
 # ── Step 5: Install Claude Code inside container ──
 
-log "Step 5: Installing Claude Code inside container"
-echo "    Installing Node.js 22 and Claude Code..."
+log "Step 5: Installing Claude Code and Factory inside container"
+echo "    Installing Node.js 22, Claude Code, and Factory..."
 
 docker exec "${CONTAINER_NAME}" bash -c '
+    apt-get update && apt-get install -y git rsync &&
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&
-    apt-get install -y nodejs &&
+    apt-get install -y --no-install-recommends nodejs &&
     npm install -g @anthropic-ai/claude-code
 '
 
-echo "    Claude Code installed."
+docker exec "${CONTAINER_NAME}" bash -c '
+    curl -LsSf https://astral.sh/uv/install.sh | sh &&
+    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
+    uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
+    which factory
+'
+
+echo "    Claude Code and Factory installed."
+
+# Create non-root agent user (Claude Code refuses --dangerously-skip-permissions as root)
+log "Step 5: Creating agent user"
+docker exec "${CONTAINER_NAME}" bash -c '
+    useradd -m -s /bin/bash agent 2>/dev/null || true
+    chown -R agent:agent /workspace
+    mkdir -p /home/agent/.claude /home/agent/.local /home/agent/.cargo
+    cp -r /root/.claude/* /home/agent/.claude/ 2>/dev/null || true
+    cp -r /root/.local/* /home/agent/.local/ 2>/dev/null || true
+    cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
+    chown -R agent:agent /home/agent
+'
+echo "    Agent user created."
+echo ""
+
+# ── Step 5.1: Configure Claude Code ──
+
+log "Step 5.1: Configuring Claude Code for headless use"
+
+docker exec --user agent \
+    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
+    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
+    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
+    -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
+    "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude
+    cat > ~/.claude/settings.json << SETTINGSEOF
+{
+  "permissions": {
+    "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)"],
+    "deny": []
+  },
+  "env": {}
+}
+SETTINGSEOF
+
+    # Smoke test — verify claude can authenticate
+    export PATH="$HOME/.local/bin:$PATH"
+    claude -p "say hello" --output-format json --max-turns 1 --permission-mode bypassPermissions 2>&1 | head -5
+    echo "Claude Code smoke test exit: $?"
+'
+
+echo "    Claude Code configured."
+echo ""
+
+# ── Step 5.5: Prepare workspace for Factory ──
+
+log "Step 5.5: Preparing workspace for Factory"
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
+    cd /workspace &&
+    git init &&
+    git config user.email "solver@factory" &&
+    git config user.name "Factory Solver" &&
+    echo "executable" >> .gitignore &&
+    git add -A &&
+    git commit -m "initial cleanroom state" --allow-empty
+'
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
+---
+goal: Reverse-engineer the compiled binary and produce equivalent source code
+---
+FACTORYEOF'
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
+'
+
+echo "    Workspace prepared for Factory."
 echo ""
 
 # ── Step 6: Run solver ──
 
-log "Step 6: Running Claude Code solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 6: Running Factory CEO solver (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT='You are reverse-engineering a compiled binary at /workspace/executable.
@@ -182,6 +263,7 @@ The evaluation compares your output against the original on hidden test cases.'
 SOLVER_PROMPT_FILE="$(mktemp /tmp/programbench-prompt-XXXXXX.txt)"
 echo "${SOLVER_PROMPT}" > "${SOLVER_PROMPT_FILE}"
 docker cp "${SOLVER_PROMPT_FILE}" "${CONTAINER_NAME}:/tmp/solver_prompt.txt"
+docker exec "${CONTAINER_NAME}" chmod 644 /tmp/solver_prompt.txt
 rm -f "${SOLVER_PROMPT_FILE}"
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
@@ -190,8 +272,10 @@ fi
 
 export_claude_env
 
+set +e
+
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" docker exec \
+timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
     -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
@@ -202,13 +286,18 @@ timeout "${SOLVER_TIMEOUT}" docker exec \
     -e CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING="${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING}" \
     -e MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS}" \
     -e CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL}" \
+    -e DISABLE_AUTOUPDATER=1 \
+    -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    -e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
     -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \
-    bash -c 'cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json --model "${ANTHROPIC_MODEL}"' \
+    bash -c 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt' \
     2>&1 | tee /dev/stderr | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
+
+set -e
 
 if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
@@ -219,6 +308,42 @@ fi
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
+# ── Step 6.5: Recover factory worktree changes ──
+
+log "Step 6.5: Recovering factory worktree changes"
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
+    set +e
+    cd /workspace
+
+    FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
+    if [ -n "$FACTORY_BRANCH" ]; then
+        echo "Merging factory branch: $FACTORY_BRANCH"
+        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null \
+            || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+    else
+        echo "No factory branch found, checking reflog..."
+        LATEST=$(git reflog --all --pretty=format:"%H %s" \
+            | grep -i "factory\|cherry-pick\|fix\|build" | head -1 | awk "{print \$1}")
+        if [ -n "$LATEST" ]; then
+            echo "Cherry-picking reflog commit: $LATEST"
+            git cherry-pick "$LATEST" --no-edit 2>/dev/null || true
+        fi
+    fi
+
+    for wt in .factory/worktrees/*/; do
+        if [ -d "$wt" ]; then
+            echo "Recovering files from worktree: $wt"
+            rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
+        fi
+    done
+
+    exit 0
+'
+
+echo "    Worktree recovery complete."
+echo ""
+
 # ── Step 7: Package submission ──
 
 log "Step 7: Packaging submission"
@@ -227,7 +352,10 @@ docker exec "${CONTAINER_NAME}" bash -c '
     cd /workspace
     if [ -f compile.sh ]; then bash compile.sh; fi
     mkdir -p /results
-    tar -czf /results/submission.tar.gz --exclude=.git --exclude=target --exclude=executable.bak --exclude=./executable .
+    tar -czf /results/submission.tar.gz \
+        --exclude=.git --exclude=target \
+        --exclude=executable.bak --exclude=./executable \
+        --exclude=.factory --exclude=eval --exclude=factory.md .
 '
 
 docker cp "${CONTAINER_NAME}:/results/submission.tar.gz" "${RESULTS_DIR}/submission.tar.gz"
