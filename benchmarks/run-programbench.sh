@@ -43,6 +43,8 @@ TOTAL=1
 cleanup() {
     local exit_code=$?
     if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        log "Copying factory events log for debugging"
+        docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
         log "Stopping and removing container ${CONTAINER_NAME}"
         docker stop "${CONTAINER_NAME}" 2>/dev/null || true
         docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
@@ -163,6 +165,37 @@ docker exec "${CONTAINER_NAME}" bash -c '
 echo "    Claude Code and Factory installed."
 echo ""
 
+# ── Step 5.1: Configure Claude Code ──
+
+log "Step 5.1: Configuring Claude Code for headless use"
+
+docker exec \
+    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
+    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
+    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
+    -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
+    "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude
+    cat > ~/.claude/settings.json << SETTINGSEOF
+{
+  "permissions": {
+    "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)"],
+    "deny": []
+  },
+  "env": {}
+}
+SETTINGSEOF
+
+    # Smoke test — verify claude can authenticate
+    export PATH="$HOME/.local/bin:$PATH"
+    claude -p "say hello" --output-format json --max-turns 1 --permission-mode bypassPermissions 2>&1 | head -5
+    echo "Claude Code smoke test exit: $?"
+'
+
+echo "    Claude Code configured."
+echo ""
+
 # ── Step 5.5: Prepare workspace for Factory ──
 
 log "Step 5.5: Preparing workspace for Factory"
@@ -237,6 +270,9 @@ timeout "${SOLVER_TIMEOUT}" docker exec \
     -e CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING="${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING}" \
     -e MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS}" \
     -e CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL}" \
+    -e DISABLE_AUTOUPDATER=1 \
+    -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    -e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
     -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
