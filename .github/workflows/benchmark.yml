@@ -104,6 +104,15 @@ jobs:
           echo "PATH=$(npm prefix -g)/bin:$PATH" >> "$GITHUB_ENV"
           claude --version
 
+      - name: Install Factory CLI
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          uv tool install 'remote-factory @ git+https://github.com/akashgit/remote-factory.git'
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "PATH=$HOME/.local/bin:$PATH" >> "$GITHUB_ENV"
+          factory --help > /dev/null
+          echo "Factory CLI installed"
+
       - name: Determine instance ID
         id: config
         if: steps.gate.outputs.run == 'true'
