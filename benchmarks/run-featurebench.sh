@@ -251,25 +251,47 @@ elif [ "${SOLVER_EXIT}" -ne 0 ]; then
 fi
 
 # Post-processing: merge factory branch changes back to default branch
-FACTORY_BRANCH=$(cd "${WORKSPACE}/repo" && git branch --list 'factory/*' | head -1 | tr -d ' *')
-if [ -n "${FACTORY_BRANCH}" ]; then
-    echo "    Merging factory branch: ${FACTORY_BRANCH}"
-    cd "${WORKSPACE}/repo" && git merge "${FACTORY_BRANCH}" --no-edit 2>/dev/null \
-        || git cherry-pick "${FACTORY_BRANCH}" --no-edit 2>/dev/null || true
-else
-    echo "    No factory branch found, checking reflog..."
-    LATEST=$(cd "${WORKSPACE}/repo" && git reflog --all --pretty=format:'%H %s' | grep -i 'factory\|cherry-pick\|fix' | head -1 | awk '{print $1}')
-    if [ -n "${LATEST}" ]; then
-        echo "    Cherry-picking from reflog: ${LATEST}"
-        cd "${WORKSPACE}/repo" && git cherry-pick "${LATEST}" --no-edit 2>/dev/null || true
+cd "${WORKSPACE}/repo"
+
+# Strategy 1: Merge surviving factory branch
+FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
+if [ -n "$FACTORY_BRANCH" ]; then
+    echo "Merging factory branch: $FACTORY_BRANCH"
+    git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+fi
+
+# Strategy 2: Recover orphaned commits via git fsck
+if [ -z "$FACTORY_BRANCH" ]; then
+    echo "No factory branch, finding orphaned commits..."
+    ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
+    if [ -n "$ORPHAN_COMMITS" ]; then
+        # Find the tip of the orphan chain — the commit with the latest timestamp
+        BEST_COMMIT=""
+        BEST_TIME=0
+        for SHA in $ORPHAN_COMMITS; do
+            COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
+            if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                BEST_TIME=$COMMIT_TIME
+                BEST_COMMIT=$SHA
+            fi
+        done
+        if [ -n "$BEST_COMMIT" ]; then
+            echo "Recovering from orphan tip: $BEST_COMMIT"
+            echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
+            # Use checkout to restore ALL files from the orphan tip
+            git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+            # Clean up factory artifacts
+            git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+            rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+        fi
     fi
 fi
 
-# Recover from surviving worktrees
-for wt in "${WORKSPACE}/repo/.factory/worktrees/"*/; do
-    if [ -d "${wt}" ]; then
-        echo "    Recovering files from worktree: ${wt}"
-        rsync -a --exclude='.git' --exclude='.factory' "${wt}" "${WORKSPACE}/repo/" 2>/dev/null || true
+# Strategy 3: Recover from surviving worktree directories
+for wt in .factory/worktrees/*/; do
+    if [ -d "$wt" ]; then
+        echo "Recovering files from worktree: $wt"
+        rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
     fi
 done
 

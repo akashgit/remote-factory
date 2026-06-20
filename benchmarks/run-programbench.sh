@@ -316,21 +316,41 @@ docker exec --user agent "${CONTAINER_NAME}" bash -c '
     set +e
     cd /workspace
 
+    # Strategy 1: Merge surviving factory branch
     FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
     if [ -n "$FACTORY_BRANCH" ]; then
         echo "Merging factory branch: $FACTORY_BRANCH"
-        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null \
-            || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
-    else
-        echo "No factory branch found, checking reflog..."
-        LATEST=$(git reflog --all --pretty=format:"%H %s" \
-            | grep -i "factory\|cherry-pick\|fix\|build" | head -1 | awk "{print \$1}")
-        if [ -n "$LATEST" ]; then
-            echo "Cherry-picking reflog commit: $LATEST"
-            git cherry-pick "$LATEST" --no-edit 2>/dev/null || true
+        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+    fi
+
+    # Strategy 2: Recover orphaned commits via git fsck
+    if [ -z "$FACTORY_BRANCH" ]; then
+        echo "No factory branch, finding orphaned commits..."
+        ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep "unreachable commit" | awk "{print \$3}")
+        if [ -n "$ORPHAN_COMMITS" ]; then
+            # Find the tip of the orphan chain — the commit with the latest timestamp
+            BEST_COMMIT=""
+            BEST_TIME=0
+            for SHA in $ORPHAN_COMMITS; do
+                COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0)
+                if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                    BEST_TIME=$COMMIT_TIME
+                    BEST_COMMIT=$SHA
+                fi
+            done
+            if [ -n "$BEST_COMMIT" ]; then
+                echo "Recovering from orphan tip: $BEST_COMMIT"
+                echo "  Message: $(git log -1 --format="%s" $BEST_COMMIT 2>/dev/null)"
+                # Use checkout to restore ALL files from the orphan tip
+                git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+                # Clean up factory artifacts
+                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+            fi
         fi
     fi
 
+    # Strategy 3: Recover from surviving worktree directories
     for wt in .factory/worktrees/*/; do
         if [ -d "$wt" ]; then
             echo "Recovering files from worktree: $wt"
@@ -397,35 +417,13 @@ if [ -f "${EVAL_JSON}" ]; then
     echo "    Eval file: ${EVAL_JSON}"
     eval "$(python3 -c "
 import json
-
 with open('${EVAL_JSON}') as f:
     data = json.load(f)
-
-passed = 0
-total = 0
-
-if isinstance(data, dict):
-    tests = data.get('tests', data.get('results', {}))
-    if isinstance(tests, dict):
-        for name, result in tests.items():
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-            elif isinstance(result, bool) and result:
-                passed += 1
-    elif isinstance(tests, list):
-        for result in tests:
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-    elif 'score' in data:
-        score = float(data['score'])
-        total = 1
-        passed = 1 if score > 0.5 else 0
-
+results = data.get('test_results', [])
+passed = sum(1 for r in results if r.get('status') == 'passed')
+total = len(results)
 if total == 0:
     total = 1
-
 resolved = 1 if passed > 0 else 0
 print(f'PASSED={passed}')
 print(f'RESOLVED={resolved}')
