@@ -156,16 +156,17 @@ class TestCeoPrompt:
         discover_start = ceo_prompt.index("## Mode: Discover")
         build_section = ceo_prompt[build_start:discover_start]
 
-        # All agents must be present
-        assert "factory agent researcher" in build_section
-        assert "factory agent strategist" in build_section
+        # Build mode references the Plan Loop for research/strategy
+        assert "Plan Loop" in build_section
+        # Builder and archivist agents must be in Build section
         assert "factory agent archivist" in build_section
         assert "factory agent builder" in build_section
 
-        # Research step must come before Build step
-        assert build_section.index("factory agent researcher") < build_section.index("factory agent builder")
-        # Strategy step must come before Build step
-        assert build_section.index("factory agent strategist") < build_section.index("factory agent builder")
+        # Plan Loop (before Build mode) must contain researcher and strategist
+        plan_start = ceo_prompt.index("## Plan Loop")
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "factory agent researcher" in plan_section
+        assert "factory agent strategist" in plan_section
 
     def test_build_mode_does_not_skip_to_builder(self, ceo_prompt: str) -> None:
         """Build mode must NOT just say 'delegate to the Builder'."""
@@ -173,11 +174,13 @@ class TestCeoPrompt:
         discover_start = ceo_prompt.index("## Mode: Discover")
         build_section = ceo_prompt[build_start:discover_start]
 
-        # Should have research and strategy steps
-        assert "Research" in build_section
-        assert "Strategy" in build_section
-        assert "factory agent researcher" in build_section
-        assert "factory agent strategist" in build_section
+        # Should reference Plan Loop for research and strategy
+        assert "Plan Loop" in build_section
+        # Plan Loop section must contain researcher and strategist
+        plan_start = ceo_prompt.index("## Plan Loop")
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "factory agent researcher" in plan_section
+        assert "factory agent strategist" in plan_section
 
     # ── CEO Review Gate tests ────────────────────────────────────
 
@@ -192,17 +195,15 @@ class TestCeoPrompt:
     def test_review_gate_references_reviews_dir(self, ceo_prompt: str) -> None:
         assert ".factory/reviews/" in ceo_prompt
 
-    def test_strategist_hard_gate_in_build_mode(self, ceo_prompt: str) -> None:
-        """Build mode must have a hard gate after Strategist before Builder."""
+    def test_strategist_hard_gate_in_plan_loop(self, ceo_prompt: str) -> None:
+        """Plan Loop must have a hard gate after Strategist before Builder."""
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        discover_start = ceo_prompt.index("## Mode: Discover")
-        build_section = ceo_prompt[build_start:discover_start]
+        plan_section = ceo_prompt[plan_start:build_start]
 
-        assert "HARD GATE" in build_section
-        assert "PLAN APPROVED" in build_section
-        # Hard gate must come after strategist and before builder
-        assert build_section.index("HARD GATE") < build_section.index("factory agent builder")
-        assert build_section.index("factory agent strategist") < build_section.index("HARD GATE")
+        assert "HARD GATE" in plan_section
+        assert "PLAN APPROVED" in plan_section
+        assert plan_section.index("factory agent strategist") < plan_section.index("HARD GATE")
 
     def test_strategist_hard_gate_in_improve_mode(self, ceo_prompt: str) -> None:
         """Improve mode must have a hard gate after Strategist."""
@@ -212,13 +213,13 @@ class TestCeoPrompt:
         assert "HARD GATE" in improve_section
         assert "PLAN APPROVED" in improve_section
 
-    def test_build_mode_has_research_review(self, ceo_prompt: str) -> None:
-        """Build mode must have CEO review after Researcher."""
+    def test_plan_loop_has_research_review(self, ceo_prompt: str) -> None:
+        """Plan Loop must have CEO review after Researcher."""
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        discover_start = ceo_prompt.index("## Mode: Discover")
-        build_section = ceo_prompt[build_start:discover_start]
+        plan_section = ceo_prompt[plan_start:build_start]
 
-        assert "ceo-verdict-researcher" in build_section
+        assert "ceo-verdict-researcher" in plan_section
 
     def test_build_mode_has_builder_review(self, ceo_prompt: str) -> None:
         """Build mode must have CEO review after Builder."""
@@ -299,14 +300,16 @@ class TestCeoPrompt:
         assert ceo_prompt.count("DO NOT SKIP") >= 5  # research, strategy, build, experiment, build-improve
 
     def test_archivist_in_build_mode(self, ceo_prompt: str) -> None:
-        """Build mode must have archivist after research, strategy, and build."""
+        """Build mode must have archivist after build; Plan Loop has archivist after plan approval."""
         build_start = ceo_prompt.index("## Mode: Build")
         discover_start = ceo_prompt.index("## Mode: Discover")
         build_section = ceo_prompt[build_start:discover_start]
-
-        assert "archivist after research" in build_section
-        assert "archivist after strategy" in build_section
         assert "archivist after build" in build_section
+
+        plan_start = ceo_prompt.index("## Plan Loop")
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "archivist" in plan_section.lower()
+        assert "plan approval" in plan_section.lower()
 
     def test_archivist_in_improve_mode(self, ceo_prompt: str) -> None:
         """Improve mode must have archivist after research, strategy, build, and experiment."""
@@ -335,49 +338,49 @@ class TestCeoPrompt:
         )
         assert len(async_calls) == 0, f"Found {len(async_calls)} async archivist calls — all must be blocking"
 
-    # ── Phase 0: Ideation tests ────────────────────────────────
+    # ── Plan Loop tests ────────────────────────────────
 
-    def test_has_phase_0_ideation(self, ceo_prompt: str) -> None:
-        assert "## Phase 0: Ideation" in ceo_prompt
+    def test_has_plan_loop(self, ceo_prompt: str) -> None:
+        assert "## Plan Loop" in ceo_prompt
 
-    def test_phase_0_before_build_mode(self, ceo_prompt: str) -> None:
-        """Phase 0 must appear before Build mode in the prompt."""
-        phase0_idx = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_before_build_mode(self, ceo_prompt: str) -> None:
+        """Plan Loop must appear before Build mode in the prompt."""
+        plan_idx = ceo_prompt.index("## Plan Loop")
         build_idx = ceo_prompt.index("## Mode: Build")
-        assert phase0_idx < build_idx
+        assert plan_idx < build_idx
 
-    def test_phase_0_spawns_researcher(self, ceo_prompt: str) -> None:
-        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_spawns_researcher(self, ceo_prompt: str) -> None:
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "factory agent researcher" in phase0_section
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "factory agent researcher" in plan_section
 
-    def test_phase_0_spawns_strategist(self, ceo_prompt: str) -> None:
-        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_spawns_strategist(self, ceo_prompt: str) -> None:
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "factory agent strategist" in phase0_section
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "factory agent strategist" in plan_section
 
-    def test_phase_0_has_iteration_limit(self, ceo_prompt: str) -> None:
-        assert "Maximum 5 iterations" in ceo_prompt
+    def test_plan_loop_has_iteration_limit(self, ceo_prompt: str) -> None:
+        assert "5 iterations" in ceo_prompt
 
-    def test_phase_0_persists_spec(self, ceo_prompt: str) -> None:
-        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_persists_spec(self, ceo_prompt: str) -> None:
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "current.md" in phase0_section
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "current.md" in plan_section
 
-    def test_phase_0_transitions_to_build(self, ceo_prompt: str) -> None:
-        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_transitions_to_build(self, ceo_prompt: str) -> None:
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "Build mode" in phase0_section
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "B3" in plan_section
 
-    def test_phase_0_spawns_archivist(self, ceo_prompt: str) -> None:
-        phase0_start = ceo_prompt.index("## Phase 0: Ideation")
+    def test_plan_loop_spawns_archivist(self, ceo_prompt: str) -> None:
+        plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_start:build_start]
-        assert "factory agent archivist" in phase0_section
+        plan_section = ceo_prompt[plan_start:build_start]
+        assert "factory agent archivist" in plan_section
 
 
 # ── Strategist Ideation Mode ─────────────────────────────────────

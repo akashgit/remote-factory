@@ -1157,17 +1157,17 @@ class TestCeoPromptResearchMode:
         assert "leakage-check" in research_section
         assert "text-file" in research_section
 
-    def test_research_ideation_phase_0_activation(self, ceo_prompt: str) -> None:
-        """Phase 0 activates for both Interactive and Research Ideation."""
-        assert "Research Ideation Mode (Phase 0)" in ceo_prompt
+    def test_research_ideation_plan_loop_activation(self, ceo_prompt: str) -> None:
+        """Plan Loop activates for research ideation."""
+        assert "research_project: true" in ceo_prompt or "research project" in ceo_prompt
 
     def test_research_ideation_strategist_instruction(self, ceo_prompt: str) -> None:
-        """Phase 0 includes research-specific Strategist invocation."""
-        phase0_idx = ceo_prompt.index("## Phase 0: Ideation")
+        """Plan Loop includes research-specific Strategist invocation."""
+        plan_idx = ceo_prompt.index("## Plan Loop")
         build_idx = ceo_prompt.index("## Mode: Build")
-        phase0_section = ceo_prompt[phase0_idx:build_idx]
-        assert "This is a research project" in phase0_section
-        assert "Research Configuration" in phase0_section
+        plan_section = ceo_prompt[plan_idx:build_idx]
+        assert "This is a research project" in plan_section
+        assert "Research Configuration" in plan_section
 
     def test_review_mode_populates_research_config(self, ceo_prompt: str) -> None:
         """Review mode populates factory.md research sections from approved spec."""
