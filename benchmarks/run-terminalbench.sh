@@ -126,7 +126,8 @@ echo "    Timeout mult:    ${TIMEOUT_MULTIPLIER}x"
 echo "    Task:            ${TASK_NAME}"
 echo ""
 
-EXTRA_INSTRUCTIONS="${HARNESS_DIR}/benchmarks/terminalbench-extra-instructions.md"
+AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
+export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
 
 cd "${HARNESS_DIR}"
 
@@ -136,13 +137,12 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        --agent-import-path factory_harbor_agent:FactoryCeo \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
-        --extra-instruction-path "${EXTRA_INSTRUCTIONS}" \
         --ae "CLAUDE_CODE_USE_VERTEX=1" \
         --ae "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         --ae "CLOUD_ML_REGION=${CLOUD_ML_REGION:-us-east5}" \
@@ -160,13 +160,12 @@ else
     echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        --agent-import-path factory_harbor_agent:FactoryCeo \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
-        --extra-instruction-path "${EXTRA_INSTRUCTIONS}" \
         --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
