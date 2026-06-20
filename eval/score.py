@@ -39,7 +39,7 @@ def eval_tests() -> dict:
             "score": score,
             "weight": 0.4166666666666667,
             "passed": passed,
-            "details": (result.stdout or result.stderr).strip()[-500:],
+            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -74,7 +74,7 @@ def eval_lint() -> dict:
             "score": score,
             "weight": 0.25,
             "passed": passed,
-            "details": (result.stdout or result.stderr).strip()[-500:],
+            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -109,7 +109,7 @@ def eval_type_check() -> dict:
             "score": score,
             "weight": 0.125,
             "passed": passed,
-            "details": (result.stdout or result.stderr).strip()[-500:],
+            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -144,7 +144,7 @@ def eval_coverage() -> dict:
             "score": score,
             "weight": 0.125,
             "passed": passed,
-            "details": (result.stdout or result.stderr).strip()[-500:],
+            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
