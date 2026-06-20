@@ -26,6 +26,7 @@ Domain-agnostic multi-agent software evolution loop that can auto-discover evals
 - CLAUDE.md
 - README.md
 - pyproject.toml
+- codecov.yml
 - .agents/**
 - .codex-plugin/**
 - AGENTS.md
