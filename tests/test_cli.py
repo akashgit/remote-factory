@@ -168,7 +168,7 @@ class TestCmdCeoDesign:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "auth layer" in task
 
     def test_no_path_fails(self, capsys):
@@ -186,28 +186,28 @@ class TestCmdCeoDesign:
         assert cmd[0] == "claude"
         assert "--dangerously-skip-permissions" in cmd
 
-    def test_design_existing_has_ideation_block(self, tmp_path):
-        """--mode design on an existing directory injects Design Mode block."""
+    def test_design_existing_has_plan_loop_block(self, tmp_path):
+        """--mode design on an existing directory injects Plan Loop block."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "existing_project: true" in task
 
-    def test_design_new_idea_has_ideation_block(self):
-        """--mode design with a non-directory path injects Design Mode block."""
+    def test_design_new_idea_has_plan_loop_block(self):
+        """--mode design with a non-directory path injects Plan Loop block."""
         with _mock_foreground() as mock_run:
             main(["ceo", "build a cool CLI tool", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "## Project Specification" not in task
 
     def test_design_task_contains_idea_text(self):
-        """--mode design with raw idea text includes it in the Phase 0 block."""
+        """--mode design with raw idea text includes it in the Plan Loop block."""
         with _mock_foreground() as mock_run:
             main(["ceo", "distributed eval runner", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
@@ -240,7 +240,7 @@ class TestCmdCeoDesign:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
 
 
 def _make_config(*, research_target: dict | None = None) -> dict:
@@ -342,14 +342,14 @@ class TestCmdCeoResearchIdeation:
         cmd = claude_calls[0][0][0]
         assert cmd[0] == "claude"
 
-    def test_research_ideation_task_has_research_phase_0(self):
-        """--mode research with idea injects Research Ideation Phase 0 block."""
+    def test_research_ideation_task_has_plan_loop(self):
+        """--mode research with idea injects Plan Loop (Interactive) block."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Research Ideation Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "swe-bench solver agent" in task
 
     def test_research_ideation_task_mode_is_build(self):
@@ -361,14 +361,14 @@ class TestCmdCeoResearchIdeation:
         task = cmd[dsp_idx + 1]
         assert "Mode: build" in task
 
-    def test_research_ideation_no_design_block(self):
-        """--mode research should NOT inject Design Mode block."""
+    def test_research_ideation_uses_plan_loop_not_design(self):
+        """--mode research should use Plan Loop, not a separate Design Mode block."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Design Mode" not in task
+        assert "## Plan Loop (Interactive)" in task
 
     def test_research_ideation_mentions_research_config(self):
         """--mode research ideation task mentions research config fields."""
@@ -395,7 +395,7 @@ class TestCmdCeoResearchIdeation:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "## Research Ideation Mode" not in task
+        assert "## Plan Loop (Interactive)" not in task
         assert "Mode: research" in task
 
 
@@ -1423,15 +1423,15 @@ class TestResearchMode:
 class TestBuildCeoTaskDesign:
     """Unit tests for _build_ceo_task design_existing parameter."""
 
-    def test_existing_project_emits_ideation_section(self, tmp_path):
+    def test_existing_project_emits_plan_loop_section(self, tmp_path):
         task = _build_ceo_task(tmp_path, "build", design_existing=True)
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "existing_project: true" in task
         assert "existing project" in task
 
     def test_existing_project_with_focus(self, tmp_path):
         task = _build_ceo_task(tmp_path, "build", design_existing=True, focus="auth layer")
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "auth layer" in task
         assert "Focus topic" in task
 
@@ -1439,17 +1439,17 @@ class TestBuildCeoTaskDesign:
         task = _build_ceo_task(tmp_path, "build", design_existing=True)
         assert "No specific topic was provided" in task
 
-    def test_new_idea_emits_ideation_section(self, tmp_path):
+    def test_new_idea_emits_plan_loop_section(self, tmp_path):
         task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
-        assert "## Design Mode (Phase 0)" in task
+        assert "## Plan Loop (Interactive)" in task
         assert "weather CLI" in task
 
     def test_existing_uses_same_header_as_new_idea(self, tmp_path):
-        """Both new ideas and existing projects use the same Phase 0 header."""
+        """Both new ideas and existing projects use the same Plan Loop header."""
         existing_task = _build_ceo_task(tmp_path, "build", design_existing=True)
         new_task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
-        assert "## Design Mode (Phase 0)" in existing_task
-        assert "## Design Mode (Phase 0)" in new_task
+        assert "## Plan Loop (Interactive)" in existing_task
+        assert "## Plan Loop (Interactive)" in new_task
 
     def test_existing_project_has_existing_flag(self, tmp_path):
         """Existing project task includes the existing_project flag for CEO conditionals."""

@@ -2567,12 +2567,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    if design_existing:
-        ceo_mode = "build"
-    elif mode == "design" or research_ideation:
-        ceo_mode = "build"
-    else:
-        ceo_mode = mode
+    interactive = design_existing or bool(design_idea) or bool(research_ideation)
+    ceo_mode = "build" if interactive else mode
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -3245,13 +3241,12 @@ def _build_ceo_task(
 
     if design_existing:
         task += (
-            f"\n\n## Design Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**existing_project: true**\n\n"
-            f"You are in design mode on an **existing project** at `{project_path}`.\n\n"
-            f"Before running any experiments, research the project (local study + external "
-            f"best practices), distill an improvement spec through user feedback, then "
-            f"transition to Improve mode. Follow the Phase 0: Ideation protocol in your "
-            f"system prompt — the existing-project conditionals in I0, I1, and I4 apply.\n\n"
+            f"You are in interactive planning mode on an **existing project** at `{project_path}`.\n\n"
+            f"Run the Plan Loop (P0-P3) with interactive approval. Research the project "
+            f"(local study + external best practices), synthesize an improvement spec "
+            f"through user feedback, then transition to Improve mode.\n\n"
         )
         if focus:
             task += (
@@ -3267,29 +3262,28 @@ def _build_ceo_task(
             )
     elif design_idea:
         task += (
-            f"\n\n## Design Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**Raw idea from user:** {design_idea}\n\n"
-            f"You are in design mode. Before building anything, "
-            f"you must refine this idea into a complete spec through research "
-            f"and iterative user feedback. Follow the Phase 0: Ideation protocol "
-            f"in your system prompt.\n\n"
-            f"After the user approves the final spec, persist it to "
+            f"Run the Plan Loop (P0-P3) with interactive approval. "
+            f"Research the space, synthesize a build plan, and refine it "
+            f"through user feedback before building.\n\n"
+            f"After the user approves the final plan, persist it to "
             f".factory/strategy/current.md and proceed to Build mode.\n"
         )
 
     if research_ideation:
         task += (
-            f"\n\n## Research Ideation Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**Raw idea from user:** {research_ideation}\n\n"
-            f"You are in research ideation mode. This is like design ideation, "
-            f"but the Strategist MUST collect research configuration:\n"
+            f"**research_project: true**\n\n"
+            f"Run the Plan Loop (P0-P3) with interactive approval. "
+            f"This is a research project — the Strategist MUST collect research configuration:\n"
             f"- Research Target (objective, metric, target value, run_command, result_path)\n"
             f"- Mutable Surfaces (files the Builder can modify)\n"
             f"- Fixed Surfaces (ground truth / eval files that must never be touched)\n"
             f"- Research Constraints (additional rules)\n"
             f"- Cost Budget (optional)\n\n"
-            f"Follow the Phase 0: Ideation protocol, but tell the Strategist this is a "
-            f"research project. After the user approves, persist the spec AND the research "
+            f"After the user approves, persist the spec AND the research "
             f"config to .factory/strategy/current.md, then proceed to Build mode. "
             f"During Review mode (factory.md creation), populate the research sections "
             f"from the approved spec.\n"
@@ -3353,8 +3347,9 @@ def _build_ceo_task(
 
     if mode == "build":
         task += (
-            "\n\nRun Build mode: the project is new or incomplete. Follow the Build mode "
-            "pipeline (B0-B6): Research → Strategy → Build phases → E2E verification. "
+            "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
+            "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
+            "(B3-B6): Build phases → E2E verification. "
             "Do NOT skip to Improve mode — the project needs to be built first."
         )
     elif mode == "discover":
