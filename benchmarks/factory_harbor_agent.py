@@ -197,20 +197,23 @@ class FactoryCeo(BaseInstalledAgent):
                 "    | grep 'unreachable commit' | awk '{print \\$3}'); "
                 '  if [ -n "$ORPHAN_COMMITS" ]; then '
                 '    BEST_COMMIT=""; '
-                "    BEST_TIME=0; "
+                "    BEST_CHANGES=0; "
                 "    for SHA in $ORPHAN_COMMITS; do "
-                '      COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0); '
-                '      if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then '
-                "        BEST_TIME=$COMMIT_TIME; "
+                '      NUM_CHANGES=$(git diff-tree --no-commit-id --name-only -r "$SHA" 2>/dev/null '
+                "        | grep -v -E '^\\.factory/|^eval/|^factory\\.md' | wc -l); "
+                '      if [ "$NUM_CHANGES" -gt "$BEST_CHANGES" ]; then '
+                "        BEST_CHANGES=$NUM_CHANGES; "
                 "        BEST_COMMIT=$SHA; "
                 "      fi; "
                 "    done; "
-                '    if [ -n "$BEST_COMMIT" ]; then '
-                '      echo "Recovering from orphan commit: $BEST_COMMIT"; '
+                '    if [ -n "$BEST_COMMIT" ] && [ "$BEST_CHANGES" -gt 0 ]; then '
+                '      echo "Recovering from orphan commit: $BEST_COMMIT ($BEST_CHANGES changed files)"; '
                 '      echo "  Message: $(git log -1 --format=\'%s\' $BEST_COMMIT 2>/dev/null)"; '
                 '      git cherry-pick "$BEST_COMMIT" --no-edit 2>/dev/null '
                 '        || git checkout "$BEST_COMMIT" -- . 2>/dev/null '
                 "        || true; "
+                "    else "
+                '      echo "No orphan commits with meaningful changes found"; '
                 "    fi; "
                 "  fi; "
                 "fi; "
