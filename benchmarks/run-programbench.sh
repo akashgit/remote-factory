@@ -164,13 +164,26 @@ docker exec "${CONTAINER_NAME}" bash -c '
 '
 
 echo "    Claude Code and Factory installed."
+
+# Create non-root agent user (Claude Code refuses --dangerously-skip-permissions as root)
+log "Step 5: Creating agent user"
+docker exec "${CONTAINER_NAME}" bash -c '
+    useradd -m -s /bin/bash agent 2>/dev/null || true
+    chown -R agent:agent /workspace
+    mkdir -p /home/agent/.claude /home/agent/.local /home/agent/.cargo
+    cp -r /root/.claude/* /home/agent/.claude/ 2>/dev/null || true
+    cp -r /root/.local/* /home/agent/.local/ 2>/dev/null || true
+    cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
+    chown -R agent:agent /home/agent
+'
+echo "    Agent user created."
 echo ""
 
 # ── Step 5.1: Configure Claude Code ──
 
 log "Step 5.1: Configuring Claude Code for headless use"
 
-docker exec \
+docker exec --user agent \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
     -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
@@ -201,7 +214,7 @@ echo ""
 
 log "Step 5.5: Preparing workspace for Factory"
 
-docker exec "${CONTAINER_NAME}" bash -c '
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
     cd /workspace &&
     git init &&
     git config user.email "solver@factory" &&
@@ -210,13 +223,13 @@ docker exec "${CONTAINER_NAME}" bash -c '
     git commit -m "initial cleanroom state" --allow-empty
 '
 
-docker exec "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
+docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
 ---
 goal: Reverse-engineer the compiled binary and produce equivalent source code
 ---
 FACTORYEOF'
 
-docker exec "${CONTAINER_NAME}" bash -c '
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
     mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
 '
 
@@ -260,7 +273,7 @@ export_claude_env
 set +e
 
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" docker exec \
+timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
     -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
@@ -297,7 +310,7 @@ echo ""
 
 log "Step 6.5: Recovering factory worktree changes"
 
-docker exec "${CONTAINER_NAME}" bash -c '
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
     set +e
     cd /workspace
 
