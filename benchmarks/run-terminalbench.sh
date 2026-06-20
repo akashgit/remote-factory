@@ -126,15 +126,18 @@ echo "    Timeout mult:    ${TIMEOUT_MULTIPLIER}x"
 echo "    Task:            ${TASK_NAME}"
 echo ""
 
+AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
+export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
+
 cd "${HARNESS_DIR}"
 
 HARBOR_EXIT=0
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
-    GCLOUD_ADC="${HOME}/.config/gcloud/application_default_credentials.json"
+    GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
     echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        --agent-import-path factory_harbor_agent:FactoryCeo \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
@@ -157,7 +160,7 @@ else
     echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        --agent-import-path factory_harbor_agent:FactoryCeo \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
