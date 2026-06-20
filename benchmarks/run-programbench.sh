@@ -219,6 +219,7 @@ docker exec --user agent "${CONTAINER_NAME}" bash -c '
     git init &&
     git config user.email "solver@factory" &&
     git config user.name "Factory Solver" &&
+    echo "executable" >> .gitignore &&
     git add -A &&
     git commit -m "initial cleanroom state" --allow-empty
 '
