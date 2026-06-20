@@ -417,35 +417,13 @@ if [ -f "${EVAL_JSON}" ]; then
     echo "    Eval file: ${EVAL_JSON}"
     eval "$(python3 -c "
 import json
-
 with open('${EVAL_JSON}') as f:
     data = json.load(f)
-
-passed = 0
-total = 0
-
-if isinstance(data, dict):
-    tests = data.get('tests', data.get('results', {}))
-    if isinstance(tests, dict):
-        for name, result in tests.items():
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-            elif isinstance(result, bool) and result:
-                passed += 1
-    elif isinstance(tests, list):
-        for result in tests:
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-    elif 'score' in data:
-        score = float(data['score'])
-        total = 1
-        passed = 1 if score > 0.5 else 0
-
+results = data.get('test_results', [])
+passed = sum(1 for r in results if r.get('status') == 'passed')
+total = len(results)
 if total == 0:
     total = 1
-
 resolved = 1 if passed > 0 else 0
 print(f'PASSED={passed}')
 print(f'RESOLVED={resolved}')
