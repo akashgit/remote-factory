@@ -459,6 +459,9 @@ class TestBobAuthPreflight:
         import factory.runners.bob as bob_module
         bob_module._auth_checked = False
 
+        # Redirect home so native auth at ~/.bob/settings.json isn't found
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))
+
         (tmp_path / ".factory").mkdir()
 
         runner = BobRunner()
