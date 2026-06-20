@@ -12,8 +12,8 @@ import structlog
 log = structlog.get_logger()
 
 try:
-    from langfuse import Langfuse
-    from langfuse.types import TraceContext
+    from langfuse import Langfuse  # type: ignore[import-not-found]
+    from langfuse.types import TraceContext  # type: ignore[import-not-found]
 
     _HAS_LANGFUSE = True
 except ImportError:
@@ -68,16 +68,17 @@ def _update_trace_via_api(
     try:
         import base64
         auth = base64.b64encode(f"{pub_key}:{sec_key}".encode()).decode()
+        inner: dict[str, Any] = {"id": trace_id, "name": name}
+        if input_data is not None:
+            inner["input"] = input_data
         body = {
             "batch": [{
                 "id": f"trace-name-{trace_id[:8]}",
                 "type": "trace-create",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
-                "body": {"id": trace_id, "name": name},
+                "body": inner,
             }],
         }
-        if input_data is not None:
-            body["batch"][0]["body"]["input"] = input_data
         req = urllib.request.Request(
             f"{host}/api/public/ingestion",
             data=json.dumps(body).encode(),

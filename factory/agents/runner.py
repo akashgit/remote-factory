@@ -344,7 +344,7 @@ def _complete_span_safe(
 
         meta = dict(metadata or {})
         claude_session_id = meta.pop("session_id", None)
-        if claude_session_id:
+        if isinstance(claude_session_id, str):
             ingest_transcript_to_span(trace_id, span_id, claude_session_id, project_path)
 
         end_span(
