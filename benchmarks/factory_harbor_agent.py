@@ -25,7 +25,7 @@ class FactoryCeo(BaseInstalledAgent):
     def get_version_command(self) -> str | None:
         return (
             'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-            'factory --version 2>/dev/null || echo "unknown"'
+            'which factory 2>/dev/null || echo "unknown"'
         )
 
     @override
@@ -79,7 +79,7 @@ class FactoryCeo(BaseInstalledAgent):
                 'export PATH="$HOME/.cargo/bin:$PATH"; '
                 "uv tool install "
                 "'remote-factory @ git+https://github.com/akashgit/remote-factory.git' && "
-                "factory --version"
+                "which factory"
             ),
         )
 
