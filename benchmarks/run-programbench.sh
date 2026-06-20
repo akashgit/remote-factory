@@ -150,8 +150,9 @@ log "Step 5: Installing Claude Code and Factory inside container"
 echo "    Installing Node.js 22, Claude Code, and Factory..."
 
 docker exec "${CONTAINER_NAME}" bash -c '
+    apt-get update && apt-get install -y git rsync &&
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&
-    apt-get install -y nodejs git rsync &&
+    apt-get install -y --no-install-recommends nodejs &&
     npm install -g @anthropic-ai/claude-code
 '
 
