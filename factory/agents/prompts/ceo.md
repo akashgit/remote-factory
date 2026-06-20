@@ -539,7 +539,8 @@ This is an EXISTING project, not a new idea. Produce an improvement spec with th
 
 ## Scope Boundaries
 <What is in scope and what is explicitly out of scope for this improvement>
-" --project "$PROJECT_PATH" --timeout 300
+
+Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
 
 **For research ideation** (interactive, research project):
@@ -560,7 +561,9 @@ MANDATORY: Read ALL tagged research files FIRST (.factory/strategy/research-*.md
 
 Every Phase hypothesis MUST have a substantive What field (specific changes), Why field (research-grounded rationale), and Expected impact field. A one-line What field is NOT enough.
 
-Produce a complete build plan with research configuration. Phase 1 must be project scaffold + eval harness." --project "$PROJECT_PATH" --timeout 300
+Produce a complete build plan with research configuration. Phase 1 must be project scaffold + eval harness.
+
+Write the plan to .factory/strategy/current.md." --project "$PROJECT_PATH" --timeout 300
 ```
 
 ### P1r: CEO Review — Strategy (HARD GATE)
@@ -625,7 +628,13 @@ Present the Strategist's output clearly. Highlight the key choices the Strategis
 
 **If the user provides feedback** (anything other than approval):
 
-**Optional: Targeted follow-up research.** If the user's feedback introduces a new domain or technology not covered by the initial research, spawn the Researcher again with a narrow scope:
+**Targeted follow-up research.** Spawn the Researcher when the user's feedback involves ANY topic the initial research didn't adequately cover. This includes — but is not limited to:
+- New technologies or libraries (e.g., "use Go instead", "add Redis caching")
+- New capabilities or visual effects (e.g., "add a 3D effect", "add real-time chat", "add animations", "add dark mode")
+- Architectural patterns (e.g., "make it serverless", "add WebSocket support", "use microservices")
+- Domain-specific techniques (e.g., "use RAG for search", "add ML predictions", "add OAuth")
+
+**Default to launching the Researcher.** If you're unsure whether the feedback was covered by the initial research, launch it — a 180s Researcher is far cheaper than a Strategist working without domain knowledge. Only skip research for purely scoping feedback that doesn't introduce new topics (e.g., "drop feature X", "move Y to phase 2", "swap priority of A and B", "make the MVP smaller").
 
 ```bash
 factory agent researcher --task "Targeted follow-up research for project planning.
@@ -661,7 +670,7 @@ Raw idea: <RAW_IDEA>
 
 Read all tagged research files at .factory/strategy/research-*.md for context.
 
-Produce a complete updated specification." --project "$PROJECT_PATH" --timeout 300
+Write the updated plan to .factory/strategy/current.md (overwrite the file — do not append)." --project "$PROJECT_PATH" --timeout 300
 ```
 
 Read the Strategist's output and return to **P1v** (re-validate research config if research project), then **P1r** (CEO review), then back to **P2** (present to user).
