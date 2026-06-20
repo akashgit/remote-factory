@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # ── Configuration ──
 
 INSTANCE_ID="${1:-sympy__sympy-20590}"
-SOLVER_TIMEOUT="${2:-1800}"
+SOLVER_TIMEOUT="${2:-3600}"
 DATASET="${3:-princeton-nlp/SWE-bench_Lite}"
 
 BENCHMARK="swebench"
@@ -78,6 +78,10 @@ if ! command -v claude &>/dev/null; then
     MISSING+=("claude (Claude Code CLI — install from https://docs.anthropic.com/en/docs/claude-code)")
 fi
 
+if ! command -v factory &>/dev/null; then
+    MISSING+=("factory (Factory CLI — install from the factory repo)")
+fi
+
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo "    ERROR: Missing prerequisites:"
     for m in "${MISSING[@]}"; do
@@ -89,6 +93,7 @@ fi
 echo "    python3: found"
 echo "    docker: found"
 echo "    claude: found"
+echo "    factory: found"
 
 ensure_uvx
 
@@ -164,9 +169,9 @@ echo "    Working directory: ${WORKSPACE}/repo"
 
 echo ""
 
-# ── Step 5: Run solver (Claude Code) ──
+# ── Step 5: Run solver (Factory CEO) ──
 
-log "Step 5: Running Claude Code solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 5: Running Factory CEO solver (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT_FILE="${WORKSPACE}/solver_prompt.txt"
@@ -175,9 +180,7 @@ import json
 with open('${INSTANCE_JSON}') as f:
     instance = json.load(f)
 
-# Rewrite /testbed/ paths to relative paths (we can't create /testbed symlink)
 problem_statement = instance['problem_statement']
-problem_statement = problem_statement.replace('/testbed/', './')
 
 prompt = '''You are fixing a bug in an open-source Python project.
 
@@ -205,16 +208,24 @@ fi
 
 cd "${WORKSPACE}/repo"
 
+# Create minimal factory.md so factory recognizes the project
+cat > "${WORKSPACE}/repo/factory.md" << 'FACTORYEOF'
+---
+goal: Fix the bug described in the problem statement
+---
+FACTORYEOF
+
 export_claude_env
+
+# Temporarily allow failures — Steps 6-9 must always run regardless of solver/post-processing outcome
+set +e
 
 SOLVER_LOG="${WORKSPACE}/solver_output.log"
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" claude -p "$(cat "${SOLVER_PROMPT_FILE}")" \
-    --model "${ANTHROPIC_MODEL}" \
-    --verbose \
-    --max-turns 200 \
-    --permission-mode bypassPermissions \
-    --output-format stream-json \
+timeout "${SOLVER_TIMEOUT}" factory ceo . \
+    --headless \
+    --no-github \
+    --prompt "${SOLVER_PROMPT_FILE}" \
     2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
 
@@ -223,6 +234,31 @@ if [ "${SOLVER_EXIT}" -eq 124 ]; then
 elif [ "${SOLVER_EXIT}" -ne 0 ]; then
     echo "    Solver exited with code ${SOLVER_EXIT}"
 fi
+
+# Post-processing: merge factory branch changes back to default branch
+FACTORY_BRANCH=$(cd "${WORKSPACE}/repo" && git branch --list 'factory/*' | head -1 | tr -d ' *')
+if [ -n "${FACTORY_BRANCH}" ]; then
+    echo "    Merging factory branch: ${FACTORY_BRANCH}"
+    cd "${WORKSPACE}/repo" && git merge "${FACTORY_BRANCH}" --no-edit 2>/dev/null \
+        || git cherry-pick "${FACTORY_BRANCH}" --no-edit 2>/dev/null || true
+else
+    echo "    No factory branch found, checking reflog..."
+    LATEST=$(cd "${WORKSPACE}/repo" && git reflog --all --pretty=format:'%H %s' | grep -i 'factory\|cherry-pick\|fix' | head -1 | awk '{print $1}')
+    if [ -n "${LATEST}" ]; then
+        echo "    Cherry-picking from reflog: ${LATEST}"
+        cd "${WORKSPACE}/repo" && git cherry-pick "${LATEST}" --no-edit 2>/dev/null || true
+    fi
+fi
+
+# Recover from surviving worktrees
+for wt in "${WORKSPACE}/repo/.factory/worktrees/"*/; do
+    if [ -d "${wt}" ]; then
+        echo "    Recovering files from worktree: ${wt}"
+        rsync -a --exclude='.git' --exclude='.factory' "${wt}" "${WORKSPACE}/repo/" 2>/dev/null || true
+    fi
+done
+
+set -e
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
@@ -233,7 +269,13 @@ log "Step 6: Capturing patch"
 
 cd "${WORKSPACE}/repo"
 PATCH_FILE="${WORKSPACE}/model_patch.diff"
-git diff > "${PATCH_FILE}"
+git diff "${BASE_COMMIT}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+
+# Fallback: if committed diff is empty, try unstaged diff too
+if [ ! -s "${PATCH_FILE}" ]; then
+    echo "    No committed changes found, trying unstaged diff..."
+    git diff -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+fi
 
 PATCH_SIZE="$(wc -c < "${PATCH_FILE}")"
 if [ "${PATCH_SIZE}" -eq 0 ]; then
@@ -241,7 +283,7 @@ if [ "${PATCH_SIZE}" -eq 0 ]; then
     echo "    Evaluation will proceed but instance will not be resolved."
 else
     PATCH_LINES="$(wc -l < "${PATCH_FILE}")"
-    PATCH_FILES="$(git diff --name-only | wc -l)"
+    PATCH_FILES="$(git diff "${BASE_COMMIT}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
     echo "    Patch: ${PATCH_LINES} lines across ${PATCH_FILES} file(s)"
 fi
 echo ""
