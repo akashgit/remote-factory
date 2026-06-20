@@ -173,3 +173,39 @@ class FactoryCeo(BaseInstalledAgent):
             ),
             env=env,
         )
+
+        # Merge factory branch changes back to the default branch.
+        # The factory works in a worktree on a factory/run-XXX branch,
+        # then deletes the worktree and branch on exit. The verifier
+        # checks the default branch where no changes would exist.
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "set +e; "
+                'FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *"); '
+                'if [ -n "$FACTORY_BRANCH" ]; then '
+                '  echo "Merging factory branch: $FACTORY_BRANCH"; '
+                '  git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                '    || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                "    || true; "
+                "else "
+                '  echo "No factory branch found, checking reflog..."; '
+                "  FACTORY_COMMITS=$(git reflog --all --pretty=format:'%H %s' "
+                "    | grep -i 'factory\\|cherry-pick\\|fix\\|build' | head -5); "
+                '  if [ -n "$FACTORY_COMMITS" ]; then '
+                '    LATEST_COMMIT=$(echo "$FACTORY_COMMITS" | head -1 | awk "{print \\$1}"); '
+                '    echo "Cherry-picking reflog commit: $LATEST_COMMIT"; '
+                '    git cherry-pick "$LATEST_COMMIT" --no-edit 2>/dev/null || true; '
+                "  fi; "
+                "fi; "
+                'for wt in .factory/worktrees/*/; do '
+                '  if [ -d "$wt" ]; then '
+                '    echo "Recovering files from worktree: $wt"; '
+                "    rsync -a --exclude='.git' --exclude='.factory' "
+                '      "$wt" ./ 2>/dev/null || true; '
+                "  fi; "
+                "done; "
+                "exit 0"
+            ),
+            env=env,
+        )
