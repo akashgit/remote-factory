@@ -753,7 +753,7 @@ When the user approves the spec (or both spec diff and plan in two-phase mode):
 ### Ideation Rules
 
 - **Maximum 5 iterations.** If the user has not approved after 5 rounds of feedback, summarize the current state and ask them to either approve the latest draft or provide a final definitive direction.
-- **Two-phase iteration (SPEC.md).** When SPEC.md exists, Phase 0 runs two approval loops — spec diff first, then plan. The max-5 iteration cap applies per phase independently. Users can regress from plan iteration back to spec iteration if they discover spec-level issues. Regression does not reset the iteration counter for Pass 1.
+- **Two-phase iteration (SPEC.md).** When SPEC.md exists, Phase 0 runs two approval loops — spec diff first, then plan. The max-5 iteration cap applies per phase independently. Users can regress from plan iteration back to spec iteration if they discover spec-level issues. Regression does not reset the iteration counter for Pass 1. If Pass 1 counter is exhausted and regression is requested, present the constraint to the user and ask them to approve the current spec as-is or provide a final definitive direction.
 - **Do not build anything during Phase 0.** No code, no scaffolding, no repos beyond the project directory. Phase 0 produces only a spec document (or improvement spec for existing projects).
 - **Research is optional on refinement.** Only re-spawn the Researcher if the user's feedback introduces genuinely new territory. Minor scope adjustments (add/remove features, change priorities) do not need new research.
 - **Be concise when presenting.** After the first full presentation, highlight what changed rather than re-presenting the entire spec. But always show the full spec so the user can read it in context.

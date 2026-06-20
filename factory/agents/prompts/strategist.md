@@ -446,7 +446,7 @@ You are invoked after the Researcher has completed domain analysis. You have acc
 Before writing any build plan content, you MUST ground your decisions in research:
 
 1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
-   - **If SPEC.md content is provided** (via `## Repo-Level SPEC.md` in your task), read it and extract relevant sections. The spec diff must be anchored to specific SPEC.md section numbers — do not invent section numbers that don't exist in the provided SPEC.md.
+   - **If SPEC.md content is provided** (via `## Repo-Level SPEC.md` in your task), read it and extract relevant sections. Anchor MODIFIED and REMOVED entries to section numbers that exist in the provided SPEC.md. ADDED sections should propose a section number that fits the existing numbering scheme.
 
 2. **Write a substantive hypothesis for each Phase** with:
    - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
