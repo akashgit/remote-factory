@@ -263,6 +263,7 @@ The evaluation compares your output against the original on hidden test cases.'
 SOLVER_PROMPT_FILE="$(mktemp /tmp/programbench-prompt-XXXXXX.txt)"
 echo "${SOLVER_PROMPT}" > "${SOLVER_PROMPT_FILE}"
 docker cp "${SOLVER_PROMPT_FILE}" "${CONTAINER_NAME}:/tmp/solver_prompt.txt"
+docker exec "${CONTAINER_NAME}" chmod 644 /tmp/solver_prompt.txt
 rm -f "${SOLVER_PROMPT_FILE}"
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
