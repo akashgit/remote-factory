@@ -139,6 +139,7 @@ async def invoke_agent(
     session_name: str | None = None,
     use_profile: bool = False,
     tmux_persist: bool = False,
+    background: bool = False,
     review_tag: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
@@ -178,7 +179,7 @@ async def invoke_agent(
         role=role,
         session_name=agent_session_name,
         project_path=project_path,
-        extras={"tmux_persist": tmux_persist},
+        extras={"tmux_persist": tmux_persist, "background": background},
     )
 
     old_parent_span = os.environ.get("FACTORY_PARENT_SPAN_ID")
@@ -448,6 +449,7 @@ async def invoke_agents_parallel(
     model: str | None = None,
     runner_name: str | None = None,
     tmux_persist: bool = False,
+    background: bool = False,
     review_tags: list[str | None] | None = None,
 ) -> list[tuple[str, int]]:
     """Invoke multiple agents concurrently. Returns list of (output, return_code).
@@ -492,6 +494,7 @@ async def invoke_agents_parallel(
             runner_name=runner_name,
             _track_failures=False,  # Avoid race condition; track locally below
             tmux_persist=tmux_persist,
+            background=background,
             review_tag=tag,
         )
         for (role, task), tag in zip(tasks, review_tags)

@@ -203,6 +203,9 @@ class BobRunner:
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
             log.warning("bob_tmux_not_supported")
+        background = request.extras.get("background", False)
+        if background:
+            log.warning("bob_bg_not_supported", hint="--bg is a claude-only feature")
         self._role = request.role
         project_path = request.project_path or self._find_project_path(request.cwd)
 

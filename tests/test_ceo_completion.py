@@ -1185,3 +1185,29 @@ class TestCeoPromptResearchMode:
         improve_idx = ceo_prompt.index("## Mode: Improve")
         review_section = ceo_prompt[review_idx:improve_idx]
         assert "Research mode" in review_section
+
+
+class TestCeoCompletionBackgroundBypass:
+    """Tests for background=True bypassing the respawn loop."""
+
+    async def test_background_bypasses_respawn_loop(self, tmp_path: Path) -> None:
+        """run_ceo_with_completion_guard calls invoke_agent directly when background=True."""
+        from factory.ceo_completion import run_ceo_with_completion_guard
+
+        (tmp_path / ".factory").mkdir()
+
+        with patch(
+            "factory.agents.runner.invoke_agent",
+            new_callable=AsyncMock,
+            return_value=("bg output", 0),
+        ) as mock_invoke:
+            stdout, code = await run_ceo_with_completion_guard(
+                tmp_path, "initial task", mode="improve",
+                background=True,
+            )
+
+        assert stdout == "bg output"
+        assert code == 0
+        mock_invoke.assert_called_once()
+        call_kwargs = mock_invoke.call_args.kwargs
+        assert call_kwargs["background"] is True

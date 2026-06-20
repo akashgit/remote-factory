@@ -52,6 +52,7 @@ class ClaudeRunner:
             install_hint="npm install -g @anthropic-ai/claude-code",
             supports_usage_telemetry=True,
             supports_session_name=True,
+            supports_background=True,
         )
 
     def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
@@ -84,6 +85,18 @@ class ClaudeRunner:
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless Claude Code invocation."""
         from factory.models import AgentRunResult
+
+        background = request.extras.get("background", False)
+        if background:
+            from factory.runners._tmux_persist import run_in_background
+
+            stdout, rc, usage = await run_in_background(
+                request.prompt, request.task, request.cwd, request.role,
+                timeout=request.timeout,
+                model=request.model,
+                dangerously_skip_permissions=request.skip_permissions,
+            )
+            return AgentRunResult(stdout=stdout, return_code=rc, usage=usage)
 
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:

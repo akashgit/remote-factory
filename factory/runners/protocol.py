@@ -25,6 +25,7 @@ class RunnerMeta:
     supports_streaming: bool = True
     supports_usage_telemetry: bool = False
     supports_session_name: bool = False
+    supports_background: bool = False
     custom_auth_check: Callable[[], bool] | None = None
 
     def is_available(self) -> bool:
