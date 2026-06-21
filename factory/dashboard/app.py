@@ -835,15 +835,41 @@ def create_app(projects_dir: Path) -> FastAPI:
         if not message:
             raise HTTPException(status_code=400, detail="Empty message")
 
+        import os
         import subprocess
+        import tempfile
+
+        cmd = [
+            "claude", "--resume", claude_sid,
+            "-p", message,
+            "--output-format", "json",
+        ]
+
+        tmp_prompt_file = None
+        agent_role = session.get("agent_role")
+        if agent_role:
+            prompt_path = (
+                Path(__file__).parent.parent / "agents" / "prompts" / f"{agent_role}.md"
+            )
+            if prompt_path.exists():
+                prompt_text = prompt_path.read_text()
+                playbook_path = Path.home() / ".factory" / "playbooks" / f"{agent_role}.md"
+                if playbook_path.exists():
+                    playbook_text = playbook_path.read_text().strip()
+                    if playbook_text:
+                        from factory.ace.injector import inject_playbook
+
+                        prompt_text = inject_playbook(prompt_text, playbook_text)
+                tmp_prompt_file = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".md", delete=False,
+                )
+                tmp_prompt_file.write(prompt_text)
+                tmp_prompt_file.close()
+                cmd.extend(["--system-prompt-file", tmp_prompt_file.name])
 
         try:
             result = subprocess.run(
-                [
-                    "claude", "--resume", claude_sid,
-                    "-p", message,
-                    "--output-format", "json",
-                ],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=300,
@@ -855,6 +881,9 @@ def create_app(projects_dir: Path) -> FastAPI:
             )
         except subprocess.TimeoutExpired:
             raise HTTPException(status_code=504, detail="Claude timed out")
+        finally:
+            if tmp_prompt_file is not None:
+                os.unlink(tmp_prompt_file.name)
 
         usage_update = None
         if result.stdout.strip():

@@ -146,6 +146,44 @@ class TestSendMessageAPI:
         )
         assert resp.status_code == 404
 
+    def test_resume_injects_system_prompt_file(
+        self, client: TestClient, session_ids: dict, projects_dir: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """When a session has an agent_role, resume should pass --system-prompt-file."""
+        import sqlite3
+        import subprocess
+
+        proj = projects_dir / "proj-a"
+        researcher_id = session_ids["researcher"]
+
+        db_path = proj / ".factory" / "sessions.db"
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(
+            "UPDATE sessions SET claude_session_id = ? WHERE id = ?",
+            ("fake-claude-sid", researcher_id),
+        )
+        conn.commit()
+        conn.close()
+
+        captured_cmd: list[str] = []
+
+        def fake_run(cmd, **kwargs):
+            captured_cmd.extend(cmd)
+            result = subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
+            return result
+
+        monkeypatch.setattr(subprocess, "run", fake_run)
+
+        resp = client.post(
+            f"/api/projects/proj-a/sessions/{researcher_id}/message",
+            json={"message": "hello"},
+        )
+        assert resp.status_code == 200
+        assert "--system-prompt-file" in captured_cmd
+        idx = captured_cmd.index("--system-prompt-file")
+        prompt_file = Path(captured_cmd[idx + 1])
+        assert prompt_file.suffix == ".md"
+
 
 class TestSessionsPage:
     def test_sessions_html_served(self, client: TestClient):
