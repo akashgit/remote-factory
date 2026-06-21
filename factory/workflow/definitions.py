@@ -460,13 +460,21 @@ def research_workflow() -> Workflow:
         writes={".factory/reviews/evaluator-latest.md"},
     )
 
-    # Add plateau gate after finalize
+    # Add plateau gate after finalize — checks if score improved over prior runs
     wf.nodes["plateau_gate"] = GateNode(
         id="plateau_gate",
         evaluator_type="fn",
         evaluator_command=(
-            "python3 -c \"import json, sys; "
-            "print('PROCEED' if True else 'RELOOP')\""
+            "python3 -c \""
+            "import json, pathlib, sys; "
+            "tsv = pathlib.Path('{project_path}/.factory/results.tsv'); "
+            "lines = [l for l in tsv.read_text().strip().splitlines()[1:] if l.strip()] if tsv.exists() else []; "
+            "scores = []; "
+            "[scores.append(float(p)) for l in lines for i, p in enumerate(l.split(chr(9))) if i == 2 and p]; "
+            "recent = scores[-3:] if len(scores) >= 3 else scores; "
+            "improved = len(recent) < 2 or recent[-1] > recent[-2]; "
+            "print('RELOOP' if improved else 'PROCEED')"
+            "\""
         ),
         reads={".factory/experiments/verdict.json"},
     )
@@ -663,9 +671,6 @@ def meta_workflow() -> Workflow:
 
 
 # ── Registry ─────────────────────────────────────────────────────
-
-
-ALL_WORKFLOWS: dict[str, type[Workflow] | Any] = {}
 
 
 def register_all() -> dict[str, Workflow]:
