@@ -39,6 +39,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'"}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -78,7 +79,7 @@ if ! command -v claude &>/dev/null; then
     MISSING+=("claude (Claude Code CLI — install from https://docs.anthropic.com/en/docs/claude-code)")
 fi
 
-if ! command -v factory &>/dev/null; then
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ] && ! command -v factory &>/dev/null; then
     MISSING+=("factory (Factory CLI — install from the factory repo)")
 fi
 
@@ -93,7 +94,10 @@ fi
 echo "    python3: found"
 echo "    docker: found"
 echo "    claude: found"
-echo "    factory: found"
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    echo "    factory: found"
+fi
+echo "    solver: ${BENCHMARK_SOLVER:-factory}"
 
 ensure_uvx
 
@@ -171,7 +175,7 @@ echo ""
 
 # ── Step 5: Run solver (Factory CEO) ──
 
-log "Step 5: Running Factory CEO solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 5: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT_FILE="${WORKSPACE}/solver_prompt.txt"
@@ -208,13 +212,6 @@ fi
 
 cd "${WORKSPACE}/repo"
 
-# Create minimal factory.md so factory recognizes the project
-cat > "${WORKSPACE}/repo/factory.md" << 'FACTORYEOF'
----
-goal: Fix the bug described in the problem statement
----
-FACTORYEOF
-
 export_claude_env
 
 # Temporarily allow failures — Steps 6-9 must always run regardless of solver/post-processing outcome
@@ -222,12 +219,31 @@ set +e
 
 SOLVER_LOG="${WORKSPACE}/solver_output.log"
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" factory ceo . \
-    --headless \
-    --no-github \
-    --prompt "${SOLVER_PROMPT_FILE}" \
-    2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
-SOLVER_EXIT=${PIPESTATUS[0]}
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    # Raw Claude Code path
+    timeout "${SOLVER_TIMEOUT}" claude -p "$(cat "${SOLVER_PROMPT_FILE}")" \
+        --model "${ANTHROPIC_MODEL}" \
+        --verbose --max-turns 200 \
+        --permission-mode bypassPermissions \
+        --output-format stream-json \
+        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
+    SOLVER_EXIT=${PIPESTATUS[0]}
+else
+    # Factory CEO path
+    cat > "${WORKSPACE}/repo/factory.md" << 'FACTORYEOF'
+---
+goal: Fix the bug described in the problem statement
+---
+FACTORYEOF
+
+    timeout "${SOLVER_TIMEOUT}" factory ceo . \
+        --headless \
+        --no-github \
+        --prompt "${SOLVER_PROMPT_FILE}" \
+        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
+    SOLVER_EXIT=${PIPESTATUS[0]}
+fi
 
 if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
@@ -235,50 +251,49 @@ elif [ "${SOLVER_EXIT}" -ne 0 ]; then
     echo "    Solver exited with code ${SOLVER_EXIT}"
 fi
 
-# Post-processing: merge factory branch changes back to default branch
-cd "${WORKSPACE}/repo"
+# Post-processing: recover factory branch/worktree changes (factory solver only)
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    cd "${WORKSPACE}/repo"
 
-# Strategy 1: Merge surviving factory branch
-FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
-if [ -n "$FACTORY_BRANCH" ]; then
-    echo "Merging factory branch: $FACTORY_BRANCH"
-    git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
-fi
+    # Strategy 1: Merge surviving factory branch
+    FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
+    if [ -n "$FACTORY_BRANCH" ]; then
+        echo "Merging factory branch: $FACTORY_BRANCH"
+        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+    fi
 
-# Strategy 2: Recover orphaned commits via git fsck
-if [ -z "$FACTORY_BRANCH" ]; then
-    echo "No factory branch, finding orphaned commits..."
-    ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
-    if [ -n "$ORPHAN_COMMITS" ]; then
-        # Find the tip of the orphan chain — the commit with the latest timestamp
-        BEST_COMMIT=""
-        BEST_TIME=0
-        for SHA in $ORPHAN_COMMITS; do
-            COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
-            if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
-                BEST_TIME=$COMMIT_TIME
-                BEST_COMMIT=$SHA
+    # Strategy 2: Recover orphaned commits via git fsck
+    if [ -z "$FACTORY_BRANCH" ]; then
+        echo "No factory branch, finding orphaned commits..."
+        ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
+        if [ -n "$ORPHAN_COMMITS" ]; then
+            BEST_COMMIT=""
+            BEST_TIME=0
+            for SHA in $ORPHAN_COMMITS; do
+                COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
+                if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                    BEST_TIME=$COMMIT_TIME
+                    BEST_COMMIT=$SHA
+                fi
+            done
+            if [ -n "$BEST_COMMIT" ]; then
+                echo "Recovering from orphan tip: $BEST_COMMIT"
+                echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
+                git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
             fi
-        done
-        if [ -n "$BEST_COMMIT" ]; then
-            echo "Recovering from orphan tip: $BEST_COMMIT"
-            echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
-            # Use checkout to restore ALL files from the orphan tip
-            git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
-            # Clean up factory artifacts
-            git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
-            rm -rf .factory/ eval/ factory.md 2>/dev/null || true
         fi
     fi
-fi
 
-# Strategy 3: Recover from surviving worktree directories
-for wt in .factory/worktrees/*/; do
-    if [ -d "$wt" ]; then
-        echo "Recovering files from worktree: $wt"
-        rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
-    fi
-done
+    # Strategy 3: Recover from surviving worktree directories
+    for wt in .factory/worktrees/*/; do
+        if [ -d "$wt" ]; then
+            echo "Recovering files from worktree: $wt"
+            rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
+        fi
+    done
+fi
 
 set -e
 
