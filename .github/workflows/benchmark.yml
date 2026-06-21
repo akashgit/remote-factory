@@ -215,6 +215,46 @@ jobs:
           merge-multiple: true
           path: results/
 
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: main-checkout
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Append results to history
+        run: |
+          HISTORY=main-checkout/benchmarks/history.jsonl
+          RUN_ID="${{ github.run_id }}"
+          COMMIT="${{ github.sha }}"
+          REF="${{ github.ref }}"
+          PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number || '' }}"
+
+          if [ -d results ]; then
+            for f in results/*.json; do
+              if [ -f "$f" ]; then
+                python3 -c "
+import json, sys
+with open('$f') as fh:
+    data = json.load(fh)
+data['run_id'] = '$RUN_ID'
+data['commit'] = '$COMMIT'
+data['ref'] = '$REF'
+data['pr_number'] = '$PR_NUMBER'
+print(json.dumps(data))
+" >> "$HISTORY"
+              fi
+            done
+          fi
+
+      - name: Commit history
+        run: |
+          cd main-checkout
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add benchmarks/history.jsonl
+          git diff --cached --quiet || git commit -m "benchmark: update history [skip ci]"
+          git push
+
       - name: Post PR comment
         if: github.event_name == 'pull_request' || inputs.pr_number != ''
         uses: actions/github-script@v7
@@ -256,6 +296,47 @@ jobs:
 
             if (!hasResults) {
               body += '_No benchmark results found._\n';
+            }
+
+            const historyPath = 'main-checkout/benchmarks/history.jsonl';
+            let baselines = {};
+            if (fs.existsSync(historyPath)) {
+              const lines = fs.readFileSync(historyPath, 'utf8').trim().split('\n').filter(Boolean);
+              for (const line of lines) {
+                try {
+                  const entry = JSON.parse(line);
+                  if (entry.ref === 'refs/heads/main') {
+                    const key = entry.benchmark + '-' + (entry.details?.solver || 'unknown');
+                    baselines[key] = entry;
+                  }
+                } catch {}
+              }
+            }
+
+            if (hasResults && Object.keys(baselines).length > 0) {
+              body += '### Comparison vs Baseline\n\n';
+              body += '| Benchmark | Solver | Score | vs Baseline | Cost | vs Baseline | Duration |\n';
+              body += '|-----------|--------|-------|-------------|------|-------------|----------|\n';
+
+              for (const file of files) {
+                if (file.endsWith('.json')) {
+                  const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                  const solver = data.details?.solver || 'unknown';
+                  const key = data.benchmark + '-' + solver;
+                  const baseline = baselines[key];
+
+                  const scoreDelta = baseline ? (data.score - baseline.score).toFixed(4) : 'N/A';
+                  const scoreArrow = baseline ? (data.score > baseline.score ? '▲' : data.score < baseline.score ? '▼' : '=') : '';
+                  const costDelta = baseline ? (data.details?.cost_usd - (baseline.details?.cost_usd || 0)).toFixed(2) : 'N/A';
+                  const costArrow = baseline ? (data.details?.cost_usd < (baseline.details?.cost_usd || 0) ? '▲' : data.details?.cost_usd > (baseline.details?.cost_usd || 0) ? '▼' : '=') : '';
+                  const duration = data.duration_seconds + 's';
+
+                  body += '| ' + data.benchmark + ' | ' + solver + ' | ' + data.score + ' | ' + scoreArrow + ' ' + scoreDelta + ' | $' + (data.details?.cost_usd || 0).toFixed(2) + ' | ' + costArrow + ' $' + costDelta + ' | ' + duration + ' |\n';
+                }
+              }
+              body += '\n_Baseline: latest main branch run. ▲ = improvement (higher score or lower cost), ▼ = regression._\n\n';
+            } else if (hasResults) {
+              body += '_No baseline available for comparison._\n\n';
             }
 
             const { data: comments } = await github.rest.issues.listComments({
