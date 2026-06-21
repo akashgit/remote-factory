@@ -15,7 +15,7 @@ esac
 
 if ! command -v sentrux &>/dev/null; then
   echo >&2 "sentrux not found, installing ${SENTRUX_VERSION} for ${platform}..."
-  url="https://github.com/getsentry/sentrux/releases/download/${SENTRUX_VERSION}/sentrux-${platform}"
+  url="https://github.com/sentrux/sentrux/releases/download/${SENTRUX_VERSION}/sentrux-${platform}"
   if [ -w /usr/local/bin ]; then
     dest="/usr/local/bin/sentrux"
   else

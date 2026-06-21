@@ -1,3 +1,4 @@
+[constraints]
 max_cycles = 5
 max_coupling = "C"
 max_cc = 30
