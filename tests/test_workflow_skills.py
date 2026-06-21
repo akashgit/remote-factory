@@ -13,11 +13,9 @@ from factory.workflow.primitives import (
     AgentConfig,
     AgentRole,
     DEFAULT_AGENT_POOL,
-    Edge,
     FnNode,
     GateNode,
     SkillPhase,
-    VerdictType,
     Workflow,
     WorkflowSkill,
 )
