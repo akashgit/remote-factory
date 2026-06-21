@@ -264,10 +264,12 @@ def eval_research_grounding(project_path: Path) -> dict:
             exp_notes = max(exp_dir_count, flat_count)
         else:
             archive_exp_dir = archive_dir / "experiments"
-            exp_notes = (
-                len(list(archive_exp_dir.glob("*.md"))) + len(list(archive_exp_dir.glob("*.json")))
-                if archive_exp_dir.exists() else 0
-            )
+            if archive_exp_dir.exists():
+                exp_stems = {f.stem for f in archive_exp_dir.glob("*.md")}
+                exp_stems |= {f.stem for f in archive_exp_dir.glob("*.json")}
+                exp_notes = len(exp_stems)
+            else:
+                exp_notes = 0
         factory_exp_dir = project_path / ".factory" / "experiments"
         exp_total = len(list(factory_exp_dir.iterdir())) if factory_exp_dir.exists() else 0
         doc_ratio = min(1.0, exp_notes / max(exp_total, 1))
