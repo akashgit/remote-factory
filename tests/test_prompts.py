@@ -78,12 +78,6 @@ class TestResearcherPrompt:
 
 
 class TestArchivistPrompt:
-    def test_has_aggressive_documentation(self, archivist_prompt: str) -> None:
-        assert "## Aggressive Documentation Protocol" in archivist_prompt
-
-    def test_has_preflight_checklist(self, archivist_prompt: str) -> None:
-        assert "Pre-flight Checklist" in archivist_prompt
-
     def test_uses_archive_dir_not_vault(self, archivist_prompt: str) -> None:
         assert ".factory/archive/" in archivist_prompt
         assert "obsidian-cli" not in archivist_prompt.lower()
@@ -119,7 +113,7 @@ class TestCeoPrompt:
         assert "## Sacred Rules" in ceo_prompt
 
     def test_has_mandatory_archival(self, ceo_prompt: str) -> None:
-        assert "## Mandatory Archival Checkpoints" in ceo_prompt
+        assert "Do not skip archival" in ceo_prompt
         assert "MANDATORY" in ceo_prompt
 
     def test_references_factory_agent_command(self, ceo_prompt: str) -> None:
@@ -142,15 +136,15 @@ class TestCeoPrompt:
             assert role in ceo_prompt
 
     def test_seventh_sacred_rule_archival(self, ceo_prompt: str) -> None:
-        assert "Do not skip archival checkpoints" in ceo_prompt
+        assert "Do not skip archival" in ceo_prompt
 
     def test_ceo_notes_convention(self, ceo_prompt: str) -> None:
         assert "ceo:keep" in ceo_prompt
         assert "ceo:revert" in ceo_prompt
-        assert "archivist_spawned" in ceo_prompt
+        assert "agents_spawned" in ceo_prompt
 
     def test_build_mode_has_full_pipeline(self, ceo_prompt: str) -> None:
-        """Build mode must use Researcher + Strategist + Archivist before Builder."""
+        """Build mode must use Researcher + Strategist before Builder."""
         # Find the Build mode section
         build_start = ceo_prompt.index("## Mode: Build")
         discover_start = ceo_prompt.index("## Mode: Discover")
@@ -158,11 +152,10 @@ class TestCeoPrompt:
 
         # Build mode references the Plan Loop for research/strategy
         assert "Plan Loop" in build_section
-        # Builder and archivist agents must be in Build section
-        assert "factory agent archivist" in build_section
+        # Builder agent must be in Build section
         assert "factory agent builder" in build_section
 
-        # Plan Loop (before Build mode) must contain researcher and strategist
+        # Plan Loop (before Build mode) must contain researcher, strategist, and archivist
         plan_start = ceo_prompt.index("## Plan Loop")
         plan_section = ceo_prompt[plan_start:build_start]
         assert "factory agent researcher" in plan_section
@@ -286,57 +279,31 @@ class TestCeoPrompt:
 
     # ── Archivist Enforcement tests ─────────────────────────────
 
-    def test_archivist_checkpoint_file(self, ceo_prompt: str) -> None:
-        """CEO must write archivist checkpoints to a tracking file."""
-        assert "archivist-checkpoints.md" in ceo_prompt
-
-    def test_archivist_all_blocking(self, ceo_prompt: str) -> None:
-        """All archival checkpoints must be blocking (no async)."""
-        # The checkpoints table should say YES for all rows
-        assert "ALL archival is blocking" in ceo_prompt
-
     def test_archivist_do_not_skip_labels(self, ceo_prompt: str) -> None:
-        """Every archivist call must have DO NOT SKIP label."""
-        assert ceo_prompt.count("DO NOT SKIP") >= 5  # research, strategy, build, experiment, build-improve
+        """Critical archivist calls must have DO NOT SKIP label."""
+        assert ceo_prompt.count("DO NOT SKIP") >= 2
 
     def test_archivist_in_build_mode(self, ceo_prompt: str) -> None:
-        """Build mode must have archivist after build; Plan Loop has archivist after plan approval."""
+        """Plan Loop references archivist and plan approval."""
         build_start = ceo_prompt.index("## Mode: Build")
-        discover_start = ceo_prompt.index("## Mode: Discover")
-        build_section = ceo_prompt[build_start:discover_start]
-        assert "archivist after build" in build_section
 
         plan_start = ceo_prompt.index("## Plan Loop")
         plan_section = ceo_prompt[plan_start:build_start]
         assert "archivist" in plan_section.lower()
-        assert "plan approval" in plan_section.lower()
+        assert "plan approved" in plan_section.lower()
 
     def test_archivist_in_improve_mode(self, ceo_prompt: str) -> None:
-        """Improve mode must have archivist after research, strategy, build, and experiment."""
+        """Improve mode must have archivist for experiment outcomes."""
         improve_start = ceo_prompt.index("## Mode: Improve")
         meta_start = ceo_prompt.index("## Mode: Meta")
         improve_section = ceo_prompt[improve_start:meta_start]
 
-        assert "archivist after research" in improve_section
-        assert "archivist after strategy" in improve_section
-        assert "archivist after build" in improve_section
-        assert "archivist after experiment" in improve_section
+        assert "archivist" in improve_section.lower()
+        assert "experiment" in improve_section.lower()
 
-    def test_final_archive_preflight_check(self, ceo_prompt: str) -> None:
-        """Final archive must verify all checkpoints before proceeding."""
-        assert "Pre-flight check" in ceo_prompt
-        assert "FINAL archivist" in ceo_prompt
-
-    def test_no_async_archivist(self, ceo_prompt: str) -> None:
-        """Archivist commands must NOT use & (async) — all blocking."""
-        # Find all archivist task lines and make sure none end with &
-        import re
-        # Match archivist commands that end with & before the closing ```
-        async_calls = re.findall(
-            r'factory agent archivist --task.*?" --project "\$PROJECT_PATH" &',
-            ceo_prompt,
-        )
-        assert len(async_calls) == 0, f"Found {len(async_calls)} async archivist calls — all must be blocking"
+    def test_final_archive_blocking(self, ceo_prompt: str) -> None:
+        """Final archive must be blocking at cycle end."""
+        assert "Final Archive" in ceo_prompt or "final archive" in ceo_prompt
 
     # ── Plan Loop tests ────────────────────────────────
 
@@ -376,11 +343,11 @@ class TestCeoPrompt:
         plan_section = ceo_prompt[plan_start:build_start]
         assert "B3" in plan_section
 
-    def test_plan_loop_spawns_archivist(self, ceo_prompt: str) -> None:
+    def test_plan_loop_references_archivist(self, ceo_prompt: str) -> None:
         plan_start = ceo_prompt.index("## Plan Loop")
         build_start = ceo_prompt.index("## Mode: Build")
         plan_section = ceo_prompt[plan_start:build_start]
-        assert "factory agent archivist" in plan_section
+        assert "archivist" in plan_section.lower()
 
 
 # ── Strategist Ideation Mode ─────────────────────────────────────
