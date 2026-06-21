@@ -548,7 +548,7 @@ class WorkflowExecutor:
         return self._parse_agent_verdict(stdout, node.id)
 
     def _build_gate_prompt(self, node: GateNode) -> str:
-        """Build the lightweight CEO gate prompt."""
+        """Build the lightweight CEO gate prompt, optionally enriched with criteria files."""
         if node.gate_prompt:
             return node.gate_prompt.replace(
                 "{project_path}", str(self.project_path),
@@ -562,13 +562,37 @@ class WorkflowExecutor:
             if edge.condition == VerdictType.RELOOP:
                 reloop_targets.append(edge.target)
 
-        return CEO_GATE_PROMPT.format(
+        criteria_content = ""
+        if node.criteria_file:
+            criteria_content = self._load_criteria_file(node.criteria_file)
+
+        base_prompt = CEO_GATE_PROMPT.format(
             step_name=node.id,
             workflow_name=self.workflow.name,
             output_file=", ".join(output_files),
             previous_context=context,
             reloop_targets=", ".join(reloop_targets) if reloop_targets else "(use exact node IDs)",
         )
+
+        if criteria_content:
+            base_prompt += f"\n\n## Review Criteria\n\n{criteria_content}"
+
+        return base_prompt
+
+    def _load_criteria_file(self, criteria_file: str) -> str:
+        """Load a gate criteria file and perform template variable substitution."""
+        criteria_dir = Path(__file__).parent / "gate_criteria"
+        criteria_path = criteria_dir / criteria_file
+
+        if not criteria_path.is_file():
+            log.debug("criteria_file_not_found", path=str(criteria_path))
+            return ""
+
+        content = criteria_path.read_text()
+        content = content.replace("{project_path}", str(self.project_path))
+        content = content.replace("{focus_directive}", self.node_context.get("focus", ""))
+        content = content.replace("{criteria_file_content}", "")
+        return content
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse agent output into a Verdict by examining the last non-empty line."""

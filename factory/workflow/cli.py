@@ -28,12 +28,13 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate}")
+        print("Usage: factory workflow {run,list,catalog,show,validate}")
         return 1
 
     handlers = {
         "run": _cmd_run,
         "list": _cmd_list,
+        "catalog": _cmd_catalog,
         "show": _cmd_show,
         "validate": _cmd_validate,
     }
@@ -52,15 +53,15 @@ def _cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
 
-    workflows = register_all()
-    wf = workflows.get(name)
-    if not wf:
+    skills = register_all()
+    skill = skills.get(name)
+    if not skill:
         print(f"Unknown workflow: {name}")
-        print(f"Available: {', '.join(workflows)}")
+        print(f"Available: {', '.join(skills)}")
         return 1
 
     executor = WorkflowExecutor(
-        wf,
+        skill.workflow,
         project_path,
         agent_pool=DEFAULT_AGENT_POOL,
         dry_run=dry_run,
@@ -82,31 +83,61 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
-    """List all registered workflows."""
-    workflows = register_all()
+    """List all registered workflows with skill metadata."""
+    skills = register_all()
 
-    header = f"{'Name':<12} {'Nodes':>6} {'Edges':>6} {'Start Node':<20}"
+    header = f"{'Name':<12} {'Nodes':>6} {'Edges':>6} {'Phases':>7} {'Aliases':<25} {'Description'}"
     print(header)
     print("-" * len(header))
 
-    for name, wf in workflows.items():
-        print(f"{name:<12} {len(wf.nodes):>6} {len(wf.edges):>6} {wf.start_node:<20}")
+    for name, skill in skills.items():
+        wf = skill.workflow
+        aliases = ", ".join(skill.aliases) if skill.aliases else "-"
+        desc = skill.description[:50] if skill.description else "-"
+        print(
+            f"{name:<12} {len(wf.nodes):>6} {len(wf.edges):>6} "
+            f"{len(skill.phases):>7} {aliases:<25} {desc}"
+        )
 
+    return 0
+
+
+def _cmd_catalog(args: argparse.Namespace) -> int:
+    """Generate injectable markdown catalog of all workflow skills."""
+    from factory.workflow.registry import SkillRegistry
+
+    registry = SkillRegistry.create()
+    print(registry.catalog())
     return 0
 
 
 def _cmd_show(args: argparse.Namespace) -> int:
     """Show a workflow's graph as a node/edge table."""
     name = args.name
-    workflows = register_all()
-    wf = workflows.get(name)
-    if not wf:
+    skills = register_all()
+    skill = skills.get(name)
+    if not skill:
         print(f"Unknown workflow: {name}")
         return 1
 
+    wf = skill.workflow
+
     print(f"Workflow: {wf.name}")
     print(f"Start:    {wf.start_node}")
+    if skill.description:
+        print(f"Desc:     {skill.description}")
+    if skill.aliases:
+        print(f"Aliases:  {', '.join(skill.aliases)}")
+    if skill.trigger_description:
+        print(f"Trigger:  {skill.trigger_description}")
     print()
+
+    if skill.phases:
+        print("Phases:")
+        for phase in skill.phases:
+            desc = f" — {phase.description}" if phase.description else ""
+            print(f"  - {phase.name}{desc}")
+        print()
 
     # Nodes table
     print("Nodes:")
@@ -158,12 +189,13 @@ def _cmd_show(args: argparse.Namespace) -> int:
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Validate a workflow using NetworkX."""
     name = args.name
-    workflows = register_all()
-    wf = workflows.get(name)
-    if not wf:
+    skills = register_all()
+    skill = skills.get(name)
+    if not skill:
         print(f"Unknown workflow: {name}")
         return 1
 
+    wf = skill.workflow
     issues = wf.validate_graph()
 
     if not issues:
@@ -188,7 +220,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
 
     # list
-    wf_sub.add_parser("list", help="List all registered workflows")
+    wf_sub.add_parser("list", help="List all registered workflows with skill metadata")
+
+    # catalog
+    wf_sub.add_parser("catalog", help="Generate injectable markdown catalog of all workflow skills")
 
     # show
     p = wf_sub.add_parser("show", help="Show workflow graph details")

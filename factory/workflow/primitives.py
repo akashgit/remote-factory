@@ -19,6 +19,7 @@ class AgentRole(str, Enum):
     BUILDER = "builder"
     REVIEWER = "reviewer"
     EVALUATOR = "evaluator"
+    QA = "qa"
     FAILURE_ANALYST = "failure_analyst"
     CEO = "ceo"
     ARCHIVIST = "archivist"
@@ -41,6 +42,7 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "evaluator": AgentConfig(role=AgentRole.EVALUATOR, model="opus"),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus"),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus"),
+    "qa": AgentConfig(role=AgentRole.QA, model="opus"),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku"),
 }
 
@@ -136,6 +138,9 @@ class GateNode(Node):
     evaluator_role: AgentRole | None = None
     evaluator_command: str | None = None
     gate_prompt: str = ""
+    user_visible: bool = False
+    criteria_file: str | None = None
+    skippable: bool = False
 
 
 class ForkNode(Node):
@@ -221,3 +226,35 @@ class Factory(BaseModel):
             if wf.trigger and wf.trigger(state, ctx):
                 return wf
         return None
+
+
+# ── workflow-as-skill ───────────────────────────────────────────
+
+
+class SkillPhase(BaseModel):
+    """A named phase within a workflow skill."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    name: str
+    description: str = ""
+
+
+class WorkflowSkill(BaseModel):
+    """A workflow wrapped with skill metadata for registry and CEO prompt injection."""
+
+    model_config = ConfigDict(strict=True, extra="forbid", arbitrary_types_allowed=True)
+
+    name: str
+    workflow: Workflow
+    description: str = ""
+    trigger_description: str = ""
+    phases: list[SkillPhase] = Field(default_factory=list)
+    inputs: list[str] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+    success_criteria: str = ""
+    aliases: list[str] = Field(default_factory=list)
+
+    def validate_graph(self) -> list[str]:
+        """Delegate graph validation to the inner workflow."""
+        return self.workflow.validate_graph()
