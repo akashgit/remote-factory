@@ -418,14 +418,49 @@ jobs:
               });
             }
 
-      - name: Update benchmark status to success
+      - name: Update benchmark status
         if: inputs.pr_number != ''
         uses: actions/github-script@v7
         with:
           script: |
+            const fs = require('fs');
             const prNumber = parseInt('${{ inputs.pr_number }}', 10);
             if (!prNumber || isNaN(prNumber)) return;
 
+            // Check factory results in downloaded artifacts
+            let factoryResults = [];
+            if (fs.existsSync('results')) {
+              for (const file of fs.readdirSync('results')) {
+                if (!file.endsWith('.json')) continue;
+                try {
+                  const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                  const solver = data.solver || data.details?.solver || 'unknown';
+                  if (solver === 'factory') {
+                    factoryResults.push(data);
+                  }
+                } catch {}
+              }
+            }
+
+            // Determine status
+            let state, description;
+            if (factoryResults.length === 0) {
+              // No factory results — leave as pending
+              console.log('No factory results found. Status stays pending.');
+              return;
+            }
+
+            const allSuccess = factoryResults.every(r => r.status === 'success');
+            if (allSuccess) {
+              state = 'success';
+              description = 'Benchmark evaluation complete. ' + factoryResults.length + ' factory benchmark(s) ran.';
+            } else {
+              const failed = factoryResults.filter(r => r.status !== 'success').length;
+              state = 'failure';
+              description = failed + ' of ' + factoryResults.length + ' factory benchmark(s) had pipeline errors.';
+            }
+
+            // Get PR head SHA
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -436,11 +471,13 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               sha: pr.head.sha,
-              state: 'success',
+              state: state,
               context: 'benchmark-eval',
-              description: 'Benchmark evaluation complete.',
+              description: description,
               target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
             });
+
+            console.log('Set benchmark-eval status to ' + state + ': ' + description);
 
       - name: Update release notes
         if: github.event_name == 'release'
