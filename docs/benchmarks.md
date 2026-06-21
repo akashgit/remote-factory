@@ -29,42 +29,17 @@
 #benchmark-dashboard tr:hover td {
   background: var(--md-default-fg-color--lightest);
 }
-#benchmark-dashboard .benchmark-tag {
-  display: inline-block;
-  padding: 0.1rem 0.4rem;
-  margin: 0.1rem 0;
-  border-radius: 3px;
-  font-size: 0.8rem;
-  background: var(--md-default-fg-color--lightest);
-}
 #benchmark-dashboard .status-success { color: #22863a; }
 #benchmark-dashboard .status-failure { color: #cb2431; }
-#benchmark-dashboard .status-pending { color: #b08800; }
 #benchmark-dashboard .error-msg {
   color: var(--md-default-fg-color--light);
   font-style: italic;
 }
 #benchmark-dashboard .section-title {
-  margin-top: 2rem;
+  margin-top: 2.5rem;
   margin-bottom: 0.5rem;
   font-size: 1.2rem;
   font-weight: 600;
-}
-#benchmark-dashboard .chart-container {
-  position: relative;
-  margin: 1rem 0 2rem 0;
-  max-height: 350px;
-}
-#benchmark-dashboard .charts-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
-  margin: 1rem 0;
-}
-@media (max-width: 768px) {
-  #benchmark-dashboard .charts-row {
-    grid-template-columns: 1fr;
-  }
 }
 #benchmark-dashboard .summary-cards {
   display: grid;
@@ -116,15 +91,9 @@
   font-size: 0.85rem;
   font-weight: 500;
 }
-#benchmark-dashboard .trend-placeholder {
-  text-align: center;
-  padding: 2rem;
-  color: var(--md-default-fg-color--light);
-  font-style: italic;
-  border: 1px dashed var(--md-default-fg-color--lightest);
-  border-radius: 8px;
-  margin: 1rem 0;
-}
+#benchmark-dashboard .delta-positive { color: #22863a; }
+#benchmark-dashboard .delta-negative { color: #cb2431; }
+#benchmark-dashboard .delta-neutral { color: #888; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -147,7 +116,6 @@ function chartColors() {
   return {
     text: dark ? '#ccc' : '#333',
     grid: dark ? '#444' : '#e0e0e0',
-    bg: dark ? '#1e1e1e' : '#fff',
   };
 }
 
@@ -191,6 +159,29 @@ function statusIcon(resolved) {
     : '<span class="status-failure">FAIL</span>';
 }
 
+function getSolver(r) {
+  return r.solver || r.details?.solver || 'unknown';
+}
+
+function isMainBranch(r) {
+  return r.ref === 'refs/heads/main';
+}
+
+function isPR(r) {
+  return (r.ref && r.ref.startsWith('refs/pull/')) || !!r.pr_number;
+}
+
+function formatDelta(val, invert) {
+  if (val == null) return '—';
+  const sign = val > 0 ? '+' : '';
+  const cls = val > 0
+    ? (invert ? 'delta-negative' : 'delta-positive')
+    : val < 0
+      ? (invert ? 'delta-positive' : 'delta-negative')
+      : 'delta-neutral';
+  return `<span class="${cls}">${sign}${typeof val === 'number' && Math.abs(val) < 10 ? val.toFixed(2) : val}</span>`;
+}
+
 async function fetchJsonl() {
   const resp = await fetch(JSONL_URL);
   if (!resp.ok) return null;
@@ -205,7 +196,7 @@ async function fetchJsonl() {
 function getLatestByCombo(results) {
   const byKey = {};
   for (const r of results) {
-    const solver = r.details?.solver || r.solver || 'unknown';
+    const solver = getSolver(r);
     const key = r.benchmark + '|' + solver;
     if (!byKey[key] || (r.timestamp > byKey[key].timestamp)) {
       byKey[key] = r;
@@ -214,42 +205,52 @@ function getLatestByCombo(results) {
   return byKey;
 }
 
-function renderSummaryCards(results) {
-  const byKey = getLatestByCombo(results);
-
+// Section 1: Latest Main Branch Results
+function renderLatestMain(mainResults) {
+  const byKey = getLatestByCombo(mainResults);
   const combos = Object.entries(byKey).sort(([a], [b]) => a.localeCompare(b));
 
-  let html = '<div class="section-title">Latest Results</div>';
-  html += '<div class="summary-cards">';
+  if (combos.length === 0) {
+    return '<div class="section-title">Latest Results (main branch)</div>'
+      + '<p class="error-msg">No main branch results yet.</p>';
+  }
 
-  for (const [key, r] of combos) {
-    const solver = r.details?.solver || r.solver || 'unknown';
-    const scoreVal = r.score;
-    const scoreClass = scoreVal > 0 ? 'score-pass' : scoreVal === 0 ? 'score-zero' : 'score-none';
-    const icon = r.resolved ? '✅' : '❌';
+  let html = '<div class="section-title">Latest Results (main branch)</div>';
+  html += '<table><thead><tr>';
+  html += '<th>Benchmark</th><th>Solver</th><th>Score</th><th>Duration</th>';
+  html += '<th>Cost</th><th>Commit</th><th>Run</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const [, r] of combos) {
+    const solver = getSolver(r);
     const commit = r.commit ? r.commit.substring(0, 7) : '—';
     const commitLink = r.commit
       ? `<a href="https://github.com/${REPO}/commit/${r.commit}"><code>${commit}</code></a>`
       : commit;
+    const runLink = r.run_url
+      ? `<a href="${r.run_url}">details</a>`
+      : '—';
 
-    html += '<div class="summary-card">';
-    html += `<div class="card-title">${r.benchmark} · ${solver}</div>`;
-    html += `<div class="card-score ${scoreClass}">${icon} ${scoreVal}</div>`;
-    html += '<div class="card-meta">';
-    html += `${formatDurationShort(r.duration_seconds)} · ${formatCost(r.details?.cost_usd)}`;
-    html += `<br>${commitLink}`;
-    html += '</div>';
-    html += '</div>';
+    html += '<tr>';
+    html += `<td>${r.benchmark}</td>`;
+    html += `<td>${solver}</td>`;
+    html += `<td>${statusIcon(r.resolved)} ${r.score}</td>`;
+    html += `<td>${formatDurationShort(r.duration_seconds)}</td>`;
+    html += `<td>${formatCost(r.details?.cost_usd)}</td>`;
+    html += `<td>${commitLink}</td>`;
+    html += `<td>${runLink}</td>`;
+    html += '</tr>';
   }
 
-  html += '</div>';
+  html += '</tbody></table>';
   return html;
 }
 
-function renderComparisonChart(results) {
-  const byKey = getLatestByCombo(results);
+// Section 2: Factory vs Claude Code Comparison
+function renderComparisonChart(mainResults) {
+  const byKey = getLatestByCombo(mainResults);
 
-  const benchmarks = [...new Set(results.map(r => r.benchmark))].sort();
+  const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
   const factoryScores = benchmarks.map(b => {
     const r = byKey[b + '|factory'];
     return r ? r.score : null;
@@ -263,7 +264,9 @@ function renderComparisonChart(results) {
   if (!hasAnyData) return '';
 
   let html = '<div class="section-title">Factory vs Claude Code</div>';
-  html += '<div class="chart-container"><canvas id="comparison-chart"></canvas></div>';
+  html += '<div style="width: 100%; margin: 2rem 0;">';
+  html += '<canvas id="comparison-chart" style="width: 100% !important; height: 400px !important;"></canvas>';
+  html += '</div>';
 
   setTimeout(() => {
     const ctx = document.getElementById('comparison-chart');
@@ -284,14 +287,14 @@ function renderComparisonChart(results) {
           {
             label: 'Claude Code',
             data: claudeScores,
-            backgroundColor: '#ea4335',
+            backgroundColor: '#ff7043',
             borderRadius: 4,
           },
         ]
       },
       options: {
         responsive: true,
-        maintainAspectRatio: true,
+        maintainAspectRatio: false,
         plugins: {
           legend: { labels: { color: colors.text } },
           tooltip: { filter: (item) => item.raw !== null },
@@ -316,119 +319,74 @@ function renderComparisonChart(results) {
   return html;
 }
 
-function renderTrendCharts(results) {
+// Section 3: Duration Trend
+function renderDurationChart(results) {
   const sorted = [...results].sort((a, b) =>
     (a.timestamp || '').localeCompare(b.timestamp || '')
   );
 
   const series = {};
   for (const r of sorted) {
-    const solver = r.details?.solver || r.solver || 'unknown';
+    const solver = getSolver(r);
     const key = r.benchmark + ' / ' + solver;
     if (!series[key]) series[key] = [];
     const date = parseTimestamp(r.timestamp);
-    if (date) {
-      series[key].push({
-        x: date,
-        duration: r.duration_seconds,
-        cost: r.details?.cost_usd,
-        score: r.score,
-      });
+    if (date && r.duration_seconds != null) {
+      series[key].push({ x: date, y: r.duration_seconds });
     }
   }
 
-  const totalPoints = Object.values(series).reduce((sum, s) => sum + s.length, 0);
-  if (totalPoints < 3) {
-    return '<div class="section-title">Trends Over Time</div>'
-      + '<div class="trend-placeholder">Trends will appear after at least 3 benchmark runs.</div>';
-  }
+  const keys = Object.keys(series).filter(k => series[k].length >= 2).sort();
+  if (keys.length === 0) return '';
 
-  const keys = Object.keys(series).sort();
   const colors = chartColors();
-  const pointSize = totalPoints < 10 ? 5 : 3;
 
-  let html = '<div class="section-title">Trends Over Time</div>';
-  html += '<div class="charts-row">';
-  html += '<div class="chart-container"><canvas id="duration-chart"></canvas></div>';
-  html += '<div class="chart-container"><canvas id="cost-chart"></canvas></div>';
+  let html = '<div class="section-title">Duration Trend</div>';
+  html += '<div style="width: 100%; margin: 2rem 0;">';
+  html += '<canvas id="duration-chart" style="width: 100% !important; height: 400px !important;"></canvas>';
   html += '</div>';
 
   setTimeout(() => {
-    const durCtx = document.getElementById('duration-chart');
-    const costCtx = document.getElementById('cost-chart');
-    if (!durCtx || !costCtx) return;
+    const ctx = document.getElementById('duration-chart');
+    if (!ctx) return;
 
-    const shortLabel = (k) => {
-      const [bench, solver] = k.split(' / ');
-      return bench + ' (' + solver + ')';
-    };
-
-    const durDatasets = keys.map((k, i) => ({
-      label: shortLabel(k),
-      data: series[k].map(p => ({ x: p.x, y: p.duration != null ? p.duration / 60 : null })),
+    const datasets = keys.map((k, i) => ({
+      label: k,
+      data: series[k],
       borderColor: CHART_COLORS[i % CHART_COLORS.length],
       backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '33',
       tension: 0.3,
-      pointRadius: pointSize,
+      pointRadius: 4,
       spanGaps: true,
     }));
 
-    const costDatasets = keys.map((k, i) => ({
-      label: shortLabel(k),
-      data: series[k].map(p => ({ x: p.x, y: p.cost })).filter(p => p.y != null),
-      borderColor: CHART_COLORS[i % CHART_COLORS.length],
-      backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '33',
-      tension: 0.3,
-      pointRadius: pointSize,
-      spanGaps: true,
-    }));
-
-    const commonOptions = {
-      responsive: true,
-      maintainAspectRatio: true,
-      interaction: { mode: 'index', intersect: false },
-      scales: {
-        x: {
-          type: 'time',
-          time: {
-            unit: 'day',
-            displayFormats: { day: 'MMM d' },
-            tooltipFormat: 'MMM d, yyyy HH:mm',
+    new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: colors.text } },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'day',
+              displayFormats: { day: 'MMM d' },
+              tooltipFormat: 'MMM d, yyyy HH:mm',
+            },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text, maxRotation: 45, maxTicksLimit: 10 },
+            grid: { color: colors.grid },
           },
-          title: { display: true, text: 'Date', color: colors.text },
-          ticks: { color: colors.text, maxRotation: 45, maxTicksLimit: 10 },
-          grid: { color: colors.grid },
-        },
-        y: {
-          ticks: { color: colors.text },
-          grid: { color: colors.grid },
-        },
-      },
-      plugins: {
-        legend: { labels: { color: colors.text } },
-      },
-    };
-
-    new Chart(durCtx, {
-      type: 'line',
-      data: { datasets: durDatasets },
-      options: {
-        ...commonOptions,
-        plugins: {
-          ...commonOptions.plugins,
-          title: { display: true, text: 'Duration (minutes)', color: colors.text },
-        },
-      },
-    });
-
-    new Chart(costCtx, {
-      type: 'line',
-      data: { datasets: costDatasets },
-      options: {
-        ...commonOptions,
-        plugins: {
-          ...commonOptions.plugins,
-          title: { display: true, text: 'Cost (USD)', color: colors.text },
+          y: {
+            title: { display: true, text: 'Duration (seconds)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
         },
       },
     });
@@ -437,9 +395,146 @@ function renderTrendCharts(results) {
   return html;
 }
 
+// Section 4: Cost Trend
+function renderCostChart(results) {
+  const sorted = [...results].sort((a, b) =>
+    (a.timestamp || '').localeCompare(b.timestamp || '')
+  );
+
+  const series = {};
+  for (const r of sorted) {
+    const solver = getSolver(r);
+    const key = r.benchmark + ' / ' + solver;
+    if (!series[key]) series[key] = [];
+    const date = parseTimestamp(r.timestamp);
+    const cost = r.details?.cost_usd;
+    if (date && cost != null) {
+      series[key].push({ x: date, y: cost });
+    }
+  }
+
+  const keys = Object.keys(series).filter(k => series[k].length >= 2).sort();
+  if (keys.length === 0) return '';
+
+  const colors = chartColors();
+
+  let html = '<div class="section-title">Cost Trend</div>';
+  html += '<div style="width: 100%; margin: 2rem 0;">';
+  html += '<canvas id="cost-chart" style="width: 100% !important; height: 400px !important;"></canvas>';
+  html += '</div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('cost-chart');
+    if (!ctx) return;
+
+    const datasets = keys.map((k, i) => ({
+      label: k,
+      data: series[k],
+      borderColor: CHART_COLORS[i % CHART_COLORS.length],
+      backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '33',
+      tension: 0.3,
+      pointRadius: 4,
+      spanGaps: true,
+    }));
+
+    new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: colors.text } },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: {
+              unit: 'day',
+              displayFormats: { day: 'MMM d' },
+              tooltipFormat: 'MMM d, yyyy HH:mm',
+            },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text, maxRotation: 45, maxTicksLimit: 10 },
+            grid: { color: colors.grid },
+          },
+          y: {
+            title: { display: true, text: 'Cost (USD)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+        },
+      },
+    });
+  }, 0);
+
+  return html;
+}
+
+// Section 5: PR Comparison
+function renderPRComparison(allResults) {
+  const prResults = allResults.filter(isPR);
+  if (prResults.length === 0) return '';
+
+  const mainResults = allResults.filter(isMainBranch);
+  const mainLatest = getLatestByCombo(mainResults);
+
+  let html = '<div class="section-title">Pull Request Results</div>';
+  html += '<table><thead><tr>';
+  html += '<th>PR</th><th>Benchmark</th><th>Solver</th>';
+  html += '<th>PR Score</th><th>Main Score</th><th>Delta</th>';
+  html += '<th>PR Cost</th><th>Main Cost</th><th>Delta</th>';
+  html += '<th>PR Duration</th><th>Main Duration</th>';
+  html += '</tr></thead><tbody>';
+
+  const sortedPR = [...prResults].sort((a, b) =>
+    (b.timestamp || '').localeCompare(a.timestamp || '')
+  );
+
+  for (const r of sortedPR) {
+    const solver = getSolver(r);
+    const key = r.benchmark + '|' + solver;
+    const baseline = mainLatest[key];
+
+    const prLabel = r.pr_number
+      ? `<a href="https://github.com/${REPO}/pull/${r.pr_number}">#${r.pr_number}</a>`
+      : r.ref ? r.ref.replace('refs/pull/', '').replace('/merge', '') : '—';
+
+    const prScore = r.score;
+    const mainScore = baseline ? baseline.score : null;
+    const scoreDelta = (prScore != null && mainScore != null) ? prScore - mainScore : null;
+
+    const prCost = r.details?.cost_usd;
+    const mainCost = baseline?.details?.cost_usd;
+    const costDelta = (prCost != null && mainCost != null) ? prCost - mainCost : null;
+
+    const prDur = r.duration_seconds;
+    const mainDur = baseline?.duration_seconds;
+
+    html += '<tr>';
+    html += `<td>${prLabel}</td>`;
+    html += `<td>${r.benchmark}</td>`;
+    html += `<td>${solver}</td>`;
+    html += `<td>${prScore != null ? prScore : '—'}</td>`;
+    html += `<td>${mainScore != null ? mainScore : '—'}</td>`;
+    html += `<td>${formatDelta(scoreDelta, false)}</td>`;
+    html += `<td>${formatCost(prCost)}</td>`;
+    html += `<td>${formatCost(mainCost)}</td>`;
+    html += `<td>${formatDelta(costDelta != null ? Number(costDelta.toFixed(2)) : null, true)}</td>`;
+    html += `<td>${formatDurationShort(prDur)}</td>`;
+    html += `<td>${formatDurationShort(mainDur)}</td>`;
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  return html;
+}
+
+// Section 6: Full History
 function renderHistoryTable(results) {
   const benchmarks = [...new Set(results.map(r => r.benchmark))].sort();
-  const solvers = [...new Set(results.map(r => r.details?.solver || r.solver || 'unknown'))].sort();
+  const solvers = [...new Set(results.map(r => getSolver(r)))].sort();
 
   let html = '<div class="section-title">Full History</div>';
 
@@ -457,29 +552,32 @@ function renderHistoryTable(results) {
   );
 
   html += '<table id="history-table"><thead><tr>';
-  html += '<th data-col="date">Date</th><th data-col="benchmark">Benchmark</th>';
-  html += '<th data-col="solver">Solver</th><th data-col="result">Result</th>';
-  html += '<th data-col="score">Score</th><th data-col="duration">Duration</th>';
-  html += '<th data-col="cost">Cost</th><th data-col="commit">Commit</th><th data-col="run">Run</th>';
+  html += '<th>Date</th><th>Ref</th><th>Benchmark</th>';
+  html += '<th>Solver</th><th>Score</th><th>Duration</th>';
+  html += '<th>Cost</th><th>Commit</th><th>Run</th>';
   html += '</tr></thead><tbody>';
 
   for (const r of sorted) {
-    const solver = r.details?.solver || r.solver || 'unknown';
+    const solver = getSolver(r);
     const commit = r.commit ? r.commit.substring(0, 7) : '—';
     const commitLink = r.commit
       ? `<a href="https://github.com/${REPO}/commit/${r.commit}"><code>${commit}</code></a>`
       : commit;
     const runLink = r.run_url
-      ? `<a href="${r.run_url}">details →</a>`
+      ? `<a href="${r.run_url}">details</a>`
       : '—';
     const cost = r.details?.cost_usd;
 
+    const refLabel = r.ref
+      ? r.ref.replace('refs/heads/', '').replace('refs/pull/', 'PR ').replace('/merge', '')
+      : '—';
+
     html += `<tr data-benchmark="${r.benchmark}" data-solver="${solver}">`;
     html += `<td style="white-space:nowrap">${formatDate(r.timestamp)}</td>`;
+    html += `<td>${refLabel}</td>`;
     html += `<td>${r.benchmark}</td>`;
     html += `<td>${solver}</td>`;
-    html += `<td>${statusIcon(r.resolved)}</td>`;
-    html += `<td>${r.score}</td>`;
+    html += `<td>${statusIcon(r.resolved)} ${r.score}</td>`;
     html += `<td>${formatDurationShort(r.duration_seconds)}</td>`;
     html += `<td>${formatCost(cost)}</td>`;
     html += `<td>${commitLink}</td>`;
@@ -516,19 +614,24 @@ async function renderDashboard() {
   const container = document.getElementById('benchmark-dashboard');
 
   try {
-    const results = await fetchJsonl();
+    const allResults = await fetchJsonl();
 
-    if (results && results.length > 0) {
+    if (allResults && allResults.length > 0) {
+      const mainResults = allResults.filter(isMainBranch);
+
       let html = '';
-      html += renderSummaryCards(results);
-      html += renderComparisonChart(results);
-      html += renderTrendCharts(results);
-      html += renderHistoryTable(results);
+      html += renderLatestMain(mainResults);
+      html += renderComparisonChart(mainResults);
+      html += renderDurationChart(allResults);
+      html += renderCostChart(allResults);
+      html += renderPRComparison(allResults);
+      html += renderHistoryTable(allResults);
       container.innerHTML = html;
       return;
     }
 
-    container.innerHTML = '<p class="error-msg">No benchmark data available yet.<br>Run the benchmark workflow to generate initial data: Actions → Benchmark CI → Run workflow</p>';
+    container.innerHTML = '<p class="error-msg">No benchmark data available yet.<br>'
+      + 'Run the benchmark workflow to generate initial data: Actions &rarr; Benchmark CI &rarr; Run workflow</p>';
   } catch (err) {
     container.innerHTML = `<p class="error-msg">${err.message}</p>`;
   }
