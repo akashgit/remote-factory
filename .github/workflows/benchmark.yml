@@ -224,23 +224,24 @@ jobs:
           ref: benchmark-data
           path: benchmark-data
           token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
       - name: Create benchmark-data branch if needed
-        if: steps.checkout-data.outcome == 'failure'
+        if: failure()
         run: |
-          mkdir -p benchmark-data
-          cd benchmark-data
+          rm -rf benchmark-data
+          mkdir benchmark-data && cd benchmark-data
           git init
-          git remote add origin "https://github.com/${{ github.repository }}.git"
           git checkout -b benchmark-data
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           touch results.jsonl
           git add results.jsonl
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git commit -m 'Initialize benchmark data branch'
+          git push -u origin benchmark-data
 
       - name: Append results to history
+        if: always()
         run: |
           cat > /tmp/append_results.py << 'PYEOF'
           import json, sys, os, glob
@@ -268,6 +269,7 @@ jobs:
           python3 /tmp/append_results.py
 
       - name: Push benchmark data
+        if: always()
         run: |
           cd benchmark-data
           git config user.name 'github-actions[bot]'
