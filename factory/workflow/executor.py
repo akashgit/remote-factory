@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 import time
 import uuid
@@ -594,10 +595,23 @@ class WorkflowExecutor:
 
     def _parse_fn_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse function output into a Verdict."""
-        text = output.strip().lower()
-        if "fail" in text or "revert" in text:
-            return Verdict.halt(reason=f"precheck failed: {output.strip()[:200]}")
-        if "reloop" in text:
+        text = output.strip()
+
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict) and "passed" in data:
+                if data["passed"]:
+                    return Verdict.proceed()
+                return Verdict.halt(
+                    reason=f"precheck failed: {data.get('blocking_failures', [])!r}"[:200]
+                )
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        text_lower = text.lower()
+        if "fail" in text_lower or "revert" in text_lower:
+            return Verdict.halt(reason=f"precheck failed: {text[:200]}")
+        if "reloop" in text_lower:
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
             if target:
                 return Verdict.reloop(target=target, feedback="fn gate requested reloop")
