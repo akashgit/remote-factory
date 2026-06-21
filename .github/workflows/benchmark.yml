@@ -217,6 +217,65 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      - name: Checkout benchmark-data branch
+        id: checkout-data
+        uses: actions/checkout@v4
+        with:
+          ref: benchmark-data
+          path: benchmark-data
+          token: ${{ secrets.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Create benchmark-data branch if needed
+        if: steps.checkout-data.outcome == 'failure'
+        run: |
+          mkdir -p benchmark-data
+          cd benchmark-data
+          git init
+          git remote add origin "https://github.com/${{ github.repository }}.git"
+          git checkout -b benchmark-data
+          touch results.jsonl
+          git add results.jsonl
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Initialize benchmark data branch'
+
+      - name: Append results to history
+        run: |
+          cat > /tmp/append_results.py << 'PYEOF'
+          import json, sys, os, glob
+
+          results_dir = 'results'
+          output = 'benchmark-data/results.jsonl'
+
+          if not os.path.isdir(results_dir):
+              sys.exit(0)
+
+          for f in sorted(glob.glob(os.path.join(results_dir, '*.json'))):
+              with open(f) as fh:
+                  data = json.load(fh)
+              data['run_id'] = os.environ.get('RUN_ID', '')
+              data['commit'] = os.environ.get('COMMIT', '')
+              data['ref'] = os.environ.get('REF', '')
+              data['run_url'] = os.environ.get('RUN_URL', '')
+              with open(output, 'a') as out:
+                  out.write(json.dumps(data) + '\n')
+          PYEOF
+          RUN_ID="${{ github.run_id }}" \
+          COMMIT="${{ github.sha }}" \
+          REF="${{ github.ref }}" \
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          python3 /tmp/append_results.py
+
+      - name: Push benchmark data
+        run: |
+          cd benchmark-data
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add results.jsonl
+          git diff --cached --quiet || git commit -m "benchmark: add results from run ${{ github.run_id }} [skip ci]"
+          git push origin benchmark-data || (git pull --rebase origin benchmark-data && git push origin benchmark-data)
+
       - name: Post PR comment
         if: github.event_name == 'pull_request' || inputs.pr_number != ''
         uses: actions/github-script@v7
@@ -260,7 +319,7 @@ jobs:
               body += '_No benchmark results found._\n';
             }
 
-            const historyPath = 'benchmarks/history.jsonl';
+            const historyPath = 'benchmark-data/results.jsonl';
             let baselines = {};
             if (fs.existsSync(historyPath)) {
               const lines = fs.readFileSync(historyPath, 'utf8').trim().split('\n').filter(Boolean);
