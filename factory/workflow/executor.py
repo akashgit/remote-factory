@@ -584,6 +584,10 @@ class WorkflowExecutor:
         criteria_dir = Path(__file__).parent / "gate_criteria"
         criteria_path = criteria_dir / criteria_file
 
+        if not criteria_path.resolve().is_relative_to(criteria_dir.resolve()):
+            log.warning("criteria_path_traversal", path=str(criteria_path))
+            return ""
+
         if not criteria_path.is_file():
             log.debug("criteria_file_not_found", path=str(criteria_path))
             return ""
@@ -591,7 +595,6 @@ class WorkflowExecutor:
         content = criteria_path.read_text()
         content = content.replace("{project_path}", str(self.project_path))
         content = content.replace("{focus_directive}", self.node_context.get("focus", ""))
-        content = content.replace("{criteria_file_content}", "")
         return content
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:

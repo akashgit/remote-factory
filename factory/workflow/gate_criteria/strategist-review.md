@@ -10,4 +10,3 @@ Review the strategist's hypotheses and plan for quality and feasibility.
 - [ ] Hypotheses are prioritized by expected impact
 - [ ] No duplicate hypotheses from previous experiments
 - [ ] Strategy accounts for project constraints and scope at {project_path}
-- [ ] {focus_directive}
