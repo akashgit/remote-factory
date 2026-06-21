@@ -229,19 +229,23 @@ jobs:
           REF="${{ github.ref }}"
           PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number || '' }}"
 
+          cat > /tmp/append_history.py << 'PYEOF'
+          import json, sys, os
+          f = sys.argv[1]
+          with open(f) as fh:
+              data = json.load(fh)
+          data['run_id'] = os.environ['RUN_ID']
+          data['commit'] = os.environ['COMMIT']
+          data['ref'] = os.environ['REF']
+          data['pr_number'] = os.environ.get('PR_NUMBER', '')
+          print(json.dumps(data))
+          PYEOF
+
           if [ -d results ]; then
             for f in results/*.json; do
               if [ -f "$f" ]; then
-                python3 -c "
-import json, sys
-with open('$f') as fh:
-    data = json.load(fh)
-data['run_id'] = '$RUN_ID'
-data['commit'] = '$COMMIT'
-data['ref'] = '$REF'
-data['pr_number'] = '$PR_NUMBER'
-print(json.dumps(data))
-" >> "$HISTORY"
+                RUN_ID="$RUN_ID" COMMIT="$COMMIT" REF="$REF" PR_NUMBER="$PR_NUMBER" \
+                  python3 /tmp/append_history.py "$f" >> "$HISTORY"
               fi
             done
           fi
