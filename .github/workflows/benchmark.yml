@@ -1,6 +1,8 @@
 name: Benchmark CI
 
 on:
+  schedule:
+    - cron: '17 6 * * 1-5'
   workflow_dispatch:
     inputs:
       benchmark:
@@ -37,12 +39,6 @@ on:
         required: false
         default: ''
         type: string
-  # pull_request trigger disabled — use workflow_dispatch with pr_number instead
-  # pull_request:
-  #   types: [opened, synchronize]
-  #   paths:
-  #     - 'factory/**'
-  #     - 'benchmarks/**'
   release:
     types: [created]
 
@@ -63,40 +59,40 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Factory solver entries
+          # Factory solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: factory
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: featurebench
             solver: factory
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: terminalbench
             solver: factory
             default_instance: 'fix-git'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: programbench
             solver: factory
             default_instance: 'cmatrix'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
-          # Claude Code solver entries
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          # Claude Code solver entries — disabled on schedule (nightly runs factory only)
           - benchmark: swebench
             solver: claude-code
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: featurebench
             solver: claude-code
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: terminalbench
             solver: claude-code
             default_instance: 'fix-git'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: programbench
             solver: claude-code
             default_instance: 'cmatrix'
-            enabled: ${{ ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
@@ -162,6 +158,8 @@ jobs:
         run: |
           if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
             echo "value=$BENCHMARK_TIMEOUT" >> "$GITHUB_OUTPUT"
+          elif [ '${{ github.event_name }}' = 'schedule' ]; then
+            echo 'value=3600' >> "$GITHUB_OUTPUT"
           else
             echo 'value=600' >> "$GITHUB_OUTPUT"
           fi
@@ -257,6 +255,7 @@ jobs:
               data['commit'] = os.environ.get('COMMIT', '')
               data['ref'] = os.environ.get('REF', '')
               data['run_url'] = os.environ.get('RUN_URL', '')
+              data['trigger'] = os.environ.get('TRIGGER', '')
               with open(output, 'a') as out:
                   out.write(json.dumps(data) + '\n')
               print(f'Wrote to {output}', file=sys.stderr)
@@ -267,6 +266,7 @@ jobs:
           COMMIT="${{ github.sha }}" \
           REF="${{ github.ref }}" \
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          TRIGGER="${{ github.event_name }}" \
           python3 /tmp/append_results.py
 
           echo 'DEBUG: results dir contents:'
