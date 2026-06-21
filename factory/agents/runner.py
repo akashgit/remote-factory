@@ -387,6 +387,7 @@ def _begin_session_safe(
     parent_id: str | None = None,
     model: str | None = None,
     title: str | None = None,
+    claude_session_id: str | None = None,
 ) -> str | None:
     """Begin a SQLite session, swallowing errors so agent invocation is never blocked."""
     try:
@@ -395,6 +396,7 @@ def _begin_session_safe(
         return begin_session(
             project_path, role,
             parent_id=parent_id, model=model, title=title,
+            claude_session_id=claude_session_id,
         )
     except Exception:
         logger.debug("Failed to begin session for %s", role, exc_info=True)
@@ -469,9 +471,12 @@ def begin_cycle_session(
     agents link to this trace. Returns the span_id, or None if Langfuse
     is not configured.
     """
+    claude_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+
     cycle_sess_id = _begin_session_safe(
         project_path, "ceo", model=model,
         title=f"cycle-{cycle_id}" if cycle_id else None,
+        claude_session_id=claude_session_id,
     )
     if cycle_sess_id:
         os.environ["FACTORY_SESSION_ID"] = cycle_sess_id
@@ -506,7 +511,14 @@ def complete_cycle_session(
     Also completes the root SQLite session if one was started.
     """
     cycle_sess_id = os.environ.pop("FACTORY_SESSION_ID", None)
-    _complete_session_safe(project_path, cycle_sess_id, status="completed")
+    claude_session_id = os.environ.get("CLAUDE_CODE_SESSION_ID")
+    metadata: dict[str, object] | None = None
+    if claude_session_id:
+        metadata = {"session_id": claude_session_id}
+    _complete_session_safe(
+        project_path, cycle_sess_id, status="completed",
+        metadata=metadata,
+    )
 
     if span_id is None:
         return

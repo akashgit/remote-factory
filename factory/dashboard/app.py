@@ -1027,6 +1027,17 @@ def _project_summary(path: Path) -> dict[str, Any]:
         except (json.JSONDecodeError, OSError, KeyError):
             pass
 
+    # Session summary
+    try:
+        cycles = get_cycles(path, limit=100)
+        info["cycle_count"] = len(cycles)
+        info["total_sessions"] = len(cycles) + sum(c.get("child_count", 0) for c in cycles)
+        if cycles:
+            info["last_cycle_at"] = cycles[0].get("created_at")
+    except Exception:
+        info["cycle_count"] = 0
+        info["total_sessions"] = 0
+
     log.debug(
         "project_summary_complete",
         project=path.name,

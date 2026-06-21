@@ -93,6 +93,7 @@ def begin_session(
     root_id: str | None = None,
     title: str | None = None,
     model: str | None = None,
+    claude_session_id: str | None = None,
 ) -> str:
     """Insert a new session row and return its ID."""
     init_db(project_path)
@@ -112,9 +113,11 @@ def begin_session(
 
         conn.execute(
             """INSERT INTO sessions
-               (id, parent_id, root_id, kind, title, agent_role, status, model, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)""",
-            (session_id, parent_id, effective_root, kind, title, role, model, now, now),
+               (id, parent_id, root_id, kind, title, agent_role, claude_session_id,
+                status, model, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?)""",
+            (session_id, parent_id, effective_root, kind, title, role,
+             claude_session_id, model, now, now),
         )
         conn.commit()
     finally:
@@ -251,6 +254,8 @@ def _discover_claude_session_id(
                     candidates.append(f)
 
     target_name = f"factory: {project_path.resolve().name}/{role}"
+
+    matched_child_ids: set[str] = set()
     for f in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             with open(f) as fh:
@@ -262,13 +267,24 @@ def _discover_claude_session_id(
                         continue
                     item = json.loads(line)
                     if item.get("type") == "agent-name":
-                        if target_name in (item.get("agentName") or ""):
+                        agent_name = item.get("agentName") or ""
+                        if target_name in agent_name:
                             return f.stem
+                        if "factory: " in agent_name:
+                            matched_child_ids.add(f.stem)
                     elif item.get("type") == "custom-title":
-                        if target_name in (item.get("customTitle") or ""):
+                        custom_title = item.get("customTitle") or ""
+                        if target_name in custom_title:
                             return f.stem
+                        if "factory: " in custom_title:
+                            matched_child_ids.add(f.stem)
         except Exception:
             continue
+
+    if role == "ceo" and candidates:
+        for f in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
+            if f.stem not in matched_child_ids:
+                return f.stem
 
     return None
 
