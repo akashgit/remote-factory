@@ -169,6 +169,7 @@ class WorkflowExecutor:
 
         if isinstance(node, JoinNode):
             self.result.nodes_executed += 1
+            self.completed_files |= node.writes
             next_id = self._next_unconditional(node_id)
             if next_id:
                 await self._execute_from(next_id)
@@ -184,6 +185,14 @@ class WorkflowExecutor:
         """Execute an AgentNode, FnNode, or Study node."""
         node_id = node.id
         node_type = type(node).__name__
+
+        if not node.blocking:
+            task = asyncio.create_task(self._run_node_background(node))
+            self.background_tasks.append(task)
+            next_id = self._next_unconditional(node_id)
+            if next_id:
+                await self._execute_from(next_id)
+            return
 
         self._emit(
             "node.started",
@@ -216,12 +225,6 @@ class WorkflowExecutor:
                 ),
             )
 
-            if not node.blocking:
-                next_id = self._next_unconditional(node_id)
-                if next_id:
-                    await self._execute_from(next_id)
-                return
-
         except Exception as exc:
             self._emit(
                 "node.failed",
@@ -240,6 +243,50 @@ class WorkflowExecutor:
         next_id = self._next_unconditional(node_id)
         if next_id:
             await self._execute_from(next_id)
+
+    async def _run_node_background(self, node: NodeType) -> None:
+        """Run a non-blocking node as a background task."""
+        node_id = node.id
+        node_type = type(node).__name__
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node_id,
+                node_type=node_type,
+            ),
+        )
+        start = time.monotonic()
+        try:
+            output = await self._run_node(node)
+            elapsed = (time.monotonic() - start) * 1000
+            self.result.node_outputs[node_id] = output
+            self.completed_files |= node.writes
+            self.result.nodes_executed += 1
+            self._emit(
+                "node.completed",
+                NodeCompleted(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node_id,
+                    node_type=node_type,
+                    files_written=sorted(node.writes),
+                    duration_ms=elapsed,
+                ),
+            )
+        except Exception as exc:
+            self._emit(
+                "node.failed",
+                NodeFailed(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node_id,
+                    node_type=node_type,
+                    error=str(exc),
+                ),
+            )
+            log.warning("background_node_failed", node=node_id, error=str(exc))
 
     async def _execute_gate(self, node: GateNode) -> None:
         """Execute a gate node, parse verdict, follow the matching edge."""
@@ -329,18 +376,66 @@ class WorkflowExecutor:
             await self._execute_from(target_id)
 
     async def _execute_fork(self, node: ForkNode) -> None:
-        """Execute all fork targets concurrently via asyncio.gather."""
+        """Execute all fork targets concurrently via asyncio.gather.
+
+        Branches are run in isolation — they do NOT follow outgoing edges.
+        After all branches complete, the fork's own unconditional edge is followed.
+        """
         self.result.nodes_executed += 1
 
         async def run_branch(target_id: str) -> None:
             target = self.workflow.nodes.get(target_id)
             if not target:
                 return
-            await self._execute_action_node(target)
+            node_type = type(target).__name__
+            self._emit(
+                "node.started",
+                NodeStarted(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=target_id,
+                    node_type=node_type,
+                ),
+            )
+            start = time.monotonic()
+            try:
+                output = await self._run_node(target)
+                elapsed = (time.monotonic() - start) * 1000
+                self.result.node_outputs[target_id] = output
+                self.completed_files |= target.writes
+                self.result.nodes_executed += 1
+                self._emit(
+                    "node.completed",
+                    NodeCompleted(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=target_id,
+                        node_type=node_type,
+                        files_written=sorted(target.writes),
+                        duration_ms=elapsed,
+                    ),
+                )
+            except Exception as exc:
+                self._emit(
+                    "node.failed",
+                    NodeFailed(
+                        workflow_name=self.workflow.name,
+                        run_id=self.run_id,
+                        node_id=target_id,
+                        node_type=node_type,
+                        error=str(exc),
+                    ),
+                )
+                self.result.halted = True
+                self.result.halt_reason = f"fork branch '{target_id}' failed: {exc}"
 
         await asyncio.gather(*(run_branch(t) for t in node.targets))
 
-        next_id = self._next_unconditional(node.id)
+        if self.result.halted:
+            return
+
+        # Follow the edge from the first branch target to find the join/next node
+        next_id = self._next_unconditional(node.targets[0]) if node.targets else None
         if next_id:
             await self._execute_from(next_id)
 
@@ -459,22 +554,26 @@ class WorkflowExecutor:
         )
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
-        """Parse agent output into a Verdict."""
-        text = output.strip().upper()
+        """Parse agent output into a Verdict by examining the last non-empty line."""
+        import re
 
-        if "HALT" in text:
-            reason_start = text.find('REASON="')
-            if reason_start != -1:
-                reason_end = text.find('"', reason_start + 8)
-                reason = output.strip()[reason_start + 8:reason_end] if reason_end != -1 else "gate halted"
-            else:
-                reason = "gate halted"
+        lines = output.strip().splitlines()
+        last_line = ""
+        for line in reversed(lines):
+            if line.strip():
+                last_line = line.strip()
+                break
+
+        text = last_line.upper()
+
+        if text.startswith("HALT") or re.match(r"^HALT\b", text):
+            reason_match = re.search(r'REASON="([^"]+)"', last_line, re.IGNORECASE)
+            reason = reason_match.group(1) if reason_match else "gate halted"
             return Verdict.halt(reason=reason)
 
-        if "RELOOP" in text:
-            import re
-            target_match = re.search(r'TARGET="([^"]+)"', text, re.IGNORECASE)
-            feedback_match = re.search(r'FEEDBACK="([^"]+)"', text, re.IGNORECASE)
+        if text.startswith("RELOOP") or re.match(r"^RELOOP\b", text):
+            target_match = re.search(r'TARGET="([^"]+)"', last_line, re.IGNORECASE)
+            feedback_match = re.search(r'FEEDBACK="([^"]+)"', last_line, re.IGNORECASE)
             target = target_match.group(1) if target_match else gate_id
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
             return Verdict.reloop(target=target, feedback=feedback)
@@ -508,16 +607,30 @@ class WorkflowExecutor:
         return stdout
 
     async def _wait_for_reads(self, node: NodeType) -> None:
-        """Wait until all files in node.reads are available."""
+        """Wait until all files in node.reads are available in completed_files."""
         if not node.reads:
             return
-        missing = node.reads - self.completed_files
-        if missing:
+        poll_interval = 0.1
+        max_wait = 60.0
+        waited = 0.0
+        while True:
+            missing = node.reads - self.completed_files
+            if not missing:
+                return
+            if waited >= max_wait:
+                self.result.halted = True
+                self.result.halt_reason = (
+                    f"node '{node.id}' timed out waiting for reads: {sorted(missing)}"
+                )
+                return
             log.debug(
                 "node.waiting_for_reads",
                 node=node.id,
                 missing=sorted(missing),
+                waited_s=round(waited, 1),
             )
+            await asyncio.sleep(poll_interval)
+            waited += poll_interval
 
     def _next_unconditional(self, node_id: str) -> str | None:
         """Find the next node via unconditional edge."""
