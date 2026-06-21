@@ -358,8 +358,13 @@ function renderTrendCharts(results) {
     const costCtx = document.getElementById('cost-chart');
     if (!durCtx || !costCtx) return;
 
+    const shortLabel = (k) => {
+      const [bench, solver] = k.split(' / ');
+      return bench + ' (' + solver + ')';
+    };
+
     const durDatasets = keys.map((k, i) => ({
-      label: k,
+      label: shortLabel(k),
       data: series[k].map(p => ({ x: p.x, y: p.duration != null ? p.duration / 60 : null })),
       borderColor: CHART_COLORS[i % CHART_COLORS.length],
       backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '33',
@@ -369,7 +374,7 @@ function renderTrendCharts(results) {
     }));
 
     const costDatasets = keys.map((k, i) => ({
-      label: k,
+      label: shortLabel(k),
       data: series[k].map(p => ({ x: p.x, y: p.cost })).filter(p => p.y != null),
       borderColor: CHART_COLORS[i % CHART_COLORS.length],
       backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + '33',
@@ -385,8 +390,13 @@ function renderTrendCharts(results) {
       scales: {
         x: {
           type: 'time',
-          time: { tooltipFormat: 'MMM d, yyyy HH:mm' },
-          ticks: { color: colors.text },
+          time: {
+            unit: 'day',
+            displayFormats: { day: 'MMM d' },
+            tooltipFormat: 'MMM d, yyyy HH:mm',
+          },
+          title: { display: true, text: 'Date', color: colors.text },
+          ticks: { color: colors.text, maxRotation: 45, maxTicksLimit: 10 },
           grid: { color: colors.grid },
         },
         y: {

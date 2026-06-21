@@ -41,6 +41,7 @@ details = json.loads(_dj) if _dj else {}
 result = {
     'benchmark': '${BENCHMARK}',
     'instance_id': '${INSTANCE_ID}',
+    'solver': '${BENCHMARK_SOLVER:-unknown}',
     'passed': ${PASSED:-0},
     'total': ${TOTAL:-0},
     'score': round(${PASSED:-0} / max(${TOTAL:-0}, 1), 4),

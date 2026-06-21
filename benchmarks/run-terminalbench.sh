@@ -212,6 +212,25 @@ print(f'COST_USD={cost}')
     eval "${COST_DATA}" 2>/dev/null || true
 fi
 
+if [ "${COST_USD}" = "0" ] || [ -z "${COST_USD}" ]; then
+    AGENT_LOG=$(find "${JOBS_DIR}" -name 'claude-code.txt' -o -name 'claude_code_stream_output.jsonl' -o -name 'factory-ceo.txt' 2>/dev/null | head -1)
+    if [ -n "${AGENT_LOG}" ]; then
+        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" | tail -1 | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        data = json.loads(line.strip())
+        if 'total_cost_usd' in data:
+            print(f'COST_USD={data[\"total_cost_usd\"]}')
+            u = data.get('usage', {})
+            print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+            print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    except: pass
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+fi
+
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
