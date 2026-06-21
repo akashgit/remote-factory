@@ -403,6 +403,79 @@ def _archivist_bullets(
     return bullets
 
 
+def _memory_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets from CEO memory files (.factory/archive/memory.json)."""
+    import json
+
+    bullets: list[PlaybookItem] = []
+    counter = 1
+
+    for path in project_paths:
+        memory_path = path / ".factory" / "archive" / "memory.json"
+        if not memory_path.exists():
+            continue
+        try:
+            entries = json.loads(memory_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(entries, list):
+            continue
+        patterns = [e for e in entries if isinstance(e, dict) and e.get("type") == "pattern"]
+        anti_patterns = [e for e in entries if isinstance(e, dict) and e.get("type") == "anti_pattern"]
+        if len(patterns) >= 3:
+            bullets.append(PlaybookItem(
+                id=_make_id("archivist", 200 + counter),
+                content=f"CEO memory has {len(patterns)} success patterns — archive is generating useful cross-cycle insights",
+                helpful=len(patterns),
+                harmful=0,
+                section="DO",
+            ))
+            counter += 1
+        if len(anti_patterns) >= 2:
+            bullets.append(PlaybookItem(
+                id=_make_id("archivist", 200 + counter),
+                content=f"CEO memory has {len(anti_patterns)} anti-patterns — continue documenting failure modes for cross-cycle learning",
+                helpful=len(anti_patterns),
+                harmful=0,
+                section="DO",
+            ))
+            counter += 1
+
+    return bullets
+
+
+def _playbook_proposal_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets suggesting Curator review when playbook_proposals exist in experiment JSON."""
+    import json
+
+    bullets: list[PlaybookItem] = []
+    proposal_count = 0
+
+    for path in project_paths:
+        exp_dir = path / ".factory" / "archive" / "experiments"
+        if not exp_dir.is_dir():
+            continue
+        for json_file in exp_dir.glob("*.json"):
+            try:
+                data = json.loads(json_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            proposals = data.get("playbook_proposals", [])
+            if isinstance(proposals, list):
+                proposal_count += len(proposals)
+
+    if proposal_count >= 2:
+        bullets.append(PlaybookItem(
+            id=_make_id("archivist", 300),
+            content=f"{proposal_count} playbook proposals found in experiment JSON sidecars — run ACE Curator to review and integrate them",
+            helpful=proposal_count,
+            harmful=0,
+            section="DO",
+        ))
+
+    return bullets
+
+
 def _ceo_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
@@ -787,6 +860,7 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
 
     obs_count = 0
     archive_count = 0
+    json_sidecar_count = 0
     for path in project_paths:
         report = load_performance_report(path)
         if not report:
@@ -795,6 +869,9 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
             if "archive" in obs.tags:
                 archive_count += 1
             obs_count += 1
+        exp_dir = path / ".factory" / "archive" / "experiments"
+        if exp_dir.is_dir():
+            json_sidecar_count += len(list(exp_dir.glob("*.json")))
 
     if obs_count >= 10 and archive_count < obs_count * 0.3:
         bullets.append(PlaybookItem(
@@ -802,6 +879,16 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
             content=f"Archive coverage is low — only {archive_count}/{obs_count} observations are from archive notes. Write more detailed experiment notes",
             helpful=archive_count,
             harmful=obs_count - archive_count,
+            section="DO",
+        ))
+        counter += 1
+
+    if json_sidecar_count > 0:
+        bullets.append(PlaybookItem(
+            id=_make_id("archivist", 100 + counter),
+            content=f"Structured JSON sidecars present ({json_sidecar_count} files) — continue writing JSON alongside markdown for programmatic consumption",
+            helpful=json_sidecar_count,
+            harmful=0,
             section="DO",
         ))
         counter += 1
@@ -865,6 +952,14 @@ def reflect_on_experiments(
     observation_items = _observation_bullets(project_paths)
     if observation_items:
         candidates.setdefault("archivist", []).extend(observation_items)
+
+    memory_items = _memory_bullets(project_paths)
+    if memory_items:
+        candidates.setdefault("archivist", []).extend(memory_items)
+
+    proposal_items = _playbook_proposal_bullets(project_paths)
+    if proposal_items:
+        candidates.setdefault("archivist", []).extend(proposal_items)
 
     # Filter empty roles
     candidates = {role: items for role, items in candidates.items() if items}

@@ -85,7 +85,25 @@ def parse_observations(project_path: Path) -> list[Observation]:
 
     archive_dir = project_path / ".factory" / "archive"
     if archive_dir.is_dir():
+        seen_stems: set[str] = set()
+        for json_file in sorted(archive_dir.glob("**/*.json"))[:50]:
+            try:
+                data = json.loads(json_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            content = data.get("learned", "") or data.get("ceo_rationale", "") or json.dumps(data)[:500]
+            if len(content) > 10:
+                seen_stems.add(json_file.stem)
+                observations.append(Observation(
+                    source=str(json_file.relative_to(project_path)),
+                    content=content[:500],
+                    timestamp=datetime.now(),
+                    project=project_name,
+                    tags=["archive"],
+                ))
         for note_file in sorted(archive_dir.glob("**/*.md"))[:50]:
+            if note_file.stem in seen_stems:
+                continue
             text = note_file.read_text()
             if len(text) > 50:
                 observations.append(Observation(
