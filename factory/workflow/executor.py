@@ -46,7 +46,7 @@ Previous context: {previous_context}
 
 Read the output and decide:
 - **Proceed**: the output is satisfactory, continue to the next step
-- **Reloop(target, feedback)**: the output needs improvement. Specify which step to return to and what feedback to provide.
+- **Reloop(target, feedback)**: the output needs improvement. Reloop targets: {reloop_targets}. Specify which step to return to and what feedback to provide.
 - **Halt(reason)**: something is fundamentally wrong, stop the workflow.
 
 Respond with exactly one of:
@@ -557,11 +557,17 @@ class WorkflowExecutor:
         output_files = sorted(node.reads) if node.reads else ["(no specific file)"]
         context = self.node_context.get(node.id, "none")
 
+        reloop_targets: list[str] = []
+        for edge in self._edge_index.get(node.id, []):
+            if edge.condition == VerdictType.RELOOP:
+                reloop_targets.append(edge.target)
+
         return CEO_GATE_PROMPT.format(
             step_name=node.id,
             workflow_name=self.workflow.name,
             output_file=", ".join(output_files),
             previous_context=context,
+            reloop_targets=", ".join(reloop_targets) if reloop_targets else "(use exact node IDs)",
         )
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
@@ -585,7 +591,17 @@ class WorkflowExecutor:
         if text.startswith("RELOOP") or re.match(r"^RELOOP\b", text):
             target_match = re.search(r'TARGET="([^"]+)"', last_line, re.IGNORECASE)
             feedback_match = re.search(r'FEEDBACK="([^"]+)"', last_line, re.IGNORECASE)
-            target = target_match.group(1) if target_match else self._next_conditional(gate_id, VerdictType.RELOOP)
+            target = target_match.group(1) if target_match else None
+
+            if target and target not in self.workflow.nodes:
+                matches = [nid for nid in self.workflow.nodes if target in nid]
+                if len(matches) == 1:
+                    target = matches[0]
+                else:
+                    target = self._next_conditional(gate_id, VerdictType.RELOOP)
+
+            if not target:
+                target = self._next_conditional(gate_id, VerdictType.RELOOP)
             if not target:
                 return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
