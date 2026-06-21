@@ -900,7 +900,6 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 hypothesis=args.hypothesis or "",
                 history=history_dicts,
                 project_path=project_path,
-                smoke_test_command=config.smoke_test,
                 hard_constraints=config.hard_constraints,
             )
 
@@ -1523,7 +1522,6 @@ def cmd_precheck(args: argparse.Namespace) -> int:
         project_path=project_path,
         baseline_sha=args.baseline,
         allowed_scope=config.scope if args.baseline else None,
-        smoke_test_command=config.smoke_test,
         similarity_threshold=args.similarity_threshold,
         fixed_surfaces=config.fixed_surfaces if config.fixed_surfaces else None,
     )
@@ -2386,7 +2384,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"2. Read the PR description: `gh pr view {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
             f"3. Run the project's test suite and lint checks\n"
-            f"4. Spawn the Reviewer agent for a structured code review\n"
+            f"4. Spawn the QA agent for health check, code review, and adversarial QA\n"
             f"5. Post your review verdict on the PR using "
             f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
@@ -4085,8 +4083,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "ceo",
+    p.add_argument("role", choices=["researcher", "strategist", "builder", "qa",
+                                     "archivist", "ceo",
                                      "failure_analyst", "refiner"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")

@@ -26,7 +26,7 @@ class TestResolvePrompt:
 
     def test_all_default_prompts_exist(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist", "evaluator", "reviewer",
+            "researcher", "strategist", "qa",
             "archivist", "ceo", "failure_analyst",
         ]
         for role in roles:
@@ -68,7 +68,7 @@ class TestResolvePrompt:
 
     def test_each_prompt_has_header(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist", "evaluator", "reviewer",
+            "researcher", "strategist", "qa",
             "archivist", "ceo", "failure_analyst",
         ]
         for role in roles:
@@ -121,7 +121,7 @@ class TestInvokeAgentsParallel:
 
         tasks: list[tuple[AgentRole, str]] = [
             ("builder", "task 1"),
-            ("evaluator", "task 2"),
+            ("qa", "task 2"),
         ]
         results = await invoke_agents_parallel(tasks, tmp_path)
         assert len(results) == 2
@@ -139,8 +139,8 @@ class TestInvokeAgentsParallel:
 
         tasks: list[tuple[AgentRole, str]] = [
             ("builder", "task 1"),
-            ("reviewer", "task 2"),
-            ("evaluator", "task 3"),
+            ("qa", "task 2"),
+            ("archivist", "task 3"),
         ]
         results = await invoke_agents_parallel(tasks, tmp_path)
         assert len(results) == 3
@@ -159,7 +159,7 @@ class TestInvokeAgentsParallel:
 
         monkeypatch.setattr("factory.agents.runner.invoke_agent", mock_invoke)
 
-        tasks: list[tuple[AgentRole, str]] = [("builder", "task 1"), ("evaluator", "task 2")]
+        tasks: list[tuple[AgentRole, str]] = [("builder", "task 1"), ("qa", "task 2")]
         await invoke_agents_parallel(tasks, tmp_path, model="claude-opus-4-6")
         assert all(m == "claude-opus-4-6" for m in captured_models)
 

@@ -184,116 +184,6 @@ def check_surfaces(
     )
 
 
-def check_leakage(
-    hypothesis: str,
-    project_path: Path,
-    fixed_surfaces: list[str],
-    baseline_sha: str | None = None,
-    sensitivity: str = "medium",
-) -> CheckResult:
-    """Check for ground truth content leaking into hypothesis or code diff.
-
-    Scans:
-    1. The hypothesis text against fingerprints of fixed surface files
-    2. The PR diff (if baseline_sha provided) against the same fingerprints
-
-    This catches both direct references ("the answer is 42") and indirect
-    hints ("do NOT use subtraction").
-    """
-    from factory.research.leakage import (
-        fingerprint_fixed_surfaces,
-        get_diff_text,
-        scan_diff_for_leakage,
-        scan_for_leakage,
-    )
-
-    fingerprints = fingerprint_fixed_surfaces(project_path, fixed_surfaces)
-    if not fingerprints:
-        return CheckResult(
-            name="ground_truth_leakage",
-            passed=True,
-            detail="No fixed surface files found to fingerprint (skipped)",
-        )
-
-    # Scan hypothesis text
-    report = scan_for_leakage(hypothesis, fingerprints, sensitivity)
-
-    # Also scan PR diff if baseline is available
-    if baseline_sha and not report.flagged:
-        diff_text = get_diff_text(project_path, baseline_sha)
-        if diff_text:
-            report = scan_diff_for_leakage(diff_text, fingerprints, sensitivity)
-
-    if not report.flagged:
-        return CheckResult(
-            name="ground_truth_leakage",
-            passed=True,
-            detail="No ground truth leakage detected",
-        )
-
-    finding_details = "; ".join(
-        f"{f.leak_type}: '{f.leaked_token}' from {f.source_file}"
-        for f in report.findings[:3]
-    )
-    return CheckResult(
-        name="ground_truth_leakage",
-        passed=report.risk_level not in ("medium", "high"),
-        detail=f"Leakage risk={report.risk_level}: {finding_details}",
-    )
-
-
-def check_smoke_test(
-    smoke_test_command: str,
-    project_path: Path,
-    timeout: float = 120,
-) -> CheckResult:
-    """Run the smoke test command and report pass/fail."""
-    if not smoke_test_command.strip():
-        return CheckResult(
-            name="smoke_test",
-            passed=True,
-            detail="No smoke test configured (skipped)",
-        )
-
-    try:
-        result = subprocess.run(
-            smoke_test_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            cwd=project_path,
-        )
-    except subprocess.TimeoutExpired:
-        return CheckResult(
-            name="smoke_test",
-            passed=False,
-            detail=f"Smoke test timed out after {timeout}s",
-        )
-    except Exception as e:
-        return CheckResult(
-            name="smoke_test",
-            passed=False,
-            detail=f"Smoke test error: {e}",
-        )
-
-    if result.returncode == 0:
-        return CheckResult(
-            name="smoke_test",
-            passed=True,
-            detail="Smoke test passed",
-        )
-
-    stderr_snippet = result.stderr.strip()[:200] if result.stderr else ""
-    stdout_snippet = result.stdout.strip()[:200] if result.stdout else ""
-    output = stderr_snippet or stdout_snippet or f"exit code {result.returncode}"
-    return CheckResult(
-        name="smoke_test",
-        passed=False,
-        detail=f"Smoke test failed: {output}",
-    )
-
-
 def check_hard_constraints(
     constraints: list[HardConstraint],
     project_path: Path,
@@ -357,7 +247,6 @@ def run_precheck(
     project_path: Path,
     baseline_sha: str | None = None,
     allowed_scope: list[str] | None = None,
-    smoke_test_command: str = "",
     similarity_threshold: float = 0.6,
     fixed_surfaces: list[str] | None = None,
     hard_constraints: list[HardConstraint] | None = None,
@@ -365,6 +254,9 @@ def run_precheck(
     """Run all prechecks and return aggregate result.
 
     A single failure makes the whole precheck fail. The CEO cannot override this.
+
+    Smoke test and ground truth leakage checks have been moved to the QA Agent,
+    which runs them as part of its adversarial QA and code review sections.
     """
     checks: list[CheckResult] = []
 
@@ -379,17 +271,10 @@ def run_precheck(
     if baseline_sha and fixed_surfaces:
         checks.append(check_surfaces(project_path, baseline_sha))
 
-    # 4. Ground truth leakage check (only if fixed_surfaces provided)
-    if fixed_surfaces:
-        checks.append(check_leakage(hypothesis, project_path, fixed_surfaces, baseline_sha))
-
-    # 5. Anti-pattern detection
+    # 4. Anti-pattern detection
     checks.append(check_anti_pattern(hypothesis, history, similarity_threshold))
 
-    # 6. Smoke test
-    checks.append(check_smoke_test(smoke_test_command, project_path))
-
-    # 7. Hard constraints (user-defined checks from factory.md)
+    # 5. Hard constraints (user-defined checks from factory.md)
     if hard_constraints:
         checks.extend(check_hard_constraints(hard_constraints, project_path))
 

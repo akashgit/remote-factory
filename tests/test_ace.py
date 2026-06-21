@@ -13,7 +13,7 @@ from factory.ace.reflector import (
     _parse_ceo_notes,
     _strategist_bullets,
     _researcher_bullets,
-    _reviewer_bullets,
+    _qa_review_bullets,
     _archivist_bullets,
     _ceo_bullets,
     reflect_on_experiments,
@@ -324,16 +324,16 @@ class TestResearcherBullets:
 # ── v2: Reviewer Bullets ─────────────────────────────────────────
 
 
-class TestReviewerBullets:
+class TestQAReviewBullets:
     def test_guard_violation_pattern(self):
-        """Repeated reviewer failures in a category → DO bullet."""
+        """Repeated QA failures in a category → DO bullet."""
         records = [
             _make_record(i, "Refactor the auth module", verdict="revert",
-                         notes="ceo:revert reviewer_failed=true")
+                         notes="ceo:revert qa_failed=true")
             for i in range(3)
         ]
         outcomes = [("refactoring", "revert", -0.01)] * 3
-        bullets = _reviewer_bullets(outcomes, records)
+        bullets = _qa_review_bullets(outcomes, records)
         assert len(bullets) >= 1
         assert any("attention" in b.content.lower() for b in bullets)
 
@@ -344,12 +344,12 @@ class TestReviewerBullets:
             for i in range(4)
         ]
         outcomes = [("feature", "revert", 0.05)] * 4
-        bullets = _reviewer_bullets(outcomes, records)
+        bullets = _qa_review_bullets(outcomes, records)
         dont_bullets = [b for b in bullets if b.section == "DON'T"]
         assert len(dont_bullets) >= 1
 
     def test_empty_data(self):
-        assert _reviewer_bullets([], []) == []
+        assert _qa_review_bullets([], []) == []
 
 
 # ── v2: Archivist Bullets ────────────────────────────────────────

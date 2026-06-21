@@ -932,13 +932,13 @@ class TestCmdAgentParser:
     def test_agent_custom_timeout(self):
         parser = build_parser()
         args = parser.parse_args([
-            "agent", "evaluator", "--task", "Eval", "--project", "/path", "--timeout", "300",
+            "agent", "qa", "--task", "Eval", "--project", "/path", "--timeout", "300",
         ])
         assert args.timeout == 300.0
 
     def test_agent_all_roles_valid(self):
         parser = build_parser()
-        for role in ["researcher", "strategist", "builder", "reviewer", "evaluator", "archivist", "ceo"]:
+        for role in ["researcher", "strategist", "builder", "qa", "archivist", "ceo"]:
             args = parser.parse_args(["agent", role, "--task", "test", "--project", "/path"])
             assert args.role == role
 

@@ -62,7 +62,7 @@ class TestExperimentNote:
         assert "  - cloud-gateway" in content
         assert "verdict: keep" in content
         assert "experiment_id: 1" in content
-        assert "source: factory-evaluator" in content
+        assert "source: factory-qa" in content
 
     def test_note_has_hypothesis(self, sample_record, obsidian_vault):
         path = write_experiment_note("cloud-gateway", sample_record)

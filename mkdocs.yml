@@ -67,5 +67,6 @@ nav:
       - Eval System: eval.md
       - Self-Improvement Loop: self-improvement.md
       - ACE Playbook Evolution: ace.md
+  - Benchmarks: benchmarks.md
   - Contributing: contributing.md
   - Changelog: changelog.md

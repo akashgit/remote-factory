@@ -38,7 +38,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
-    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'"}'
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -133,8 +133,8 @@ HARBOR_EXIT=0
 
 if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
     # Use Harbor's built-in claude-code agent
-    AGENT_ARGS=(--agent claude-code)
-    echo "    Agent:           claude-code (Harbor built-in)"
+    AGENT_ARGS=(--agent claude-code --extra-instruction-path "${HARNESS_DIR}/benchmarks/terminalbench-extra-instructions.md")
+    echo "    Agent:           claude-code (Harbor built-in + extra instructions)"
 else
     # Use Factory Harbor agent
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
@@ -189,6 +189,27 @@ fi
 
 if [ "${HARBOR_EXIT}" -ne 0 ]; then
     echo "    Harbor exited with code ${HARBOR_EXIT}"
+fi
+
+# Extract cost from Harbor result
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+HARBOR_RESULT=$(find "${JOBS_DIR}" -name 'result.json' -maxdepth 2 2>/dev/null | head -1)
+if [ -n "${HARBOR_RESULT}" ]; then
+    COST_DATA=$(python3 -c "
+import json
+with open('${HARBOR_RESULT}') as f:
+    data = json.load(f)
+cost = 0
+for trial in data.get('trials', {}).values():
+    cost += trial.get('cost_usd', 0) or 0
+print(f'COST_USD={cost}')
+" 2>/dev/null)
+    eval "${COST_DATA}" 2>/dev/null || true
 fi
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
