@@ -208,14 +208,14 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all benchmark artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: benchmark-results-*
           merge-multiple: true
           path: results/
-
-      - uses: actions/checkout@v4
 
       - name: Setup benchmark-data branch
         run: |
