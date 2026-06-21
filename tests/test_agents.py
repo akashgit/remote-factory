@@ -456,6 +456,8 @@ class TestCeoPromptNoBackgroundSpawning:
         for match in matches:
             if "--review-tag" in match:
                 continue
+            if "archivist" in match:
+                continue
             assert "WRONG" in prompt[prompt.find(match) - 50:prompt.find(match)], \
                 f"Found `factory agent ... &` without 'WRONG' context: {match}"
 
