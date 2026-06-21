@@ -216,48 +216,6 @@ jobs:
           path: results/
 
       - uses: actions/checkout@v4
-        with:
-          ref: main
-          path: main-checkout
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Append results to history
-        run: |
-          HISTORY=main-checkout/benchmarks/history.jsonl
-          RUN_ID="${{ github.run_id }}"
-          COMMIT="${{ github.sha }}"
-          REF="${{ github.ref }}"
-          PR_NUMBER="${{ inputs.pr_number || github.event.pull_request.number || '' }}"
-
-          cat > /tmp/append_history.py << 'PYEOF'
-          import json, sys, os
-          f = sys.argv[1]
-          with open(f) as fh:
-              data = json.load(fh)
-          data['run_id'] = os.environ['RUN_ID']
-          data['commit'] = os.environ['COMMIT']
-          data['ref'] = os.environ['REF']
-          data['pr_number'] = os.environ.get('PR_NUMBER', '')
-          print(json.dumps(data))
-          PYEOF
-
-          if [ -d results ]; then
-            for f in results/*.json; do
-              if [ -f "$f" ]; then
-                RUN_ID="$RUN_ID" COMMIT="$COMMIT" REF="$REF" PR_NUMBER="$PR_NUMBER" \
-                  python3 /tmp/append_history.py "$f" >> "$HISTORY"
-              fi
-            done
-          fi
-
-      - name: Commit history
-        run: |
-          cd main-checkout
-          git config user.name 'github-actions[bot]'
-          git config user.email 'github-actions[bot]@users.noreply.github.com'
-          git add benchmarks/history.jsonl
-          git diff --cached --quiet || git commit -m "benchmark: update history [skip ci]"
-          git push
 
       - name: Post PR comment
         if: github.event_name == 'pull_request' || inputs.pr_number != ''
@@ -302,7 +260,7 @@ jobs:
               body += '_No benchmark results found._\n';
             }
 
-            const historyPath = 'main-checkout/benchmarks/history.jsonl';
+            const historyPath = 'benchmarks/history.jsonl';
             let baselines = {};
             if (fs.existsSync(historyPath)) {
               const lines = fs.readFileSync(historyPath, 'utf8').trim().split('\n').filter(Boolean);
