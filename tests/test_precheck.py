@@ -253,7 +253,6 @@ class TestRunPrecheck:
             hypothesis="add new feature",
             history=[],
             project_path=Path("/tmp"),
-            smoke_test_command="",
         )
         assert result.passed
         assert len(result.blocking_failures) == 0

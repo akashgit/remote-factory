@@ -247,7 +247,6 @@ def run_precheck(
     project_path: Path,
     baseline_sha: str | None = None,
     allowed_scope: list[str] | None = None,
-    smoke_test_command: str = "",
     similarity_threshold: float = 0.6,
     fixed_surfaces: list[str] | None = None,
     hard_constraints: list[HardConstraint] | None = None,

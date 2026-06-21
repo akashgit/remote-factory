@@ -900,7 +900,6 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 hypothesis=args.hypothesis or "",
                 history=history_dicts,
                 project_path=project_path,
-                smoke_test_command=config.smoke_test,
                 hard_constraints=config.hard_constraints,
             )
 
@@ -1523,7 +1522,6 @@ def cmd_precheck(args: argparse.Namespace) -> int:
         project_path=project_path,
         baseline_sha=args.baseline,
         allowed_scope=config.scope if args.baseline else None,
-        smoke_test_command=config.smoke_test,
         similarity_threshold=args.similarity_threshold,
         fixed_surfaces=config.fixed_surfaces if config.fixed_surfaces else None,
     )
