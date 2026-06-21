@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shlex
 import time
 import uuid
 from pathlib import Path
@@ -162,6 +163,8 @@ class WorkflowExecutor:
             return
 
         await self._wait_for_reads(node)
+        if self.result.halted:
+            return
 
         if isinstance(node, ForkNode):
             await self._execute_fork(node)
@@ -426,16 +429,23 @@ class WorkflowExecutor:
                         error=str(exc),
                     ),
                 )
+                if not self.result.halted:
+                    self.result.halt_reason = f"fork branch '{target_id}' failed: {exc}"
                 self.result.halted = True
-                self.result.halt_reason = f"fork branch '{target_id}' failed: {exc}"
 
         await asyncio.gather(*(run_branch(t) for t in node.targets))
 
         if self.result.halted:
             return
 
-        # Follow the edge from the first branch target to find the join/next node
-        next_id = self._next_unconditional(node.targets[0]) if node.targets else None
+        branch_set = set(node.targets)
+        next_id: str | None = None
+        for edge in self._edge_index.get(node.id, []):
+            if edge.condition is None and edge.target not in branch_set:
+                next_id = edge.target
+                break
+        if next_id is None and node.targets:
+            next_id = self._next_unconditional(node.targets[0])
         if next_id:
             await self._execute_from(next_id)
 
@@ -457,7 +467,7 @@ class WorkflowExecutor:
 
     async def _run_study(self, node: Study) -> str:
         """Run factory study command."""
-        cmd = f"factory study {self.project_path}"
+        cmd = f"factory study {shlex.quote(str(self.project_path))}"
         if node.focus:
             cmd += f' --focus "{node.focus}"'
         return await self._run_shell(cmd)
@@ -466,7 +476,7 @@ class WorkflowExecutor:
         """Run a FnNode's shell command."""
         if not node.command:
             return ""
-        cmd = node.command.replace("{project_path}", str(self.project_path))
+        cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
         return await self._run_shell(cmd)
 
     async def _run_agent(self, node: AgentNode) -> str:
@@ -507,11 +517,11 @@ class WorkflowExecutor:
         if node.evaluator_type == "fn":
             if node.evaluator_command:
                 cmd = node.evaluator_command.replace(
-                    "{project_path}", str(self.project_path),
+                    "{project_path}", shlex.quote(str(self.project_path)),
                 )
                 try:
                     output = await self._run_shell(cmd)
-                    return self._parse_fn_verdict(output)
+                    return self._parse_fn_verdict(output, node.id)
                 except RuntimeError:
                     return Verdict.halt(reason=f"gate command failed: {node.evaluator_command}")
             return Verdict.proceed()
@@ -574,17 +584,24 @@ class WorkflowExecutor:
         if text.startswith("RELOOP") or re.match(r"^RELOOP\b", text):
             target_match = re.search(r'TARGET="([^"]+)"', last_line, re.IGNORECASE)
             feedback_match = re.search(r'FEEDBACK="([^"]+)"', last_line, re.IGNORECASE)
-            target = target_match.group(1) if target_match else gate_id
+            target = target_match.group(1) if target_match else self._next_conditional(gate_id, VerdictType.RELOOP)
+            if not target:
+                return Verdict.halt(reason=f"RELOOP verdict from gate '{gate_id}' missing target and no RELOOP edge defined")
             feedback = feedback_match.group(1) if feedback_match else "needs improvement"
             return Verdict.reloop(target=target, feedback=feedback)
 
         return Verdict.proceed()
 
-    def _parse_fn_verdict(self, output: str) -> Verdict:
+    def _parse_fn_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse function output into a Verdict."""
         text = output.strip().lower()
         if "fail" in text or "revert" in text:
             return Verdict.halt(reason=f"precheck failed: {output.strip()[:200]}")
+        if "reloop" in text:
+            target = self._next_conditional(gate_id, VerdictType.RELOOP)
+            if target:
+                return Verdict.reloop(target=target, feedback="fn gate requested reloop")
+            return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
     async def _run_shell(self, cmd: str) -> str:
