@@ -297,10 +297,11 @@ def _researcher_bullets(
 def _qa_review_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
+    counter_offset: int = 0,
 ) -> list[PlaybookItem]:
     """Generate QA code-review playbook bullets from guard/review patterns."""
     bullets: list[PlaybookItem] = []
-    counter = 1
+    counter = 1 + counter_offset
 
     # Parse CEO notes to find QA failures
     qa_failures = [r for r in records if "qa_failed=true" in (r.notes or "")]
@@ -849,7 +850,10 @@ def reflect_on_experiments(
     candidates: dict[str, list[PlaybookItem]] = {
         "strategist": _strategist_bullets(outcomes, all_records),
         "builder": _builder_bullets(outcomes, all_records),
-        "qa": _qa_health_bullets(outcomes, all_records) + _qa_review_bullets(outcomes, all_records),
+        "qa": (
+            _qa_h := _qa_health_bullets(outcomes, all_records),
+            _qa_h + _qa_review_bullets(outcomes, all_records, counter_offset=len(_qa_h)),
+        )[-1],
         "researcher": _researcher_bullets(outcomes, all_records),
         "archivist": _archivist_bullets(outcomes, all_records),
         "ceo": _ceo_bullets(outcomes, all_records),
