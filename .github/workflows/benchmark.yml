@@ -50,6 +50,7 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write
+  statuses: write
 
 jobs:
   benchmark:
@@ -416,6 +417,30 @@ jobs:
                 body: body
               });
             }
+
+      - name: Update benchmark status to success
+        if: inputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const prNumber = parseInt('${{ inputs.pr_number }}', 10);
+            if (!prNumber || isNaN(prNumber)) return;
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: pr.head.sha,
+              state: 'success',
+              context: 'benchmark-eval',
+              description: 'Benchmark evaluation complete.',
+              target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
+            });
 
       - name: Update release notes
         if: github.event_name == 'release'
