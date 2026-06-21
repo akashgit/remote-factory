@@ -301,11 +301,11 @@ def _phase_data_review(
     factory_dir: Path,
 ) -> tuple[dict[str, Any], dict[str, Any] | None]:
     verdict = _parse_single_verdict(
-        factory_dir / "reviews" / "ceo-verdict-reviewer.md"
+        factory_dir / "reviews" / "ceo-verdict-qa.md"
     )
     return {
         "agent_output": _read_text_safe(
-            factory_dir / "reviews" / "reviewer-latest.md"
+            factory_dir / "reviews" / "qa-latest.md"
         )
         or "",
     }, verdict
@@ -321,7 +321,7 @@ def _phase_data_eval(
         "delta": None,
         "last_eval": _read_json_safe(factory_dir / "last_eval.json"),
         "agent_output": _read_text_safe(
-            factory_dir / "reviews" / "evaluator-latest.md"
+            factory_dir / "reviews" / "qa-latest.md"
         )
         or "",
     }

@@ -4085,8 +4085,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "ceo",
+    p.add_argument("role", choices=["researcher", "strategist", "builder", "qa",
+                                     "archivist", "ceo",
                                      "failure_analyst", "refiner"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")

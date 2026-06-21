@@ -46,11 +46,11 @@ class TestAgentTracking:
 
     def test_agent_failed_removes_from_active(self):
         events = [
-            _event("agent.started", agent="reviewer", data={"task": "review code"}),
-            _event("agent.failed", agent="reviewer"),
+            _event("agent.started", agent="qa", data={"task": "review code"}),
+            _event("agent.failed", agent="qa"),
         ]
         state = infer_state(events)
-        assert "reviewer" not in state.active_agents
+        assert "qa" not in state.active_agents
 
     def test_agent_timeout_removes_from_active(self):
         events = [
@@ -92,8 +92,7 @@ class TestPhaseInference:
             ("researcher", "Research"),
             ("strategist", "Strategize"),
             ("builder", "Build"),
-            ("reviewer", "Review"),
-            ("evaluator", "Eval"),
+            ("qa", "QA"),
             ("archivist", "Archive"),
         ]
         for agent, expected_phase in cases:
@@ -250,7 +249,7 @@ class TestActiveAgentCount:
     def test_with_agents(self):
         state = FactoryLiveState()
         state.active_agents["builder"] = AgentActivity(role="builder", task="work", started_at="2026-05-03T12:00:00Z")
-        state.active_agents["reviewer"] = AgentActivity(role="reviewer", task="review", started_at="2026-05-03T12:00:00Z")
+        state.active_agents["qa"] = AgentActivity(role="qa", task="review", started_at="2026-05-03T12:00:00Z")
         assert active_agent_count(state) == 2
 
 
@@ -297,13 +296,13 @@ class TestModeAwarePhaseInference:
         state = infer_state(events)
         assert state.current_phase == "Analyze"
 
-    def test_research_evaluator_sets_run(self):
+    def test_research_qa_sets_qa(self):
         events = [
             _event("cycle.started", data={"mode": "research"}),
-            _event("agent.started", agent="evaluator", data={"task": "eval"}),
+            _event("agent.started", agent="qa", data={"task": "verify"}),
         ]
         state = infer_state(events)
-        assert state.current_phase == "Run"
+        assert state.current_phase == "QA"
 
     def test_build_strategist_sets_plan(self):
         events = [

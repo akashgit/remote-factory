@@ -33,8 +33,7 @@ factory agent <role> --task "<task description>" --project "$(pwd)" [--timeout N
 | researcher | Web research, codebase analysis, domain studies |
 | strategist | Generate prioritized hypotheses from observations |
 | builder | Implement code changes on a feature branch, open PRs |
-| reviewer | Review PRs, guard checks, keep/revert verdicts |
-| evaluator | Run evals, compare before/after scores |
+| qa | Health checks, code review, adversarial QA verification |
 | archivist | Record findings to `.factory/archive/` |
 | distiller | Refine vague ideas into buildable specs |
 
@@ -64,7 +63,7 @@ The runner captures agent stdout to `.factory/reviews/<role>-latest.md`.
 | Step | Role | Task Summary | Depends On |
 |------|------|-------------|-----------|
 | S1 | researcher | ... | - |
-| S2 | evaluator | ... | - |
+| S2 | qa | ... | - |
 | S3 | strategist | ... | S1, S2 |
 | ... | ... | ... | ... |
 

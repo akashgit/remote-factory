@@ -460,8 +460,7 @@ def phase_projects_dir(tmp_path: Path) -> Path:
     (factory / "reviews" / "researcher-latest.md").write_text("Researcher output here")
     (factory / "reviews" / "strategist-latest.md").write_text("Strategist output here")
     (factory / "reviews" / "builder-latest.md").write_text("Builder output here")
-    (factory / "reviews" / "reviewer-latest.md").write_text("Reviewer output here")
-    (factory / "reviews" / "evaluator-latest.md").write_text("Evaluator output here")
+    (factory / "reviews" / "qa-latest.md").write_text("QA output here")
     (factory / "reviews" / "archivist-latest.md").write_text("Archivist output here")
     (factory / "reviews" / "session-summary.md").write_text("# Session Summary\nAll good.")
 
@@ -478,7 +477,7 @@ def phase_projects_dir(tmp_path: Path) -> Path:
         "**Verdict:** REDIRECT\n**Rationale:** Missing test coverage\n"
         "**Issues found:**\n- No tests for new module\n- Unused import"
     )
-    (factory / "reviews" / "ceo-verdict-reviewer.md").write_text(
+    (factory / "reviews" / "ceo-verdict-qa.md").write_text(
         "**Verdict:** ABORT\n**Rationale:** Critical regression\n"
         "**Issues found:** None"
     )
@@ -542,8 +541,8 @@ def phase_projects_dir(tmp_path: Path) -> Path:
     emit_event(proj, "experiment.begin", data={"exp_id": 1, "hypothesis": "Add structlog"})
     emit_event(proj, "agent.started", agent="builder", data={"task": "implement"})
     emit_event(proj, "agent.completed", agent="builder", data={"return_code": 0})
-    emit_event(proj, "agent.started", agent="reviewer", data={"task": "review"})
-    emit_event(proj, "agent.completed", agent="reviewer", data={"return_code": 0})
+    emit_event(proj, "agent.started", agent="qa", data={"task": "verify"})
+    emit_event(proj, "agent.completed", agent="qa", data={"return_code": 0})
     emit_event(proj, "eval.started", data={"command": "python eval/score.py"})
     emit_event(proj, "eval.completed", data={"composite": 0.78, "passed": True, "dimensions": 2})
 
@@ -693,7 +692,7 @@ class TestPhaseDetailAPI:
         body = resp.json()
         assert body["status"] == "completed"
         data = body["data"]
-        assert data["agent_output"] == "Reviewer output here"
+        assert data["agent_output"] == "QA output here"
         verdict = body["verdict"]
         assert verdict["decision"] == "ABORT"
 

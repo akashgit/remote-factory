@@ -4,8 +4,8 @@ Reads experiment histories across all managed projects and produces per-agent
 candidate bullets based on statistical patterns. This is deterministic pattern
 extraction (no LLM needed) — the data speaks for itself.
 
-Factory v2: generates bullets for all 7 agent roles (researcher, strategist,
-builder, reviewer, evaluator, archivist, ceo) by parsing structured CEO notes
+Factory v2: generates bullets for all agent roles (researcher, strategist,
+builder, qa, archivist, ceo) by parsing structured CEO notes
 from the experiment record notes field.
 
 Counter wiring: after generating candidates, the Reflector also loads the
@@ -38,9 +38,8 @@ log = structlog.get_logger()
 _ROLE_PREFIX = {
     "strategist": "strat",
     "builder": "build",
-    "evaluator": "eval",
+    "qa": "qa",
     "researcher": "res",
-    "reviewer": "rev",
     "archivist": "arch",
     "ceo": "ceo",
 }
@@ -214,11 +213,11 @@ def _builder_bullets(
     return bullets
 
 
-def _evaluator_bullets(
+def _qa_health_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
 ) -> list[PlaybookItem]:
-    """Generate evaluator playbook bullets from scoring patterns."""
+    """Generate QA health-check playbook bullets from scoring patterns."""
     bullets: list[PlaybookItem] = []
     counter = 1
 
@@ -229,7 +228,7 @@ def _evaluator_bullets(
     ]
     if len(misleading) >= 2:
         bullets.append(PlaybookItem(
-            id=_make_id("evaluator", counter),
+            id=_make_id("qa", counter),
             content=f"Flag score regressions even on kept experiments — {len(misleading)} experiments were kept despite negative deltas, eval may be misleading",
             helpful=0,
             harmful=len(misleading),
@@ -295,21 +294,21 @@ def _researcher_bullets(
     return bullets
 
 
-def _reviewer_bullets(
+def _qa_review_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
 ) -> list[PlaybookItem]:
-    """Generate reviewer playbook bullets from guard/review patterns."""
+    """Generate QA code-review playbook bullets from guard/review patterns."""
     bullets: list[PlaybookItem] = []
     counter = 1
 
-    # Parse CEO notes to find reviewer failures
-    reviewer_failures = [r for r in records if "reviewer_failed=true" in (r.notes or "")]
-    if len(reviewer_failures) >= 2:
-        failure_cats = Counter(classify_hypothesis(r.hypothesis) for r in reviewer_failures)
+    # Parse CEO notes to find QA failures
+    qa_failures = [r for r in records if "qa_failed=true" in (r.notes or "")]
+    if len(qa_failures) >= 2:
+        failure_cats = Counter(classify_hypothesis(r.hypothesis) for r in qa_failures)
         top_cat, top_count = failure_cats.most_common(1)[0]
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Pay extra attention to {top_cat} changes — {top_count} guard violations in this category",
             helpful=0,
             harmful=top_count,
@@ -318,14 +317,14 @@ def _reviewer_bullets(
         counter += 1
 
     # Detect false positives: experiments that were reverted despite positive delta
-    # (suggests the reviewer or CEO was too strict)
+    # (suggests QA or CEO was too strict)
     strict_reverts = [
         r for r in records
         if r.verdict == "revert" and r.delta is not None and r.delta > 0.02
     ]
     if len(strict_reverts) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Review strictness may be too high — {len(strict_reverts)} experiments reverted despite positive deltas (>+0.02). Check if guard rules are too conservative",
             helpful=0,
             harmful=len(strict_reverts),
@@ -340,7 +339,7 @@ def _reviewer_bullets(
     ]
     if len(marginal_keeps) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Raise the bar on marginal improvements — {len(marginal_keeps)} experiments kept with delta < 0.005. These add complexity without meaningful gain",
             helpful=0,
             harmful=len(marginal_keeps),
@@ -846,13 +845,12 @@ def reflect_on_experiments(
 
     log.info("reflector_start", total_experiments=len(outcomes), projects=len(histories))
 
-    # Generate per-role candidates (all 7 agent roles)
+    # Generate per-role candidates
     candidates: dict[str, list[PlaybookItem]] = {
         "strategist": _strategist_bullets(outcomes, all_records),
         "builder": _builder_bullets(outcomes, all_records),
-        "evaluator": _evaluator_bullets(outcomes, all_records),
+        "qa": _qa_health_bullets(outcomes, all_records) + _qa_review_bullets(outcomes, all_records),
         "researcher": _researcher_bullets(outcomes, all_records),
-        "reviewer": _reviewer_bullets(outcomes, all_records),
         "archivist": _archivist_bullets(outcomes, all_records),
         "ceo": _ceo_bullets(outcomes, all_records),
     }

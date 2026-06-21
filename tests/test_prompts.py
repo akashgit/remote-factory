@@ -138,7 +138,7 @@ class TestCeoPrompt:
         assert "## Context Preservation" in ceo_prompt
 
     def test_lists_all_agent_roles(self, ceo_prompt: str) -> None:
-        for role in ["Researcher", "Strategist", "Builder", "Reviewer", "Evaluator", "Archivist"]:
+        for role in ["Researcher", "Strategist", "Builder", "QA", "Archivist"]:
             assert role in ceo_prompt
 
     def test_seventh_sacred_rule_archival(self, ceo_prompt: str) -> None:
@@ -238,18 +238,17 @@ class TestCeoPrompt:
         assert "gh pr diff" in improve_section
         assert "ceo-verdict-builder" in improve_section
 
-    def test_improve_mode_has_reviewer_review(self, ceo_prompt: str) -> None:
-        """CEO must validate the Reviewer's verdict, not blindly trust it."""
+    def test_improve_mode_has_qa_verification(self, ceo_prompt: str) -> None:
+        """CEO must use QA Agent for post-Builder verification."""
         improve_start = ceo_prompt.index("## Mode: Improve")
         improve_section = ceo_prompt[improve_start:]
 
-        assert "ceo-verdict-reviewer" in improve_section
-        assert "rubber-stamp" in improve_section.lower() or "rubber-stamped" in improve_section.lower()
+        assert "factory agent qa" in improve_section
+        assert "QA_ITERATION" in improve_section
 
     def test_review_assessment_criteria_table(self, ceo_prompt: str) -> None:
         """Review gate must define assessment criteria per role."""
-        # Should have a table with criteria for each role
-        for role in ["Researcher", "Strategist", "Builder", "Reviewer", "Evaluator"]:
+        for role in ["Researcher", "Strategist", "Builder", "QA"]:
             assert role in ceo_prompt
 
     # ── E2E Verification Gate tests ──────────────────────────────
