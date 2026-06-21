@@ -92,7 +92,9 @@ def parse_observations(project_path: Path) -> list[Observation]:
     archive_dir = project_path / ".factory" / "archive"
     if archive_dir.is_dir():
         seen_exp_nums: set[str] = set()
-        for json_file in sorted(archive_dir.glob("**/*.json"))[:50]:
+        archive_experiments = archive_dir / "experiments"
+        json_source = archive_experiments if archive_experiments.is_dir() else archive_dir
+        for json_file in sorted(json_source.glob("**/*.json"))[:50]:
             try:
                 data = json.loads(json_file.read_text())
             except (json.JSONDecodeError, OSError):

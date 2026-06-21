@@ -265,9 +265,14 @@ def eval_research_grounding(project_path: Path) -> dict:
         else:
             archive_exp_dir = archive_dir / "experiments"
             if archive_exp_dir.exists():
-                exp_stems = {f.stem for f in archive_exp_dir.glob("*.md")}
-                exp_stems |= {f.stem for f in archive_exp_dir.glob("*.json")}
-                exp_notes = len(exp_stems)
+                exp_ids: set[str] = set()
+                for f in archive_exp_dir.glob("*.md"):
+                    m = re.search(r"(\d+)$", f.stem)
+                    exp_ids.add(m.group(1) if m else f.stem)
+                for f in archive_exp_dir.glob("*.json"):
+                    m = re.search(r"(\d+)$", f.stem)
+                    exp_ids.add(m.group(1) if m else f.stem)
+                exp_notes = len(exp_ids)
             else:
                 exp_notes = 0
         factory_exp_dir = project_path / ".factory" / "experiments"
