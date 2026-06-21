@@ -58,6 +58,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'"}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -140,8 +141,13 @@ echo ""
 
 # ── Step 5: Install Claude Code inside container ──
 
-log "Step 5: Installing Claude Code and Factory inside container"
-echo "    Installing Node.js 22, Claude Code, and Factory..."
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    log "Step 5: Installing Claude Code inside container"
+    echo "    Installing Node.js 22 and Claude Code..."
+else
+    log "Step 5: Installing Claude Code and Factory inside container"
+    echo "    Installing Node.js 22, Claude Code, and Factory..."
+fi
 
 docker exec "${CONTAINER_NAME}" bash -c '
     apt-get update && apt-get install -y git rsync &&
@@ -150,14 +156,17 @@ docker exec "${CONTAINER_NAME}" bash -c '
     npm install -g @anthropic-ai/claude-code
 '
 
-docker exec "${CONTAINER_NAME}" bash -c '
-    curl -LsSf https://astral.sh/uv/install.sh | sh &&
-    export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
-    uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
-    which factory
-'
-
-echo "    Claude Code and Factory installed."
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    docker exec "${CONTAINER_NAME}" bash -c '
+        curl -LsSf https://astral.sh/uv/install.sh | sh &&
+        export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
+        uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
+        which factory
+    '
+    echo "    Claude Code and Factory installed."
+else
+    echo "    Claude Code installed."
+fi
 
 # Create non-root agent user (Claude Code refuses --dangerously-skip-permissions as root)
 log "Step 5: Creating agent user"
@@ -212,7 +221,7 @@ echo ""
 
 # ── Step 5.5: Prepare workspace for Factory ──
 
-log "Step 5.5: Preparing workspace for Factory"
+log "Step 5.5: Preparing workspace"
 
 docker exec --user agent "${CONTAINER_NAME}" bash -c '
     cd /workspace &&
@@ -224,22 +233,24 @@ docker exec --user agent "${CONTAINER_NAME}" bash -c '
     git commit -m "initial cleanroom state" --allow-empty
 '
 
-docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
 ---
 goal: Reverse-engineer the compiled binary and produce equivalent source code
 ---
 FACTORYEOF'
+fi
 
 docker exec --user agent "${CONTAINER_NAME}" bash -c '
     mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
 '
 
-echo "    Workspace prepared for Factory."
+echo "    Workspace prepared."
 echo ""
 
 # ── Step 6: Run solver ──
 
-log "Step 6: Running Factory CEO solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 6: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT='You are reverse-engineering a compiled binary at /workspace/executable.
@@ -275,6 +286,13 @@ export_claude_env
 set +e
 
 SOLVER_EXIT=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --model "${ANTHROPIC_MODEL}" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json'
+else
+    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt'
+fi
+
 timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
@@ -293,7 +311,7 @@ timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \
-    bash -c 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt' \
+    bash -c "${SOLVER_CMD}" \
     2>&1 | tee /dev/stderr | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
 
@@ -310,58 +328,57 @@ echo ""
 
 # ── Step 6.5: Recover factory worktree changes ──
 
-log "Step 6.5: Recovering factory worktree changes"
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    log "Step 6.5: Recovering factory worktree changes"
 
-docker exec --user agent "${CONTAINER_NAME}" bash -c '
-    set +e
-    cd /workspace
+    docker exec --user agent "${CONTAINER_NAME}" bash -c '
+        set +e
+        cd /workspace
 
-    # Strategy 1: Merge surviving factory branch
-    FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
-    if [ -n "$FACTORY_BRANCH" ]; then
-        echo "Merging factory branch: $FACTORY_BRANCH"
-        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
-    fi
+        # Strategy 1: Merge surviving factory branch
+        FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
+        if [ -n "$FACTORY_BRANCH" ]; then
+            echo "Merging factory branch: $FACTORY_BRANCH"
+            git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+        fi
 
-    # Strategy 2: Recover orphaned commits via git fsck
-    if [ -z "$FACTORY_BRANCH" ]; then
-        echo "No factory branch, finding orphaned commits..."
-        ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep "unreachable commit" | awk "{print \$3}")
-        if [ -n "$ORPHAN_COMMITS" ]; then
-            # Find the tip of the orphan chain — the commit with the latest timestamp
-            BEST_COMMIT=""
-            BEST_TIME=0
-            for SHA in $ORPHAN_COMMITS; do
-                COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0)
-                if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
-                    BEST_TIME=$COMMIT_TIME
-                    BEST_COMMIT=$SHA
+        # Strategy 2: Recover orphaned commits via git fsck
+        if [ -z "$FACTORY_BRANCH" ]; then
+            echo "No factory branch, finding orphaned commits..."
+            ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep "unreachable commit" | awk "{print \$3}")
+            if [ -n "$ORPHAN_COMMITS" ]; then
+                BEST_COMMIT=""
+                BEST_TIME=0
+                for SHA in $ORPHAN_COMMITS; do
+                    COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0)
+                    if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                        BEST_TIME=$COMMIT_TIME
+                        BEST_COMMIT=$SHA
+                    fi
+                done
+                if [ -n "$BEST_COMMIT" ]; then
+                    echo "Recovering from orphan tip: $BEST_COMMIT"
+                    echo "  Message: $(git log -1 --format="%s" $BEST_COMMIT 2>/dev/null)"
+                    git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+                    git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                    rm -rf .factory/ eval/ factory.md 2>/dev/null || true
                 fi
-            done
-            if [ -n "$BEST_COMMIT" ]; then
-                echo "Recovering from orphan tip: $BEST_COMMIT"
-                echo "  Message: $(git log -1 --format="%s" $BEST_COMMIT 2>/dev/null)"
-                # Use checkout to restore ALL files from the orphan tip
-                git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
-                # Clean up factory artifacts
-                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
-                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
             fi
         fi
-    fi
 
-    # Strategy 3: Recover from surviving worktree directories
-    for wt in .factory/worktrees/*/; do
-        if [ -d "$wt" ]; then
-            echo "Recovering files from worktree: $wt"
-            rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
-        fi
-    done
+        # Strategy 3: Recover from surviving worktree directories
+        for wt in .factory/worktrees/*/; do
+            if [ -d "$wt" ]; then
+                echo "Recovering files from worktree: $wt"
+                rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
+            fi
+        done
 
-    exit 0
-'
+        exit 0
+    '
 
-echo "    Worktree recovery complete."
+    echo "    Worktree recovery complete."
+fi
 echo ""
 
 # ── Step 7: Package submission ──

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # benchmarks/run.sh — Unified entry point for all benchmark runners.
 #
-# Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve]
+# Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]
 #
 # Arguments:
 #   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench
@@ -13,13 +13,14 @@ set -euo pipefail
 #   --timeout N    Solver timeout in seconds
 #   --split S      Dataset split (featurebench only)
 #   --preserve     Keep workspace/volumes after run
+#   --solver S     Solver to use: factory (default) or claude-code
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Parse arguments ──
 
 if [ $# -lt 2 ]; then
-    echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve]"
+    echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]"
     echo ""
     echo "Benchmarks: swebench, featurebench, terminalbench, programbench"
     exit 1
@@ -32,6 +33,7 @@ shift 2
 TIMEOUT=""
 SPLIT=""
 PRESERVE=""
+SOLVER="factory"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -47,12 +49,29 @@ while [ $# -gt 0 ]; do
             PRESERVE=1
             shift
             ;;
+        --solver)
+            SOLVER="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
             exit 1
             ;;
     esac
 done
+
+# Validate solver
+case "${SOLVER}" in
+    factory|claude-code)
+        ;;
+    *)
+        echo "ERROR: Unknown solver '${SOLVER}'"
+        echo "Valid solvers: factory, claude-code"
+        exit 1
+        ;;
+esac
+
+export BENCHMARK_SOLVER="${SOLVER}"
 
 # ── Validate benchmark ──
 
