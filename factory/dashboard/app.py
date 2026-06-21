@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 
 from factory.events import load_events
-from factory.sessions import get_cycle, get_cycles, get_session, reingest_session
+from factory.sessions import get_children, get_cycle, get_cycles, get_session, reingest_session
 from factory.visualizer import (
     MODE_PHASES,
     PHASES,
@@ -360,6 +360,128 @@ def _phase_data_archive(
     }, None
 
 
+def _build_cycle_graph(
+    project_path: Path, cycle_id: str,
+) -> dict[str, Any]:
+    """Build a Cytoscape.js-format graph from session hierarchy and events."""
+    from factory.sessions import get_session as _get_session
+
+    root = _get_session(project_path, cycle_id)
+    if root is None:
+        return {"nodes": [], "edges": [], "timeline": {}}
+
+    children = get_children(project_path, cycle_id)
+    all_sessions = [root] + children
+
+    nodes: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
+
+    for s in all_sessions:
+        created = s.get("created_at") or 0
+        updated = s.get("updated_at") or created
+        duration = s.get("duration_ms") or 0.0
+        end_time = created + int(duration / 1000) if duration else updated
+        task_preview = (s.get("title") or "")[:120]
+
+        nodes.append({
+            "data": {
+                "id": s["id"],
+                "role": s.get("agent_role") or "unknown",
+                "status": s.get("status") or "unknown",
+                "label": s.get("agent_role") or "unknown",
+                "task_preview": task_preview,
+                "duration_ms": duration,
+                "total_cost_usd": s.get("total_cost_usd") or 0.0,
+                "start_time": created,
+                "end_time": end_time,
+                "model": s.get("model") or "",
+                "type": "agent",
+            }
+        })
+
+    for child in children:
+        if child.get("parent_id"):
+            edges.append({
+                "data": {
+                    "id": f"e_{child['parent_id']}_{child['id']}",
+                    "source": child["parent_id"],
+                    "target": child["id"],
+                    "type": "spawned",
+                }
+            })
+
+    siblings = sorted(children, key=lambda c: c.get("created_at") or 0)
+    for i in range(len(siblings) - 1):
+        a = siblings[i]
+        b = siblings[i + 1]
+        if a.get("parent_id") == b.get("parent_id"):
+            edges.append({
+                "data": {
+                    "id": f"e_seq_{a['id']}_{b['id']}",
+                    "source": a["id"],
+                    "target": b["id"],
+                    "type": "sequential",
+                }
+            })
+
+    timeline_start = root.get("created_at") or 0
+    timeline_end = max(
+        (s.get("updated_at") or s.get("created_at") or 0) for s in all_sessions
+    )
+
+    phases: list[dict[str, Any]] = []
+    events_file = project_path / ".factory" / "events.jsonl"
+    if events_file.exists():
+        try:
+            all_events = load_events(project_path)
+            phase_events = [
+                e for e in all_events
+                if (e.get("type", "").startswith("phase."))
+                and timeline_start <= _event_ts(e) <= timeline_end + 60
+            ]
+            current_phase: dict[str, Any] | None = None
+            for ev in phase_events:
+                ts = _event_ts(ev)
+                name = ev.get("data", {}).get("phase") or ev.get("data", {}).get("name") or ""
+                if ev["type"] == "phase.started":
+                    if current_phase:
+                        current_phase["end"] = ts
+                        phases.append(current_phase)
+                    current_phase = {"name": name, "start": ts, "end": None}
+                elif ev["type"] == "phase.completed":
+                    if current_phase:
+                        current_phase["end"] = ts
+                        phases.append(current_phase)
+                        current_phase = None
+            if current_phase:
+                current_phase["end"] = timeline_end
+                phases.append(current_phase)
+        except Exception:
+            pass
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "timeline": {
+            "start": timeline_start,
+            "end": timeline_end,
+            "phases": phases,
+        },
+    }
+
+
+def _event_ts(event: dict[str, Any]) -> int:
+    """Extract a unix timestamp from an event's ISO timestamp string."""
+    ts_str = event.get("timestamp", "")
+    if not ts_str:
+        return 0
+    try:
+        from datetime import datetime as _dt
+        return int(_dt.fromisoformat(ts_str).timestamp())
+    except (ValueError, TypeError):
+        return 0
+
+
 def _validate_path_segment(value: str, label: str = "name") -> None:
     """Reject path segments that could escape the projects directory."""
     if not _SAFE_NAME_RE.match(value) or ".." in value:
@@ -655,6 +777,21 @@ def create_app(projects_dir: Path) -> FastAPI:
         if cycle is None:
             raise HTTPException(status_code=404, detail="Cycle not found")
         return JSONResponse(cycle)
+
+    @app.get("/api/projects/{name}/cycles/{cycle_id}/graph")
+    async def cycle_graph(name: str, cycle_id: str) -> JSONResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/cycles/{cycle_id}/graph",
+            project=name,
+            cycle_id=cycle_id,
+        )
+        path = projects_dir / name
+        graph = _build_cycle_graph(path, cycle_id)
+        if not graph["nodes"]:
+            raise HTTPException(status_code=404, detail="Cycle not found")
+        return JSONResponse(graph)
 
     @app.get("/api/projects/{name}/sessions/{session_id}")
     async def session_detail(name: str, session_id: str) -> JSONResponse:

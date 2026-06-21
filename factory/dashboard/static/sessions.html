@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sessions — Factory Dashboard</title>
 <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dagre@0.8/dist/dagre.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-dagre@2/cytoscape-dagre.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -117,6 +120,20 @@ details summary:hover{text-decoration:underline}
 .chat-send-btn:hover:not(:disabled){filter:brightness(1.1)}
 
 .item-count-badge{font-size:9px;padding:0 5px;border-radius:8px;background:var(--border);color:var(--text-dim);font-weight:600;flex-shrink:0}
+
+.view-toggle{display:flex;gap:4px;margin-left:auto}
+.view-toggle-btn{background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 12px;font-size:11px;font-weight:600;color:var(--text-dim);cursor:pointer;transition:all 0.15s}
+.view-toggle-btn:hover{border-color:var(--accent);color:var(--text)}
+.view-toggle-btn.active{background:rgba(88,166,255,0.12);border-color:var(--accent);color:var(--accent)}
+
+#graph-container{width:100%;height:100%;position:relative;display:none}
+#cy{width:100%;height:100%;background:var(--bg)}
+.graph-fit-btn{position:absolute;top:12px;right:12px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:6px 12px;font-size:11px;font-weight:600;color:var(--text-dim);cursor:pointer;z-index:10}
+.graph-fit-btn:hover{border-color:var(--accent);color:var(--text)}
+.cy-tooltip{position:absolute;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:12px;line-height:1.6;pointer-events:none;z-index:100;max-width:300px;box-shadow:0 4px 12px rgba(0,0,0,0.4)}
+.cy-tooltip .tt-role{font-weight:700;text-transform:capitalize;margin-bottom:4px}
+.cy-tooltip .tt-row{color:var(--text-dim);font-size:11px}
+.cy-tooltip .tt-row span{color:var(--text);font-weight:600}
 
 @media(max-width:800px){
   .content{grid-template-columns:1fr;grid-template-rows:280px 1fr}
@@ -327,6 +344,10 @@ function renderCycleDetail(cycle) {
   html += '<span style="font-weight:600;font-size:14px">' + esc(cycle.title || 'CEO Cycle') + '</span>';
   if (cycle.model) html += '<span class="model-name">' + esc(cycle.model) + '</span>';
   html += '<span class="status-badge ' + esc(cycle.status || 'completed') + '">' + esc(cycle.status || 'unknown') + '</span>';
+  html += '<div class="view-toggle">';
+  html += '<button class="view-toggle-btn active" id="btn-conversation" onclick="switchView(\'conversation\')">Conversation</button>';
+  html += '<button class="view-toggle-btn" id="btn-graph" onclick="switchView(\'graph\')">Graph</button>';
+  html += '</div>';
   html += '</div>';
 
   html += '<div class="cycle-stats">';
@@ -350,7 +371,9 @@ function renderCycleDetail(cycle) {
   }
   html += '</div>';
 
-  html += '<div class="cycle-detail-body">';
+  html += '<div id="graph-container"><button class="graph-fit-btn" onclick="fitGraph()">Fit</button><div id="cy"></div></div>';
+
+  html += '<div class="cycle-detail-body" id="conversation-container">';
 
   var ceoItems = cycle.items || [];
   if (ceoItems.length > 0) {
@@ -676,6 +699,200 @@ function connectSSE() {
     } catch (err) {}
   };
   evtSource.onerror = function() {};
+}
+
+// ── Graph View ──
+var cyInstance = null;
+var currentView = 'conversation';
+var tooltipEl = null;
+
+function switchView(view) {
+  currentView = view;
+  var convEl = document.getElementById('conversation-container');
+  var graphEl = document.getElementById('graph-container');
+  var btnConv = document.getElementById('btn-conversation');
+  var btnGraph = document.getElementById('btn-graph');
+  if (!convEl || !graphEl) return;
+
+  if (view === 'graph') {
+    convEl.style.display = 'none';
+    graphEl.style.display = 'block';
+    btnConv.classList.remove('active');
+    btnGraph.classList.add('active');
+    loadGraph();
+  } else {
+    convEl.style.display = '';
+    graphEl.style.display = 'none';
+    btnConv.classList.add('active');
+    btnGraph.classList.remove('active');
+  }
+}
+
+async function loadGraph() {
+  if (!selectedCycleId) return;
+  var cyEl = document.getElementById('cy');
+  if (!cyEl) return;
+
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) +
+      '/cycles/' + encodeURIComponent(selectedCycleId) + '/graph');
+    if (!resp.ok) { cyEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim)">No graph data</div>'; return; }
+    var graph = await resp.json();
+    renderGraph(graph);
+  } catch (e) {
+    cyEl.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim)">Failed to load graph</div>';
+  }
+}
+
+function nodeSize(durationMs) {
+  if (!durationMs || durationMs <= 0) return 50;
+  var sec = durationMs / 1000;
+  var size = 40 + Math.min(80, Math.sqrt(sec) * 4);
+  return Math.min(120, Math.max(40, size));
+}
+
+function statusBorderStyle(status) {
+  if (status === 'running') return 'dashed';
+  if (status === 'failed') return 'dotted';
+  return 'solid';
+}
+
+function statusBorderColor(status) {
+  if (status === 'running') return '#d29922';
+  if (status === 'failed') return '#f85149';
+  return '#3fb950';
+}
+
+function renderGraph(graph) {
+  if (cyInstance) { cyInstance.destroy(); cyInstance = null; }
+  removeTooltip();
+
+  var elements = [];
+  (graph.nodes || []).forEach(function(n) {
+    var d = n.data;
+    var size = nodeSize(d.duration_ms);
+    elements.push({
+      data: Object.assign({}, d, { _size: size }),
+    });
+  });
+  (graph.edges || []).forEach(function(e) {
+    elements.push({ data: e.data });
+  });
+
+  cyInstance = cytoscape({
+    container: document.getElementById('cy'),
+    elements: elements,
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'label': 'data(label)',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'color': '#e6edf3',
+          'font-size': '11px',
+          'font-weight': 'bold',
+          'text-transform': 'capitalize',
+          'shape': 'roundrectangle',
+          'width': 'data(_size)',
+          'height': 'data(_size)',
+          'background-color': function(ele) { return roleColor(ele.data('role')); },
+          'background-opacity': 0.85,
+          'border-width': 3,
+          'border-style': function(ele) { return statusBorderStyle(ele.data('status')); },
+          'border-color': function(ele) { return statusBorderColor(ele.data('status')); },
+          'text-wrap': 'wrap',
+          'text-max-width': '80px',
+        }
+      },
+      {
+        selector: 'edge[type="spawned"]',
+        style: {
+          'width': 2,
+          'line-color': '#58a6ff',
+          'target-arrow-color': '#58a6ff',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 0.8,
+        }
+      },
+      {
+        selector: 'edge[type="sequential"]',
+        style: {
+          'width': 1.5,
+          'line-color': '#30363d',
+          'line-style': 'dashed',
+          'target-arrow-color': '#30363d',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'arrow-scale': 0.6,
+        }
+      }
+    ],
+    layout: {
+      name: 'dagre',
+      rankDir: 'TB',
+      nodeSep: 40,
+      rankSep: 60,
+      padding: 30,
+    },
+    minZoom: 0.3,
+    maxZoom: 3,
+  });
+
+  cyInstance.on('tap', 'node', function(evt) {
+    var nodeId = evt.target.data('id');
+    switchView('conversation');
+    setTimeout(function() {
+      var section = document.getElementById('section-' + nodeId);
+      if (section) {
+        if (!section.classList.contains('open')) {
+          toggleAgentSection(nodeId);
+        }
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 100);
+  });
+
+  cyInstance.on('mouseover', 'node', function(evt) {
+    var d = evt.target.data();
+    showTooltip(evt, d);
+  });
+  cyInstance.on('mouseout', 'node', function() {
+    removeTooltip();
+  });
+  cyInstance.on('drag', 'node', function() { removeTooltip(); });
+}
+
+function showTooltip(evt, d) {
+  removeTooltip();
+  tooltipEl = document.createElement('div');
+  tooltipEl.className = 'cy-tooltip';
+  var html = '<div class="tt-role" style="color:' + roleColor(d.role) + '">' + esc(d.role) + '</div>';
+  if (d.task_preview) html += '<div class="tt-row">' + esc(d.task_preview) + '</div>';
+  html += '<div class="tt-row">Duration: <span>' + formatDuration(d.duration_ms) + '</span></div>';
+  html += '<div class="tt-row">Cost: <span>' + formatCost(d.total_cost_usd) + '</span></div>';
+  if (d.model) html += '<div class="tt-row">Model: <span>' + esc(d.model) + '</span></div>';
+  html += '<div class="tt-row">Status: <span>' + esc(d.status) + '</span></div>';
+  tooltipEl.innerHTML = html;
+  document.body.appendChild(tooltipEl);
+
+  var pos = evt.renderedPosition;
+  var cyEl = document.getElementById('cy');
+  var rect = cyEl.getBoundingClientRect();
+  tooltipEl.style.left = (rect.left + pos.x + 15) + 'px';
+  tooltipEl.style.top = (rect.top + pos.y - 10) + 'px';
+}
+
+function removeTooltip() {
+  if (tooltipEl && tooltipEl.parentNode) {
+    tooltipEl.parentNode.removeChild(tooltipEl);
+  }
+  tooltipEl = null;
+}
+
+function fitGraph() {
+  if (cyInstance) cyInstance.fit(undefined, 30);
 }
 
 // ── Init ──
