@@ -15,11 +15,6 @@
   padding: 0.6rem 0.8rem;
   border-bottom: 2px solid var(--md-default-fg-color--lightest);
   white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-}
-#benchmark-dashboard th:hover {
-  opacity: 0.7;
 }
 #benchmark-dashboard td {
   padding: 0.5rem 0.8rem;
@@ -41,37 +36,39 @@
   font-size: 1.2rem;
   font-weight: 600;
 }
-#benchmark-dashboard .summary-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 1rem;
-  margin: 1rem 0 2rem 0;
-}
-#benchmark-dashboard .summary-card {
-  border: 1px solid var(--md-default-fg-color--lightest);
-  border-radius: 8px;
-  padding: 1rem 1.2rem;
-}
-#benchmark-dashboard .summary-card .card-title {
+#benchmark-dashboard .section-explanation {
   font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  margin-bottom: 0.6rem;
-  opacity: 0.7;
+  opacity: 0.6;
+  margin: 0.3rem 0 1.5rem 0;
+  font-style: italic;
 }
-#benchmark-dashboard .summary-card .card-score {
-  font-size: 1.6rem;
-  font-weight: 700;
-  margin-bottom: 0.3rem;
+#benchmark-dashboard .avg-summary {
+  font-size: 1.05rem;
+  margin: 0.8rem 0;
+  line-height: 1.6;
 }
-#benchmark-dashboard .summary-card .card-meta {
+#benchmark-dashboard .avg-summary strong {
+  font-size: 1.1rem;
+}
+#benchmark-dashboard .footnote {
   font-size: 0.8rem;
   opacity: 0.6;
+  font-style: italic;
+  margin: 0.5rem 0 1.5rem 0;
 }
-#benchmark-dashboard .card-score.score-pass { color: #22863a; }
-#benchmark-dashboard .card-score.score-zero { color: #b08800; }
-#benchmark-dashboard .card-score.score-none { color: #888; }
+
+/* Hero section */
+#benchmark-dashboard .hero-section { text-align: center; margin: 1rem 0 2.5rem 0; }
+#benchmark-dashboard .hero-cards { display: flex; gap: 2rem; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0; }
+#benchmark-dashboard .hero-card { flex: 1; text-align: center; padding: 2rem; border-radius: 12px; background: var(--md-default-bg-color--light, #f5f5f5); min-width: 240px; border: 2px solid; }
+#benchmark-dashboard .hero-card.factory { border-color: #4285f4; }
+#benchmark-dashboard .hero-card.claude-code { border-color: #ff7043; }
+#benchmark-dashboard .hero-score { font-size: 3rem; font-weight: 800; line-height: 1.1; }
+#benchmark-dashboard .hero-label { font-size: 1.1rem; color: var(--md-default-fg-color--light); margin-bottom: 0.5rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+#benchmark-dashboard .hero-trend { font-size: 0.9rem; margin-top: 0.5rem; }
+#benchmark-dashboard .hero-explanation { font-size: 0.85rem; opacity: 0.6; max-width: 600px; margin: 0 auto; }
+
+/* Filter bar */
 #benchmark-dashboard .filter-bar {
   display: flex;
   gap: 1rem;
@@ -91,41 +88,28 @@
   font-size: 0.85rem;
   font-weight: 500;
 }
-#benchmark-dashboard .delta-positive { color: #22863a; }
-#benchmark-dashboard .delta-negative { color: #cb2431; }
-#benchmark-dashboard .delta-neutral { color: #888; }
-#benchmark-dashboard .avg-summary {
-  font-size: 1.05rem;
-  margin: 0.8rem 0;
-  line-height: 1.6;
-}
-#benchmark-dashboard .avg-summary strong {
-  font-size: 1.1rem;
-}
-#benchmark-dashboard .footnote {
-  font-size: 0.8rem;
-  opacity: 0.6;
-  font-style: italic;
-  margin: 0.5rem 0 1.5rem 0;
-}
-#benchmark-dashboard details {
-  margin-bottom: 0.2rem;
-}
-#benchmark-dashboard details summary {
+
+/* Run history expandable rows */
+#benchmark-dashboard .run-detail { background: rgba(255,255,255,0.02); }
+#benchmark-dashboard .run-detail td:first-child { padding-left: 2rem; font-size: 0.85rem; opacity: 0.85; }
+#benchmark-dashboard .run-detail.hidden { display: none; }
+#benchmark-dashboard .toggle-details {
+  background: none;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
   cursor: pointer;
-  padding: 0.4rem 0;
-  font-size: 0.9rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color);
 }
-#benchmark-dashboard details summary:hover {
-  opacity: 0.7;
+#benchmark-dashboard .toggle-details:hover {
+  background: var(--md-default-fg-color--lightest);
 }
-#benchmark-dashboard details table {
-  margin: 0.3rem 0 0.5rem 1rem;
-  font-size: 0.85rem;
-}
-#benchmark-dashboard details td {
-  padding: 0.3rem 0.6rem;
-}
+
+/* Trend indicators */
+#benchmark-dashboard .trend-up { color: #22863a; }
+#benchmark-dashboard .trend-down { color: #cb2431; }
+#benchmark-dashboard .trend-neutral { color: #888; }
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -133,11 +117,6 @@
 <script>
 const REPO = 'akashgit/remote-factory';
 const JSONL_URL = `https://raw.githubusercontent.com/${REPO}/benchmark-data/results.jsonl`;
-
-const CHART_COLORS = [
-  '#4285f4', '#ea4335', '#34a853', '#fbbc04',
-  '#8e24aa', '#00acc1', '#ff7043', '#9ccc65'
-];
 
 function isDarkMode() {
   return document.body.getAttribute('data-md-color-scheme') === 'slate';
@@ -158,11 +137,6 @@ function formatDurationShort(seconds) {
   return m > 0 ? m + 'm ' + s + 's' : s + 's';
 }
 
-function formatDurationMinutes(seconds) {
-  if (seconds == null) return '—';
-  return (seconds / 60).toFixed(1) + 'm';
-}
-
 function formatCost(usd) {
   if (usd == null) return '—';
   return '$' + usd.toFixed(2);
@@ -170,25 +144,10 @@ function formatCost(usd) {
 
 function formatDate(ts) {
   if (!ts) return '—';
-  const iso = ts.replace(
-    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
-    '$1-$2-$3T$4:$5:$6Z'
-  );
-  const d = new Date(iso);
-  if (isNaN(d)) return ts;
+  const d = parseTimestamp(ts);
+  if (!d) return ts;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-}
-
-function formatDateShort(ts) {
-  if (!ts) return '—';
-  const iso = ts.replace(
-    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
-    '$1-$2-$3T$4:$5:$6Z'
-  );
-  const d = new Date(iso);
-  if (isNaN(d)) return ts;
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function parseTimestamp(ts) {
@@ -205,10 +164,6 @@ function statusIcon(resolved) {
   return resolved
     ? '<span class="status-success">PASS</span>'
     : '<span class="status-failure">FAIL</span>';
-}
-
-function statusEmoji(resolved) {
-  return resolved ? '✅' : '❌';
 }
 
 function getSolver(r) {
@@ -229,17 +184,6 @@ function formatRefLabel(r) {
   if (r.ref.startsWith('refs/pull/'))
     return 'PR #' + r.ref.replace('refs/pull/', '').replace('/merge', '');
   return r.ref.replace('refs/heads/', '');
-}
-
-function formatDelta(val, invert) {
-  if (val == null) return '—';
-  const sign = val > 0 ? '+' : '';
-  const cls = val > 0
-    ? (invert ? 'delta-negative' : 'delta-positive')
-    : val < 0
-      ? (invert ? 'delta-positive' : 'delta-negative')
-      : 'delta-neutral';
-  return `<span class="${cls}">${sign}${typeof val === 'number' && Math.abs(val) < 10 ? val.toFixed(2) : val}</span>`;
 }
 
 async function fetchJsonl() {
@@ -265,26 +209,73 @@ function getLatestByCombo(results) {
   return byKey;
 }
 
-function computeSolverAverages(mainResults) {
-  const bySolver = {};
-  for (const r of mainResults) {
-    const solver = getSolver(r);
-    if (!bySolver[solver]) bySolver[solver] = { durations: [], costs: [], count: 0 };
-    bySolver[solver].count++;
-    if (r.duration_seconds != null) bySolver[solver].durations.push(r.duration_seconds);
-    if (r.details?.cost_usd != null) bySolver[solver].costs.push(r.details.cost_usd);
+function groupByRunId(results) {
+  const runs = {};
+  for (const entry of results) {
+    const rid = entry.run_id || entry.timestamp || Math.random().toString();
+    if (!runs[rid]) {
+      runs[rid] = {
+        run_id: rid,
+        date: entry.timestamp,
+        ref: entry.ref,
+        commit: entry.commit,
+        run_url: entry.run_url,
+        trigger: entry.trigger,
+        jobs: []
+      };
+    }
+    runs[rid].jobs.push(entry);
   }
-  const result = {};
-  for (const [solver, data] of Object.entries(bySolver)) {
-    const avgDur = data.durations.length > 0
-      ? data.durations.reduce((a, b) => a + b, 0) / data.durations.length : null;
-    const avgCost = data.costs.length > 0
-      ? data.costs.reduce((a, b) => a + b, 0) / data.costs.length : null;
-    const totalCost = data.costs.length > 0
-      ? data.costs.reduce((a, b) => a + b, 0) : null;
-    result[solver] = { avgDur, avgCost, totalCost, count: data.count };
+
+  for (const run of Object.values(runs)) {
+    run.passed = run.jobs.filter(j => j.resolved).length;
+    run.total = run.jobs.length;
+    run.totalCost = run.jobs.reduce((s, j) => s + (j.details?.cost_usd || 0), 0);
+    run.maxDuration = Math.max(...run.jobs.map(j => j.duration_seconds || 0));
+    run.branch = formatRefLabel(run);
+    run.passRate = run.total > 0 ? (run.passed / run.total * 100) : 0;
+    run.score = run.total > 0 ? run.passRate.toFixed(0) + '%' : '—';
   }
-  return result;
+
+  return Object.values(runs).sort((a, b) =>
+    (b.date || '').localeCompare(a.date || '')
+  );
+}
+
+function computeRunAccuracy(jobs) {
+  const resolved = jobs.filter(j => j.resolved).length;
+  return jobs.length > 0 ? (resolved / jobs.length) * 100 : null;
+}
+
+function computeAccuracyPoints(mainResults) {
+  const runsByRunId = {};
+  for (const e of mainResults) {
+    const rid = e.run_id || e.timestamp;
+    if (!runsByRunId[rid]) runsByRunId[rid] = [];
+    runsByRunId[rid].push(e);
+  }
+
+  const factoryPoints = [];
+  const claudePoints = [];
+
+  for (const [, entries] of Object.entries(runsByRunId)) {
+    const date = parseTimestamp(entries[0].timestamp);
+    if (!date) continue;
+
+    const factoryJobs = entries.filter(e => getSolver(e) === 'factory');
+    const claudeJobs = entries.filter(e => getSolver(e) === 'claude-code');
+
+    if (factoryJobs.length > 0) {
+      factoryPoints.push({ x: date, y: computeRunAccuracy(factoryJobs) });
+    }
+    if (claudeJobs.length > 0) {
+      claudePoints.push({ x: date, y: computeRunAccuracy(claudeJobs) });
+    }
+  }
+
+  factoryPoints.sort((a, b) => a.x - b.x);
+  claudePoints.sort((a, b) => a.x - b.x);
+  return { factoryPoints, claudePoints };
 }
 
 function computeRunAverages(mainResults) {
@@ -301,13 +292,8 @@ function computeRunAverages(mainResults) {
   const claudeCostPoints = [];
 
   for (const [, entries] of Object.entries(runsByRunId)) {
-    const ts = entries[0].timestamp || '';
-    const iso = ts.replace(
-      /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
-      '$1-$2-$3T$4:$5:$6Z'
-    );
-    const date = new Date(iso);
-    if (isNaN(date)) continue;
+    const date = parseTimestamp(entries[0].timestamp);
+    if (!date) continue;
 
     const factoryJobs = entries.filter(e => getSolver(e) === 'factory');
     const claudeJobs = entries.filter(e => getSolver(e) === 'claude-code');
@@ -339,19 +325,294 @@ function computeRunAverages(mainResults) {
   return { factoryDurationPoints, claudeDurationPoints, factoryCostPoints, claudeCostPoints };
 }
 
-// Section 1: Latest Main Branch Results
-function renderLatestMain(mainResults) {
+// Section 1: Hero — Headline Numbers
+function renderHero(mainResults) {
+  const runsByRunId = {};
+  for (const e of mainResults) {
+    const rid = e.run_id || e.timestamp;
+    if (!runsByRunId[rid]) runsByRunId[rid] = [];
+    runsByRunId[rid].push(e);
+  }
+
+  const runIds = Object.keys(runsByRunId).sort((a, b) => {
+    const ta = runsByRunId[a][0].timestamp || '';
+    const tb = runsByRunId[b][0].timestamp || '';
+    return tb.localeCompare(ta);
+  });
+
+  if (runIds.length === 0) return '';
+
+  const latestEntries = runsByRunId[runIds[0]];
+  const priorEntries = runIds.length > 1 ? runsByRunId[runIds[1]] : [];
+
+  function solverAccuracy(entries, solver) {
+    const jobs = entries.filter(e => getSolver(e) === solver);
+    return computeRunAccuracy(jobs);
+  }
+
+  const factoryAcc = solverAccuracy(latestEntries, 'factory');
+  const claudeAcc = solverAccuracy(latestEntries, 'claude-code');
+  const prevFactoryAcc = solverAccuracy(priorEntries, 'factory');
+  const prevClaudeAcc = solverAccuracy(priorEntries, 'claude-code');
+
+  function trendHtml(current, prev) {
+    if (current == null) return '';
+    if (prev == null) return '<div class="hero-trend trend-neutral">first run</div>';
+    const delta = current - prev;
+    if (Math.abs(delta) < 0.5) return '<div class="hero-trend trend-neutral">= no change</div>';
+    const sign = delta > 0 ? '+' : '';
+    const cls = delta > 0 ? 'trend-up' : 'trend-down';
+    const arrow = delta > 0 ? '&#9650;' : '&#9660;';
+    return `<div class="hero-trend ${cls}">${arrow} ${sign}${delta.toFixed(0)}% vs prior run</div>`;
+  }
+
+  let html = '<div class="hero-section">';
+  html += '<div class="hero-cards">';
+
+  html += '<div class="hero-card factory">';
+  html += '<div class="hero-label">Factory</div>';
+  html += `<div class="hero-score">${factoryAcc != null ? factoryAcc.toFixed(0) + '%' : '—'}</div>`;
+  html += trendHtml(factoryAcc, prevFactoryAcc);
+  html += '</div>';
+
+  html += '<div class="hero-card claude-code">';
+  html += '<div class="hero-label">Claude Code</div>';
+  html += `<div class="hero-score">${claudeAcc != null ? claudeAcc.toFixed(0) + '%' : '—'}</div>`;
+  html += trendHtml(claudeAcc, prevClaudeAcc);
+  html += '</div>';
+
+  html += '</div>';
+  html += '<div class="hero-explanation">Latest main branch results, averaged across all benchmarks. Accuracy = percentage of benchmark tasks solved correctly (higher is better).</div>';
+  html += '</div>';
+  return html;
+}
+
+// Section 2: Accuracy Trend — Line Chart Over Time
+function renderAccuracyTrend(mainResults) {
+  const { factoryPoints, claudePoints } = computeAccuracyPoints(mainResults);
+  if (factoryPoints.length === 0 && claudePoints.length === 0) return '';
+
+  let html = '<div class="section-title">Accuracy Over Time</div>';
+  html += '<p class="section-explanation">Average solve rate across all benchmarks for each CI run on the main branch.</p>';
+  html += '<div style="width:100%;margin:2rem 0"><canvas id="accuracy-trend-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('accuracy-trend-chart');
+    if (!ctx) return;
+    const colors = chartColors();
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Factory',
+            data: factoryPoints,
+            borderColor: '#4285f4',
+            backgroundColor: '#4285f4',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+          {
+            label: 'Claude Code',
+            data: claudePoints,
+            borderColor: '#ff7043',
+            backgroundColor: '#ff7043',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: colors.text } },
+          tooltip: {
+            callbacks: {
+              label: (item) => item.dataset.label + ': ' + item.raw.y.toFixed(0) + '%',
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: 'Accuracy (%)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+        },
+      },
+    });
+  }, 0);
+
+  return html;
+}
+
+// Section 3: Duration Trend — Line Chart Over Time
+function renderDurationTrend(mainResults) {
+  const runAvgs = computeRunAverages(mainResults);
+  if (runAvgs.factoryDurationPoints.length === 0 && runAvgs.claudeDurationPoints.length === 0) return '';
+
+  let html = '<div class="section-title">Average Duration Over Time</div>';
+  html += '<p class="section-explanation">Average wall-clock time per benchmark task. Lower is better.</p>';
+  html += '<div style="width:100%;margin:2rem 0"><canvas id="duration-trend-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('duration-trend-chart');
+    if (!ctx) return;
+    const colors = chartColors();
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Factory',
+            data: runAvgs.factoryDurationPoints,
+            borderColor: '#4285f4',
+            backgroundColor: '#4285f4',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+          {
+            label: 'Claude Code',
+            data: runAvgs.claudeDurationPoints,
+            borderColor: '#ff7043',
+            backgroundColor: '#ff7043',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: colors.text } },
+          tooltip: {
+            callbacks: {
+              label: (item) => item.dataset.label + ': ' + formatDurationShort(item.raw.y),
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y: {
+            title: { display: true, text: 'Duration (seconds)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+        },
+      },
+    });
+  }, 0);
+
+  return html;
+}
+
+// Section 4: Cost Trend — Line Chart Over Time
+function renderCostTrend(mainResults) {
+  const runAvgs = computeRunAverages(mainResults);
+  if (runAvgs.factoryCostPoints.length === 0 && runAvgs.claudeCostPoints.length === 0) return '';
+
+  const totalFactory = runAvgs.factoryCostPoints.reduce((s, p) => s + p.y, 0);
+  const totalClaude = runAvgs.claudeCostPoints.reduce((s, p) => s + p.y, 0);
+
+  let html = '<div class="section-title">Average Cost Per Run Over Time</div>';
+  html += '<div class="avg-summary">';
+  html += `<strong>Total Spend:</strong> Factory ${formatCost(totalFactory)} | Claude Code ${formatCost(totalClaude)}`;
+  html += '</div>';
+  html += '<p class="section-explanation">Average API cost per benchmark task. Vertex AI runs may show $0 when billing is at the platform level.</p>';
+  html += '<div style="width:100%;margin:2rem 0"><canvas id="cost-trend-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('cost-trend-chart');
+    if (!ctx) return;
+    const colors = chartColors();
+
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Factory',
+            data: runAvgs.factoryCostPoints,
+            borderColor: '#4285f4',
+            backgroundColor: '#4285f4',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+          {
+            label: 'Claude Code',
+            data: runAvgs.claudeCostPoints,
+            borderColor: '#ff7043',
+            backgroundColor: '#ff7043',
+            tension: 0.2,
+            pointRadius: 4,
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: colors.text } },
+          tooltip: {
+            callbacks: {
+              label: (item) => item.dataset.label + ': ' + formatCost(item.raw.y),
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y: {
+            title: { display: true, text: 'Cost (USD)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+        },
+      },
+    });
+  }, 0);
+
+  return html;
+}
+
+// Section 5: Per-Benchmark Breakdown Table
+function renderPerBenchmarkTable(mainResults) {
   const byKey = getLatestByCombo(mainResults);
   const combos = Object.entries(byKey).sort(([a], [b]) => a.localeCompare(b));
 
   if (combos.length === 0) {
-    return '<div class="section-title">Latest Results (main branch)</div>'
+    return '<div class="section-title">Latest Results by Benchmark</div>'
       + '<p class="error-msg">No main branch results yet.</p>';
   }
 
-  let html = '<div class="section-title">Latest Results (main branch)</div>';
+  let html = '<div class="section-title">Latest Results by Benchmark</div>';
+  html += '<p class="section-explanation">Most recent main branch result for each benchmark and solver combination.</p>';
   html += '<table><thead><tr>';
-  html += '<th>Benchmark</th><th>Solver</th><th>Score</th><th>Duration</th>';
+  html += '<th>Benchmark</th><th>Solver</th><th>Result</th><th>Duration</th>';
   html += '<th>Cost</th><th>Commit</th><th>Run</th>';
   html += '</tr></thead><tbody>';
 
@@ -368,7 +629,7 @@ function renderLatestMain(mainResults) {
     html += '<tr>';
     html += `<td>${r.benchmark}</td>`;
     html += `<td>${solver}</td>`;
-    html += `<td>${statusIcon(r.resolved)} ${r.score}</td>`;
+    html += `<td>${statusIcon(r.resolved)} ${(r.score * 100).toFixed(0)}%</td>`;
     html += `<td>${formatDurationShort(r.duration_seconds)}</td>`;
     html += `<td>${formatCost(r.details?.cost_usd)}</td>`;
     html += `<td>${commitLink}</td>`;
@@ -380,363 +641,161 @@ function renderLatestMain(mainResults) {
   return html;
 }
 
-// Section 2: Factory vs Claude Code Comparison
-function renderComparisonChart(mainResults) {
-  const byKey = getLatestByCombo(mainResults);
+// Section 6: Run History — flat rows with expandable details
+function renderRunHistory(allResults) {
+  const benchmarks = [...new Set(allResults.map(r => r.benchmark))].sort();
+  const solvers = [...new Set(allResults.map(r => getSolver(r)))].sort();
+  const sortedRuns = groupByRunId(allResults);
 
-  const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
-  const factoryScores = benchmarks.map(b => {
-    const r = byKey[b + '|factory'];
-    return r ? r.score : null;
-  });
-  const claudeScores = benchmarks.map(b => {
-    const r = byKey[b + '|claude-code'];
-    return r ? r.score : null;
-  });
-
-  const hasAnyData = factoryScores.some(v => v !== null) || claudeScores.some(v => v !== null);
-  if (!hasAnyData) return '';
-
-  let html = '<div class="section-title">Factory vs Claude Code</div>';
-  html += '<div style="width:100%;margin:2rem 0"><canvas id="comparison-chart" style="width:100%!important;height:400px!important"></canvas></div>';
-
-  setTimeout(() => {
-    const ctx = document.getElementById('comparison-chart');
-    if (!ctx) return;
-    const colors = chartColors();
-
-    new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: benchmarks,
-        datasets: [
-          {
-            label: 'Factory',
-            data: factoryScores,
-            backgroundColor: '#4285f4',
-            borderRadius: 4,
-          },
-          {
-            label: 'Claude Code',
-            data: claudeScores,
-            backgroundColor: '#ff7043',
-            borderRadius: 4,
-          },
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { labels: { color: colors.text } },
-          tooltip: { filter: (item) => item.raw !== null },
-        },
-        scales: {
-          x: {
-            ticks: { color: colors.text },
-            grid: { color: colors.grid },
-          },
-          y: {
-            min: 0,
-            max: 1,
-            title: { display: true, text: 'Score', color: colors.text },
-            ticks: { color: colors.text },
-            grid: { color: colors.grid },
-          },
-        },
-      },
-    });
-  }, 0);
-
-  return html;
-}
-
-// Section 3: Duration — line chart over time, then per-benchmark breakdown
-function renderDurationSection(mainResults) {
-  const runAvgs = computeRunAverages(mainResults);
-  const hasTrend = runAvgs.factoryDurationPoints.length > 0 || runAvgs.claudeDurationPoints.length > 0;
-
-  if (!hasTrend) return '';
-
-  let html = '<div class="section-title">Average Duration Over Time (Main Branch)</div>';
-  html += '<div style="width:100%;margin:2rem 0"><canvas id="avg-duration-chart" style="width:100%!important;height:400px!important"></canvas></div>';
-  html += '<p class="footnote">Average across all benchmarks. Per-benchmark breakdown below.</p>';
-
-  const byKey = getLatestByCombo(mainResults);
-  const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
-  const factoryDurations = benchmarks.map(b => {
-    const r = byKey[b + '|factory'];
-    return r?.duration_seconds ?? null;
-  });
-  const claudeDurations = benchmarks.map(b => {
-    const r = byKey[b + '|claude-code'];
-    return r?.duration_seconds ?? null;
-  });
-
-  const hasBreakdown = factoryDurations.some(v => v !== null) || claudeDurations.some(v => v !== null);
-  if (hasBreakdown) {
-    html += '<div style="width:100%;margin:2rem 0"><canvas id="duration-breakdown-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+  // Compute trend deltas vs prior run
+  for (let i = 0; i < sortedRuns.length; i++) {
+    const run = sortedRuns[i];
+    const prev = sortedRuns[i + 1];
+    if (!prev) {
+      run.delta = null;
+      continue;
+    }
+    run.delta = {
+      accuracy: run.passRate - prev.passRate,
+      cost: run.totalCost - prev.totalCost,
+      duration: run.maxDuration - prev.maxDuration,
+    };
   }
 
-  setTimeout(() => {
-    const colors = chartColors();
+  function formatTrendColumn(delta) {
+    if (!delta) return '<span class="trend-neutral">—</span>';
+    let parts = [];
 
-    const avgCtx = document.getElementById('avg-duration-chart');
-    if (avgCtx) {
-      new Chart(avgCtx, {
-        type: 'line',
-        data: {
-          datasets: [
-            {
-              label: 'Factory',
-              data: runAvgs.factoryDurationPoints,
-              borderColor: '#4285f4',
-              backgroundColor: '#4285f4',
-              tension: 0.2,
-              pointRadius: 4,
-            },
-            {
-              label: 'Claude Code',
-              data: runAvgs.claudeDurationPoints,
-              borderColor: '#ff7043',
-              backgroundColor: '#ff7043',
-              tension: 0.2,
-              pointRadius: 4,
-            },
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { labels: { color: colors.text } },
-            tooltip: {
-              callbacks: {
-                label: (item) => item.dataset.label + ': ' + formatDurationShort(item.raw),
-              },
-            },
-          },
-          scales: {
-            x: {
-              type: 'time',
-              time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
-              title: { display: true, text: 'Date', color: colors.text },
-              ticks: { color: colors.text },
-              grid: { color: colors.grid },
-            },
-            y: {
-              title: { display: true, text: 'Duration (seconds)', color: colors.text },
-              ticks: { color: colors.text },
-              grid: { color: colors.grid },
-            },
-          },
-        },
-      });
+    // Accuracy: higher is better (normal colors)
+    const accVal = delta.accuracy;
+    if (Math.abs(accVal) >= 0.5) {
+      const sign = accVal > 0 ? '+' : '';
+      const cls = accVal > 0 ? 'trend-up' : 'trend-down';
+      const arrow = accVal > 0 ? '&#9650;' : '&#9660;';
+      parts.push(`<span class="${cls}">${arrow}${sign}${accVal.toFixed(0)}% acc</span>`);
     }
 
-    if (hasBreakdown) {
-      const breakdownCtx = document.getElementById('duration-breakdown-chart');
-      if (breakdownCtx) {
-        new Chart(breakdownCtx, {
-          type: 'bar',
-          data: {
-            labels: benchmarks,
-            datasets: [
-              {
-                label: 'Factory',
-                data: factoryDurations,
-                backgroundColor: '#4285f4',
-                borderRadius: 4,
-              },
-              {
-                label: 'Claude Code',
-                data: claudeDurations,
-                backgroundColor: '#ff7043',
-                borderRadius: 4,
-              },
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { labels: { color: colors.text } },
-              tooltip: {
-                filter: (item) => item.raw !== null,
-                callbacks: {
-                  label: (item) => item.dataset.label + ': ' + formatDurationShort(item.raw),
-                },
-              },
-            },
-            scales: {
-              x: {
-                ticks: { color: colors.text },
-                grid: { color: colors.grid },
-              },
-              y: {
-                title: { display: true, text: 'Duration (seconds)', color: colors.text },
-                ticks: { color: colors.text },
-                grid: { color: colors.grid },
-              },
-            },
-          },
-        });
-      }
+    // Cost: lower is better (inverted colors)
+    const costVal = delta.cost;
+    if (Math.abs(costVal) >= 0.01) {
+      const sign = costVal > 0 ? '+' : '';
+      const cls = costVal > 0 ? 'trend-down' : 'trend-up';
+      const arrow = costVal > 0 ? '&#9650;' : '&#9660;';
+      parts.push(`<span class="${cls}">${arrow}${sign}$${costVal.toFixed(2)} cost</span>`);
     }
-  }, 0);
 
-  return html;
-}
+    // Duration: lower is better (inverted colors)
+    const durVal = delta.duration;
+    if (Math.abs(durVal) >= 1) {
+      const sign = durVal > 0 ? '+' : '';
+      const cls = durVal > 0 ? 'trend-down' : 'trend-up';
+      const arrow = durVal > 0 ? '&#9650;' : '&#9660;';
+      parts.push(`<span class="${cls}">${arrow}${sign}${formatDurationShort(Math.abs(durVal))} dur</span>`);
+    }
 
-// Section 4: Cost — line chart over time, then per-benchmark breakdown
-function renderCostSection(mainResults) {
-  const runAvgs = computeRunAverages(mainResults);
-  const hasTrend = runAvgs.factoryCostPoints.length > 0 || runAvgs.claudeCostPoints.length > 0;
+    return parts.length > 0 ? parts.join('<br>') : '<span class="trend-neutral">= no change</span>';
+  }
 
-  if (!hasTrend) return '';
+  let html = '<div class="section-title">Run History</div>';
+  html += '<p class="section-explanation">All benchmark runs, newest first. Trend arrows compare each run against the immediately preceding run. Green = improvement, red = regression.</p>';
 
-  const avgs = computeSolverAverages(mainResults);
-  const factoryStats = avgs['factory'] || {};
-  const claudeStats = avgs['claude-code'] || {};
-
-  let html = '<div class="section-title">Average Cost Per Run Over Time (Main Branch)</div>';
-
-  html += '<div class="avg-summary">';
-  html += '<strong>Total Spend:</strong> ';
-  html += `Factory ${formatCost(factoryStats.totalCost)} (${factoryStats.count || 0} runs)`;
-  html += ` | Claude Code ${formatCost(claudeStats.totalCost)} (${claudeStats.count || 0} runs)`;
+  html += '<div class="filter-bar">';
+  html += '<label>Benchmark: <select id="filter-benchmark"><option value="">All</option>';
+  for (const b of benchmarks) html += `<option value="${b}">${b}</option>`;
+  html += '</select></label>';
+  html += '<label>Solver: <select id="filter-solver"><option value="">All</option>';
+  for (const s of solvers) html += `<option value="${s}">${s}</option>`;
+  html += '</select></label>';
   html += '</div>';
 
-  html += '<div style="width:100%;margin:2rem 0"><canvas id="avg-cost-chart" style="width:100%!important;height:400px!important"></canvas></div>';
-  html += '<p class="footnote">Average across all benchmarks. Per-benchmark breakdown below. Vertex AI runs may show $0 cost when billing is handled at the platform level.</p>';
+  html += '<table id="history-table"><thead><tr>';
+  html += '<th>Date</th><th>Branch</th><th>Pass Rate</th>';
+  html += '<th>Cost</th><th>Duration</th><th>Trend</th><th></th>';
+  html += '</tr></thead><tbody>';
 
-  const byKey = getLatestByCombo(mainResults);
-  const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
-  const factoryCosts = benchmarks.map(b => {
-    const r = byKey[b + '|factory'];
-    return r?.details?.cost_usd ?? null;
-  });
-  const claudeCosts = benchmarks.map(b => {
-    const r = byKey[b + '|claude-code'];
-    return r?.details?.cost_usd ?? null;
-  });
+  for (const run of sortedRuns) {
+    const rid = run.run_id.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const jobBenchmarks = [...new Set(run.jobs.map(j => j.benchmark))].join(',');
+    const jobSolvers = [...new Set(run.jobs.map(j => getSolver(j)))].join(',');
 
-  const hasBreakdown = factoryCosts.some(v => v !== null) || claudeCosts.some(v => v !== null);
-  if (hasBreakdown) {
-    html += '<div style="width:100%;margin:2rem 0"><canvas id="cost-breakdown-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+    html += `<tr class="run-summary" data-run-id="${rid}" data-benchmarks="${jobBenchmarks}" data-solvers="${jobSolvers}">`;
+    html += `<td style="white-space:nowrap">${formatDate(run.date)}</td>`;
+    html += `<td>${run.branch}</td>`;
+    html += `<td>${run.score} (${run.passed}/${run.total})</td>`;
+    html += `<td>${formatCost(run.totalCost)}</td>`;
+    html += `<td>${formatDurationShort(run.maxDuration)}</td>`;
+    html += `<td>${formatTrendColumn(run.delta)}</td>`;
+    html += `<td><button class="toggle-details" data-target="${rid}">+</button></td>`;
+    html += '</tr>';
+
+    for (const j of run.jobs) {
+      const solver = getSolver(j);
+      const runLink = j.run_url ? `<a href="${j.run_url}">link</a>` : '';
+      html += `<tr class="run-detail hidden" data-parent="${rid}" data-benchmark="${j.benchmark}" data-solver="${solver}">`;
+      html += `<td>${j.benchmark}</td>`;
+      html += `<td>${solver}</td>`;
+      html += `<td>${statusIcon(j.resolved)} ${(j.score * 100).toFixed(0)}%</td>`;
+      html += `<td>${formatCost(j.details?.cost_usd)}</td>`;
+      html += `<td>${formatDurationShort(j.duration_seconds)}</td>`;
+      html += `<td></td>`;
+      html += `<td>${runLink}</td>`;
+      html += '</tr>';
+    }
   }
 
+  html += '</tbody></table>';
+
   setTimeout(() => {
-    const colors = chartColors();
+    // Toggle detail rows
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-details');
+      if (!btn) return;
+      const runId = btn.dataset.target;
+      const details = document.querySelectorAll(`.run-detail[data-parent="${runId}"]`);
+      const isHidden = details[0]?.classList.contains('hidden');
+      details.forEach(row => row.classList.toggle('hidden'));
+      btn.textContent = isHidden ? '−' : '+';
+    });
 
-    const avgCtx = document.getElementById('avg-cost-chart');
-    if (avgCtx) {
-      new Chart(avgCtx, {
-        type: 'line',
-        data: {
-          datasets: [
-            {
-              label: 'Factory',
-              data: runAvgs.factoryCostPoints,
-              borderColor: '#4285f4',
-              backgroundColor: '#4285f4',
-              tension: 0.2,
-              pointRadius: 4,
-            },
-            {
-              label: 'Claude Code',
-              data: runAvgs.claudeCostPoints,
-              borderColor: '#ff7043',
-              backgroundColor: '#ff7043',
-              tension: 0.2,
-              pointRadius: 4,
-            },
-          ]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { labels: { color: colors.text } },
-            tooltip: {
-              callbacks: {
-                label: (item) => item.dataset.label + ': ' + formatCost(item.raw),
-              },
-            },
-          },
-          scales: {
-            x: {
-              type: 'time',
-              time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
-              title: { display: true, text: 'Date', color: colors.text },
-              ticks: { color: colors.text },
-              grid: { color: colors.grid },
-            },
-            y: {
-              title: { display: true, text: 'Cost (USD)', color: colors.text },
-              ticks: { color: colors.text },
-              grid: { color: colors.grid },
-            },
-          },
-        },
-      });
-    }
+    // Filters
+    const benchSelect = document.getElementById('filter-benchmark');
+    const solverSelect = document.getElementById('filter-solver');
+    if (!benchSelect || !solverSelect) return;
 
-    if (hasBreakdown) {
-      const breakdownCtx = document.getElementById('cost-breakdown-chart');
-      if (breakdownCtx) {
-        new Chart(breakdownCtx, {
-          type: 'bar',
-          data: {
-            labels: benchmarks,
-            datasets: [
-              {
-                label: 'Factory',
-                data: factoryCosts,
-                backgroundColor: '#4285f4',
-                borderRadius: 4,
-              },
-              {
-                label: 'Claude Code',
-                data: claudeCosts,
-                backgroundColor: '#ff7043',
-                borderRadius: 4,
-              },
-            ]
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { labels: { color: colors.text } },
-              tooltip: {
-                filter: (item) => item.raw !== null,
-                callbacks: {
-                  label: (item) => item.dataset.label + ': ' + formatCost(item.raw),
-                },
-              },
-            },
-            scales: {
-              x: {
-                ticks: { color: colors.text },
-                grid: { color: colors.grid },
-              },
-              y: {
-                title: { display: true, text: 'Cost (USD)', color: colors.text },
-                ticks: { color: colors.text },
-                grid: { color: colors.grid },
-              },
-            },
-          },
-        });
+    function applyFilters() {
+      const bv = benchSelect.value;
+      const sv = solverSelect.value;
+
+      const summaryRows = document.querySelectorAll('#history-table .run-summary');
+      for (const row of summaryRows) {
+        const rowBenchmarks = (row.dataset.benchmarks || '').split(',');
+        const rowSolvers = (row.dataset.solvers || '').split(',');
+        const matchB = !bv || rowBenchmarks.includes(bv);
+        const matchS = !sv || rowSolvers.includes(sv);
+        row.style.display = (matchB && matchS) ? '' : 'none';
+
+        const runId = row.dataset.runId;
+        const detailRows = document.querySelectorAll(`.run-detail[data-parent="${runId}"]`);
+        for (const dr of detailRows) {
+          const dMatchB = !bv || dr.dataset.benchmark === bv;
+          const dMatchS = !sv || dr.dataset.solver === sv;
+          if (matchB && matchS) {
+            dr.style.display = (dMatchB && dMatchS) ? (dr.classList.contains('hidden') ? 'none' : '') : 'none';
+          } else {
+            dr.style.display = 'none';
+          }
+        }
       }
     }
+
+    benchSelect.addEventListener('change', applyFilters);
+    solverSelect.addEventListener('change', applyFilters);
   }, 0);
 
   return html;
 }
 
-// Section 5: PR Comparison
+// Section 7: PR Comparison
 function renderPRComparison(allResults) {
   const prResults = allResults.filter(isPR);
   if (prResults.length === 0) return '';
@@ -744,7 +803,8 @@ function renderPRComparison(allResults) {
   const mainResults = allResults.filter(isMainBranch);
   const mainLatest = getLatestByCombo(mainResults);
 
-  let html = '<div class="section-title">Pull Request Results</div>';
+  let html = '<div class="section-title">Pull Request Comparison</div>';
+  html += '<p class="section-explanation">Pull request benchmark results compared against the latest main branch baseline.</p>';
   html += '<table><thead><tr>';
   html += '<th>PR</th><th>Benchmark</th><th>Solver</th>';
   html += '<th>PR Score</th><th>Main Score</th><th>Delta</th>';
@@ -776,12 +836,23 @@ function renderPRComparison(allResults) {
     const prDur = r.duration_seconds;
     const mainDur = baseline?.duration_seconds;
 
+    function formatDelta(val, invert) {
+      if (val == null) return '—';
+      const sign = val > 0 ? '+' : '';
+      const cls = val > 0
+        ? (invert ? 'trend-down' : 'trend-up')
+        : val < 0
+          ? (invert ? 'trend-up' : 'trend-down')
+          : 'trend-neutral';
+      return `<span class="${cls}">${sign}${typeof val === 'number' && Math.abs(val) < 10 ? val.toFixed(2) : val}</span>`;
+    }
+
     html += '<tr>';
     html += `<td>${prLabel}</td>`;
     html += `<td>${r.benchmark}</td>`;
     html += `<td>${solver}</td>`;
-    html += `<td>${prScore != null ? prScore : '—'}</td>`;
-    html += `<td>${mainScore != null ? mainScore : '—'}</td>`;
+    html += `<td>${prScore != null ? (prScore * 100).toFixed(0) + '%' : '—'}</td>`;
+    html += `<td>${mainScore != null ? (mainScore * 100).toFixed(0) + '%' : '—'}</td>`;
     html += `<td>${formatDelta(scoreDelta, false)}</td>`;
     html += `<td>${formatCost(prCost)}</td>`;
     html += `<td>${formatCost(mainCost)}</td>`;
@@ -795,136 +866,6 @@ function renderPRComparison(allResults) {
   return html;
 }
 
-// Section 6: Full History — grouped by run_id
-function renderHistoryTable(results) {
-  const benchmarks = [...new Set(results.map(r => r.benchmark))].sort();
-  const solvers = [...new Set(results.map(r => getSolver(r)))].sort();
-
-  const runs = {};
-  for (const entry of results) {
-    const rid = entry.run_id || entry.timestamp || Math.random().toString();
-    if (!runs[rid]) {
-      runs[rid] = {
-        run_id: rid,
-        date: entry.timestamp,
-        ref: entry.ref,
-        commit: entry.commit,
-        run_url: entry.run_url,
-        trigger: entry.trigger,
-        jobs: []
-      };
-    }
-    runs[rid].jobs.push(entry);
-  }
-
-  for (const run of Object.values(runs)) {
-    run.passed = run.jobs.filter(j => j.resolved).length;
-    run.total = run.jobs.length;
-    run.totalCost = run.jobs.reduce((s, j) => s + (j.details?.cost_usd || 0), 0);
-    run.maxDuration = Math.max(...run.jobs.map(j => j.duration_seconds || 0));
-    run.branch = formatRefLabel(run);
-    run.score = run.total > 0 ? (run.passed / run.total * 100).toFixed(0) + '%' : '—';
-  }
-
-  const sortedRuns = Object.values(runs).sort((a, b) =>
-    (b.date || '').localeCompare(a.date || '')
-  );
-
-  let html = '<div class="section-title">Full History</div>';
-
-  html += '<div class="filter-bar">';
-  html += '<label>Benchmark: <select id="filter-benchmark"><option value="">All</option>';
-  for (const b of benchmarks) html += `<option value="${b}">${b}</option>`;
-  html += '</select></label>';
-  html += '<label>Solver: <select id="filter-solver"><option value="">All</option>';
-  for (const s of solvers) html += `<option value="${s}">${s}</option>`;
-  html += '</select></label>';
-  html += '</div>';
-
-  html += '<table id="history-table"><thead><tr>';
-  html += '<th>Date</th><th>Branch/PR</th><th>Passed</th>';
-  html += '<th>Total</th><th>Score</th><th>Cost</th>';
-  html += '<th>Duration</th><th>Details</th>';
-  html += '</tr></thead><tbody>';
-
-  for (const run of sortedRuns) {
-    const commit = run.commit ? run.commit.substring(0, 7) : '';
-    const commitSuffix = commit
-      ? ` @ <a href="https://github.com/${REPO}/commit/${run.commit}"><code>${commit}</code></a>`
-      : '';
-    const runLink = run.run_url
-      ? ` <a href="${run.run_url}">[GHA]</a>`
-      : '';
-
-    const jobBenchmarks = run.jobs.map(j => j.benchmark);
-    const jobSolvers = run.jobs.map(j => getSolver(j));
-    const benchmarkAttr = [...new Set(jobBenchmarks)].join(',');
-    const solverAttr = [...new Set(jobSolvers)].join(',');
-
-    html += `<tr data-benchmarks="${benchmarkAttr}" data-solvers="${solverAttr}">`;
-    html += `<td style="white-space:nowrap">${formatDate(run.date)}</td>`;
-    html += `<td>${run.branch}${commitSuffix}</td>`;
-    html += `<td>${run.passed}</td>`;
-    html += `<td>${run.total}</td>`;
-    html += `<td>${run.score}</td>`;
-    html += `<td>${formatCost(run.totalCost)}</td>`;
-    html += `<td>${formatDurationShort(run.maxDuration)}</td>`;
-    html += '<td>';
-
-    html += `<details><summary>${run.passed}/${run.total} passed — ${run.branch} — ${formatDateShort(run.date)}${runLink}</summary>`;
-    html += '<table>';
-    html += '<tr><th>Benchmark</th><th>Solver</th><th>Result</th><th>Duration</th><th>Cost</th></tr>';
-    for (const j of run.jobs) {
-      const solver = getSolver(j);
-      html += `<tr data-benchmark="${j.benchmark}" data-solver="${solver}">`;
-      html += `<td>${j.benchmark}</td>`;
-      html += `<td>${solver}</td>`;
-      html += `<td>${statusEmoji(j.resolved)}</td>`;
-      html += `<td>${formatDurationShort(j.duration_seconds)}</td>`;
-      html += `<td>${formatCost(j.details?.cost_usd)}</td>`;
-      html += '</tr>';
-    }
-    html += '</table></details>';
-
-    html += '</td>';
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-
-  setTimeout(() => {
-    const benchSelect = document.getElementById('filter-benchmark');
-    const solverSelect = document.getElementById('filter-solver');
-    if (!benchSelect || !solverSelect) return;
-
-    function applyFilters() {
-      const bv = benchSelect.value;
-      const sv = solverSelect.value;
-
-      const rows = document.querySelectorAll('#history-table tbody tr');
-      for (const row of rows) {
-        const rowBenchmarks = (row.dataset.benchmarks || '').split(',');
-        const rowSolvers = (row.dataset.solvers || '').split(',');
-        const matchB = !bv || rowBenchmarks.includes(bv);
-        const matchS = !sv || rowSolvers.includes(sv);
-        row.style.display = (matchB && matchS) ? '' : 'none';
-
-        const detailRows = row.querySelectorAll('details table tr[data-benchmark]');
-        for (const dr of detailRows) {
-          const dMatchB = !bv || dr.dataset.benchmark === bv;
-          const dMatchS = !sv || dr.dataset.solver === sv;
-          dr.style.display = (dMatchB && dMatchS) ? '' : 'none';
-        }
-      }
-    }
-
-    benchSelect.addEventListener('change', applyFilters);
-    solverSelect.addEventListener('change', applyFilters);
-  }, 0);
-
-  return html;
-}
-
 async function renderDashboard() {
   const container = document.getElementById('benchmark-dashboard');
 
@@ -935,12 +876,13 @@ async function renderDashboard() {
       const mainResults = allResults.filter(isMainBranch);
 
       let html = '';
-      html += renderLatestMain(mainResults);
-      html += renderComparisonChart(mainResults);
-      html += renderDurationSection(mainResults);
-      html += renderCostSection(mainResults);
+      html += renderHero(mainResults);
+      html += renderAccuracyTrend(mainResults);
+      html += renderDurationTrend(mainResults);
+      html += renderCostTrend(mainResults);
+      html += renderPerBenchmarkTable(mainResults);
+      html += renderRunHistory(allResults);
       html += renderPRComparison(allResults);
-      html += renderHistoryTable(allResults);
       container.innerHTML = html;
       return;
     }
