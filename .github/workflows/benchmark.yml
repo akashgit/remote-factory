@@ -372,6 +372,27 @@ jobs:
               body += '_No baseline available for comparison._\n\n';
             }
 
+            body += '\n<details>\n<summary>How these benchmarks run</summary>\n\n';
+
+            body += '**Factory solver:** Runs `factory ceo . --headless --no-github --prompt <task>` — ';
+            body += 'full factory loop (research → strategize → build → review). ';
+            body += 'See [`benchmarks/run-swebench.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/run-swebench.sh).\n\n';
+
+            body += '**Claude Code solver:** Runs `claude -p <task> --model claude-opus-4-6[1m] --max-turns 200` — ';
+            body += 'single-shot solve. Same script files as factory, switched via `--solver` flag.\n\n';
+
+            body += '**TerminalBench:** Uses [Harbor framework](https://harborframework.com). ';
+            body += 'Factory runs via custom [`factory_harbor_agent.py`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/factory_harbor_agent.py), ';
+            body += 'Claude Code uses Harbor\'s built-in agent.\n\n';
+
+            body += '**ProgramBench:** Both solvers run inside a Docker cleanroom container. ';
+            body += 'See [`benchmarks/run-programbench.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/run-programbench.sh).\n\n';
+
+            body += '**Config:** `claude-opus-4-6[1m]`, effort=XHIGH, thinking=128K tokens. ';
+            body += 'See [`benchmarks/lib.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/lib.sh).\n\n';
+
+            body += '</details>\n';
+
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: prNumber,
               owner: context.repo.owner,
