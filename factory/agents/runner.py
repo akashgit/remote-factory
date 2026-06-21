@@ -163,6 +163,12 @@ async def invoke_agent(
 
     sid = _begin_span_safe(project_path, role, model=model, task=task)
 
+    parent_session_id = os.environ.get("FACTORY_SESSION_ID")
+    sess_id = _begin_session_safe(
+        project_path, role,
+        parent_id=parent_session_id, model=model, title=task[:200] if task else None,
+    )
+
     runner = get_runner(runner_name, project_path=project_path)
 
     agent_session_name = session_name or f"factory: {project_path.resolve().name}/{role}"
@@ -183,8 +189,11 @@ async def invoke_agent(
     )
 
     old_parent_span = os.environ.get("FACTORY_PARENT_SPAN_ID")
+    old_session_id = os.environ.get("FACTORY_SESSION_ID")
     if sid:
         os.environ["FACTORY_PARENT_SPAN_ID"] = sid
+    if sess_id:
+        os.environ["FACTORY_SESSION_ID"] = sess_id
     try:
         try:
             result = await runner.headless(request)
@@ -195,6 +204,7 @@ async def invoke_agent(
             logger.error("%s agent failed: %s", role, e)
             _emit_safe(project_path, "agent.failed", agent=role, data={"error": str(e)[:200]})
             _complete_span_safe(project_path, sid, status="failed")
+            _complete_session_safe(project_path, sess_id, status="failed")
             if _track_failures:
                 _consecutive_failures += 1
                 _check_failure_threshold(project_path, role)
@@ -208,6 +218,10 @@ async def invoke_agent(
             )
             _complete_span_safe(
                 project_path, sid, status="failed",
+                usage=usage, metadata=result.metadata, output=stdout,
+            )
+            _complete_session_safe(
+                project_path, sess_id, status="failed",
                 usage=usage, metadata=result.metadata, output=stdout,
             )
             if _track_failures:
@@ -238,6 +252,10 @@ async def invoke_agent(
                 project_path, sid, status="completed",
                 usage=usage, metadata=result.metadata, output=stdout,
             )
+            _complete_session_safe(
+                project_path, sess_id, status="completed",
+                usage=usage, metadata=result.metadata, output=stdout,
+            )
             if _track_failures:
                 _consecutive_failures = 0
 
@@ -249,6 +267,10 @@ async def invoke_agent(
             os.environ["FACTORY_PARENT_SPAN_ID"] = old_parent_span
         elif sid:
             os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
+        if old_session_id is not None:
+            os.environ["FACTORY_SESSION_ID"] = old_session_id
+        elif sess_id:
+            os.environ.pop("FACTORY_SESSION_ID", None)
 
 
 def _check_failure_threshold(project_path: Path, last_agent: str) -> None:
@@ -358,6 +380,50 @@ def _complete_span_safe(
         logger.debug("Failed to complete span %s", span_id, exc_info=True)
 
 
+def _begin_session_safe(
+    project_path: Path,
+    role: str,
+    *,
+    parent_id: str | None = None,
+    model: str | None = None,
+    title: str | None = None,
+) -> str | None:
+    """Begin a SQLite session, swallowing errors so agent invocation is never blocked."""
+    try:
+        from factory.sessions import begin_session
+
+        return begin_session(
+            project_path, role,
+            parent_id=parent_id, model=model, title=title,
+        )
+    except Exception:
+        logger.debug("Failed to begin session for %s", role, exc_info=True)
+        return None
+
+
+def _complete_session_safe(
+    project_path: Path,
+    session_id: str | None,
+    *,
+    status: str = "completed",
+    usage: object | None = None,
+    metadata: dict[str, object] | None = None,
+    output: str | None = None,
+) -> None:
+    """Complete a SQLite session, swallowing errors so agent invocation is never blocked."""
+    if session_id is None:
+        return
+    try:
+        from factory.sessions import complete_session
+
+        complete_session(
+            project_path, session_id,
+            status=status, usage=usage, metadata=metadata, output=output,
+        )
+    except Exception:
+        logger.debug("Failed to complete session %s", session_id, exc_info=True)
+
+
 def _save_review(
     project_path: Path, role: str, output: str, return_code: int,
     review_tag: str | None = None,
@@ -396,10 +462,20 @@ def begin_cycle_session(
 ) -> str | None:
     """Create a root Langfuse trace for a factory cycle.
 
+    Also creates a root SQLite session so child agents can link via
+    FACTORY_SESSION_ID.
+
     Sets FACTORY_TRACE_ID and FACTORY_PARENT_SPAN_ID env vars so child
     agents link to this trace. Returns the span_id, or None if Langfuse
     is not configured.
     """
+    cycle_sess_id = _begin_session_safe(
+        project_path, "ceo", model=model,
+        title=f"cycle-{cycle_id}" if cycle_id else None,
+    )
+    if cycle_sess_id:
+        os.environ["FACTORY_SESSION_ID"] = cycle_sess_id
+
     try:
         from factory.telemetry import begin_trace, is_enabled
 
@@ -425,7 +501,13 @@ def complete_cycle_session(
     project_path: Path,
     span_id: str | None,
 ) -> None:
-    """Mark a root Langfuse trace as finished and flush."""
+    """Mark a root Langfuse trace as finished and flush.
+
+    Also completes the root SQLite session if one was started.
+    """
+    cycle_sess_id = os.environ.pop("FACTORY_SESSION_ID", None)
+    _complete_session_safe(project_path, cycle_sess_id, status="completed")
+
     if span_id is None:
         return
     try:

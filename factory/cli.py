@@ -1885,6 +1885,46 @@ def cmd_backfill_archive(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """List agent sessions from the SQLite session database."""
+    from factory.sessions import get_cycles, get_sessions
+
+    project_path = Path(args.path).resolve()
+    cycle_filter = getattr(args, "cycle", None)
+    role_filter = getattr(args, "role", None)
+
+    if cycle_filter:
+        rows = get_sessions(project_path, cycle_id=cycle_filter, role=role_filter)
+    elif role_filter:
+        rows = get_sessions(project_path, role=role_filter)
+    else:
+        rows = get_cycles(project_path)
+
+    if not rows:
+        print("No sessions found.")
+        return 0
+
+    header = f"{'ID':<14} {'Role':<14} {'Status':<12} {'Duration':>10} {'Cost':>10}"
+    print(header)
+    print("-" * len(header))
+
+    for r in rows:
+        sid = r.get("id", "")[:13]
+        role = (r.get("agent_role") or "unknown")[:13]
+        status = (r.get("status") or "unknown")[:11]
+        duration_ms = r.get("duration_ms") or r.get("total_duration") or 0.0
+        duration_s = duration_ms / 1000.0
+        if duration_s >= 60:
+            dur_str = f"{duration_s / 60:.1f}m"
+        else:
+            dur_str = f"{duration_s:.1f}s"
+        cost = r.get("total_cost_usd") or r.get("total_cost") or 0.0
+        cost_str = f"${cost:.4f}" if cost else "-"
+        print(f"{sid:<14} {role:<14} {status:<12} {dur_str:>10} {cost_str:>10}")
+
+    return 0
+
+
 def cmd_diff(args: argparse.Namespace) -> int:
     """Compare two experiments side-by-side."""
     from factory.analysis import compare_experiments, format_comparison
@@ -3871,6 +3911,12 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("research", help="Print research citation index for experiments")
     p.add_argument("path", help="Path to the project")
 
+    # sessions
+    p = sub.add_parser("sessions", help="List agent sessions from the local SQLite database")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--cycle", default=None, help="Filter by cycle (root session) ID")
+    p.add_argument("--role", default=None, help="Filter by agent role")
+
     # diff
     p = sub.add_parser("diff", help="Compare two experiments side-by-side")
     p.add_argument("path", help="Path to the project")
@@ -4320,6 +4366,7 @@ def main(argv: list[str] | None = None) -> int:
         "research": cmd_research,
         "backfill-citations": cmd_backfill_citations,
         "backfill-archive": cmd_backfill_archive,
+        "sessions": cmd_sessions,
         "diff": cmd_diff,
         "explain": cmd_explain,
         "export": cmd_export,
