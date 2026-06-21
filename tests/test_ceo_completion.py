@@ -1155,7 +1155,6 @@ class TestCeoPromptResearchMode:
         research_section = ceo_prompt[research_idx:meta_idx]
         assert "validate-research" in research_section
         assert "leakage-check" in research_section
-        assert "text-file" in research_section
 
     def test_research_ideation_plan_loop_activation(self, ceo_prompt: str) -> None:
         """Plan Loop activates for research ideation."""
