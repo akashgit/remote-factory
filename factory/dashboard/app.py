@@ -16,6 +16,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 
 from factory.events import load_events
+from factory.sessions import get_cycle, get_cycles, get_session, reingest_session
 from factory.visualizer import (
     MODE_PHASES,
     PHASES,
@@ -630,6 +631,120 @@ def create_app(projects_dir: Path) -> FastAPI:
             "dashboard_request", endpoint="/research/{name}", project=name
         )
         return HTMLResponse((_STATIC_DIR / "research.html").read_text())
+
+    # ── Session endpoints ──
+
+    @app.get("/api/projects/{name}/cycles")
+    async def project_cycles(name: str, limit: int = 20) -> list[dict[str, Any]]:
+        _validate_path_segment(name)
+        log.info("dashboard_request", endpoint="/api/projects/{name}/cycles", project=name)
+        path = projects_dir / name
+        return get_cycles(path, limit=limit)
+
+    @app.get("/api/projects/{name}/cycles/{cycle_id}")
+    async def project_cycle_detail(name: str, cycle_id: str) -> JSONResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/cycles/{cycle_id}",
+            project=name,
+            cycle_id=cycle_id,
+        )
+        path = projects_dir / name
+        cycle = get_cycle(path, cycle_id)
+        if cycle is None:
+            raise HTTPException(status_code=404, detail="Cycle not found")
+        return JSONResponse(cycle)
+
+    @app.get("/api/projects/{name}/sessions/{session_id}")
+    async def session_detail(name: str, session_id: str) -> JSONResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/{session_id}",
+            project=name,
+            session_id=session_id,
+        )
+        path = projects_dir / name
+        session = get_session(path, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return JSONResponse(session)
+
+    @app.post("/api/projects/{name}/sessions/{session_id}/message")
+    async def send_session_message(
+        name: str, session_id: str, request: Request,
+    ) -> JSONResponse:
+        _validate_path_segment(name)
+        log.info(
+            "dashboard_request",
+            endpoint="/api/projects/{name}/sessions/{session_id}/message",
+            project=name,
+            session_id=session_id,
+        )
+        path = projects_dir / name
+        session = get_session(path, session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        claude_sid = session.get("claude_session_id")
+        if not claude_sid:
+            raise HTTPException(
+                status_code=400,
+                detail="Session has no claude_session_id — cannot resume",
+            )
+
+        body = await request.json()
+        message = body.get("message", "").strip()
+        if not message:
+            raise HTTPException(status_code=400, detail="Empty message")
+
+        import subprocess
+
+        try:
+            result = subprocess.run(
+                [
+                    "claude", "--resume", claude_sid,
+                    "-p", message,
+                    "--output-format", "json",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=str(path),
+            )
+        except FileNotFoundError:
+            raise HTTPException(
+                status_code=500, detail="claude CLI not found",
+            )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=504, detail="Claude timed out")
+
+        usage_update = None
+        if result.stdout.strip():
+            try:
+                out = json.loads(result.stdout)
+                usage_update = {
+                    "input_tokens": out.get("input_tokens", 0),
+                    "output_tokens": out.get("output_tokens", 0),
+                    "cache_read_tokens": out.get("cache_read_tokens", 0),
+                    "cost_usd": out.get("cost_usd", 0.0),
+                    "num_turns": out.get("num_turns", 0),
+                }
+            except json.JSONDecodeError:
+                pass
+
+        updated = reingest_session(
+            path, session_id, usage_update=usage_update,
+        )
+        if updated is None:
+            updated = get_session(path, session_id)
+        return JSONResponse(updated)
+
+    @app.get("/sessions/{name}", response_class=HTMLResponse)
+    async def sessions_view(name: str) -> HTMLResponse:
+        _validate_path_segment(name)
+        log.info("dashboard_request", endpoint="/sessions/{name}", project=name)
+        return HTMLResponse((_STATIC_DIR / "sessions.html").read_text())
 
     @app.get("/api/events/stream")
     async def event_stream(request: Request) -> StreamingResponse:

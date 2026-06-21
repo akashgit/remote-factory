@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions — Factory Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--text-dim:#7d8590;--accent:#58a6ff;
+  --green:#3fb950;--red:#f85149;--yellow:#d29922;
+  --cyan:#39d2e0;--orange:#f0883e;--purple:#bc8cff;
+  --font:'SF Mono','Cascadia Code','JetBrains Mono','Fira Code',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5}
+header{display:flex;align-items:center;justify-content:space-between;padding:12px 24px;border-bottom:1px solid var(--border);background:var(--surface)}
+.logo{font-weight:700;font-size:16px;letter-spacing:2px;color:var(--accent);font-family:var(--font)}
+.header-info{display:flex;align-items:center;gap:16px}
+.back-link{color:var(--accent);text-decoration:none;font-size:13px}
+.back-link:hover{text-decoration:underline}
+
+.content{display:grid;grid-template-columns:300px 1fr;height:calc(100vh - 49px);overflow:hidden}
+
+.cycle-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.cycle-panel-header{padding:10px 16px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0;display:flex;justify-content:space-between;align-items:center;font-family:var(--font)}
+.cycle-panel-body{overflow-y:auto;flex:1;padding:4px}
+
+.cycle-item{padding:10px 14px;cursor:pointer;border-radius:6px;border:1px solid transparent;margin-bottom:2px;transition:all 0.1s}
+.cycle-item:hover{background:var(--surface);border-color:var(--border)}
+.cycle-item.selected{background:var(--surface);border-color:var(--accent)}
+.cycle-item.running{animation:itemPulse 2s infinite}
+@keyframes itemPulse{0%,100%{opacity:1}50%{opacity:0.85}}
+
+.cycle-item-top{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.cycle-item-title{font-size:13px;font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cycle-item-meta{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text-dim)}
+.cycle-item-roles{display:flex;gap:3px;flex-wrap:wrap;margin-top:2px}
+
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.status-dot.running{background:var(--yellow);box-shadow:0 0 6px var(--yellow);animation:pulse 1.5s infinite}
+.status-dot.completed{background:var(--green)}
+.status-dot.failed{background:var(--red)}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(210,153,34,0.4)}50%{opacity:0.7;box-shadow:0 0 0 4px rgba(210,153,34,0)}}
+
+.role-badge{display:inline-block;padding:1px 6px;border-radius:10px;font-size:10px;font-weight:600;text-transform:capitalize;color:#fff}
+.role-mini{display:inline-block;padding:0 5px;border-radius:8px;font-size:9px;font-weight:600;text-transform:capitalize;color:#fff}
+.status-badge{font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600}
+.status-badge.running{background:#3d2e1f;color:var(--yellow)}
+.status-badge.completed{background:#1a3a2a;color:var(--green)}
+.status-badge.failed{background:#3d1f1f;color:var(--red)}
+
+.detail-panel{display:flex;flex-direction:column;overflow:hidden}
+.detail-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-dim);font-size:13px}
+
+.cycle-header{padding:14px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+.cycle-header-top{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+.cycle-header-top .role-badge{font-size:12px;padding:2px 10px}
+.model-name{font-size:12px;color:var(--text-dim)}
+.cycle-stats{display:flex;gap:16px;flex-wrap:wrap;font-size:12px}
+.cycle-stat{display:flex;flex-direction:column;gap:1px}
+.cycle-stat .cs-label{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.3px;font-family:var(--font)}
+.cycle-stat .cs-value{font-weight:600}
+
+.cycle-detail-body{overflow-y:auto;flex:1;padding:0}
+
+.agent-section{border-bottom:1px solid var(--border)}
+.agent-section:last-child{border-bottom:none}
+.agent-section-header{padding:10px 20px;cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--surface);user-select:none;transition:background 0.1s}
+.agent-section-header:hover{background:#1c2129}
+.agent-section-arrow{font-size:10px;transition:transform 0.15s;width:14px;text-align:center;flex-shrink:0;color:var(--text-dim)}
+.agent-section.open .agent-section-arrow{transform:rotate(90deg)}
+.agent-section-info{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.agent-section-meta{display:flex;gap:10px;font-size:11px;color:var(--text-dim);flex-shrink:0}
+.agent-section-body{display:none;padding:0}
+.agent-section.open .agent-section-body{display:block}
+.interactive-badge{font-size:9px;padding:1px 5px;border-radius:8px;font-weight:600;flex-shrink:0}
+.interactive-badge.interactive{background:rgba(88,166,255,0.15);color:var(--accent)}
+
+.chat-body{display:flex;flex-direction:column;gap:8px;padding:12px 20px}
+
+.chat-msg{max-width:85%;padding:10px 14px;border-radius:8px;font-size:13px;line-height:1.6;position:relative}
+.chat-msg.assistant{align-self:flex-start;background:rgba(63,185,80,0.06);border-left:2px solid var(--green);border-top-left-radius:2px}
+.chat-msg.user{align-self:flex-end;background:rgba(88,166,255,0.06);border-right:2px solid var(--accent);border-top-right-radius:2px}
+.chat-msg.tool-call{align-self:flex-start;background:rgba(240,136,62,0.08);border-left:2px solid var(--orange);border-top-left-radius:2px}
+.chat-msg.tool-output{align-self:flex-start;background:rgba(125,133,144,0.06);border-left:2px solid #555;border-top-left-radius:2px}
+.chat-msg.thinking{align-self:flex-start;background:rgba(188,140,255,0.06);border-left:2px solid var(--purple);border-top-left-radius:2px;opacity:0.7}
+
+.chat-role-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-dim);margin-bottom:4px;font-family:var(--font)}
+.chat-msg.user .chat-role-label{text-align:right}
+
+.tool-header{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.tool-icon{font-size:12px}
+.tool-name{font-weight:700;color:var(--orange);font-size:12px}
+
+.chat-msg pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;font-family:var(--font)}
+.chat-msg code:not([class*="language-"]){background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:1px 5px;font-size:12px;font-family:var(--font)}
+.chat-msg .tool-output-pre{background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:8px 10px;font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:400px;overflow-y:auto;font-family:var(--font)}
+.thinking-content{font-style:italic;color:var(--text-dim)}
+
+.chat-msg .md-content p{margin:0 0 8px 0}
+.chat-msg .md-content p:last-child{margin-bottom:0}
+.chat-msg .md-content ul,.chat-msg .md-content ol{margin:0 0 8px 16px}
+.chat-msg .md-content h1,.chat-msg .md-content h2,.chat-msg .md-content h3{margin:8px 0 4px 0;font-size:14px}
+
+details{border:none}
+details summary{cursor:pointer;color:var(--accent);font-size:12px;padding:4px 0;user-select:none}
+details summary:hover{text-decoration:underline}
+
+.chat-input-area{padding:12px 20px;border-top:1px solid var(--border);background:var(--surface);display:flex;gap:8px;align-items:flex-end}
+.chat-input{flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 14px;color:var(--text);font-family:inherit;font-size:13px;resize:none;min-height:40px;max-height:120px;outline:none}
+.chat-input:focus{border-color:var(--accent)}
+.chat-input:disabled{opacity:0.5}
+.chat-send-btn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap}
+.chat-send-btn:disabled{opacity:0.4;cursor:not-allowed}
+.chat-send-btn:hover:not(:disabled){filter:brightness(1.1)}
+
+.item-count-badge{font-size:9px;padding:0 5px;border-radius:8px;background:var(--border);color:var(--text-dim);font-weight:600;flex-shrink:0}
+
+@media(max-width:800px){
+  .content{grid-template-columns:1fr;grid-template-rows:280px 1fr}
+  .cycle-panel{border-right:none;border-bottom:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">FACTORY</div>
+  <div class="header-info">
+    <span id="project-name" style="font-weight:600"></span>
+    <a href="/" class="back-link">&larr; Dashboard</a>
+  </div>
+</header>
+
+<div class="content">
+  <div class="cycle-panel">
+    <div class="cycle-panel-header">
+      <span>Cycles</span>
+      <span id="cycle-count" style="font-weight:400"></span>
+    </div>
+    <div class="cycle-panel-body" id="cycle-list">
+      <div style="text-align:center;padding:40px 20px;color:var(--text-dim)">Loading cycles...</div>
+    </div>
+  </div>
+  <div class="detail-panel" id="detail-panel">
+    <div class="detail-empty" id="detail-empty">Select a cycle from the list</div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/marked@15.0.0/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/prism.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-json.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-diff.min.js"></script>
+<script>
+var projectName = decodeURIComponent(
+  window.location.pathname.split('/').filter(Boolean).pop() || ''
+);
+document.getElementById('project-name').textContent = 'Sessions — ' + projectName;
+document.title = 'Sessions — ' + projectName;
+
+var selectedCycleId = null;
+var expandedSessions = {};
+
+function esc(str) {
+  if (!str) return '';
+  var d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function roleColor(role) {
+  var name = (role || '').toLowerCase();
+  var hash = 0;
+  for (var i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  var h = ((hash % 360) + 360) % 360;
+  return 'hsl(' + h + ', 65%, 55%)';
+}
+
+function formatCost(usd) {
+  if (usd == null || usd === 0) return '$0.00';
+  if (usd < 0.01) return '<$0.01';
+  return '$' + usd.toFixed(2);
+}
+
+function formatDuration(ms) {
+  if (ms == null || ms === 0) return '0s';
+  var sec = Math.round(ms / 1000);
+  if (sec < 60) return sec + 's';
+  var min = Math.floor(sec / 60);
+  var rem = sec % 60;
+  if (min < 60) return min + 'm' + rem + 's';
+  var hr = Math.floor(min / 60);
+  return hr + 'h' + (min % 60) + 'm';
+}
+
+function formatTokens(n) {
+  if (n == null || n === 0) return '0';
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
+  return String(n);
+}
+
+function formatTime(ts) {
+  if (!ts) return '';
+  var d = new Date(ts * 1000);
+  var now = new Date();
+  var diff = (now - d) / 1000;
+  if (diff < 60) return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return d.toLocaleDateString(undefined, {month:'short', day:'numeric'}) + ' ' +
+    d.toLocaleTimeString(undefined, {hour:'2-digit', minute:'2-digit'});
+}
+
+function renderRoleBadge(role, cls) {
+  var r = (role || 'unknown').toLowerCase();
+  var c = cls || 'role-badge';
+  return '<span class="' + c + '" style="background:' + roleColor(r) + '">' + esc(r) + '</span>';
+}
+
+function renderMarkdown(text) {
+  if (!text) return '<span style="color:var(--text-dim)">(empty)</span>';
+  try {
+    var html = marked.parse(text, {breaks: true, gfm: true});
+    return '<div class="md-content">' + html + '</div>';
+  } catch (e) {
+    return '<pre>' + esc(text) + '</pre>';
+  }
+}
+
+// ── Data Loading ──
+async function loadCycles() {
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/cycles?limit=50');
+    if (!resp.ok) { renderEmptyCycles(); return; }
+    var cycles = await resp.json();
+    if (cycles.length === 0) { renderEmptyCycles(); return; }
+    document.getElementById('cycle-count').textContent = cycles.length + ' total';
+    renderCycleList(cycles);
+    if (!selectedCycleId && cycles.length > 0) {
+      selectCycle(cycles[0].id);
+    }
+  } catch (e) { renderEmptyCycles(); }
+}
+
+function renderEmptyCycles() {
+  document.getElementById('cycle-list').innerHTML =
+    '<div style="text-align:center;padding:40px 20px;color:var(--text-dim)">' +
+    '<div style="font-weight:600;margin-bottom:4px">No Cycles</div>' +
+    '<div style="font-size:12px">Run <code style="background:var(--border);padding:2px 6px;border-radius:4px">factory ceo &lt;path&gt;</code> to start.</div>' +
+    '</div>';
+}
+
+function renderCycleList(cycles) {
+  var el = document.getElementById('cycle-list');
+  var html = '';
+
+  cycles.forEach(function(c) {
+    var sel = selectedCycleId === c.id ? ' selected' : '';
+    var running = c.status === 'running' ? ' running' : '';
+    var statusCls = c.status || 'completed';
+    var title = c.title || formatTime(c.created_at) || 'Cycle';
+
+    html += '<div class="cycle-item' + sel + running + '" data-id="' + esc(c.id) + '" onclick="selectCycle(\'' + esc(c.id) + '\')">';
+    html += '<div class="cycle-item-top">';
+    html += '<span class="status-dot ' + esc(statusCls) + '"></span>';
+    html += '<span class="cycle-item-title">' + esc(title) + '</span>';
+    html += '<span class="cycle-item-meta">';
+    html += '<span>' + formatCost(c.total_cost || c.total_cost_usd) + '</span>';
+    html += '<span>' + formatDuration(c.total_duration || c.duration_ms) + '</span>';
+    html += '</span>';
+    html += '</div>';
+
+    var childRoles = c.child_roles ? c.child_roles.split(',') : [];
+    if (childRoles.length > 0 || c.child_count > 0) {
+      html += '<div class="cycle-item-roles">';
+      if (childRoles.length > 0) {
+        childRoles.forEach(function(r) {
+          html += renderRoleBadge(r.trim(), 'role-mini');
+        });
+      } else if (c.child_count > 0) {
+        html += '<span style="font-size:10px;color:var(--text-dim)">' + c.child_count + ' agents</span>';
+      }
+      html += '</div>';
+    }
+
+    html += '</div>';
+  });
+
+  el.innerHTML = html;
+}
+
+// ── Cycle Detail ──
+async function selectCycle(cycleId) {
+  selectedCycleId = cycleId;
+  expandedSessions = {};
+
+  document.querySelectorAll('.cycle-item').forEach(function(n) {
+    n.classList.toggle('selected', n.dataset.id === cycleId);
+  });
+
+  var panel = document.getElementById('detail-panel');
+  panel.innerHTML = '<div class="detail-empty">Loading cycle...</div>';
+
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/cycles/' + encodeURIComponent(cycleId));
+    if (!resp.ok) { panel.innerHTML = '<div class="detail-empty">Cycle not found</div>'; return; }
+    var cycle = await resp.json();
+    renderCycleDetail(cycle);
+  } catch (e) {
+    panel.innerHTML = '<div class="detail-empty">Failed to load cycle</div>';
+  }
+}
+
+function renderCycleDetail(cycle) {
+  var panel = document.getElementById('detail-panel');
+  var html = '';
+
+  html += '<div class="cycle-header">';
+  html += '<div class="cycle-header-top">';
+  html += renderRoleBadge('ceo');
+  html += '<span style="font-weight:600;font-size:14px">' + esc(cycle.title || 'CEO Cycle') + '</span>';
+  if (cycle.model) html += '<span class="model-name">' + esc(cycle.model) + '</span>';
+  html += '<span class="status-badge ' + esc(cycle.status || 'completed') + '">' + esc(cycle.status || 'unknown') + '</span>';
+  html += '</div>';
+
+  html += '<div class="cycle-stats">';
+  html += renderCycleStat('Total Cost', formatCost(cycle.total_cost));
+  html += renderCycleStat('Total Duration', formatDuration(cycle.total_duration));
+  html += renderCycleStat('Agents', String((cycle.children || []).length));
+  html += renderCycleStat('CEO Tokens', formatTokens((cycle.input_tokens || 0) + (cycle.output_tokens || 0)));
+  if (cycle.created_at) html += renderCycleStat('Started', formatTime(cycle.created_at));
+  html += '</div>';
+
+  var children = cycle.children || [];
+  if (children.length > 0) {
+    html += '<div style="padding:8px 0 0;display:flex;gap:4px;flex-wrap:wrap">';
+    children.forEach(function(c) {
+      var statusDot = '<span class="status-dot ' + esc(c.status || 'completed') + '" style="width:6px;height:6px"></span>';
+      html += '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 8px;border-radius:10px;border:1px solid var(--border);background:var(--bg);cursor:pointer" onclick="toggleAgentSection(\'' + esc(c.id) + '\')">' +
+        statusDot + ' ' + renderRoleBadge(c.agent_role, 'role-mini') + ' ' + formatCost(c.total_cost_usd) +
+        '</span>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+
+  html += '<div class="cycle-detail-body">';
+
+  var ceoItems = cycle.items || [];
+  if (ceoItems.length > 0) {
+    var ceoOpen = expandedSessions[cycle.id] ? ' open' : '';
+    html += '<div class="agent-section' + ceoOpen + '" id="section-' + esc(cycle.id) + '">';
+    html += renderAgentSectionHeader(cycle, true);
+    html += '<div class="agent-section-body">';
+    html += renderSessionChat(ceoItems);
+    if (cycle.claude_session_id) {
+      html += renderChatInput(cycle.id);
+    } else {
+      html += renderViewOnly();
+    }
+    html += '</div>';
+    html += '</div>';
+  }
+
+  children.forEach(function(child, idx) {
+    var autoExpand = (idx === 0 && !Object.keys(expandedSessions).length);
+    if (autoExpand) expandedSessions[child.id] = true;
+    var isOpen = expandedSessions[child.id] ? ' open' : '';
+    html += '<div class="agent-section' + isOpen + '" id="section-' + esc(child.id) + '">';
+    html += renderAgentSectionHeader(child, false);
+    html += '<div class="agent-section-body" id="body-' + esc(child.id) + '">';
+    if (expandedSessions[child.id]) {
+      html += '<div class="chat-body" style="color:var(--text-dim);text-align:center;padding:20px">Loading...</div>';
+    }
+    html += '</div>';
+    html += '</div>';
+  });
+
+  html += '</div>';
+
+  panel.innerHTML = html;
+
+  Object.keys(expandedSessions).forEach(function(sid) {
+    if (expandedSessions[sid] && sid !== cycle.id) {
+      loadSessionItems(sid);
+    }
+  });
+}
+
+function renderAgentSectionHeader(session, isCeo) {
+  var statusCls = session.status || 'completed';
+  var itemCount = (session.items || []).length;
+  var html = '<div class="agent-section-header" onclick="toggleAgentSection(\'' + esc(session.id) + '\')">';
+  html += '<span class="agent-section-arrow">&#9656;</span>';
+  html += '<div class="agent-section-info">';
+  html += '<span class="status-dot ' + esc(statusCls) + '"></span>';
+  html += renderRoleBadge(isCeo ? 'ceo' : session.agent_role);
+  if (session.claude_session_id) {
+    html += '<span class="interactive-badge interactive">interactive</span>';
+  }
+  if (itemCount > 0) {
+    html += '<span class="item-count-badge">' + itemCount + '</span>';
+  }
+  html += '</div>';
+  html += '<div class="agent-section-meta">';
+  if (session.model) html += '<span>' + esc(session.model) + '</span>';
+  html += '<span>' + formatCost(session.total_cost_usd) + '</span>';
+  html += '<span>' + formatDuration(session.duration_ms) + '</span>';
+  html += '<span>' + formatTokens((session.input_tokens || 0) + (session.output_tokens || 0)) + ' tok</span>';
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function renderCycleStat(label, value) {
+  return '<div class="cycle-stat"><span class="cs-label">' + esc(label) + '</span><span class="cs-value">' + esc(value) + '</span></div>';
+}
+
+// ── Toggle & Load Session Items ──
+function toggleAgentSection(sessionId) {
+  var section = document.getElementById('section-' + sessionId);
+  if (!section) return;
+
+  var wasOpen = section.classList.contains('open');
+  section.classList.toggle('open');
+  expandedSessions[sessionId] = !wasOpen;
+
+  if (!wasOpen) {
+    loadSessionItems(sessionId);
+  }
+}
+
+async function loadSessionItems(sessionId) {
+  var body = document.getElementById('body-' + sessionId);
+  if (!body) return;
+  if (body.dataset.loaded === 'true') return;
+
+  body.innerHTML = '<div style="color:var(--text-dim);text-align:center;padding:20px;font-size:12px">Loading conversation...</div>';
+
+  try {
+    var resp = await fetch('/api/projects/' + encodeURIComponent(projectName) + '/sessions/' + encodeURIComponent(sessionId));
+    if (!resp.ok) { body.innerHTML = '<div style="color:var(--text-dim);padding:20px">Failed to load</div>'; return; }
+    var session = await resp.json();
+    var items = session.items || [];
+
+    var html = renderSessionChat(items);
+    if (session.claude_session_id) {
+      html += renderChatInput(sessionId);
+    } else {
+      html += renderViewOnly();
+    }
+    body.innerHTML = html;
+    body.dataset.loaded = 'true';
+
+    highlightCode(body);
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--text-dim);padding:20px">Error loading session</div>';
+  }
+}
+
+function highlightCode(container) {
+  if (typeof Prism !== 'undefined') {
+    container.querySelectorAll('pre code[class*="language-"]').forEach(function(el) {
+      Prism.highlightElement(el);
+    });
+  }
+}
+
+function renderSessionChat(items) {
+  if (!items || items.length === 0) {
+    return '<div class="chat-body"><div style="text-align:center;padding:30px;color:var(--text-dim);font-size:12px">No conversation items</div></div>';
+  }
+
+  var html = '<div class="chat-body">';
+  items.forEach(function(item) {
+    html += renderChatMessage(item);
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderChatInput(sessionId) {
+  return '<div class="chat-input-area">' +
+    '<textarea class="chat-input" id="chat-input-' + esc(sessionId) + '" placeholder="Send a follow-up message..." rows="1" onkeydown="handleChatKey(event, \'' + esc(sessionId) + '\')"></textarea>' +
+    '<button class="chat-send-btn" id="chat-send-' + esc(sessionId) + '" onclick="sendMessage(\'' + esc(sessionId) + '\')">Send</button>' +
+    '</div>';
+}
+
+function renderViewOnly() {
+  return '<div class="chat-input-area" style="justify-content:center">' +
+    '<span style="font-size:11px;color:var(--text-dim);padding:6px 0">view only — no interactive session</span>' +
+    '</div>';
+}
+
+// ── Chat Message Rendering ──
+function renderChatMessage(item) {
+  var type = item.type || 'message';
+  var role = item.role || '';
+  var data = item.data || '';
+
+  if (type === 'message' && role === 'assistant') {
+    return renderChatBubble('assistant', 'Assistant', renderMarkdown(data));
+  }
+  if (type === 'message' && role === 'user') {
+    return renderChatBubble('user', 'User', renderMarkdown(data));
+  }
+  if (type === 'tool_call') return renderToolCall(item);
+  if (type === 'tool_output') return renderToolOutput(item);
+  if (type === 'thinking') return renderThinking(item);
+  return renderChatBubble('assistant', type + ' / ' + role, '<pre>' + esc(data) + '</pre>');
+}
+
+function renderChatBubble(cls, label, body) {
+  return '<div class="chat-msg ' + cls + '">' +
+    '<div class="chat-role-label">' + esc(label) + '</div>' +
+    '<div>' + body + '</div></div>';
+}
+
+function renderToolCall(item) {
+  var data = item.data || '{}';
+  var name = 'unknown';
+  var input = {};
+  try {
+    var parsed = JSON.parse(data);
+    name = parsed.name || 'unknown';
+    input = parsed.input || {};
+  } catch (e) {}
+
+  var body = '';
+  if (name === 'Bash') {
+    var cmd = input.command || JSON.stringify(input);
+    body = '<pre><code class="language-bash">' + esc(cmd) + '</code></pre>';
+  } else if (name === 'Read') {
+    body = '<code>' + esc(input.file_path || '') + '</code>';
+  } else if (name === 'Write' || name === 'Edit') {
+    body = '<code>' + esc(input.file_path || '') + '</code>';
+    if (name === 'Edit' && input.old_string) {
+      body += '<details><summary>Diff</summary><pre><code class="language-diff">- ' +
+        esc(input.old_string).replace(/\n/g, '\n- ') + '\n+ ' +
+        esc(input.new_string || '').replace(/\n/g, '\n+ ') +
+        '</code></pre></details>';
+    }
+  } else {
+    var inputJson = JSON.stringify(input, null, 2);
+    body = '<details><summary>Input</summary><pre><code class="language-json">' + esc(inputJson) + '</code></pre></details>';
+  }
+
+  return '<div class="chat-msg tool-call">' +
+    '<div class="chat-role-label"><span class="tool-header"><span class="tool-icon">&#9881;</span> <span class="tool-name">' + esc(name) + '</span></span></div>' +
+    '<div>' + body + '</div></div>';
+}
+
+function renderToolOutput(item) {
+  var data = item.data || '';
+  var content = data;
+  try {
+    var parsed = JSON.parse(data);
+    if (parsed && typeof parsed === 'object' && parsed.content != null) {
+      content = parsed.content;
+    }
+  } catch (e) {}
+
+  var lines = content.split('\n');
+  var body = '';
+  if (lines.length <= 5) {
+    body = '<pre class="tool-output-pre">' + esc(content) + '</pre>';
+  } else {
+    var preview = lines.slice(0, 3).join('\n');
+    body = '<details><summary><span style="font-family:var(--font);font-size:12px">' + esc(preview) +
+      '\n... (' + (lines.length - 3) + ' more lines)</span></summary>' +
+      '<pre class="tool-output-pre">' + esc(content) + '</pre></details>';
+  }
+
+  return '<div class="chat-msg tool-output">' +
+    '<div class="chat-role-label">Output</div>' +
+    '<div>' + body + '</div></div>';
+}
+
+function renderThinking(item) {
+  var data = item.data || '';
+  var preview = item.preview || (typeof data === 'string' ? data.substring(0, 80) : '');
+  return '<div class="chat-msg thinking">' +
+    '<div class="chat-role-label">Thinking</div>' +
+    '<details><summary>' + esc(preview) + (data.length > 80 ? '...' : '') + '</summary>' +
+    '<div class="thinking-content">' + renderMarkdown(data) + '</div></details></div>';
+}
+
+// ── Send Message ──
+function handleChatKey(e, sessionId) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage(sessionId);
+  }
+}
+
+async function sendMessage(sessionId) {
+  var input = document.getElementById('chat-input-' + sessionId);
+  var btn = document.getElementById('chat-send-' + sessionId);
+  if (!input || !btn) return;
+  var message = input.value.trim();
+  if (!message) return;
+
+  input.disabled = true;
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+
+  var section = document.getElementById('section-' + sessionId);
+  var chatBody = section ? section.querySelector('.chat-body') : null;
+  if (chatBody) {
+    var userDiv = document.createElement('div');
+    userDiv.className = 'chat-msg user';
+    userDiv.innerHTML = '<div class="chat-role-label">User</div><div>' + renderMarkdown(message) + '</div>';
+    chatBody.appendChild(userDiv);
+
+    var loadingDiv = document.createElement('div');
+    loadingDiv.className = 'chat-msg assistant';
+    loadingDiv.id = 'loading-' + sessionId;
+    loadingDiv.innerHTML = '<div class="chat-role-label">Assistant</div><div style="color:var(--text-dim)">Processing...</div>';
+    chatBody.appendChild(loadingDiv);
+    chatBody.scrollTop = chatBody.scrollHeight;
+  }
+
+  input.value = '';
+
+  try {
+    var resp = await fetch(
+      '/api/projects/' + encodeURIComponent(projectName) +
+      '/sessions/' + encodeURIComponent(sessionId) + '/message',
+      { method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: message}) }
+    );
+    if (!resp.ok) {
+      var err = await resp.json().catch(function() { return {}; });
+      alert('Error: ' + (err.detail || 'Request failed'));
+      var ld = document.getElementById('loading-' + sessionId);
+      if (ld && ld.parentNode) ld.parentNode.removeChild(ld);
+      return;
+    }
+
+    var body = document.getElementById('body-' + sessionId);
+    if (body) body.dataset.loaded = '';
+    expandedSessions[sessionId] = true;
+    await loadSessionItems(sessionId);
+  } catch (e) {
+    alert('Failed to send: ' + e.message);
+    var ld2 = document.getElementById('loading-' + sessionId);
+    if (ld2 && ld2.parentNode) ld2.parentNode.removeChild(ld2);
+  } finally {
+    input = document.getElementById('chat-input-' + sessionId);
+    btn = document.getElementById('chat-send-' + sessionId);
+    if (input) { input.disabled = false; input.focus(); }
+    if (btn) { btn.disabled = false; btn.textContent = 'Send'; }
+  }
+}
+
+// ── SSE Integration ──
+function connectSSE() {
+  var evtSource = new EventSource('/api/events/stream');
+  evtSource.onmessage = function(e) {
+    try {
+      var event = JSON.parse(e.data);
+      if (event.project !== projectName) return;
+      var type = event.type || '';
+      if (type === 'agent.started' || type === 'agent.completed' || type === 'agent.failed') {
+        loadCycles();
+        if (selectedCycleId) {
+          selectCycle(selectedCycleId);
+        }
+      }
+    } catch (err) {}
+  };
+  evtSource.onerror = function() {};
+}
+
+// ── Init ──
+loadCycles();
+connectSSE();
+</script>
+</body>
+</html>

@@ -850,6 +850,7 @@ function renderProjects(projects) {
         ${esc(p.name)}
         ${p.name === selectedProject && currentMode ? `<span class="mode-badge">${esc(currentMode)}</span>` : ''}
         <button class="project-info-btn" onclick="event.stopPropagation(); openProjectDetails('${esc(p.name)}')" title="Project details">info</button>
+        <button class="project-info-btn" onclick="event.stopPropagation(); window.location.href='/sessions/${encodeURIComponent(p.name)}'" title="View sessions">sessions</button>
       </div>
       ${p.goal ? `<div class="project-goal">${esc(p.goal)}</div>` : ''}
       <div class="project-stats">
