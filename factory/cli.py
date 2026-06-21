@@ -2384,7 +2384,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"2. Read the PR description: `gh pr view {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
             f"3. Run the project's test suite and lint checks\n"
-            f"4. Spawn the Reviewer agent for a structured code review\n"
+            f"4. Spawn the QA agent for health check, code review, and adversarial QA\n"
             f"5. Post your review verdict on the PR using "
             f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
