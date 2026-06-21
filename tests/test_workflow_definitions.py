@@ -16,7 +16,6 @@ from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     FnNode,
-    ForkNode,
     GateNode,
 )
 
@@ -160,10 +159,11 @@ class TestMetaStructure:
         assert "insights" in wf.nodes
         assert isinstance(wf.nodes["insights"], FnNode)
 
-    def test_meta_has_fork(self) -> None:
+    def test_meta_archivist_chains_to_test(self) -> None:
+        """Archivist (non-blocking) chains directly to test_collect."""
         wf = meta_workflow()
-        assert "fork_post" in wf.nodes
-        assert isinstance(wf.nodes["fork_post"], ForkNode)
+        edges_from_archivist = [e for e in wf.edges if e.source == "archivist"]
+        assert any(e.target == "test_collect" for e in edges_from_archivist)
 
     def test_meta_has_test_pruning(self) -> None:
         wf = meta_workflow()
