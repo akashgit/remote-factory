@@ -287,6 +287,58 @@ function computeSolverAverages(mainResults) {
   return result;
 }
 
+function computeRunAverages(mainResults) {
+  const runsByRunId = {};
+  for (const e of mainResults) {
+    const rid = e.run_id || e.timestamp || '';
+    if (!runsByRunId[rid]) runsByRunId[rid] = [];
+    runsByRunId[rid].push(e);
+  }
+
+  const factoryDurationPoints = [];
+  const claudeDurationPoints = [];
+  const factoryCostPoints = [];
+  const claudeCostPoints = [];
+
+  for (const [, entries] of Object.entries(runsByRunId)) {
+    const ts = entries[0].timestamp || '';
+    const iso = ts.replace(
+      /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+      '$1-$2-$3T$4:$5:$6Z'
+    );
+    const date = new Date(iso);
+    if (isNaN(date)) continue;
+
+    const factoryJobs = entries.filter(e => getSolver(e) === 'factory');
+    const claudeJobs = entries.filter(e => getSolver(e) === 'claude-code');
+
+    if (factoryJobs.length > 0) {
+      const durs = factoryJobs.filter(j => j.duration_seconds != null);
+      const costs = factoryJobs.filter(j => j.details?.cost_usd != null);
+      if (durs.length > 0)
+        factoryDurationPoints.push({ x: date, y: durs.reduce((s, j) => s + j.duration_seconds, 0) / durs.length });
+      if (costs.length > 0)
+        factoryCostPoints.push({ x: date, y: costs.reduce((s, j) => s + j.details.cost_usd, 0) / costs.length });
+    }
+    if (claudeJobs.length > 0) {
+      const durs = claudeJobs.filter(j => j.duration_seconds != null);
+      const costs = claudeJobs.filter(j => j.details?.cost_usd != null);
+      if (durs.length > 0)
+        claudeDurationPoints.push({ x: date, y: durs.reduce((s, j) => s + j.duration_seconds, 0) / durs.length });
+      if (costs.length > 0)
+        claudeCostPoints.push({ x: date, y: costs.reduce((s, j) => s + j.details.cost_usd, 0) / costs.length });
+    }
+  }
+
+  const sortByDate = (a, b) => a.x - b.x;
+  factoryDurationPoints.sort(sortByDate);
+  claudeDurationPoints.sort(sortByDate);
+  factoryCostPoints.sort(sortByDate);
+  claudeCostPoints.sort(sortByDate);
+
+  return { factoryDurationPoints, claudeDurationPoints, factoryCostPoints, claudeCostPoints };
+}
+
 // Section 1: Latest Main Branch Results
 function renderLatestMain(mainResults) {
   const byKey = getLatestByCombo(mainResults);
@@ -399,24 +451,16 @@ function renderComparisonChart(mainResults) {
   return html;
 }
 
-// Section 3: Duration — averages first, then per-benchmark breakdown
+// Section 3: Duration — line chart over time, then per-benchmark breakdown
 function renderDurationSection(mainResults) {
-  const avgs = computeSolverAverages(mainResults);
-  const factoryAvg = avgs['factory']?.avgDur;
-  const claudeAvg = avgs['claude-code']?.avgDur;
+  const runAvgs = computeRunAverages(mainResults);
+  const hasTrend = runAvgs.factoryDurationPoints.length > 0 || runAvgs.claudeDurationPoints.length > 0;
 
-  if (factoryAvg == null && claudeAvg == null) return '';
+  if (!hasTrend) return '';
 
-  let html = '<div class="section-title">Duration</div>';
-
-  html += '<div class="avg-summary">';
-  html += '<strong>Average Duration:</strong> ';
-  html += `Factory ${formatDurationMinutes(factoryAvg)}`;
-  html += ` vs Claude Code ${formatDurationMinutes(claudeAvg)}`;
-  html += '</div>';
-
+  let html = '<div class="section-title">Average Duration Over Time (Main Branch)</div>';
   html += '<div style="width:100%;margin:2rem 0"><canvas id="avg-duration-chart" style="width:100%!important;height:400px!important"></canvas></div>';
-  html += '<p class="footnote">Note: Averages across benchmarks with different complexities. Per-benchmark breakdown below for detailed comparison.</p>';
+  html += '<p class="footnote">Average across all benchmarks. Per-benchmark breakdown below.</p>';
 
   const byKey = getLatestByCombo(mainResults);
   const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
@@ -440,28 +484,43 @@ function renderDurationSection(mainResults) {
     const avgCtx = document.getElementById('avg-duration-chart');
     if (avgCtx) {
       new Chart(avgCtx, {
-        type: 'bar',
+        type: 'line',
         data: {
-          labels: ['Factory', 'Claude Code'],
-          datasets: [{
-            data: [factoryAvg, claudeAvg],
-            backgroundColor: ['#4285f4', '#ff7043'],
-            borderRadius: 4,
-          }]
+          datasets: [
+            {
+              label: 'Factory',
+              data: runAvgs.factoryDurationPoints,
+              borderColor: '#4285f4',
+              backgroundColor: '#4285f4',
+              tension: 0.2,
+              pointRadius: 4,
+            },
+            {
+              label: 'Claude Code',
+              data: runAvgs.claudeDurationPoints,
+              borderColor: '#ff7043',
+              backgroundColor: '#ff7043',
+              tension: 0.2,
+              pointRadius: 4,
+            },
+          ]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: false },
+            legend: { labels: { color: colors.text } },
             tooltip: {
               callbacks: {
-                label: (item) => formatDurationShort(item.raw),
+                label: (item) => item.dataset.label + ': ' + formatDurationShort(item.raw),
               },
             },
           },
           scales: {
             x: {
+              type: 'time',
+              time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+              title: { display: true, text: 'Date', color: colors.text },
               ticks: { color: colors.text },
               grid: { color: colors.grid },
             },
@@ -529,28 +588,27 @@ function renderDurationSection(mainResults) {
   return html;
 }
 
-// Section 4: Cost — averages + totals first, then per-benchmark breakdown
+// Section 4: Cost — line chart over time, then per-benchmark breakdown
 function renderCostSection(mainResults) {
+  const runAvgs = computeRunAverages(mainResults);
+  const hasTrend = runAvgs.factoryCostPoints.length > 0 || runAvgs.claudeCostPoints.length > 0;
+
+  if (!hasTrend) return '';
+
   const avgs = computeSolverAverages(mainResults);
   const factoryStats = avgs['factory'] || {};
   const claudeStats = avgs['claude-code'] || {};
 
-  if (factoryStats.avgCost == null && claudeStats.avgCost == null) return '';
-
-  let html = '<div class="section-title">Cost</div>';
+  let html = '<div class="section-title">Average Cost Per Run Over Time (Main Branch)</div>';
 
   html += '<div class="avg-summary">';
-  html += '<strong>Average Cost Per Run:</strong> ';
-  html += `Factory ${formatCost(factoryStats.avgCost)}`;
-  html += ` vs Claude Code ${formatCost(claudeStats.avgCost)}`;
-  html += '<br>';
-  html += '<strong>Total Cost to Date:</strong> ';
-  html += `Factory ${formatCost(factoryStats.totalCost)} (${factoryStats.count} runs)`;
-  html += ` | Claude Code ${formatCost(claudeStats.totalCost)} (${claudeStats.count} runs)`;
+  html += '<strong>Total Spend:</strong> ';
+  html += `Factory ${formatCost(factoryStats.totalCost)} (${factoryStats.count || 0} runs)`;
+  html += ` | Claude Code ${formatCost(claudeStats.totalCost)} (${claudeStats.count || 0} runs)`;
   html += '</div>';
 
   html += '<div style="width:100%;margin:2rem 0"><canvas id="avg-cost-chart" style="width:100%!important;height:400px!important"></canvas></div>';
-  html += '<p class="footnote">Note: Vertex AI runs may show $0 cost when billing is handled at the platform level.</p>';
+  html += '<p class="footnote">Average across all benchmarks. Per-benchmark breakdown below. Vertex AI runs may show $0 cost when billing is handled at the platform level.</p>';
 
   const byKey = getLatestByCombo(mainResults);
   const benchmarks = [...new Set(mainResults.map(r => r.benchmark))].sort();
@@ -574,28 +632,43 @@ function renderCostSection(mainResults) {
     const avgCtx = document.getElementById('avg-cost-chart');
     if (avgCtx) {
       new Chart(avgCtx, {
-        type: 'bar',
+        type: 'line',
         data: {
-          labels: ['Factory', 'Claude Code'],
-          datasets: [{
-            data: [factoryStats.avgCost, claudeStats.avgCost],
-            backgroundColor: ['#4285f4', '#ff7043'],
-            borderRadius: 4,
-          }]
+          datasets: [
+            {
+              label: 'Factory',
+              data: runAvgs.factoryCostPoints,
+              borderColor: '#4285f4',
+              backgroundColor: '#4285f4',
+              tension: 0.2,
+              pointRadius: 4,
+            },
+            {
+              label: 'Claude Code',
+              data: runAvgs.claudeCostPoints,
+              borderColor: '#ff7043',
+              backgroundColor: '#ff7043',
+              tension: 0.2,
+              pointRadius: 4,
+            },
+          ]
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { display: false },
+            legend: { labels: { color: colors.text } },
             tooltip: {
               callbacks: {
-                label: (item) => formatCost(item.raw),
+                label: (item) => item.dataset.label + ': ' + formatCost(item.raw),
               },
             },
           },
           scales: {
             x: {
+              type: 'time',
+              time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+              title: { display: true, text: 'Date', color: colors.text },
               ticks: { color: colors.text },
               grid: { color: colors.grid },
             },
