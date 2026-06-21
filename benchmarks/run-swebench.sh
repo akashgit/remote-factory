@@ -39,7 +39,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
-    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'"}'
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -249,6 +249,59 @@ if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
 elif [ "${SOLVER_EXIT}" -ne 0 ]; then
     echo "    Solver exited with code ${SOLVER_EXIT}"
+fi
+
+# Extract cost and token data from solver output
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    if [ -f "${SOLVER_LOG}" ]; then
+        COST_DATA=$(grep '"type":"result"' "${SOLVER_LOG}" | tail -1 | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.readline())
+    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
+    u = data.get('usage', {})
+    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
+    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
+except: pass
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+else
+    EVENTS_FILE="${WORKSPACE}/repo/.factory/events.jsonl"
+    if [ -f "${EVENTS_FILE}" ]; then
+        COST_DATA=$(python3 -c "
+import json
+total_cost = 0
+total_input = 0
+total_output = 0
+total_cache_read = 0
+total_cache_create = 0
+for line in open('${EVENTS_FILE}'):
+    try:
+        e = json.loads(line)
+        if e.get('type') == 'agent.completed':
+            d = e.get('data', {})
+            total_cost += d.get('total_cost_usd', 0) or 0
+            total_input += d.get('input_tokens', 0)
+            total_output += d.get('output_tokens', 0)
+            total_cache_read += d.get('cache_read_tokens', 0)
+    except: pass
+print(f'COST_USD={total_cost}')
+print(f'INPUT_TOKENS={total_input}')
+print(f'OUTPUT_TOKENS={total_output}')
+print(f'CACHE_READ_TOKENS={total_cache_read}')
+print(f'CACHE_CREATION_TOKENS={total_cache_create}')
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
 fi
 
 # Post-processing: recover factory branch/worktree changes (factory solver only)

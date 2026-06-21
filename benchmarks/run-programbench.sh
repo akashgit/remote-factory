@@ -58,7 +58,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
-    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'"}'
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -312,8 +312,62 @@ timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \
     bash -c "${SOLVER_CMD}" \
-    2>&1 | tee /dev/stderr | tail -50 || true
+    2>&1 | tee "${RESULTS_DIR}/solver_output.log" | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
+
+# Extract cost and token data from solver output
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    if [ -f "${RESULTS_DIR}/solver_output.log" ]; then
+        COST_DATA=$(grep '"type":"result"' "${RESULTS_DIR}/solver_output.log" | tail -1 | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.readline())
+    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
+    u = data.get('usage', {})
+    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
+    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
+except: pass
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+else
+    docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
+    EVENTS_FILE="${RESULTS_DIR}/events.jsonl"
+    if [ -f "${EVENTS_FILE}" ]; then
+        COST_DATA=$(python3 -c "
+import json
+total_cost = 0
+total_input = 0
+total_output = 0
+total_cache_read = 0
+total_cache_create = 0
+for line in open('${EVENTS_FILE}'):
+    try:
+        e = json.loads(line)
+        if e.get('type') == 'agent.completed':
+            d = e.get('data', {})
+            total_cost += d.get('total_cost_usd', 0) or 0
+            total_input += d.get('input_tokens', 0)
+            total_output += d.get('output_tokens', 0)
+            total_cache_read += d.get('cache_read_tokens', 0)
+    except: pass
+print(f'COST_USD={total_cost}')
+print(f'INPUT_TOKENS={total_input}')
+print(f'OUTPUT_TOKENS={total_output}')
+print(f'CACHE_READ_TOKENS={total_cache_read}')
+print(f'CACHE_CREATION_TOKENS={total_cache_create}')
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+fi
 
 set -e
 
