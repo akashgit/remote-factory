@@ -208,14 +208,14 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all benchmark artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: benchmark-results-*
           merge-multiple: true
           path: results/
-
-      - uses: actions/checkout@v4
 
       - name: Checkout benchmark-data branch
         id: checkout-data
@@ -275,18 +275,9 @@ jobs:
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
           python3 /tmp/append_results.py
 
-          echo 'DEBUG: results dir contents:'
-          ls -la results/ 2>/dev/null || echo 'results/ not found'
-          echo 'DEBUG: benchmark-data/results.jsonl size:'
-          wc -c benchmark-data/results.jsonl 2>/dev/null || echo 'file not found'
-          cat benchmark-data/results.jsonl 2>/dev/null | head -3
-
       - name: Push benchmark data
         run: |
           cd benchmark-data
-          echo 'DEBUG: results.jsonl in benchmark-data:'
-          wc -c results.jsonl
-          git status
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add results.jsonl
