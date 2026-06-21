@@ -128,16 +128,10 @@ log "Step 4: Starting cleanroom container"
 RESULTS_DIR="$(mktemp -d /tmp/programbench-results-XXXXXX)"
 echo "    Results directory: ${RESULTS_DIR}"
 
-GCLOUD_MOUNT_ARGS=()
 GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
-if [ -f "${GCLOUD_ADC}" ]; then
-    GCLOUD_MOUNT_ARGS=(-v "${GCLOUD_ADC}:/tmp/gcloud-adc.json:ro")
-    echo "    Mounting gcloud credentials"
-fi
 
 docker run -d --name "${CONTAINER_NAME}" \
     -v "${RESULTS_DIR}:/results" \
-    "${GCLOUD_MOUNT_ARGS[@]+"${GCLOUD_MOUNT_ARGS[@]}"}" \
     "${IMAGE}" \
     sleep infinity
 
@@ -176,7 +170,11 @@ docker exec "${CONTAINER_NAME}" bash -c '
     cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
     chown -R agent:agent /home/agent
 '
-docker exec "${CONTAINER_NAME}" chmod 644 /tmp/gcloud-adc.json 2>/dev/null || true
+if [ -f "${GCLOUD_ADC}" ]; then
+    docker cp "${GCLOUD_ADC}" "${CONTAINER_NAME}:/tmp/gcloud-adc.json"
+    docker exec "${CONTAINER_NAME}" chmod 644 /tmp/gcloud-adc.json
+    echo "    Copied gcloud credentials into container"
+fi
 
 echo "    Agent user created."
 echo ""
