@@ -93,8 +93,8 @@ def parse_observations(project_path: Path) -> list[Observation]:
     if archive_dir.is_dir():
         seen_exp_nums: set[str] = set()
         archive_experiments = archive_dir / "experiments"
-        json_source = archive_experiments if archive_experiments.is_dir() else archive_dir
-        for json_file in sorted(json_source.glob("**/*.json"))[:50]:
+        json_source = sorted(archive_experiments.glob("**/*.json"))[:50] if archive_experiments.is_dir() else []
+        for json_file in json_source:
             try:
                 data = json.loads(json_file.read_text())
             except (json.JSONDecodeError, OSError):
@@ -112,10 +112,14 @@ def parse_observations(project_path: Path) -> list[Observation]:
                     project=project_name,
                     tags=["archive"],
                 ))
-        for note_file in sorted(archive_dir.glob("**/*.md"))[:50]:
+        md_source = sorted(archive_experiments.glob("**/*.md"))[:50] if archive_experiments.is_dir() else []
+        for note_file in md_source:
             if _extract_exp_number(note_file.stem) in seen_exp_nums:
                 continue
-            text = note_file.read_text()
+            try:
+                text = note_file.read_text()
+            except OSError:
+                continue
             if len(text) > 50:
                 observations.append(Observation(
                     source=str(note_file.relative_to(project_path)),
