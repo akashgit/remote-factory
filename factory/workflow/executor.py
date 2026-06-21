@@ -523,7 +523,7 @@ class WorkflowExecutor:
                     output = await self._run_shell(cmd)
                     return self._parse_fn_verdict(output, node.id)
                 except RuntimeError:
-                    return Verdict.halt(reason=f"gate command failed: {node.evaluator_command}")
+                    return Verdict.halt(reason=f"gate command failed: {cmd}")
             return Verdict.proceed()
 
         prompt = self._build_gate_prompt(node)

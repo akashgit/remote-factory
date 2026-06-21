@@ -265,7 +265,7 @@ class TestResearchE2E:
 @e2e
 class TestMetaE2E:
     async def test_meta_structure(self, tmp_path: Path) -> None:
-        """W₅: Verify meta workflow structure."""
+        """W₅: Verify meta workflow structure — archivist chains to test pruning."""
         _init_test_project(
             tmp_path / "meta-test", with_factory=True,
         )
@@ -273,15 +273,16 @@ class TestMetaE2E:
         wf = meta_workflow()
 
         assert "insights" in wf.nodes
-        assert "fork_post" in wf.nodes
+        assert "archivist" in wf.nodes
         assert "test_collect" in wf.nodes
         assert "test_researcher" in wf.nodes
 
-        from factory.workflow.primitives import ForkNode
-        fork = wf.nodes.get("fork_post")
-        assert isinstance(fork, ForkNode)
-        assert "archivist" in fork.targets
-        assert "test_collect" in fork.targets
+        archivist = wf.nodes.get("archivist")
+        assert archivist is not None
+        assert archivist.blocking is False
+
+        edges_from_archivist = [e for e in wf.edges if e.source == "archivist"]
+        assert any(e.target == "test_collect" for e in edges_from_archivist)
 
     async def test_meta_runs(self, tmp_path: Path) -> None:
         """W₅: Execute meta workflow."""

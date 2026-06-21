@@ -525,7 +525,10 @@ def meta_workflow() -> Workflow:
     """W₅: Meta Mode — cross-project insights → playbook evolution + test pruning.
 
     insights → Researcher → CEO gate → Strategist → User gate → apply_playbooks →
-    Fork(Archivist(async), test_pruning_branch)
+    Archivist(async) → test_collect → test_researcher → gate → test_builder
+
+    The archivist is non-blocking, so it fires in the background while the
+    test pruning chain proceeds immediately.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -584,13 +587,7 @@ def meta_workflow() -> Workflow:
         writes={".factory/archive/playbooks-applied.md"},
     )
 
-    # Fork: archivist + test pruning
-    nodes["fork_post"] = ForkNode(
-        id="fork_post",
-        targets=["archivist", "test_collect"],
-    )
-
-    # Archivist (async)
+    # Archivist (async, non-blocking — fires in background while test chain proceeds)
     nodes["archivist"] = AgentNode(
         id="archivist",
         role=AgentRole.ARCHIVIST,
@@ -600,7 +597,7 @@ def meta_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Test pruning branch
+    # Test pruning chain
     nodes["test_collect"] = FnNode(
         id="test_collect",
         command="pytest --co -q 2>/dev/null || true",
@@ -646,11 +643,9 @@ def meta_workflow() -> Workflow:
         Edge(source="strategist", target="gate_user"),
         Edge(source="gate_user", target="apply_playbooks", condition=VerdictType.PROCEED),
         Edge(source="gate_user", target="strategist", condition=VerdictType.RELOOP),
-        # Apply → fork
-        Edge(source="apply_playbooks", target="fork_post"),
-        # Fork to archivist and test collection
-        Edge(source="fork_post", target="archivist"),
-        Edge(source="fork_post", target="test_collect"),
+        # Apply → archivist (non-blocking) → test chain
+        Edge(source="apply_playbooks", target="archivist"),
+        Edge(source="archivist", target="test_collect"),
         # Test pruning branch
         Edge(source="test_collect", target="test_researcher"),
         Edge(source="test_researcher", target="gate_test_prune"),
