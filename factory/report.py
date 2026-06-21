@@ -128,6 +128,22 @@ def parse_observations(project_path: Path) -> list[Observation]:
                     project=project_name,
                     tags=["archive"],
                 ))
+        # Non-experiment archive notes (sources, patterns, etc.)
+        for note_file in sorted(archive_dir.glob("**/*.md"))[:50]:
+            if archive_experiments.is_dir() and note_file.is_relative_to(archive_experiments):
+                continue
+            try:
+                text = note_file.read_text()
+            except OSError:
+                continue
+            if len(text) > 50:
+                observations.append(Observation(
+                    source=str(note_file.relative_to(project_path)),
+                    content=text[:500],
+                    timestamp=datetime.now(),
+                    project=project_name,
+                    tags=["archive"],
+                ))
 
     log.debug("parse_observations", count=len(observations))
     return observations
