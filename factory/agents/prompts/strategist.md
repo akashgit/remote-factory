@@ -447,6 +447,8 @@ Before writing any build plan content, you MUST ground your decisions in researc
 
 1. **Read `.factory/strategy/research.md`** and extract at least 3 specific findings (technology recommendations, architecture patterns, pitfalls, prior art). These findings must appear as citations in your build plan — not as vague references but as concrete decisions grounded in evidence.
 
+1b. **Check for SPEC.md at the project root.** If `SPEC.md` exists in the project directory, read it thoroughly. You MUST include a `## SPEC.md Diff` section in your output describing which spec sections are ADDED, MODIFIED, or REMOVED by this plan. If no SPEC.md exists (greenfield project), omit the section entirely.
+
 2. **Write a substantive hypothesis for each Phase** with:
    - **What:** Specific changes — project layout, deps, entry points, or feature implementation (detailed enough to implement without clarification)
    - **Why:** Research-grounded rationale — why this approach over alternatives
@@ -463,6 +465,45 @@ When your task includes a `## Prior Draft` and `## User Feedback` section, you a
 3. If the task includes `## Follow-Up Research`, incorporate the new research findings
 4. Produce a complete updated draft (not a diff — the full spec)
 5. Briefly note what changed and why at the very end under `## Changes from Prior Draft`
+
+### SPEC.md Diff Section
+
+When SPEC.md exists at the project root, your output MUST include a `## SPEC.md Diff` section describing how the spec changes. Use this format:
+
+```markdown
+## SPEC.md Diff
+
+### ADDED Requirements
+
+#### Section X.Y: <Title>
+<New requirement text using RFC 2119 language (MUST, SHOULD, MAY).
+Self-contained — a reader should understand the requirement without
+reading the rest of the plan.>
+
+### MODIFIED Requirements
+
+#### Section X.Y: <Title>
+- **Previously:** <what the spec currently says>
+- **Now:** <what it should say after this change>
+- **Rationale:** <why the change is needed>
+
+### REMOVED Requirements
+
+#### Section X.Y: <Title>
+- **Previously:** <what the spec currently says>
+- **Rationale:** <why this requirement is being removed>
+```
+
+**Rules:**
+- Reference specific SPEC.md section numbers (e.g., Section 2.3, Section 5)
+- Each entry must be self-contained — readable without the full plan context
+- Use RFC 2119 language (MUST, SHOULD, MAY) for requirements
+- Omit empty subsections (e.g., if nothing is REMOVED, omit that subsection)
+- Omit the entire `## SPEC.md Diff` section when no SPEC.md exists (greenfield projects)
+
+### Plan-Spec Traceability
+
+When a `## SPEC.md Diff` section is included, every Phase hypothesis MUST include an `**Implements:**` field listing which SPEC.md Diff entries it addresses (e.g., `**Implements:** MODIFIED Section 2, ADDED Section 5`). This creates traceability from spec → plan → implementation. If a SPEC.md Diff entry has no corresponding Phase, the plan is incomplete.
 
 ### Ideation Constraints
 
@@ -501,10 +542,16 @@ Write the build plan content to stdout using this exact structure. Each phase = 
 - **Expected impact:** <which eval dimensions improve>
 - **Priority:** high
 
+## SPEC.md Diff (when SPEC.md exists at project root)
+
+<ADDED/MODIFIED/REMOVED entries per the SPEC.md Diff Section format above.
+Omit entirely for greenfield projects with no SPEC.md.>
+
 ### Phase 2: <feature title>
 #### H2: <title>
 - **Category:** EXPLORE
 - **Growth dimension:** capability_surface
+- **Implements:** <SPEC.md Diff entries, e.g. "MODIFIED Section 2, ADDED Section 5" — required when SPEC.md Diff is present>
 - **What:** <specific, scoped change — one PR's worth>
 - **Why:** <rationale citing research>
 - **Expected impact:** <which eval dimensions improve>

@@ -567,6 +567,8 @@ This is a **hard gate**. The Builder MUST NOT start until you approve the plan.
 
 5. **Deferred section check:** If a Deferred section exists, verify it only contains items requiring human intervention (API keys, external accounts, manual provisioning). If it contains features or integrations that could be built without a human, REDIRECT with: "Deferred section contains buildable items — move them to build phases."
 
+6. **SPEC.md Diff check (conditional):** If SPEC.md exists in the project root, verify: (a) the plan contains a `## SPEC.md Diff` section with at least one ADDED, MODIFIED, or REMOVED subsection, and (b) every Phase hypothesis has an `**Implements:**` field referencing spec diff entries. If either is missing, REDIRECT with: "Project has SPEC.md but plan is missing spec traceability — add a ## SPEC.md Diff section and Implements fields on each Phase." Skip this check when no SPEC.md exists (greenfield projects).
+
 Write your review to `.factory/reviews/ceo-verdict-strategist.md`.
 
 If PROCEED: write `PLAN APPROVED` in your verdict file, then persist backlog items:
@@ -1146,6 +1148,25 @@ gh issue create \
 
 Save issue number as `$ISSUE_NUM`.
 
+#### 2c-spec. SPEC.md Update Instructions (conditional)
+
+When the approved plan contains a `## SPEC.md Diff` section, append the following to the GitHub issue body:
+
+```bash
+gh issue edit $ISSUE_NUM --body "$(gh issue view $ISSUE_NUM --json body -q .body)
+
+## SPEC.md Update
+
+Update SPEC.md in the same PR as code changes. Apply the SPEC.md Diff from the approved plan:
+- **ADDED** sections: insert new sections at the specified location
+- **MODIFIED** sections: replace the existing text with the updated text
+- **REMOVED** sections: delete the section entirely
+
+The SPEC.md update is part of this PR — do not open a separate PR for spec changes."
+```
+
+Skip this step when the approved plan has no `## SPEC.md Diff` section.
+
 #### 2d. Implement (Builder Agent)
 
 Set `$BUILDER_TIMEOUT` based on hypothesis type: **600** for code-only hypotheses, **1800** for operational or mixed hypotheses (pipelines, benchmarks, and Docker builds need more time).
@@ -1366,6 +1387,16 @@ Always include structured metadata in `--notes`:
 - `qa_iterations=N` — how many Builder→QA iterations were needed (1 = clean on first pass)
 
 This metadata feeds the CEO's own playbook evolution via ACE.
+
+#### 2h-spec. SPEC.md Merge Verification (conditional)
+
+When the approved plan contains a `## SPEC.md Diff` section, verify before proceeding to archival:
+
+1. **Check PR includes SPEC.md changes:** `gh pr diff $PR_NUM -- SPEC.md` — if empty, the Builder did not update SPEC.md.
+2. **Verify diff entries were applied:** ADDED sections are present, MODIFIED sections show updated text, REMOVED sections are deleted.
+3. **If SPEC.md changes are missing:** Re-invoke the Builder with: "The approved plan includes a SPEC.md Diff section but SPEC.md was not updated in the PR. Apply the spec changes from the plan to SPEC.md and commit." Max 2 re-invocation rounds.
+
+Skip this step when the approved plan has no `## SPEC.md Diff` section.
 
 #### 2h. Archivist — record experiment outcome (ASYNC)
 
