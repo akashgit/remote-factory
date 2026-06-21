@@ -2189,6 +2189,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
+    from factory.agents.plugin import load_agent_config
     from factory.agents.runner import invoke_agent
     from factory.user_config import load_config
 
@@ -2200,6 +2201,10 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project_path = Path(args.project).resolve()
     timeout = getattr(args, "timeout", 600.0)
     model = _resolve_model(args)
+    if not model:
+        agent_config = load_agent_config()
+        if role in agent_config:
+            model = agent_config[role].model or None
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)

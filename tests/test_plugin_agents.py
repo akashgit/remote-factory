@@ -46,10 +46,14 @@ class TestLoadAgentConfig:
     def test_ceo_uses_opus(self):
         assert load_agent_config()["ceo"].model == "opus"
 
-    def test_non_ceo_agents_use_sonnet(self):
+    def test_agent_model_assignments(self):
+        """Researcher and archivist use sonnet; all other agents use opus."""
+        sonnet_roles = {"researcher", "archivist"}
         for role, meta in load_agent_config().items():
-            if role != "ceo":
+            if role in sonnet_roles:
                 assert meta.model == "sonnet", f"{role} should use sonnet, got {meta.model}"
+            else:
+                assert meta.model == "opus", f"{role} should use opus, got {meta.model}"
 
     def test_builder_has_edit_write(self):
         tools = load_agent_config()["builder"].tools
