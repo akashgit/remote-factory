@@ -35,6 +35,8 @@ jobs:
 
   quality:
     runs-on: ubuntu-latest
+    env:
+      SENTRUX_VERSION: v0.5.7
     steps:
       - uses: actions/checkout@v4
       - name: Cache Sentrux
@@ -43,7 +45,7 @@ jobs:
           path: |
             /usr/local/bin/sentrux
             ~/.sentrux/plugins
-          key: sentrux-v0.5.7-standard-plugins
+          key: sentrux-${{ env.SENTRUX_VERSION }}-standard-plugins
       - name: Run Sentrux quality check
         continue-on-error: true
         run: ./scripts/sentrux-check.sh
