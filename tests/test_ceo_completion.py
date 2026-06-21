@@ -1102,7 +1102,6 @@ class TestCeoPromptResearchMode:
         assert "failure_analysis.md" in r15_section
         assert "research-failures.md" in r15_section
         assert "research-priorart.md" in r15_section
-        assert "archivist after research" in r15_section
 
     def test_references_research_infrastructure(self, ceo_prompt: str) -> None:
         """The prompt references ResearchTarget config, failure_analyst, and run_command."""

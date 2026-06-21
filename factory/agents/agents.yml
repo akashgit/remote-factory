@@ -35,7 +35,7 @@ qa:
     thorough post-Builder verification.
 
 archivist:
-  model: sonnet
+  model: haiku
   tools: [Bash, Read, Write, Grep, Glob]
   description: >-
     Record experiment results, research findings, and project knowledge to an

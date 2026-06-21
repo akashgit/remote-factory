@@ -191,12 +191,13 @@ def eval_observability(project_path: Path) -> dict:
 
 
 def _collect_archive_sources(archive_dir: Path) -> list[Path]:
-    """Collect markdown source files from .factory/archive/ subdirectories."""
+    """Collect source files from .factory/archive/ subdirectories."""
     sources: list[Path] = []
     for subdir in ("sources", "research"):
         d = archive_dir / subdir
         if d.exists():
             sources.extend(d.glob("*.md"))
+            sources.extend(d.glob("*.json"))
     return sources
 
 
@@ -263,7 +264,17 @@ def eval_research_grounding(project_path: Path) -> dict:
             exp_notes = max(exp_dir_count, flat_count)
         else:
             archive_exp_dir = archive_dir / "experiments"
-            exp_notes = len(list(archive_exp_dir.glob("*.md"))) if archive_exp_dir.exists() else 0
+            if archive_exp_dir.exists():
+                exp_ids: set[str] = set()
+                for p in archive_exp_dir.glob("*.md"):
+                    m = re.search(r"(\d+)$", p.stem)
+                    exp_ids.add(m.group(1) if m else p.stem)
+                for p in archive_exp_dir.glob("*.json"):
+                    m = re.search(r"(\d+)$", p.stem)
+                    exp_ids.add(m.group(1) if m else p.stem)
+                exp_notes = len(exp_ids)
+            else:
+                exp_notes = 0
         factory_exp_dir = project_path / ".factory" / "experiments"
         exp_total = len(list(factory_exp_dir.iterdir())) if factory_exp_dir.exists() else 0
         doc_ratio = min(1.0, exp_notes / max(exp_total, 1))
