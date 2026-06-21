@@ -133,8 +133,8 @@ HARBOR_EXIT=0
 
 if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
     # Use Harbor's built-in claude-code agent
-    AGENT_ARGS=(--agent claude-code)
-    echo "    Agent:           claude-code (Harbor built-in)"
+    AGENT_ARGS=(--agent claude-code --extra-instruction-path "${HARNESS_DIR}/benchmarks/terminalbench-extra-instructions.md")
+    echo "    Agent:           claude-code (Harbor built-in + extra instructions)"
 else
     # Use Factory Harbor agent
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
