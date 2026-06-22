@@ -260,22 +260,13 @@ def _discover_claude_session_id(
     dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
     candidates: list[Path] = []
 
-    for search_dir in [claude_dir / dir_name]:
-        if not search_dir.exists():
-            continue
+    search_dir = claude_dir / dir_name
+    if search_dir.exists():
         for f in search_dir.iterdir():
             if not f.name.endswith(".jsonl") or f.is_dir():
                 continue
             if f.stat().st_mtime >= created_at - 5:
                 candidates.append(f)
-
-    if not candidates:
-        for pdir in claude_dir.iterdir():
-            if not pdir.is_dir():
-                continue
-            for f in pdir.iterdir():
-                if f.name.endswith(".jsonl") and f.stat().st_mtime >= created_at - 5:
-                    candidates.append(f)
 
     target_name = f"factory: {project_path.resolve().name}/{role}"
 
@@ -306,9 +297,10 @@ def _discover_claude_session_id(
             continue
 
     if role == "ceo" and candidates:
-        for f in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
-            if f.stem not in matched_child_ids:
-                return f.stem
+        now = time.time()
+        non_child = [f for f in candidates if f.stem not in matched_child_ids]
+        if non_child:
+            return min(non_child, key=lambda f: abs(f.stat().st_mtime - now)).stem
 
     return None
 
