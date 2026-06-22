@@ -30,17 +30,21 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
         capture_output=True,
     )
 
-    # Symlink worktree/.factory → the real .factory dir (resolved absolute path).
-    # The worktree lives inside .factory/worktrees/, so this is inherently circular
-    # for recursive traversal — but safe because shutil.rmtree and os.walk don't
-    # follow symlinks by default.
+    # Symlink worktree/.factory → the real .factory dir so the CEO can
+    # access experiment data from within the worktree.
+    #
+    # Skip when the worktree lives INSIDE .factory/ (self-referential case,
+    # e.g. factory running on its own repo).  The symlink would point
+    # .factory → .factory, creating an ELOOP circular symlink.
     wt_factory = wt_dir / ".factory"
-    if wt_factory.exists() or wt_factory.is_symlink():
-        if wt_factory.is_dir() and not wt_factory.is_symlink():
-            shutil.rmtree(wt_factory)
-        else:
-            wt_factory.unlink()
-    wt_factory.symlink_to(factory_dir)
+    _self_referential = wt_dir.resolve().is_relative_to(factory_dir.resolve())
+    if not _self_referential:
+        if wt_factory.exists() or wt_factory.is_symlink():
+            if wt_factory.is_dir() and not wt_factory.is_symlink():
+                shutil.rmtree(wt_factory)
+            else:
+                wt_factory.unlink()
+        wt_factory.symlink_to(factory_dir)
 
     log.info("worktree_created", branch=branch, path=str(wt_dir))
 
