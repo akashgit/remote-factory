@@ -2350,7 +2350,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     With --headless: pipe mode via claude -p (for scripting, cron, etc.).
     With --mode design: brainstorm an idea via research + Strategist before building.
     """
-    from factory.agents.runner import resolve_prompt
+    from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
     from factory.runners import get_runner
     from factory.user_config import load_config
 
@@ -2658,6 +2658,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         # Uses completion guard to auto-resume on premature exit
         from factory.ceo_completion import run_ceo_with_completion_guard
 
+        span_id = begin_cycle_session(wt_path, cycle_id=session_name, model=model)
         try:
             result, code = _run(run_ceo_with_completion_guard(
                 wt_path,
@@ -2686,12 +2687,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 background=background,
             )
         finally:
+            complete_cycle_session(wt_path, span_id)
             remove_worktree(project_path, wt_path, wt_branch)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
                 shutil.rmtree(project_path, ignore_errors=True)
 
     # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
+    span_id = begin_cycle_session(wt_path, cycle_id=session_name, model=model)
     try:
         if pending_ids:
             print(
@@ -2709,6 +2712,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             session_name=session_name,
         ))
     finally:
+        complete_cycle_session(wt_path, span_id)
         remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil
