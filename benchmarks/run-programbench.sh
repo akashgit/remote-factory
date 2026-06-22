@@ -495,7 +495,7 @@ passed = sum(1 for r in results if r.get('status') == 'passed')
 total = len(results)
 if total == 0:
     total = 1
-resolved = 1 if passed > 0 else 0
+resolved = 1 if passed == total else 0
 print(f'PASSED={passed}')
 print(f'RESOLVED={resolved}')
 print(f'TOTAL={total}')
@@ -516,7 +516,7 @@ else
 import json
 with open('${EVAL_JSON}') as f:
     data = json.load(f)
-resolved = 1 if data.get('score', 0) > 0.5 else 0
+resolved = 1 if data.get('score', 0) >= 1.0 else 0
 total = 1
 passed = resolved
 print(f'PASSED={passed}')
