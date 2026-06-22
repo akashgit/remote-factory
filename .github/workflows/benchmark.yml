@@ -1,6 +1,8 @@
 name: Benchmark CI
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '17 6 * * 1-5'
   workflow_dispatch:
@@ -43,14 +45,13 @@ on:
     types: [created]
 
 concurrency:
-  group: benchmark-${{ github.event.pull_request.number || github.ref }}
+  group: benchmark-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: write
   pull-requests: write
   id-token: write
-  statuses: write
 
 jobs:
   benchmark:
@@ -64,36 +65,36 @@ jobs:
           - benchmark: swebench
             solver: factory
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: featurebench
             solver: factory
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: terminalbench
             solver: factory
             default_instance: 'fix-git'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: programbench
             solver: factory
             default_instance: 'cmatrix'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: featurebench
             solver: claude-code
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: terminalbench
             solver: claude-code
             default_instance: 'fix-git'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: programbench
             solver: claude-code
             default_instance: 'cmatrix'
-            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
@@ -162,7 +163,7 @@ jobs:
           elif [ '${{ github.event_name }}' = 'schedule' ]; then
             echo 'value=3600' >> "$GITHUB_OUTPUT"
           else
-            echo 'value=600' >> "$GITHUB_OUTPUT"
+            echo 'value=7200' >> "$GITHUB_OUTPUT"
           fi
 
       - name: Run ${{ matrix.benchmark }} benchmark (${{ matrix.solver }})
@@ -289,14 +290,34 @@ jobs:
           git diff --cached --quiet || git commit -m "benchmark: add results from run ${{ github.run_id }} [skip ci]"
           git push origin benchmark-data || (git pull --rebase origin benchmark-data && git push origin benchmark-data)
 
+      - name: Find merged PR
+        id: find_pr
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha
+            });
+            const merged = prs.find(p => p.state === 'closed' && p.merged_at);
+            if (merged) {
+              core.setOutput('merged_pr_number', merged.number.toString());
+              console.log('Found merged PR #' + merged.number);
+            } else {
+              core.setOutput('merged_pr_number', '');
+              console.log('No merged PR found for this push');
+            }
+
       - name: Post PR comment
-        if: github.event_name == 'pull_request' || inputs.pr_number != ''
+        if: github.event_name == 'pull_request' || inputs.pr_number != '' || steps.find_pr.outputs.merged_pr_number != ''
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const marker = '<!-- benchmark-results -->';
-            const prNumber = context.issue?.number || parseInt('${{ inputs.pr_number }}', 10);
+            const prNumber = context.issue?.number || parseInt('${{ inputs.pr_number }}', 10) || parseInt('${{ steps.find_pr.outputs.merged_pr_number }}', 10);
 
             if (!prNumber || isNaN(prNumber)) {
               console.log('No PR number available, skipping comment');
@@ -483,106 +504,22 @@ jobs:
               });
             }
 
-      - name: Update benchmark status
-        if: inputs.pr_number != ''
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const prNumber = parseInt('${{ inputs.pr_number }}', 10);
-            if (!prNumber || isNaN(prNumber)) return;
-
-            // Check factory results in downloaded artifacts
-            let factoryResults = [];
-            if (fs.existsSync('results')) {
-              for (const file of fs.readdirSync('results')) {
-                if (!file.endsWith('.json')) continue;
-                try {
-                  const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
-                  const solver = data.solver || data.details?.solver || 'unknown';
-                  if (solver === 'factory') {
-                    factoryResults.push(data);
-                  }
-                } catch {}
-              }
-            }
-
-            if (factoryResults.length === 0) {
-              console.log('No factory results found. Status stays pending.');
-              return;
-            }
-
-            const REQUIRED_BENCHMARKS = ['swebench', 'featurebench', 'terminalbench', 'programbench'];
-            const factoryBenchmarks = new Set(factoryResults.map(r => r.benchmark));
-            const missing = REQUIRED_BENCHMARKS.filter(b => !factoryBenchmarks.has(b));
-
-            if (missing.length > 0) {
-              const ran = factoryResults.length;
-              const total = REQUIRED_BENCHMARKS.length;
-              console.log('Only ' + ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '));
-
-              const { data: pr } = await github.rest.pulls.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: prNumber
-              });
-
-              await github.rest.repos.createCommitStatus({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                sha: pr.head.sha,
-                state: 'pending',
-                context: 'benchmark-eval',
-                description: ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '),
-                target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
-              });
-              return;
-            }
-
-            let state, description;
-            const allSuccess = factoryResults.every(r => r.status === 'success');
-            if (allSuccess) {
-              state = 'success';
-              description = 'All 4 factory benchmarks completed.';
-            } else {
-              const failed = factoryResults.filter(r => r.status !== 'success').length;
-              state = 'failure';
-              description = failed + ' of ' + REQUIRED_BENCHMARKS.length + ' factory benchmarks had pipeline errors.';
-            }
-
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: prNumber
-            });
-
-            await github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: pr.head.sha,
-              state: state,
-              context: 'benchmark-eval',
-              description: description,
-              target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
-            });
-
-            console.log('Set benchmark-eval status to ' + state + ': ' + description);
-
       - name: Update release notes
         if: github.event_name == 'release'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
+            const marker = '<!-- benchmark-results -->';
 
             if (!fs.existsSync('results/')) {
               console.log('No results directory found, skipping release notes update');
               return;
             }
 
-            let benchmarkSection = '\n\n## Benchmark Results\n\n';
-            benchmarkSection += '| Benchmark | Instance | Result | Score | Duration |\n';
-            benchmarkSection += '|-----------|----------|--------|-------|----------|\n';
+            let benchmarkSection = marker + '\n\n## Benchmark Results\n\n';
+            benchmarkSection += '| Benchmark | Solver | Instance | Result | Score | Cost | Duration |\n';
+            benchmarkSection += '|-----------|--------|----------|--------|-------|------|----------|\n';
 
             const files = fs.readdirSync('results/');
             let hasResults = false;
@@ -592,7 +529,9 @@ jobs:
                 hasResults = true;
                 const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
                 const status = data.resolved ? '✅' : '❌';
-                benchmarkSection += '| ' + data.benchmark + ' | `' + data.instance_id + '` | ' + status + ' | ' + data.score + ' | ' + data.duration_seconds + 's |\n';
+                const solver = data.solver || data.details?.solver || 'unknown';
+                const cost = data.details?.cost_usd != null ? '$' + data.details.cost_usd.toFixed(2) : 'N/A';
+                benchmarkSection += '| ' + data.benchmark + ' | ' + solver + ' | `' + data.instance_id + '` | ' + status + ' | ' + data.score + ' | ' + cost + ' | ' + data.duration_seconds + 's |\n';
               }
             }
 
@@ -601,15 +540,27 @@ jobs:
               return;
             }
 
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            benchmarkSection += '\n📊 [View benchmark dashboard](https://' + owner + '.github.io/' + repo + '/benchmarks/)\n';
+
             const release = await github.rest.repos.getRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: owner,
+              repo: repo,
               release_id: context.payload.release.id
             });
 
+            const existingBody = release.data.body || '';
+            let newBody;
+            if (existingBody.includes(marker)) {
+              newBody = existingBody.replace(new RegExp(marker + '[\\s\\S]*$'), benchmarkSection);
+            } else {
+              newBody = existingBody + '\n\n' + benchmarkSection;
+            }
+
             await github.rest.repos.updateRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
+              owner: owner,
+              repo: repo,
               release_id: context.payload.release.id,
-              body: (release.data.body || '') + benchmarkSection
+              body: newBody
             });
