@@ -340,7 +340,8 @@ jobs:
                 try {
                   const entry = JSON.parse(line);
                   if (entry.ref === 'refs/heads/main') {
-                    const key = entry.benchmark + '-' + (entry.details?.solver || 'unknown');
+                    const solver = entry.solver || entry.details?.solver || 'unknown';
+                    const key = entry.benchmark + '-' + solver;
                     baselines[key] = entry;
                   }
                 } catch {}
@@ -348,27 +349,91 @@ jobs:
             }
 
             if (hasResults && Object.keys(baselines).length > 0) {
-              body += '### Comparison vs Baseline\n\n';
-              body += '| Benchmark | Solver | Score | vs Baseline | Cost | vs Baseline | Duration |\n';
-              body += '|-----------|--------|-------|-------------|------|-------------|----------|\n';
+              const pctChange = (curr, base) => {
+                if (!base || base === 0) return '';
+                const p = ((curr - base) / Math.abs(base)) * 100;
+                return ' (' + (p >= 0 ? '+' : '') + p.toFixed(1) + '%)';
+              };
+
+              let totalScore = 0, totalBaselineScore = 0, resultCount = 0, baselineCount = 0;
+              let totalCost = 0, costCount = 0, totalDuration = 0, durationCount = 0;
+              for (const file of files) {
+                if (!file.endsWith('.json')) continue;
+                const d = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                const s = d.solver || d.details?.solver || 'unknown';
+                const bl = baselines[d.benchmark + '-' + s];
+                totalScore += d.score; resultCount++;
+                if (bl) { totalBaselineScore += bl.score; baselineCount++; }
+                if (d.details?.cost_usd > 0) { totalCost += d.details.cost_usd; costCount++; }
+                if (d.duration_seconds > 0) { totalDuration += d.duration_seconds; durationCount++; }
+              }
+
+              const avgScore = resultCount > 0 ? (totalScore / resultCount * 100) : 0;
+              const avgBaseline = baselineCount > 0 ? (totalBaselineScore / baselineCount * 100) : null;
+              const avgCostStr = costCount > 0 ? '$' + (totalCost / costCount).toFixed(2) : 'N/A';
+              const avgDurStr = durationCount > 0 ? Math.round(totalDuration / durationCount) + 's' : 'N/A';
+              let summary = '**Overall: ' + avgScore.toFixed(1) + '% accuracy';
+              if (avgBaseline != null) {
+                const diff = avgScore - avgBaseline;
+                const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+                summary += ' (' + arrow + ' ' + (diff >= 0 ? '+' : '') + diff.toFixed(1) + '% vs main)';
+              }
+              summary += ' | ' + avgCostStr + ' avg cost | ' + avgDurStr + ' avg duration**';
+              body += summary + '\n\n';
+
+              body += '### Comparison vs Main\n\n';
+              body += '| Benchmark | Solver | Score | vs Main | Cost | vs Main | Duration | vs Main |\n';
+              body += '|-----------|--------|-------|---------|------|---------|----------|---------|\n';
 
               for (const file of files) {
-                if (file.endsWith('.json')) {
-                  const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
-                  const solver = data.details?.solver || 'unknown';
-                  const key = data.benchmark + '-' + solver;
-                  const baseline = baselines[key];
+                if (!file.endsWith('.json')) continue;
+                const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                const solver = data.solver || data.details?.solver || 'unknown';
+                const key = data.benchmark + '-' + solver;
+                const baseline = baselines[key];
 
-                  const scoreDelta = baseline ? (data.score - baseline.score).toFixed(4) : 'N/A';
-                  const scoreArrow = baseline ? (data.score > baseline.score ? '▲' : data.score < baseline.score ? '▼' : '=') : '';
-                  const costDelta = baseline ? (data.details?.cost_usd - (baseline.details?.cost_usd || 0)).toFixed(2) : 'N/A';
-                  const costArrow = baseline ? (data.details?.cost_usd < (baseline.details?.cost_usd || 0) ? '▲' : data.details?.cost_usd > (baseline.details?.cost_usd || 0) ? '▼' : '=') : '';
-                  const duration = data.duration_seconds + 's';
-
-                  body += '| ' + data.benchmark + ' | ' + solver + ' | ' + data.score + ' | ' + scoreArrow + ' ' + scoreDelta + ' | $' + (data.details?.cost_usd || 0).toFixed(2) + ' | ' + costArrow + ' $' + costDelta + ' | ' + duration + ' |\n';
+                const scoreVal = data.score;
+                let scoreVs = 'N/A';
+                if (baseline) {
+                  if (baseline.score === 0 && data.score === 0) {
+                    scoreVs = '= 0%';
+                  } else if (baseline.score === 0) {
+                    scoreVs = '+∞% ▲';
+                  } else {
+                    const sp = ((data.score - baseline.score) / Math.abs(baseline.score)) * 100;
+                    scoreVs = (sp >= 0 ? '+' : '') + sp.toFixed(1) + '% ' + (sp > 0 ? '▲' : sp < 0 ? '▼' : '=');
+                  }
                 }
+
+                const hasCurrCost = data.details?.cost_usd != null && data.details.cost_usd > 0;
+                const hasBaseCost = baseline?.details?.cost_usd != null && baseline.details.cost_usd > 0;
+                const costVal = hasCurrCost ? '$' + data.details.cost_usd.toFixed(2) : 'N/A';
+                let costVs = 'N/A';
+                if (hasCurrCost && hasBaseCost) {
+                  const cd = data.details.cost_usd - baseline.details.cost_usd;
+                  if (cd === 0) { costVs = '= $0.00'; }
+                  else {
+                    const ca = cd < 0 ? '▲' : '▼';
+                    costVs = (cd < 0 ? '-' : '+') + '$' + Math.abs(cd).toFixed(2) + pctChange(data.details.cost_usd, baseline.details.cost_usd) + ' ' + ca;
+                  }
+                }
+
+                const hasCurrDur = data.duration_seconds != null && data.duration_seconds > 0;
+                const hasBaseDur = baseline?.duration_seconds != null && baseline.duration_seconds > 0;
+                const durVal = hasCurrDur ? Math.round(data.duration_seconds) + 's' : 'N/A';
+                let durVs = 'N/A';
+                if (hasCurrDur && hasBaseDur) {
+                  const dd = Math.round(data.duration_seconds - baseline.duration_seconds);
+                  if (dd === 0) { durVs = '= 0s'; }
+                  else {
+                    const da = dd < 0 ? '▲' : '▼';
+                    durVs = (dd < 0 ? '-' : '+') + Math.abs(dd) + 's' + pctChange(data.duration_seconds, baseline.duration_seconds) + ' ' + da;
+                  }
+                }
+
+                body += '| ' + data.benchmark + ' | ' + solver + ' | ' + scoreVal + ' | ' + scoreVs + ' | ' + costVal + ' | ' + costVs + ' | ' + durVal + ' | ' + durVs + ' |\n';
               }
-              body += '\n_Baseline: latest main branch run. ▲ = improvement (higher score or lower cost), ▼ = regression._\n\n';
+              body += '\n_Baseline: latest main branch run per benchmark+solver. ▲ = improvement, ▼ = regression._\n\n';
             } else if (hasResults) {
               body += '_No baseline available for comparison._\n\n';
             }
