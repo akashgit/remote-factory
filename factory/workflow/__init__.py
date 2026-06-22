@@ -11,11 +11,14 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    SkillPhase,
     Study,
     Verdict,
     VerdictType,
     Workflow,
+    WorkflowSkill,
 )
+from factory.workflow.registry import SkillRegistry
 
 __all__ = [
     "AgentConfig",
@@ -28,9 +31,12 @@ __all__ = [
     "ForkNode",
     "GateNode",
     "JoinNode",
+    "SkillPhase",
+    "SkillRegistry",
     "Study",
     "Verdict",
     "VerdictType",
     "Workflow",
     "WorkflowExecutor",
+    "WorkflowSkill",
 ]

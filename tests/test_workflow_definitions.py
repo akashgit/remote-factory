@@ -200,7 +200,7 @@ class TestAgentPool:
             "strategist": "opus",
             "builder": "opus",
             "reviewer": "opus",
-            "evaluator": "opus",
+            "qa": "opus",
             "failure_analyst": "opus",
             "ceo": "opus",
             "archivist": "haiku",

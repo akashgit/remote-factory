@@ -80,11 +80,15 @@ class WorkflowExecutor:
         agent_pool: dict[str, AgentConfig] | None = None,
         *,
         dry_run: bool = False,
+        headless: bool = False,
+        context: dict[str, str] | None = None,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
+        self.headless = headless
+        self.exec_context = context or {}
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -484,7 +488,7 @@ class WorkflowExecutor:
         """Invoke an agent via factory/agents/runner.py."""
         from factory.agents.runner import invoke_agent
 
-        task = node.prompt_template
+        task = self._build_agent_prompt(node)
         context = self.node_context.get(node.id, "")
         if context:
             task = f"{task}\n\n{context}"
@@ -507,13 +511,29 @@ class WorkflowExecutor:
 
         return stdout
 
+    def _build_agent_prompt(self, node: AgentNode) -> str:
+        """Build agent prompt with project context variable substitution."""
+        prompt = node.prompt_template
+        replacements = {
+            "{project_path}": str(self.project_path),
+            "{project_idea}": self.exec_context.get("project_idea", ""),
+            "{project_description}": self.exec_context.get("project_description", ""),
+            "{focus_directive}": self.exec_context.get("focus_directive", ""),
+        }
+        for key, value in replacements.items():
+            prompt = prompt.replace(key, value)
+        return prompt
+
     async def _evaluate_gate(self, node: GateNode) -> Verdict:
         """Evaluate a gate and return a verdict."""
         if self.dry_run:
             return Verdict.proceed()
 
         if node.evaluator_type == "user":
-            return Verdict.proceed()
+            if self.headless:
+                log.info("user_gate_auto_converted", node=node.id, reason="headless mode")
+                return await self._evaluate_agent_gate(node)
+            return await self._evaluate_user_gate(node)
 
         if node.evaluator_type == "fn":
             if node.evaluator_command:
@@ -527,6 +547,10 @@ class WorkflowExecutor:
                     return Verdict.halt(reason=f"gate command failed: {cmd}")
             return Verdict.proceed()
 
+        return await self._evaluate_agent_gate(node)
+
+    async def _evaluate_agent_gate(self, node: GateNode) -> Verdict:
+        """Evaluate a gate using a CEO agent."""
         prompt = self._build_gate_prompt(node)
         from factory.agents.runner import invoke_agent
 
@@ -547,8 +571,53 @@ class WorkflowExecutor:
 
         return self._parse_agent_verdict(stdout, node.id)
 
+    async def _evaluate_user_gate(self, node: GateNode) -> Verdict:
+        """Evaluate a gate by prompting the user for input via stdin."""
+        output_files = sorted(node.reads) if node.reads else []
+        print(f"\n{'=' * 60}")
+        print(f"USER GATE: {node.id} ({self.workflow.name})")
+        print(f"{'=' * 60}")
+        if output_files:
+            print(f"Review output: {', '.join(output_files)}")
+        context = self.node_context.get(node.id, "")
+        if context:
+            print(f"Context: {context}")
+
+        reloop_targets: list[str] = []
+        for edge in self._edge_index.get(node.id, []):
+            if edge.condition == VerdictType.RELOOP:
+                reloop_targets.append(edge.target)
+
+        print("\nOptions:")
+        print("  [P]roceed — continue to next step")
+        if reloop_targets:
+            print(f"  [R]eloop  — send back to: {', '.join(reloop_targets)}")
+        print("  [H]alt    — stop the workflow")
+        print()
+
+        try:
+            response = input("Your verdict (P/R/H): ").strip().upper()
+        except (EOFError, KeyboardInterrupt):
+            return Verdict.halt(reason="user gate interrupted")
+
+        if response.startswith("H"):
+            reason = input("Reason for halt: ").strip() if response == "H" else "user halted"
+            return Verdict.halt(reason=reason or "user halted")
+
+        if response.startswith("R") and reloop_targets:
+            target = reloop_targets[0]
+            if len(reloop_targets) > 1:
+                print(f"Available targets: {', '.join(reloop_targets)}")
+                chosen = input(f"Target [{target}]: ").strip()
+                if chosen and chosen in reloop_targets:
+                    target = chosen
+            feedback = input("Feedback: ").strip() or "user requested reloop"
+            return Verdict.reloop(target=target, feedback=feedback)
+
+        return Verdict.proceed()
+
     def _build_gate_prompt(self, node: GateNode) -> str:
-        """Build the lightweight CEO gate prompt."""
+        """Build the lightweight CEO gate prompt, optionally enriched with criteria files."""
         if node.gate_prompt:
             return node.gate_prompt.replace(
                 "{project_path}", str(self.project_path),
@@ -562,13 +631,37 @@ class WorkflowExecutor:
             if edge.condition == VerdictType.RELOOP:
                 reloop_targets.append(edge.target)
 
-        return CEO_GATE_PROMPT.format(
+        criteria_content = ""
+        if node.criteria_file:
+            criteria_content = self._load_criteria_file(node.criteria_file)
+
+        base_prompt = CEO_GATE_PROMPT.format(
             step_name=node.id,
             workflow_name=self.workflow.name,
             output_file=", ".join(output_files),
             previous_context=context,
             reloop_targets=", ".join(reloop_targets) if reloop_targets else "(use exact node IDs)",
         )
+
+        if criteria_content:
+            base_prompt += f"\n\n## Review Criteria\n\n{criteria_content}"
+
+        return base_prompt
+
+    def _load_criteria_file(self, criteria_file: str) -> str:
+        """Load a gate criteria file and perform template variable substitution."""
+        criteria_dir = Path(__file__).parent / "gate_criteria"
+        criteria_path = criteria_dir / criteria_file
+
+        if not criteria_path.is_file():
+            log.debug("criteria_file_not_found", path=str(criteria_path))
+            return ""
+
+        content = criteria_path.read_text()
+        content = content.replace("{project_path}", str(self.project_path))
+        content = content.replace("{focus_directive}", self.exec_context.get("focus_directive", ""))
+        content = content.replace("{criteria_file_content}", "")
+        return content
 
     def _parse_agent_verdict(self, output: str, gate_id: str) -> Verdict:
         """Parse agent output into a Verdict by examining the last non-empty line."""

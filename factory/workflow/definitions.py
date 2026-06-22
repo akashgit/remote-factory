@@ -20,9 +20,11 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    SkillPhase,
     Study,
     VerdictType,
     Workflow,
+    WorkflowSkill,
 )
 
 
@@ -91,6 +93,7 @@ def build_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/strategy/research-combined.md"},
+        criteria_file="researcher-review.md",
     )
 
     # Strategist
@@ -111,6 +114,7 @@ def build_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/strategy/current.md"},
+        criteria_file="strategist-review.md",
     )
 
     # Archivist (async, non-blocking)
@@ -140,28 +144,29 @@ def build_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/reviews/builder-latest.md"},
+        criteria_file="builder-review.md",
     )
 
-    nodes["evaluator"] = AgentNode(
-        id="evaluator",
-        role=AgentRole.EVALUATOR,
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
         prompt_template="Run eval command and interpret scores.",
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
         evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["archivist_build"] = AgentNode(
         id="archivist_build",
         role=AgentRole.ARCHIVIST,
         prompt_template="Archive the build phase results.",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
         writes={".factory/archive/build.md"},
         blocking=False,
     )
@@ -190,11 +195,11 @@ def build_workflow() -> Workflow:
         Edge(source="archivist_plan", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate → evaluator (proceed) or builder (reloop, max 3)
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        # Build gate → QA (proceed) or builder (reloop, max 3)
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck gate
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → precheck gate
+        Edge(source="qa", target="gate_precheck"),
         # Precheck → archivist (proceed) or halt
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
     ]
@@ -277,6 +282,7 @@ def improve_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/strategy/research-local.md"},
+        criteria_file="researcher-review.md",
     )
 
     # Strategist
@@ -297,9 +303,10 @@ def improve_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/strategy/current.md"},
+        criteria_file="strategist-review.md",
     )
 
-    # Per-hypothesis: begin → builder → gate → evaluator → precheck → finalize → archivist
+    # Per-hypothesis: begin → builder → gate → qa → precheck → finalize → archivist
     nodes["begin"] = FnNode(
         id="begin",
         command='factory begin {project_path} --hypothesis "Implement hypothesis"',
@@ -322,27 +329,28 @@ def improve_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         reads={".factory/reviews/builder-latest.md"},
+        criteria_file="builder-review.md",
     )
 
-    nodes["evaluator"] = AgentNode(
-        id="evaluator",
-        role=AgentRole.EVALUATOR,
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
         prompt_template="Run eval and interpret scores.",
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
         evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["finalize"] = FnNode(
         id="finalize",
         command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'hypothesis'",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
         writes={".factory/experiments/verdict.json"},
     )
 
@@ -373,10 +381,10 @@ def improve_workflow() -> Workflow:
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
         # Build gate
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → precheck
+        Edge(source="qa", target="gate_precheck"),
         # Precheck → finalize (proceed) or halt
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         # Finalize → archivist
@@ -452,12 +460,12 @@ def research_workflow() -> Workflow:
         writes={".factory/strategy/current.md"},
     )
 
-    # Replace evaluator with research command
-    wf.nodes["evaluator"] = FnNode(
-        id="evaluator",
+    # Replace QA with research eval command
+    wf.nodes["qa"] = FnNode(
+        id="qa",
         command="factory eval {project_path}",
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
     )
 
     # Add plateau gate after finalize — checks if score improved over prior runs
@@ -496,10 +504,10 @@ def research_workflow() -> Workflow:
         Edge(source="begin", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → precheck
+        Edge(source="qa", target="gate_precheck"),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         # Finalize → archivist → plateau gate
         Edge(source="finalize", target="archivist"),
@@ -668,12 +676,88 @@ def meta_workflow() -> Workflow:
 # ── Registry ─────────────────────────────────────────────────────
 
 
-def register_all() -> dict[str, Workflow]:
-    """Build and return all 5 workflow definitions."""
+def register_all() -> dict[str, WorkflowSkill]:
+    """Build and return all 5 workflow definitions wrapped as WorkflowSkills.
+
+    Ordered by trigger specificity: more constrained triggers first so that
+    select() picks the most specific match.
+    """
     return {
-        "build": build_workflow(),
-        "design": design_workflow(),
-        "improve": improve_workflow(),
-        "research": research_workflow(),
-        "meta": meta_workflow(),
+        "design": WorkflowSkill(
+            name="design",
+            workflow=design_workflow(),
+            description="Interactive design mode — build workflow with user approval gates.",
+            trigger_description="Triggers when no repo and interactive mode is enabled.",
+            phases=[
+                SkillPhase(name="research", description="Parallel research on similar projects, tech stack, and pitfalls"),
+                SkillPhase(name="strategy", description="User reviews and approves the build plan"),
+                SkillPhase(name="build", description="Implement the approved plan"),
+            ],
+            inputs=["idea or spec text", "project path"],
+            outputs=[".factory/strategy/current.md", ".factory/reviews/builder-latest.md"],
+            success_criteria="User approves strategy, project builds successfully.",
+            aliases=["interactive", "discuss"],
+        ),
+        "build": WorkflowSkill(
+            name="build",
+            workflow=build_workflow(),
+            description="Build a new project from an idea, spec file, or GitHub URL.",
+            trigger_description="Triggers when no repo exists or repo is incomplete.",
+            phases=[
+                SkillPhase(name="research", description="Parallel research on similar projects, tech stack, and pitfalls"),
+                SkillPhase(name="strategy", description="Synthesize research into a phased build plan"),
+                SkillPhase(name="build", description="Implement the plan and run evals"),
+            ],
+            inputs=["idea or spec text", "project path"],
+            outputs=[".factory/strategy/current.md", ".factory/reviews/builder-latest.md"],
+            success_criteria="Project builds, tests pass, eval score above threshold.",
+            aliases=["new", "create"],
+        ),
+        "meta": WorkflowSkill(
+            name="meta",
+            workflow=meta_workflow(),
+            description="Meta mode — cross-project insights, playbook evolution, and test pruning.",
+            trigger_description="Triggers when mode is set to 'meta'.",
+            phases=[
+                SkillPhase(name="insights", description="Collect cross-project experiment insights"),
+                SkillPhase(name="playbook_evolution", description="Propose and apply playbook improvements"),
+                SkillPhase(name="test_pruning", description="Identify and remove redundant tests"),
+            ],
+            inputs=["project path", "projects directory"],
+            outputs=[".factory/archive/meta.md", ".factory/reviews/test-pruning-latest.md"],
+            success_criteria="Playbooks updated, redundant tests removed.",
+            aliases=["self-improve", "ace"],
+        ),
+        "research": WorkflowSkill(
+            name="research",
+            workflow=research_workflow(),
+            description="Research mode — baseline measurement, failure analysis, and plateau detection.",
+            trigger_description="Triggers when project has .factory/ and research_target is set.",
+            phases=[
+                SkillPhase(name="baseline", description="Measure baseline eval score"),
+                SkillPhase(name="failure_analysis", description="Analyze and categorize failures"),
+                SkillPhase(name="research", description="Research solutions based on failure analysis"),
+                SkillPhase(name="experiment", description="Build, eval, and iterate until plateau"),
+            ],
+            inputs=["project path", "research_target"],
+            outputs=[".factory/experiments/baseline.json", ".factory/experiments/verdict.json"],
+            success_criteria="Research target metric improves; plateau gate passes.",
+            aliases=["benchmark", "optimize"],
+        ),
+        "improve": WorkflowSkill(
+            name="improve",
+            workflow=improve_workflow(),
+            description="Improve an existing project through study, hypothesis, and eval loop.",
+            trigger_description="Triggers when project has .factory/ directory.",
+            phases=[
+                SkillPhase(name="study", description="Analyze codebase and write observations"),
+                SkillPhase(name="research", description="Research the codebase based on observations"),
+                SkillPhase(name="strategy", description="Generate hypotheses from research"),
+                SkillPhase(name="experiment", description="Build, eval, and finalize each hypothesis"),
+            ],
+            inputs=["project path"],
+            outputs=[".factory/strategy/observations.md", ".factory/experiments/verdict.json"],
+            success_criteria="At least one hypothesis kept with positive eval delta.",
+            aliases=["evolve", "iterate"],
+        ),
     }
