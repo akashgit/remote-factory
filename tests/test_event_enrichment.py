@@ -83,7 +83,7 @@ def test_worktree_created_event_schema(tmp_path: Path) -> None:
 
     event = emit_event(project, "worktree.created", data={
         "run_id": "abc12345",
-        "worktree_path": str(project / ".factory" / "worktrees" / "run-abc12345"),
+        "worktree_path": str(project / ".factory-worktrees" / "run-abc12345"),
         "branch": "factory/run-abc12345",
         "base_branch": "main",
     })
