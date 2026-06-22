@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from factory.sessions import (
+    _discover_claude_session_id,
     _find_transcript,
     _ingest_transcript,
     backfill_transcripts,
@@ -524,3 +525,46 @@ def test_complete_session_preserves_existing_claude_session_id(tmp_path: Path) -
 
     session = get_session(tmp_path, sid)
     assert session["claude_session_id"] == "original-id"
+
+
+def test_discover_claude_session_id_ceo_with_mixed_transcripts(tmp_path: Path) -> None:
+    """CEO fallback finds the CEO transcript even when child agent transcripts exist.
+
+    Regression test: child agents have custom-titles like 'factory: project/role'
+    (with a '/') while CEO sessions have titles like 'factory: i want build snake game'
+    (no '/'). Both contain 'factory: ' but only child patterns should be excluded.
+    """
+    import json
+    import time
+    from unittest.mock import patch
+
+    project_resolved = str(tmp_path.resolve())
+    dir_name = project_resolved.replace("/", "-").replace(".", "-")
+    claude_dir = tmp_path / "mock_home" / ".claude" / "projects" / dir_name
+    claude_dir.mkdir(parents=True)
+
+    project_name = tmp_path.resolve().name
+    created_at = int(time.time()) - 10
+
+    # Child agent transcript — has 'factory: project/role' pattern (with '/')
+    child_transcript = claude_dir / "child-session-abc.jsonl"
+    child_lines = [
+        json.dumps({"type": "agent-name", "agentName": f"factory: {project_name}/researcher"}),
+        json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": "research"}]}}),
+    ]
+    child_transcript.write_text("\n".join(child_lines) + "\n")
+
+    # CEO transcript — has 'factory: <prompt>' pattern (no '/')
+    ceo_transcript = claude_dir / "ceo-session-xyz.jsonl"
+    ceo_lines = [
+        json.dumps({"type": "custom-title", "customTitle": "factory: i want build snake game"}),
+        json.dumps({"type": "user", "message": {"content": [{"type": "text", "text": "build it"}]}}),
+    ]
+    ceo_transcript.write_text("\n".join(ceo_lines) + "\n")
+
+    with patch("factory.sessions.Path.home", return_value=tmp_path / "mock_home"):
+        result = _discover_claude_session_id("ceo", created_at, tmp_path)
+
+    # The CEO transcript should be found via the fallback path,
+    # NOT excluded as a child agent
+    assert result == "ceo-session-xyz"

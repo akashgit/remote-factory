@@ -294,13 +294,13 @@ def _discover_claude_session_id(
                         agent_name = item.get("agentName") or ""
                         if target_name in agent_name:
                             return f.stem
-                        if "factory: " in agent_name:
+                        if "factory: " in agent_name and "/" in agent_name:
                             matched_child_ids.add(f.stem)
                     elif item.get("type") == "custom-title":
                         custom_title = item.get("customTitle") or ""
                         if target_name in custom_title:
                             return f.stem
-                        if "factory: " in custom_title:
+                        if "factory: " in custom_title and "/" in custom_title:
                             matched_child_ids.add(f.stem)
         except Exception:
             continue
