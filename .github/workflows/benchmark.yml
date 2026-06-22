@@ -507,25 +507,49 @@ jobs:
               }
             }
 
-            // Determine status
-            let state, description;
             if (factoryResults.length === 0) {
-              // No factory results — leave as pending
               console.log('No factory results found. Status stays pending.');
               return;
             }
 
+            const REQUIRED_BENCHMARKS = ['swebench', 'featurebench', 'terminalbench', 'programbench'];
+            const factoryBenchmarks = new Set(factoryResults.map(r => r.benchmark));
+            const missing = REQUIRED_BENCHMARKS.filter(b => !factoryBenchmarks.has(b));
+
+            if (missing.length > 0) {
+              const ran = factoryResults.length;
+              const total = REQUIRED_BENCHMARKS.length;
+              console.log('Only ' + ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '));
+
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pr.head.sha,
+                state: 'pending',
+                context: 'benchmark-eval',
+                description: ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '),
+                target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
+              });
+              return;
+            }
+
+            let state, description;
             const allSuccess = factoryResults.every(r => r.status === 'success');
             if (allSuccess) {
               state = 'success';
-              description = 'Benchmark evaluation complete. ' + factoryResults.length + ' factory benchmark(s) ran.';
+              description = 'All 4 factory benchmarks completed.';
             } else {
               const failed = factoryResults.filter(r => r.status !== 'success').length;
               state = 'failure';
-              description = failed + ' of ' + factoryResults.length + ' factory benchmark(s) had pipeline errors.';
+              description = failed + ' of ' + REQUIRED_BENCHMARKS.length + ' factory benchmarks had pipeline errors.';
             }
 
-            // Get PR head SHA
             const { data: pr } = await github.rest.pulls.get({
               owner: context.repo.owner,
               repo: context.repo.repo,
