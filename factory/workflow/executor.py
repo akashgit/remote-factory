@@ -597,22 +597,22 @@ class WorkflowExecutor:
 
         try:
             response = input("Your verdict (P/R/H): ").strip().upper()
+
+            if response.startswith("H"):
+                reason = input("Reason for halt: ").strip() if response == "H" else "user halted"
+                return Verdict.halt(reason=reason or "user halted")
+
+            if response.startswith("R") and reloop_targets:
+                target = reloop_targets[0]
+                if len(reloop_targets) > 1:
+                    print(f"Available targets: {', '.join(reloop_targets)}")
+                    chosen = input(f"Target [{target}]: ").strip()
+                    if chosen and chosen in reloop_targets:
+                        target = chosen
+                feedback = input("Feedback: ").strip() or "user requested reloop"
+                return Verdict.reloop(target=target, feedback=feedback)
         except (EOFError, KeyboardInterrupt):
             return Verdict.halt(reason="user gate interrupted")
-
-        if response.startswith("H"):
-            reason = input("Reason for halt: ").strip() if response == "H" else "user halted"
-            return Verdict.halt(reason=reason or "user halted")
-
-        if response.startswith("R") and reloop_targets:
-            target = reloop_targets[0]
-            if len(reloop_targets) > 1:
-                print(f"Available targets: {', '.join(reloop_targets)}")
-                chosen = input(f"Target [{target}]: ").strip()
-                if chosen and chosen in reloop_targets:
-                    target = chosen
-            feedback = input("Feedback: ").strip() or "user requested reloop"
-            return Verdict.reloop(target=target, feedback=feedback)
 
         return Verdict.proceed()
 

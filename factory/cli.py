@@ -3426,6 +3426,21 @@ def _build_ceo_task(
             "If stripping breaks tests, fall back to the full diff.\n"
         )
 
+    try:
+        from factory.workflow.registry import SkillRegistry
+
+        registry = SkillRegistry.create()
+        catalog = registry.catalog()
+        if catalog.strip():
+            task += (
+                "\n\n## Workflow Skills\n\n"
+                "The following workflow skills are available. You can invoke them with "
+                "`factory workflow run <name> <project_path>`.\n\n"
+                f"{catalog}\n"
+            )
+    except Exception:
+        pass
+
     return task
 
 
