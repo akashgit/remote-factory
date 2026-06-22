@@ -215,7 +215,7 @@ class FactoryCeo(BaseInstalledAgent):
                 "  fi; "
                 "fi; "
                 # Strategy 3: Recover from surviving worktree directories
-                'for wt in .factory/worktrees/*/; do '
+                'for wt in .factory-worktrees/*/; do '
                 '  if [ -d "$wt" ]; then '
                 '    echo "Recovering files from worktree: $wt"; '
                 "    rsync -a --exclude='.git' --exclude='.factory' "

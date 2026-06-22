@@ -354,7 +354,7 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
     fi
 
     # Strategy 3: Recover from surviving worktree directories
-    for wt in .factory/worktrees/*/; do
+    for wt in .factory-worktrees/*/; do
         if [ -d "$wt" ]; then
             echo "Recovering files from worktree: $wt"
             rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true

@@ -49,7 +49,7 @@ class TestCreateWorktree:
         assert wt_path.exists()
         assert wt_path.is_dir()
         assert branch.startswith("factory/run-")
-        assert wt_path.parent == git_project / ".factory" / "worktrees"
+        assert wt_path.parent == git_project / ".factory-worktrees"
 
     def test_worktree_has_factory_symlink(self, git_project: Path) -> None:
         wt_path, _ = create_worktree(git_project)
@@ -151,7 +151,7 @@ class TestPruneStale:
         assert pruned == []
 
     def test_cleans_orphaned_directory(self, git_project: Path) -> None:
-        wt_dir = git_project / ".factory" / "worktrees"
+        wt_dir = git_project / ".factory-worktrees"
         wt_dir.mkdir(parents=True, exist_ok=True)
         orphan = wt_dir / "run-deadbeef"
         orphan.mkdir()
