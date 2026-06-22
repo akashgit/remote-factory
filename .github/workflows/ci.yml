@@ -33,6 +33,50 @@ jobs:
           files: coverage.xml
           fail_ci_if_error: false
 
+  quality:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      SENTRUX_VERSION: v0.5.7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache Sentrux
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/bin/sentrux
+            ~/.local/bin/sentrux
+            ~/.sentrux/plugins
+          key: sentrux-${{ env.SENTRUX_VERSION }}-standard-plugins
+      - name: Run Sentrux quality check
+        continue-on-error: true
+        run: ./scripts/sentrux-check.sh 2>&1 | tee sentrux-output.txt
+      - name: Post Sentrux results as PR comment
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "<!-- sentrux-report -->"
+            echo "## Sentrux Quality Report"
+            echo ""
+            echo '```'
+            cat sentrux-output.txt
+            echo '```'
+          } > comment-body.txt
+
+          COMMENT_ID=$(gh api "repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/comments" \
+            --jq '.[] | select(.body | startswith("<!-- sentrux-report -->")) | .id' | head -1)
+
+          if [ -n "$COMMENT_ID" ]; then
+            gh api "repos/${{ github.repository }}/issues/comments/${COMMENT_ID}" \
+              -X PATCH -f body="$(cat comment-body.txt)"
+          else
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file comment-body.txt
+          fi
+
   lint:
     runs-on: ubuntu-latest
     steps:
