@@ -33,10 +33,17 @@ log = structlog.get_logger()
 
 
 def ensure_factory_dir(path: Path) -> None:
-    """Create a .factory directory, removing a broken symlink first if present."""
-    if path.is_symlink() and not path.exists():
-        log.warning("ensure_factory_dir_removing_broken_symlink", path=str(path))
-        path.unlink()
+    """Create a .factory directory, removing a broken or circular symlink first."""
+    if path.is_symlink():
+        remove = False
+        try:
+            if not path.exists():
+                remove = True
+        except OSError:
+            remove = True
+        if remove:
+            log.warning("ensure_factory_dir_removing_bad_symlink", path=str(path))
+            path.unlink()
     path.mkdir(parents=True, exist_ok=True)
 
 
