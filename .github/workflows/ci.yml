@@ -47,6 +47,7 @@ jobs:
         with:
           path: |
             /usr/local/bin/sentrux
+            ~/.local/bin/sentrux
             ~/.sentrux/plugins
           key: sentrux-${{ env.SENTRUX_VERSION }}-standard-plugins
       - name: Run Sentrux quality check
