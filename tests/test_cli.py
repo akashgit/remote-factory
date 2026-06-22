@@ -215,23 +215,23 @@ class TestCmdCeoDesign:
         task = cmd[dsp_idx + 1]
         assert "distributed eval runner" in task
 
-    def test_design_existing_mode_is_build(self, tmp_path):
-        """--mode design on existing dir sets Mode: build in the CEO task."""
+    def test_design_existing_mode_is_design(self, tmp_path):
+        """--mode design on existing dir sets Mode: design in the CEO task."""
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: build" in task
+        assert "Mode: design" in task
 
-    def test_design_new_idea_mode_is_build(self):
-        """--mode design with new idea sets Mode: build in the CEO task."""
+    def test_design_new_idea_mode_is_ideation(self):
+        """--mode design with new idea sets Mode: ideation in the CEO task."""
         with _mock_foreground() as mock_run:
             main(["ceo", "weather CLI", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: build" in task
+        assert "Mode: ideation" in task
 
     def test_interactive_backward_compat_alias(self, tmp_path):
         """--mode interactive is accepted as a backward-compatible alias for design."""
@@ -352,14 +352,14 @@ class TestCmdCeoResearchIdeation:
         assert "## Research Ideation Mode (Phase 0)" in task
         assert "swe-bench solver agent" in task
 
-    def test_research_ideation_task_mode_is_build(self):
-        """--mode research with idea sets Mode: build (not research) since it enters ideation first."""
+    def test_research_ideation_task_mode_is_ideation(self):
+        """--mode research with idea sets Mode: ideation (not build) since it enters ideation first."""
         with _mock_foreground() as mock_run:
             main(["ceo", "swe-bench solver agent", "--mode", "research"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Mode: build" in task
+        assert "Mode: ideation" in task
 
     def test_research_ideation_no_design_block(self):
         """--mode research should NOT inject Design Mode block."""
@@ -1456,10 +1456,10 @@ class TestBuildCeoTaskDesign:
         task = _build_ceo_task(tmp_path, "build", design_existing=True)
         assert "existing_project: true" in task
 
-    def test_existing_mode_is_build(self, tmp_path):
-        """When ceo_mode is build (as set by cli.py), task shows Mode: build."""
-        task = _build_ceo_task(tmp_path, "build", design_existing=True)
-        assert "Mode: build" in task
+    def test_existing_mode_shows_display_mode(self, tmp_path):
+        """When display_mode is provided, task shows it instead of internal mode."""
+        task = _build_ceo_task(tmp_path, "build", design_existing=True, display_mode="design")
+        assert "Mode: design" in task
 
 
 class TestProfileParser:

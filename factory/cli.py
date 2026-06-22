@@ -2598,6 +2598,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         issue_url=issue_url,
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
+        display_mode=banner_mode,
     )
 
     session_name = _derive_session_name(
@@ -3232,9 +3233,11 @@ def _build_ceo_task(
     issue_url: str | None = None,
     refine_request: str | None = None,
     clean_pr: bool = False,
+    display_mode: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
-    task = f"Project: {project_path}\nMode: {mode}"
+    shown_mode = display_mode if display_mode is not None else mode
+    task = f"Project: {project_path}\nMode: {shown_mode}"
 
     if messages:
         task += "\n\n## User Messages\n"
