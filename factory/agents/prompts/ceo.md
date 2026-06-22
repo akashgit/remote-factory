@@ -1075,15 +1075,7 @@ For each CEO-approved hypothesis in `strategy/current.md`, in priority order:
 
 **Every hypothesis gets the full pipeline.** Steps 2a through 2d-qa execute sequentially for each experiment. Do NOT batch builders and skip QA. Do NOT abbreviate the pipeline for "small" changes. Initialize `$QA_ITERATION=1` fresh for each experiment.
 
-#### 2a. Baseline Eval
-
-```bash
-factory eval "$PROJECT_PATH"
-```
-
-Parse the JSON output. Save the composite score as `$SCORE_BEFORE`. If eval crashes, see Error Recovery below.
-
-#### 2b. Begin Experiment
+#### 2a. Begin Experiment
 
 ```bash
 factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
@@ -1091,7 +1083,7 @@ factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 
 Save the printed experiment ID as `$EXP_ID`.
 
-#### 2c. Create GitHub Issue
+#### 2b. Create GitHub Issue
 
 For **code-only** hypotheses (`**Type:** code` or no Type field):
 
@@ -1146,7 +1138,7 @@ gh issue create \
 
 Save issue number as `$ISSUE_NUM`.
 
-#### 2d. Implement (Builder Agent)
+#### 2c. Implement (Builder Agent)
 
 Set `$BUILDER_TIMEOUT` based on hypothesis type: **600** for code-only hypotheses, **1800** for operational or mixed hypotheses (pipelines, benchmarks, and Docker builds need more time).
 
@@ -1168,7 +1160,7 @@ Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .facto
 
 If Builder fails (no PR opened), see Error Recovery below.
 
-#### 2d-qa: QA Agent Verification (MANDATORY — DO NOT SKIP)
+#### 2d. QA Agent Verification (MANDATORY — DO NOT SKIP)
 
 **MANDATORY FOR EVERY EXPERIMENT — NO EXCEPTIONS.** The QA Agent runs for every experiment regardless of change size, change type (code, prompt, config), or whether lint/types pass. "The change is small" is NOT a valid reason to skip. Skipping QA violates Sacred Rule 9.
 
@@ -1190,12 +1182,14 @@ factory agent qa --task "Verify experiment $EXP_ID for $PROJECT_PATH. QA iterati
 
 Hypothesis: <hypothesis text>
 PR: #$PR_NUM
-Baseline score: $SCORE_BEFORE
 Baseline SHA: $BASELINE_SHA
 Issue: #$ISSUE_NUM
 
 Run all 3 verification sections:
-1. Health Check — run: factory eval $PROJECT_PATH. Report composite score and delta vs baseline $SCORE_BEFORE.
+1. Health Check — capture baseline and post-change scores:
+   a. Run: cd $PROJECT_PATH && git stash && git checkout $BASELINE_SHA && factory eval $PROJECT_PATH (save as baseline score)
+   b. Run: cd $PROJECT_PATH && git checkout <pr-branch> && git stash pop && factory eval $PROJECT_PATH (save as post-change score)
+   c. Report: composite score baseline, composite score post-change, delta
 2. Code Review — read PR diff (gh pr diff $PR_NUM), evaluate the 7-category checklist, check spec fidelity against issue #$ISSUE_NUM.
 3. Adversarial QA — actually run/test the feature described in the hypothesis. Execute the smoke test if configured in factory.md.
 
@@ -1208,7 +1202,7 @@ Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$
 2. Verify all 3 sections are present (Health Check, Code Review, Adversarial QA)
 3. Check that the QA Agent actually executed the feature (not just claimed it works)
 4. Parse the `**Verdict:**` line
-5. Extract `score_after` from the Health Check section
+5. Extract `score_before` and `score_after` from the Health Check section
 
 **Act on the QA verdict:**
 
@@ -1920,13 +1914,7 @@ The verdict decision is driven by the research target metric, with hygiene as a 
 
 #### R5a. Hygiene Gate (NON-OVERRIDABLE)
 
-Run the standard eval to check hygiene dimensions:
-
-```bash
-factory eval "$PROJECT_PATH"
-```
-
-Read the JSON output and compare each hygiene dimension (tests, lint, type_check, coverage) against the baseline scores captured before the experiment. **If ANY hygiene dimension regresses:** mandatory revert, even if the research target improved. Hygiene is a gate, not a tradeoff.
+Read the QA Agent's Health Check section from `.factory/reviews/qa-latest.md`. Extract the hygiene dimension scores (tests, lint, type_check, coverage) and compare each against the baseline scores reported by the QA Agent. **If ANY hygiene dimension regresses:** mandatory revert, even if the research target improved. Hygiene is a gate, not a tradeoff.
 
 #### R5b. Monotonic Improvement Check
 
@@ -2457,10 +2445,11 @@ If the Builder doesn't produce a PR:
 5. Move to next hypothesis — **do NOT write the code yourself** (Sacred Rule 8)
 
 ### Eval Crash
-If `factory eval` fails without producing a valid score:
-1. Check eval script: `cat "$PROJECT_PATH/eval/score.py"`
-2. If fixable, spawn the Builder to fix it — **do NOT edit eval/score.py yourself** (Sacred Rule 8)
-3. If not fixable by an agent, finalize as error with `--notes "ceo:error eval_crashed=true"`
+If the QA Agent reports that `factory eval` failed to produce a valid score:
+1. Read the QA Agent's error output from `.factory/reviews/qa-latest.md`
+2. Spawn the Builder to fix eval/score.py — **do NOT edit it yourself** (Sacred Rule 8)
+3. After the Builder fixes it, re-run the QA Agent to verify the fix worked
+4. If the Builder cannot fix it after 2 attempts, finalize as error with `--notes "ceo:error eval_crashed=true builder_could_not_fix=true"`
 
 ### Guard Violation
 If `factory guard` reports violations:
