@@ -166,7 +166,8 @@ def complete_session(
         conn.execute(
             """UPDATE sessions SET
                 status = ?, stop_reason = ?, terminal_reason = ?,
-                claude_session_id = ?, model = COALESCE(?, model),
+                claude_session_id = COALESCE(?, claude_session_id),
+                model = COALESCE(?, model),
                 input_tokens = ?, output_tokens = ?, cache_read_tokens = ?,
                 total_cost_usd = ?, duration_ms = ?, num_turns = ?,
                 updated_at = ?
@@ -179,9 +180,32 @@ def complete_session(
                 now, session_id,
             ),
         )
+
+        effective_csid = claude_session_id
+        if not effective_csid:
+            row = conn.execute(
+                "SELECT claude_session_id, agent_role, created_at FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if row:
+                effective_csid = row["claude_session_id"]
+                if not effective_csid:
+                    discovered = _discover_claude_session_id(
+                        row["agent_role"] or "", row["created_at"], project_path,
+                    )
+                    if discovered:
+                        conn.execute(
+                            "UPDATE sessions SET claude_session_id = ? WHERE id = ?",
+                            (discovered, session_id),
+                        )
+                        effective_csid = discovered
+
         ingested = False
-        if claude_session_id and isinstance(claude_session_id, str):
-            ingested = _ingest_transcript(conn, session_id, claude_session_id, project_path)
+        if effective_csid and isinstance(effective_csid, str):
+            conn.execute(
+                "DELETE FROM session_items WHERE session_id = ?", (session_id,),
+            )
+            ingested = _ingest_transcript(conn, session_id, effective_csid, project_path)
 
         if not ingested and output:
             item_id = _generate_id("item")

@@ -470,3 +470,57 @@ def test_find_transcript_no_claude_dir(tmp_path: Path) -> None:
     with patch("factory.sessions.Path.home", return_value=tmp_path / "mock_home"):
         result = _find_transcript("session", tmp_path)
     assert result is None
+
+
+def test_complete_session_discovers_claude_session_id(tmp_path: Path) -> None:
+    """complete_session discovers claude_session_id when not provided (CEO case)."""
+    import json
+    import time
+    from unittest.mock import patch
+
+    sid = begin_session(tmp_path, "ceo")
+
+    # Verify session starts with no claude_session_id
+    session = get_session(tmp_path, sid)
+    assert session["claude_session_id"] is None
+
+    # Create a transcript file that _discover_claude_session_id will find
+    project_resolved = str(tmp_path.resolve())
+    dir_name = project_resolved.replace("/", "-").replace(".", "-")
+    claude_dir = tmp_path / "mock_home" / ".claude" / "projects" / dir_name
+    claude_dir.mkdir(parents=True)
+
+    claude_sid = "discovered-ceo-session"
+    transcript = claude_dir / f"{claude_sid}.jsonl"
+    lines = [
+        json.dumps({"type": "system", "data": "init"}),
+        json.dumps({
+            "type": "user",
+            "message": {"content": [{"type": "text", "text": "Start CEO"}]},
+        }),
+        json.dumps({
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "On it."}]},
+        }),
+    ]
+    transcript.write_text("\n".join(lines) + "\n")
+    # Ensure mtime is recent enough
+    transcript.touch()
+
+    with patch("factory.sessions.Path.home", return_value=tmp_path / "mock_home"):
+        complete_session(tmp_path, sid, status="completed")
+
+    session = get_session(tmp_path, sid)
+    assert session["claude_session_id"] == claude_sid
+    assert len(session["items"]) == 2  # user + assistant from transcript
+
+
+def test_complete_session_preserves_existing_claude_session_id(tmp_path: Path) -> None:
+    """complete_session does not overwrite an existing claude_session_id with NULL."""
+    sid = begin_session(tmp_path, "builder", claude_session_id="original-id")
+
+    # Complete without providing session_id in metadata
+    complete_session(tmp_path, sid, status="completed")
+
+    session = get_session(tmp_path, sid)
+    assert session["claude_session_id"] == "original-id"
