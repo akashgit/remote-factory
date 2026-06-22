@@ -91,6 +91,8 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
 def prune_stale(project_path: Path) -> list[str]:
     """Clean up stale worktrees from crashed runs. Returns list of pruned entries."""
     project_path = project_path.resolve()
+    if not project_path.exists():
+        return []
 
     result = subprocess.run(
         ["git", "worktree", "prune", "--verbose"],

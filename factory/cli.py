@@ -2551,6 +2551,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     _print_banner(banner_mode)
     _ensure_dashboard(project_path)
 
+    if needs_materialize:
+        _materialize_project(project_path, deferred_spec)
+
     from factory.worktree import create_worktree, prune_stale, remove_worktree
     pruned = prune_stale(project_path)
     if pruned:
@@ -2564,9 +2567,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
-
-    if needs_materialize:
-        _materialize_project(project_path, deferred_spec)
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
