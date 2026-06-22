@@ -77,23 +77,23 @@ jobs:
             solver: factory
             default_instance: 'cmatrix'
             enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
-          # Claude Code solver entries — disabled on schedule (nightly runs factory only)
+          # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: featurebench
             solver: claude-code
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: terminalbench
             solver: claude-code
             default_instance: 'fix-git'
-            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: programbench
             solver: claude-code
             default_instance: 'cmatrix'
-            enabled: ${{ github.event_name != 'schedule' && ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled

@@ -274,7 +274,7 @@ CACHE_CREATION_TOKENS=0
 
 if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
     if [ -f "${SOLVER_LOG}" ]; then
-        COST_DATA=$(grep '"type":"result"' "${SOLVER_LOG}" | tail -1 | python3 -c "
+        COST_DATA=$(grep '"type":"result"' "${SOLVER_LOG}" 2>/dev/null | tail -1 | python3 -c "
 import sys, json
 try:
     data = json.loads(sys.stdin.readline())
@@ -285,7 +285,7 @@ try:
     print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
     print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
 except: pass
-" 2>/dev/null)
+" 2>/dev/null || true)
         eval "${COST_DATA}" 2>/dev/null || true
     fi
 else
