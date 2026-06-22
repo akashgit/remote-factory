@@ -293,6 +293,7 @@ jobs:
       - name: Find merged PR
         id: find_pr
         if: github.event_name == 'push'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
