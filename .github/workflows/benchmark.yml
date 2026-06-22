@@ -23,7 +23,7 @@ on:
       timeout:
         description: 'Solver timeout in seconds'
         required: false
-        default: '1800'
+        default: '7200'
         type: string
       solver:
         description: 'Solver to use'
