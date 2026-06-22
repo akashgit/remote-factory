@@ -660,9 +660,14 @@ async function sendMessage(sessionId) {
     );
     if (!resp.ok) {
       var err = await resp.json().catch(function() { return {}; });
-      alert('Error: ' + (err.detail || 'Request failed'));
+      var errMsg = err.detail || err.error || 'Request failed';
       var ld = document.getElementById('loading-' + sessionId);
-      if (ld && ld.parentNode) ld.parentNode.removeChild(ld);
+      if (ld) {
+        ld.innerHTML = '<div class="chat-role-label">Error</div><div style="color:var(--red)">' + esc(errMsg) + '</div>';
+        ld.style.borderLeftColor = 'var(--red)';
+        ld.style.background = 'rgba(248,81,73,0.06)';
+        ld.id = '';
+      }
       return;
     }
 
@@ -671,9 +676,13 @@ async function sendMessage(sessionId) {
     expandedSessions[sessionId] = true;
     await loadSessionItems(sessionId);
   } catch (e) {
-    alert('Failed to send: ' + e.message);
     var ld2 = document.getElementById('loading-' + sessionId);
-    if (ld2 && ld2.parentNode) ld2.parentNode.removeChild(ld2);
+    if (ld2) {
+      ld2.innerHTML = '<div class="chat-role-label">Error</div><div style="color:var(--red)">' + esc('Failed to send: ' + e.message) + '</div>';
+      ld2.style.borderLeftColor = 'var(--red)';
+      ld2.style.background = 'rgba(248,81,73,0.06)';
+      ld2.id = '';
+    }
   } finally {
     input = document.getElementById('chat-input-' + sessionId);
     btn = document.getElementById('chat-send-' + sessionId);

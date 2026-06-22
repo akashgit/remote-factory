@@ -885,6 +885,19 @@ def create_app(projects_dir: Path) -> FastAPI:
             if tmp_prompt_file is not None:
                 os.unlink(tmp_prompt_file.name)
 
+        if result.returncode != 0:
+            stderr_text = (result.stderr or "").strip()
+            log.warning(
+                "claude_resume_failed",
+                session_id=session_id,
+                returncode=result.returncode,
+                stderr=stderr_text,
+            )
+            return JSONResponse(
+                {"error": "Session cannot be resumed", "detail": stderr_text},
+                status_code=410,
+            )
+
         usage_update = None
         if result.stdout.strip():
             try:
