@@ -191,6 +191,10 @@ if [ "${HARBOR_EXIT}" -ne 0 ]; then
     echo "    Harbor exited with code ${HARBOR_EXIT}"
 fi
 
+# Temporarily allow failures — cost/reward extraction uses grep/find which return
+# non-zero on no match; pipefail would kill the script before reaching STATUS=success.
+set +e
+
 # Extract cost from Harbor result
 COST_USD=0
 INPUT_TOKENS=0
@@ -215,7 +219,7 @@ fi
 if [ "${COST_USD}" = "0" ] || [ -z "${COST_USD}" ]; then
     AGENT_LOG=$(find "${JOBS_DIR}" -name 'claude-code.txt' -o -name 'claude_code_stream_output.jsonl' -o -name 'factory-ceo.txt' 2>/dev/null | head -1)
     if [ -n "${AGENT_LOG}" ]; then
-        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" | tail -1 | python3 -c "
+        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" 2>/dev/null | tail -1 | python3 -c "
 import sys, json
 for line in sys.stdin:
     try:
@@ -226,7 +230,7 @@ for line in sys.stdin:
             print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
             print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
     except: pass
-" 2>/dev/null)
+" 2>/dev/null || true)
         eval "${COST_DATA}" 2>/dev/null || true
     fi
 fi
@@ -342,6 +346,8 @@ else
 fi
 echo "============================================"
 echo ""
+
+set -e
 
 STATUS="success"
 
