@@ -900,7 +900,6 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 hypothesis=args.hypothesis or "",
                 history=history_dicts,
                 project_path=project_path,
-                smoke_test_command=config.smoke_test,
                 hard_constraints=config.hard_constraints,
             )
 
@@ -1523,7 +1522,6 @@ def cmd_precheck(args: argparse.Namespace) -> int:
         project_path=project_path,
         baseline_sha=args.baseline,
         allowed_scope=config.scope if args.baseline else None,
-        smoke_test_command=config.smoke_test,
         similarity_threshold=args.similarity_threshold,
         fixed_surfaces=config.fixed_surfaces if config.fixed_surfaces else None,
     )
@@ -2189,6 +2187,7 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
 def cmd_agent(args: argparse.Namespace) -> int:
     """Invoke a specialist agent with the given task."""
+    from factory.agents.plugin import load_agent_config
     from factory.agents.runner import invoke_agent
     from factory.user_config import load_config
 
@@ -2200,6 +2199,10 @@ def cmd_agent(args: argparse.Namespace) -> int:
     project_path = Path(args.project).resolve()
     timeout = getattr(args, "timeout", 600.0)
     model = _resolve_model(args)
+    if not model:
+        agent_config = load_agent_config()
+        if role in agent_config:
+            model = agent_config[role].model or None
     runner = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
@@ -2381,7 +2384,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"2. Read the PR description: `gh pr view {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
             f"3. Run the project's test suite and lint checks\n"
-            f"4. Spawn the Reviewer agent for a structured code review\n"
+            f"4. Spawn the QA agent for health check, code review, and adversarial QA\n"
             f"5. Post your review verdict on the PR using "
             f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
             f"{' --repo ' + repo if repo else ''}`\n"
@@ -2548,6 +2551,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     _print_banner(banner_mode)
     _ensure_dashboard(project_path)
 
+    if needs_materialize:
+        _materialize_project(project_path, deferred_spec)
+
     from factory.worktree import create_worktree, prune_stale, remove_worktree
     pruned = prune_stale(project_path)
     if pruned:
@@ -2561,18 +2567,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
-
-    if needs_materialize:
-        _materialize_project(project_path, deferred_spec)
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    if design_existing:
-        ceo_mode = "build"
-    elif mode == "design" or research_ideation:
-        ceo_mode = "build"
-    else:
-        ceo_mode = mode
+    interactive = design_existing or bool(design_idea) or bool(research_ideation)
+    ceo_mode = "build" if interactive else mode
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -3248,13 +3247,12 @@ def _build_ceo_task(
 
     if design_existing:
         task += (
-            f"\n\n## Design Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**existing_project: true**\n\n"
-            f"You are in design mode on an **existing project** at `{project_path}`.\n\n"
-            f"Before running any experiments, research the project (local study + external "
-            f"best practices), distill an improvement spec through user feedback, then "
-            f"transition to Improve mode. Follow the Phase 0: Ideation protocol in your "
-            f"system prompt — the existing-project conditionals in I0, I1, and I4 apply.\n\n"
+            f"You are in interactive planning mode on an **existing project** at `{project_path}`.\n\n"
+            f"Run the Plan Loop (P0-P3) with interactive approval. Research the project "
+            f"(local study + external best practices), synthesize an improvement spec "
+            f"through user feedback, then transition to Improve mode.\n\n"
         )
         if focus:
             task += (
@@ -3270,29 +3268,28 @@ def _build_ceo_task(
             )
     elif design_idea:
         task += (
-            f"\n\n## Design Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**Raw idea from user:** {design_idea}\n\n"
-            f"You are in design mode. Before building anything, "
-            f"you must refine this idea into a complete spec through research "
-            f"and iterative user feedback. Follow the Phase 0: Ideation protocol "
-            f"in your system prompt.\n\n"
-            f"After the user approves the final spec, persist it to "
+            f"Run the Plan Loop (P0-P3) with interactive approval. "
+            f"Research the space, synthesize a build plan, and refine it "
+            f"through user feedback before building.\n\n"
+            f"After the user approves the final plan, persist it to "
             f".factory/strategy/current.md and proceed to Build mode.\n"
         )
 
     if research_ideation:
         task += (
-            f"\n\n## Research Ideation Mode (Phase 0)\n\n"
+            f"\n\n## Plan Loop (Interactive)\n\n"
             f"**Raw idea from user:** {research_ideation}\n\n"
-            f"You are in research ideation mode. This is like design ideation, "
-            f"but the Strategist MUST collect research configuration:\n"
+            f"**research_project: true**\n\n"
+            f"Run the Plan Loop (P0-P3) with interactive approval. "
+            f"This is a research project — the Strategist MUST collect research configuration:\n"
             f"- Research Target (objective, metric, target value, run_command, result_path)\n"
             f"- Mutable Surfaces (files the Builder can modify)\n"
             f"- Fixed Surfaces (ground truth / eval files that must never be touched)\n"
             f"- Research Constraints (additional rules)\n"
             f"- Cost Budget (optional)\n\n"
-            f"Follow the Phase 0: Ideation protocol, but tell the Strategist this is a "
-            f"research project. After the user approves, persist the spec AND the research "
+            f"After the user approves, persist the spec AND the research "
             f"config to .factory/strategy/current.md, then proceed to Build mode. "
             f"During Review mode (factory.md creation), populate the research sections "
             f"from the approved spec.\n"
@@ -3356,8 +3353,9 @@ def _build_ceo_task(
 
     if mode == "build":
         task += (
-            "\n\nRun Build mode: the project is new or incomplete. Follow the Build mode "
-            "pipeline (B0-B6): Research → Strategy → Build phases → E2E verification. "
+            "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
+            "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
+            "(B3-B6): Build phases → E2E verification. "
             "Do NOT skip to Improve mode — the project needs to be built first."
         )
     elif mode == "discover":
@@ -4088,8 +4086,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder", "reviewer",
-                                     "evaluator", "archivist", "ceo",
+    p.add_argument("role", choices=["researcher", "strategist", "builder", "qa",
+                                     "archivist", "ceo",
                                      "failure_analyst", "refiner"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")

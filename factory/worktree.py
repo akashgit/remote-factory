@@ -19,10 +19,12 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     run_id = secrets.token_hex(4)
     branch = f"factory/run-{run_id}"
     factory_dir = project_path / ".factory"
-    wt_dir = factory_dir / "worktrees" / f"run-{run_id}"
+    wt_parent = project_path / ".factory-worktrees"
+    wt_dir = wt_parent / f"run-{run_id}"
 
     log.info("worktree_create", branch=branch, path=str(wt_dir))
 
+    wt_parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
         ["git", "worktree", "add", str(wt_dir), "-b", branch, base_branch],
         cwd=project_path,
@@ -30,10 +32,8 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
         capture_output=True,
     )
 
-    # Symlink worktree/.factory → the real .factory dir (resolved absolute path).
-    # The worktree lives inside .factory/worktrees/, so this is inherently circular
-    # for recursive traversal — but safe because shutil.rmtree and os.walk don't
-    # follow symlinks by default.
+    # Symlink worktree/.factory → the real .factory dir so the CEO can
+    # access experiment data from within the worktree.
     wt_factory = wt_dir / ".factory"
     if wt_factory.exists() or wt_factory.is_symlink():
         if wt_factory.is_dir() and not wt_factory.is_symlink():
@@ -90,8 +90,8 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
 
 def prune_stale(project_path: Path) -> list[str]:
     """Clean up stale worktrees from crashed runs. Returns list of pruned entries."""
-    factory_dir = project_path / ".factory"
-    if not factory_dir.is_dir():
+    project_path = project_path.resolve()
+    if not project_path.exists():
         return []
 
     result = subprocess.run(
@@ -102,9 +102,17 @@ def prune_stale(project_path: Path) -> list[str]:
     )
     pruned = [line for line in result.stderr.splitlines() if "Removing" in line]
 
-    wt_parent = factory_dir / "worktrees"
-    if wt_parent.exists():
-        active = _list_active_worktrees(project_path)
+    # Check both current (.factory-worktrees/) and legacy (.factory/worktrees/) locations
+    wt_parents = [
+        project_path / ".factory-worktrees",
+        project_path / ".factory" / "worktrees",
+    ]
+    active: set[str] | None = None
+    for wt_parent in wt_parents:
+        if not wt_parent.is_dir():
+            continue
+        if active is None:
+            active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
                 run_id = d.name.removeprefix("run-")

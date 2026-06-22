@@ -30,7 +30,7 @@ def _parse_usage(data: dict) -> AgentUsage:
         output_tokens=usage_block.get("output_tokens", 0),
         cache_read_tokens=usage_block.get("cache_read_input_tokens", 0),
         cache_creation_tokens=usage_block.get("cache_creation_input_tokens", 0),
-        total_cost_usd=data.get("cost_usd", 0.0) or 0.0,
+        total_cost_usd=data.get("total_cost_usd", 0.0) or 0.0,
         duration_ms=data.get("duration_ms", 0.0) or 0.0,
         num_turns=data.get("num_turns", 0) or 0,
         model=data.get("model", ""),

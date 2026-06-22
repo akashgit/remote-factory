@@ -8,7 +8,7 @@ researcher:
     a domain before making changes.
 
 strategist:
-  model: sonnet
+  model: opus
   tools: [Bash, Read, Write, Grep, Glob]
   description: >-
     Dual-mode agent: generates prioritized improvement hypotheses (Improve mode)
@@ -17,31 +17,25 @@ strategist:
     a plan for what to improve next or needs an idea distilled into a spec.
 
 builder:
-  model: sonnet
+  model: opus
   tools: [Bash, Read, Edit, Write, Grep, Glob]
   description: >-
     Implement a single focused change and open a pull request.
     Reads issues, writes code, runs tests, and creates PRs on feature branches.
     Use when the user wants a specific feature built or bug fixed.
 
-reviewer:
-  model: sonnet
+qa:
+  model: opus
   tools: [Bash, Read, Grep, Glob]
   description: >-
-    Review pull requests against guard rules, eval scores, and code quality criteria.
-    Makes keep/revert decisions on changes. Use when the user wants a structured
-    code review or keep/revert verdict.
-
-evaluator:
-  model: sonnet
-  tools: [Bash, Read, Grep, Glob]
-  description: >-
-    Run project evaluations and interpret the results.
-    Executes eval commands, compares before/after scores, and explains trends.
-    Use when the user wants to measure project quality or understand score changes.
+    Independent verification agent combining health checks, code review, and
+    adversarial QA into a single quality gate. Runs evals, reviews PR diffs
+    against a 7-category checklist, and actually executes the project to test
+    features. Read-only — cannot modify source files. Use when the user wants
+    thorough post-Builder verification.
 
 archivist:
-  model: sonnet
+  model: haiku
   tools: [Bash, Read, Write, Grep, Glob]
   description: >-
     Record experiment results, research findings, and project knowledge to an
@@ -58,9 +52,25 @@ ceo:
     Use when the user wants a complete evolution cycle.
 
 failure_analyst:
-  model: sonnet
+  model: opus
   tools: [Bash, Read, Grep, Glob]
   description: >-
     Analyze research experiment failures by stage and root cause.
     Reads run artifacts, classifies failures, and produces structured analysis
     for the Strategist. Use after a research experiment fails.
+
+refiner:
+  model: opus
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Classify and scope user-directed refinement requests. Analyzes which files
+    need to change, estimates effort, and produces a structured classification
+    for the CEO. Use when the user requests a specific change via --refine.
+
+profiler:
+  model: opus
+  tools: [Bash, Read, Grep, Glob]
+  description: >-
+    Synthesize a user's working style, preferences, and decision patterns from
+    factory session evidence into a coherent prose profile. Use when generating
+    or updating a user profile from experiment data.

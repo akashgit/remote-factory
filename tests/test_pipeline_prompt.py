@@ -53,7 +53,7 @@ class TestPipelineSkillStructure:
 
     def test_references_roles_from_config(self, pipeline_skill):
         config = load_agent_config()
-        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        core_roles = {"researcher", "strategist", "builder", "qa", "archivist"}
         for role in core_roles:
             assert role in config, f"{role} missing from agents.yml"
             assert role in pipeline_skill, f"{role} missing from pipeline skill"
@@ -96,13 +96,13 @@ class TestPipelineSubagentsSkillStructure:
 
     def test_references_roles_matching_config(self, subagents_skill):
         config = load_agent_config()
-        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        core_roles = {"researcher", "strategist", "builder", "qa", "archivist"}
         for role in core_roles:
             assert role in config, f"{role} missing from agents.yml"
             assert role in subagents_skill, f"{role} missing from subagents skill"
 
     def test_subagent_types_use_plugin_namespace(self, subagents_skill):
-        core_roles = {"researcher", "strategist", "builder", "reviewer", "evaluator", "archivist"}
+        core_roles = {"researcher", "strategist", "builder", "qa", "archivist"}
         for role in core_roles:
             assert f"factory:{role}" in subagents_skill, \
                 f"subagent type 'factory:{role}' not referenced in skill"

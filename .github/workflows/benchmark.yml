@@ -1,6 +1,8 @@
 name: Benchmark CI
 
 on:
+  schedule:
+    - cron: '17 6 * * 1-5'
   workflow_dispatch:
     inputs:
       benchmark:
@@ -21,19 +23,22 @@ on:
       timeout:
         description: 'Solver timeout in seconds'
         required: false
-        default: '1800'
+        default: '7200'
         type: string
+      solver:
+        description: 'Solver to use'
+        required: false
+        type: choice
+        default: 'factory'
+        options:
+          - factory
+          - claude-code
+          - both
       pr_number:
         description: 'PR number to post results to (optional)'
         required: false
         default: ''
         type: string
-  # pull_request trigger disabled — use workflow_dispatch with pr_number instead
-  # pull_request:
-  #   types: [opened, synchronize]
-  #   paths:
-  #     - 'factory/**'
-  #     - 'benchmarks/**'
   release:
     types: [created]
 
@@ -45,6 +50,7 @@ permissions:
   contents: write
   pull-requests: write
   id-token: write
+  statuses: write
 
 jobs:
   benchmark:
@@ -54,18 +60,40 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Factory solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
+            solver: factory
             default_instance: 'sympy__sympy-20590'
-            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all' }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: featurebench
+            solver: factory
             default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
-            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all' }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: terminalbench
+            solver: factory
             default_instance: 'fix-git'
-            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all' }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: programbench
+            solver: factory
             default_instance: 'cmatrix'
-            enabled: ${{ (github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all' }}
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
+          - benchmark: swebench
+            solver: claude-code
+            default_instance: 'sympy__sympy-20590'
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: featurebench
+            solver: claude-code
+            default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: terminalbench
+            solver: claude-code
+            default_instance: 'fix-git'
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'terminalbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: programbench
+            solver: claude-code
+            default_instance: 'cmatrix'
+            enabled: ${{ github.event_name == 'schedule' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
@@ -104,6 +132,15 @@ jobs:
           echo "PATH=$(npm prefix -g)/bin:$PATH" >> "$GITHUB_ENV"
           claude --version
 
+      - name: Install Factory CLI
+        if: steps.gate.outputs.run == 'true' && matrix.solver == 'factory'
+        run: |
+          uv tool install 'remote-factory @ git+https://github.com/akashgit/remote-factory.git'
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "PATH=$HOME/.local/bin:$PATH" >> "$GITHUB_ENV"
+          factory --help > /dev/null
+          echo "Factory CLI installed"
+
       - name: Determine instance ID
         id: config
         if: steps.gate.outputs.run == 'true'
@@ -122,11 +159,13 @@ jobs:
         run: |
           if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
             echo "value=$BENCHMARK_TIMEOUT" >> "$GITHUB_OUTPUT"
+          elif [ '${{ github.event_name }}' = 'schedule' ]; then
+            echo 'value=3600' >> "$GITHUB_OUTPUT"
           else
             echo 'value=600' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run ${{ matrix.benchmark }} benchmark
+      - name: Run ${{ matrix.benchmark }} benchmark (${{ matrix.solver }})
         if: steps.gate.outputs.run == 'true'
         env:
           CLAUDE_CODE_USE_VERTEX: "1"
@@ -140,13 +179,13 @@ jobs:
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
-          benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }}
+          benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}
 
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always() && steps.gate.outputs.run == 'true'
         with:
-          name: benchmark-results-${{ matrix.benchmark }}
+          name: benchmark-results-${{ matrix.benchmark }}-${{ matrix.solver }}
           path: benchmarks/results/
 
       - name: Print summary
@@ -168,12 +207,87 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download all benchmark artifacts
         uses: actions/download-artifact@v4
         with:
           pattern: benchmark-results-*
           merge-multiple: true
           path: results/
+
+      - name: Setup benchmark-data branch
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/${{ github.repository }}.git benchmark-data >/dev/null 2>&1; then
+            git clone --single-branch --branch benchmark-data https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git benchmark-data
+          else
+            mkdir benchmark-data && cd benchmark-data
+            git init
+            git checkout -b benchmark-data
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            touch results.jsonl
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add . && git commit -m 'Initialize benchmark data branch'
+            git push -u origin benchmark-data
+          fi
+
+      - name: Append results to history
+        if: always()
+        run: |
+          cat > /tmp/append_results.py << 'PYEOF'
+          import json, sys, os, glob
+
+          results_dir = 'results'
+          output = 'benchmark-data/results.jsonl'
+
+          if not os.path.isdir(results_dir):
+              print(f'ERROR: {results_dir} not found', file=sys.stderr)
+              sys.exit(0)
+
+          files = sorted(glob.glob(os.path.join(results_dir, '*.json')))
+          print(f'Found {len(files)} result files in {results_dir}', file=sys.stderr)
+
+          for f in files:
+              print(f'Processing: {f}', file=sys.stderr)
+              with open(f) as fh:
+                  data = json.load(fh)
+              data['run_id'] = os.environ.get('RUN_ID', '')
+              data['commit'] = os.environ.get('COMMIT', '')
+              data['ref'] = os.environ.get('REF', '')
+              data['run_url'] = os.environ.get('RUN_URL', '')
+              data['trigger'] = os.environ.get('TRIGGER', '')
+              with open(output, 'a') as out:
+                  out.write(json.dumps(data) + '\n')
+              print(f'Wrote to {output}', file=sys.stderr)
+
+          print(f'Final size: {os.path.getsize(output)} bytes', file=sys.stderr)
+          PYEOF
+          RUN_ID="${{ github.run_id }}" \
+          COMMIT="${{ github.sha }}" \
+          REF="${{ github.ref }}" \
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          TRIGGER="${{ github.event_name }}" \
+          python3 /tmp/append_results.py
+
+          echo 'DEBUG: results dir contents:'
+          ls -la results/ 2>/dev/null || echo 'results/ not found'
+          echo 'DEBUG: benchmark-data/results.jsonl size:'
+          wc -c benchmark-data/results.jsonl 2>/dev/null || echo 'file not found'
+          cat benchmark-data/results.jsonl 2>/dev/null | head -3
+
+      - name: Push benchmark data
+        if: always()
+        run: |
+          cd benchmark-data
+          echo 'DEBUG: results.jsonl in benchmark-data:'
+          wc -c results.jsonl
+          git status
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add results.jsonl
+          git diff --cached --quiet || git commit -m "benchmark: add results from run ${{ github.run_id }} [skip ci]"
+          git push origin benchmark-data || (git pull --rebase origin benchmark-data && git push origin benchmark-data)
 
       - name: Post PR comment
         if: github.event_name == 'pull_request' || inputs.pr_number != ''
@@ -218,6 +332,133 @@ jobs:
               body += '_No benchmark results found._\n';
             }
 
+            const historyPath = 'benchmark-data/results.jsonl';
+            let baselines = {};
+            if (fs.existsSync(historyPath)) {
+              const lines = fs.readFileSync(historyPath, 'utf8').trim().split('\n').filter(Boolean);
+              for (const line of lines) {
+                try {
+                  const entry = JSON.parse(line);
+                  if (entry.ref === 'refs/heads/main') {
+                    const solver = entry.solver || entry.details?.solver || 'unknown';
+                    const key = entry.benchmark + '-' + solver;
+                    baselines[key] = entry;
+                  }
+                } catch {}
+              }
+            }
+
+            if (hasResults && Object.keys(baselines).length > 0) {
+              const pctChange = (curr, base) => {
+                if (!base || base === 0) return '';
+                const p = ((curr - base) / Math.abs(base)) * 100;
+                return ' (' + (p >= 0 ? '+' : '') + p.toFixed(1) + '%)';
+              };
+
+              let totalScore = 0, totalBaselineScore = 0, resultCount = 0, baselineCount = 0;
+              let totalCost = 0, costCount = 0, totalDuration = 0, durationCount = 0;
+              for (const file of files) {
+                if (!file.endsWith('.json')) continue;
+                const d = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                const s = d.solver || d.details?.solver || 'unknown';
+                const bl = baselines[d.benchmark + '-' + s];
+                totalScore += d.score; resultCount++;
+                if (bl) { totalBaselineScore += bl.score; baselineCount++; }
+                if (d.details?.cost_usd > 0) { totalCost += d.details.cost_usd; costCount++; }
+                if (d.duration_seconds > 0) { totalDuration += d.duration_seconds; durationCount++; }
+              }
+
+              const avgScore = resultCount > 0 ? (totalScore / resultCount * 100) : 0;
+              const avgBaseline = baselineCount > 0 ? (totalBaselineScore / baselineCount * 100) : null;
+              const avgCostStr = costCount > 0 ? '$' + (totalCost / costCount).toFixed(2) : 'N/A';
+              const avgDurStr = durationCount > 0 ? Math.round(totalDuration / durationCount) + 's' : 'N/A';
+              let summary = '**Overall: ' + avgScore.toFixed(1) + '% accuracy';
+              if (avgBaseline != null) {
+                const diff = avgScore - avgBaseline;
+                const arrow = diff > 0 ? '▲' : diff < 0 ? '▼' : '=';
+                summary += ' (' + arrow + ' ' + (diff >= 0 ? '+' : '') + diff.toFixed(1) + '% vs main)';
+              }
+              summary += ' | ' + avgCostStr + ' avg cost | ' + avgDurStr + ' avg duration**';
+              body += summary + '\n\n';
+
+              body += '### Comparison vs Main\n\n';
+              body += '| Benchmark | Solver | Score | vs Main | Cost | vs Main | Duration | vs Main |\n';
+              body += '|-----------|--------|-------|---------|------|---------|----------|---------|\n';
+
+              for (const file of files) {
+                if (!file.endsWith('.json')) continue;
+                const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                const solver = data.solver || data.details?.solver || 'unknown';
+                const key = data.benchmark + '-' + solver;
+                const baseline = baselines[key];
+
+                const scoreVal = data.score;
+                let scoreVs = 'N/A';
+                if (baseline) {
+                  if (baseline.score === 0 && data.score === 0) {
+                    scoreVs = '= 0%';
+                  } else if (baseline.score === 0) {
+                    scoreVs = '+∞% ▲';
+                  } else {
+                    const sp = ((data.score - baseline.score) / Math.abs(baseline.score)) * 100;
+                    scoreVs = (sp >= 0 ? '+' : '') + sp.toFixed(1) + '% ' + (sp > 0 ? '▲' : sp < 0 ? '▼' : '=');
+                  }
+                }
+
+                const hasCurrCost = data.details?.cost_usd != null && data.details.cost_usd > 0;
+                const hasBaseCost = baseline?.details?.cost_usd != null && baseline.details.cost_usd > 0;
+                const costVal = hasCurrCost ? '$' + data.details.cost_usd.toFixed(2) : 'N/A';
+                let costVs = 'N/A';
+                if (hasCurrCost && hasBaseCost) {
+                  const cd = data.details.cost_usd - baseline.details.cost_usd;
+                  if (cd === 0) { costVs = '= $0.00'; }
+                  else {
+                    const ca = cd < 0 ? '▲' : '▼';
+                    costVs = (cd < 0 ? '-' : '+') + '$' + Math.abs(cd).toFixed(2) + pctChange(data.details.cost_usd, baseline.details.cost_usd) + ' ' + ca;
+                  }
+                }
+
+                const hasCurrDur = data.duration_seconds != null && data.duration_seconds > 0;
+                const hasBaseDur = baseline?.duration_seconds != null && baseline.duration_seconds > 0;
+                const durVal = hasCurrDur ? Math.round(data.duration_seconds) + 's' : 'N/A';
+                let durVs = 'N/A';
+                if (hasCurrDur && hasBaseDur) {
+                  const dd = Math.round(data.duration_seconds - baseline.duration_seconds);
+                  if (dd === 0) { durVs = '= 0s'; }
+                  else {
+                    const da = dd < 0 ? '▲' : '▼';
+                    durVs = (dd < 0 ? '-' : '+') + Math.abs(dd) + 's' + pctChange(data.duration_seconds, baseline.duration_seconds) + ' ' + da;
+                  }
+                }
+
+                body += '| ' + data.benchmark + ' | ' + solver + ' | ' + scoreVal + ' | ' + scoreVs + ' | ' + costVal + ' | ' + costVs + ' | ' + durVal + ' | ' + durVs + ' |\n';
+              }
+              body += '\n_Baseline: latest main branch run per benchmark+solver. ▲ = improvement, ▼ = regression._\n\n';
+            } else if (hasResults) {
+              body += '_No baseline available for comparison._\n\n';
+            }
+
+            body += '\n<details>\n<summary>How these benchmarks run</summary>\n\n';
+
+            body += '**Factory solver:** Runs `factory ceo . --headless --no-github --prompt <task>` — ';
+            body += 'full factory loop (research → strategize → build → review). ';
+            body += 'See [`benchmarks/run-swebench.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/run-swebench.sh).\n\n';
+
+            body += '**Claude Code solver:** Runs `claude -p <task> --model claude-opus-4-6[1m] --max-turns 200` — ';
+            body += 'single-shot solve. Same script files as factory, switched via `--solver` flag.\n\n';
+
+            body += '**TerminalBench:** Uses [Harbor framework](https://harborframework.com). ';
+            body += 'Factory runs via custom [`factory_harbor_agent.py`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/factory_harbor_agent.py), ';
+            body += 'Claude Code uses Harbor\'s built-in agent.\n\n';
+
+            body += '**ProgramBench:** Both solvers run inside a Docker cleanroom container. ';
+            body += 'See [`benchmarks/run-programbench.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/run-programbench.sh).\n\n';
+
+            body += '**Config:** `claude-opus-4-6[1m]`, effort=XHIGH, thinking=128K tokens. ';
+            body += 'See [`benchmarks/lib.sh`](https://github.com/akashgit/remote-factory/blob/main/benchmarks/lib.sh).\n\n';
+
+            body += '</details>\n';
+
             const { data: comments } = await github.rest.issues.listComments({
               issue_number: prNumber,
               owner: context.repo.owner,
@@ -241,6 +482,91 @@ jobs:
                 body: body
               });
             }
+
+      - name: Update benchmark status
+        if: inputs.pr_number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const prNumber = parseInt('${{ inputs.pr_number }}', 10);
+            if (!prNumber || isNaN(prNumber)) return;
+
+            // Check factory results in downloaded artifacts
+            let factoryResults = [];
+            if (fs.existsSync('results')) {
+              for (const file of fs.readdirSync('results')) {
+                if (!file.endsWith('.json')) continue;
+                try {
+                  const data = JSON.parse(fs.readFileSync('results/' + file, 'utf8'));
+                  const solver = data.solver || data.details?.solver || 'unknown';
+                  if (solver === 'factory') {
+                    factoryResults.push(data);
+                  }
+                } catch {}
+              }
+            }
+
+            if (factoryResults.length === 0) {
+              console.log('No factory results found. Status stays pending.');
+              return;
+            }
+
+            const REQUIRED_BENCHMARKS = ['swebench', 'featurebench', 'terminalbench', 'programbench'];
+            const factoryBenchmarks = new Set(factoryResults.map(r => r.benchmark));
+            const missing = REQUIRED_BENCHMARKS.filter(b => !factoryBenchmarks.has(b));
+
+            if (missing.length > 0) {
+              const ran = factoryResults.length;
+              const total = REQUIRED_BENCHMARKS.length;
+              console.log('Only ' + ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '));
+
+              const { data: pr } = await github.rest.pulls.get({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: prNumber
+              });
+
+              await github.rest.repos.createCommitStatus({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                sha: pr.head.sha,
+                state: 'pending',
+                context: 'benchmark-eval',
+                description: ran + '/' + total + ' factory benchmarks ran. Missing: ' + missing.join(', '),
+                target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
+              });
+              return;
+            }
+
+            let state, description;
+            const allSuccess = factoryResults.every(r => r.status === 'success');
+            if (allSuccess) {
+              state = 'success';
+              description = 'All 4 factory benchmarks completed.';
+            } else {
+              const failed = factoryResults.filter(r => r.status !== 'success').length;
+              state = 'failure';
+              description = failed + ' of ' + REQUIRED_BENCHMARKS.length + ' factory benchmarks had pipeline errors.';
+            }
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: pr.head.sha,
+              state: state,
+              context: 'benchmark-eval',
+              description: description,
+              target_url: 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId
+            });
+
+            console.log('Set benchmark-eval status to ' + state + ': ' + description);
 
       - name: Update release notes
         if: github.event_name == 'release'

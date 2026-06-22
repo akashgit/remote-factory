@@ -31,7 +31,7 @@ experiment_id: {{id}}
 verdict: {{verdict}}
 score_delta: {{delta}}
 date: {{date}}
-source: factory-evaluator
+source: factory-qa
 ---
 
 # Experiment #{{id}}: {{hypothesis}}
@@ -319,7 +319,7 @@ def write_experiment_note(
         f"verdict: {record.verdict}",
         f"score_delta: {record.delta if record.delta is not None else 0.0}",
         f"date: {date_str}",
-        "source: factory-evaluator",
+        "source: factory-qa",
         "---",
         "",
         f"# Experiment #{record.id}: {record.hypothesis[:80]}",

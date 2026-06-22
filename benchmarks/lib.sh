@@ -41,6 +41,7 @@ details = json.loads(_dj) if _dj else {}
 result = {
     'benchmark': '${BENCHMARK}',
     'instance_id': '${INSTANCE_ID}',
+    'solver': '${BENCHMARK_SOLVER:-unknown}',
     'passed': ${PASSED:-0},
     'total': ${TOTAL:-0},
     'score': round(${PASSED:-0} / max(${TOTAL:-0}, 1), 4),
@@ -79,7 +80,8 @@ ensure_uvx() {
 #        check_gcloud_creds warning    (warn if missing)
 check_gcloud_creds() {
     local mode="${1:-warning}"
-    if [ ! -f "${HOME}/.config/gcloud/application_default_credentials.json" ]; then
+    local creds_file="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
+    if [ ! -f "${creds_file}" ]; then
         if [ "${mode}" = "required" ]; then
             echo "    ERROR: gcloud application default credentials not found."
             echo "    Run: gcloud auth application-default login"

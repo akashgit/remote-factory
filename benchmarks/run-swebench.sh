@@ -12,7 +12,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # ── Configuration ──
 
 INSTANCE_ID="${1:-sympy__sympy-20590}"
-SOLVER_TIMEOUT="${2:-1800}"
+SOLVER_TIMEOUT="${2:-3600}"
 DATASET="${3:-princeton-nlp/SWE-bench_Lite}"
 
 BENCHMARK="swebench"
@@ -39,6 +39,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -78,6 +79,10 @@ if ! command -v claude &>/dev/null; then
     MISSING+=("claude (Claude Code CLI — install from https://docs.anthropic.com/en/docs/claude-code)")
 fi
 
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ] && ! command -v factory &>/dev/null; then
+    MISSING+=("factory (Factory CLI — install from the factory repo)")
+fi
+
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo "    ERROR: Missing prerequisites:"
     for m in "${MISSING[@]}"; do
@@ -89,6 +94,10 @@ fi
 echo "    python3: found"
 echo "    docker: found"
 echo "    claude: found"
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    echo "    factory: found"
+fi
+echo "    solver: ${BENCHMARK_SOLVER:-factory}"
 
 ensure_uvx
 
@@ -164,9 +173,9 @@ echo "    Working directory: ${WORKSPACE}/repo"
 
 echo ""
 
-# ── Step 5: Run solver (Claude Code) ──
+# ── Step 5: Run solver (Factory CEO) ──
 
-log "Step 5: Running Claude Code solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 5: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT_FILE="${WORKSPACE}/solver_prompt.txt"
@@ -175,9 +184,7 @@ import json
 with open('${INSTANCE_JSON}') as f:
     instance = json.load(f)
 
-# Rewrite /testbed/ paths to relative paths (we can't create /testbed symlink)
 problem_statement = instance['problem_statement']
-problem_statement = problem_statement.replace('/testbed/', './')
 
 prompt = '''You are fixing a bug in an open-source Python project.
 
@@ -207,22 +214,141 @@ cd "${WORKSPACE}/repo"
 
 export_claude_env
 
+# Temporarily allow failures — Steps 6-9 must always run regardless of solver/post-processing outcome
+set +e
+
 SOLVER_LOG="${WORKSPACE}/solver_output.log"
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" claude -p "$(cat "${SOLVER_PROMPT_FILE}")" \
-    --model "${ANTHROPIC_MODEL}" \
-    --verbose \
-    --max-turns 200 \
-    --permission-mode bypassPermissions \
-    --output-format stream-json \
-    2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
-SOLVER_EXIT=${PIPESTATUS[0]}
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    # Raw Claude Code path
+    timeout "${SOLVER_TIMEOUT}" claude -p "$(cat "${SOLVER_PROMPT_FILE}")" \
+        --model "${ANTHROPIC_MODEL}" \
+        --verbose --max-turns 200 \
+        --permission-mode bypassPermissions \
+        --output-format stream-json \
+        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
+    SOLVER_EXIT=${PIPESTATUS[0]}
+else
+    # Factory CEO path
+    cat > "${WORKSPACE}/repo/factory.md" << 'FACTORYEOF'
+---
+goal: Fix the bug described in the problem statement
+---
+FACTORYEOF
+
+    timeout "${SOLVER_TIMEOUT}" factory ceo . \
+        --headless \
+        --no-github \
+        --prompt "${SOLVER_PROMPT_FILE}" \
+        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
+    SOLVER_EXIT=${PIPESTATUS[0]}
+fi
 
 if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
 elif [ "${SOLVER_EXIT}" -ne 0 ]; then
     echo "    Solver exited with code ${SOLVER_EXIT}"
 fi
+
+# Extract cost and token data from solver output
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    if [ -f "${SOLVER_LOG}" ]; then
+        COST_DATA=$(grep '"type":"result"' "${SOLVER_LOG}" 2>/dev/null | tail -1 | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.readline())
+    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
+    u = data.get('usage', {})
+    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
+    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
+except: pass
+" 2>/dev/null || true)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+else
+    EVENTS_FILE="${WORKSPACE}/repo/.factory/events.jsonl"
+    if [ -f "${EVENTS_FILE}" ]; then
+        COST_DATA=$(python3 -c "
+import json
+total_cost = 0
+total_input = 0
+total_output = 0
+total_cache_read = 0
+total_cache_create = 0
+for line in open('${EVENTS_FILE}'):
+    try:
+        e = json.loads(line)
+        if e.get('type') == 'agent.completed':
+            d = e.get('data', {})
+            total_cost += d.get('total_cost_usd', 0) or 0
+            total_input += d.get('input_tokens', 0)
+            total_output += d.get('output_tokens', 0)
+            total_cache_read += d.get('cache_read_tokens', 0)
+    except: pass
+print(f'COST_USD={total_cost}')
+print(f'INPUT_TOKENS={total_input}')
+print(f'OUTPUT_TOKENS={total_output}')
+print(f'CACHE_READ_TOKENS={total_cache_read}')
+print(f'CACHE_CREATION_TOKENS={total_cache_create}')
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+fi
+
+# Post-processing: recover factory branch/worktree changes (factory solver only)
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    cd "${WORKSPACE}/repo"
+
+    # Strategy 1: Merge surviving factory branch
+    FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
+    if [ -n "$FACTORY_BRANCH" ]; then
+        echo "Merging factory branch: $FACTORY_BRANCH"
+        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+    fi
+
+    # Strategy 2: Recover orphaned commits via git fsck
+    if [ -z "$FACTORY_BRANCH" ]; then
+        echo "No factory branch, finding orphaned commits..."
+        ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
+        if [ -n "$ORPHAN_COMMITS" ]; then
+            BEST_COMMIT=""
+            BEST_TIME=0
+            for SHA in $ORPHAN_COMMITS; do
+                COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
+                if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                    BEST_TIME=$COMMIT_TIME
+                    BEST_COMMIT=$SHA
+                fi
+            done
+            if [ -n "$BEST_COMMIT" ]; then
+                echo "Recovering from orphan tip: $BEST_COMMIT"
+                echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
+                git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+            fi
+        fi
+    fi
+
+    # Strategy 3: Recover from surviving worktree directories
+    for wt in .factory-worktrees/*/; do
+        if [ -d "$wt" ]; then
+            echo "Recovering files from worktree: $wt"
+            rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
+        fi
+    done
+fi
+
+set -e
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
@@ -233,7 +359,13 @@ log "Step 6: Capturing patch"
 
 cd "${WORKSPACE}/repo"
 PATCH_FILE="${WORKSPACE}/model_patch.diff"
-git diff > "${PATCH_FILE}"
+git diff "${BASE_COMMIT}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+
+# Fallback: if committed diff is empty, try unstaged diff too
+if [ ! -s "${PATCH_FILE}" ]; then
+    echo "    No committed changes found, trying unstaged diff..."
+    git diff -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+fi
 
 PATCH_SIZE="$(wc -c < "${PATCH_FILE}")"
 if [ "${PATCH_SIZE}" -eq 0 ]; then
@@ -241,7 +373,7 @@ if [ "${PATCH_SIZE}" -eq 0 ]; then
     echo "    Evaluation will proceed but instance will not be resolved."
 else
     PATCH_LINES="$(wc -l < "${PATCH_FILE}")"
-    PATCH_FILES="$(git diff --name-only | wc -l)"
+    PATCH_FILES="$(git diff "${BASE_COMMIT}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
     echo "    Patch: ${PATCH_LINES} lines across ${PATCH_FILES} file(s)"
 fi
 echo ""

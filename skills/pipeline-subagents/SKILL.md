@@ -34,8 +34,7 @@ Agent({
 | factory:researcher | Web research, codebase analysis, domain studies |
 | factory:strategist | Generate prioritized hypotheses from observations |
 | factory:builder | Implement code changes on a feature branch, open PRs |
-| factory:reviewer | Review PRs, guard checks, keep/revert verdicts |
-| factory:evaluator | Run evals, compare before/after scores |
+| factory:qa | Health checks, code review, adversarial QA verification |
 | factory:archivist | Record findings to `.factory/archive/` |
 | factory:distiller | Refine vague ideas into buildable specs |
 
@@ -47,7 +46,7 @@ Issue multiple Agent tool calls in the **same message** — they run concurrentl
 
 ```
 Agent({ subagent_type: "factory:researcher", prompt: "Research the auth bug..." })
-Agent({ subagent_type: "factory:evaluator", prompt: "Run baseline eval..." })
+Agent({ subagent_type: "factory:qa", prompt: "Run baseline eval..." })
 ```
 
 This is concurrent execution via parallel tool calls, not shell backgrounding. Each Agent call is still individually synchronous.
@@ -77,7 +76,7 @@ Agent({ subagent_type: "factory:archivist", prompt: "Archive findings...", run_i
 | Step | Role | Task Summary | Depends On |
 |------|------|-------------|-----------|
 | S1 | researcher | ... | - |
-| S2 | evaluator | ... | - |
+| S2 | qa | ... | - |
 | S3 | strategist | ... | S1, S2 |
 | ... | ... | ... | ... |
 

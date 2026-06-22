@@ -51,9 +51,9 @@ A dedicated Claude Code agent that owns the full factory workflow. Spawned via `
 
 ### Layer 3: Specialist Agents (`factory/agents/`)
 
-Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
 
-**Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), Reviewer (guard), Evaluator (measure), Archivist (record), Refiner (scope refinements), CEO (orchestrate).
+**Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), QA (health check + code review + adversarial QA), Archivist (record), Refiner (scope refinements), CEO (orchestrate).
 
 ### Key data flow
 

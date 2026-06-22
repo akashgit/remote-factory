@@ -43,6 +43,8 @@ TOTAL=1
 cleanup() {
     local exit_code=$?
     if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
+        log "Copying factory events log for debugging"
+        docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
         log "Stopping and removing container ${CONTAINER_NAME}"
         docker stop "${CONTAINER_NAME}" 2>/dev/null || true
         docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
@@ -56,6 +58,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -126,16 +129,10 @@ log "Step 4: Starting cleanroom container"
 RESULTS_DIR="$(mktemp -d /tmp/programbench-results-XXXXXX)"
 echo "    Results directory: ${RESULTS_DIR}"
 
-GCLOUD_MOUNT_ARGS=()
-GCLOUD_ADC="${HOME}/.config/gcloud/application_default_credentials.json"
-if [ -f "${GCLOUD_ADC}" ]; then
-    GCLOUD_MOUNT_ARGS=(-v "${HOME}/.config/gcloud:/home/agent/.config/gcloud:ro")
-    echo "    Mounting gcloud credentials"
-fi
+GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
 
 docker run -d --name "${CONTAINER_NAME}" \
     -v "${RESULTS_DIR}:/results" \
-    "${GCLOUD_MOUNT_ARGS[@]+"${GCLOUD_MOUNT_ARGS[@]}"}" \
     "${IMAGE}" \
     sleep infinity
 
@@ -144,21 +141,116 @@ echo ""
 
 # ── Step 5: Install Claude Code inside container ──
 
-log "Step 5: Installing Claude Code inside container"
-echo "    Installing Node.js 22 and Claude Code..."
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    log "Step 5: Installing Claude Code inside container"
+    echo "    Installing Node.js 22 and Claude Code..."
+else
+    log "Step 5: Installing Claude Code and Factory inside container"
+    echo "    Installing Node.js 22, Claude Code, and Factory..."
+fi
 
 docker exec "${CONTAINER_NAME}" bash -c '
+    apt-get update && apt-get install -y git rsync &&
     curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&
-    apt-get install -y nodejs &&
+    apt-get install -y --no-install-recommends nodejs &&
     npm install -g @anthropic-ai/claude-code
 '
 
-echo "    Claude Code installed."
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    docker exec "${CONTAINER_NAME}" bash -c '
+        curl -LsSf https://astral.sh/uv/install.sh | sh &&
+        export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
+        uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
+        which factory
+    '
+    echo "    Claude Code and Factory installed."
+else
+    echo "    Claude Code installed."
+fi
+
+# Create non-root agent user (Claude Code refuses --dangerously-skip-permissions as root)
+log "Step 5: Creating agent user"
+docker exec "${CONTAINER_NAME}" bash -c '
+    useradd -m -s /bin/bash agent 2>/dev/null || true
+    chown -R agent:agent /workspace
+    mkdir -p /home/agent/.claude /home/agent/.local /home/agent/.cargo
+    cp -r /root/.claude/* /home/agent/.claude/ 2>/dev/null || true
+    cp -r /root/.local/* /home/agent/.local/ 2>/dev/null || true
+    cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
+    chown -R agent:agent /home/agent
+'
+if [ -f "${GCLOUD_ADC}" ]; then
+    docker cp "${GCLOUD_ADC}" "${CONTAINER_NAME}:/tmp/gcloud-adc.json"
+    docker exec "${CONTAINER_NAME}" chmod 644 /tmp/gcloud-adc.json
+    echo "    Copied gcloud credentials into container"
+fi
+
+echo "    Agent user created."
+echo ""
+
+# ── Step 5.1: Configure Claude Code ──
+
+log "Step 5.1: Configuring Claude Code for headless use"
+
+docker exec --user agent \
+    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
+    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
+    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
+    -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
+    "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude
+    cat > ~/.claude/settings.json << SETTINGSEOF
+{
+  "permissions": {
+    "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)"],
+    "deny": []
+  },
+  "env": {}
+}
+SETTINGSEOF
+
+    # Smoke test — verify claude can authenticate
+    export PATH="$HOME/.local/bin:$PATH"
+    claude -p "say hello" --output-format json --max-turns 1 --permission-mode bypassPermissions 2>&1 | head -5
+    echo "Claude Code smoke test exit: $?"
+'
+
+echo "    Claude Code configured."
+echo ""
+
+# ── Step 5.5: Prepare workspace for Factory ──
+
+log "Step 5.5: Preparing workspace"
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
+    cd /workspace &&
+    git init &&
+    git config user.email "solver@factory" &&
+    git config user.name "Factory Solver" &&
+    echo "executable" >> .gitignore &&
+    git add -A &&
+    git commit -m "initial cleanroom state" --allow-empty
+'
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
+---
+goal: Reverse-engineer the compiled binary and produce equivalent source code
+---
+FACTORYEOF'
+fi
+
+docker exec --user agent "${CONTAINER_NAME}" bash -c '
+    mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
+'
+
+echo "    Workspace prepared."
 echo ""
 
 # ── Step 6: Run solver ──
 
-log "Step 6: Running Claude Code solver (timeout: ${SOLVER_TIMEOUT}s)"
+log "Step 6: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 SOLVER_PROMPT='You are reverse-engineering a compiled binary at /workspace/executable.
@@ -182,6 +274,7 @@ The evaluation compares your output against the original on hidden test cases.'
 SOLVER_PROMPT_FILE="$(mktemp /tmp/programbench-prompt-XXXXXX.txt)"
 echo "${SOLVER_PROMPT}" > "${SOLVER_PROMPT_FILE}"
 docker cp "${SOLVER_PROMPT_FILE}" "${CONTAINER_NAME}:/tmp/solver_prompt.txt"
+docker exec "${CONTAINER_NAME}" chmod 644 /tmp/solver_prompt.txt
 rm -f "${SOLVER_PROMPT_FILE}"
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
@@ -190,8 +283,17 @@ fi
 
 export_claude_env
 
+set +e
+
 SOLVER_EXIT=0
-timeout "${SOLVER_TIMEOUT}" docker exec \
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --model "${ANTHROPIC_MODEL}" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json'
+else
+    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt'
+fi
+
+timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
     -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
     -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
@@ -202,13 +304,72 @@ timeout "${SOLVER_TIMEOUT}" docker exec \
     -e CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING="${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING}" \
     -e MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS}" \
     -e CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL}" \
-    -e GOOGLE_APPLICATION_CREDENTIALS=/home/agent/.config/gcloud/application_default_credentials.json \
+    -e DISABLE_AUTOUPDATER=1 \
+    -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    -e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
     "${CONTAINER_NAME}" \
-    bash -c 'cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json --model "${ANTHROPIC_MODEL}"' \
-    2>&1 | tee /dev/stderr | tail -50 || true
+    bash -c "${SOLVER_CMD}" \
+    2>&1 | tee "${RESULTS_DIR}/solver_output.log" | tail -50 || true
 SOLVER_EXIT=${PIPESTATUS[0]}
+
+# Extract cost and token data from solver output
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    if [ -f "${RESULTS_DIR}/solver_output.log" ]; then
+        COST_DATA=$(grep '"type":"result"' "${RESULTS_DIR}/solver_output.log" 2>/dev/null | tail -1 | python3 -c "
+import sys, json
+try:
+    data = json.loads(sys.stdin.readline())
+    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
+    u = data.get('usage', {})
+    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
+    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
+except: pass
+" 2>/dev/null || true)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+else
+    docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
+    EVENTS_FILE="${RESULTS_DIR}/events.jsonl"
+    if [ -f "${EVENTS_FILE}" ]; then
+        COST_DATA=$(python3 -c "
+import json
+total_cost = 0
+total_input = 0
+total_output = 0
+total_cache_read = 0
+total_cache_create = 0
+for line in open('${EVENTS_FILE}'):
+    try:
+        e = json.loads(line)
+        if e.get('type') == 'agent.completed':
+            d = e.get('data', {})
+            total_cost += d.get('total_cost_usd', 0) or 0
+            total_input += d.get('input_tokens', 0)
+            total_output += d.get('output_tokens', 0)
+            total_cache_read += d.get('cache_read_tokens', 0)
+    except: pass
+print(f'COST_USD={total_cost}')
+print(f'INPUT_TOKENS={total_input}')
+print(f'OUTPUT_TOKENS={total_output}')
+print(f'CACHE_READ_TOKENS={total_cache_read}')
+print(f'CACHE_CREATION_TOKENS={total_cache_create}')
+" 2>/dev/null)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
+fi
+
+set -e
 
 if [ "${SOLVER_EXIT}" -eq 124 ]; then
     echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
@@ -219,6 +380,61 @@ fi
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
+# ── Step 6.5: Recover factory worktree changes ──
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
+    log "Step 6.5: Recovering factory worktree changes"
+
+    docker exec --user agent "${CONTAINER_NAME}" bash -c '
+        set +e
+        cd /workspace
+
+        # Strategy 1: Merge surviving factory branch
+        FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
+        if [ -n "$FACTORY_BRANCH" ]; then
+            echo "Merging factory branch: $FACTORY_BRANCH"
+            git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
+        fi
+
+        # Strategy 2: Recover orphaned commits via git fsck
+        if [ -z "$FACTORY_BRANCH" ]; then
+            echo "No factory branch, finding orphaned commits..."
+            ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep "unreachable commit" | awk "{print \$3}")
+            if [ -n "$ORPHAN_COMMITS" ]; then
+                BEST_COMMIT=""
+                BEST_TIME=0
+                for SHA in $ORPHAN_COMMITS; do
+                    COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0)
+                    if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
+                        BEST_TIME=$COMMIT_TIME
+                        BEST_COMMIT=$SHA
+                    fi
+                done
+                if [ -n "$BEST_COMMIT" ]; then
+                    echo "Recovering from orphan tip: $BEST_COMMIT"
+                    echo "  Message: $(git log -1 --format="%s" $BEST_COMMIT 2>/dev/null)"
+                    git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
+                    git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                    rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+                fi
+            fi
+        fi
+
+        # Strategy 3: Recover from surviving worktree directories
+        for wt in .factory-worktrees/*/; do
+            if [ -d "$wt" ]; then
+                echo "Recovering files from worktree: $wt"
+                rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
+            fi
+        done
+
+        exit 0
+    '
+
+    echo "    Worktree recovery complete."
+fi
+echo ""
+
 # ── Step 7: Package submission ──
 
 log "Step 7: Packaging submission"
@@ -227,7 +443,10 @@ docker exec "${CONTAINER_NAME}" bash -c '
     cd /workspace
     if [ -f compile.sh ]; then bash compile.sh; fi
     mkdir -p /results
-    tar -czf /results/submission.tar.gz --exclude=.git --exclude=target --exclude=executable.bak --exclude=./executable .
+    tar -czf /results/submission.tar.gz \
+        --exclude=.git --exclude=target \
+        --exclude=executable.bak --exclude=./executable \
+        --exclude=.factory --exclude=eval --exclude=factory.md .
 '
 
 docker cp "${CONTAINER_NAME}:/results/submission.tar.gz" "${RESULTS_DIR}/submission.tar.gz"
@@ -269,36 +488,14 @@ if [ -f "${EVAL_JSON}" ]; then
     echo "    Eval file: ${EVAL_JSON}"
     eval "$(python3 -c "
 import json
-
 with open('${EVAL_JSON}') as f:
     data = json.load(f)
-
-passed = 0
-total = 0
-
-if isinstance(data, dict):
-    tests = data.get('tests', data.get('results', {}))
-    if isinstance(tests, dict):
-        for name, result in tests.items():
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-            elif isinstance(result, bool) and result:
-                passed += 1
-    elif isinstance(tests, list):
-        for result in tests:
-            total += 1
-            if isinstance(result, dict) and result.get('passed', result.get('success', False)):
-                passed += 1
-    elif 'score' in data:
-        score = float(data['score'])
-        total = 1
-        passed = 1 if score > 0.5 else 0
-
+results = data.get('test_results', [])
+passed = sum(1 for r in results if r.get('status') == 'passed')
+total = len(results)
 if total == 0:
     total = 1
-
-resolved = 1 if passed > 0 else 0
+resolved = 1 if passed == total else 0
 print(f'PASSED={passed}')
 print(f'RESOLVED={resolved}')
 print(f'TOTAL={total}')
@@ -319,7 +516,7 @@ else
 import json
 with open('${EVAL_JSON}') as f:
     data = json.load(f)
-resolved = 1 if data.get('score', 0) > 0.5 else 0
+resolved = 1 if data.get('score', 0) >= 1.0 else 0
 total = 1
 passed = resolved
 print(f'PASSED={passed}')

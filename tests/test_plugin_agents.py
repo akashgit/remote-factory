@@ -18,8 +18,8 @@ from factory.agents.runner import AgentRole, _PROMPTS_DIR
 
 
 ALL_ROLES: list[AgentRole] = [
-    "researcher", "strategist", "builder", "reviewer",
-    "evaluator", "archivist", "ceo", "failure_analyst",
+    "researcher", "strategist", "builder", "qa",
+    "archivist", "ceo", "failure_analyst",
 ]
 
 
@@ -46,10 +46,17 @@ class TestLoadAgentConfig:
     def test_ceo_uses_opus(self):
         assert load_agent_config()["ceo"].model == "opus"
 
-    def test_non_ceo_agents_use_sonnet(self):
+    def test_agent_model_assignments(self):
+        """Researcher uses sonnet; archivist uses haiku; all other agents use opus."""
+        sonnet_roles = {"researcher"}
+        haiku_roles = {"archivist"}
         for role, meta in load_agent_config().items():
-            if role != "ceo":
+            if role in sonnet_roles:
                 assert meta.model == "sonnet", f"{role} should use sonnet, got {meta.model}"
+            elif role in haiku_roles:
+                assert meta.model == "haiku", f"{role} should use haiku, got {meta.model}"
+            else:
+                assert meta.model == "opus", f"{role} should use opus, got {meta.model}"
 
     def test_builder_has_edit_write(self):
         tools = load_agent_config()["builder"].tools

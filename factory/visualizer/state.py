@@ -70,8 +70,7 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "researcher": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
-        "reviewer": "Review",
-        "evaluator": "Eval",
+        "qa": "QA",
         "archivist": "Archive",
     },
     "research": {
@@ -79,14 +78,14 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "researcher": "Research",
         "strategist": "Hypothesize",
         "builder": "Build",
-        "evaluator": "Run",
+        "qa": "QA",
         "archivist": "Archive",
     },
     "build": {
         "researcher": "Research",
         "strategist": "Plan",
         "builder": "Build",
-        "evaluator": "Verify",
+        "qa": "QA",
         "archivist": "Archive",
     },
     "discover": {
@@ -96,8 +95,7 @@ MODE_AGENT_TO_PHASE: dict[str, dict[str, str]] = {
         "researcher": "Observe",
         "strategist": "Hypothesize",
         "builder": "Build",
-        "reviewer": "Review",
-        "evaluator": "Eval",
+        "qa": "QA",
         "archivist": "Archive",
     },
 }
@@ -167,8 +165,7 @@ _AGENT_TO_PHASE: dict[str, str] = {
     "researcher": "Research",
     "strategist": "Strategize",
     "builder": "Build",
-    "reviewer": "Review",
-    "evaluator": "Eval",
+    "qa": "QA",
     "archivist": "Archive",
 }
 

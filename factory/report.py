@@ -14,6 +14,12 @@ from factory.models import AgentVerdict, Observation, PerformanceReport
 log = structlog.get_logger()
 
 
+def _extract_exp_number(stem: str) -> str:
+    """Extract trailing numeric experiment ID from a stem like 'myproject-042' or '042'."""
+    match = re.search(r"(\d+)$", stem)
+    return match.group(1) if match else stem
+
+
 def parse_ceo_verdicts(project_path: Path) -> list[AgentVerdict]:
     """Parse all ceo-verdict-*.md files in .factory/reviews/."""
     reviews_dir = project_path / ".factory" / "reviews"
@@ -85,8 +91,51 @@ def parse_observations(project_path: Path) -> list[Observation]:
 
     archive_dir = project_path / ".factory" / "archive"
     if archive_dir.is_dir():
+        seen_exp_nums: set[str] = set()
+        archive_experiments = archive_dir / "experiments"
+        json_source = sorted(archive_experiments.glob("**/*.json"))[:50] if archive_experiments.is_dir() else []
+        for json_file in json_source:
+            try:
+                data = json.loads(json_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            if not isinstance(data, dict):
+                continue
+            content = data.get("learned", "") or data.get("ceo_rationale", "") or json.dumps(data)[:500]
+            if len(content) > 10:
+                exp_num = _extract_exp_number(json_file.stem)
+                seen_exp_nums.add(exp_num)
+                observations.append(Observation(
+                    source=str(json_file.relative_to(project_path)),
+                    content=content[:500],
+                    timestamp=datetime.now(),
+                    project=project_name,
+                    tags=["archive"],
+                ))
+        md_source = sorted(archive_experiments.glob("**/*.md"))[:50] if archive_experiments.is_dir() else []
+        for note_file in md_source:
+            if _extract_exp_number(note_file.stem) in seen_exp_nums:
+                continue
+            try:
+                text = note_file.read_text()
+            except OSError:
+                continue
+            if len(text) > 50:
+                observations.append(Observation(
+                    source=str(note_file.relative_to(project_path)),
+                    content=text[:500],
+                    timestamp=datetime.now(),
+                    project=project_name,
+                    tags=["archive"],
+                ))
+        # Non-experiment archive notes (sources, patterns, etc.)
         for note_file in sorted(archive_dir.glob("**/*.md"))[:50]:
-            text = note_file.read_text()
+            if archive_experiments.is_dir() and note_file.is_relative_to(archive_experiments):
+                continue
+            try:
+                text = note_file.read_text()
+            except OSError:
+                continue
             if len(text) > 50:
                 observations.append(Observation(
                     source=str(note_file.relative_to(project_path)),

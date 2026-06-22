@@ -38,6 +38,7 @@ cleanup() {
         fi
     fi
     PASSED="${RESOLVED}"
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -129,12 +130,25 @@ echo ""
 cd "${HARNESS_DIR}"
 
 HARBOR_EXIT=0
+
+if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
+    # Use Harbor's built-in claude-code agent
+    AGENT_ARGS=(--agent claude-code --extra-instruction-path "${HARNESS_DIR}/benchmarks/terminalbench-extra-instructions.md")
+    echo "    Agent:           claude-code (Harbor built-in + extra instructions)"
+else
+    # Use Factory Harbor agent
+    AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
+    export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
+    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FactoryCeo)
+    echo "    Agent:           factory (FactoryCeo)"
+fi
+
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
-    GCLOUD_ADC="${HOME}/.config/gcloud/application_default_credentials.json"
+    GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
     echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        "${AGENT_ARGS[@]}" \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
@@ -157,7 +171,7 @@ else
     echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
     uvx harbor run \
         --dataset terminal-bench@2.0 \
-        --agent claude-code \
+        "${AGENT_ARGS[@]}" \
         --model "${MODEL}" \
         --include-task-name "${TASK_NAME}" \
         --n-concurrent 1 \
@@ -175,6 +189,50 @@ fi
 
 if [ "${HARBOR_EXIT}" -ne 0 ]; then
     echo "    Harbor exited with code ${HARBOR_EXIT}"
+fi
+
+# Temporarily allow failures — cost/reward extraction uses grep/find which return
+# non-zero on no match; pipefail would kill the script before reaching STATUS=success.
+set +e
+
+# Extract cost from Harbor result
+COST_USD=0
+INPUT_TOKENS=0
+OUTPUT_TOKENS=0
+CACHE_READ_TOKENS=0
+CACHE_CREATION_TOKENS=0
+
+HARBOR_RESULT=$(find "${JOBS_DIR}" -name 'result.json' -maxdepth 2 2>/dev/null | head -1)
+if [ -n "${HARBOR_RESULT}" ]; then
+    COST_DATA=$(python3 -c "
+import json
+with open('${HARBOR_RESULT}') as f:
+    data = json.load(f)
+cost = 0
+for trial in data.get('trials', {}).values():
+    cost += trial.get('cost_usd', 0) or 0
+print(f'COST_USD={cost}')
+" 2>/dev/null)
+    eval "${COST_DATA}" 2>/dev/null || true
+fi
+
+if [ "${COST_USD}" = "0" ] || [ -z "${COST_USD}" ]; then
+    AGENT_LOG=$(find "${JOBS_DIR}" -name 'claude-code.txt' -o -name 'claude_code_stream_output.jsonl' -o -name 'factory-ceo.txt' 2>/dev/null | head -1)
+    if [ -n "${AGENT_LOG}" ]; then
+        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" 2>/dev/null | tail -1 | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        data = json.loads(line.strip())
+        if 'total_cost_usd' in data:
+            print(f'COST_USD={data[\"total_cost_usd\"]}')
+            u = data.get('usage', {})
+            print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+            print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    except: pass
+" 2>/dev/null || true)
+        eval "${COST_DATA}" 2>/dev/null || true
+    fi
 fi
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -288,6 +346,8 @@ else
 fi
 echo "============================================"
 echo ""
+
+set -e
 
 STATUS="success"
 

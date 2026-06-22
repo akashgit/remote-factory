@@ -44,9 +44,8 @@ def _reassign_ids(items: list[PlaybookItem], role: str) -> list[PlaybookItem]:
     prefix_map = {
         "strategist": "strat",
         "builder": "build",
-        "evaluator": "eval",
+        "qa": "qa",
         "researcher": "res",
-        "reviewer": "rev",
         "archivist": "arch",
     }
     prefix = prefix_map.get(role, role[:5])

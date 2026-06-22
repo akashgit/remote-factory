@@ -4,8 +4,8 @@ Reads experiment histories across all managed projects and produces per-agent
 candidate bullets based on statistical patterns. This is deterministic pattern
 extraction (no LLM needed) — the data speaks for itself.
 
-Factory v2: generates bullets for all 7 agent roles (researcher, strategist,
-builder, reviewer, evaluator, archivist, ceo) by parsing structured CEO notes
+Factory v2: generates bullets for all agent roles (researcher, strategist,
+builder, qa, archivist, ceo) by parsing structured CEO notes
 from the experiment record notes field.
 
 Counter wiring: after generating candidates, the Reflector also loads the
@@ -38,9 +38,8 @@ log = structlog.get_logger()
 _ROLE_PREFIX = {
     "strategist": "strat",
     "builder": "build",
-    "evaluator": "eval",
+    "qa": "qa",
     "researcher": "res",
-    "reviewer": "rev",
     "archivist": "arch",
     "ceo": "ceo",
 }
@@ -214,11 +213,11 @@ def _builder_bullets(
     return bullets
 
 
-def _evaluator_bullets(
+def _qa_health_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
 ) -> list[PlaybookItem]:
-    """Generate evaluator playbook bullets from scoring patterns."""
+    """Generate QA health-check playbook bullets from scoring patterns."""
     bullets: list[PlaybookItem] = []
     counter = 1
 
@@ -229,7 +228,7 @@ def _evaluator_bullets(
     ]
     if len(misleading) >= 2:
         bullets.append(PlaybookItem(
-            id=_make_id("evaluator", counter),
+            id=_make_id("qa", counter),
             content=f"Flag score regressions even on kept experiments — {len(misleading)} experiments were kept despite negative deltas, eval may be misleading",
             helpful=0,
             harmful=len(misleading),
@@ -295,21 +294,22 @@ def _researcher_bullets(
     return bullets
 
 
-def _reviewer_bullets(
+def _qa_review_bullets(
     outcomes: list[tuple[str, str, float | None]],
     records: list[ExperimentRecord],
+    counter_offset: int = 0,
 ) -> list[PlaybookItem]:
-    """Generate reviewer playbook bullets from guard/review patterns."""
+    """Generate QA code-review playbook bullets from guard/review patterns."""
     bullets: list[PlaybookItem] = []
-    counter = 1
+    counter = 1 + counter_offset
 
-    # Parse CEO notes to find reviewer failures
-    reviewer_failures = [r for r in records if "reviewer_failed=true" in (r.notes or "")]
-    if len(reviewer_failures) >= 2:
-        failure_cats = Counter(classify_hypothesis(r.hypothesis) for r in reviewer_failures)
+    # Parse CEO notes to find QA failures
+    qa_failures = [r for r in records if "qa_failed=true" in (r.notes or "")]
+    if len(qa_failures) >= 2:
+        failure_cats = Counter(classify_hypothesis(r.hypothesis) for r in qa_failures)
         top_cat, top_count = failure_cats.most_common(1)[0]
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Pay extra attention to {top_cat} changes — {top_count} guard violations in this category",
             helpful=0,
             harmful=top_count,
@@ -318,14 +318,14 @@ def _reviewer_bullets(
         counter += 1
 
     # Detect false positives: experiments that were reverted despite positive delta
-    # (suggests the reviewer or CEO was too strict)
+    # (suggests QA or CEO was too strict)
     strict_reverts = [
         r for r in records
         if r.verdict == "revert" and r.delta is not None and r.delta > 0.02
     ]
     if len(strict_reverts) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Review strictness may be too high — {len(strict_reverts)} experiments reverted despite positive deltas (>+0.02). Check if guard rules are too conservative",
             helpful=0,
             harmful=len(strict_reverts),
@@ -340,7 +340,7 @@ def _reviewer_bullets(
     ]
     if len(marginal_keeps) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("reviewer", counter),
+            id=_make_id("qa", counter),
             content=f"Raise the bar on marginal improvements — {len(marginal_keeps)} experiments kept with delta < 0.005. These add complexity without meaningful gain",
             helpful=0,
             harmful=len(marginal_keeps),
@@ -399,6 +399,79 @@ def _archivist_bullets(
                 section="DO",
             ))
             counter += 1
+
+    return bullets
+
+
+def _memory_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets from CEO memory files (.factory/archive/memory.json)."""
+    import json
+
+    bullets: list[PlaybookItem] = []
+    counter = 1
+
+    for path in project_paths:
+        memory_path = path / ".factory" / "archive" / "memory.json"
+        if not memory_path.exists():
+            continue
+        try:
+            entries = json.loads(memory_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        if not isinstance(entries, list):
+            continue
+        patterns = [e for e in entries if isinstance(e, dict) and e.get("type") == "pattern"]
+        anti_patterns = [e for e in entries if isinstance(e, dict) and e.get("type") == "anti_pattern"]
+        if len(patterns) >= 3:
+            bullets.append(PlaybookItem(
+                id=_make_id("archivist", 200 + counter),
+                content=f"CEO memory has {len(patterns)} success patterns — archive is generating useful cross-cycle insights",
+                helpful=len(patterns),
+                harmful=0,
+                section="DO",
+            ))
+            counter += 1
+        if len(anti_patterns) >= 2:
+            bullets.append(PlaybookItem(
+                id=_make_id("archivist", 200 + counter),
+                content=f"CEO memory has {len(anti_patterns)} anti-patterns — continue documenting failure modes for cross-cycle learning",
+                helpful=len(anti_patterns),
+                harmful=0,
+                section="DO",
+            ))
+            counter += 1
+
+    return bullets
+
+
+def _playbook_proposal_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
+    """Generate bullets suggesting Curator review when playbook_proposals exist in experiment JSON."""
+    import json
+
+    bullets: list[PlaybookItem] = []
+    proposal_count = 0
+
+    for path in project_paths:
+        exp_dir = path / ".factory" / "archive" / "experiments"
+        if not exp_dir.is_dir():
+            continue
+        for json_file in exp_dir.glob("*.json"):
+            try:
+                data = json.loads(json_file.read_text())
+            except (json.JSONDecodeError, OSError):
+                continue
+            proposals = data.get("playbook_proposals", [])
+            if isinstance(proposals, list):
+                proposal_count += len(proposals)
+
+    if proposal_count >= 2:
+        bullets.append(PlaybookItem(
+            id=_make_id("archivist", 300),
+            content=f"{proposal_count} playbook proposals found in experiment JSON sidecars — run ACE Curator to review and integrate them",
+            helpful=proposal_count,
+            harmful=0,
+            section="DO",
+        ))
 
     return bullets
 
@@ -787,6 +860,7 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
 
     obs_count = 0
     archive_count = 0
+    json_sidecar_count = 0
     for path in project_paths:
         report = load_performance_report(path)
         if not report:
@@ -795,6 +869,9 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
             if "archive" in obs.tags:
                 archive_count += 1
             obs_count += 1
+        exp_dir = path / ".factory" / "archive" / "experiments"
+        if exp_dir.is_dir():
+            json_sidecar_count += len(list(exp_dir.glob("*.json")))
 
     if obs_count >= 10 and archive_count < obs_count * 0.3:
         bullets.append(PlaybookItem(
@@ -802,6 +879,16 @@ def _observation_bullets(project_paths: list[Path]) -> list[PlaybookItem]:
             content=f"Archive coverage is low — only {archive_count}/{obs_count} observations are from archive notes. Write more detailed experiment notes",
             helpful=archive_count,
             harmful=obs_count - archive_count,
+            section="DO",
+        ))
+        counter += 1
+
+    if json_sidecar_count > 0:
+        bullets.append(PlaybookItem(
+            id=_make_id("archivist", 100 + counter),
+            content=f"Structured JSON sidecars present ({json_sidecar_count} files) — continue writing JSON alongside markdown for programmatic consumption",
+            helpful=json_sidecar_count,
+            harmful=0,
             section="DO",
         ))
         counter += 1
@@ -846,13 +933,15 @@ def reflect_on_experiments(
 
     log.info("reflector_start", total_experiments=len(outcomes), projects=len(histories))
 
-    # Generate per-role candidates (all 7 agent roles)
+    # Generate per-role candidates
     candidates: dict[str, list[PlaybookItem]] = {
         "strategist": _strategist_bullets(outcomes, all_records),
         "builder": _builder_bullets(outcomes, all_records),
-        "evaluator": _evaluator_bullets(outcomes, all_records),
+        "qa": (
+            _qa_h := _qa_health_bullets(outcomes, all_records),
+            _qa_h + _qa_review_bullets(outcomes, all_records, counter_offset=len(_qa_h)),
+        )[-1],
         "researcher": _researcher_bullets(outcomes, all_records),
-        "reviewer": _reviewer_bullets(outcomes, all_records),
         "archivist": _archivist_bullets(outcomes, all_records),
         "ceo": _ceo_bullets(outcomes, all_records),
     }
@@ -865,6 +954,14 @@ def reflect_on_experiments(
     observation_items = _observation_bullets(project_paths)
     if observation_items:
         candidates.setdefault("archivist", []).extend(observation_items)
+
+    memory_items = _memory_bullets(project_paths)
+    if memory_items:
+        candidates.setdefault("archivist", []).extend(memory_items)
+
+    proposal_items = _playbook_proposal_bullets(project_paths)
+    if proposal_items:
+        candidates.setdefault("archivist", []).extend(proposal_items)
 
     # Filter empty roles
     candidates = {role: items for role, items in candidates.items() if items}
