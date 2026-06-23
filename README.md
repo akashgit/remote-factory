@@ -363,10 +363,12 @@ LangFuse provides LLM observability and tracing — track agent invocations, tok
 # Start LangFuse services
 scripts/langfuse start
 
-# Set the env vars the factory needs (printed by the start command)
+# Set the env vars the factory needs
 export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_BASE_URL=http://localhost:3000
 export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
 export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+export TELEMETRY_PLATFORM=langfuse
 ```
 
 The dev credentials above match the docker-compose setup. Add them to your `~/.bashrc` or `~/.zshrc` to persist across sessions.

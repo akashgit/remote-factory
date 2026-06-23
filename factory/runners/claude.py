@@ -67,7 +67,8 @@ class ClaudeRunner:
         cmd = [
             "claude", "--append-system-prompt-file", prompt_file.name,
             "-p", request.task,
-            "--output-format", "json",
+            "--output-format", "stream-json",
+            "--verbose",
         ]
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
@@ -124,19 +125,29 @@ class ClaudeRunner:
             usage = None
             result_text = result.stdout
             metadata: dict[str, object] = {**result.metadata}
-            try:
-                data = json.loads(result.stdout)
-                if isinstance(data, dict):
-                    result_value = data.get("result", result.stdout)
-                    result_text = result_value if isinstance(result_value, str) else result.stdout
-                    usage = _parse_usage(data)
-                    for key in ("session_id", "uuid", "stop_reason", "terminal_reason",
-                                "duration_api_ms", "ttft_ms", "is_error", "subtype"):
-                        metadata[key] = data.get(key)
-                    metadata["model_usage"] = data.get("modelUsage")
-                    metadata["permission_denials"] = data.get("permission_denials")
-            except (json.JSONDecodeError, ValueError):
-                log.debug("claude_json_parse_failed")
+
+            data: dict[str, object] | None = None
+            for line in reversed(result.stdout.strip().splitlines()):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    continue
+                if isinstance(parsed, dict) and "result" in parsed:
+                    data = parsed
+                    break
+
+            if data is not None:
+                result_value = data.get("result", result.stdout)
+                result_text = result_value if isinstance(result_value, str) else result.stdout
+                usage = _parse_usage(data)
+                for key in ("session_id", "uuid", "stop_reason", "terminal_reason",
+                            "duration_api_ms", "ttft_ms", "is_error", "subtype"):
+                    metadata[key] = data.get(key)
+                metadata["model_usage"] = data.get("modelUsage")
+                metadata["permission_denials"] = data.get("permission_denials")
 
             return AgentRunResult(
                 stdout=result_text,

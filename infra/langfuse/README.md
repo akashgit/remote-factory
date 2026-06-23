@@ -1,36 +1,66 @@
-# LangFuse Local Development
+# Langfuse Local Development
 
-LangFuse provides LLM observability and tracing for the Red Hat Agents system.
+Langfuse provides LLM observability and tracing for the factory system.
 
 ## Quick Start
 
-1. Start LangFuse services:
+1. Start Langfuse services:
 ```bash
-# From project root
-scripts/langfuse start
+cd infra/langfuse && docker compose up -d
 ```
 
-2. Set the environment variables the factory requires (these match the docker-compose dev credentials):
+2. Run the factory with Langfuse tracing enabled:
+
 ```bash
 export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_BASE_URL=http://localhost:3000
 export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
 export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+export TELEMETRY_PLATFORM=langfuse
+
+factory ceo /path/to/project
 ```
+
+3. Open `http://localhost:3000` to view traces. Login: `dev@localhost.local` / `devpassword123`
 
 Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
 
-| Variable | Dev Value | Notes |
-|----------|-----------|-------|
-| `LANGFUSE_HOST` | `http://localhost:3000` | Required — tracing is disabled without it |
-| `LANGFUSE_PUBLIC_KEY` | `pk-lf-dev-local-key` | Matches docker-compose |
-| `LANGFUSE_SECRET_KEY` | `sk-lf-dev-local-key` | Matches docker-compose |
+The factory creates a single Langfuse trace per CEO cycle. The trace structure:
 
-### Viewing Traces
+```
+Trace: factory:<project>/<mode>
+└── Root span (cycle session)
+    ├── agent:ceo          ← interactive CEO session (streamed in real-time)
+    │   ├── tool:Bash
+    │   ├── assistant_message
+    │   └── ...
+    ├── agent:researcher   ← headless specialist (transcript ingested on completion)
+    ├── agent:strategist
+    ├── agent:builder
+    └── agent:qa
+```
 
-1. Start LangFuse: `scripts/langfuse start`
-2. Run a factory command: `uv run factory ceo /path/to/project`
-3. Open browser: `scripts/langfuse open --traces`
-4. Login: `dev@localhost.local` / `devpassword123`
+- **CEO session** is traced incrementally via a background thread that tails the Claude Code transcript JSONL every 5 seconds. The span exists from session start, so partial data is visible even if the session is killed.
+- **Specialist agents** have their transcripts batch-ingested when the agent completes.
+- The trace name (`factory:<project>/<mode>`) is reasserted via the ingestion API to prevent the SDK from overwriting it with child observation names.
+
+### Environment Variables
+
+| Variable | Default | Notes |
+|-----------|---------|-------|
+| `LANGFUSE_HOST` | — | Required. Set to `http://localhost:3000` for local dev |
+| `LANGFUSE_BASE_URL` | — | Same as HOST (some SDK versions use this) |
+| `LANGFUSE_PUBLIC_KEY` | — | `pk-lf-dev-local-key` for local dev |
+| `LANGFUSE_SECRET_KEY` | — | `sk-lf-dev-local-key` for local dev |
+| `TELEMETRY_PLATFORM` | — | Set to `langfuse` to enable |
+
+### Verifying Traces
+
+```bash
+python scripts/verify_langfuse_trace.py <project-name> [--after TIMESTAMP]
+```
+
+This checks: single trace exists, correct name format, root span, agent spans nested under root, CEO span present, transcript observations ingested.
 
 ## CLI Commands
 
@@ -62,11 +92,7 @@ scripts/langfuse open               # Open browser
 
 ## Requirements
 
-- **Podman** (recommended) or **Docker**
-  - macOS: `brew install podman`
-  - Fedora: `dnf install podman`
-- **podman-compose** (if using Podman)
-  - `pip install podman-compose`
+- **Docker** or **Podman** — any of `docker compose`, `docker-compose`, or `podman-compose` works
 
 ## Disabling Tracing
 

@@ -87,7 +87,8 @@ class TestClaudeRunner:
                 assert "--model" in all_args
                 assert "claude-opus-4-7" in all_args
                 assert "--output-format" in all_args
-                assert "json" in all_args
+                assert "stream-json" in all_args
+                assert "--verbose" in all_args
 
     async def test_headless_separates_prompt_and_task(self, tmp_path: Path) -> None:
         """headless() writes prompt to a temp file via --append-system-prompt-file and task via -p."""

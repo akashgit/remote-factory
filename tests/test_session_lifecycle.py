@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import os
+import time
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from factory.agents.runner import begin_cycle_session, complete_cycle_session
+from factory.cli import _start_ceo_tailer, _stop_ceo_tailer
 from factory.models import AgentRunResult, AgentUsage
+from factory.telemetry import TranscriptTailer
 
 
 @pytest.fixture
@@ -146,3 +150,122 @@ async def test_invoke_agent_restores_env_on_failure(tmp_path: Path, _mock_teleme
             os.environ["FACTORY_PARENT_SPAN_ID"] = old_span
         else:
             os.environ.pop("FACTORY_PARENT_SPAN_ID", None)
+
+
+# ---------------------------------------------------------------------------
+# _start_ceo_tailer / _stop_ceo_tailer tests
+# ---------------------------------------------------------------------------
+
+
+def test_start_ceo_tailer_returns_none_without_span_id(tmp_path: Path) -> None:
+    assert _start_ceo_tailer(tmp_path, None, time.time()) is None
+
+
+def test_start_ceo_tailer_returns_none_when_disabled(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    with patch("factory.telemetry.is_enabled", return_value=False):
+        result = _start_ceo_tailer(tmp_path, "span-001", time.time())
+    assert result is None
+
+
+def test_start_ceo_tailer_returns_none_without_trace_id(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    monkeypatch.delenv("FACTORY_TRACE_ID", raising=False)
+    with patch("factory.telemetry.is_enabled", return_value=True):
+        result = _start_ceo_tailer(tmp_path, "span-001", time.time())
+    assert result is None
+
+
+def test_start_ceo_tailer_creates_span_and_starts_tailer(
+    tmp_path: Path, _mock_telemetry, monkeypatch,
+) -> None:
+    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    with patch.object(TranscriptTailer, "start") as mock_start:
+        tailer = _start_ceo_tailer(tmp_path, "span-001", time.time())
+    assert tailer is not None
+    assert tailer.span_id == "span-002"
+    assert tailer.trace_id == "trace-001"
+    mock_start.assert_called_once()
+
+
+def test_stop_ceo_tailer_noop_when_none() -> None:
+    _stop_ceo_tailer(None)
+
+
+def test_stop_ceo_tailer_drains_and_ends_span(monkeypatch) -> None:
+    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    mock_tailer = MagicMock()
+    mock_tailer.span_id = "span-ceo"
+    mock_tailer.stop_and_drain.return_value = 5
+
+    with patch("factory.telemetry.end_span") as mock_end:
+        _stop_ceo_tailer(mock_tailer)
+
+    mock_tailer.stop_and_drain.assert_called_once()
+    mock_end.assert_called_once_with("trace-001", "span-ceo", status="completed")
+
+
+# ---------------------------------------------------------------------------
+# TranscriptTailer tests
+# ---------------------------------------------------------------------------
+
+
+def test_tailer_finds_and_ingests_transcript(tmp_path: Path, _mock_telemetry, monkeypatch) -> None:
+    """Tailer finds a transcript file and ingests its lines."""
+    import factory.telemetry as tmod
+
+    mock_parent = MagicMock()
+    mock_tool = MagicMock()
+    mock_parent.start_observation.return_value = mock_tool
+    tmod._observations["span-ceo"] = mock_parent
+
+    claude_dir = Path.home() / ".claude" / "projects"
+    dir_name = str(tmp_path.resolve()).replace("/", "-").replace(".", "-")
+    transcript_dir = claude_dir / dir_name
+    transcript_dir.mkdir(parents=True, exist_ok=True)
+
+    start_time = time.time() - 1
+    transcript_file = transcript_dir / "ceo-session.jsonl"
+    transcript_file.write_text(
+        json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "text", "text": "Starting build"},
+        ]}}) + "\n"
+        + json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "input": {"cmd": "ls"}, "id": "tu_1"},
+        ]}}) + "\n"
+    )
+
+    tailer = TranscriptTailer(
+        trace_id="trace-001",
+        span_id="span-ceo",
+        project_path=tmp_path,
+        session_start=start_time,
+    )
+    tailer.FIND_TIMEOUT = 2.0
+    tailer.POLL_INTERVAL = 0.5
+    tailer.start()
+    time.sleep(1.5)
+    count = tailer.stop_and_drain()
+
+    try:
+        assert count >= 2
+        assert mock_parent.create_event.call_count >= 1
+    finally:
+        transcript_file.unlink(missing_ok=True)
+        try:
+            transcript_dir.rmdir()
+        except OSError:
+            pass
+
+
+def test_tailer_stop_and_drain_without_start() -> None:
+    """stop_and_drain works even if the tailer was never started."""
+    tailer = TranscriptTailer(
+        trace_id="t", span_id="s",
+        project_path=Path("/nonexistent"),
+        session_start=time.time(),
+    )
+    assert tailer.stop_and_drain() == 0

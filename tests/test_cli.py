@@ -1026,8 +1026,15 @@ class TestCmdCeoReview:
         task = mock_agent.call_args[0][1]
         assert "Mode: review" in task
         assert "PR #42" in task
-        assert "gh pr diff 42" in task
-        assert "gh pr view 42" in task
+        assert "review-only run" in task
+        assert "no Builder iterations" in task
+        assert "factory eval" in task
+        assert "step 2c-qa" in task
+        assert "iteration 1/1" in task
+        assert "step 2d" in task
+        assert "--score-before" in task
+        assert "--score-after" in task
+        assert "factory review --verdict" in task
 
     def test_review_mode_headless_with_repo(self, tmp_path, capsys):
         """--mode review --pr 42 --repo owner/repo includes repo in task."""
@@ -1038,6 +1045,7 @@ class TestCmdCeoReview:
         task = mock_agent.call_args[0][1]
         assert "owner/repo" in task
         assert "--repo owner/repo" in task
+        assert "factory review --verdict" in task
 
     def test_review_mode_skips_worktree(self, tmp_path):
         """Review mode does not create worktrees or touch experiment store."""

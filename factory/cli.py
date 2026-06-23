@@ -2374,20 +2374,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         _print_banner("review")
 
+        repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
             f"Project: {project_path}\nMode: review\n\n"
             f"## PR Review Directive\n\n"
             f"Review PR #{pr_number}{repo_clause}.\n\n"
-            f"1. Read the PR diff: `gh pr diff {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
-            f"2. Read the PR description: `gh pr view {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
-            f"3. Run the project's test suite and lint checks\n"
-            f"4. Spawn the QA agent for health check, code review, and adversarial QA\n"
-            f"5. Post your review verdict on the PR using "
-            f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
+            f"This is a review-only run — no experiment lifecycle, no Builder iterations.\n\n"
+            f"Execute these Improve pipeline steps:\n"
+            f"1. Run baseline eval (factory eval) to get $SCORE_BEFORE\n"
+            f"2. Run step 2c-qa (QA Agent Verification) — single pass, "
+            f"iteration 1/1, no Builder fix loop\n"
+            f"3. Run step 2d (Hard Precheck Gate)\n"
+            f"4. Post verdict via "
+            f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
+            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
+            f"{repo_flag}\n"
         )
 
         if not headless:
@@ -2612,6 +2614,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     if bg_agents:
         os.environ["FACTORY_BG"] = "1"
 
+    from factory.agents.runner import begin_cycle_session, complete_cycle_session
+    cycle_span_id = begin_cycle_session(project_path, cycle_id=mode, model=model)
+
+    import time as _time
+
+    _ceo_start = _time.time()
+
+    ceo_tailer = _start_ceo_tailer(wt_path, cycle_span_id, _ceo_start)
+
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
@@ -2645,6 +2656,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 background=background,
             )
         finally:
+            _stop_ceo_tailer(ceo_tailer)
+            complete_cycle_session(project_path, cycle_span_id)
             remove_worktree(project_path, wt_path, wt_branch)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
@@ -2668,10 +2681,61 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             session_name=session_name,
         ))
     finally:
+        _stop_ceo_tailer(ceo_tailer)
+        complete_cycle_session(project_path, cycle_span_id)
         remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil
             shutil.rmtree(project_path, ignore_errors=True)
+
+
+def _start_ceo_tailer(
+    wt_path: Path, cycle_span_id: str | None, start_time: float,
+) -> object | None:
+    """Create the CEO span eagerly and start a TranscriptTailer."""
+    if not cycle_span_id:
+        return None
+    try:
+        from factory.telemetry import TranscriptTailer, begin_span, flush, is_enabled
+
+        if not is_enabled():
+            return None
+        trace_id = os.environ.get("FACTORY_TRACE_ID", "")
+        if not trace_id:
+            return None
+
+        ceo_span_id = begin_span(trace_id, cycle_span_id, "ceo")
+        if ceo_span_id is None:
+            return None
+
+        flush()
+
+        tailer = TranscriptTailer(
+            trace_id=trace_id,
+            span_id=ceo_span_id,
+            project_path=wt_path,
+            session_start=start_time,
+        )
+        tailer.start()
+        return tailer
+    except Exception:
+        return None
+
+
+def _stop_ceo_tailer(tailer: object | None) -> None:
+    """Stop the tailer, do final drain, and end the CEO span."""
+    if tailer is None:
+        return
+    try:
+        from factory.telemetry import end_span
+
+        tailer.stop_and_drain()  # type: ignore[union-attr]
+        trace_id = os.environ.get("FACTORY_TRACE_ID", "")
+        span_id = getattr(tailer, "span_id", None)
+        if trace_id and span_id:
+            end_span(trace_id, span_id, status="completed")
+    except Exception:
+        pass
 
 
 def _is_github_url(path: str) -> bool:
