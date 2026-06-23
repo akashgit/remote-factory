@@ -3,7 +3,7 @@
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
 W₃: Improve Mode
-W₄: Research Mode (= W₃ with baseline+failure_analyst, research_command eval, plateau gate)
+W₄: Research Mode (= W₃ with baseline+failure_analyst, QA with surface checks, plateau gate)
 W₅: Meta Mode
 W₆: Discover Mode
 W₇: Review Mode
@@ -49,8 +49,8 @@ def build_workflow() -> Workflow:
     """W₁: Build Mode — new project from idea/spec.
 
     Fork(3 researchers) → Join → CEO gate → Strategist → CEO gate →
-    Archivist(async) → Builder → CEO gate(max 3) → Evaluator → Precheck gate →
-    Archivist(async)
+    Archivist(async) → Builder → CEO gate → QA → gate_qa(max 3) →
+    Precheck gate → Archivist(async)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -171,7 +171,7 @@ def build_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Per-phase: Builder → CEO gate → Evaluator → Precheck → Archivist(async)
+    # Per-phase: Builder → CEO gate → QA → gate_qa(max 3) → Precheck → Archivist(async)
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
@@ -199,30 +199,41 @@ def build_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes["evaluator"] = AgentNode(
-        id="evaluator",
-        role=AgentRole.EVALUATOR,
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
         prompt_template=(
-            "Run eval: factory eval $PROJECT_PATH. "
-            "Capture composite score and per-dimension breakdown. "
-            "Report delta from baseline. Interpret which dimensions improved/regressed."
+            "Run health check (factory eval + score delta), code review "
+            "(correctness, architecture, edge cases, security), and adversarial QA "
+            "(run/test the built feature). Write results to .factory/reviews/qa-latest.md"
         ),
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
         evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["archivist_build"] = AgentNode(
         id="archivist_build",
         role=AgentRole.ARCHIVIST,
         prompt_template="Archive the build phase results.",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
         writes={".factory/archive/build.md"},
         blocking=False,
     )
@@ -251,11 +262,14 @@ def build_workflow() -> Workflow:
         Edge(source="archivist_plan", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate → evaluator (proceed) or builder (reloop, max 3)
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        # Build gate → QA (proceed) or builder (reloop)
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck gate
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → gate_qa
+        Edge(source="qa", target="gate_qa"),
+        # gate_qa → precheck (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         # Precheck → archivist (proceed) or halt
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
     ]
@@ -304,11 +318,11 @@ def design_workflow() -> Workflow:
 
 
 def improve_workflow() -> Workflow:
-    """W₃: Improve Mode — study → research → strategy → per-hypothesis build/eval loop.
+    """W₃: Improve Mode — study → research → strategy → per-hypothesis build/QA loop.
 
     Study → Researcher → CEO gate → Strategist → CEO gate →
-    per-hypothesis: begin → Builder → CEO gate(max 3) → Evaluator → Precheck →
-    finalize → Archivist(async)
+    per-hypothesis: begin → Builder → CEO gate → QA → gate_qa(max 3) →
+    Precheck → finalize → Archivist(async)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -381,7 +395,7 @@ def improve_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
     )
 
-    # Per-hypothesis: begin → builder → gate → evaluator → precheck → finalize → archivist
+    # Per-hypothesis: begin → builder → gate → QA → gate_qa(max 3) → precheck → finalize → archivist
     nodes["begin"] = FnNode(
         id="begin",
         command='factory begin {project_path} --hypothesis "Implement hypothesis"',
@@ -412,29 +426,40 @@ def improve_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes["evaluator"] = AgentNode(
-        id="evaluator",
-        role=AgentRole.EVALUATOR,
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
         prompt_template=(
-            "Run eval: factory eval $PROJECT_PATH. "
-            "Capture composite score. Report delta from baseline. "
-            "Interpret dimension changes."
+            "Run health check (factory eval + score delta), code review "
+            "(correctness, architecture, edge cases, security), and adversarial QA "
+            "(run/test the built feature). Write results to .factory/reviews/qa-latest.md"
         ),
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
         evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
     )
 
     nodes["finalize"] = FnNode(
         id="finalize",
         command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'hypothesis'",
-        reads={".factory/reviews/evaluator-latest.md"},
+        reads={".factory/reviews/qa-latest.md"},
         writes={".factory/experiments/verdict.json"},
     )
 
@@ -464,11 +489,14 @@ def improve_workflow() -> Workflow:
         Edge(source="begin", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        # Build gate → QA (proceed) or builder (reloop)
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → gate_qa
+        Edge(source="qa", target="gate_qa"),
+        # gate_qa → precheck (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         # Finalize → archivist
@@ -495,7 +523,7 @@ def research_workflow() -> Workflow:
     research command eval, and plateau detection.
 
     W₄ = W₃[study ← (baseline → failure_analyst → researcher),
-             evaluator ← research_command, + plateau_gate]
+             qa ← QA with surface constraint verification, + plateau_gate]
     """
     wf = improve_workflow()
 
@@ -556,12 +584,18 @@ def research_workflow() -> Workflow:
         writes={".factory/strategy/current.md"},
     )
 
-    # Replace evaluator with research command
-    wf.nodes["evaluator"] = FnNode(
-        id="evaluator",
-        command="factory eval {project_path}",
+    # Override QA prompt to include surface constraint verification for research mode
+    wf.nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Run health check (factory eval + score delta), code review "
+            "(correctness, architecture, edge cases, security), adversarial QA "
+            "(run/test the built feature), and verify mutable/fixed surface "
+            "constraint compliance. Write results to .factory/reviews/qa-latest.md"
+        ),
         reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/evaluator-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
     )
 
     # Add plateau gate after finalize — checks if score improved over prior runs
@@ -600,10 +634,14 @@ def research_workflow() -> Workflow:
         Edge(source="begin", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        Edge(source="gate_build", target="evaluator", condition=VerdictType.PROCEED),
+        # Build gate → QA (proceed) or builder (reloop)
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # Evaluator → precheck
-        Edge(source="evaluator", target="gate_precheck"),
+        # QA → gate_qa
+        Edge(source="qa", target="gate_qa"),
+        # gate_qa → precheck (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         # Finalize → archivist → plateau gate
         Edge(source="finalize", target="archivist"),
@@ -629,7 +667,8 @@ def meta_workflow() -> Workflow:
     """W₅: Meta Mode — cross-project insights → playbook evolution + test pruning.
 
     insights → Researcher → CEO gate → Strategist → User gate → apply_playbooks →
-    Archivist(async) → test_collect → test_researcher → gate → test_builder
+    Archivist(async) → test_collect → test_researcher → gate → test_builder →
+    qa_verify → gate_qa_verify(max 3)
 
     The archivist is non-blocking, so it fires in the background while the
     test pruning chain proceeds immediately.
@@ -746,6 +785,29 @@ def meta_workflow() -> Workflow:
         writes={".factory/reviews/test-pruning-latest.md"},
     )
 
+    nodes["qa_verify"] = AgentNode(
+        id="qa_verify",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Verify the test suite still passes after pruning. "
+            "Run health check and confirm no regressions. "
+            "Write results to .factory/reviews/qa-verify-latest.md"
+        ),
+        reads={".factory/reviews/test-pruning-latest.md"},
+        writes={".factory/reviews/qa-verify-latest.md"},
+    )
+
+    nodes["gate_qa_verify"] = GateNode(
+        id="gate_qa_verify",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA verification of test pruning. PROCEED if tests still pass. "
+            "RELOOP to test_builder (max 3 iterations) if regressions found."
+        ),
+        reads={".factory/reviews/qa-verify-latest.md"},
+    )
+
     edges = [
         # Insights → researcher
         Edge(source="insights", target="researcher"),
@@ -765,6 +827,10 @@ def meta_workflow() -> Workflow:
         Edge(source="test_researcher", target="gate_test_prune"),
         Edge(source="gate_test_prune", target="test_builder", condition=VerdictType.PROCEED),
         Edge(source="gate_test_prune", target="test_researcher", condition=VerdictType.RELOOP),
+        # QA verification after test pruning
+        Edge(source="test_builder", target="qa_verify"),
+        Edge(source="qa_verify", target="gate_qa_verify"),
+        Edge(source="gate_qa_verify", target="test_builder", condition=VerdictType.RELOOP),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -851,7 +917,6 @@ def review_workflow() -> Workflow:
     nodes["eval_test"] = FnNode(
         id="eval_test",
         command='cd {project_path} && python eval/score.py',
-        reads={".factory/eval_profile.json", "eval/score.py"},
         writes={".factory/reviews/eval-test-latest.md"},
     )
 
@@ -878,7 +943,6 @@ def review_workflow() -> Workflow:
             "p.write_text(json.dumps(d, indent=2))"
             "\""
         ),
-        reads={".factory/eval_profile.json"},
         writes={".factory/eval_profile.json"},
     )
 
@@ -917,7 +981,7 @@ def review_workflow() -> Workflow:
             'cd {project_path} && git add factory.md eval/score.py .factory/ '
             '&& git commit -m "factory: initialize factory config and baseline eval"'
         ),
-        reads={"factory.md", "eval/score.py", ".factory/"},
+        reads={"factory.md"},
     )
 
     nodes["gate_e2e"] = GateNode(
@@ -979,7 +1043,6 @@ def refine_workflow() -> Workflow:
             "as Tier 1, 2, or 3. Produce the structured classification output "
             "with a Builder task description."
         ),
-        reads={"CLAUDE.md", "factory.md"},
         writes={".factory/reviews/refiner-latest.md"},
     )
 
@@ -1044,7 +1107,7 @@ def refine_workflow() -> Workflow:
     # R5: QA verification
     nodes["qa"] = AgentNode(
         id="qa",
-        role=AgentRole.REVIEWER,
+        role=AgentRole.QA,
         prompt_template=(
             "Verify the refinement. Run all 3 verification sections: "
             "1. Health Check — run factory eval. Report composite score and delta. "
