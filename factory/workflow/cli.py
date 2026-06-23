@@ -28,7 +28,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate}")
+        print("Usage: factory workflow {run,list,show,validate,export-skills}")
         return 1
 
     handlers = {
@@ -36,6 +36,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
         "list": _cmd_list,
         "show": _cmd_show,
         "validate": _cmd_validate,
+        "export-skills": _cmd_export_skills,
     }
 
     handler = handlers.get(sub)
@@ -176,6 +177,39 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_export_skills(args: argparse.Namespace) -> int:
+    """Export workflow definitions as Claude Code SKILL.md files."""
+    from factory.workflow.skill_export import export_all_skills, validate_skill
+
+    output_dir = Path(getattr(args, "output_dir", None) or ".").resolve()
+    verify = getattr(args, "verify", False)
+
+    workflows = register_all()
+    generated = export_all_skills(output_dir, workflows)
+
+    print(f"Exported {len(generated)} skills to {output_dir}/")
+    for path in generated:
+        print(f"  {path.relative_to(output_dir)}")
+
+    if verify:
+        total_issues = 0
+        for path in generated:
+            content = path.read_text()
+            issues = validate_skill(content)
+            if issues:
+                print(f"\n  INVALID: {path.name}")
+                for issue in issues:
+                    print(f"    - {issue}")
+                total_issues += len(issues)
+
+        if total_issues:
+            print(f"\n{total_issues} validation issue(s) found.")
+            return 1
+        print("\nAll skills valid.")
+
+    return 0
+
+
 def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the 'workflow' subcommand with its subcommands."""
     wf_parser = sub.add_parser("workflow", help="Workflow graph engine commands")
@@ -197,3 +231,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     # validate
     p = wf_sub.add_parser("validate", help="Validate workflow graph structure")
     p.add_argument("name", help="Workflow name")
+
+    # export-skills
+    p = wf_sub.add_parser("export-skills", help="Export workflows as SKILL.md files")
+    p.add_argument(
+        "--output-dir", default=".", help="Output directory (default: current directory)"
+    )
+    p.add_argument("--verify", action="store_true", help="Validate generated skills")

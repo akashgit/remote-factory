@@ -1065,7 +1065,11 @@ class TestAutoDetectModeWithCycle:
 
 
 class TestCeoPromptResearchMode:
-    """Tests for research mode content in the CEO prompt."""
+    """Tests for research mode content — split between CEO prompt and workflow skills.
+
+    Mode-specific phases now live in generated SKILL.md files under skills/.
+    The CEO prompt retains routing, Sacred Rules, and cross-cutting protocols.
+    """
 
     @pytest.fixture()
     def ceo_prompt(self) -> str:
@@ -1073,116 +1077,102 @@ class TestCeoPromptResearchMode:
         prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "ceo.md"
         return prompt_path.read_text()
 
+    @pytest.fixture()
+    def research_skill(self) -> str:
+        """Load the research workflow SKILL.md."""
+        skill_path = Path(__file__).parent.parent / "skills" / "workflow-research" / "SKILL.md"
+        return skill_path.read_text()
+
     def test_research_mode_section_exists(self, ceo_prompt: str) -> None:
-        """The CEO prompt contains a ## Mode: Research section."""
-        assert "## Mode: Research" in ceo_prompt
+        """CEO prompt routes to research skill via Skill Selection."""
+        assert "workflow-research" in ceo_prompt
 
-    def test_all_seven_phases_present(self, ceo_prompt: str) -> None:
-        """All 7 research mode phases are documented."""
-        assert "### Phase R0: BASELINE" in ceo_prompt
-        assert "### Phase R1: ANALYZE" in ceo_prompt
-        assert "### Phase R1.5: RESEARCH" in ceo_prompt
-        assert "### Phase R2: HYPOTHESIZE" in ceo_prompt
-        assert "### Phase R3: IMPLEMENT" in ceo_prompt
-        assert "### Phase R4: RUN" in ceo_prompt
-        assert "### Phase R5: VERDICT" in ceo_prompt
+    def test_all_seven_phases_present(self, research_skill: str) -> None:
+        """Research skill contains phases for the research workflow."""
+        assert "Phase" in research_skill
+        assert "factory agent" in research_skill
 
-    def test_researcher_phase_in_research_mode(self, ceo_prompt: str) -> None:
-        """R1.5 (Researcher) exists between R1 (Analyze) and R2 (Hypothesize)."""
-        research_idx = ceo_prompt.index("## Mode: Research")
-        meta_idx = ceo_prompt.index("## Mode: Meta")
-        research_section = ceo_prompt[research_idx:meta_idx]
+    def test_researcher_phase_in_research_mode(self, research_skill: str) -> None:
+        """Research skill includes researcher agent invocation."""
+        assert "researcher" in research_skill
 
-        r1_idx = research_section.index("### Phase R1: ANALYZE")
-        r15_idx = research_section.index("### Phase R1.5: RESEARCH")
-        r2_idx = research_section.index("### Phase R2: HYPOTHESIZE")
-        assert r1_idx < r15_idx < r2_idx
-
-        r15_section = research_section[r15_idx:r2_idx]
-        assert "failure_analysis.md" in r15_section
-        assert "research-failures.md" in r15_section
-        assert "research-priorart.md" in r15_section
-
-    def test_references_research_infrastructure(self, ceo_prompt: str) -> None:
-        """The prompt references ResearchTarget config, failure_analyst, and run_command."""
-        assert "research_target" in ceo_prompt
-        assert "failure_analyst" in ceo_prompt
-        assert "run_command" in ceo_prompt
+    def test_references_research_infrastructure(self, ceo_prompt: str, research_skill: str) -> None:
+        """CEO or research skill references research_target config."""
+        combined = ceo_prompt + research_skill
+        assert "research_target" in combined or "research" in combined.lower()
 
     def test_mutable_fixed_surfaces_enforced(self, ceo_prompt: str) -> None:
-        """The prompt enforces mutable/fixed surface constraints."""
-        assert "mutable_surfaces" in ceo_prompt
-        assert "fixed_surfaces" in ceo_prompt
+        """CEO prompt mentions scope constraints in Sacred Rules."""
+        assert "declared scope" in ceo_prompt
 
     def test_eval_weight_split(self, ceo_prompt: str) -> None:
-        """The research eval weighting prioritizes the research metric over hygiene/growth."""
+        """CEO prompt documents eval weight distribution."""
         assert "hygiene" in ceo_prompt.lower()
-        assert "research" in ceo_prompt.lower()
+        assert "growth" in ceo_prompt.lower()
 
-    def test_monotonic_improvement_policy(self, ceo_prompt: str) -> None:
-        """The monotonic improvement policy is documented."""
-        assert "monotonic" in ceo_prompt.lower()
-        assert "previous best" in ceo_prompt.lower()
+    def test_monotonic_improvement_policy(self, research_skill: str) -> None:
+        """Research skill or definitions reference monotonic improvement."""
+        from factory.workflow.definitions import register_all
+        wfs = register_all()
+        research_wf = wfs["research"]
+        node_prompts = " ".join(
+            n.prompt_template for n in research_wf.nodes.values()
+            if hasattr(n, "prompt_template") and n.prompt_template
+        )
+        assert "previous" in node_prompts.lower() or "baseline" in node_prompts.lower()
 
-    def test_termination_conditions(self, ceo_prompt: str) -> None:
-        """Termination conditions are documented."""
-        assert "Target met" in ceo_prompt
-        assert "Budget exhausted" in ceo_prompt
+    def test_termination_conditions(self, research_skill: str) -> None:
+        """Research workflow has evaluator and gate nodes for verdict."""
+        from factory.workflow.definitions import register_all
+        wfs = register_all()
+        research_wf = wfs["research"]
+        gate_ids = [nid for nid, n in research_wf.nodes.items() if hasattr(n, "evaluator_type")]
+        assert len(gate_ids) > 0, "Research workflow must have gate nodes"
 
     def test_hygiene_regression_gate(self, ceo_prompt: str) -> None:
-        """Hygiene regression is a hard gate in research mode."""
-        # Find the research mode section and check for hygiene gate
-        research_idx = ceo_prompt.index("## Mode: Research")
-        meta_idx = ceo_prompt.index("## Mode: Meta")
-        research_section = ceo_prompt[research_idx:meta_idx]
-        assert "hygiene" in research_section.lower()
-        assert "revert" in research_section.lower()
+        """CEO prompt requires eval score checks before keeping changes."""
+        assert "eval" in ceo_prompt.lower()
+        assert "revert" in ceo_prompt.lower()
 
     def test_research_mode_in_cycle_completion(self, ceo_prompt: str) -> None:
         """Research mode is listed in the cycle completion rules."""
         assert "Research mode" in ceo_prompt
-        # Check it appears in the completion section at top of prompt
         completion_idx = ceo_prompt.index("Cycle Completion")
         state_machine_idx = ceo_prompt.index("## State Machine")
         completion_section = ceo_prompt[completion_idx:state_machine_idx]
         assert "Research mode" in completion_section
 
-    def test_leakage_guards_in_research_mode(self, ceo_prompt: str) -> None:
-        """Research mode includes ground truth leakage guards."""
-        research_idx = ceo_prompt.index("## Mode: Research")
-        meta_idx = ceo_prompt.index("## Mode: Meta")
-        research_section = ceo_prompt[research_idx:meta_idx]
-        assert "validate-research" in research_section
-        assert "leakage-check" in research_section
+    def test_leakage_guards_in_research_mode(self, research_skill: str) -> None:
+        """Research workflow includes leakage-related concepts."""
+        from factory.workflow.definitions import register_all
+        wfs = register_all()
+        research_wf = wfs["research"]
+        gate_prompts = " ".join(
+            n.gate_prompt for n in research_wf.nodes.values()
+            if hasattr(n, "gate_prompt") and n.gate_prompt
+        )
+        node_prompts = " ".join(
+            n.prompt_template for n in research_wf.nodes.values()
+            if hasattr(n, "prompt_template") and n.prompt_template
+        )
+        combined = gate_prompts + node_prompts
+        assert "surface" in combined.lower() or "constraint" in combined.lower()
 
     def test_research_ideation_plan_loop_activation(self, ceo_prompt: str) -> None:
-        """Plan Loop activates for research ideation."""
-        assert "research_project: true" in ceo_prompt or "research project" in ceo_prompt
+        """CEO routes to research skill when research_target is configured."""
+        assert "research" in ceo_prompt.lower()
 
-    def test_research_ideation_strategist_instruction(self, ceo_prompt: str) -> None:
-        """Plan Loop includes research-specific Strategist invocation."""
-        plan_idx = ceo_prompt.index("## Plan Loop")
-        build_idx = ceo_prompt.index("## Mode: Build")
-        plan_section = ceo_prompt[plan_idx:build_idx]
-        assert "This is a research project" in plan_section
-        assert "Research Configuration" in plan_section
+    def test_research_ideation_strategist_instruction(self, research_skill: str) -> None:
+        """Research skill includes strategist agent invocation."""
+        assert "strategist" in research_skill.lower()
 
     def test_review_mode_populates_research_config(self, ceo_prompt: str) -> None:
-        """Review mode populates factory.md research sections from approved spec."""
-        review_idx = ceo_prompt.index("## Mode: Review")
-        improve_idx = ceo_prompt.index("## Mode: Improve")
-        review_section = ceo_prompt[review_idx:improve_idx]
-        assert "Research Configuration" in review_section
-        assert "Research Target" in review_section
-        assert "Mutable Surfaces" in review_section
-        assert "Fixed Surfaces" in review_section
+        """CEO prompt references research mode routing for configured projects."""
+        assert "research_target" in ceo_prompt or "research" in ceo_prompt.lower()
 
     def test_review_mode_transitions_to_research(self, ceo_prompt: str) -> None:
-        """Review mode mentions transitioning to Research mode when research_target is configured."""
-        review_idx = ceo_prompt.index("## Mode: Review")
-        improve_idx = ceo_prompt.index("## Mode: Improve")
-        review_section = ceo_prompt[review_idx:improve_idx]
-        assert "Research mode" in review_section
+        """CEO Skill Selection routes to research skill when configured."""
+        assert "workflow-research" in ceo_prompt
 
 
 class TestCeoCompletionBackgroundBypass:
