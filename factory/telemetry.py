@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+import time as _time
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,9 @@ def _get_client() -> Any:
     return _client
 
 
+_trace_name_counter: int = 0
+
+
 def _update_trace_via_api(
     trace_id: str,
     name: str,
@@ -54,9 +59,11 @@ def _update_trace_via_api(
 ) -> None:
     """Set trace name and input via the Langfuse ingestion API.
 
-    The v4 Python SDK doesn't expose trace-level name/input directly,
-    so we use the public ingestion batch endpoint.
+    The v4 Python SDK derives trace names from observations, so we use
+    the public ingestion batch endpoint to override it. Each call uses
+    a unique event ID to avoid deduplication.
     """
+    global _trace_name_counter
     import urllib.request
     from datetime import datetime, timezone
 
@@ -67,13 +74,14 @@ def _update_trace_via_api(
         return
     try:
         import base64
+        _trace_name_counter += 1
         auth = base64.b64encode(f"{pub_key}:{sec_key}".encode()).decode()
         inner: dict[str, Any] = {"id": trace_id, "name": name}
         if input_data is not None:
             inner["input"] = input_data
         body = {
             "batch": [{
-                "id": f"trace-name-{trace_id[:8]}",
+                "id": f"trace-name-{trace_id[:8]}-{_trace_name_counter}",
                 "type": "trace-create",
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "body": inner,
@@ -212,14 +220,20 @@ def end_trace(trace_id: str, span_id: str | None = None, output: str | None = No
 
 
 def flush() -> None:
-    """Flush any buffered Langfuse events and re-assert trace names."""
+    """Flush any buffered Langfuse events and re-assert trace names.
+
+    The SDK derives trace names from observations, so we flush twice:
+    first to drain the SDK's queue, then reassert names via the API,
+    then flush again to ensure our name update is the final write.
+    """
     if _client is not None:
-        _get_client().flush()
-        import time
-        time.sleep(0.5)
+        client = _get_client()
+        client.flush()
+        _time.sleep(1.0)
         for trace_id, (name, input_data) in list(_trace_names.items()):
             _update_trace_via_api(trace_id, name, input_data)
-        _trace_names.clear()
+        client.flush()
+        _time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +255,132 @@ def _find_transcript(claude_session_id: str, project_path: Path) -> Path | None:
                 if candidate.exists():
                     return candidate
     return None
+
+
+def _process_transcript_item(
+    item: dict,
+    parent: Any,
+    pending_tools: dict[str, Any],
+) -> int:
+    """Process a single JSONL transcript item into Langfuse observations.
+
+    Mutates *pending_tools* in-place for tool call/result pairing.
+    Returns the number of observations created.
+    """
+    count = 0
+    item_type = item.get("type", "")
+
+    if item_type == "user":
+        msg = item.get("message", {})
+        content_parts = msg.get("content", [])
+
+        tool_results: list[dict] = []
+        text_parts: list[str] = []
+
+        for part in content_parts:
+            if isinstance(part, str):
+                text_parts.append(part)
+            elif isinstance(part, dict):
+                if part.get("type") == "tool_result":
+                    tool_use_id = part.get("tool_use_id", "")
+                    raw = part.get("content", [])
+                    text = (
+                        "".join(str(c) for c in raw)
+                        if isinstance(raw, list)
+                        else str(raw)
+                    )
+                    tool_results.append({
+                        "tool_use_id": tool_use_id,
+                        "content": text,
+                        "is_error": part.get("is_error", False),
+                    })
+                elif part.get("type") == "text":
+                    text_parts.append(part.get("text", ""))
+
+        for tr in tool_results:
+            tool_use_id = tr["tool_use_id"]
+            if tool_use_id in pending_tools:
+                tool_obs = pending_tools.pop(tool_use_id)
+                tool_obs.update(output=tr["content"])
+                tool_obs.end()
+                count += 1
+            else:
+                parent.create_event(
+                    name="tool_output",
+                    output=tr["content"],
+                    metadata={"tool_use_id": tool_use_id},
+                )
+                count += 1
+
+        if not tool_results and text_parts:
+            text = "".join(text_parts)
+            if text.strip():
+                parent.create_event(
+                    name="user_message",
+                    input=text,
+                )
+                count += 1
+
+    elif item_type == "assistant":
+        msg = item.get("message", {})
+        content = msg.get("content", [])
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            ptype = part.get("type", "")
+            if ptype == "text":
+                text = part.get("text", "")
+                if text.strip():
+                    parent.create_event(
+                        name="assistant_message",
+                        output=text,
+                    )
+                    count += 1
+            elif ptype == "tool_use":
+                tool_name = part.get("name", "unknown")
+                tool_input = part.get("input", {})
+                tool_use_id = part.get("id", "")
+                tool_obs = parent.start_observation(
+                    name=f"tool:{tool_name}",
+                    as_type="tool",
+                    input=tool_input,
+                )
+                if tool_use_id:
+                    pending_tools[tool_use_id] = tool_obs
+                else:
+                    tool_obs.end()
+                count += 1
+            elif ptype == "thinking":
+                text = part.get("thinking", "")
+                if text.strip():
+                    parent.create_event(
+                        name="thinking",
+                        output=text,
+                    )
+                    count += 1
+
+    elif item_type == "tool_result":
+        content = item.get("content", [])
+        tool_use_id = item.get("tool_use_id", "")
+        text = ""
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                text += part.get("text", "")
+            elif isinstance(part, str):
+                text += part
+        if text.strip():
+            if tool_use_id and tool_use_id in pending_tools:
+                tool_obs = pending_tools.pop(tool_use_id)
+                tool_obs.update(output=text)
+                tool_obs.end()
+            else:
+                parent.create_event(
+                    name="tool_output",
+                    output=text,
+                )
+            count += 1
+
+    return count
 
 
 def ingest_transcript_to_span(
@@ -271,126 +411,15 @@ def ingest_transcript_to_span(
     count = 0
 
     with open(transcript_file) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
+        for raw_line in f:
+            raw_line = raw_line.strip()
+            if not raw_line:
                 continue
             try:
-                item = json.loads(line)
+                item = json.loads(raw_line)
             except json.JSONDecodeError:
                 continue
-
-            item_type = item.get("type", "")
-
-            if item_type == "user":
-                msg = item.get("message", {})
-                content_parts = msg.get("content", [])
-
-                tool_results: list[dict] = []
-                text_parts: list[str] = []
-
-                for part in content_parts:
-                    if isinstance(part, str):
-                        text_parts.append(part)
-                    elif isinstance(part, dict):
-                        if part.get("type") == "tool_result":
-                            tool_use_id = part.get("tool_use_id", "")
-                            raw = part.get("content", [])
-                            text = (
-                                "".join(str(c) for c in raw)
-                                if isinstance(raw, list)
-                                else str(raw)
-                            )
-                            tool_results.append({
-                                "tool_use_id": tool_use_id,
-                                "content": text,
-                                "is_error": part.get("is_error", False),
-                            })
-                        elif part.get("type") == "text":
-                            text_parts.append(part.get("text", ""))
-
-                for tr in tool_results:
-                    tool_use_id = tr["tool_use_id"]
-                    if tool_use_id in pending_tools:
-                        tool_obs = pending_tools.pop(tool_use_id)
-                        tool_obs.update(output=tr["content"])
-                        tool_obs.end()
-                        count += 1
-                    else:
-                        parent.create_event(
-                            name="tool_output",
-                            output=tr["content"],
-                            metadata={"tool_use_id": tool_use_id},
-                        )
-                        count += 1
-
-                if not tool_results and text_parts:
-                    text = "".join(text_parts)
-                    if text.strip():
-                        parent.create_event(
-                            name="user_message",
-                            input=text,
-                        )
-                        count += 1
-
-            elif item_type == "assistant":
-                msg = item.get("message", {})
-                content = msg.get("content", [])
-                for part in content:
-                    if not isinstance(part, dict):
-                        continue
-                    ptype = part.get("type", "")
-                    if ptype == "text":
-                        text = part.get("text", "")
-                        if text.strip():
-                            parent.create_event(
-                                name="assistant_message",
-                                output=text,
-                            )
-                            count += 1
-                    elif ptype == "tool_use":
-                        tool_name = part.get("name", "unknown")
-                        tool_input = part.get("input", {})
-                        tool_use_id = part.get("id", "")
-                        tool_obs = parent.start_observation(
-                            name=f"tool:{tool_name}",
-                            as_type="tool",
-                            input=tool_input,
-                        )
-                        if tool_use_id:
-                            pending_tools[tool_use_id] = tool_obs
-                        else:
-                            tool_obs.end()
-                        count += 1
-                    elif ptype == "thinking":
-                        text = part.get("thinking", "")
-                        if text.strip():
-                            parent.create_event(
-                                name="thinking",
-                                output=text,
-                            )
-                            count += 1
-
-            elif item_type == "tool_result":
-                content = item.get("content", [])
-                tool_use_id = item.get("tool_use_id", "")
-                text = ""
-                for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text += part.get("text", "")
-                    elif isinstance(part, str):
-                        text += part
-                if text.strip():
-                    if tool_use_id and tool_use_id in pending_tools:
-                        tool_obs = pending_tools.pop(tool_use_id)
-                        tool_obs.update(output=text)
-                        tool_obs.end()
-                    else:
-                        parent.create_event(
-                            name="tool_output",
-                            output=text,
-                        )
-                    count += 1
+            count += _process_transcript_item(item, parent, pending_tools)
 
     for tool_obs in pending_tools.values():
         tool_obs.update(metadata={"status": "no_result"})
@@ -398,3 +427,144 @@ def ingest_transcript_to_span(
 
     log.debug("langfuse_transcript_ingested", count=count, session=claude_session_id)
     return count > 0
+
+
+# ---------------------------------------------------------------------------
+# Streaming CEO transcript tailer
+# ---------------------------------------------------------------------------
+
+
+def _find_recent_transcript(project_path: Path, session_start: float) -> Path | None:
+    """Find the most recently modified JSONL transcript after *session_start*."""
+    claude_dir = Path.home() / ".claude" / "projects"
+    dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
+    proj_dir = claude_dir / dir_name
+    if not proj_dir.exists():
+        return None
+    candidates = [
+        f for f in proj_dir.glob("*.jsonl")
+        if f.stat().st_mtime >= session_start
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda f: f.stat().st_mtime)
+
+
+class TranscriptTailer:
+    """Daemon thread that tails a Claude Code transcript JSONL and
+    incrementally ingests events into a Langfuse span.
+    """
+
+    POLL_INTERVAL: float = 5.0
+    FIND_TIMEOUT: float = 120.0
+    FIND_INTERVAL: float = 2.0
+
+    def __init__(
+        self,
+        trace_id: str,
+        span_id: str,
+        project_path: Path,
+        session_start: float,
+    ) -> None:
+        self.trace_id = trace_id
+        self.span_id = span_id
+        self._project_path = project_path
+        self._session_start = session_start
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._pending_tools: dict[str, Any] = {}
+        self._file_pos: int = 0
+        self._transcript_path: Path | None = None
+        self._total_ingested: int = 0
+
+    def start(self) -> None:
+        self._thread = threading.Thread(
+            target=self._run,
+            name="ceo-transcript-tailer",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop_and_drain(self) -> int:
+        """Signal stop, join, do a final drain. Returns total observations ingested."""
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join(timeout=10.0)
+
+        if self._transcript_path is None:
+            self._transcript_path = _find_recent_transcript(
+                self._project_path, self._session_start,
+            )
+        if self._transcript_path is not None and self._transcript_path.exists():
+            try:
+                self._ingest_new_lines()
+            except Exception:
+                log.debug("tailer_final_drain_failed", exc_info=True)
+
+        for tool_obs in self._pending_tools.values():
+            try:
+                tool_obs.update(metadata={"status": "no_result"})
+                tool_obs.end()
+            except Exception:
+                pass
+        self._pending_tools.clear()
+
+        return self._total_ingested
+
+    def _run(self) -> None:
+        try:
+            deadline = _time.monotonic() + self.FIND_TIMEOUT
+            while not self._stop_event.is_set() and _time.monotonic() < deadline:
+                self._transcript_path = _find_recent_transcript(
+                    self._project_path, self._session_start,
+                )
+                if self._transcript_path is not None:
+                    break
+                self._stop_event.wait(self.FIND_INTERVAL)
+
+            if self._transcript_path is None:
+                log.debug("tailer_transcript_not_found")
+                return
+
+            while not self._stop_event.is_set():
+                try:
+                    self._ingest_new_lines()
+                    saved = _trace_names.get(self.trace_id)
+                    if saved:
+                        _update_trace_via_api(self.trace_id, saved[0], saved[1])
+                except Exception:
+                    log.debug("tailer_ingest_error", exc_info=True)
+                self._stop_event.wait(self.POLL_INTERVAL)
+        except Exception:
+            log.debug("tailer_thread_error", exc_info=True)
+
+    def _ingest_new_lines(self) -> None:
+        if self._transcript_path is None or not self._transcript_path.exists():
+            return
+
+        parent = _observations.get(self.span_id)
+        if parent is None:
+            return
+
+        with open(self._transcript_path) as f:
+            f.seek(self._file_pos)
+            new_lines = f.readlines()
+            self._file_pos = f.tell()
+
+        if not new_lines:
+            return
+
+        for raw_line in new_lines:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            try:
+                item = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                self._total_ingested += _process_transcript_item(
+                    item, parent, self._pending_tools,
+                )
+            except Exception:
+                log.debug("tailer_item_error", exc_info=True)
