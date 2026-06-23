@@ -397,11 +397,7 @@ All commands run from the project root:
 
 ### Requirements
 
-- **Podman** (recommended) or **Docker**
-  - macOS: `brew install podman`
-  - Fedora: `dnf install podman`
-- **podman-compose** (if using Podman)
-  - `pip install podman-compose`
+- **Docker** or **Podman** — any of `docker compose`, `docker-compose`, or `podman-compose` works
 
 ### Disabling Tracing
 
