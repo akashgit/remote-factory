@@ -148,7 +148,7 @@ def _agent_to_instruction(node: AgentNode, *, is_parallel: bool = False) -> str:
         writes_str = ", ".join(sorted(node.writes))
         prompt += f"\nWrite output to: {writes_str}"
 
-    bg_suffix = " &" if not node.blocking else ""
+    bg_suffix = " &" if is_parallel or not node.blocking else ""
     tag_flag = ""
     if is_parallel and role == "researcher":
         tag = node.id.replace("researcher_", "")
