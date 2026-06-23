@@ -2374,20 +2374,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         _print_banner("review")
 
-        repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
             f"Project: {project_path}\nMode: review\n\n"
             f"## PR Review Directive\n\n"
-            f"Review PR #{pr_number}{repo_clause}.\n\n"
-            f"1. Read the PR diff: `gh pr diff {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
-            f"2. Read the PR description: `gh pr view {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
-            f"3. Run the project's test suite and lint checks\n"
-            f"4. Spawn the QA agent for health check, code review, and adversarial QA\n"
-            f"5. Post your review verdict on the PR using "
-            f"`factory review --verdict <KEEP|REVERT> --pr {pr_number}"
-            f"{' --repo ' + repo if repo else ''}`\n"
+            f"Review PR #{pr_number}{' in repo `' + repo + '`' if repo else ''}"
+            f" using the 3-round review protocol.\n\n"
+            f"Follow the `## Mode: PR Review` section in your prompt.\n\n"
+            f"PR number: {pr_number}\n"
+            + (f"Repo: {repo}\n" if repo else "")
+            + f"Project path: {project_path}\n"
         )
 
         if not headless:

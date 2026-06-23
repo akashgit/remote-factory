@@ -2397,6 +2397,109 @@ factory log "$PROJECT_PATH" "refine.completed" --data "{\"exp_id\": $EXP_ID, \"v
 
 ---
 
+## Mode: PR Review (`--mode review --pr <N>`)
+
+A 3-round single-agent review of a GitHub PR. One QA agent, three rounds of escalating depth. Each round builds on the findings of the previous rounds.
+
+### PR-R0: Read PR Context
+
+```bash
+gh pr view $PR_NUMBER --json title,body,additions,deletions,changedFiles
+gh pr diff $PR_NUMBER
+```
+
+If `--repo` was provided, append `--repo $REPO` to both commands. Save the diff — you will reference it in all 3 rounds.
+
+### PR-R1: Round 1 — Standard Review
+
+Spawn the QA agent for a standard full pass:
+
+```bash
+factory agent qa --task "Review round 1/3 for PR #$PR_NUMBER.
+
+$DIFF_AND_CONTEXT
+
+This is round 1 of 3. Perform your standard review:
+1. Health Check — run evals
+2. Code Review — 7-category checklist
+3. Adversarial QA — actually run/test the feature
+
+Report all findings with file:line references." --project $PROJECT_PATH --timeout 300
+```
+
+Read `.factory/reviews/qa-latest.md`. Summarize the key findings from round 1.
+
+### PR-R2: Round 2 — Deep Review
+
+Spawn the QA agent again with round 1 findings:
+
+```bash
+factory agent qa --task "Review round 2/3 for PR #$PR_NUMBER.
+
+$DIFF_AND_CONTEXT
+
+## Round 1 Findings
+$ROUND_1_SUMMARY
+
+This is round 2 of 3 — DEEP REVIEW. You have already reviewed this PR once. Now:
+1. Challenge your own round 1 findings — are they real issues or false positives?
+2. Look for issues you MISSED in round 1 — what did you gloss over?
+3. Go deeper on flagged areas — explore adjacent code paths
+4. Focus on edge cases and error handling you skipped
+
+Do NOT repeat round 1 findings. Report only NEW findings or escalations." --project $PROJECT_PATH --timeout 300
+```
+
+Read `.factory/reviews/qa-latest.md`. Add round 2 findings to the cumulative list.
+
+### PR-R3: Round 3 — Adversarial Stress Test
+
+Spawn the QA agent one final time with all prior findings:
+
+```bash
+factory agent qa --task "Review round 3/3 for PR #$PR_NUMBER.
+
+$DIFF_AND_CONTEXT
+
+## Round 1 Findings
+$ROUND_1_SUMMARY
+
+## Round 2 Findings
+$ROUND_2_SUMMARY
+
+This is round 3 of 3 — ADVERSARIAL STRESS TEST. Try to BREAK this PR:
+1. What assumptions does this code make that might not hold?
+2. Boundary conditions nobody tested?
+3. Race conditions, concurrency issues, TOCTOU?
+4. What if dependencies are unavailable or behave differently?
+5. Can a malicious actor exploit any of these changes?
+6. Look at every finding marked LOW or INFO — should any be escalated?
+
+Report only NEW findings. Use severity ratings." --project $PROJECT_PATH --timeout 300
+```
+
+Read `.factory/reviews/qa-latest.md`.
+
+### PR-R4: Consolidate and Post Verdict
+
+Collect all findings across 3 rounds. Post a consolidated review:
+
+```bash
+factory review \
+    --verdict $VERDICT \
+    --reason "$ONE_SENTENCE_SUMMARY" \
+    --pr $PR_NUMBER \
+    --notes "review_rounds=3 r1_issues=$R1_COUNT r2_issues=$R2_COUNT r3_issues=$R3_COUNT"
+```
+
+**Verdict rules:**
+- ANY finding rated CRITICAL across any round → REVERT
+- Multiple HIGH findings that the PR author should address → REVERT
+- Minor issues only (MEDIUM/LOW/INFO) → KEEP with notes
+- CLEAN across all 3 rounds → KEEP
+
+---
+
 ## CEO Self-Learning Protocol
 
 You learn from your own decisions. Every keep/revert decision and every agent failure is data that feeds your own playbook evolution.

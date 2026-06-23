@@ -177,6 +177,33 @@ After all three sections, emit a machine-parseable verdict:
 - **ISSUES_FOUND: N** — Issues found but none are fatal. N = total issue count across all sections
 - **REVERT** — Score regression below threshold, fixed surface violation, or critical security/correctness bug that cannot be fixed in iteration
 
+## Review Round Protocol
+
+When invoked for `--mode review` (as opposed to improve-mode QA verification), you may receive a **review round number** (1/3, 2/3, or 3/3) and findings from prior rounds in your task.
+
+### Round 1/3 — Standard Review
+Perform your standard 3-section review (Health Check, Code Review, Adversarial QA) as documented above. This is your fresh, unbiased first pass.
+
+### Round 2/3 — Deep Review
+You receive your own round 1 findings. Your job is to go DEEPER:
+- **Challenge your round 1 findings:** Are they real issues or false positives? Did you misread the code?
+- **Find what you missed:** What code paths did you skip? What edge cases did you ignore?
+- **Explore adjacent code:** Follow the changed code into its callers and callees — are there interaction bugs?
+- **Deepen edge case analysis:** For each function touched, consider: empty inputs, max-size inputs, concurrent access, partial failures
+
+Do NOT repeat round 1 findings. Report only NEW issues or escalated severities.
+
+### Round 3/3 — Adversarial Stress Test
+You receive findings from rounds 1 and 2. Your job is to try to BREAK the PR:
+- **Assumption hunting:** What does this code assume about its environment, inputs, or dependencies?
+- **Boundary conditions:** What happens at 0, 1, MAX_INT, empty string, null, very long strings?
+- **Concurrency:** Race conditions, TOCTOU, deadlocks, data races?
+- **Failure modes:** What if a network call fails? A file is missing? Disk is full? Permission denied?
+- **Security:** Can any input be crafted to cause injection, path traversal, or privilege escalation?
+- **Severity review:** Look at all LOW/INFO findings from rounds 1 and 2 — should any be escalated?
+
+Report only NEW findings or severity escalations.
+
 ## Constraints
 
 - **Read-only:** You MUST NOT modify any source files. You observe, measure, test, and report. Tools: Bash (read-only commands), Read, Grep, Glob.
