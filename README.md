@@ -353,6 +353,67 @@ Run `uv run factory config show` to see resolved config, or `uv run factory conf
 
 ---
 
+## LLM Tracing (LangFuse)
+
+LangFuse provides LLM observability and tracing — track agent invocations, token usage, and execution flow across all factory runs.
+
+### Quick Start (Zero Configuration)
+
+Tracing works automatically with no setup required:
+
+```bash
+scripts/langfuse start
+```
+
+That's it. The factory auto-detects LangFuse at `localhost:3000` using development credentials that match the docker-compose setup. No environment variables or `.env` files needed.
+
+### Viewing Traces
+
+1. Start LangFuse: `scripts/langfuse start`
+2. Run a query: `uv run factory ceo /path/to/project`
+3. Open browser: `scripts/langfuse open --traces`
+4. Login: `dev@localhost.local` / `devpassword123`
+
+Tag queries for easy searching:
+```bash
+uv run factory ceo /path --trace-id my-test
+# Search by "Session ID" in the LangFuse UI
+```
+
+### CLI Commands
+
+All commands run from the project root:
+
+| Command | Description |
+|---------|-------------|
+| `scripts/langfuse start` | Start LangFuse services |
+| `scripts/langfuse stop` | Stop services (preserve data) |
+| `scripts/langfuse stop --volumes` | Stop and delete all data |
+| `scripts/langfuse status` | Check service health and trace count |
+| `scripts/langfuse logs` | View service logs |
+| `scripts/langfuse logs -f` | Stream logs in real-time |
+| `scripts/langfuse open` | Open LangFuse UI in browser |
+| `scripts/langfuse reset` | Delete all traces |
+
+### Requirements
+
+- **Podman** (recommended) or **Docker**
+  - macOS: `brew install podman`
+  - Fedora: `dnf install podman`
+- **podman-compose** (if using Podman)
+  - `pip install podman-compose`
+
+### Disabling Tracing
+
+To disable tracing without stopping LangFuse:
+```bash
+export LANGFUSE_TRACING_ENABLED=false
+```
+
+For LLM connection setup (optional, only needed for LangFuse's evaluation and playground features) and troubleshooting, see [`infra/langfuse/README.md`](infra/langfuse/README.md).
+
+---
+
 ## Install as a Claude Code Plugin
 
 re:factory is also distributed as a fully-bundled [Claude Code plugin](https://docs.claude.com/en/docs/claude-code/plugins) — agents, skills, and slash commands packaged together. A GitHub Actions workflow rebuilds the `plugins` branch of this repo on every push to `main`, so it always tracks the latest generated artifacts.
