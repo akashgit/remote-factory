@@ -191,7 +191,7 @@ class TestFlush:
         telemetry_mod._client = mock_client
         with patch.object(telemetry_mod, "_update_trace_via_api"):
             telemetry_mod.flush()
-        mock_client.flush.assert_called_once()
+        assert mock_client.flush.call_count == 2
 
     def test_noop_when_no_client(self) -> None:
         telemetry_mod._client = None
