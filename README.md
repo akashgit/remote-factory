@@ -357,15 +357,19 @@ Run `uv run factory config show` to see resolved config, or `uv run factory conf
 
 LangFuse provides LLM observability and tracing — track agent invocations, token usage, and execution flow across all factory runs.
 
-### Quick Start (Zero Configuration)
-
-Tracing works automatically with no setup required:
+### Quick Start
 
 ```bash
+# Start LangFuse services
 scripts/langfuse start
+
+# Set the env vars the factory needs (printed by the start command)
+export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
 ```
 
-That's it. The factory auto-detects LangFuse at `localhost:3000` using development credentials that match the docker-compose setup. No environment variables or `.env` files needed.
+The dev credentials above match the docker-compose setup. Add them to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
 
 ### Viewing Traces
 
