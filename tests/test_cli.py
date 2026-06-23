@@ -1026,7 +1026,7 @@ class TestCmdCeoReview:
         task = mock_agent.call_args[0][1]
         assert "Mode: review" in task
         assert "PR #42" in task
-        assert "gh pr diff 42" in task
+        assert "3 rounds of QA" in task
         assert "gh pr view 42" in task
 
     def test_review_mode_headless_with_repo(self, tmp_path, capsys):
