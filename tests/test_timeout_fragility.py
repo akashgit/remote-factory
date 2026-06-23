@@ -392,3 +392,185 @@ class TestInactivityTimeoutDeadCodeWhenExceedsMaxTimeout:
         assert result.return_code == 0, (
             f"Process should exit normally, got return_code={result.return_code}"
         )
+
+
+class TestCoverageGaps:
+    """Tests targeting specific uncovered lines in _stream.py and _subprocess.py."""
+
+    async def test_tee_stream_chunked_sanitize_ansi_only(self):
+        """_stream.py L138-142: sanitize strips ANSI-only chunks in chunked mode.
+
+        Feed tee_stream_chunked an ANSI-only chunk followed by a visible chunk.
+        With sanitize=True, the ANSI-only chunk should be skipped in dest output
+        but preserved in the raw buffer.
+        """
+        from io import BytesIO
+
+        from factory.runners._stream import tee_stream_chunked
+
+        ansi_only = b"\x1b[32m\x1b[0m\n"
+        visible = b"visible\n"
+
+        reader = asyncio.StreamReader()
+        reader.feed_data(ansi_only)
+        reader.feed_data(visible)
+        reader.feed_eof()
+
+        dest = BytesIO()
+        buffer: list[bytes] = []
+
+        await tee_stream_chunked(
+            reader, dest, buffer,
+            stream=True,
+            sanitize=True,
+            chunk_size=len(ansi_only),
+        )
+
+        raw = b"".join(buffer)
+        assert b"\x1b[32m" in raw, "Raw buffer should contain ANSI sequences"
+        assert b"visible" in raw, "Raw buffer should contain visible text"
+
+        dest_content = dest.getvalue()
+        assert b"visible" in dest_content, "Dest should contain visible text"
+        assert b"\x1b[" not in dest_content, "Dest should not contain ANSI sequences"
+
+    async def test_watchdog_killpg_fallback_to_proc_kill(self):
+        """_stream.py L172-173: killpg fails, falls back to proc.kill().
+
+        Mock os.killpg to raise OSError so the watchdog falls back to proc.kill().
+        Process sleeps with no output, triggering the inactivity watchdog.
+        """
+        from unittest.mock import patch
+
+        script = "import time\ntime.sleep(60)\n"
+        proc = await _create_proc(script)
+        killed_by_watchdog: list[bool] = [False]
+
+        with patch(
+            "factory.runners._stream.os.killpg",
+            side_effect=OSError("mocked killpg failure"),
+        ):
+            await stream_subprocess(
+                proc,
+                stream=False,
+                inactivity_timeout=1.0,
+                killed_by_watchdog=killed_by_watchdog,
+            )
+
+        assert killed_by_watchdog[0] is True, (
+            "Watchdog should have killed the process via proc.kill() fallback"
+        )
+        assert proc.returncode is not None
+
+    async def test_proc_wait_timeout_killpg_fallback(self):
+        """_stream.py L280-284: proc.wait() timeout guard killpg fallback.
+
+        Subprocess redirects pipes to /dev/null and sleeps. Streams close
+        immediately, proc.wait(timeout=10) fires, killpg is mocked to fail,
+        forcing the fallback to proc.kill().
+        """
+        from unittest.mock import patch
+
+        script = (
+            "import os, sys, time\n"
+            "devnull = os.open(os.devnull, os.O_WRONLY)\n"
+            "os.dup2(devnull, 1)\n"
+            "os.dup2(devnull, 2)\n"
+            "os.close(devnull)\n"
+            "time.sleep(60)\n"
+        )
+
+        proc = await _create_proc(script, start_new_session=True)
+        killed_by_watchdog: list[bool] = [False]
+
+        with patch(
+            "factory.runners._stream.os.killpg",
+            side_effect=ProcessLookupError("mocked"),
+        ):
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
+                stream_subprocess(
+                    proc,
+                    stream=False,
+                    inactivity_timeout=30.0,
+                    killed_by_watchdog=killed_by_watchdog,
+                ),
+                timeout=20.0,
+            )
+
+        assert proc.returncode is not None, (
+            "Process should have been killed by proc.kill() fallback"
+        )
+        assert killed_by_watchdog[0] is False
+
+    async def test_max_timeout_killpg_fallback(self):
+        """_subprocess.py L100-104: max_timeout killpg fallback.
+
+        Mock os.killpg in _subprocess.py to raise ProcessLookupError when
+        the max_timeout fires, forcing the fallback to proc.kill().
+        """
+        from unittest.mock import patch
+
+        script = (
+            "import sys, time\n"
+            "for i in range(100):\n"
+            "    sys.stdout.write(f'tick {i}\\n')\n"
+            "    sys.stdout.flush()\n"
+            "    time.sleep(0.5)\n"
+        )
+
+        with patch(
+            "factory.runners._subprocess.os.killpg",
+            side_effect=ProcessLookupError("mocked"),
+        ):
+            result = await run_subprocess(
+                [sys.executable, "-c", script],
+                cwd=os.getcwd(),
+                env=os.environ.copy(),
+                timeout=10.0,
+                runner_name="test",
+                role="killpg-fallback",
+                max_timeout=2.0,
+            )
+
+        assert "max wall-clock timeout" in result.stdout
+        assert result.return_code == 1
+
+    async def test_nonzero_exit_not_killed_by_watchdog(self):
+        """_subprocess.py: process exits with non-zero code on its own.
+
+        Verify the path where return_code != 0 but killed_by_watchdog is False.
+        """
+        script = (
+            "import sys\n"
+            "sys.stdout.write('error output here\\n')\n"
+            "sys.stdout.flush()\n"
+            "sys.exit(1)\n"
+        )
+
+        result = await run_subprocess(
+            [sys.executable, "-c", script],
+            cwd=os.getcwd(),
+            env=os.environ.copy(),
+            timeout=10.0,
+            runner_name="test",
+            role="nonzero-exit",
+        )
+
+        assert result.return_code == 1
+        assert "error output here" in result.stdout
+        assert "inactivity" not in result.stdout
+        assert "max wall-clock timeout" not in result.stdout
+
+    async def test_file_not_found_returns_error(self):
+        """_subprocess.py L115-121: FileNotFoundError when binary is missing."""
+        result = await run_subprocess(
+            ["nonexistent-binary-xyz-12345"],
+            cwd=os.getcwd(),
+            env=os.environ.copy(),
+            timeout=10.0,
+            runner_name="test",
+            role="fnf",
+        )
+
+        assert result.return_code == 1
+        assert "not found" in result.stdout
