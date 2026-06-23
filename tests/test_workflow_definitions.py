@@ -199,8 +199,7 @@ class TestAgentPool:
             "researcher": "sonnet",
             "strategist": "opus",
             "builder": "opus",
-            "reviewer": "opus",
-            "evaluator": "opus",
+            "qa": "opus",
             "failure_analyst": "opus",
             "ceo": "opus",
             "archivist": "haiku",
@@ -217,10 +216,13 @@ class TestAgentPool:
 
 
 class TestRegisterAll:
-    def test_all_five_workflows(self) -> None:
+    def test_all_eight_workflows(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) == 5
-        assert set(all_wf.keys()) == {"build", "design", "improve", "research", "meta"}
+        assert len(all_wf) == 8
+        assert set(all_wf.keys()) == {
+            "build", "design", "improve", "research", "meta",
+            "discover", "review", "refine",
+        }
 
     def test_all_validate(self) -> None:
         all_wf = register_all()

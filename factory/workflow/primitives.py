@@ -17,8 +17,7 @@ class AgentRole(str, Enum):
     RESEARCHER = "researcher"
     STRATEGIST = "strategist"
     BUILDER = "builder"
-    REVIEWER = "reviewer"
-    EVALUATOR = "evaluator"
+    QA = "qa"
     FAILURE_ANALYST = "failure_analyst"
     CEO = "ceo"
     ARCHIVIST = "archivist"
@@ -38,8 +37,7 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "researcher": AgentConfig(role=AgentRole.RESEARCHER, model="sonnet"),
     "strategist": AgentConfig(role=AgentRole.STRATEGIST, model="opus"),
     "builder": AgentConfig(role=AgentRole.BUILDER, model="opus"),
-    "reviewer": AgentConfig(role=AgentRole.REVIEWER, model="opus"),
-    "evaluator": AgentConfig(role=AgentRole.EVALUATOR, model="opus"),
+    "qa": AgentConfig(role=AgentRole.QA, model="opus"),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus"),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus"),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku"),
