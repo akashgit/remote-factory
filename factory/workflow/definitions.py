@@ -1,10 +1,13 @@
-"""All 5 workflow definitions as Python functions returning Workflow objects.
+"""All 8 workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
 W₃: Improve Mode
 W₄: Research Mode (= W₃ with baseline+failure_analyst, research_command eval, plateau gate)
 W₅: Meta Mode
+W₆: Discover Mode
+W₇: Review Mode
+W₈: Refine Mode
 """
 
 from __future__ import annotations
@@ -24,6 +27,19 @@ from factory.workflow.primitives import (
     VerdictType,
     Workflow,
 )
+
+# Re-export for test convenience
+__all__ = [
+    "build_workflow",
+    "design_workflow",
+    "improve_workflow",
+    "research_workflow",
+    "meta_workflow",
+    "discover_workflow",
+    "review_workflow",
+    "refine_workflow",
+    "register_all",
+]
 
 
 # ── W₁: Build Mode ──────────────────────────────────────────────
@@ -763,15 +779,366 @@ def meta_workflow() -> Workflow:
     )
 
 
+# ── W₆: Discover Mode ──────────────────────────────────────────
+
+
+def discover_workflow() -> Workflow:
+    """W₆: Discover Mode — auto-discover eval dimensions and generate eval harness.
+
+    factory discover → CEO verify → re-detect state
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["discover"] = FnNode(
+        id="discover",
+        command="factory discover {project_path}",
+        writes={
+            ".factory/eval_profile.json",
+            "eval/score.py",
+        },
+    )
+
+    nodes["gate_discover"] = GateNode(
+        id="gate_discover",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Verify the discovered eval profile makes sense. "
+            "Read .factory/eval_profile.json and eval/score.py. "
+            "Check: Are the dimensions relevant to this project? "
+            "Does score.py look correct? Any missing dimensions?"
+        ),
+        reads={".factory/eval_profile.json", "eval/score.py"},
+    )
+
+    nodes["redetect"] = FnNode(
+        id="redetect",
+        command="factory detect {project_path}",
+        reads={".factory/eval_profile.json"},
+    )
+
+    edges = [
+        Edge(source="discover", target="gate_discover"),
+        Edge(source="gate_discover", target="redetect", condition=VerdictType.PROCEED),
+        Edge(source="gate_discover", target="discover", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.NO_FACTORY
+
+    return Workflow(
+        name="discover",
+        nodes=nodes,
+        edges=edges,
+        start_node="discover",
+        trigger=trigger,
+    )
+
+
+# ── W₇: Review Mode ───────────────────────────────────────────
+
+
+def review_workflow() -> Workflow:
+    """W₇: Review Mode — verify eval dimensions, create factory.md, baseline eval.
+
+    eval_test → CEO gate (fix dims) → mark_reviewed → create_factory_md →
+    factory_init → baseline_eval → commit → e2e_gate
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["eval_test"] = FnNode(
+        id="eval_test",
+        command='cd {project_path} && python eval/score.py',
+        reads={".factory/eval_profile.json", "eval/score.py"},
+        writes={".factory/reviews/eval-test-latest.md"},
+    )
+
+    nodes["gate_eval"] = GateNode(
+        id="gate_eval",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check eval output. Did all dimensions pass? "
+            "If any dimension failed, dispatch the Builder to fix it "
+            "(install missing tool, adjust command, remove broken dimension). "
+            "PROCEED only when all dimensions produce valid scores."
+        ),
+        reads={".factory/reviews/eval-test-latest.md"},
+    )
+
+    nodes["mark_reviewed"] = FnNode(
+        id="mark_reviewed",
+        command=(
+            "python3 -c \""
+            "import json; from pathlib import Path; "
+            "p = Path('{project_path}/.factory/eval_profile.json'); "
+            "d = json.loads(p.read_text()); d['human_reviewed'] = True; "
+            "p.write_text(json.dumps(d, indent=2))"
+            "\""
+        ),
+        reads={".factory/eval_profile.json"},
+        writes={".factory/eval_profile.json"},
+    )
+
+    nodes["create_factory_md"] = AgentNode(
+        id="create_factory_md",
+        role=AgentRole.CEO,
+        prompt_template=(
+            "Create factory.md from template. "
+            "Copy the factory config template to the project root. "
+            "Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test. "
+            "If .factory/eval_spec.json exists, populate the Eval Spec section. "
+            "If .factory/strategy/current.md has a Research Configuration section, "
+            "populate research sections (Research Target, Mutable/Fixed Surfaces, etc.)."
+        ),
+        reads={".factory/eval_profile.json"},
+        writes={"factory.md"},
+    )
+
+    nodes["factory_init"] = FnNode(
+        id="factory_init",
+        command="factory init {project_path}",
+        reads={"factory.md"},
+        writes={".factory/config.json"},
+    )
+
+    nodes["baseline_eval"] = FnNode(
+        id="baseline_eval",
+        command="factory eval {project_path}",
+        reads={".factory/config.json"},
+        writes={".factory/experiments/baseline.json"},
+    )
+
+    nodes["commit"] = FnNode(
+        id="commit",
+        command=(
+            'cd {project_path} && git add factory.md eval/score.py .factory/ '
+            '&& git commit -m "factory: initialize factory config and baseline eval"'
+        ),
+        reads={"factory.md", "eval/score.py", ".factory/"},
+    )
+
+    nodes["gate_e2e"] = GateNode(
+        id="gate_e2e",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "E2E verification gate. Verify the project runs end-to-end. "
+            "Check the Smoke Test command in factory.md and run it. "
+            "If this is a pre-existing project entering the factory for the first time, "
+            "it MUST be verified before transitioning to Improve mode."
+        ),
+        reads={"factory.md", ".factory/config.json"},
+    )
+
+    edges = [
+        Edge(source="eval_test", target="gate_eval"),
+        Edge(source="gate_eval", target="mark_reviewed", condition=VerdictType.PROCEED),
+        Edge(source="gate_eval", target="eval_test", condition=VerdictType.RELOOP),
+        Edge(source="mark_reviewed", target="create_factory_md"),
+        Edge(source="create_factory_md", target="factory_init"),
+        Edge(source="factory_init", target="baseline_eval"),
+        Edge(source="baseline_eval", target="commit"),
+        Edge(source="commit", target="gate_e2e"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.EVALS_PENDING_REVIEW
+
+    return Workflow(
+        name="review",
+        nodes=nodes,
+        edges=edges,
+        start_node="eval_test",
+        trigger=trigger,
+    )
+
+
+# ── W₈: Refine Mode ───────────────────────────────────────────
+
+
+def refine_workflow() -> Workflow:
+    """W₈: Refine Mode — lightweight user-directed refinement pipeline.
+
+    Refiner → CEO gate → tier gate → begin → create issue →
+    Builder → QA gate(max 3) → precheck → finalize → Archivist(async)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # R0: Classify
+    nodes["refiner"] = AgentNode(
+        id="refiner",
+        role=AgentRole.REFINER,
+        prompt_template=(
+            "Classify and scope a refinement request. "
+            "Read CLAUDE.md and factory.md. Analyze the codebase to identify "
+            "which files need to change, estimate scope, and classify the request "
+            "as Tier 1, 2, or 3. Produce the structured classification output "
+            "with a Builder task description."
+        ),
+        reads={"CLAUDE.md", "factory.md"},
+        writes={".factory/reviews/refiner-latest.md"},
+    )
+
+    # R0-review: CEO Review
+    nodes["gate_refiner"] = GateNode(
+        id="gate_refiner",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review Refiner classification. Is the tier classification reasonable? "
+            "Are the identified files correct? Is the Builder task description "
+            "specific enough? REDIRECT if the classification is wrong."
+        ),
+        reads={".factory/reviews/refiner-latest.md"},
+    )
+
+    # R1: Tier gate — Tier 3 exits
+    nodes["gate_tier"] = GateNode(
+        id="gate_tier",
+        evaluator_type="fn",
+        evaluator_command=(
+            "python3 -c \""
+            "from pathlib import Path; "
+            "text = Path('{project_path}/.factory/reviews/refiner-latest.md').read_text(); "
+            "print('HALT' if 'Tier 3' in text or 'tier 3' in text or 'TIER 3' in text else 'PROCEED')"
+            "\""
+        ),
+        reads={".factory/reviews/refiner-latest.md"},
+    )
+
+    # R2: Begin experiment
+    nodes["begin"] = FnNode(
+        id="begin",
+        command='factory begin {project_path} --hypothesis "Refine: user refinement request"',
+        writes={".factory/experiments/current_id"},
+    )
+
+    # R3: Create GitHub issue
+    nodes["create_issue"] = FnNode(
+        id="create_issue",
+        command=(
+            'gh issue create --title "Refine: refinement request" '
+            '--label "refinement" --body "Factory refinement experiment."'
+        ),
+        reads={".factory/reviews/refiner-latest.md"},
+    )
+
+    # R4: Builder
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the refinement described in the Refiner's output. "
+            "Read the GitHub issue. Read CLAUDE.md and factory.md. "
+            "Implement exactly what the issue describes. Run tests. "
+            "Commit and open a draft PR."
+        ),
+        reads={".factory/reviews/refiner-latest.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    # R5: QA verification
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.REVIEWER,
+        prompt_template=(
+            "Verify the refinement. Run all 3 verification sections: "
+            "1. Health Check — run factory eval. Report composite score and delta. "
+            "2. Code Review — read PR diff, evaluate 7-category checklist. "
+            "Run factory guard with --check-scope. "
+            "3. Adversarial QA — run/test the project, verify the refinement works."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    # R5-review: CEO gate on QA
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read QA output. Did all verification sections pass? "
+            "Are there issues that need Builder fixes? "
+            "REDIRECT to Builder if issues found (max 3 iterations)."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    # R6: Precheck gate
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    # R7: Finalize
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'Refine: request'",
+        reads={".factory/reviews/qa-latest.md"},
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    # R12: Archivist (async)
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive refinement experiment results and learnings.",
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/archive/refinement.md"},
+        blocking=False,
+    )
+
+    edges = [
+        # Refiner → CEO gate
+        Edge(source="refiner", target="gate_refiner"),
+        Edge(source="gate_refiner", target="gate_tier", condition=VerdictType.PROCEED),
+        Edge(source="gate_refiner", target="refiner", condition=VerdictType.RELOOP),
+        # Tier gate → begin (proceed) or halt (tier 3)
+        Edge(source="gate_tier", target="begin", condition=VerdictType.PROCEED),
+        # Begin → create issue → builder
+        Edge(source="begin", target="create_issue"),
+        Edge(source="create_issue", target="builder"),
+        # Builder → QA → CEO gate
+        Edge(source="builder", target="qa"),
+        Edge(source="qa", target="gate_qa"),
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Precheck → finalize → archivist
+        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="finalize", target="archivist"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.HAS_FACTORY and bool(ctx.get("refine"))
+
+    return Workflow(
+        name="refine",
+        nodes=nodes,
+        edges=edges,
+        start_node="refiner",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 5 workflow definitions."""
+    """Build and return all 8 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
+        "discover": discover_workflow(),
+        "review": review_workflow(),
         "improve": improve_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
+        "refine": refine_workflow(),
     }

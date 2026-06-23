@@ -340,3 +340,58 @@ class TestValidateSkill:
         content = f'---\nname: workflow-test\ndescription: "x"\n---\n{body}'
         issues = validate_skill(content)
         assert any("500" in i for i in issues)
+
+
+# ── real workflow skill generation ──────────────────────────────
+
+
+class TestRealWorkflowSkills:
+    """Tests that real workflow definitions produce valid, exportable skills."""
+
+    def test_discover_workflow_generates_valid_skill(self) -> None:
+        from factory.workflow.definitions import discover_workflow
+
+        wf = discover_workflow()
+        content = workflow_to_skill_md(wf)
+        issues = validate_skill(content)
+        assert issues == [], f"Validation issues: {issues}"
+        assert "workflow-discover" in content
+        assert "factory discover" in content
+
+    def test_review_workflow_generates_valid_skill(self) -> None:
+        from factory.workflow.definitions import review_workflow
+
+        wf = review_workflow()
+        content = workflow_to_skill_md(wf)
+        issues = validate_skill(content)
+        assert issues == [], f"Validation issues: {issues}"
+        assert "workflow-review" in content
+        assert "eval" in content.lower()
+
+    def test_refine_workflow_generates_valid_skill(self) -> None:
+        from factory.workflow.definitions import refine_workflow
+
+        wf = refine_workflow()
+        content = workflow_to_skill_md(wf)
+        issues = validate_skill(content)
+        assert issues == [], f"Validation issues: {issues}"
+        assert "workflow-refine" in content
+        assert "refiner" in content.lower()
+
+    def test_all_eight_skills_exported(self, tmp_path: Path) -> None:
+        from factory.workflow.definitions import register_all
+
+        workflows = register_all()
+        paths = export_all_skills(tmp_path, workflows=workflows)
+        assert len(paths) == 8, f"Expected 8 skills, got {len(paths)}"
+        dirs = {p.parent.name for p in paths}
+        expected = {
+            "workflow-build", "workflow-design", "workflow-discover",
+            "workflow-review", "workflow-improve", "workflow-research",
+            "workflow-meta", "workflow-refine",
+        }
+        assert dirs == expected, f"Missing: {expected - dirs}"
+        for p in paths:
+            content = p.read_text()
+            issues = validate_skill(content)
+            assert issues == [], f"{p.parent.name} validation: {issues}"
