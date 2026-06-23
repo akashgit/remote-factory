@@ -49,8 +49,13 @@ def build_workflow() -> Workflow:
         id="researcher_similar",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Research similar projects and prior art. "
-            "Write findings to .factory/strategy/research-similar.md"
+            "Similar projects research. "
+            "Search the web for similar projects, existing solutions, and prior art. "
+            "Analyze their strengths, weaknesses, and market positioning. "
+            "Check .factory/archive/ for prior knowledge on similar builds. "
+            "Write findings to .factory/strategy/research-similar.md covering: "
+            "similar projects found (with links), what they do well and what's missing, "
+            "differentiation opportunities."
         ),
         writes={".factory/strategy/research-similar.md"},
     )
@@ -58,8 +63,13 @@ def build_workflow() -> Workflow:
         id="researcher_techstack",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Research tech stack choices, best practices, and implementation patterns. "
-            "Write findings to .factory/strategy/research-techstack.md"
+            "Tech stack research. "
+            "Identify the best technology stack for this type of project. "
+            "Find architecture patterns and best practices. "
+            "Evaluate framework/library options with trade-offs. "
+            "Write findings to .factory/strategy/research-techstack.md covering: "
+            "recommended tech stack with rationale, architecture patterns, "
+            "framework comparisons."
         ),
         writes={".factory/strategy/research-techstack.md"},
     )
@@ -67,8 +77,13 @@ def build_workflow() -> Workflow:
         id="researcher_pitfalls",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Research common pitfalls, anti-patterns, and failure modes. "
-            "Write findings to .factory/strategy/research-pitfalls.md"
+            "Pitfalls and scope research. "
+            "Identify potential pitfalls and common mistakes for this type of project. "
+            "Research MVP scope best practices. "
+            "Check .factory/archive/ for lessons from past builds. "
+            "Write findings to .factory/strategy/research-pitfalls.md covering: "
+            "potential pitfalls to avoid, MVP scope recommendation, "
+            "lessons from similar past builds."
         ),
         writes={".factory/strategy/research-pitfalls.md"},
     )
@@ -90,6 +105,10 @@ def build_workflow() -> Workflow:
         id="gate_research",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Is the research relevant? Does it cover the technology landscape adequately? "
+            "Check for gaps in similar projects, tech stack analysis, and pitfall coverage."
+        ),
         reads={".factory/strategy/research-combined.md"},
     )
 
@@ -98,18 +117,31 @@ def build_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Synthesize research into a phased build plan. "
-            "Read research files and write plan to .factory/strategy/current.md"
+            "Synthesize a project specification from research. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
+            "Every Phase must have substantive What/Why/Expected impact fields. "
+            "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
+            "Write the plan to .factory/strategy/current.md."
         ),
         reads={".factory/strategy/research-combined.md"},
         writes={".factory/strategy/current.md"},
     )
 
-    # CEO gate on strategy quality
+    # CEO gate on strategy quality — HARD GATE
     nodes["gate_strategy"] = GateNode(
         id="gate_strategy",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "HARD GATE — Builder MUST NOT start until approved. Check: "
+            "1) Depth: every hypothesis has Category/What/Why/Expected impact. "
+            "2) Research grounding: architecture and rationale cite research findings. "
+            "3) Buildability: a Builder could implement each phase without clarifying questions. "
+            "4) Phase 1 is scaffold + eval harness. "
+            "5) Deferred section only contains items requiring human intervention. "
+            "Write PLAN APPROVED in verdict if all checks pass."
+        ),
         reads={".factory/strategy/current.md"},
     )
 
@@ -128,8 +160,11 @@ def build_workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         prompt_template=(
-            "Implement the current phase from .factory/strategy/current.md. "
-            "Open a draft PR with the changes."
+            "Implement the next phase from .factory/strategy/current.md. "
+            "Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. "
+            "Read CLAUDE.md and factory.md if they exist. "
+            "Implement exactly what the current phase describes. Run tests. "
+            "Commit changes and open a draft PR."
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
@@ -139,13 +174,23 @@ def build_workflow() -> Workflow:
         id="gate_build",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output. Check git log and diff. "
+            "Does the work match the plan for this phase? "
+            "If the Builder opened a PR, read it. "
+            "REDIRECT if off-scope or missed key requirements."
+        ),
         reads={".factory/reviews/builder-latest.md"},
     )
 
     nodes["evaluator"] = AgentNode(
         id="evaluator",
         role=AgentRole.EVALUATOR,
-        prompt_template="Run eval command and interpret scores.",
+        prompt_template=(
+            "Run eval: factory eval $PROJECT_PATH. "
+            "Capture composite score and per-dimension breakdown. "
+            "Report delta from baseline. Interpret which dimensions improved/regressed."
+        ),
         reads={".factory/reviews/builder-latest.md"},
         writes={".factory/reviews/evaluator-latest.md"},
     )
@@ -264,8 +309,12 @@ def improve_workflow() -> Workflow:
         id="researcher",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Read observations and research the codebase. "
-            "Write findings to .factory/strategy/research-local.md"
+            "Deep research for the project. "
+            "Read observations at .factory/strategy/observations.md. "
+            "Analyze codebase structure, eval scores, and experiment history. "
+            "Search the web for best practices relevant to weak dimensions. "
+            "Check .factory/archive/ for prior knowledge. "
+            "Write findings to .factory/strategy/research-local.md."
         ),
         reads={".factory/strategy/observations.md"},
         writes={".factory/strategy/research-local.md"},
@@ -276,6 +325,10 @@ def improve_workflow() -> Workflow:
         id="gate_research",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Are observations grounded in data? Did web research surface useful patterns? "
+            "Any blind spots in the analysis?"
+        ),
         reads={".factory/strategy/research-local.md"},
     )
 
@@ -284,18 +337,31 @@ def improve_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Generate hypotheses from research and observations. "
-            "Write to .factory/strategy/current.md"
+            "Generate prioritized hypotheses. "
+            "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
+            "Read Hypothesis Budget from observations for constraints. "
+            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+            "Each hypothesis must be specific, scoped to one PR, tied to observations, "
+            "with expected impact on eval dimensions. "
+            "Tag backlog items with **Backlog item:** and new items with **New:**. "
+            "Write to .factory/strategy/current.md."
         ),
         reads={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
         writes={".factory/strategy/current.md"},
     )
 
-    # CEO gate on strategy
+    # CEO gate on strategy — HARD GATE
     nodes["gate_strategy"] = GateNode(
         id="gate_strategy",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
+            "Expected eval impact realistic? Follows FEEC priority? "
+            "Not redundant with reverted experiment? "
+            "At least one growth hypothesis? Backlog convergence? "
+            "Write PLAN APPROVED with approved hypotheses in priority order."
+        ),
         reads={".factory/strategy/current.md"},
     )
 
@@ -310,8 +376,10 @@ def improve_workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         prompt_template=(
-            "Implement the hypothesis from .factory/strategy/current.md. "
-            "Open a draft PR."
+            "Implement the current hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md. Read the CEO strategy approval. "
+            "Implement exactly what the hypothesis describes. Run tests. "
+            "Commit and open a draft PR."
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
@@ -321,13 +389,21 @@ def improve_workflow() -> Workflow:
         id="gate_build",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and PR diff. Does work match the hypothesis? "
+            "No scope creep? Tests included? REDIRECT if off-scope."
+        ),
         reads={".factory/reviews/builder-latest.md"},
     )
 
     nodes["evaluator"] = AgentNode(
         id="evaluator",
         role=AgentRole.EVALUATOR,
-        prompt_template="Run eval and interpret scores.",
+        prompt_template=(
+            "Run eval: factory eval $PROJECT_PATH. "
+            "Capture composite score. Report delta from baseline. "
+            "Interpret dimension changes."
+        ),
         reads={".factory/reviews/builder-latest.md"},
         writes={".factory/reviews/evaluator-latest.md"},
     )
@@ -421,8 +497,13 @@ def research_workflow() -> Workflow:
         id="failure_analyst",
         role=AgentRole.FAILURE_ANALYST,
         prompt_template=(
-            "Analyze baseline failures and categorize root causes. "
-            "Write to .factory/strategy/failure_analysis.md"
+            "Analyze research run results. "
+            "Read run artifacts at .factory/research/runs/. "
+            "Read research target config from .factory/config.json. "
+            "Classify failures by type and severity. "
+            "Compute failure distribution. "
+            "Suggest interventions within mutable surfaces only. "
+            "Write to .factory/strategy/failure_analysis.md."
         ),
         reads={".factory/experiments/baseline.json"},
         writes={".factory/strategy/failure_analysis.md"},
@@ -433,8 +514,11 @@ def research_workflow() -> Workflow:
         id="researcher",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Read failure analysis and research solutions. "
-            "Write to .factory/strategy/research-local.md"
+            "Failure-targeted research. "
+            "Read failure analysis at .factory/strategy/failure_analysis.md. "
+            "Search the web for solutions to the dominant failure modes. "
+            "Check .factory/archive/ for prior knowledge on these patterns. "
+            "Write findings to .factory/strategy/research-local.md."
         ),
         reads={".factory/strategy/failure_analysis.md"},
         writes={".factory/strategy/research-local.md"},
@@ -445,8 +529,12 @@ def research_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Generate hypotheses from research and failure analysis. "
-            "Write to .factory/strategy/current.md"
+            "Generate research hypotheses targeting dominant failure modes. "
+            "Each hypothesis must improve over the previous baseline score. "
+            "Each hypothesis must name specific files from mutable_surfaces to modify. "
+            "Hypotheses MUST NOT modify files in fixed_surfaces. "
+            "Prioritize by expected impact on the target metric. "
+            "Write 1-3 hypotheses to .factory/strategy/current.md."
         ),
         reads={".factory/strategy/research-local.md", ".factory/strategy/failure_analysis.md"},
         writes={".factory/strategy/current.md"},
@@ -545,8 +633,10 @@ def meta_workflow() -> Workflow:
         id="researcher",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Read cross-project insights and current playbooks. "
-            "Identify patterns and propose improvements."
+            "Read cross-project insights at .factory/strategy/insights.md and current playbooks. "
+            "Identify recurring patterns, anti-patterns, and improvement opportunities. "
+            "Compare agent performance across projects. "
+            "Write findings to .factory/strategy/research-local.md."
         ),
         reads={".factory/strategy/insights.md"},
         writes={".factory/strategy/research-local.md"},
@@ -557,6 +647,10 @@ def meta_workflow() -> Workflow:
         id="gate_research",
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Are cross-project patterns well-supported by data? "
+            "Are proposed improvements actionable? Any blind spots?"
+        ),
         reads={".factory/strategy/research-local.md"},
     )
 
@@ -565,8 +659,10 @@ def meta_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Propose specific playbook edits based on research. "
-            "Write diffs to .factory/strategy/playbook-diffs.md"
+            "Propose specific playbook edits based on cross-project research. "
+            "For each agent role, propose DO/DON'T bullet additions or removals "
+            "with supporting evidence from experiment data. "
+            "Write diffs to .factory/strategy/playbook-diffs.md."
         ),
         reads={".factory/strategy/research-local.md"},
         writes={".factory/strategy/playbook-diffs.md"},
@@ -609,7 +705,9 @@ def meta_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Analyze test inventory for redundant, dead, or flaky tests. "
-            "Write findings to .factory/strategy/test-analysis.md"
+            "Identify tests that overlap, test nothing meaningful, or are consistently flaky. "
+            "Write findings to .factory/strategy/test-analysis.md with specific test names "
+            "and reasons for removal."
         ),
         reads={".factory/strategy/test-inventory.md"},
         writes={".factory/strategy/test-analysis.md"},
