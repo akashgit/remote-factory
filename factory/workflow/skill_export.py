@@ -76,6 +76,31 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "discover": {
+        "description": (
+            "Discover mode — auto-discover eval dimensions and generate the eval harness. "
+            "Use when the project state is no_factory (repo exists but no factory setup). "
+            "Runs factory discover, verifies the eval profile, and re-detects state."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "review": {
+        "description": (
+            "Review mode — verify eval dimensions work, create factory.md, and run baseline eval. "
+            "Use when the project state is evals_pending_review. Tests all dimensions, marks "
+            "the profile as reviewed, initializes the factory store, and runs E2E verification."
+        ),
+        "argument_hint": "<project_path>",
+    },
+    "refine": {
+        "description": (
+            "Refine mode — lightweight pipeline for user-directed refinements. "
+            "Use when the user says 'refine X', passes --refine, or wants a targeted change "
+            "without the overhead of research and multi-hypothesis cycles. Classifies the request, "
+            "implements with Builder, verifies with QA, and archives."
+        ),
+        "argument_hint": '<project_path> --refine "<request>"',
+    },
 }
 
 

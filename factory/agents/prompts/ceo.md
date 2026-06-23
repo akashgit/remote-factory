@@ -291,15 +291,15 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 
 **Default routing:**
 - `no_repo` or `incomplete` → read `skills/workflow-build/SKILL.md`
-- `no_factory` → run `factory discover "$PROJECT_PATH"` then `factory review "$PROJECT_PATH"`
-- `evals_pending_review` → run `factory review "$PROJECT_PATH"`
+- `no_factory` → read `skills/workflow-discover/SKILL.md`
+- `evals_pending_review` → read `skills/workflow-review/SKILL.md`
 - `has_factory` → read `skills/workflow-improve/SKILL.md`
 
 **Mode overrides (from task directives):**
 - `--mode design` or `## Plan Loop (Interactive)` → read `skills/workflow-design/SKILL.md`
 - `--mode research` (with `research_target` configured) → read `skills/workflow-research/SKILL.md`
 - `--mode meta` → read `skills/workflow-meta/SKILL.md`
-- `--refine "<request>"` → read `skills/workflow-improve/SKILL.md` and apply refinement scope
+- `--refine "<request>"` → read `skills/workflow-refine/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 
