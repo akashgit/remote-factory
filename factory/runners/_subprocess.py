@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import signal
 from pathlib import Path
 
 import structlog
@@ -36,7 +38,8 @@ async def run_subprocess(
     runner_name: str,
     role: str,
     sanitize: bool = False,
-    max_timeout: float = 3600.0,
+    max_timeout: float | None = None,
+    activity_mode: str = "line",
 ) -> AgentRunResult:
     """Run a subprocess with streaming, timeout, and error handling.
 
@@ -48,8 +51,15 @@ async def run_subprocess(
             produced for this many seconds.
         max_timeout: Hard wall-clock backstop via ``asyncio.wait_for``.
             Catches pathological trickle-output that keeps the inactivity
-            watchdog alive indefinitely. Defaults to 3600s (1 hour).
+            watchdog alive indefinitely. When None (default), auto-derived
+            as ``max(timeout * 2, 3600.0)`` — guaranteeing the inactivity
+            watchdog can always fire before the wall-clock backstop.
     """
+    if max_timeout is None:
+        max_timeout = max(timeout * 2, 3600.0)
+    elif max_timeout <= timeout:
+        log.warning("max_timeout_le_inactivity", max_timeout=max_timeout, inactivity_timeout=timeout)
+
     stream = should_stream()
     prefix = f"[{runner_name}:{role}]" if stream else None
 
@@ -70,6 +80,7 @@ async def run_subprocess(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=env,
+            start_new_session=True,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             stream_subprocess(
@@ -79,11 +90,15 @@ async def run_subprocess(
                 sanitize=sanitize,
                 inactivity_timeout=timeout,
                 killed_by_watchdog=killed_by_watchdog,
+                activity_mode=activity_mode,
             ),
             timeout=max_timeout,
         )
     except asyncio.TimeoutError:
-        proc.kill()  # type: ignore[union-attr]
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[union-attr]
+        except (ProcessLookupError, OSError):
+            proc.kill()  # type: ignore[union-attr]
         await proc.wait()  # type: ignore[union-attr]
         log.error(
             f"{runner_name}_max_timeout",

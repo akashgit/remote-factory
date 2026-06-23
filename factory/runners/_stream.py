@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import re
+import signal
 import sys
 import time
 from typing import BinaryIO
@@ -111,9 +113,39 @@ async def tee_stream(
             dest.flush()
 
 
+async def tee_stream_chunked(
+    src: asyncio.StreamReader,
+    dest: BinaryIO,
+    buffer: list[bytes],
+    *,
+    stream: bool = True,
+    sanitize: bool = False,
+    last_activity: list[float] | None = None,
+    chunk_size: int = 4096,
+) -> None:
+    """Read from an async stream in chunks (not lines).
+
+    Updates last_activity on any bytes received, not just newlines.
+    """
+    while True:
+        chunk = await src.read(chunk_size)
+        if not chunk:
+            break
+        if last_activity is not None:
+            last_activity[0] = time.monotonic()
+        buffer.append(chunk)
+        if stream:
+            out = strip_ansi(chunk) if sanitize else chunk
+            if sanitize and not out.strip(b"\r\n"):
+                continue
+            dest.write(out)
+            dest.flush()
+
+
 async def _watchdog(
     proc: asyncio.subprocess.Process,
-    last_activity: list[float],
+    last_stdout: list[float],
+    last_stderr: list[float],
     inactivity_timeout: float,
     killed_by_watchdog: list[bool] | None = None,
 ) -> None:
@@ -121,13 +153,24 @@ async def _watchdog(
     poll_interval = min(inactivity_timeout / 4, 30.0)
     while proc.returncode is None:
         await asyncio.sleep(poll_interval)
-        idle = time.monotonic() - last_activity[0]
-        if idle >= inactivity_timeout and proc.returncode is None:
-            log.warning("watchdog_killing_process", idle_seconds=round(idle, 1), threshold=inactivity_timeout)
+        now = time.monotonic()
+        stdout_idle = now - last_stdout[0]
+        stderr_idle = now - last_stderr[0]
+        both_idle = min(stdout_idle, stderr_idle)
+        if both_idle >= inactivity_timeout and proc.returncode is None:
+            log.warning(
+                "watchdog_killing_process",
+                stdout_idle=round(stdout_idle, 1),
+                stderr_idle=round(stderr_idle, 1),
+                threshold=inactivity_timeout,
+            )
             try:
-                proc.kill()
-            except ProcessLookupError:
-                return
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, OSError):
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    return
             if killed_by_watchdog is not None:
                 killed_by_watchdog[0] = True
             return
@@ -141,6 +184,7 @@ async def stream_subprocess(
     sanitize: bool = False,
     inactivity_timeout: float | None = None,
     killed_by_watchdog: list[bool] | None = None,
+    activity_mode: str = "line",
 ) -> tuple[bytes, bytes]:
     """Stream subprocess stdout/stderr to the terminal while collecting output.
 
@@ -155,6 +199,8 @@ async def stream_subprocess(
         killed_by_watchdog: Single-element mutable flag set by the watchdog when it
             kills the process. Lets callers distinguish watchdog kills from external
             SIGKILL (OOM killer, manual kill -9).
+        activity_mode: "line" (default) uses readline()-based detection; "byte" uses
+            chunk-based read() that detects any bytes as activity.
 
     Returns:
         (stdout_bytes, stderr_bytes) tuple with all collected output.
@@ -164,36 +210,57 @@ async def stream_subprocess(
 
     prefix_bytes = f"{prefix} ".encode() if prefix else None
 
-    last_activity: list[float] | None = None
+    last_stdout: list[float] | None = None
+    last_stderr: list[float] | None = None
     if inactivity_timeout is not None:
-        last_activity = [time.monotonic()]
+        now = time.monotonic()
+        last_stdout = [now]
+        last_stderr = [now]
 
     assert proc.stdout is not None
     assert proc.stderr is not None
 
-    tee_stdout = tee_stream(
-        proc.stdout,
-        sys.stdout.buffer,
-        stdout_buf,
-        stream=stream,
-        prefix=prefix_bytes,
-        sanitize=sanitize,
-        last_activity=last_activity,
-    )
-    tee_stderr = tee_stream(
-        proc.stderr,
-        sys.stderr.buffer,
-        stderr_buf,
-        stream=stream,
-        prefix=prefix_bytes,
-        sanitize=sanitize,
-        last_activity=last_activity,
-    )
+    if activity_mode == "byte":
+        tee_stdout = tee_stream_chunked(
+            proc.stdout,
+            sys.stdout.buffer,
+            stdout_buf,
+            stream=stream,
+            sanitize=sanitize,
+            last_activity=last_stdout,
+        )
+        tee_stderr = tee_stream_chunked(
+            proc.stderr,
+            sys.stderr.buffer,
+            stderr_buf,
+            stream=stream,
+            sanitize=sanitize,
+            last_activity=last_stderr,
+        )
+    else:
+        tee_stdout = tee_stream(
+            proc.stdout,
+            sys.stdout.buffer,
+            stdout_buf,
+            stream=stream,
+            prefix=prefix_bytes,
+            sanitize=sanitize,
+            last_activity=last_stdout,
+        )
+        tee_stderr = tee_stream(
+            proc.stderr,
+            sys.stderr.buffer,
+            stderr_buf,
+            stream=stream,
+            prefix=prefix_bytes,
+            sanitize=sanitize,
+            last_activity=last_stderr,
+        )
 
     watchdog_task: asyncio.Task[None] | None = None
-    if inactivity_timeout is not None and last_activity is not None:
+    if inactivity_timeout is not None and last_stdout is not None and last_stderr is not None:
         watchdog_task = asyncio.create_task(
-            _watchdog(proc, last_activity, inactivity_timeout, killed_by_watchdog)
+            _watchdog(proc, last_stdout, last_stderr, inactivity_timeout, killed_by_watchdog)
         )
 
     try:
@@ -204,6 +271,14 @@ async def stream_subprocess(
             with contextlib.suppress(asyncio.CancelledError):
                 await watchdog_task
 
-    await proc.wait()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=10.0)
+    except asyncio.TimeoutError:
+        log.warning("proc_wait_timeout", pid=proc.pid)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, OSError):
+            proc.kill()
+        await proc.wait()
 
     return b"".join(stdout_buf), b"".join(stderr_buf)
