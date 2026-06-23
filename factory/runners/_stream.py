@@ -278,7 +278,10 @@ async def stream_subprocess(
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except (ProcessLookupError, OSError):
-            proc.kill()
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
         await proc.wait()
 
     return b"".join(stdout_buf), b"".join(stderr_buf)

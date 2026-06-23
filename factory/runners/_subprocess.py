@@ -98,7 +98,10 @@ async def run_subprocess(
         try:
             os.killpg(proc.pid, signal.SIGKILL)  # type: ignore[union-attr]
         except (ProcessLookupError, OSError):
-            proc.kill()  # type: ignore[union-attr]
+            try:
+                proc.kill()  # type: ignore[union-attr]
+            except ProcessLookupError:
+                pass
         await proc.wait()  # type: ignore[union-attr]
         log.error(
             f"{runner_name}_max_timeout",
