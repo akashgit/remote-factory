@@ -1224,14 +1224,16 @@ Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$
 
 **Act on the QA verdict:**
 
-- **CLEAN** → proceed to precheck gate below
-- **REVERT** (score regression, fixed surface violation, critical bug) → mandatory revert (see Error Recovery)
-- **ISSUES_FOUND: N** → apply the QA iteration loop:
+- **REVERT** → mandatory revert (see Error Recovery). Do NOT iterate.
+- **CLEAN** or **ISSUES_FOUND: N** → enter the QA iteration loop below.
 
-**QA Iteration Loop (on ISSUES_FOUND):**
+**QA Iteration Loop (mandatory 3 rounds):**
 
-1. **Check iteration cap:** If `$QA_ITERATION >= 3`, stop. Proceed to precheck with current code — remaining issues will be flagged in the PR for human review.
-2. **Route fixes to Builder:** Re-invoke the Builder with the QA Agent's issue list:
+QA ALWAYS runs 3 rounds per experiment. This is not conditional on whether issues are found — every experiment gets 3 rounds of QA review with escalating depth.
+
+1. **Check iteration cap:** If `$QA_ITERATION >= 3`, stop looping. Proceed to precheck gate (step 2d). All 3 rounds are complete.
+
+2. **Route fixes to Builder (only if ISSUES_FOUND):** If the QA verdict was `ISSUES_FOUND`, re-invoke the Builder with the issue list:
    ```bash
    factory agent builder --task "Fix QA issues on PR #$PR_NUM in <owner>/<repo>.
    The QA Agent found the following issues in iteration $QA_ITERATION:
@@ -1241,6 +1243,8 @@ Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$
    Fix ALL listed issues. Do NOT introduce new functionality — only fix the flagged items.
    Commit fixes to the existing branch. Do NOT create a new PR." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
    ```
+   If the QA verdict was `CLEAN`, skip the Builder — no fixes needed. Proceed directly to step 3.
+
 3. **Increment:** `$QA_ITERATION += 1`
 4. **Re-run QA:** Spawn the QA Agent again with the updated iteration number. Loop back to "Spawn the QA Agent" above.
 
