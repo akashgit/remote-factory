@@ -2,39 +2,35 @@
 
 LangFuse provides LLM observability and tracing for the Red Hat Agents system.
 
-## Quick Start (Zero Configuration)
+## Quick Start
 
-**Tracing works automatically with no configuration.** Just start LangFuse:
-
+1. Start LangFuse services:
 ```bash
 # From project root
 scripts/langfuse start
 ```
 
-That's it! The agents system automatically sends traces to LangFuse when it's running.
+2. Set the environment variables the factory requires (these match the docker-compose dev credentials):
+```bash
+export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+```
 
-### How It Works
+Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
 
-The tracing module auto-detects LangFuse at `localhost:3000` using pre-configured development credentials that match the docker-compose setup. No environment variables, no `.env` files, no manual configuration needed.
-
-| Component | Default | Notes |
-|-----------|---------|-------|
-| Host | `http://localhost:3000` | Auto-detected |
-| Public Key | `pk-lf-dev-local-key` | Matches docker-compose |
-| Secret Key | `sk-lf-dev-local-key` | Matches docker-compose |
+| Variable | Dev Value | Notes |
+|----------|-----------|-------|
+| `LANGFUSE_HOST` | `http://localhost:3000` | Required — tracing is disabled without it |
+| `LANGFUSE_PUBLIC_KEY` | `pk-lf-dev-local-key` | Matches docker-compose |
+| `LANGFUSE_SECRET_KEY` | `sk-lf-dev-local-key` | Matches docker-compose |
 
 ### Viewing Traces
 
 1. Start LangFuse: `scripts/langfuse start`
-2. Run a query: `./analyze "What is Red Hat's Q2 revenue?"`
+2. Run a factory command: `uv run factory ceo /path/to/project`
 3. Open browser: `scripts/langfuse open --traces`
 4. Login: `dev@localhost.local` / `devpassword123`
-
-Use `--trace-id` to tag queries for easy searching:
-```bash
-./analyze --trace-id my-test "What is Red Hat's Q2 revenue?"
-# Search by "Session ID" in LangFuse UI to find it
-```
 
 ## CLI Commands
 
