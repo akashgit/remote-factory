@@ -4384,6 +4384,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
 
+    # workflow — graph engine commands
+    from factory.workflow.cli import add_workflow_parser
+    add_workflow_parser(sub)
+
     return parser
 
 
@@ -4458,6 +4462,7 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
+        "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),
     }
 
     try:
