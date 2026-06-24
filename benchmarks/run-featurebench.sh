@@ -188,7 +188,8 @@ if [ -s "${MASK_PATCH}" ]; then
     git apply --whitespace=nowarn "${MASK_PATCH}" 2>/dev/null \
         && git add -A && git commit --quiet --amend --no-edit \
         && git reflog expire --expire=now --all && git gc --prune=now --quiet \
-        && echo "    Applied mask patch (function bodies removed, baked into commit)" \
+        && MASKED_COMMIT=$(git rev-parse HEAD) \
+        && echo "    Applied mask patch (function bodies removed, baked into commit ${MASKED_COMMIT:0:12})" \
         || echo "    WARNING: Mask patch failed to apply"
 else
     echo "    No mask patch in dataset"
@@ -403,7 +404,8 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
     fi
 
     # Strategy 2: Recover orphaned commits via git fsck
-    # Pick the orphan whose parent is the base commit (not just newest by timestamp)
+    # Pick the orphan that descends from HEAD (not BASE_COMMIT — the amend changed the SHA)
+    RECOVERY_BASE=$(git rev-parse HEAD)
     if [ -z "$FACTORY_BRANCH" ]; then
         echo "No factory branch, finding orphaned commits..."
         ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
@@ -411,7 +413,7 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
             BEST_COMMIT=""
             BEST_TIME=0
             for SHA in $ORPHAN_COMMITS; do
-                if ! git merge-base --is-ancestor "${BASE_COMMIT}" "$SHA" 2>/dev/null; then
+                if ! git merge-base --is-ancestor "${RECOVERY_BASE}" "$SHA" 2>/dev/null; then
                     continue
                 fi
                 COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
@@ -421,13 +423,13 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
                 fi
             done
             if [ -n "$BEST_COMMIT" ]; then
-                echo "Recovering from orphan tip: $BEST_COMMIT (ancestor of ${BASE_COMMIT:0:12})"
+                echo "Recovering from orphan tip: $BEST_COMMIT (descends from ${RECOVERY_BASE:0:12})"
                 echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
                 git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
                 git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
                 rm -rf .factory/ eval/ factory.md 2>/dev/null || true
             else
-                echo "No orphan commits descend from BASE_COMMIT ${BASE_COMMIT:0:12}"
+                echo "No orphan commits descend from ${RECOVERY_BASE:0:12}"
             fi
         fi
     fi
@@ -452,7 +454,11 @@ log "Step 6: Capturing patch"
 
 cd "${WORKSPACE}/repo"
 PATCH_FILE="${WORKSPACE}/model_patch.diff"
-git diff "${BASE_COMMIT}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+
+# Diff against the masked commit (not BASE_COMMIT) so the patch captures
+# the full function body additions from masked→implemented
+DIFF_BASE="${MASKED_COMMIT:-${BASE_COMMIT}}"
+git diff "${DIFF_BASE}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
 
 # Fallback: if committed diff is empty, try unstaged diff too
 if [ ! -s "${PATCH_FILE}" ]; then
@@ -466,7 +472,7 @@ if [ "${PATCH_SIZE}" -eq 0 ]; then
     echo "    Evaluation will proceed but instance will not be resolved."
 else
     PATCH_LINES="$(wc -l < "${PATCH_FILE}")"
-    PATCH_FILES="$(git diff "${BASE_COMMIT}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
+    PATCH_FILES="$(git diff "${DIFF_BASE}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
     echo "    Patch: ${PATCH_LINES} lines across ${PATCH_FILES} file(s)"
 fi
 echo ""
@@ -528,11 +534,26 @@ log "Step 9: Extracting results"
 
 RESULTS_JSON=""
 
-for candidate in "${HARNESS_DIR}"/runs/*/eval_outputs/"${INSTANCE_ID}"/attempt-*/report.json; do
+# Check predictions directory first (fb eval writes here)
+for candidate in "${PREDICTIONS_DIR}"/eval_outputs/"${INSTANCE_ID}"/attempt-*/report.json; do
     if [ -f "${candidate}" ]; then
         RESULTS_JSON="${candidate}"
     fi
 done
+
+# Fallback: check predictions dir top-level report
+if [ -z "${RESULTS_JSON}" ] && [ -f "${PREDICTIONS_DIR}/report.json" ]; then
+    RESULTS_JSON="${PREDICTIONS_DIR}/report.json"
+fi
+
+# Fallback: check harness runs directory
+if [ -z "${RESULTS_JSON}" ]; then
+    for candidate in "${HARNESS_DIR}"/runs/*/eval_outputs/"${INSTANCE_ID}"/attempt-*/report.json; do
+        if [ -f "${candidate}" ]; then
+            RESULTS_JSON="${candidate}"
+        fi
+    done
+fi
 
 if [ -z "${RESULTS_JSON}" ]; then
     for candidate in "${HARNESS_DIR}"/runs/*/report.json; do
