@@ -33,5 +33,10 @@ if [ ! -d "$HOME/.sentrux/plugins" ] || [ -z "$(ls -A "$HOME/.sentrux/plugins" 2
   sentrux plugin add-standard
 fi
 
+if [ "${1:-}" = "--install-only" ]; then
+  echo >&2 "Sentrux installed successfully."
+  exit 0
+fi
+
 echo >&2 "Running sentrux check..."
 exec sentrux check .

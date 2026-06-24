@@ -1,17 +1,20 @@
 """Universal hygiene eval dimensions applied to every factory-managed project.
 
-These 6 dimensions are mandatory and cannot be removed. They are computed by
+These 7 dimensions are mandatory and cannot be removed. They are computed by
 the factory itself (not by per-project eval/score.py) and auto-detect the
 project's tooling. Projects can ADD dimensions via eval/score.py but cannot
 remove any of these.
 
-Together with the 5 growth dimensions in growth.py, these form the 11
+Together with the 5 growth dimensions in growth.py, these form the 12
 mandatory eval dimensions that define the factory's quality baseline.
 
 All functions take a project_path and return an EvalResult-compatible dict.
 If a tool is not detected for a dimension, score is 0.5 (neutral), not 0.
 """
 
+import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import structlog
@@ -24,12 +27,13 @@ log = structlog.get_logger()
 # Relative weights within the hygiene category (sum to 1.0).
 # The runner normalizes these so that hygiene gets 50% of the composite.
 HYGIENE_WEIGHTS = {
-    "tests": 0.30,
-    "lint": 0.15,
-    "type_check": 0.10,
-    "coverage": 0.25,
-    "guard_patterns": 0.10,
-    "config_parser": 0.10,
+    "tests": 0.28,
+    "lint": 0.14,
+    "type_check": 0.09,
+    "coverage": 0.23,
+    "guard_patterns": 0.09,
+    "config_parser": 0.09,
+    "architecture": 0.08,
 }
 
 
@@ -314,6 +318,70 @@ def eval_config_parser(project_path: Path) -> dict:
         }
 
 
+# ── Dimension 7: architecture (weight 0.08) ──────────────────────
+
+
+def eval_architecture(project_path: Path) -> dict:
+    """Run Sentrux architecture quality check (conditional on .sentrux/rules.toml)."""
+    rules_path = project_path / ".sentrux" / "rules.toml"
+    if not rules_path.exists():
+        return _neutral("architecture", "no .sentrux/rules.toml found")
+
+    if not shutil.which("sentrux"):
+        return _neutral("architecture", "sentrux not installed")
+
+    try:
+        result = subprocess.run(
+            ["sentrux", "check", "."],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "name": "architecture",
+            "score": 0.5,
+            "weight": HYGIENE_WEIGHTS["architecture"],
+            "passed": True,
+            "details": "Timeout: sentrux check exceeded 120s",
+        }
+
+    stdout = result.stdout.strip()
+
+    try:
+        data = json.loads(stdout)
+    except (json.JSONDecodeError, ValueError):
+        if result.returncode == 0:
+            return {
+                "name": "architecture",
+                "score": 1.0,
+                "weight": HYGIENE_WEIGHTS["architecture"],
+                "passed": True,
+                "details": f"All constraints satisfied (exit 0): {stdout[:200]}",
+            }
+        return {
+            "name": "architecture",
+            "score": 0.0,
+            "weight": HYGIENE_WEIGHTS["architecture"],
+            "passed": False,
+            "details": f"Rule violations (exit {result.returncode}): {stdout[:200]}",
+        }
+
+    quality_signal = data.get("quality_signal", 0)
+    score = max(0.0, min(1.0, quality_signal / 10000))
+    bottleneck = data.get("bottleneck", "unknown")
+    passed = result.returncode == 0
+
+    return {
+        "name": "architecture",
+        "score": round(score, 4),
+        "weight": HYGIENE_WEIGHTS["architecture"],
+        "passed": passed,
+        "details": f"quality_signal={quality_signal}/10000, bottleneck={bottleneck}",
+    }
+
+
 # ── Public API ─────────────────────────────────────────────────────
 
 
@@ -336,7 +404,7 @@ def _collect_test_and_coverage(project_path: Path, timeout: int = 300) -> tuple[
 
 
 def compute_hygiene_results(project_path: Path, test_timeout: int = 600) -> list[dict]:
-    """Compute all 6 mandatory hygiene dimensions for a project."""
+    """Compute all 7 mandatory hygiene dimensions for a project."""
     test_result, cov_result = _collect_test_and_coverage(project_path, timeout=test_timeout)
     return [
         test_result,
@@ -345,4 +413,5 @@ def compute_hygiene_results(project_path: Path, test_timeout: int = 600) -> list
         cov_result,
         eval_guard_patterns(project_path),
         eval_config_parser(project_path),
+        eval_architecture(project_path),
     ]

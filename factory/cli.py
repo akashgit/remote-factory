@@ -2729,7 +2729,7 @@ def _stop_ceo_tailer(tailer: object | None) -> None:
     try:
         from factory.telemetry import end_span
 
-        tailer.stop_and_drain()  # type: ignore[union-attr]
+        tailer.stop_and_drain()  # type: ignore[attr-defined]
         trace_id = os.environ.get("FACTORY_TRACE_ID", "")
         span_id = getattr(tailer, "span_id", None)
         if trace_id and span_id:

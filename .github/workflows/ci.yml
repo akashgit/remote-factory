@@ -42,6 +42,8 @@ jobs:
       SENTRUX_VERSION: v0.5.7
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Cache Sentrux
         uses: actions/cache@v4
         with:
@@ -50,9 +52,22 @@ jobs:
             ~/.local/bin/sentrux
             ~/.sentrux/plugins
           key: sentrux-${{ env.SENTRUX_VERSION }}-standard-plugins
-      - name: Run Sentrux quality check
+      - name: Install Sentrux
+        run: ./scripts/sentrux-check.sh --install-only 2>&1 || true
+      - name: Save baseline from base branch
+        if: github.event_name == 'pull_request'
         continue-on-error: true
-        run: ./scripts/sentrux-check.sh 2>&1 | tee sentrux-output.txt
+        run: |
+          git checkout ${{ github.event.pull_request.base.sha }}
+          sentrux gate --save . 2>&1 | tee sentrux-baseline.txt || true
+          git checkout ${{ github.sha }}
+      - name: Run Sentrux diff (gate)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: sentrux gate . 2>&1 | tee sentrux-diff.txt || true
+      - name: Run Sentrux absolute check
+        continue-on-error: true
+        run: sentrux check . 2>&1 | tee sentrux-output.txt
       - name: Post Sentrux results as PR comment
         if: github.event_name == 'pull_request'
         env:
@@ -62,8 +77,18 @@ jobs:
             echo "<!-- sentrux-report -->"
             echo "## Sentrux Quality Report"
             echo ""
+            echo "### Absolute"
             echo '```'
             cat sentrux-output.txt
+            echo '```'
+            echo ""
+            echo "### Diff (vs base branch)"
+            echo '```'
+            if [ -f sentrux-diff.txt ]; then
+              cat sentrux-diff.txt
+            else
+              echo "No diff available"
+            fi
             echo '```'
           } > comment-body.txt
 
