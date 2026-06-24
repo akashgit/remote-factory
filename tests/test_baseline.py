@@ -6,8 +6,6 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from factory.baseline import _parse_scores_jsonl, fetch_baseline
 
 
@@ -64,7 +62,7 @@ SCORES_JSONL = (
 
 
 class TestFetchBaseline:
-    def test_exact_match(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_exact_match(self, tmp_path: Path) -> None:
         calls: list[list[str]] = []
 
         def mock_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:

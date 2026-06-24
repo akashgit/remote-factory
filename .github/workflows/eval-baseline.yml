@@ -31,8 +31,9 @@ jobs:
       - name: Run eval
         id: eval
         run: |
-          uv run factory eval . > eval_output.json 2>/dev/null || true
+          uv run factory eval . > eval_output.json || true
           cat eval_output.json
+          python3 -c "import json; json.load(open('eval_output.json'))" || { echo 'ERROR: eval_output.json is missing or invalid JSON'; exit 1; }
 
       - name: Setup eval-data branch
         run: |
@@ -102,3 +103,4 @@ jobs:
             echo "Push failed (attempt $i), rebasing and retrying..."
             git pull --rebase origin eval-data
           done
+          git push origin eval-data || { echo 'ERROR: all push attempts failed'; exit 1; }
