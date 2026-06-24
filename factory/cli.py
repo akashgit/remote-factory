@@ -4399,7 +4399,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_env_local() -> None:
+    """Auto-load .env.local if present, exporting vars into os.environ."""
+    for candidate in [Path(".env.local"), Path.home() / "remote-factory" / ".env.local"]:
+        if candidate.exists():
+            for line in candidate.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    os.environ.setdefault(key.strip(), value.strip())
+            break
+
+
 def main(argv: list[str] | None = None) -> int:
+    _load_env_local()
     parser = build_parser()
     args = parser.parse_args(argv)
 
