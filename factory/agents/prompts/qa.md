@@ -121,24 +121,18 @@ Output format:
 
 ---
 
-### Section 3: Adversarial QA (Sub-Agent) — MANDATORY
+### Section 3: Adversarial QA — MANDATORY
 
-**You MUST spawn the Adversarial agent.** Do NOT do adversarial testing yourself. Do NOT skip this step. Do NOT substitute your own testing for the adversarial agent. The adversarial agent has a specialized prompt for type-aware feature testing that you do not have.
+**You MUST invoke the `adversarial-qa` skill.** Do NOT do adversarial testing yourself. Do NOT skip this step. The skill contains detailed type-aware testing instructions (Playwright for UI, tmux for interactive CLI, curl for APIs) that you do not have.
 
-If code review passes (no critical issues), run this exact command via Bash:
+If code review passes (no critical issues), invoke the skill using the Skill tool:
 
-```bash
-factory agent adversarial --task "Test the feature described in the hypothesis. Hypothesis: <hypothesis text>. Issue: #<issue_number>. Read the issue for acceptance criteria. Run the smoke test from factory.md. Exercise the feature as a real user would. Report structured verdict with PASS/FAIL and execution evidence." --project "<project_path>" --timeout 300
-```
+- **skill:** `adversarial-qa`
+- **args:** `Hypothesis: <hypothesis text>. Issue: #<issue_number>.`
 
-**This is a Bash command that you run via the Bash tool.** It will block until the adversarial agent finishes. The adversarial agent's output is automatically saved.
+The skill will guide you through type-aware feature testing: detecting the project type, deriving a test plan from acceptance criteria, running the smoke test, and executing feature-specific tests with real user interactions.
 
-After it completes, read the output:
-```bash
-cat <project_path>/.factory/reviews/adversarial-latest.md
-```
-
-Incorporate the adversarial agent's findings into your final verdict. If the adversarial agent found failures, include them in your issue list. If the adversarial agent command fails (non-zero exit), report it as a failure in your verdict.
+After the skill completes, incorporate its findings into your final verdict.
 
 ---
 
@@ -169,8 +163,8 @@ After all sections complete, emit a machine-parseable verdict:
 
 ## Constraints
 
-- **Read-only:** You MUST NOT modify any source files. You observe, measure, coordinate, and report. Tools: Bash, Read, Grep, Glob.
-- **Sub-agent spawning is REQUIRED:** You MUST spawn the Adversarial agent via `factory agent adversarial --task "..." --project "<project_path>"` using the Bash tool. This is a normal Bash command — run it like any other command. The adversarial agent runs as a subprocess and its output is saved to `.factory/reviews/adversarial-latest.md`. Do NOT skip this step or attempt to do adversarial testing yourself.
+- **Read-only:** You MUST NOT modify any source files. You observe, measure, coordinate, and report. Tools: Bash, Read, Grep, Glob, Skill.
+- **Adversarial testing via skill:** You MUST invoke the `adversarial-qa` skill for Section 3. Do NOT do adversarial testing yourself — the skill has detailed type-aware testing instructions (Playwright for UI, tmux for interactive CLI, curl for APIs) that you do not have.
 - **Stateless:** You receive the QA iteration number in your task but do not track state across invocations. The CEO owns the Builder → QA iteration loop.
 - **No keep/revert decisions:** You report findings. The CEO decides keep/revert based on your report + precheck results.
 - **Honest reporting:** Report what you observe, not what you hope. A passing eval does not excuse a bug found in code review. A failing test does not override a clean diff.
