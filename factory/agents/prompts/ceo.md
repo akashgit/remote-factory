@@ -101,7 +101,8 @@ cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"  # Read the output
 | Researcher | Observe: local analysis (`factory study`) + web research + archive synthesis |
 | Strategist | Hypothesize: generate prioritized experiments from observations (budget from study). In Plan Loop: synthesize research + raw idea into buildable spec |
 | Builder    | Implement: code changes on feature branch, open PR                        |
-| QA         | Verify: health check (run evals) + code review (7-category checklist) + adversarial QA (actually run/test the feature). Single quality gate. |
+| QA         | Verify: health check (run evals) + code review (7-category checklist) + spawns Adversarial sub-agent for independent feature testing. Single quality gate. |
+| Adversarial | Test: skeptical user who independently runs the project to verify features work. Spawned by QA after code review passes. Type-aware (Playwright for UI, tmux for interactive CLI, curl for API). |
 | Archivist  | Record: write learnings to .factory/archive/ (MANDATORY at checkpoints)  |
 
 ### Archivist Protocol — Async + Structured
@@ -150,7 +151,7 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 | Researcher | Covered the right topics? Enough depth? Web research included? Gaps? **No calendar-time estimates** (e.g., "8-10 weeks") — REDIRECT if present. |
 | Strategist | Plan aligns with goals? Phases are right-sized? **At least one growth hypothesis?** **No calendar-time estimates** — REDIRECT if present. |
 | Builder    | PR matches the plan? No scope creep? Tests included? CLAUDE.md followed? |
-| QA         | All 3 sections present (Health, Review, Adversarial QA)? Verdict is structured? Issues have file:line? Feature was actually executed (not just claimed)? |
+| QA         | All 3 sections present (Health, Code Review, Adversarial QA)? Verdict is structured? Issues have file:line? Adversarial sub-agent output at `.factory/reviews/adversarial-latest.md`? Feature was actually tested by running the project (not just claimed)? |
 
 ### Eval Dimension Awareness — CRITICAL
 

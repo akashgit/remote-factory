@@ -27,7 +27,7 @@ class TestResolvePrompt:
     def test_all_default_prompts_exist(self):
         roles: list[AgentRole] = [
             "researcher", "strategist", "qa",
-            "archivist", "ceo", "failure_analyst",
+            "archivist", "ceo", "failure_analyst", "adversarial",
         ]
         for role in roles:
             prompt = resolve_prompt(role)
@@ -69,7 +69,7 @@ class TestResolvePrompt:
     def test_each_prompt_has_header(self):
         roles: list[AgentRole] = [
             "researcher", "strategist", "qa",
-            "archivist", "ceo", "failure_analyst",
+            "archivist", "ceo", "failure_analyst", "adversarial",
         ]
         for role in roles:
             prompt = resolve_prompt(role)

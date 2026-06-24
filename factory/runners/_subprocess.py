@@ -70,6 +70,7 @@ async def run_subprocess(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=env,
+            limit=1024 * 1024,  # 1MB readline buffer (default 64KB is too small for stream-json)
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             stream_subprocess(
