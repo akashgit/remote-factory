@@ -361,7 +361,7 @@ LangFuse provides LLM observability and tracing — track agent invocations, tok
 
 ```bash
 # Start LangFuse services
-scripts/langfuse start
+scripts/langfuse-setup start
 
 # Set the env vars the factory needs
 export LANGFUSE_HOST=http://localhost:3000
@@ -375,31 +375,18 @@ The dev credentials above match the docker-compose setup. Add them to your `~/.b
 
 ### Viewing Traces
 
-1. Start LangFuse: `scripts/langfuse start`
-2. Run a query: `uv run factory ceo /path/to/project`
-3. Open browser: `scripts/langfuse open --traces`
+1. Start LangFuse: `scripts/langfuse-setup start`
+2. Run the factory: `uv run factory ceo /path/to/project`
+3. Open `http://localhost:3000` in your browser
 4. Login: `dev@localhost.local` / `devpassword123`
-
-Tag queries for easy searching:
-```bash
-uv run factory ceo /path --trace-id my-test
-# Search by "Session ID" in the LangFuse UI
-```
 
 ### CLI Commands
 
-All commands run from the project root:
-
-| Command | Description |
-|---------|-------------|
-| `scripts/langfuse start` | Start LangFuse services |
-| `scripts/langfuse stop` | Stop services (preserve data) |
-| `scripts/langfuse stop --volumes` | Stop and delete all data |
-| `scripts/langfuse status` | Check service health and trace count |
-| `scripts/langfuse logs` | View service logs |
-| `scripts/langfuse logs -f` | Stream logs in real-time |
-| `scripts/langfuse open` | Open LangFuse UI in browser |
-| `scripts/langfuse reset` | Delete all traces |
+```bash
+scripts/langfuse-setup start    # Start LangFuse services
+scripts/langfuse-setup stop     # Stop services
+scripts/langfuse-setup status   # Show status and credentials
+```
 
 ### Requirements
 
@@ -412,7 +399,7 @@ To disable tracing without stopping LangFuse:
 export LANGFUSE_TRACING_ENABLED=false
 ```
 
-For LLM connection setup (optional, only needed for LangFuse's evaluation and playground features) and troubleshooting, see [`infra/langfuse/README.md`](infra/langfuse/README.md).
+For LLM connection setup, trace structure details, and troubleshooting, see [`infra/langfuse/README.md`](infra/langfuse/README.md).
 
 ---
 

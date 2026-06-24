@@ -67,27 +67,9 @@ This checks: single trace exists, correct name format, root span, agent spans ne
 All commands run from the **project root** directory:
 
 ```bash
-scripts/langfuse <command> [options]
-
-Commands:
-  start       Start LangFuse services
-  stop        Stop LangFuse services
-  status      Check service health and trace count
-  logs        View service logs
-  open        Open LangFuse UI in browser
-  reset       Delete all traces
-  config      Show configuration
-  setup-llm   Set up LLM for evaluations (optional)
-```
-
-Common examples:
-```bash
-scripts/langfuse start              # Start services
-scripts/langfuse status             # Check health
-scripts/langfuse stop               # Stop (preserve data)
-scripts/langfuse stop --volumes     # Stop and delete all data
-scripts/langfuse logs -f            # Stream all logs
-scripts/langfuse open               # Open browser
+scripts/langfuse-setup start    # Start LangFuse services
+scripts/langfuse-setup stop     # Stop services
+scripts/langfuse-setup status   # Show status and credentials
 ```
 
 ## Requirements
@@ -130,7 +112,7 @@ Get a free API key from [Google AI Studio](https://aistudio.google.com/apikey):
 export GOOGLE_API_KEY=your-api-key
 
 # 2. Configure LangFuse
-scripts/langfuse setup-llm --adapter google-ai-studio
+scripts/langfuse-setup setup-llm --adapter google-ai-studio
 ```
 
 Available models: `gemini-3.1-pro-preview`, `gemini-3-flash-preview`
@@ -140,25 +122,25 @@ Available models: `gemini-3.1-pro-preview`, `gemini-3-flash-preview`
 ```bash
 # OpenAI
 export OPENAI_API_KEY=sk-xxx
-scripts/langfuse setup-llm --adapter openai
+scripts/langfuse-setup setup-llm --adapter openai
 
 # Anthropic
 export ANTHROPIC_API_KEY=sk-ant-xxx
-scripts/langfuse setup-llm --adapter anthropic
+scripts/langfuse-setup setup-llm --adapter anthropic
 ```
 
 ### Managing LLM Connections
 
 ```bash
-scripts/langfuse setup-llm --list     # List connections
-scripts/langfuse setup-llm --delete   # Delete all
-scripts/langfuse setup-llm --force    # Update existing
+scripts/langfuse-setup setup-llm --list     # List connections
+scripts/langfuse-setup setup-llm --delete   # Delete all
+scripts/langfuse-setup setup-llm --force    # Update existing
 ```
 
 ### Setting Default Model
 
 After creating a connection, set the default in the UI:
-1. `scripts/langfuse open`
+1. `scripts/langfuse-setup status`
 2. **Project Settings** > **Evaluators** > **+ Set up Evaluator**
 3. Select model (e.g., `gemini-3.1-pro-preview`)
 
@@ -186,12 +168,13 @@ podman machine start
 
 ### Containers failing to start
 ```bash
-scripts/langfuse logs --service web
-scripts/langfuse logs --service worker
+cd infra/langfuse && docker compose logs web
+cd infra/langfuse && docker compose logs worker
 ```
 
 ### Reset everything
 ```bash
-scripts/langfuse stop --volumes
-scripts/langfuse start
+scripts/langfuse-setup stop
+cd infra/langfuse && docker compose down --volumes
+scripts/langfuse-setup start
 ```
