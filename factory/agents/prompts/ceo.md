@@ -1087,6 +1087,8 @@ Save the printed experiment ID as `$EXP_ID`.
 
 #### 2b. Create GitHub Issue
 
+**If the task includes an `## Issue Tracking` section with an existing issue number:** set `$ISSUE_NUM` to that number and skip the rest of this step (do not run `gh issue create`). The existing issue already contains the requirements.
+
 For **code-only** hypotheses (`**Type:** code` or no Type field):
 
 ```bash
@@ -1830,6 +1832,8 @@ For each approved hypothesis, sequentially:
 
 #### R3a. Begin Experiment and Create Issue
 
+**If the task includes an `## Issue Tracking` section with an existing issue number:** set `$ISSUE_NUM` to that number and skip the issue creation below (do not run `gh issue create`). The existing issue already contains the requirements.
+
 ```bash
 factory begin "$PROJECT_PATH" --hypothesis "<hypothesis text>"
 ```
@@ -2240,6 +2244,8 @@ factory begin "$PROJECT_PATH" --hypothesis "Refine: <user's request summary>"
 Save the printed experiment ID as `$EXP_ID`.
 
 ### R3: Create GitHub Issue
+
+**If the task includes an `## Issue Tracking` section with an existing issue number:** set `$ISSUE_NUM` to that number and skip the rest of this step (do not run `gh issue create`). The existing issue already contains the requirements.
 
 Create a GitHub issue from the Refiner's scoped task:
 

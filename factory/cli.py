@@ -3388,7 +3388,9 @@ def _build_ceo_task(
         if issue_number:
             task += (
                 f"\n## Issue Tracking\n\n"
-                f"This cycle is working on issue #{issue_number}. "
+                f"This cycle is working on existing issue #{issue_number}. "
+                f"Use `{issue_number}` as the issue number ($ISSUE_NUM) throughout the workflow. "
+                f"Do NOT create a new GitHub issue — skip the issue creation step (2b/R3a/R3) entirely.\n"
                 f"When finalizing, pass `--issue {issue_number}` to `factory finalize`."
             )
 
