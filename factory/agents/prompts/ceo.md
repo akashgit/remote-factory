@@ -179,6 +179,11 @@ The factory config (`factory.md`) may specify a `## Target Branch` (default: `ma
 
 Read the target branch from `.factory/config.json` field `target_branch`. If absent, default to `main`.
 
+Resolve the target branch variable at the start of each cycle:
+```bash
+TARGET_BRANCH=$(cat .factory/config.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('target_branch','main'))")
+```
+
 ### Resuming from a Crash
 
 Crash recovery is handled by you directly at Step 0 (Assess Sprint State). You read the `.factory/` state yourself to determine whether to resume or start fresh — no external agent is needed.
@@ -1172,10 +1177,10 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 5. Implement exactly what the issue describes
 6. If the issue has an '## Execution Step' section: after implementing code changes, execute those commands. The task is NOT complete until the output artifacts listed in '## Execution Acceptance Criteria' exist and are non-empty. Code-only completion for an operational issue is a failure.
 7. Run tests and evals
-8. Commit and open a DRAFT PR targeting main. Use idempotency:
+8. Commit and open a DRAFT PR targeting $TARGET_BRANCH. Use idempotency:
    - First check: gh pr list --head <branch> --json number,title
    - If a PR already exists for this branch, skip creation and use the existing PR number
-   - If no PR exists: gh pr create --draft --base main
+   - If no PR exists: gh pr create --draft --base $TARGET_BRANCH
 Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout $BUILDER_TIMEOUT
 ```
 
@@ -1195,7 +1200,7 @@ factory log "$PROJECT_PATH" "phase.build.completed" --data "{\"exp_id\": $EXP_ID
 Find the PR number first:
 ```bash
 PR_NUM=$(gh pr list --state open --json number,headRefName -q '.[0].number')
-BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
 ```
 
 ```bash
@@ -1249,7 +1254,7 @@ Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$
 **Before making any keep/revert decision, run the precheck gate.** This is a hard gate — you CANNOT override a failed precheck. A failure means mandatory revert, no exceptions.
 
 ```bash
-BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
 factory precheck "$PROJECT_PATH" \
     --score-before $SCORE_BEFORE \
     --score-after $SCORE_AFTER \
@@ -2277,10 +2282,10 @@ factory agent builder --task "Implement GitHub issue #$ISSUE_NUM in <owner>/<rep
 3. The worktree already has its own branch — do NOT create a new branch. Commit directly to the current branch.
 4. Implement exactly what the issue describes
 5. Run tests after implementation
-6. Commit and open a DRAFT PR targeting main. Use idempotency:
+6. Commit and open a DRAFT PR targeting $TARGET_BRANCH. Use idempotency:
    - First check: gh pr list --head <branch> --json number,title
    - If a PR already exists for this branch, skip creation and use the existing PR number
-   - If no PR exists: gh pr create --draft --base main
+   - If no PR exists: gh pr create --draft --base $TARGET_BRANCH
 Rules: implement ONLY what the issue asks. Do NOT modify eval/score.py or .factory/." --project "$PROJECT_PATH" --timeout 600
 ```
 
@@ -2296,7 +2301,7 @@ Initialize `$QA_ITERATION=1` before entering the QA loop.
 
 ```bash
 PR_NUM=$(gh pr list --state open --json number,headRefName -q '.[0].number')
-BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
 
 factory agent qa --task "Verify refinement experiment $EXP_ID for $PROJECT_PATH. QA iteration: $QA_ITERATION/3.
 
@@ -2320,7 +2325,7 @@ Apply the same QA iteration loop as Improve mode (max 3 iterations, route fixes 
 #### R6: Hard Precheck Gate (= Improve 2d)
 
 ```bash
-BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 main)
+BASELINE_SHA=$(cd "$PROJECT_PATH" && git log --format=%H -1 $TARGET_BRANCH)
 factory precheck "$PROJECT_PATH" \
     --score-before $SCORE_BEFORE \
     --score-after $SCORE_AFTER \
@@ -2494,7 +2499,7 @@ If the QA Agent reports that `factory eval` failed (Health Check shows no valid 
 ### Guard Violation
 If `factory guard` reports violations:
 1. Change MUST be reverted — no exceptions
-2. Close PR, checkout main
+2. Close PR, checkout $TARGET_BRANCH
 3. Finalize as revert with `--notes "ceo:revert violation=<details> qa_iterations=$QA_ITERATION"`
 4. Record violation in `strategy/current.md` under Anti-patterns
 

@@ -42,9 +42,12 @@ def _read_target_branch(project_path: Path) -> str:
                 return tb
         except (json.JSONDecodeError, OSError):
             pass
-    from factory.worktree import detect_default_branch
+    try:
+        from factory.worktree import detect_default_branch
 
-    return detect_default_branch(project_path)
+        return detect_default_branch(project_path)
+    except (FileNotFoundError, OSError, subprocess.CalledProcessError):
+        return "main"
 
 
 # ── banner ────────────────────────────────────────────────────
@@ -3399,6 +3402,12 @@ def _build_ceo_task(
             f"The Builder should create experiment branches from `{branch}` and "
             f"target PRs against `{branch}`. After revert, checkout `{branch}` instead of main.\n"
         )
+
+    resolved_branch = branch or _read_target_branch(project_path)
+    task += (
+        f"\n\n## Target Branch\n\n"
+        f"Resolved target branch: `{resolved_branch}`\n"
+    )
 
     if any(v is not None for v in (min_growth, max_new)):
         budget_lines = ["\n\n## Budget Override\n"]
