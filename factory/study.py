@@ -906,8 +906,8 @@ def study_project_local(
     if spec_path is not None:
         try:
             spec_lines = [
-                l for l in spec_path.read_text().splitlines()
-                if l.strip() and not l.strip().startswith("# ")
+                ln for ln in spec_path.read_text().splitlines()
+                if ln.strip() and not ln.strip().startswith("# ")
             ]
             if spec_lines:
                 lines.append("")
