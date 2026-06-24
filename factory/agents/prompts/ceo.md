@@ -1191,7 +1191,7 @@ Log milestone:
 factory log "$PROJECT_PATH" "phase.build.completed" --data "{\"exp_id\": $EXP_ID}"
 ```
 
-**Spawn the QA Agent (health check + code review):**
+**Spawn the QA Agent:**
 
 Find the PR number first:
 ```bash
@@ -1207,28 +1207,29 @@ PR: #$PR_NUM
 Baseline SHA: $BASELINE_SHA
 Issue: #$ISSUE_NUM
 
-Run both verification sections:
-1. Health Check — run: factory eval $PROJECT_PATH. Report composite score and delta vs baseline.
-2. Code Review — read each changed file's diff individually (git diff $BASELINE_SHA..HEAD -- <file>), evaluate 7-category checklist with file:line evidence, check spec fidelity against issue #$ISSUE_NUM.
+Run all 3 verification sections:
+1. Health Check — run: factory eval $PROJECT_PATH. Capture the composite score as \$SCORE_BEFORE (baseline) and report delta. This is the authoritative baseline measurement for this experiment.
+2. Code Review — read PR diff (gh pr diff $PR_NUM), evaluate the 7-category checklist, check spec fidelity against issue #$ISSUE_NUM.
+3. Adversarial QA — actually run/test the feature described in the hypothesis. Execute the smoke test if configured in factory.md.
 
-Report structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$PROJECT_PATH" --timeout 600
+Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$PROJECT_PATH" --timeout 600
 ```
 
 **CEO Review — QA Verdict:**
 
 1. Read `.factory/reviews/qa-latest.md`
-2. Verify both sections are present (Health Check, Code Review)
-3. Parse the `**Verdict:**` line
-4. Extract `score_after` from the Health Check section
+2. Verify all 3 sections are present (Health Check, Code Review, Adversarial QA)
+3. Check that the QA Agent actually executed the feature (not just claimed it works)
+4. Parse the `**Verdict:**` line
+5. Extract `score_after` from the Health Check section
 
 **Act on the QA verdict:**
 
-- **CLEAN** → proceed to Adversarial testing below
+- **CLEAN** → proceed to precheck gate below
 - **REVERT** (score regression, fixed surface violation, critical bug) → mandatory revert (see Error Recovery)
-- **ISSUES_FOUND: N with critical issues** → apply the QA iteration loop (skip Adversarial until review is clean)
-- **ISSUES_FOUND: N with no critical issues** → proceed to Adversarial testing, note the non-critical issues
+- **ISSUES_FOUND: N** → apply the QA iteration loop:
 
-**QA Iteration Loop (on ISSUES_FOUND with critical issues):**
+**QA Iteration Loop (on ISSUES_FOUND):**
 
 1. **Check iteration cap:** If `$QA_ITERATION >= 3`, stop. Proceed to precheck with current code — remaining issues will be flagged in the PR for human review.
 2. **Route fixes to Builder:** Re-invoke the Builder with the QA Agent's issue list:
@@ -1243,30 +1244,6 @@ Report structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$PROJE
    ```
 3. **Increment:** `$QA_ITERATION += 1`
 4. **Re-run QA:** Spawn the QA Agent again with the updated iteration number. Loop back to "Spawn the QA Agent" above.
-
-**Spawn the Adversarial Agent (feature testing):**
-
-After QA passes (CLEAN or ISSUES_FOUND with no critical issues), spawn the Adversarial agent to independently test the feature:
-
-```bash
-factory agent adversarial --task "Test the feature built in experiment $EXP_ID for $PROJECT_PATH.
-
-Hypothesis: <hypothesis text>
-Issue: #$ISSUE_NUM
-PR: #$PR_NUM
-
-Read the issue for acceptance criteria. Run the smoke test from factory.md.
-Exercise the feature as a real user would. Test edge cases.
-Report structured verdict with PASS/FAIL and execution evidence for each test." --project "$PROJECT_PATH" --timeout 600
-```
-
-**CEO Review — Adversarial Verdict:**
-
-1. Read `.factory/reviews/adversarial-latest.md`
-2. Verify the agent actually ran the project (check for command + output evidence, not just claims)
-3. Parse the `**Verdict:**` line (PASS or FAIL)
-4. If FAIL with critical failures → route to Builder for fixes, then re-run Adversarial (max 2 retries)
-5. If PASS → proceed to precheck gate
 
 #### 2d. Hard Precheck Gate (NON-OVERRIDABLE)
 
