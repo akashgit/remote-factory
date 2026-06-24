@@ -37,23 +37,35 @@ mypy factory/                    # Type check
 - Async/await by default — library functions in `store.py` and `eval/runner.py` are async, the CLI wraps them with `asyncio.run()`
 - Structured logging via `structlog` — use `log = structlog.get_logger()` at module level
 
-## Architecture (v2 — CEO Agent)
+## Architecture (v2 — CEO Agent + Workflow Graph Engine)
 
-The factory is a **three-layer system** with a dedicated CEO agent as the orchestrator:
+The factory is a **four-layer system**:
 
 ### Layer 1: Python CLI (`factory/`)
 
 Pure tools that don't make decisions. Entry point is `factory/cli.py` → `factory.cli:main` (registered as `factory` script in pyproject.toml). Each subcommand is a `cmd_*` function dispatched via a handler dict. Key modules include `factory/clean_pr.py` (Clean PR Mode — strips non-essential artifacts from PRs before pushing to external repos).
 
-### Layer 2: CEO Agent (`factory/agents/prompts/ceo.md`)
+### Layer 2: Workflow Graph Engine (`factory/workflow/`)
 
-A dedicated Claude Code agent that owns the full factory workflow. Spawned via `factory ceo /path` or `factory run /path`. The CEO detects project state, routes to modes (Build/Discover/Review/Improve/Research/Design/Meta), spawns specialist agents, makes keep/revert decisions, and ensures mandatory archival. SKILL.md is a thin launcher shim that spawns the CEO.
+All 8 factory modes (build, design, improve, research, meta, discover, review, refine) are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives connected by `Edge` objects. See `factory/workflow/README.md` for full documentation.
 
-### Layer 3: Specialist Agents (`factory/agents/`)
+The same graph definition produces two execution formats:
+- **Headless:** `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically — `factory workflow run <name> --project /path`
+- **Interactive:** `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/` — the CEO agent reads these at runtime as mode-specific playbooks
 
-Seven specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+### Layer 3: CEO Agent (`factory/agents/prompts/ceo.md` + `skills/workflow-*/SKILL.md`)
 
-**Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), QA (health check + code review + adversarial QA), Archivist (record), Refiner (scope refinements), CEO (orchestrate).
+The CEO prompt is split into two parts:
+- **`ceo.md` (501 lines)** — core identity, cross-cutting rules (Sacred Rules, FEEC, keep/revert framework, review gates, error recovery, self-learning). No mode-specific procedures.
+- **`skills/workflow-*/SKILL.md` (8 files)** — each mode's full step-by-step playbook, auto-generated from the workflow graph definitions via `factory workflow export-skills`.
+
+Spawned via `factory ceo /path` or `factory run /path`. The CEO receives `ceo.md` as its system prompt, detects project state, then reads the appropriate `SKILL.md` into its context and follows it as the mode-specific playbook.
+
+### Layer 4: Specialist Agents (`factory/agents/`)
+
+Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent <role>`. Agent prompts are resolved via `factory/agents/runner.py` with a two-tier lookup: project-specific override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` (user-local, ACE-generated) are auto-injected, falling back to factory defaults in `factory/agents/playbooks/<role>.md`.
+
+**Roles:** Researcher (observe), Strategist (hypothesize and refine ideas), Builder (implement), QA (health check + code review + adversarial QA), Archivist (record), Refiner (scope refinements), Failure Analyst (research mode), CEO (orchestrate).
 
 ### Key data flow
 
