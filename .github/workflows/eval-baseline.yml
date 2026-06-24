@@ -1,0 +1,104 @@
+name: Eval Baseline
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eval-baseline-${{ github.sha }}
+
+jobs:
+  eval-baseline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Run eval
+        id: eval
+        run: |
+          uv run factory eval . > eval_output.json 2>/dev/null || true
+          cat eval_output.json
+
+      - name: Setup eval-data branch
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/${{ github.repository }}.git eval-data >/dev/null 2>&1; then
+            git clone --single-branch --branch eval-data https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git eval-data
+          else
+            mkdir eval-data && cd eval-data
+            git init
+            git checkout -b eval-data
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            touch scores.jsonl
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add . && git commit -m 'Initialize eval-data branch'
+            git push -u origin eval-data
+          fi
+
+      - name: Enrich and append baseline record
+        env:
+          COMMIT: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 << 'PYEOF'
+          import json, os, sys
+          from datetime import datetime, timezone
+
+          eval_path = "eval_output.json"
+          output_path = "eval-data/scores.jsonl"
+
+          if not os.path.isfile(eval_path):
+              print("ERROR: eval_output.json not found", file=sys.stderr)
+              sys.exit(1)
+
+          with open(eval_path) as f:
+              eval_data = json.load(f)
+
+          record = {
+              "commit": os.environ.get("COMMIT", ""),
+              "ref": os.environ.get("REF", ""),
+              "timestamp": datetime.now(timezone.utc).isoformat(),
+              "run_id": os.environ.get("RUN_ID", ""),
+              "run_url": os.environ.get("RUN_URL", ""),
+              "composite_score": eval_data.get("total"),
+              "results": eval_data.get("results", []),
+              "guard_violations": eval_data.get("guard_violations", []),
+              "passed": eval_data.get("passed", False),
+          }
+
+          with open(output_path, "a") as f:
+              f.write(json.dumps(record) + "\n")
+
+          print(f"Appended baseline record for {record['commit'][:8]}", file=sys.stderr)
+          PYEOF
+
+      - name: Push to eval-data branch
+        working-directory: eval-data
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add scores.jsonl
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "Add eval baseline for ${{ github.sha }}"
+          for i in 1 2 3; do
+            git push origin eval-data && break
+            echo "Push failed (attempt $i), rebasing and retrying..."
+            git pull --rebase origin eval-data
+          done
