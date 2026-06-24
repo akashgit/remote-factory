@@ -23,7 +23,19 @@ factory ceo /path/to/project
 
 3. Open `http://localhost:3000` to view traces. Login: `dev@localhost.local` / `devpassword123`
 
-Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
+**Note:** `scripts/langfuse-setup start` auto-creates a `.env.local` file with these credentials. The factory CLI auto-loads it on startup — no manual export needed.
+
+If you need to create it manually, the file should look like:
+
+```
+LANGFUSE_HOST=http://localhost:3000
+LANGFUSE_BASE_URL=http://localhost:3000
+LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+TELEMETRY_PLATFORM=langfuse
+```
+
+To persist across sessions, add the `export` versions to `~/.bashrc` or `~/.zshrc`.
 
 The factory creates a single Langfuse trace per CEO cycle. The trace structure:
 
