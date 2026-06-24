@@ -33,13 +33,24 @@ def _make_ceo_message_emitter(project_path: Path) -> Callable[[bytes], None]:
         if not isinstance(parsed, dict) or parsed.get("type") != "assistant":
             return
         message = parsed.get("message", "")
-        if not isinstance(message, str) or not message:
+        if isinstance(message, str):
+            text = message
+        elif isinstance(message, dict):
+            content = message.get("content", [])
+            text = "".join(
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            )
+        else:
+            return
+        if not text:
             return
         emit_event(
             project_path,
             "ceo.message",
             agent="ceo",
-            data={"message": message, "message_type": "assistant"},
+            data={"message": text, "message_type": "assistant"},
         )
 
     return _on_line

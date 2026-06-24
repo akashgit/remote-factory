@@ -82,13 +82,97 @@ class TestMakeCeoMessageEmitter:
         events_file = project / ".factory" / "events.jsonl"
         assert not events_file.exists()
 
-    def test_skips_non_string_message(self, tmp_path: Path) -> None:
+    def test_skips_non_string_non_dict_message(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         project.mkdir()
         (project / ".factory").mkdir()
 
         emitter = _make_ceo_message_emitter(project)
         emitter(json.dumps({"type": "assistant", "message": 42}).encode())
+
+        events_file = project / ".factory" / "events.jsonl"
+        assert not events_file.exists()
+
+    def test_emits_event_for_transcript_format(self, tmp_path: Path) -> None:
+        """Transcript JSONL has message as dict with content array."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        emitter = _make_ceo_message_emitter(project)
+        line = json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "Hello from transcript"}
+                ],
+            },
+        }).encode()
+        emitter(line)
+
+        events_file = project / ".factory" / "events.jsonl"
+        assert events_file.exists()
+        events = [json.loads(ln) for ln in events_file.read_text().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["type"] == "ceo.message"
+        assert events[0]["data"]["message"] == "Hello from transcript"
+
+    def test_transcript_format_multiple_text_blocks(self, tmp_path: Path) -> None:
+        """Transcript content with multiple text blocks gets concatenated."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        emitter = _make_ceo_message_emitter(project)
+        line = json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "text", "text": "Part 1. "},
+                    {"type": "tool_use", "id": "t1", "name": "Bash"},
+                    {"type": "text", "text": "Part 2."},
+                ],
+            },
+        }).encode()
+        emitter(line)
+
+        events_file = project / ".factory" / "events.jsonl"
+        events = [json.loads(ln) for ln in events_file.read_text().strip().splitlines()]
+        assert len(events) == 1
+        assert events[0]["data"]["message"] == "Part 1. Part 2."
+
+    def test_transcript_format_empty_content_skipped(self, tmp_path: Path) -> None:
+        """Transcript with empty content array produces no event."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        emitter = _make_ceo_message_emitter(project)
+        line = json.dumps({
+            "type": "assistant",
+            "message": {"content": []},
+        }).encode()
+        emitter(line)
+
+        events_file = project / ".factory" / "events.jsonl"
+        assert not events_file.exists()
+
+    def test_transcript_format_no_text_blocks_skipped(self, tmp_path: Path) -> None:
+        """Transcript with only non-text content blocks produces no event."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        emitter = _make_ceo_message_emitter(project)
+        line = json.dumps({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {"type": "tool_use", "id": "t1", "name": "Bash"},
+                ],
+            },
+        }).encode()
+        emitter(line)
 
         events_file = project / ".factory" / "events.jsonl"
         assert not events_file.exists()
