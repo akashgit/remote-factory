@@ -22,6 +22,7 @@ class AgentRole(str, Enum):
     CEO = "ceo"
     ARCHIVIST = "archivist"
     REFINER = "refiner"
+    REPORTER = "reporter"
 
 
 class AgentConfig(BaseModel):
@@ -42,6 +43,7 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus"),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku"),
     "refiner": AgentConfig(role=AgentRole.REFINER, model="opus"),
+    "reporter": AgentConfig(role=AgentRole.REPORTER, model="sonnet"),
 }
 
 

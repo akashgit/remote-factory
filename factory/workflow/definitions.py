@@ -238,6 +238,15 @@ def build_workflow() -> Workflow:
         blocking=False,
     )
 
+    nodes["reporter_build"] = AgentNode(
+        id="reporter_build",
+        role=AgentRole.REPORTER,
+        prompt_template="Generate HTML report for the completed experiment.",
+        reads={".factory/reviews/qa-latest.md"},
+        writes={".factory/reports/"},
+        blocking=False,
+    )
+
     # Edges
     edges = [
         # Fork to researchers
@@ -270,8 +279,9 @@ def build_workflow() -> Workflow:
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → archivist (proceed) or halt
+        # Precheck → archivist + reporter (proceed) or halt
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="reporter_build", condition=VerdictType.PROCEED),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -472,6 +482,15 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
+    nodes["reporter"] = AgentNode(
+        id="reporter",
+        role=AgentRole.REPORTER,
+        prompt_template="Generate HTML report for the completed experiment.",
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/reports/"},
+        blocking=False,
+    )
+
     edges = [
         # Study → researcher
         Edge(source="study", target="researcher"),
@@ -499,8 +518,9 @@ def improve_workflow() -> Workflow:
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
-        # Finalize → archivist
+        # Finalize → archivist + reporter
         Edge(source="finalize", target="archivist"),
+        Edge(source="finalize", target="reporter"),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -643,8 +663,9 @@ def research_workflow() -> Workflow:
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
-        # Finalize → archivist → plateau gate
+        # Finalize → archivist + reporter → plateau gate
         Edge(source="finalize", target="archivist"),
+        Edge(source="finalize", target="reporter"),
         Edge(source="archivist", target="plateau_gate"),
         # Plateau gate: proceed (done) or reloop to baseline
         Edge(source="plateau_gate", target="baseline", condition=VerdictType.RELOOP),
