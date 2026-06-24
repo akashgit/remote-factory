@@ -1701,6 +1701,34 @@ def cmd_clean_pr(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_baseline(args: argparse.Namespace) -> int:
+    """Fetch stored eval baseline for a commit from the eval-data branch."""
+    from factory.baseline import fetch_baseline
+
+    project_path = Path(args.path).resolve()
+
+    commit = getattr(args, "commit", None)
+    if not commit:
+        result = subprocess.run(
+            ["git", "merge-base", "HEAD", _read_target_branch(project_path)],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print("Error: could not determine merge-base commit.", file=sys.stderr)
+            return 1
+        commit = result.stdout.strip()
+
+    baseline = fetch_baseline(project_path, commit_sha=commit)
+    if baseline is None:
+        print(f"No baseline found for commit {commit[:12]}", file=sys.stderr)
+        return 1
+
+    print(json.dumps(baseline, indent=2, default=str))
+    return 0
+
+
 def cmd_review(args: argparse.Namespace) -> int:
     """Format and optionally post a review on a GitHub PR."""
     from factory.review import ReviewPayload, format_review, post_review
@@ -4005,6 +4033,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
     p.add_argument("--exp", type=int, default=None, help="Experiment ID (archives full diff before stripping)")
 
+    # baseline
+    p = sub.add_parser("baseline", help="Fetch stored eval baseline from eval-data branch")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--commit", default=None,
+                    help="Commit SHA to look up (default: git merge-base HEAD <target-branch>)")
+
     # refine-status
     p = sub.add_parser("refine-status", help="Print refinement state and regrounding output")
     p.add_argument("path", help="Path to the project")
@@ -4397,6 +4431,7 @@ def main(argv: list[str] | None = None) -> int:
         "archive": cmd_archive,
         "precheck": cmd_precheck,
         "clean-pr": cmd_clean_pr,
+        "baseline": cmd_baseline,
         "leakage-check": cmd_leakage_check,
         "validate-research": cmd_validate_research,
         "refine-status": cmd_refine_status,
