@@ -55,7 +55,8 @@ def fetch_baseline(
 
     Returns the baseline record dict, or ``None`` if no match is found.
     """
-    fetch_result = _git(["fetch", remote, branch], cwd=project_path)
+    refspec = f"{branch}:refs/remotes/{remote}/{branch}"
+    fetch_result = _git(["fetch", remote, refspec], cwd=project_path)
     if fetch_result.returncode != 0:
         log.warning("baseline.fetch_failed", remote=remote, branch=branch,
                     stderr=fetch_result.stderr.strip())

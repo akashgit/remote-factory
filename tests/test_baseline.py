@@ -113,6 +113,25 @@ class TestFetchBaseline:
 
         assert result is None
 
+    def test_fetch_uses_explicit_refspec(self, tmp_path: Path) -> None:
+        calls: list[list[str]] = []
+
+        def mock_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+            calls.append(args)
+            if args[0] == "fetch":
+                return _make_completed()
+            if args[0] == "show":
+                return _make_completed(stdout=SCORES_JSONL)
+            return _make_completed(returncode=1)
+
+        with patch("factory.baseline._git", side_effect=mock_git):
+            fetch_baseline(tmp_path, commit_sha="abc123")
+
+        fetch_call = calls[0]
+        assert fetch_call[0] == "fetch"
+        assert fetch_call[1] == "origin"
+        assert fetch_call[2] == "eval-data:refs/remotes/origin/eval-data"
+
     def test_fetch_failure(self, tmp_path: Path) -> None:
         def mock_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
             if args[:2] == ["fetch", "origin"]:
