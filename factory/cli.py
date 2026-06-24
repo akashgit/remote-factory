@@ -17,6 +17,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 log = structlog.get_logger()
@@ -2649,7 +2650,12 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     _ceo_start = _time.time()
 
-    ceo_tailer = _start_ceo_tailer(wt_path, cycle_span_id, _ceo_start)
+    from factory.runners.claude import _make_ceo_message_emitter
+
+    ceo_tailer = _start_ceo_tailer(
+        wt_path, cycle_span_id, _ceo_start,
+        on_line=_make_ceo_message_emitter(wt_path),
+    )
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)
@@ -2719,30 +2725,32 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
 def _start_ceo_tailer(
     wt_path: Path, cycle_span_id: str | None, start_time: float,
+    on_line: Callable[[bytes], None] | None = None,
 ) -> object | None:
     """Create the CEO span eagerly and start a TranscriptTailer."""
-    if not cycle_span_id:
-        return None
     try:
         from factory.telemetry import TranscriptTailer, begin_span, flush, is_enabled
 
-        if not is_enabled():
-            return None
-        trace_id = os.environ.get("FACTORY_TRACE_ID", "")
-        if not trace_id:
-            return None
+        trace_id = ""
+        ceo_span_id = ""
 
-        ceo_span_id = begin_span(trace_id, cycle_span_id, "ceo")
-        if ceo_span_id is None:
-            return None
+        if cycle_span_id and is_enabled():
+            trace_id = os.environ.get("FACTORY_TRACE_ID", "")
+            if trace_id:
+                span = begin_span(trace_id, cycle_span_id, "ceo")
+                if span:
+                    ceo_span_id = span
+                    flush()
 
-        flush()
+        if not trace_id and not on_line:
+            return None
 
         tailer = TranscriptTailer(
             trace_id=trace_id,
             span_id=ceo_span_id,
             project_path=wt_path,
             session_start=start_time,
+            on_line=on_line,
         )
         tailer.start()
         return tailer

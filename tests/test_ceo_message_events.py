@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from factory.runners.claude import _make_ceo_message_emitter
@@ -252,3 +253,156 @@ class TestTeeStreamOnLineCallback:
 
         assert len(buffer) == 1
         assert buffer[0] == b"test line\n"
+
+
+class TestTranscriptTailerOnLine:
+    """Test TranscriptTailer on_line callback for interactive ceo.message events."""
+
+    def test_transcript_tailer_on_line_callback(self, tmp_path: Path) -> None:
+        """on_line fires for each line and emits ceo.message events."""
+        import time
+
+        from factory.telemetry import TranscriptTailer
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        claude_dir = Path.home() / ".claude" / "projects"
+        dir_name = str(project.resolve()).replace("/", "-").replace(".", "-")
+        proj_dir = claude_dir / dir_name
+        proj_dir.mkdir(parents=True, exist_ok=True)
+
+        transcript = proj_dir / "test-session.jsonl"
+        start_time = time.time() - 1
+        transcript.write_text(
+            json.dumps({"type": "assistant", "message": "hello from tailer"}) + "\n"
+            + json.dumps({"type": "user", "message": {"content": []}}) + "\n"
+        )
+
+        emitter = _make_ceo_message_emitter(project)
+        tailer = TranscriptTailer(
+            trace_id="",
+            span_id="",
+            project_path=project,
+            session_start=start_time,
+            on_line=emitter,
+        )
+        tailer.start()
+        time.sleep(1.0)
+        ingested = tailer.stop_and_drain()
+
+        assert ingested == 0
+
+        events_file = project / ".factory" / "events.jsonl"
+        assert events_file.exists()
+        events = [json.loads(ln) for ln in events_file.read_text().strip().splitlines()]
+        ceo_events = [e for e in events if e["type"] == "ceo.message"]
+        assert len(ceo_events) == 1
+        assert ceo_events[0]["data"]["message"] == "hello from tailer"
+
+    def test_transcript_tailer_on_line_fires_without_langfuse(self, tmp_path: Path) -> None:
+        """on_line fires even when Langfuse is not configured (empty trace_id/span_id)."""
+        import time
+
+        from factory.telemetry import TranscriptTailer
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        claude_dir = Path.home() / ".claude" / "projects"
+        dir_name = str(project.resolve()).replace("/", "-").replace(".", "-")
+        proj_dir = claude_dir / dir_name
+        proj_dir.mkdir(parents=True, exist_ok=True)
+
+        transcript = proj_dir / "test-session2.jsonl"
+        start_time = time.time() - 1
+        transcript.write_text(
+            json.dumps({"type": "assistant", "message": "line1"}) + "\n"
+            + json.dumps({"type": "assistant", "message": "line2"}) + "\n"
+        )
+
+        captured: list[bytes] = []
+
+        def capture(line: bytes) -> None:
+            captured.append(line)
+
+        tailer = TranscriptTailer(
+            trace_id="",
+            span_id="",
+            project_path=project,
+            session_start=start_time,
+            on_line=capture,
+        )
+        tailer.start()
+        time.sleep(1.0)
+        ingested = tailer.stop_and_drain()
+
+        assert ingested == 0
+        assert len(captured) == 2
+
+    def test_transcript_tailer_on_line_ignores_non_assistant(self, tmp_path: Path) -> None:
+        """The emitter callback only emits ceo.message for assistant-type lines."""
+        import time
+
+        from factory.telemetry import TranscriptTailer
+
+        project = tmp_path / "proj"
+        project.mkdir()
+        (project / ".factory").mkdir()
+
+        claude_dir = Path.home() / ".claude" / "projects"
+        dir_name = str(project.resolve()).replace("/", "-").replace(".", "-")
+        proj_dir = claude_dir / dir_name
+        proj_dir.mkdir(parents=True, exist_ok=True)
+
+        transcript = proj_dir / "test-session3.jsonl"
+        start_time = time.time() - 1
+        transcript.write_text(
+            json.dumps({"type": "user", "message": {"content": []}}) + "\n"
+            + json.dumps({"type": "tool_use", "name": "Bash"}) + "\n"
+            + json.dumps({"type": "result", "result": "done"}) + "\n"
+        )
+
+        emitter = _make_ceo_message_emitter(project)
+        tailer = TranscriptTailer(
+            trace_id="",
+            span_id="",
+            project_path=project,
+            session_start=start_time,
+            on_line=emitter,
+        )
+        tailer.start()
+        time.sleep(1.0)
+        tailer.stop_and_drain()
+
+        events_file = project / ".factory" / "events.jsonl"
+        assert not events_file.exists()
+
+    def test_start_ceo_tailer_with_on_line_no_langfuse(self, tmp_path: Path) -> None:
+        """_start_ceo_tailer returns a tailer (not None) when on_line is provided,
+        even without Langfuse or cycle_span_id."""
+        import time
+        from unittest.mock import patch
+
+        from factory.cli import _start_ceo_tailer
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        captured: list[bytes] = []
+
+        def capture(line: bytes) -> None:
+            captured.append(line)
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("FACTORY_TRACE_ID", None)
+            os.environ.pop("LANGFUSE_HOST", None)
+
+            tailer = _start_ceo_tailer(
+                project, None, time.time(), on_line=capture,
+            )
+
+        assert tailer is not None
+        tailer.stop_and_drain()  # type: ignore[union-attr]
