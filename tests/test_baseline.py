@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -160,3 +162,53 @@ class TestBaselineCLI:
         from factory.cli import cmd_baseline
 
         assert callable(cmd_baseline)
+
+    def test_cmd_baseline_success(self, tmp_path: Path, capsys) -> None:
+        from factory.cli import cmd_baseline
+
+        baseline_data = {"commit": "abc123", "composite_score": 0.85, "passed": True}
+        args = argparse.Namespace(path=str(tmp_path), commit="abc123")
+
+        with patch("factory.baseline.fetch_baseline", return_value=baseline_data):
+            rc = cmd_baseline(args)
+
+        assert rc == 0
+        captured = capsys.readouterr()
+        parsed = json.loads(captured.out)
+        assert parsed["composite_score"] == 0.85
+        assert parsed["commit"] == "abc123"
+
+    def test_cmd_baseline_no_match(self, tmp_path: Path, capsys) -> None:
+        from factory.cli import cmd_baseline
+
+        args = argparse.Namespace(path=str(tmp_path), commit="deadbeef1234")
+
+        with patch("factory.baseline.fetch_baseline", return_value=None):
+            rc = cmd_baseline(args)
+
+        assert rc == 1
+        captured = capsys.readouterr()
+        assert "No baseline found" in captured.err
+
+    def test_cmd_baseline_default_commit(self, tmp_path: Path, capsys) -> None:
+        from factory.cli import cmd_baseline
+
+        baseline_data = {"commit": "resolved_sha", "composite_score": 0.90}
+        args = argparse.Namespace(path=str(tmp_path))
+
+        merge_base_result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="resolved_sha\n", stderr=""
+        )
+
+        with (
+            patch("factory.baseline.fetch_baseline", return_value=baseline_data) as mock_fetch,
+            patch("subprocess.run", return_value=merge_base_result) as mock_run,
+            patch("factory.cli._read_target_branch", return_value="main"),
+        ):
+            rc = cmd_baseline(args)
+
+        assert rc == 0
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args
+        assert "merge-base" in call_args[0][0]
+        mock_fetch.assert_called_once_with(tmp_path, commit_sha="resolved_sha")
