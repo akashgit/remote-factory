@@ -361,6 +361,15 @@ For hypotheses with non-overlapping file scopes, execute them in parallel:
 - 3-5 hypotheses: parallel builders, sequential review
 - 5+ hypotheses: wave-based (batches of 3-5)
 
+### Issue Reuse (Focus Mode)
+
+When the task contains an `## Issue Tracking` section, an existing GitHub issue has been targeted via `--focus`. In this case:
+- Do NOT create a new issue — use the issue number from the Issue Tracking section (it appears as "working on issue #NNN")
+- Pass the existing issue number to the Builder
+- The PR should reference this existing issue (e.g., "Closes #NNN")
+
+Only create a new issue when no `## Issue Tracking` section is present in the task.
+
 ---
 
 ## Keep/Revert Decision Framework
