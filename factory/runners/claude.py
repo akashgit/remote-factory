@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,30 @@ if TYPE_CHECKING:
     from factory.runners.protocol import RunnerMeta
 
 log = structlog.get_logger()
+
+
+def _make_ceo_message_emitter(project_path: Path) -> Callable[[bytes], None]:
+    """Return a callback that emits ceo.message events for assistant JSONL lines."""
+    from factory.events import emit_event
+
+    def _on_line(line: bytes) -> None:
+        try:
+            parsed = json.loads(line)
+        except (json.JSONDecodeError, ValueError):
+            return
+        if not isinstance(parsed, dict) or parsed.get("type") != "assistant":
+            return
+        message = parsed.get("message", "")
+        if not isinstance(message, str) or not message:
+            return
+        emit_event(
+            project_path,
+            "ceo.message",
+            agent="ceo",
+            data={"message": message, "message_type": "assistant"},
+        )
+
+    return _on_line
 
 
 def _parse_usage(data: dict) -> AgentUsage:
@@ -117,9 +142,14 @@ class ClaudeRunner:
         try:
             log.info("claude_headless", cwd=str(request.cwd), model=request.model)
 
+            on_line = None
+            if request.role == "ceo" and request.project_path is not None:
+                on_line = _make_ceo_message_emitter(request.project_path)
+
             result = await run_subprocess(
                 cmd, cwd=str(request.cwd), env=env,
                 timeout=request.timeout, runner_name="claude", role=request.role,
+                on_line=on_line,
             )
 
             usage = None
