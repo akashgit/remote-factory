@@ -167,7 +167,7 @@ class FactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --headless "
+                "factory ceo . --headless --mode build "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
             ),

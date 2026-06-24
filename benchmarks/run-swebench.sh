@@ -240,6 +240,7 @@ FACTORYEOF
     timeout "${SOLVER_TIMEOUT}" factory ceo . \
         --headless \
         --no-github \
+        --mode build \
         --prompt "${SOLVER_PROMPT_FILE}" \
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
@@ -316,6 +317,7 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
     fi
 
     # Strategy 2: Recover orphaned commits via git fsck
+    # Pick the orphan whose parent is the base commit (not just newest by timestamp)
     if [ -z "$FACTORY_BRANCH" ]; then
         echo "No factory branch, finding orphaned commits..."
         ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
@@ -323,6 +325,10 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
             BEST_COMMIT=""
             BEST_TIME=0
             for SHA in $ORPHAN_COMMITS; do
+                # Only consider orphans that descend from BASE_COMMIT
+                if ! git merge-base --is-ancestor "${BASE_COMMIT}" "$SHA" 2>/dev/null; then
+                    continue
+                fi
                 COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
                 if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
                     BEST_TIME=$COMMIT_TIME
@@ -330,11 +336,13 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
                 fi
             done
             if [ -n "$BEST_COMMIT" ]; then
-                echo "Recovering from orphan tip: $BEST_COMMIT"
+                echo "Recovering from orphan tip: $BEST_COMMIT (ancestor of ${BASE_COMMIT:0:12})"
                 echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
                 git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
                 git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
                 rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+            else
+                echo "No orphan commits descend from BASE_COMMIT ${BASE_COMMIT:0:12}"
             fi
         fi
     fi
