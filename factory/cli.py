@@ -1063,6 +1063,36 @@ def cmd_backlog_remove(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_baseline(args: argparse.Namespace) -> int:
+    from factory.baseline import get_baseline, get_latest_main_baseline
+
+    project_path = Path(args.path).resolve()
+    commit = getattr(args, "commit", None)
+    repo = getattr(args, "repo", None)
+    latest = getattr(args, "latest", False)
+
+    if latest:
+        score = get_latest_main_baseline(project_path, repo=repo)
+    else:
+        target_branch = "main"
+        try:
+            from factory.store import ExperimentStore
+            store = ExperimentStore(project_path)
+            config = _run(store.read_config())
+            target_branch = config.target_branch or "main"
+        except Exception:
+            pass
+        score = get_baseline(project_path, commit=commit, repo=repo,
+                             target_branch=target_branch)
+
+    if score is None:
+        print("No baseline found.", file=sys.stderr)
+        return 1
+
+    print(json.dumps(score.model_dump(), indent=2, default=str))
+    return 0
+
+
 def cmd_backlog_list(args: argparse.Namespace) -> int:
     from factory.study import _migrate_legacy_backlog, _parse_backlog_items, _persist_backlog_items
 
@@ -3895,6 +3925,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
     p.add_argument("item", help="Exact text of the backlog item to remove")
 
+    # baseline
+    p = sub.add_parser("baseline", help="Retrieve stored eval baseline from benchmark-data branch")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--commit", default=None, help="Specific commit SHA to look up")
+    p.add_argument("--repo", default=None, help="GitHub owner/repo (auto-detected from remote)")
+    p.add_argument("--latest", action="store_true", help="Get latest main baseline instead of merge-base")
+
     # backlog-list (alias: deferred-list)
     p = sub.add_parser("backlog-list", aliases=["deferred-list"], help="List pending backlog items")
     p.add_argument("path", help="Path to the project")
@@ -4375,6 +4412,7 @@ def main(argv: list[str] | None = None) -> int:
         "history": cmd_history,
         "notify": cmd_notify,
         "study": cmd_study,
+        "baseline": cmd_baseline,
         "backlog-remove": cmd_backlog_remove,
         "deferred-remove": cmd_backlog_remove,
         "backlog-list": cmd_backlog_list,

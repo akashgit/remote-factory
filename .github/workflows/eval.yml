@@ -1,0 +1,301 @@
+name: Eval Baseline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: eval-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Initialize factory
+        run: |
+          uv run python -m factory init .
+          echo "Factory initialized"
+
+      - name: Run eval
+        id: eval
+        run: |
+          uv run python -m factory eval . > eval-result.json 2>eval-stderr.txt || true
+          cat eval-result.json
+          TOTAL=$(python3 -c "import json; print(json.load(open('eval-result.json'))['total'])")
+          PASSED=$(python3 -c "import json; print(json.load(open('eval-result.json'))['passed'])")
+          echo "total=$TOTAL" >> "$GITHUB_OUTPUT"
+          echo "passed=$PASSED" >> "$GITHUB_OUTPUT"
+          echo "Composite score: $TOTAL (passed: $PASSED)"
+
+      - name: Upload eval result
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-result
+          path: eval-result.json
+
+      - name: Print summary
+        if: always()
+        run: |
+          echo "## Eval Baseline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          python3 << 'PYEOF'
+          import json, sys
+          try:
+              data = json.load(open('eval-result.json'))
+          except Exception as e:
+              print(f"Failed to read eval results: {e}", file=sys.stderr)
+              sys.exit(0)
+          print(f"**Composite: {data['total']:.4f}** ({'PASS' if data['passed'] else 'FAIL'})")
+          print()
+          print("| Dimension | Score | Weight | Status |")
+          print("|-----------|-------|--------|--------|")
+          for r in data['results']:
+              status = "PASS" if r['passed'] else "FAIL"
+              print(f"| {r['name']} | {r['score']:.3f} | {r['weight']:.3f} | {status} |")
+          PYEOF >> $GITHUB_STEP_SUMMARY
+
+      - name: Check threshold
+        if: github.event_name == 'pull_request'
+        run: |
+          PASSED="${{ steps.eval.outputs.passed }}"
+          if [ "$PASSED" = "False" ]; then
+            echo "::error::Eval score below threshold — merge blocked"
+            exit 1
+          fi
+
+  store:
+    needs: eval
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download eval result
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-result
+          path: eval-artifacts/
+
+      - name: Setup benchmark-data branch
+        run: |
+          if git ls-remote --exit-code --heads https://github.com/${{ github.repository }}.git benchmark-data >/dev/null 2>&1; then
+            git clone --single-branch --branch benchmark-data https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git benchmark-data
+          else
+            mkdir benchmark-data && cd benchmark-data
+            git init
+            git checkout -b benchmark-data
+            git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+            touch eval-results.jsonl
+            git config user.name 'github-actions[bot]'
+            git config user.email 'github-actions[bot]@users.noreply.github.com'
+            git add . && git commit -m 'Initialize benchmark data branch with eval-results'
+            git push -u origin benchmark-data
+          fi
+
+      - name: Append eval result to history
+        run: |
+          python3 << 'PYEOF'
+          import json, os
+
+          result_file = 'eval-artifacts/eval-result.json'
+          output_file = 'benchmark-data/eval-results.jsonl'
+
+          if not os.path.isfile(result_file):
+              print(f'ERROR: {result_file} not found')
+              exit(0)
+
+          with open(result_file) as f:
+              data = json.load(f)
+
+          entry = {
+              'type': 'eval',
+              'commit': os.environ.get('COMMIT', ''),
+              'ref': os.environ.get('REF', ''),
+              'timestamp': os.environ.get('TIMESTAMP', ''),
+              'run_id': os.environ.get('RUN_ID', ''),
+              'run_url': os.environ.get('RUN_URL', ''),
+              'trigger': os.environ.get('TRIGGER', ''),
+              'total': data.get('total', 0),
+              'passed': data.get('passed', False),
+              'threshold': 0.6,
+              'results': data.get('results', []),
+              'guard_violations': data.get('guard_violations', []),
+          }
+
+          with open(output_file, 'a') as out:
+              out.write(json.dumps(entry) + '\n')
+
+          print(f'Appended eval result (total={entry["total"]:.4f}) to {output_file}')
+          PYEOF
+        env:
+          COMMIT: ${{ github.sha }}
+          REF: ${{ github.ref }}
+          TIMESTAMP: ${{ github.event.head_commit.timestamp }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TRIGGER: ${{ github.event_name }}
+
+      - name: Push eval data
+        run: |
+          cd benchmark-data
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add eval-results.jsonl
+          git diff --cached --quiet || git commit -m "eval: add baseline from ${{ github.sha }} [skip ci]"
+          git push origin benchmark-data || (git pull --rebase origin benchmark-data && git push origin benchmark-data)
+
+  comment:
+    needs: eval
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download eval result
+        uses: actions/download-artifact@v4
+        with:
+          name: eval-result
+          path: eval-artifacts/
+
+      - name: Post PR comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- eval-baseline -->';
+            const prNumber = context.issue?.number;
+
+            if (!prNumber) {
+              console.log('No PR number, skipping comment');
+              return;
+            }
+
+            let data;
+            try {
+              data = JSON.parse(fs.readFileSync('eval-artifacts/eval-result.json', 'utf8'));
+            } catch (e) {
+              console.log('No eval result found:', e.message);
+              return;
+            }
+
+            // Fetch baseline from benchmark-data branch
+            let baseline = null;
+            try {
+              const resp = await github.rest.repos.getContent({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                path: 'eval-results.jsonl',
+                ref: 'benchmark-data',
+              });
+              const content = Buffer.from(resp.data.content, 'base64').toString();
+              const lines = content.trim().split('\n').filter(Boolean);
+              // Find the latest main entry
+              for (const line of lines.reverse()) {
+                try {
+                  const entry = JSON.parse(line);
+                  if (entry.ref === 'refs/heads/main') {
+                    baseline = entry;
+                    break;
+                  }
+                } catch {}
+              }
+            } catch (e) {
+              console.log('No baseline available:', e.message);
+            }
+
+            const status = data.passed ? 'PASS' : 'FAIL';
+            const statusIcon = data.passed ? ':white_check_mark:' : ':x:';
+
+            let body = marker + '\n';
+            body += `## ${statusIcon} Eval Baseline — ${data.total.toFixed(4)} (${status})\n\n`;
+
+            body += '| Dimension | Score | Weight | Status |';
+            if (baseline) body += ' Baseline | Delta |';
+            body += '\n';
+
+            body += '|-----------|-------|--------|--------|';
+            if (baseline) body += '----------|-------|';
+            body += '\n';
+
+            const baselineMap = {};
+            if (baseline) {
+              for (const r of baseline.results || []) {
+                baselineMap[r.name] = r;
+              }
+            }
+
+            for (const r of data.results) {
+              const s = r.passed ? ':white_check_mark:' : ':x:';
+              let row = `| ${r.name} | ${r.score.toFixed(3)} | ${r.weight.toFixed(3)} | ${s} |`;
+              if (baseline) {
+                const br = baselineMap[r.name];
+                if (br) {
+                  const delta = r.score - br.score;
+                  const arrow = delta > 0.001 ? ':arrow_up:' : delta < -0.001 ? ':arrow_down:' : '';
+                  row += ` ${br.score.toFixed(3)} | ${delta >= 0 ? '+' : ''}${delta.toFixed(3)} ${arrow} |`;
+                } else {
+                  row += ' N/A | N/A |';
+                }
+              }
+              body += row + '\n';
+            }
+
+            // Composite row
+            body += '| **Composite** | **' + data.total.toFixed(4) + '** | | **' + status + '** |';
+            if (baseline) {
+              const delta = data.total - baseline.total;
+              const arrow = delta > 0.001 ? ':arrow_up:' : delta < -0.001 ? ':arrow_down:' : '';
+              body += ' **' + baseline.total.toFixed(4) + '** | **' + (delta >= 0 ? '+' : '') + delta.toFixed(4) + '** ' + arrow + ' |';
+            }
+            body += '\n';
+
+            if (baseline) {
+              body += '\n_Baseline: latest main branch eval (commit ' + baseline.commit.substring(0, 8) + ')_\n';
+            } else {
+              body += '\n_No baseline available for comparison._\n';
+            }
+
+            // Upsert comment
+            const { data: comments } = await github.rest.issues.listComments({
+              issue_number: prNumber,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body: body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: prNumber,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: body,
+              });
+            }
