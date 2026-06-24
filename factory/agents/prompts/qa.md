@@ -56,8 +56,10 @@ Read the full PR diff and evaluate against a structured checklist. This section 
 
 **Process:**
 
+**CRITICAL: Do NOT run `gh pr diff`.** The full PR diff is too large and will crash the output parser. Instead:
+
 1. **Get the list of changed files:** `git diff --name-only <baseline>..HEAD`
-2. **Read each changed file's diff individually** (do NOT read the entire PR diff at once — it may be too large):
+2. **Read each changed file's diff individually:**
    ```bash
    git diff <baseline>..HEAD -- <file1>
    git diff <baseline>..HEAD -- <file2>

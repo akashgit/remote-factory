@@ -1208,9 +1208,9 @@ Baseline SHA: $BASELINE_SHA
 Issue: #$ISSUE_NUM
 
 Run all 3 verification sections:
-1. Health Check — run: factory eval $PROJECT_PATH. Capture the composite score as \$SCORE_BEFORE (baseline) and report delta. This is the authoritative baseline measurement for this experiment.
-2. Code Review — read PR diff (gh pr diff $PR_NUM), evaluate the 7-category checklist, check spec fidelity against issue #$ISSUE_NUM.
-3. Adversarial QA — actually run/test the feature described in the hypothesis. Execute the smoke test if configured in factory.md.
+1. Health Check — run factory eval, report scores and delta.
+2. Code Review — read each changed file's diff individually (git diff baseline..HEAD -- file), evaluate 7-category checklist, check spec fidelity against issue #$ISSUE_NUM. Do NOT use gh pr diff (too large, crashes parser).
+3. Adversarial QA — switch to skeptical user mode, actually run and test the feature. Use tmux for interactive CLIs, curl for APIs, Playwright for UIs.
 
 Report your structured verdict: CLEAN, ISSUES_FOUND: N, or REVERT." --project "$PROJECT_PATH" --timeout 600
 ```
