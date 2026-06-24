@@ -18,9 +18,10 @@ class TestHygieneWeights:
         total = sum(HYGIENE_WEIGHTS.values())
         assert abs(total - 1.0) < 1e-9
 
-    def test_all_six_dimensions(self):
+    def test_all_seven_dimensions(self):
         assert set(HYGIENE_WEIGHTS.keys()) == {
             "tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser",
+            "architecture",
         }
 
 
@@ -125,11 +126,11 @@ class TestEvalConfigParser:
 
 
 class TestComputeHygieneResults:
-    def test_returns_all_six(self, tmp_path):
+    def test_returns_all_seven(self, tmp_path):
         results = compute_hygiene_results(tmp_path)
-        assert len(results) == 6
+        assert len(results) == 7
         names = {r["name"] for r in results}
-        assert names == {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser"}
+        assert names == {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser", "architecture"}
 
     def test_all_have_required_keys(self, tmp_path):
         results = compute_hygiene_results(tmp_path)
@@ -143,4 +144,4 @@ class TestComputeHygieneResults:
     def test_accepts_test_timeout_parameter(self, tmp_path):
         """compute_hygiene_results should accept test_timeout parameter."""
         results = compute_hygiene_results(tmp_path, test_timeout=900)
-        assert len(results) == 6
+        assert len(results) == 7
