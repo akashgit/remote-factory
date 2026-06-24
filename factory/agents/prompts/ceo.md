@@ -181,7 +181,7 @@ Read the target branch from `.factory/config.json` field `target_branch`. If abs
 
 Resolve the target branch variable at the start of each cycle:
 ```bash
-TARGET_BRANCH=$(cat .factory/config.json | python3 -c "import sys,json; print(json.load(sys.stdin).get('target_branch','main'))")
+TARGET_BRANCH=$(cat .factory/config.json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('target_branch','main'))" 2>/dev/null || echo "main")
 ```
 
 ### Resuming from a Crash
