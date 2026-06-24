@@ -128,7 +128,8 @@ def _find_entry_for_commit(entries: list[dict], commit: str) -> dict | None:
     """
     matches = [
         e for e in entries
-        if e.get("commit", "").startswith(commit) or commit.startswith(e.get("commit", ""))
+        if (stored := e.get("commit", ""))
+        and (stored.startswith(commit) or commit.startswith(stored))
     ]
     if not matches:
         return None

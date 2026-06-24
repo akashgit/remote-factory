@@ -131,6 +131,17 @@ class TestFindEntryForCommit:
     def test_empty_entries(self):
         assert _find_entry_for_commit([], "abc123") is None
 
+    def test_empty_commit_field_skipped(self):
+        bad_entry = {**SAMPLE_ENTRY, "commit": ""}
+        entries = [bad_entry, SAMPLE_ENTRY_2]
+        result = _find_entry_for_commit(entries, "abc123")
+        assert result is None
+
+    def test_missing_commit_field_skipped(self):
+        bad_entry = {k: v for k, v in SAMPLE_ENTRY.items() if k != "commit"}
+        entries = [bad_entry]
+        assert _find_entry_for_commit(entries, "anything") is None
+
 
 # ── _find_latest_main_entry ──────────────────────────────────────
 
