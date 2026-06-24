@@ -6,6 +6,7 @@ import json
 import os
 import threading
 import time as _time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -465,6 +466,8 @@ class TranscriptTailer:
         span_id: str,
         project_path: Path,
         session_start: float,
+        *,
+        on_line: Callable[[bytes], None] | None = None,
     ) -> None:
         self.trace_id = trace_id
         self.span_id = span_id
@@ -476,6 +479,7 @@ class TranscriptTailer:
         self._file_pos: int = 0
         self._transcript_path: Path | None = None
         self._total_ingested: int = 0
+        self._on_line = on_line
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -529,9 +533,10 @@ class TranscriptTailer:
             while not self._stop_event.is_set():
                 try:
                     self._ingest_new_lines()
-                    saved = _trace_names.get(self.trace_id)
-                    if saved:
-                        _update_trace_via_api(self.trace_id, saved[0], saved[1])
+                    if self.trace_id:
+                        saved = _trace_names.get(self.trace_id)
+                        if saved:
+                            _update_trace_via_api(self.trace_id, saved[0], saved[1])
                 except Exception:
                     log.debug("tailer_ingest_error", exc_info=True)
                 self._stop_event.wait(self.POLL_INTERVAL)
@@ -542,10 +547,6 @@ class TranscriptTailer:
         if self._transcript_path is None or not self._transcript_path.exists():
             return
 
-        parent = _observations.get(self.span_id)
-        if parent is None:
-            return
-
         with open(self._transcript_path) as f:
             f.seek(self._file_pos)
             new_lines = f.readlines()
@@ -554,10 +555,22 @@ class TranscriptTailer:
         if not new_lines:
             return
 
+        parent = _observations.get(self.span_id) if self.span_id else None
+
         for raw_line in new_lines:
             raw_line = raw_line.strip()
             if not raw_line:
                 continue
+
+            if self._on_line is not None:
+                try:
+                    self._on_line(raw_line.encode())
+                except Exception:
+                    log.debug("tailer_on_line_error", exc_info=True)
+
+            if parent is None:
+                continue
+
             try:
                 item = json.loads(raw_line)
             except json.JSONDecodeError:
