@@ -7,6 +7,7 @@ import contextlib
 import re
 import sys
 import time
+from collections.abc import Callable
 from typing import BinaryIO
 
 import structlog
@@ -76,6 +77,7 @@ async def tee_stream(
     prefix: bytes | None = None,
     sanitize: bool = False,
     last_activity: list[float] | None = None,
+    on_line: Callable[[bytes], None] | None = None,
 ) -> None:
     """Read from an async stream, optionally tee to a destination, and collect in buffer.
 
@@ -101,6 +103,8 @@ async def tee_stream(
         if last_activity is not None:
             last_activity[0] = time.monotonic()
         buffer.append(line)  # ALWAYS raw — the captured buffer is never sanitized
+        if on_line is not None:
+            on_line(line)
         if stream:
             out = strip_ansi(line) if sanitize else line
             if sanitize and out != line and not out.strip(b"\r\n"):
@@ -141,6 +145,7 @@ async def stream_subprocess(
     sanitize: bool = False,
     inactivity_timeout: float | None = None,
     killed_by_watchdog: list[bool] | None = None,
+    on_line: Callable[[bytes], None] | None = None,
 ) -> tuple[bytes, bytes]:
     """Stream subprocess stdout/stderr to the terminal while collecting output.
 
@@ -179,6 +184,7 @@ async def stream_subprocess(
         prefix=prefix_bytes,
         sanitize=sanitize,
         last_activity=last_activity,
+        on_line=on_line,
     )
     tee_stderr = tee_stream(
         proc.stderr,

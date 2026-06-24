@@ -8,6 +8,8 @@ from pathlib import Path
 import structlog
 
 from factory.models import AgentRunResult
+from collections.abc import Callable
+
 from factory.runners._stream import should_stream, stream_subprocess
 
 log = structlog.get_logger()
@@ -37,6 +39,7 @@ async def run_subprocess(
     role: str,
     sanitize: bool = False,
     max_timeout: float = 3600.0,
+    on_line: Callable[[bytes], None] | None = None,
 ) -> AgentRunResult:
     """Run a subprocess with streaming, timeout, and error handling.
 
@@ -80,6 +83,7 @@ async def run_subprocess(
                 sanitize=sanitize,
                 inactivity_timeout=timeout,
                 killed_by_watchdog=killed_by_watchdog,
+                on_line=on_line,
             ),
             timeout=max_timeout,
         )
