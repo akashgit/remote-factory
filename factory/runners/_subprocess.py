@@ -70,6 +70,7 @@ async def run_subprocess(
             stderr=asyncio.subprocess.PIPE,
             cwd=cwd,
             env=env,
+            limit=1_048_576,
         )
         stdout_bytes, stderr_bytes = await asyncio.wait_for(
             stream_subprocess(
