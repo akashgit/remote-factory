@@ -163,7 +163,8 @@ def print_report(
     file=sys.stdout,
 ):
     """Print a human-readable orchestration report."""
-    p = lambda *a, **kw: print(*a, **kw, file=file)
+    def p(*a, **kw):
+        print(*a, **kw, file=file)
 
     trace_info = timeline[0]
     p("=" * 80)
