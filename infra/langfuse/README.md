@@ -21,9 +21,18 @@ export TELEMETRY_PLATFORM=langfuse
 factory ceo /path/to/project
 ```
 
+**Important:** Variables must be `export`ed — the factory runs as a subprocess and won't see plain shell variables. If you use a `.env.local` file, source it with:
+
+```bash
+set -a && source .env.local && set +a    # export all vars from the file
+factory ceo /path/to/project
+```
+
+Plain `source .env.local` (without `set -a`) will NOT work — the variables won't propagate to `factory ceo` or `uv run factory`.
+
 3. Open `http://localhost:3000` to view traces. Login: `dev@localhost.local` / `devpassword123`
 
-Add these to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
+To persist across sessions, add the `export` lines to `~/.bashrc` or `~/.zshrc`.
 
 The factory creates a single Langfuse trace per CEO cycle. The trace structure:
 
