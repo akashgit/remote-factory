@@ -9,6 +9,7 @@ W₆: Discover Mode
 W₇: Review Mode
 W₈: Refine Mode
 W₉: Create Mode (meta-mode for creating new factory modes)
+W₁₀: Spec Generate Mode
 """
 
 from __future__ import annotations
@@ -44,6 +45,7 @@ __all__ = [
     "refine_workflow",
     "create_workflow",
     "skill_refine_workflow",
+    "spec_generate_workflow",
     "register_all",
 ]
 
@@ -312,9 +314,8 @@ def design_workflow() -> Workflow:
     wf.name = "design"
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return (
-            state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE}
-            and ctx.get("interactive", False)
+        return state in {ProjectState.NO_REPO, ProjectState.REPO_INCOMPLETE} and ctx.get(
+            "interactive", False
         )
 
     wf.trigger = trigger
@@ -557,8 +558,8 @@ def qa_workflow() -> Workflow:
     gate_qa = sub.nodes["gate_qa"]
     assert isinstance(gate_qa, GateNode)
     derived_prompt = re.sub(
-        r'RELOOP to builder \(max \d+ iterations\) if issues found\.',
-        'HALT if issues found — no fix loop in QA mode.',
+        r"RELOOP to builder \(max \d+ iterations\) if issues found\.",
+        "HALT if issues found — no fix loop in QA mode.",
         gate_qa.gate_prompt,
     )
     sub.nodes["gate_qa"] = gate_qa.model_copy(update={"gate_prompt": derived_prompt})
@@ -677,7 +678,7 @@ def research_workflow() -> Workflow:
         id="plateau_gate",
         evaluator_type="fn",
         evaluator_command=(
-            "python3 -c \""
+            'python3 -c "'
             "import json, pathlib, sys; "
             "tsv = pathlib.Path('{project_path}/.factory/results.tsv'); "
             "lines = [l for l in tsv.read_text().strip().splitlines()[1:] if l.strip()] if tsv.exists() else []; "
@@ -686,7 +687,7 @@ def research_workflow() -> Workflow:
             "recent = scores[-3:] if len(scores) >= 3 else scores; "
             "improved = len(recent) < 2 or recent[-1] > recent[-2]; "
             "print('RELOOP' if improved else 'PROCEED')"
-            "\""
+            '"'
         ),
         reads={".factory/experiments/verdict.json"},
     )
@@ -854,8 +855,7 @@ def meta_workflow() -> Workflow:
         role=AgentRole.BUILDER,
         timeout=1800,
         prompt_template=(
-            "Delete the approved redundant tests. "
-            "Verify remaining suite still passes."
+            "Delete the approved redundant tests. Verify remaining suite still passes."
         ),
         reads={".factory/strategy/test-analysis.md"},
         writes={".factory/reviews/test-pruning-latest.md"},
@@ -993,7 +993,7 @@ def review_workflow() -> Workflow:
 
     nodes["eval_test"] = FnNode(
         id="eval_test",
-        command='cd {project_path} && python eval/score.py',
+        command="cd {project_path} && python eval/score.py",
         writes={".factory/reviews/eval-test-latest.md"},
     )
 
@@ -1013,12 +1013,12 @@ def review_workflow() -> Workflow:
     nodes["mark_reviewed"] = FnNode(
         id="mark_reviewed",
         command=(
-            "python3 -c \""
+            'python3 -c "'
             "import json; from pathlib import Path; "
             "p = Path('{project_path}/.factory/eval_profile.json'); "
             "d = json.loads(p.read_text()); d['human_reviewed'] = True; "
             "p.write_text(json.dumps(d, indent=2))"
-            "\""
+            '"'
         ),
         writes={".factory/eval_profile.json"},
     )
@@ -1055,7 +1055,7 @@ def review_workflow() -> Workflow:
     nodes["commit"] = FnNode(
         id="commit",
         command=(
-            'cd {project_path} && git add factory.md eval/score.py .factory/ '
+            "cd {project_path} && git add factory.md eval/score.py .factory/ "
             '&& git commit -m "factory: initialize factory config and baseline eval"'
         ),
         reads={"factory.md"},
@@ -1141,11 +1141,11 @@ def refine_workflow() -> Workflow:
         id="gate_tier",
         evaluator_type="fn",
         evaluator_command=(
-            "python3 -c \""
+            'python3 -c "'
             "from pathlib import Path; "
             "text = Path('{project_path}/.factory/reviews/refiner-latest.md').read_text(); "
             "print('HALT' if 'Tier 3' in text or 'tier 3' in text or 'TIER 3' in text else 'PROCEED')"
-            "\""
+            '"'
         ),
         reads={".factory/reviews/refiner-latest.md"},
     )
@@ -1600,14 +1600,14 @@ def skill_refine_workflow() -> Workflow:
         id="guard",
         evaluator_type="fn",
         evaluator_command=(
-            "python3 -c \""
+            'python3 -c "'
             "from factory.workflow.guard import check; "
             "from pathlib import Path; "
             "s = Path('{project_path}/.factory/strategy/templatized-skill.md').read_text(); "
             "r = Path('{project_path}/.factory/strategy/refined-skill.md').read_text(); "
             "result = check(s, r); "
             "print(result.verdict)"
-            "\""
+            '"'
         ),
         reads={
             ".factory/strategy/templatized-skill.md",
@@ -1642,11 +1642,124 @@ def skill_refine_workflow() -> Workflow:
     )
 
 
+# ── W₁₁: Spec Generate Mode ────────────────────────────────────
+
+
+def spec_generate_workflow() -> Workflow:
+    """W₁₁: Spec Generate — extract module graph, annotate, validate.
+
+    extract → gate_extract → annotate → gate_annotate →
+    validate_stub → gate_validate → done
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Haiku extraction — produces spec_raw.md
+    nodes["extract"] = AgentNode(
+        id="extract",
+        role=AgentRole.RESEARCHER,
+        model="haiku",
+        prompt_template=(
+            "Extract a structural module map from the project. "
+            "Read the spec_extractor prompt at factory/agents/prompts/spec_extractor.md. "
+            "Identify module boundaries, internal imports, public exports, and shared types. "
+            "Stay at module-level granularity. "
+            "Write output to .factory/spec_raw.md in the structured Markdown format."
+        ),
+        writes={".factory/spec_raw.md"},
+    )
+
+    # CEO gate — check extraction quality
+    nodes["gate_extract"] = GateNode(
+        id="gate_extract",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review the extracted spec at .factory/spec_raw.md. "
+            "Check: are modules identified correctly? Are dependency edges plausible? "
+            "Any major gaps — modules that clearly exist but are missing? "
+            "PROCEED if the extraction is usable. RELOOP if major gaps."
+        ),
+        reads={".factory/spec_raw.md"},
+    )
+
+    # Researcher annotation — produces repo_spec.md
+    nodes["annotate"] = AgentNode(
+        id="annotate",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Annotate the raw spec at .factory/spec_raw.md. "
+            "Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md. "
+            "Add module role descriptions, architectural layers, non-obvious dependencies, "
+            "change impact analysis, and hub/leaf classification. "
+            "Write output to .factory/repo_spec.md."
+        ),
+        reads={".factory/spec_raw.md"},
+        writes={".factory/repo_spec.md"},
+    )
+
+    # CEO gate — check annotation quality
+    nodes["gate_annotate"] = GateNode(
+        id="gate_annotate",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review the annotated spec at .factory/repo_spec.md. "
+            "Check: do module descriptions match the actual code? "
+            "Are change impact assessments reasonable? "
+            "Is hub/leaf classification correct? "
+            "PROCEED if the spec is accurate. RELOOP if descriptions are wrong."
+        ),
+        reads={".factory/repo_spec.md"},
+    )
+
+    # Validation stub — placeholder for real validation (H2)
+    nodes["validate_stub"] = FnNode(
+        id="validate_stub",
+        command="echo PASS",
+        reads={".factory/repo_spec.md"},
+    )
+
+    # Final quality gate
+    nodes["gate_validate"] = GateNode(
+        id="gate_validate",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Final quality gate for the repo spec. "
+            "Read .factory/repo_spec.md. Is it complete, well-structured, "
+            "and under 8K tokens? PROCEED to finish."
+        ),
+        reads={".factory/repo_spec.md"},
+    )
+
+    edges = [
+        # Extract → gate
+        Edge(source="extract", target="gate_extract"),
+        Edge(source="gate_extract", target="annotate", condition=VerdictType.PROCEED),
+        Edge(source="gate_extract", target="extract", condition=VerdictType.RELOOP),
+        # Annotate → gate
+        Edge(source="annotate", target="gate_annotate"),
+        Edge(source="gate_annotate", target="validate_stub", condition=VerdictType.PROCEED),
+        Edge(source="gate_annotate", target="annotate", condition=VerdictType.RELOOP),
+        # Validate → gate
+        Edge(source="validate_stub", target="gate_validate"),
+    ]
+
+    return Workflow(
+        name="spec-generate",
+        nodes=nodes,
+        edges=edges,
+        start_node="extract",
+        trigger=None,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 11 workflow definitions."""
+    """Build and return all 12 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1659,4 +1772,5 @@ def register_all() -> dict[str, Workflow]:
         "refine": refine_workflow(),
         "create": create_workflow(),
         "skill-refine": skill_refine_workflow(),
+        "spec-generate": spec_generate_workflow(),
     }
