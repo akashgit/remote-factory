@@ -328,6 +328,16 @@ SCOREEOF
     git config gc.auto 0
     git config gc.pruneExpire never
 
+    # Install a post-commit hook that tags each new commit.
+    # Tags survive branch deletion, preventing the commit from being garbage collected.
+    mkdir -p "${WORKSPACE}/repo/.git/hooks"
+    cat > "${WORKSPACE}/repo/.git/hooks/post-commit" << 'HOOKEOF'
+#!/bin/bash
+# Tag each commit to prevent gc from pruning it after branch deletion
+git tag -f factory-last-commit HEAD 2>/dev/null || true
+HOOKEOF
+    chmod +x "${WORKSPACE}/repo/.git/hooks/post-commit"
+
     FACTORY_CEO_MAX_RESPAWNS=0 \
     FACTORY_KEEP_WORKTREE=1 \
     timeout "${SOLVER_TIMEOUT}" factory ceo . \
@@ -401,6 +411,17 @@ fi
 # Post-processing: recover factory branch/worktree changes (factory solver only)
 if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
     cd "${WORKSPACE}/repo"
+
+    # Strategy 0: Recover from factory-last-commit tag (most reliable)
+    FACTORY_TAG_COMMIT=$(git rev-parse factory-last-commit 2>/dev/null || true)
+    if [ -n "$FACTORY_TAG_COMMIT" ] && [ "$FACTORY_TAG_COMMIT" != "$(git rev-parse HEAD)" ]; then
+        echo "Recovering from tag factory-last-commit: $FACTORY_TAG_COMMIT"
+        echo "  Message: $(git log -1 --format='%s' $FACTORY_TAG_COMMIT 2>/dev/null)"
+        git checkout "$FACTORY_TAG_COMMIT" -- . 2>/dev/null || true
+        # Remove factory scaffolding files
+        git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+        rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+    fi
 
     # Strategy 1: Merge surviving factory branch
     FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
