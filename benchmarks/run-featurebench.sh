@@ -323,6 +323,7 @@ SCOREEOF
     git commit -m "factory: pre-seed config for improve mode"
 
     FACTORY_CEO_MAX_RESPAWNS=0 \
+    FACTORY_KEEP_WORKTREE=1 \
     timeout "${SOLVER_TIMEOUT}" factory ceo . \
         --headless \
         --no-github \

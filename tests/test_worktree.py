@@ -130,6 +130,21 @@ class TestRemoveWorktree:
         remove_worktree(git_project, wt_path, branch)
         remove_worktree(git_project, wt_path, branch)
 
+    def test_keep_worktree_env_skips_removal(self, git_project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        wt_path, branch = create_worktree(git_project)
+        assert wt_path.exists()
+
+        monkeypatch.setenv("FACTORY_KEEP_WORKTREE", "1")
+        remove_worktree(git_project, wt_path, branch)
+
+        assert wt_path.exists()
+
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch in result.stdout
+
     def test_removes_from_worktree_list(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
         remove_worktree(git_project, wt_path, branch)

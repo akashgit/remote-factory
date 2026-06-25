@@ -1,5 +1,6 @@
 """Git worktree lifecycle management for experiment isolation."""
 
+import os
 import secrets
 import shutil
 import subprocess
@@ -61,6 +62,10 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
+
+    if os.environ.get("FACTORY_KEEP_WORKTREE"):
+        log.info("worktree_kept", branch=branch, path=str(worktree_path), reason="FACTORY_KEEP_WORKTREE")
+        return
 
     run_id = branch.removeprefix("factory/run-")
     try:
