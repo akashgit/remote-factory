@@ -329,6 +329,12 @@ SCOREEOF
     git add -A
     git commit -m "factory: pre-seed config for improve mode"
 
+    # Prevent git from auto-pruning dangling objects during and after factory cleanup.
+    # The factory creates worktree branches and commits there, then deletes the branch
+    # when done. Without this, git gc may prune the commit objects before recovery.
+    git config gc.auto 0
+    git config gc.pruneExpire never
+
     FACTORY_CEO_MAX_RESPAWNS=0 \
     FACTORY_KEEP_WORKTREE=1 \
     timeout "${SOLVER_TIMEOUT}" factory ceo . \
