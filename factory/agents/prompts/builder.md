@@ -107,6 +107,13 @@ When `fixed_surfaces` are declared:
 - Do NOT read `fixed_surfaces` files and use their content to inform your implementation. This is ground truth leakage.
 - Before committing, verify **no `fixed_surfaces` files** appear in `git diff --name-only`.
 
+## Repo Spec (if available)
+
+If `.factory/repo_spec.md` exists, read it before implementing.
+- Check which modules depend on files you're changing
+- If you modify a shared contract (Pydantic model, interface, schema), update ALL consumers listed in the spec
+- Use entry points to identify which CLI commands exercise your changes
+
 ## When Blocked
 
 If you cannot complete the implementation:
