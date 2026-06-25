@@ -289,6 +289,65 @@ python -c "import packaging; print('OK')"
 ## Task
 
 ${PROBLEM_STMT}
+
+## Edge Case Requirements
+
+These are EXACT behavioral specifications. Every function MUST handle these edge cases precisely as documented.
+
+### _parse_keywords(data: str) -> list[str]
+- Split ONLY on comma, NEVER on space
+- Strip whitespace from each keyword after splitting
+- Filter out empty strings after stripping
+- Examples: 'A' -> ['A'], 'A ' -> ['A'], ' A' -> ['A'], 'A, B' -> ['A', 'B'], 'A,B' -> ['A', 'B'], 'A B' -> ['A B'] (NOT split), ' A, B' -> ['A', 'B'], 'A,B ' -> ['A', 'B']
+
+### _parse_project_urls(data: list[str]) -> dict[str, str]
+- Split each item on first comma ONLY
+- Empty string '' -> {'': ''}
+- Single value 'A' (no comma) -> {'A': ''}
+- Normal 'A, B' -> {'A': 'B'}
+- Duplicate labels should raise InvalidMetadata
+
+### parse_email(data: str | bytes) -> tuple[RawMetadata, dict]
+- Accept both str and bytes input (use Parser for str, BytesParser for bytes)
+- Use email.policy.compat32 for parsing
+- For each header, decode via email.header.decode_header()
+- If any chunk fails UTF-8 decode, set valid_encoding = False and decode as latin-1
+- If valid_encoding is False for a header, put it in unparsed dict (not raw)
+- For non-repeating fields (_STRING_FIELDS) with len(value) != 1: put in unparsed
+- For non-repeating fields with len(value) == 1: put value[0] in raw
+- For repeating fields: put value list in raw
+- Description handling:
+  - If description appears as both header AND body payload, ALL go to unparsed['description'] as a list
+  - If only body payload, put in raw['description']
+  - Non-UTF8 body: preserve raw bytes in unparsed['description']
+
+### _process_description_content_type(self, value: str) -> str
+- Parse content type and check main type is one of: text/plain, text/x-rst, text/markdown
+- REJECT any explicit charset parameter, even charset=UTF-8
+- Only allow content type with NO charset or with no parameters
+
+### _process_dynamic(self, value: list[str]) -> list[str]
+- REJECT if any value is 'name', 'version', or 'metadata-version'
+- Raise InvalidMetadata for any of these
+
+### Metadata validation (from_raw / from_email)
+- Required fields: metadata_version, name, version — raise InvalidMetadata if missing
+- import_name == [''] should normalize to []
+- Unrecognized fields in raw dict -> raise InvalidMetadata
+- Field introduction version checking: fields added in later versions (download_url in 1.1, requires_python in 1.2, etc.) raise InvalidMetadata if metadata_version is too old
+- Collect ALL validation errors into ExceptionGroup
+
+### Metadata.from_email(data)
+- Must return (Metadata, unparsed_dict) tuple or store unparsed
+- Preserve unparsed dict from parse_email
+
+### as_rfc822() -> RFC822Message / _write_metadata
+- Write all metadata fields as RFC822 headers, description as body
+- Multi-line values: use RFC822 continuation (indent with 8 spaces or tab on continuation lines)
+- Empty import_names list [] -> write 'Import-Names: ' header (empty value, NOT omitted)
+- Multi-value fields (classifiers, requires_dist) -> one header per value
+- project_urls dict -> 'label, url' format per entry as separate headers
+- Keywords list -> single comma-joined header value
 FACTORYEOF
 
     mkdir -p "${WORKSPACE}/repo/.factory"
@@ -344,7 +403,7 @@ HOOKEOF
         --headless \
         --no-github \
         --mode improve \
-        --focus "Implement all empty function bodies in the source files. The detailed feature specification and interface requirements are in factory.md under the ## Task section — you MUST read factory.md before implementing. Functions have had their bodies removed and need to be reimplemented based on the specifications in factory.md, their signatures, docstrings, and the project context. CRITICAL EDGE CASES: (1) _parse_keywords must handle various separator patterns: comma-separated, space-separated, leading/trailing whitespace; (2) _parse_project_urls must handle empty strings and single-value entries; (3) parse_email must handle bytes input, non-UTF8 encoding (latin-1/iso-8859-1 fallback), and multiple description fields; (4) _process_* validators for non-repeating fields must raise InvalidMetadata when a field appears multiple times; (5) RFC822Message.as_bytes and header_store_parse must handle multiline continuation headers correctly; (6) Metadata.from_email must preserve unparsed fields and handle empty import_name lists; (7) _write_metadata must produce valid RFC822 with proper multiline folding for long values. Run tests after implementing to verify correctness." \
+        --focus "Implement all empty function bodies. Read factory.md CAREFULLY — it contains both the feature specification (## Task) and EXACT edge case requirements (## Edge Case Requirements) for 42 specific test cases. Every function must handle these edge cases PRECISELY as documented. The edge case specs have input->output examples — follow them exactly." \
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
 fi
