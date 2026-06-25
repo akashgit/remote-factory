@@ -2213,6 +2213,75 @@ def cmd_spec_validate(args: argparse.Namespace) -> int:
     return 0 if result.passed else 1
 
 
+def cmd_spec_scope(args: argparse.Namespace) -> int:
+    """Scope a diff against the existing repo spec."""
+    from factory.spec.update import scope_diff
+
+    project_path = Path(args.path).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    spec_path = project_path / ".factory" / "repo_spec.md"
+    if not spec_path.is_file():
+        print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
+        return 1
+
+    exp_id = getattr(args, "experiment", None)
+    _emit_cli_event(project_path, "spec.scope.started", {"path": str(project_path)})
+    try:
+        scope = scope_diff(project_path, experiment_id=exp_id)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        _emit_cli_event(project_path, "spec.scope.failed", {"error": str(exc)[:200]})
+        return 1
+
+    _emit_cli_event(
+        project_path,
+        "spec.scope.completed",
+        {
+            "affected_modules": len(scope.affected_modules),
+            "new_files": len(scope.new_files),
+            "deleted_files": len(scope.deleted_files),
+        },
+    )
+
+    output_path = project_path / ".factory" / "spec_update_scope.md"
+    print(
+        f"Scope: {len(scope.affected_modules)} affected modules, "
+        f"{len(scope.new_files)} new files, {len(scope.deleted_files)} deleted"
+    )
+    print(f"Report: {output_path}")
+    return 0
+
+
+def cmd_spec_update(args: argparse.Namespace) -> int:
+    """Update a repo spec based on changes since last spec commit."""
+    from factory.spec.update import update_spec
+
+    project_path = Path(args.path).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    spec_path = project_path / ".factory" / "repo_spec.md"
+    if not spec_path.is_file():
+        print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
+        return 1
+
+    _emit_cli_event(project_path, "spec.update.started", {"path": str(project_path)})
+    try:
+        result_path = _run(update_spec(project_path))
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        _emit_cli_event(project_path, "spec.update.failed", {"error": str(exc)[:200]})
+        return 1
+
+    _emit_cli_event(project_path, "spec.update.completed", {"output": str(result_path)})
+    print(f"Repo spec updated: {result_path}")
+    return 0
+
+
 def cmd_self_update(args: argparse.Namespace) -> int:
     """Self-update the factory CLI via uv tool upgrade."""
     from importlib.metadata import version as pkg_version
@@ -5210,13 +5279,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stop ALL factory tmux sessions (required when no --session/--path given)",
     )
 
-    # spec — repo spec generation
+    # spec — repo spec generation and analysis
     spec_parser = sub.add_parser("spec", help="Repo spec generation and analysis")
     spec_sub = spec_parser.add_subparsers(dest="spec_command")
     p_spec_gen = spec_sub.add_parser("generate", help="Generate a repo spec for a project")
     p_spec_gen.add_argument("path", help="Path to the project")
     p_spec_val = spec_sub.add_parser("validate", help="Validate a repo spec against the project")
     p_spec_val.add_argument("path", help="Path to the project")
+    p_spec_scope = spec_sub.add_parser("scope", help="Scope a diff against the repo spec")
+    p_spec_scope.add_argument("path", help="Path to the project")
+    p_spec_scope.add_argument("--experiment", type=int, default=None, help="Experiment ID to scope")
+    p_spec_update = spec_sub.add_parser("update", help="Update the repo spec from recent changes")
+    p_spec_update.add_argument("path", help="Path to the project")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
@@ -5312,9 +5386,14 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
-        "spec": lambda a: {"generate": cmd_spec_generate, "validate": cmd_spec_validate}.get(
+        "spec": lambda a: {
+            "generate": cmd_spec_generate,
+            "validate": cmd_spec_validate,
+            "scope": cmd_spec_scope,
+            "update": cmd_spec_update,
+        }.get(
             str(getattr(a, "spec_command", "")),
-            lambda args: print("Usage: factory spec {generate,validate}") or 1,
+            lambda args: print("Usage: factory spec {generate,validate,scope,update}") or 1,
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
