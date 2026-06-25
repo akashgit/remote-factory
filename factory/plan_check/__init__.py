@@ -1,3 +1,4 @@
+from factory.plan_check.criteria_extractor import extract_criteria, parse_and_extract
 from factory.plan_check.models import (
     AcceptanceCriterion,
     CriterionResult,
@@ -5,11 +6,16 @@ from factory.plan_check.models import (
     ReportSummary,
     VerificationReport,
 )
+from factory.plan_check.parser import ParsedHypothesis, parse_strategy_plan
 
 __all__ = [
     "AcceptanceCriterion",
     "CriterionResult",
     "HypothesisVerdict",
+    "ParsedHypothesis",
     "ReportSummary",
     "VerificationReport",
+    "extract_criteria",
+    "parse_and_extract",
+    "parse_strategy_plan",
 ]
