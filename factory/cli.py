@@ -3383,7 +3383,6 @@ def cmd_refactory(args: argparse.Namespace) -> int:
         "claude",
         "--session-id", session_id,
         "--append-system-prompt-file", prompt_file.name,
-        "--cwd", str(workspace),
     ]
 
     if not is_new_session:
@@ -3392,6 +3391,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
     if model:
         cmd.extend(["--model", model])
 
+    os.chdir(workspace)
     os.execvp("claude", cmd)
     return 0  # unreachable after execvp
 

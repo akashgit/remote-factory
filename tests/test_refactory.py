@@ -178,7 +178,7 @@ class TestCmdRefactory:
         assert "--session-id" in cmd
         assert "--resume" not in cmd
         assert "--append-system-prompt-file" in cmd
-        assert "--cwd" in cmd
+        assert "--cwd" not in cmd
 
     def test_existing_session_has_resume_flag(self, mock_home: Path) -> None:
         from unittest.mock import patch
