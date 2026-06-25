@@ -101,6 +101,14 @@ class TestSessionId:
         save_session_id(custom_id)
         assert get_session_id() == custom_id
 
+    def test_corrupt_json_generates_new(self, mock_home: Path) -> None:
+        session_file = mock_home / ".factory" / "refactory-session.json"
+        session_file.parent.mkdir(parents=True, exist_ok=True)
+        session_file.write_text("{corrupt json!!")
+        sid = get_session_id()
+        assert isinstance(sid, str)
+        assert len(sid) == 36
+
 
 # ── Agent role registration ──────────────────────────────────────
 
@@ -138,3 +146,82 @@ class TestCLIIntegration:
         prompt = resolve_prompt("refactory")
         assert isinstance(prompt, str)
         assert len(prompt) > 0
+
+
+# ── cmd_refactory ────────────────────────────────────────────────
+
+
+class TestCmdRefactory:
+    def test_no_claude_returns_error(self, mock_home: Path) -> None:
+        from unittest.mock import patch
+
+        from factory.cli import cmd_refactory, build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["refactory"])
+        with patch("shutil.which", return_value=None):
+            code = cmd_refactory(args)
+        assert code == 1
+
+    def test_new_session_no_resume_flag(self, mock_home: Path) -> None:
+        from unittest.mock import patch
+
+        from factory.cli import cmd_refactory, build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["refactory"])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--session-id" in cmd
+        assert "--resume" not in cmd
+        assert "--append-system-prompt-file" in cmd
+        assert "--cwd" in cmd
+
+    def test_existing_session_has_resume_flag(self, mock_home: Path) -> None:
+        from unittest.mock import patch
+
+        from factory.cli import cmd_refactory, build_parser
+
+        save_session_id("existing-uuid")
+        parser = build_parser()
+        args = parser.parse_args(["refactory"])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--resume" in cmd
+
+    def test_reset_flag_no_resume(self, mock_home: Path) -> None:
+        from unittest.mock import patch
+
+        from factory.cli import cmd_refactory, build_parser
+
+        save_session_id("old-uuid")
+        parser = build_parser()
+        args = parser.parse_args(["refactory", "--reset"])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--resume" not in cmd
+
+    def test_model_flag_forwarded(self, mock_home: Path) -> None:
+        from unittest.mock import patch
+
+        from factory.cli import cmd_refactory, build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["refactory", "--model", "sonnet"])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--model" in cmd
+        model_idx = cmd.index("--model")
+        assert cmd[model_idx + 1] == "sonnet"
