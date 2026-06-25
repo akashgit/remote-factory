@@ -92,9 +92,19 @@ factory agent researcher --task "..." --project "$PROJECT_PATH" --timeout 600
 cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"  # Read the output
 ```
 
-**Exception 1 — Parallel Researcher spawning:** The Researcher agent can be spawned in parallel via shell backgrounding (`&`) + `wait`. Each parallel researcher MUST use `--review-tag` to produce distinct output files. After `wait`, read ALL tagged review files.
+**Exception 1 — Parallel Researcher spawning:** The Researcher agent can be spawned in parallel via shell backgrounding (`&`) + `wait` **inside a SINGLE Bash tool call**. Each parallel researcher MUST use `--review-tag` to produce distinct output files. After `wait`, read ALL tagged review files. **CRITICAL:** Do NOT use `run_in_background: True` on the Bash tool — that returns immediately and the runner never captures output. Instead, put all commands in ONE Bash call:
 
-**Exception 2 — Archivist (fire-and-forget):** Post-verdict archivist invocations run async with `&`. The CEO continues immediately. No `wait` needed — the final blocking archive at cycle end catches any gaps.
+```bash
+factory agent researcher --review-tag similar --task "..." --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag techstack --task "..." --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag pitfalls --task "..." --project "$PROJECT_PATH" --timeout 600 &
+wait
+echo "All researchers complete"
+```
+
+This single Bash call blocks until all 3 researchers finish. The `&` backgrounds each within the shell process, and `wait` ensures the call only returns when all are done.
+
+**Exception 2 — Archivist (fire-and-forget):** Post-verdict archivist invocations run async with `&` **in a single Bash tool call** (NOT `run_in_background: True`). The CEO continues immediately. No `wait` needed — the final blocking archive at cycle end catches any gaps.
 
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|

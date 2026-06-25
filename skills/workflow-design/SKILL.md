@@ -12,25 +12,14 @@ The user wants: **$ARGUMENTS**
 ## Phase 1: Research (Parallel)
 
 
-Spawn 3 agents in parallel:
+Spawn 3 researchers in parallel using a SINGLE Bash tool call with shell `&` + `wait`. Do NOT use `run_in_background: True` or separate Bash calls — all commands must run in one shell:
 
 ```bash
-factory agent researcher --review-tag similar --task "Similar projects research. Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities.
-Write output to: .factory/strategy/research-similar.md" --project "$PROJECT_PATH" --timeout 600 &
-```
-
-```bash
-factory agent researcher --review-tag techstack --task "Tech stack research. Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons.
-Write output to: .factory/strategy/research-techstack.md" --project "$PROJECT_PATH" --timeout 600 &
-```
-
-```bash
-factory agent researcher --review-tag pitfalls --task "Pitfalls and scope research. Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds.
-Write output to: .factory/strategy/research-pitfalls.md" --project "$PROJECT_PATH" --timeout 600 &
-```
-
-```bash
+factory agent researcher --review-tag similar --task "Similar projects research. Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities. Write output to: .factory/strategy/research-similar.md" --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag techstack --task "Tech stack research. Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons. Write output to: .factory/strategy/research-techstack.md" --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag pitfalls --task "Pitfalls and scope research. Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds. Write output to: .factory/strategy/research-pitfalls.md" --project "$PROJECT_PATH" --timeout 600 &
 wait
+echo "All researchers complete"
 ```
 
 ## Barrier: Research
