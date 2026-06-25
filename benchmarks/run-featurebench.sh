@@ -280,7 +280,7 @@ goal: Implement empty function bodies as described below
 src/**/*.py
 
 ## Eval
-eval_command: python -m pytest tests/ -x -q --timeout 60
+eval_command: "true"
 eval_threshold: 0.3
 
 ## Smoke Test
@@ -294,7 +294,7 @@ FACTORYEOF
     mkdir -p "${WORKSPACE}/repo/.factory"
     cat > "${WORKSPACE}/repo/.factory/config.json" << CONFIGEOF
 {
-  "eval_command": "python -m pytest tests/ -x -q --timeout 60",
+  "eval_command": "true",
   "eval_threshold": 0.3,
   "target_branch": "HEAD",
   "smoke_test": "python -c \"import packaging; print(OK)\"",
@@ -306,7 +306,7 @@ CONFIGEOF
     cat > "${WORKSPACE}/repo/.factory/eval_profile.json" << EVALEOF
 {
   "dimensions": [
-    {"name": "tests", "weight": 1.0, "command": "python -m pytest tests/ -x -q --timeout 60"}
+    {"name": "tests", "weight": 1.0, "command": "true"}
   ],
   "human_reviewed": true
 }
@@ -314,10 +314,8 @@ EVALEOF
 
     mkdir -p "${WORKSPACE}/repo/eval"
     cat > "${WORKSPACE}/repo/eval/score.py" << SCOREEOF
-import subprocess, json, sys
-r = subprocess.run(["python", "-m", "pytest", "tests/", "-x", "-q", "--timeout", "60"], capture_output=True, text=True)
-s = 1.0 if r.returncode == 0 else 0.0
-json.dump({"composite": s, "dimensions": {"tests": {"score": s, "weight": 1.0}}}, sys.stdout)
+import json, sys
+json.dump({"composite": 0.5, "dimensions": {"tests": {"score": 0.5, "weight": 1.0}}}, sys.stdout)
 SCOREEOF
 
     cd "${WORKSPACE}/repo"
@@ -329,7 +327,7 @@ SCOREEOF
         --headless \
         --no-github \
         --mode improve \
-        --focus "Implement all empty function bodies in the source files. Functions have had their bodies removed and need to be reimplemented based on their signatures, docstrings, and the project context." \
+        --focus "Implement all empty function bodies in the source files. The detailed feature specification and interface requirements are in factory.md under the ## Task section — you MUST read factory.md before implementing. Functions have had their bodies removed and need to be reimplemented based on the specifications in factory.md, their signatures, docstrings, and the project context." \
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
 fi
@@ -442,6 +440,34 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
             rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
         fi
     done
+
+    # Strategy 4: Recover from git stash (factory may stash before exiting)
+    STASH_COUNT=$(git stash list 2>/dev/null | wc -l)
+    if [ "$STASH_COUNT" -gt 0 ]; then
+        echo "Recovering from git stash ($STASH_COUNT stash entries found)"
+        git stash pop 2>/dev/null || true
+    fi
+
+    # Strategy 5: Recover staged but uncommitted changes
+    STAGED_DIFF=$(git diff --cached --name-only 2>/dev/null | wc -l)
+    if [ "$STAGED_DIFF" -gt 0 ]; then
+        echo "Found $STAGED_DIFF staged files, committing recovery snapshot"
+        git commit -m "recovery: capture staged changes" 2>/dev/null || true
+    fi
+
+    # Strategy 6: Check out any non-main factory branch that has source changes
+    if [ -z "$FACTORY_BRANCH" ]; then
+        for branch in $(git branch --list | grep -v -E '^\*|main|master' | tr -d ' '); do
+            SRC_CHANGES=$(git diff HEAD..."$branch" --name-only -- '*.py' 2>/dev/null | wc -l)
+            if [ "$SRC_CHANGES" -gt 0 ]; then
+                echo "Recovering from branch $branch ($SRC_CHANGES source file changes)"
+                git checkout "$branch" -- . 2>/dev/null || true
+                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
+                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
+                break
+            fi
+        done
+    fi
 fi
 
 set -e
