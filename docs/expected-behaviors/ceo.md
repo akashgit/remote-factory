@@ -380,7 +380,7 @@ Growth dimensions: `capability_surface`, `experiment_diversity`, `observability`
 | **Build mode respawn loop** — CEO respawns report "0/N phases complete" because build mode has no verdict tracking in `results.tsv` | `results.tsv` has only header row after build phases completed. Respawn input says "0/N phases complete" when git log shows N commits. `current.md` overwritten outside Strategist phase. | #783 |
 | **Duplicate researcher spawning** — CEO uses `run_in_background: True` instead of shell `&` + `wait`, causing 2x token spend | `agent.started` count for `researcher` role exceeds 3 in Build/Design mode. Bash tool calls show `run_in_background: true` with `factory agent` commands. Output files missing immediately after tool call returns. | #763 |
 | **Sacred Rule 8 violation** — CEO writes code or runs evals directly instead of delegating | CEO tool use shows `Edit`/`Write` on `*.py`/`*.ts`/`*.go` files. CEO tool use shows `Bash` running `pytest`/`ruff`/`mypy`. No `agent.started` event after agent failure. | #582 (proposal) |
-| **QA/Archivist skip in build mode** — CEO exits after eval without spawning QA or Archivist | `sprint.completed` event without preceding `agent.started agent=qa` event. PR exists without QA trace. No `agent.started agent=archivist` in session. | #723 |
+| **QA skip in Build mode** — Build workflow only runs Evaluator (scoring), not the full 3-section QA pipeline. Sacred Rule 9 mandates QA for every PR, but this is not enforced in Build mode. When this gap causes quality issues, the trace will show no `agent.started agent=qa` event after the Builder's PR. | No `agent.started agent=qa` event between `agent.completed agent=builder` and experiment finalization in Build mode. Only `agent.started agent=evaluator` present. | #723 |
 | **Hygiene-only strategy approved** — CEO approves Strategist plan with no growth hypothesis | `ceo-verdict-strategy.md` contains "PLAN APPROVED" but `current.md` has no `**Growth dimension:**` tags. All hypotheses are tests/lint/cleanup. | — |
 | **Self-judged early exit** — CEO exits mid-cycle with rationalization | `sprint.completed` event with fewer `factory finalize` calls than approved hypotheses. Exit text contains "good stopping point" or "beyond the scope of a single session". | playbook ceo-00007, ceo-00008 |
 | **Strategy file mutation during resume** — On respawn, CEO overwrites `current.md` instead of preserving the build plan | `current.md` diff shows it changed from build-plan format (Phase headings) to improve-mode format (observations/hypotheses). No `agent.started agent=strategist` event corresponding to the change. | #783 (secondary) |
@@ -411,6 +411,12 @@ Growth dimensions: `capability_surface`, `experiment_diversity`, `observability`
 | Strategist | Plan aligns with goals? Phases right-sized? **At least one growth hypothesis?** **No calendar-time estimates** — REDIRECT if present. |
 | Builder | PR matches plan? No scope creep? Tests included? CLAUDE.md followed? |
 | QA | All 3 sections present (Health, Review, Adversarial QA)? Verdict structured? Issues have file:line? Feature actually executed (not just claimed)? |
+
+**Note on Evaluator vs QA Agent:** The workflow SKILL.md files reference an 'Evaluator' phase (runs `factory eval` for scoring). The QA Agent prompt defines a 3-section pipeline (Health Check + Code Review + Adversarial QA) where Health Check subsumes the Evaluator's role. In practice:
+- **Build mode:** Only the Evaluator phase runs (lightweight eval scoring). No full QA pipeline.
+- **Improve/Research mode:** The full QA Agent runs all 3 sections, which includes eval scoring as Section 1.
+- **Refine mode:** The QA Agent is invoked as 'reviewer' role with all 3 sections.
+Sacred Rule 9 mandates QA for every PR, but Build mode historically runs only the Evaluator step. This is a known gap.
 
 **Experiment finalization notes format:**
 - Keep: `--notes "ceo:keep score_delta=+0.05 key_improvement=<what> qa_iterations=$QA_ITERATION"`
