@@ -1197,7 +1197,7 @@ def spec_generate_workflow() -> Workflow:
     """W₉: Spec Generate — extract module graph, annotate, validate.
 
     extract → gate_extract → annotate → gate_annotate →
-    validate_stub → gate_validate → done
+    validate → gate_validate → done
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -1261,11 +1261,12 @@ def spec_generate_workflow() -> Workflow:
         reads={".factory/repo_spec.md"},
     )
 
-    # Validation stub — placeholder for real validation (H2)
-    nodes["validate_stub"] = FnNode(
-        id="validate_stub",
-        command="echo PASS",
+    # Validation — run automated consistency checks
+    nodes["validate"] = FnNode(
+        id="validate",
+        command="factory spec validate {project_path}",
         reads={".factory/repo_spec.md"},
+        writes={".factory/spec_validation.md"},
     )
 
     # Final quality gate
@@ -1288,10 +1289,10 @@ def spec_generate_workflow() -> Workflow:
         Edge(source="gate_extract", target="extract", condition=VerdictType.RELOOP),
         # Annotate → gate
         Edge(source="annotate", target="gate_annotate"),
-        Edge(source="gate_annotate", target="validate_stub", condition=VerdictType.PROCEED),
+        Edge(source="gate_annotate", target="validate", condition=VerdictType.PROCEED),
         Edge(source="gate_annotate", target="annotate", condition=VerdictType.RELOOP),
         # Validate → gate
-        Edge(source="validate_stub", target="gate_validate"),
+        Edge(source="validate", target="gate_validate"),
     ]
 
     return Workflow(
