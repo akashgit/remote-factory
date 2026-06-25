@@ -70,6 +70,15 @@ Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" -
 
 ---
 
+### Workflow: Design
+
+**Phase:** Phase 4 — Builder (identical to Build workflow)
+**Spawned by:** CEO, synchronously — same invocation as Build
+**Behavior:** Identical to Build workflow. The only difference is the strategy approval gate: in Design, the user (not the CEO) approves the Strategist's plan before the Builder is spawned.
+**Inputs/Outputs/Handoff:** Same as Build workflow above.
+
+---
+
 ### Workflow: Improve
 
 **Phase:** Phase 4 — Builder (after `factory begin` starts the experiment)

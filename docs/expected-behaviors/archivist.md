@@ -83,6 +83,15 @@ Write output to: .factory/archive/build.md" --project "$PROJECT_PATH" --timeout 
 
 ---
 
+### Workflow: Design
+
+**Phase:** Phase 3 (Archivist Plan) and Phase 6 (Archivist Build) — identical to Build workflow
+**Spawned by:** CEO, fire-and-forget with `&`, `--model haiku` — same as Build
+**Behavior:** Identical to Build workflow. The Design workflow uses the same archival points.
+**Inputs/Outputs/Handoff:** Same as Build workflow above.
+
+---
+
 ### Workflow: Improve
 
 **Phase:** Phase 6 — Archivist (after `factory finalize`, final phase)
