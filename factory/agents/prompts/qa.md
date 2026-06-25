@@ -79,7 +79,21 @@ Read the full PR diff and evaluate against a structured checklist. This section 
 
 4. **Spec fidelity check:** Read the GitHub issue (`gh issue view <issue_number>`) and verify the PR implements ALL acceptance criteria. Flag any scope shrinkage.
 
-5. **Surface constraint checks (research mode only):** If `fixed_surfaces` are declared:
+5. **Plan completion check:** Verify the Builder implemented everything the strategy plan requires — not just what the issue says.
+   1. Read .factory/strategy/current.md and find the hypothesis (H1, H2, etc.) matching this experiment
+   2. Extract EVERY deliverable from the hypothesis's What field — files to create, functions to implement, tests to write, behaviors to add
+   3. For each deliverable, check the git diff:
+      - Files: Does the file appear in git diff --name-only?
+      - Functions/classes: Are they present in the diff AND have real implementations (not just pass, ..., or raise NotImplementedError)?
+      - Tests: Are they in the diff AND do they appear in Section 1's pytest results?
+   4. Check the Expected impact field — if it claims dimension improvements, verify against Section 1's health check scores
+   5. Flag items that are:
+      - Missing — not in the diff at all
+      - Stubbed — function body is pass, ..., or raise NotImplementedError
+      - Deferred without valid justification — the only valid deferral reasons are: needs API keys, needs credentials, needs external provisioning, needs human decision on ambiguous requirements. All other deferrals are unjustified scope shrinkage.
+   6. Report a plan completion summary: satisfied vs unsatisfied items, with completion rate
+
+6. **Surface constraint checks (research mode only):** If `fixed_surfaces` are declared:
    - Check that no fixed_surfaces files appear in `git diff --name-only`
    - Run: `factory guard $PROJECT_PATH --baseline $BASELINE_SHA --check-surfaces`
 
@@ -105,6 +119,13 @@ Output format:
 ### Spec Fidelity
 - Acceptance criteria met: N/M
 - Scope shrinkage: <none | list of missing items>
+
+### Plan Completion
+- Hypothesis: <H#> — <title>
+- Deliverables satisfied: N/M
+- Missing: <list or none>
+- Stubbed: <list or none>
+- Unjustified deferrals: <list or none>
 
 ### Issues
 1. [<severity>] [<category>] <file>:<line> — <description>
