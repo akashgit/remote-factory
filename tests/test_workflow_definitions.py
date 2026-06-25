@@ -216,12 +216,19 @@ class TestAgentPool:
 
 
 class TestRegisterAll:
-    def test_all_eight_workflows(self) -> None:
+    def test_all_nine_workflows(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) == 8
+        assert len(all_wf) == 9
         assert set(all_wf.keys()) == {
-            "build", "design", "improve", "research", "meta",
-            "discover", "review", "refine",
+            "build",
+            "design",
+            "improve",
+            "research",
+            "meta",
+            "discover",
+            "review",
+            "refine",
+            "spec-generate",
         }
 
     def test_all_validate(self) -> None:
