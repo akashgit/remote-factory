@@ -5263,7 +5263,8 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
         "spec": lambda a: {"generate": cmd_spec_generate}.get(
-            getattr(a, "spec_command", None), lambda _: print("Usage: factory spec {generate}") or 1
+            str(getattr(a, "spec_command", "")),
+            lambda args: print("Usage: factory spec {generate}") or 1,
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
