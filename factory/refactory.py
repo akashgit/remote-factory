@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import shutil
+import stat
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-WORKSPACE_DIR = Path.home() / ".factory" / "refactory"
-SESSION_FILE = Path.home() / ".factory" / "refactory-session.json"
-
-SETTINGS_JSON = {
+SETTINGS_JSON: dict[str, Any] = {
     "mcpServers": {
         "factory": {
             "command": "factory",
@@ -27,9 +26,11 @@ You are the re:factory supervisor. Use /slash commands and factory CLI to manage
 See your system prompt for full instructions.
 """
 
+SOP_COMPACT_DIR = Path(__file__).parent / "agents" / "sop-compact"
 
-def setup_workspace() -> Path:
-    """Create the re:factory workspace at ~/.factory/refactory/.
+
+def setup_workspace(project_path: Path) -> Path:
+    """Create the re:factory workspace at <project>/.refactory/.
 
     Idempotent — safe to call on every launch. Creates directory structure
     and writes config files, overwriting settings.json and CLAUDE.md to
@@ -37,7 +38,7 @@ def setup_workspace() -> Path:
 
     Returns the workspace path.
     """
-    workspace = WORKSPACE_DIR
+    workspace = project_path / ".refactory"
     workspace.mkdir(parents=True, exist_ok=True)
 
     claude_dir = workspace / ".claude"
@@ -46,8 +47,47 @@ def setup_workspace() -> Path:
     commands_dir = claude_dir / "commands"
     commands_dir.mkdir(exist_ok=True)
 
+    sop_dir = claude_dir / "sop-compact"
+    sop_dir.mkdir(exist_ok=True)
+
+    for hook_name in ("pre-compact.sh", "session-start.sh"):
+        src = SOP_COMPACT_DIR / hook_name
+        if src.is_file():
+            dst = sop_dir / hook_name
+            shutil.copy2(src, dst)
+            dst.chmod(dst.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+    sop_src = SOP_COMPACT_DIR / "sop-compact.md"
+    if sop_src.is_file():
+        shutil.copy2(sop_src, claude_dir / "sop-compact.md")
+
+    settings = dict(SETTINGS_JSON)
+    settings["hooks"] = {
+        "PreCompact": [
+            {
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": str((project_path / ".refactory" / ".claude" / "sop-compact" / "pre-compact.sh").resolve()),
+                    }
+                ]
+            }
+        ],
+        "SessionStart": [
+            {
+                "matcher": "*",
+                "hooks": [
+                    {
+                        "type": "command",
+                        "command": str((project_path / ".refactory" / ".claude" / "sop-compact" / "session-start.sh").resolve()),
+                    }
+                ],
+            }
+        ],
+    }
+
     settings_path = claude_dir / "settings.json"
-    settings_path.write_text(json.dumps(SETTINGS_JSON, indent=2) + "\n")
+    settings_path.write_text(json.dumps(settings, indent=2) + "\n")
 
     claude_md_path = workspace / "CLAUDE.md"
     claude_md_path.write_text(CLAUDE_MD_CONTENT)
@@ -60,21 +100,22 @@ def setup_workspace() -> Path:
     return workspace
 
 
-def get_session_id(reset: bool = False) -> str:
-    """Read or create a persistent session ID.
+def get_session_id(project_path: Path, reset: bool = False) -> str:
+    """Read or create a persistent session ID for a project.
 
-    The session ID is stored in ~/.factory/refactory-session.json (outside
-    the workspace, so it survives workspace regeneration).
+    The session ID is stored in <project>/.refactory/session.json.
 
     Args:
+        project_path: Root directory of the project.
         reset: If True, generate a new session ID even if one exists.
 
     Returns:
         The session ID string.
     """
-    if not reset and SESSION_FILE.exists():
+    session_file = project_path / ".refactory" / "session.json"
+    if not reset and session_file.exists():
         try:
-            data = json.loads(SESSION_FILE.read_text())
+            data = json.loads(session_file.read_text())
             sid = data.get("session_id")
             if isinstance(sid, str) and sid:
                 return sid
@@ -82,15 +123,16 @@ def get_session_id(reset: bool = False) -> str:
             pass
 
     sid = str(uuid.uuid4())
-    save_session_id(sid)
+    save_session_id(project_path, sid)
     return sid
 
 
-def save_session_id(session_id: str) -> None:
-    """Write session state to ~/.factory/refactory-session.json."""
-    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+def save_session_id(project_path: Path, session_id: str) -> None:
+    """Write session state to <project>/.refactory/session.json."""
+    session_file = project_path / ".refactory" / "session.json"
+    session_file.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "session_id": session_id,
         "created": datetime.now(timezone.utc).isoformat(),
     }
-    SESSION_FILE.write_text(json.dumps(data, indent=2) + "\n")
+    session_file.write_text(json.dumps(data, indent=2) + "\n")

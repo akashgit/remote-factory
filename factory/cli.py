@@ -3366,10 +3366,13 @@ def cmd_refactory(args: argparse.Namespace) -> int:
         print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
         return 1
 
-    workspace = setup_workspace()
+    project_path = Path(getattr(args, "path", None) or Path.cwd()).resolve()
+
+    workspace = setup_workspace(project_path)
     reset = getattr(args, "reset", False)
-    is_new_session = reset or not (Path.home() / ".factory" / "refactory-session.json").exists()
-    session_id = get_session_id(reset=reset)
+    session_file = project_path / ".refactory" / "session.json"
+    is_new_session = reset or not session_file.exists()
+    session_id = get_session_id(project_path, reset=reset)
     model = getattr(args, "model", None)
 
     prompt = resolve_prompt("refactory")
@@ -4576,6 +4579,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     # refactory — persistent supervisor agent
     p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
+    p.add_argument("path", nargs="?", default=None,
+                    help="Project directory (default: current working directory)")
     p.add_argument("--reset", action="store_true", default=False,
                     help="Reset session (new session ID, fresh start)")
     p.add_argument("--model", default=None,
@@ -4609,7 +4614,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.command:
         if sys.stdin.isatty() and sys.stderr.isatty():
-            return cmd_refactory(args)
+            if (Path.cwd() / ".git").is_dir():
+                return cmd_refactory(args)
+            return _welcome_wizard()
         parser.print_help()
         return 1
 
