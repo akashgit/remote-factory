@@ -162,7 +162,7 @@ class TestSpecGenerateWorkflow:
             "gate_extract",
             "annotate",
             "gate_annotate",
-            "validate_stub",
+            "validate",
             "gate_validate",
         }
         assert expected == set(wf.nodes.keys())
@@ -188,11 +188,11 @@ class TestSpecGenerateWorkflow:
             assert gate.evaluator_type == "agent"
             assert gate.evaluator_role == AgentRole.CEO
 
-    def test_validate_stub_is_fn(self) -> None:
+    def test_validate_is_fn(self) -> None:
         wf = spec_generate_workflow()
-        stub = wf.nodes["validate_stub"]
-        assert isinstance(stub, FnNode)
-        assert stub.command == "echo PASS"
+        node = wf.nodes["validate"]
+        assert isinstance(node, FnNode)
+        assert "factory spec validate" in node.command
 
     def test_extract_writes_spec_raw(self) -> None:
         wf = spec_generate_workflow()
