@@ -2165,6 +2165,54 @@ def cmd_spec_generate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_spec_validate(args: argparse.Namespace) -> int:
+    """Validate a repo spec against the actual project."""
+    from factory.spec.validate import validate_spec
+
+    project_path = Path(args.path).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    spec_path = project_path / ".factory" / "repo_spec.md"
+    if not spec_path.is_file():
+        print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
+        return 1
+
+    _emit_cli_event(project_path, "spec.validate.started", {"path": str(project_path)})
+    try:
+        result = _run(validate_spec(project_path))
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        _emit_cli_event(project_path, "spec.validate.failed", {"error": str(exc)[:200]})
+        return 1
+
+    output_path = project_path / ".factory" / "spec_validation.md"
+    _emit_cli_event(
+        project_path,
+        "spec.validate.completed",
+        {
+            "errors": len(result.errors),
+            "warnings": len(result.warnings),
+            "output": str(output_path),
+        },
+    )
+
+    if result.errors:
+        print(f"FAIL: {len(result.errors)} error(s), {len(result.warnings)} warning(s)")
+        for err in result.errors:
+            print(f"  ERROR: {err}")
+        for warn in result.warnings:
+            print(f"  WARN: {warn}")
+    else:
+        print(f"PASS: {len(result.warnings)} warning(s)")
+        for warn in result.warnings:
+            print(f"  WARN: {warn}")
+
+    print(f"Report: {output_path}")
+    return 0 if result.passed else 1
+
+
 def cmd_self_update(args: argparse.Namespace) -> int:
     """Self-update the factory CLI via uv tool upgrade."""
     from importlib.metadata import version as pkg_version
@@ -5167,6 +5215,8 @@ def build_parser() -> argparse.ArgumentParser:
     spec_sub = spec_parser.add_subparsers(dest="spec_command")
     p_spec_gen = spec_sub.add_parser("generate", help="Generate a repo spec for a project")
     p_spec_gen.add_argument("path", help="Path to the project")
+    p_spec_val = spec_sub.add_parser("validate", help="Validate a repo spec against the project")
+    p_spec_val.add_argument("path", help="Path to the project")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
@@ -5262,9 +5312,9 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
-        "spec": lambda a: {"generate": cmd_spec_generate}.get(
+        "spec": lambda a: {"generate": cmd_spec_generate, "validate": cmd_spec_validate}.get(
             str(getattr(a, "spec_command", "")),
-            lambda args: print("Usage: factory spec {generate}") or 1,
+            lambda args: print("Usage: factory spec {generate,validate}") or 1,
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
