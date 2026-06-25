@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import json
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -172,10 +173,9 @@ def _verify_eval_score(
     if delta is not None:
         return CriterionResult(
             criterion=criterion,
-            passed=True,
-            actual_value=f"{dimension}={actual_score}",
+            passed=False,
+            actual_value="baseline comparison requires --baseline SHA",
             expected_value=f"{dimension} +{delta}",
-            evidence=["Baseline comparison not implemented; passing on score existence"],
         )
 
     return CriterionResult(
@@ -188,6 +188,7 @@ def _verify_eval_score(
 def _verify_file_exists(
     criterion: AcceptanceCriterion,
     project_path: Path,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> CriterionResult:
     target_path = criterion.target.get("path", "")
     full_path = project_path / target_path
@@ -204,6 +205,7 @@ def _verify_file_exists(
 def _verify_function_exists(
     criterion: AcceptanceCriterion,
     project_path: Path,
+    timeout: int = DEFAULT_TIMEOUT,
 ) -> CriterionResult:
     target_path = criterion.target.get("path", "")
     symbol = criterion.target.get("symbol", "")
@@ -346,9 +348,17 @@ def _verify_command_exits_zero(
         )
 
     try:
+        cmd_list = shlex.split(command)
+    except ValueError as exc:
+        return CriterionResult(
+            criterion=criterion,
+            passed=False,
+            error=f"Invalid command syntax: {exc}",
+        )
+
+    try:
         result = subprocess.run(
-            command,
-            shell=True,
+            cmd_list,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -444,12 +454,7 @@ def verify_criteria(
             continue
 
         log.info("verifying_criterion", criterion_id=criterion.criterion_id, method=method)
-
-        if method in ("eval_score", "test_passes", "command_exits_zero", "grep_match"):
-            result = verifier(criterion, project_path, timeout=timeout)
-        else:
-            result = verifier(criterion, project_path)
-
+        result = verifier(criterion, project_path, timeout=timeout)
         results.append(result)
     return results
 

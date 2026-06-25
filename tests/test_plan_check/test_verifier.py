@@ -333,6 +333,60 @@ def test_detect_stubs_with_docstring_and_pass() -> None:
 
 
 # ---------------------------------------------------------------------------
+# eval_score — delta fails without baseline
+# ---------------------------------------------------------------------------
+
+
+def test_verify_eval_score_delta_fails_without_baseline(tmp_path: Path) -> None:
+    scores_dir = tmp_path / ".factory" / "eval"
+    scores_dir.mkdir(parents=True)
+    (scores_dir / "scores.json").write_text(json.dumps({"tests": 0.75}))
+    c = _criterion(
+        "eval_score",
+        {"dimension": "tests", "delta": 0.1},
+        criterion_type="eval_target",
+    )
+    [result] = verify_criteria([c], tmp_path)
+    assert result.passed is False
+    assert "baseline" in (result.actual_value or "").lower()
+
+
+# ---------------------------------------------------------------------------
+# command_exits_zero — uses shlex.split (no shell=True)
+# ---------------------------------------------------------------------------
+
+
+def test_verify_command_shlex_split(tmp_path: Path) -> None:
+    mock_result = MagicMock()
+    mock_result.returncode = 0
+    mock_result.stdout = "ok"
+    mock_result.stderr = ""
+    c = _criterion(
+        "command_exits_zero",
+        {"command": "echo hello world"},
+        criterion_type="functional",
+    )
+    with patch("factory.plan_check.verifier.subprocess.run", return_value=mock_result) as mock_run:
+        [result] = verify_criteria([c], tmp_path)
+    assert result.passed is True
+    call_args = mock_run.call_args
+    assert call_args[0][0] == ["echo", "hello", "world"]
+    assert call_args[1].get("shell") is None or call_args[1].get("shell") is False
+
+
+def test_verify_command_invalid_shlex(tmp_path: Path) -> None:
+    c = _criterion(
+        "command_exits_zero",
+        {"command": "echo 'unterminated"},
+        criterion_type="functional",
+    )
+    [result] = verify_criteria([c], tmp_path)
+    assert result.passed is False
+    assert result.error is not None
+    assert "Invalid command syntax" in result.error
+
+
+# ---------------------------------------------------------------------------
 # verify_hypothesis
 # ---------------------------------------------------------------------------
 

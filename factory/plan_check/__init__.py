@@ -1,3 +1,4 @@
+from factory.plan_check.cli import PlanCheckError
 from factory.plan_check.criteria_extractor import extract_criteria, parse_and_extract
 from factory.plan_check.models import (
     AcceptanceCriterion,
@@ -13,6 +14,7 @@ __all__ = [
     "CriterionResult",
     "HypothesisVerdict",
     "ParsedHypothesis",
+    "PlanCheckError",
     "ReportSummary",
     "VerificationReport",
     "extract_criteria",

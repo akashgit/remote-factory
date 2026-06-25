@@ -16,6 +16,10 @@ from factory.plan_check.verifier import verify_plan
 log = structlog.get_logger()
 
 
+class PlanCheckError(Exception):
+    """Raised when plan-check encounters a configuration or runtime error."""
+
+
 def add_subcommand(subparsers: argparse._SubParsersAction) -> None:  # type: ignore[type-arg]
     parser = subparsers.add_parser(
         "plan-check",
@@ -73,8 +77,9 @@ def _handle_plan_check(args: argparse.Namespace) -> None:
             output_dir=output_dir,
             report_format=args.report_format,
         )
-    except SystemExit:
-        raise
+    except PlanCheckError as exc:
+        log.error("plan_check_error", detail=str(exc))
+        sys.exit(2)
     except Exception:
         log.exception("plan_check_error")
         sys.exit(2)
@@ -101,8 +106,7 @@ def run_plan_check(
         output_dir = project_path / ".factory" / "reports"
 
     if not strategy_path.exists():
-        log.error("strategy_file_not_found", path=str(strategy_path))
-        sys.exit(2)
+        raise PlanCheckError(f"Strategy file not found: {strategy_path}")
 
     log.info("reading_strategy_plan", path=str(strategy_path))
     content = strategy_path.read_text()

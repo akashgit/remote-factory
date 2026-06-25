@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import pytest
 
-from factory.plan_check.cli import add_subcommand, run_plan_check
+from factory.plan_check.cli import PlanCheckError, add_subcommand, run_plan_check
 
 
 def _make_parser() -> argparse.ArgumentParser:
@@ -56,15 +56,14 @@ class TestCliArgsParsing:
 
 
 class TestCliMissingStrategy:
-    def test_exits_2_when_strategy_missing(self, tmp_path: Path):
+    def test_raises_plan_check_error_when_strategy_missing(self, tmp_path: Path):
         strategy = tmp_path / "nonexistent.md"
-        with pytest.raises(SystemExit) as exc_info:
+        with pytest.raises(PlanCheckError, match="Strategy file not found"):
             run_plan_check(
                 project_path=tmp_path,
                 strategy_path=strategy,
                 output_dir=tmp_path / "reports",
             )
-        assert exc_info.value.code == 2
 
 
 class TestCliJsonStdout:

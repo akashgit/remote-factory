@@ -125,6 +125,21 @@ def test_extract_from_real_hypothesis():
     assert len(criteria) == 9
 
 
+def test_extract_function_multiple_files_same_line():
+    h = _hyp(
+        what=(
+            "Create `src/a.py` with function `foo()` and "
+            "`src/b.py` with function `bar()`"
+        )
+    )
+    criteria = extract_criteria(h)
+    funcs = [c for c in criteria if c.verification_method == "function_exists"]
+    assert len(funcs) == 2
+    by_name = {c.target["symbol"]: c.target["path"] for c in funcs}
+    assert by_name["foo"] == "src/a.py"
+    assert by_name["bar"] == "src/b.py"
+
+
 def test_no_criteria_from_empty_what():
     h = _hyp(what="", expected_impact="")
     criteria = extract_criteria(h)

@@ -95,25 +95,34 @@ def _extract_function_deliverables(hypothesis: ParsedHypothesis) -> list[Accepta
     last_file_path = ""
 
     for line in hypothesis.what.split("\n"):
-        file_match = _FILE_PATH_RE.search(line)
-        if file_match:
-            last_file_path = file_match.group(1)
+        file_matches = list(_FILE_PATH_RE.finditer(line))
+        if file_matches:
+            last_file_path = file_matches[-1].group(1)
 
         if "function" not in line.lower():
             continue
 
         for func_match in _FUNCTION_RE.finditer(line):
             func_name = func_match.group(1)
-            if func_name not in seen:
-                seen.add(func_name)
-                criteria.append(AcceptanceCriterion(
-                    criterion_id=f"{hypothesis.id}.deliverable.{func_name}",
-                    hypothesis_id=hypothesis.id,
-                    criterion_type="deliverable",
-                    description=f"function {func_name} exists",
-                    verification_method="function_exists",
-                    target={"path": last_file_path, "symbol": func_name},
-                ))
+            if func_name in seen:
+                continue
+            seen.add(func_name)
+            associated_path = last_file_path
+            if file_matches:
+                func_pos = func_match.start()
+                best = file_matches[0]
+                for fm in file_matches:
+                    if fm.start() <= func_pos:
+                        best = fm
+                associated_path = best.group(1)
+            criteria.append(AcceptanceCriterion(
+                criterion_id=f"{hypothesis.id}.deliverable.{func_name}",
+                hypothesis_id=hypothesis.id,
+                criterion_type="deliverable",
+                description=f"function {func_name} exists",
+                verification_method="function_exists",
+                target={"path": associated_path, "symbol": func_name},
+            ))
 
     return criteria
 
