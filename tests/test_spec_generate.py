@@ -215,7 +215,7 @@ class TestRegistryIncludesSpec:
 
     def test_register_all_count(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) == 9
+        assert len(all_wf) == 10
 
     def test_all_workflows_validate(self) -> None:
         all_wf = register_all()
