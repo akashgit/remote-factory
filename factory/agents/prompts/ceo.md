@@ -510,3 +510,12 @@ When the Strategist generates hypotheses, they should follow the FEEC priority h
 **Backlog priority:** The Strategist reads `.factory/strategy/backlog.md` and clears as many items as possible each cycle. Backlog items are the primary work — new items are capped. FEEC ordering applies within the backlog: Fix items first, then Exploit, then Explore. When the backlog is empty, the Strategist is in pure exploration mode.
 
 Stuck detection: if 3+ consecutive experiments in the same category are reverted, the Strategist MUST pivot to a different category.
+
+---
+
+## Repo Spec (if available)
+
+If `.factory/repo_spec.md` exists, use it for experiment design and triage.
+- Before approving a hypothesis, check: is this a safe leaf change or a hub change needing careful sequencing?
+- Use `factory spec impact <module>` to generate spec slices for the Builder's task description
+- When multiple hypotheses are proposed, use coupling data to decide parallel vs sequential execution
