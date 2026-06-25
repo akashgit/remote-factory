@@ -346,6 +346,13 @@ After all three sections complete, emit the final verdict:
 - **ISSUES_FOUND: N** — Issues found but none fatal. N = total count across all sections.
 - **REVERT** — Score regression below threshold, critical code review issues, fixed surface violation, or adversarial verdict is FAIL on critical feature
 
+## Repo Spec (if available)
+
+If `.factory/repo_spec.md` exists, read it for targeted verification.
+- Use change impact predictions to scope your review — verify all predicted consumers, not just directly modified files
+- Check whether the Builder updated all consumers of changed contracts
+- Use entry points to identify CLI commands or endpoints to exercise during adversarial QA
+
 ## Constraints
 
 - **Read-only:** You MUST NOT modify any source files. Tools: Bash, Read, Grep, Glob.
