@@ -2282,6 +2282,30 @@ def cmd_spec_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_spec_impact(args: argparse.Namespace) -> int:
+    """Print the impact subgraph for a module from the repo spec."""
+    from factory.spec.impact import get_impact
+
+    project_path = Path(args.project).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    spec_path = project_path / ".factory" / "repo_spec.md"
+    if not spec_path.is_file():
+        print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
+        return 1
+
+    try:
+        snippet = get_impact(args.module, project_path)
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print(snippet)
+    return 0
+
+
 def cmd_self_update(args: argparse.Namespace) -> int:
     """Self-update the factory CLI via uv tool upgrade."""
     from importlib.metadata import version as pkg_version
@@ -5291,6 +5315,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_spec_scope.add_argument("--experiment", type=int, default=None, help="Experiment ID to scope")
     p_spec_update = spec_sub.add_parser("update", help="Update the repo spec from recent changes")
     p_spec_update.add_argument("path", help="Path to the project")
+    p_spec_impact = spec_sub.add_parser("impact", help="Show impact subgraph for a module")
+    p_spec_impact.add_argument("module", help="Module name to query")
+    p_spec_impact.add_argument("--project", required=True, help="Path to the project")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
@@ -5391,9 +5418,10 @@ def main(argv: list[str] | None = None) -> int:
             "validate": cmd_spec_validate,
             "scope": cmd_spec_scope,
             "update": cmd_spec_update,
+            "impact": cmd_spec_impact,
         }.get(
             str(getattr(a, "spec_command", "")),
-            lambda args: print("Usage: factory spec {generate,validate,scope,update}") or 1,
+            lambda args: print("Usage: factory spec {generate,validate,scope,update,impact}") or 1,
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]
