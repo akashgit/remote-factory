@@ -1,4 +1,4 @@
-"""All 9 workflow definitions as Python functions returning Workflow objects.
+"""All 10 workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
@@ -10,6 +10,7 @@ W₇: Review Mode
 W₈: Refine Mode
 W₉: Create Mode (meta-mode for creating new factory modes)
 W₁₀: Spec Generate Mode
+W₁₁: Spec Update Mode
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ __all__ = [
     "create_workflow",
     "skill_refine_workflow",
     "spec_generate_workflow",
+    "spec_update_workflow",
     "register_all",
 ]
 
@@ -485,6 +487,24 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
+    # Non-blocking spec update — runs if .factory/repo_spec.md exists
+    nodes["spec_update"] = FnNode(
+        id="spec_update",
+        command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "import subprocess, sys; "
+            "p = Path('{project_path}/.factory/repo_spec.md'); "
+            "sys.exit(0) if not p.is_file() else None; "
+            "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
+            "capture_output=True, text=True); "
+            "print(r.stdout); print(r.stderr, file=sys.stderr); "
+            "sys.exit(0)"
+            '"'
+        ),
+        blocking=False,
+    )
+
     edges = [
         # Study → researcher
         Edge(source="study", target="researcher"),
@@ -513,8 +533,9 @@ def improve_workflow() -> Workflow:
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist
+        # Finalize → archivist → spec_update (non-blocking)
         Edge(source="finalize", target="archivist"),
+        Edge(source="archivist", target="spec_update"),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -719,9 +740,10 @@ def research_workflow() -> Workflow:
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → plateau gate
+        # Finalize → archivist → spec_update (non-blocking) → plateau gate
         Edge(source="finalize", target="archivist"),
-        Edge(source="archivist", target="plateau_gate"),
+        Edge(source="archivist", target="spec_update"),
+        Edge(source="spec_update", target="plateau_gate"),
         # Plateau gate: proceed (done) or reloop to baseline
         Edge(source="plateau_gate", target="baseline", condition=VerdictType.RELOOP),
     ]
@@ -1756,11 +1778,102 @@ def spec_generate_workflow() -> Workflow:
     )
 
 
+# ── W₁₀: Spec Update Mode ─────────────────────────────────────
+
+
+def spec_update_workflow() -> Workflow:
+    """W₁₀: Spec Update — scope diff, patch spec, revalidate.
+
+    diff_scope → patch → gate_patch → revalidate → gate_revalidate → done
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Diff scoping — map changed files to affected modules
+    nodes["diff_scope"] = FnNode(
+        id="diff_scope",
+        command="factory spec scope {project_path}",
+        writes={".factory/spec_update_scope.md"},
+    )
+
+    # Haiku patcher — incrementally update repo_spec.md
+    nodes["patch"] = AgentNode(
+        id="patch",
+        role=AgentRole.RESEARCHER,
+        model="haiku",
+        prompt_template=(
+            "Patch the repo spec based on scoped changes. "
+            "Read the spec_patcher prompt at factory/agents/prompts/spec_patcher.md. "
+            "Read .factory/spec_update_scope.md for the list of affected modules and new files. "
+            "Read .factory/repo_spec.md for the current spec. "
+            "Read changed source files and update affected module entries. "
+            "Add new module entries for unmapped files. "
+            "Remove modules whose paths no longer exist. "
+            "Write updated spec to .factory/repo_spec.md."
+        ),
+        reads={".factory/spec_update_scope.md"},
+        writes={".factory/repo_spec.md"},
+    )
+
+    # CEO gate — check patch quality
+    nodes["gate_patch"] = GateNode(
+        id="gate_patch",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review the patched spec at .factory/repo_spec.md. "
+            "Check: do updates match the diff scope? Were all affected modules touched? "
+            "Were new files mapped to modules? Were deleted modules removed? "
+            "PROCEED if updates are reasonable. RELOOP to patch if issues."
+        ),
+        reads={".factory/repo_spec.md", ".factory/spec_update_scope.md"},
+    )
+
+    # Revalidation — run automated consistency checks
+    nodes["revalidate"] = FnNode(
+        id="revalidate",
+        command="factory spec validate {project_path}",
+        reads={".factory/repo_spec.md"},
+        writes={".factory/spec_validation.md"},
+    )
+
+    # Final quality gate
+    nodes["gate_revalidate"] = GateNode(
+        id="gate_revalidate",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Final quality gate for the updated spec. "
+            "Read .factory/spec_validation.md. "
+            "If validation errors exist, RELOOP to patch for fixes. "
+            "PROCEED if the spec passes validation."
+        ),
+        reads={".factory/spec_validation.md"},
+    )
+
+    edges = [
+        Edge(source="diff_scope", target="patch"),
+        Edge(source="patch", target="gate_patch"),
+        Edge(source="gate_patch", target="revalidate", condition=VerdictType.PROCEED),
+        Edge(source="gate_patch", target="patch", condition=VerdictType.RELOOP),
+        Edge(source="revalidate", target="gate_revalidate"),
+        Edge(source="gate_revalidate", target="patch", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="spec-update",
+        nodes=nodes,
+        edges=edges,
+        start_node="diff_scope",
+        trigger=None,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 12 workflow definitions."""
+    """Build and return all 13 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1774,4 +1887,5 @@ def register_all() -> dict[str, Workflow]:
         "create": create_workflow(),
         "skill-refine": skill_refine_workflow(),
         "spec-generate": spec_generate_workflow(),
+        "spec-update": spec_update_workflow(),
     }
