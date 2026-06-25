@@ -280,7 +280,7 @@ goal: Implement empty function bodies as described below
 src/**/*.py
 
 ## Eval
-eval_command: "true"
+eval_command: python -m pytest tests/ -x -q --timeout 120
 eval_threshold: 0.3
 
 ## Smoke Test
@@ -294,7 +294,7 @@ FACTORYEOF
     mkdir -p "${WORKSPACE}/repo/.factory"
     cat > "${WORKSPACE}/repo/.factory/config.json" << CONFIGEOF
 {
-  "eval_command": "true",
+  "eval_command": "python -m pytest tests/ -x -q --timeout 120",
   "eval_threshold": 0.3,
   "target_branch": "HEAD",
   "smoke_test": "python -c \"import packaging; print(OK)\"",
@@ -306,7 +306,7 @@ CONFIGEOF
     cat > "${WORKSPACE}/repo/.factory/eval_profile.json" << EVALEOF
 {
   "dimensions": [
-    {"name": "tests", "weight": 1.0, "command": "true"}
+    {"name": "tests", "weight": 1.0, "command": "python -m pytest tests/ -x -q --timeout 120"}
   ],
   "human_reviewed": true
 }
@@ -314,8 +314,15 @@ EVALEOF
 
     mkdir -p "${WORKSPACE}/repo/eval"
     cat > "${WORKSPACE}/repo/eval/score.py" << SCOREEOF
-import json, sys
-json.dump({"composite": 0.5, "dimensions": {"tests": {"score": 0.5, "weight": 1.0}}}, sys.stdout)
+import subprocess, json, sys, re
+r = subprocess.run(['python', '-m', 'pytest', 'tests/', '-q', '--timeout', '120', '--tb=no'], capture_output=True, text=True)
+m = re.search(r'(\d+) passed', r.stdout)
+passed = int(m.group(1)) if m else 0
+m2 = re.search(r'(\d+) failed', r.stdout)
+failed = int(m2.group(1)) if m2 else 0
+total = passed + failed if (passed + failed) > 0 else 1
+s = passed / total
+json.dump({'composite': s, 'dimensions': {'tests': {'score': s, 'weight': 1.0}}, 'details': {'passed': passed, 'failed': failed, 'total': total}}, sys.stdout)
 SCOREEOF
 
     cd "${WORKSPACE}/repo"
@@ -328,7 +335,7 @@ SCOREEOF
         --headless \
         --no-github \
         --mode improve \
-        --focus "Implement all empty function bodies in the source files. The detailed feature specification and interface requirements are in factory.md under the ## Task section — you MUST read factory.md before implementing. Functions have had their bodies removed and need to be reimplemented based on the specifications in factory.md, their signatures, docstrings, and the project context." \
+        --focus "Implement all empty function bodies in the source files. The detailed feature specification and interface requirements are in factory.md under the ## Task section — you MUST read factory.md before implementing. Functions have had their bodies removed and need to be reimplemented based on the specifications in factory.md, their signatures, docstrings, and the project context. CRITICAL EDGE CASES: (1) _parse_keywords must handle various separator patterns: comma-separated, space-separated, leading/trailing whitespace; (2) _parse_project_urls must handle empty strings and single-value entries; (3) parse_email must handle bytes input, non-UTF8 encoding (latin-1/iso-8859-1 fallback), and multiple description fields; (4) _process_* validators for non-repeating fields must raise InvalidMetadata when a field appears multiple times; (5) RFC822Message.as_bytes and header_store_parse must handle multiline continuation headers correctly; (6) Metadata.from_email must preserve unparsed fields and handle empty import_name lists; (7) _write_metadata must produce valid RFC822 with proper multiline folding for long values. Run tests after implementing to verify correctness." \
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
 fi
