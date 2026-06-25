@@ -81,7 +81,8 @@ class TestSessionId:
         assert not session_file.exists()
         sid = get_session_id()
         assert isinstance(sid, str)
-        assert len(sid) == 32
+        assert len(sid) == 36  # UUID with dashes
+        assert sid.count("-") == 4
         assert session_file.exists()
 
     def test_returns_existing(self, mock_home: Path) -> None:
@@ -93,7 +94,7 @@ class TestSessionId:
         sid1 = get_session_id()
         sid2 = get_session_id(reset=True)
         assert sid1 != sid2
-        assert len(sid2) == 32
+        assert len(sid2) == 36
 
     def test_save_roundtrip(self, mock_home: Path) -> None:
         custom_id = "abcdef1234567890abcdef1234567890"

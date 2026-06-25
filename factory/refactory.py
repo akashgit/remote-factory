@@ -81,7 +81,7 @@ def get_session_id(reset: bool = False) -> str:
         except (json.JSONDecodeError, KeyError):
             pass
 
-    sid = uuid.uuid4().hex
+    sid = str(uuid.uuid4())
     save_session_id(sid)
     return sid
 
