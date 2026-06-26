@@ -2,7 +2,7 @@
 
 import fnmatch
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePath
 
 
@@ -236,7 +236,7 @@ def check_eval_not_skipped(
         return "Eval was skipped: .factory/last_eval.json does not exist"
 
     if cycle_started_at is not None:
-        mtime = datetime.fromtimestamp(last_eval.stat().st_mtime)
+        mtime = datetime.fromtimestamp(last_eval.stat().st_mtime, tz=timezone.utc)
         if mtime < cycle_started_at:
             return (
                 f"Eval was skipped: .factory/last_eval.json is stale "

@@ -2,7 +2,7 @@
 
 import json
 import subprocess
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -285,7 +285,7 @@ class TestCheckEvalNotSkipped:
         factory_dir.mkdir()
         last_eval = factory_dir / "last_eval.json"
         last_eval.write_text(json.dumps({"total": 0.8}))
-        cycle_started_at = datetime.now() - timedelta(minutes=5)
+        cycle_started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
         result = check_eval_not_skipped(git_project, cycle_started_at)
         assert result is None
 
@@ -294,15 +294,24 @@ class TestCheckEvalNotSkipped:
         assert result is not None
         assert "does not exist" in result
 
+    def test_check_eval_not_skipped_with_tz_aware_cycle(self, git_project):
+        factory_dir = git_project / ".factory"
+        factory_dir.mkdir()
+        last_eval = factory_dir / "last_eval.json"
+        last_eval.write_text(json.dumps({"total": 0.8}))
+        cycle_started_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        result = check_eval_not_skipped(git_project, cycle_started_at)
+        assert result is None
+
     def test_fails_when_stale(self, git_project):
         factory_dir = git_project / ".factory"
         factory_dir.mkdir()
         last_eval = factory_dir / "last_eval.json"
         last_eval.write_text(json.dumps({"total": 0.8}))
         import os
-        stale_time = (datetime.now() - timedelta(hours=2)).timestamp()
+        stale_time = (datetime.now(timezone.utc) - timedelta(hours=2)).timestamp()
         os.utime(last_eval, (stale_time, stale_time))
-        cycle_started_at = datetime.now() - timedelta(minutes=5)
+        cycle_started_at = datetime.now(timezone.utc) - timedelta(minutes=5)
         result = check_eval_not_skipped(git_project, cycle_started_at)
         assert result is not None
         assert "stale" in result
