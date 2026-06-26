@@ -50,7 +50,7 @@ def test_generate_spec_delegates_to_spec_module(tmp_path: Path):
     spec_path.write_text("# GRAPH-SPEC\n\nGenerated content.")
 
     mock_generate = AsyncMock(return_value=spec_path)
-    with patch("factory.discovery.spec._generate_spec", mock_generate):
+    with patch("factory.spec.generate.generate_spec", mock_generate):
         result = generate_spec(tmp_path)
 
     mock_generate.assert_awaited_once_with(tmp_path)

@@ -30,7 +30,7 @@ def _find_contracts(module_name: str, spec: RepoSpec) -> list[str]:
     contracts: list[str] = []
     for contract in spec.shared_contracts:
         if contract.defined_in.lower() == module_name.lower():
-            consumers = ", ".join(contract.used_by) if contract.used_by else "none"
+            consumers = ", ".join(contract.consumers) if contract.consumers else "none"
             risk = contract.change_risk or "unknown"
             contracts.append(f"{contract.name} (used by: {consumers}, risk: {risk})")
     return contracts
@@ -42,10 +42,12 @@ def _find_change_impact(module_name: str, spec: RepoSpec) -> str | None:
     for impact in spec.change_impact:
         if impact.module.lower() == lower:
             parts = []
-            if impact.classification:
-                parts.append(f"classification: {impact.classification}")
-            if impact.impact:
-                parts.append(f"impact: {impact.impact}")
+            if impact.severity:
+                parts.append(f"severity: {impact.severity}")
+            if impact.reason:
+                parts.append(f"reason: {impact.reason}")
+            if impact.affects:
+                parts.append(f"affects: {', '.join(impact.affects)}")
             return ", ".join(parts) if parts else None
     return None
 
