@@ -805,8 +805,8 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
     spec_path, spec_source = resolve_spec(project_path)
     if spec_source == "absent":
-        spec_content = generate_spec(project_path, profile)
-        spec_path = store.factory_dir / "SPEC.md"
+        spec_content = generate_spec(project_path)
+        spec_path = store.factory_dir / "GRAPH-SPEC.md"
         spec_path.write_text(spec_content)
         spec_source = "generated"
 
