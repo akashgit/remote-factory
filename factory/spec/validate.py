@@ -1,9 +1,8 @@
-"""Spec validation engine — automated consistency checks without an LLM."""
+"""Spec validation engine — structural checks + Haiku-based import verification."""
 
 from __future__ import annotations
 
-import ast
-import re
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -53,118 +52,91 @@ def _check_paths(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[st
     return errors, warnings
 
 
-def _extract_python_imports(file_path: Path) -> set[str]:
-    """Extract imported module names from a Python file using ast.parse."""
-    try:
-        source = file_path.read_text()
-        tree = ast.parse(source)
-    except (SyntaxError, OSError, UnicodeDecodeError):
-        return set()
+async def _check_imports_haiku(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[str]]:
+    """Cross-reference declared dependency edges against actual imports using Haiku.
 
-    imports: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                imports.add(alias.name.split(".")[0])
-        elif isinstance(node, ast.ImportFrom):
-            if node.module:
-                imports.add(node.module.split(".")[0])
+    For each declared dependency edge, Haiku reads the source files and confirms
+    the import actually exists. Reports phantom edges (declared but not in source)
+    and missing edges (in source but not in spec).
+    """
+    from factory.agents.runner import invoke_agent
 
-    return imports
-
-
-def _extract_non_python_imports(file_path: Path) -> set[str]:
-    """Best-effort regex import extraction for non-Python files."""
-    try:
-        content = file_path.read_text()
-    except (OSError, UnicodeDecodeError):
-        return set()
-
-    imports: set[str] = set()
-
-    ts_import = re.compile(r"""(?:import|from)\s+['"]([^'"]+)['"]""")
-    for m in ts_import.finditer(content):
-        path = m.group(1)
-        if path.startswith("."):
-            parts = path.strip("./").split("/")
-            if parts:
-                imports.add(parts[0])
-
-    go_import = re.compile(r'"([^"]+)"')
-    if file_path.suffix == ".go":
-        for m in go_import.finditer(content):
-            pkg = m.group(1).split("/")[-1]
-            imports.add(pkg)
-
-    return imports
-
-
-def _check_imports(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[str]]:
-    """Cross-reference declared dependency edges against actual imports."""
     errors: list[str] = []
     warnings: list[str] = []
 
-    module_paths: dict[str, Path] = {}
-    for mod in spec.modules:
-        if mod.path:
-            module_paths[mod.name] = project_path / mod.path
-
+    edges_to_check: list[dict[str, str]] = []
     for mod in spec.modules:
         if not mod.path or not mod.depends_on:
             continue
-
         mod_path = project_path / mod.path
         if not mod_path.exists():
             continue
+        for dep_name in mod.depends_on:
+            dep_mod = spec.get_module(dep_name)
+            dep_path = dep_mod.path if dep_mod else dep_name
+            edges_to_check.append(
+                {
+                    "source_module": mod.name,
+                    "source_path": mod.path,
+                    "target_module": dep_name,
+                    "target_path": dep_path,
+                }
+            )
 
-        python_files: list[Path] = []
-        if mod_path.is_dir():
-            python_files = list(mod_path.rglob("*.py"))
-        elif mod_path.is_file() and mod_path.suffix == ".py":
-            python_files = [mod_path]
+    if not edges_to_check:
+        return errors, warnings
 
-        is_python = len(python_files) > 0
+    task = (
+        f"Verify dependency edges in {project_path}.\n\n"
+        "For each declared dependency edge below, read the source module's files "
+        "and confirm that it actually imports from the target module.\n\n"
+        "## Edges to Verify\n\n"
+        f"```json\n{json.dumps(edges_to_check, indent=2)}\n```\n\n"
+        "## Output\n\n"
+        "Return a JSON array of findings. Each finding is an object with:\n"
+        '- "type": "phantom" (declared in spec but not found in source) or '
+        '"missing" (found in source but not declared in spec)\n'
+        '- "source": source module name\n'
+        '- "target": target module name\n'
+        '- "detail": brief explanation\n\n'
+        "If all edges are verified, return an empty array: []\n"
+        "Return ONLY the JSON array, no other text."
+    )
 
-        if is_python:
-            all_imports: set[str] = set()
-            for py_file in python_files:
-                all_imports |= _extract_python_imports(py_file)
+    result, code = await invoke_agent(
+        "researcher",
+        task,
+        project_path,
+        timeout=120.0,
+        dangerously_skip_permissions=True,
+        model="haiku",
+    )
 
-            dep_paths: dict[str, str] = {}
-            for dep_name in mod.depends_on:
-                dep_mod = spec.get_module(dep_name)
-                if dep_mod and dep_mod.path:
-                    parts = dep_mod.path.replace("/", ".").replace("\\", ".")
-                    top_pkg = parts.split(".")[0]
-                    dep_paths[dep_name] = top_pkg
+    if code != 0:
+        warnings.append(f"Haiku import verification failed (exit {code})")
+        return errors, warnings
 
-            for dep_name, top_pkg in dep_paths.items():
-                if top_pkg not in all_imports:
-                    warnings.append(
-                        f"Module '{mod.name}' declares dependency on '{dep_name}' "
-                        f"but no import of '{top_pkg}' found in source"
-                    )
+    try:
+        result_text = result.strip()
+        start = result_text.find("[")
+        end = result_text.rfind("]") + 1
+        if start >= 0 and end > start:
+            findings = json.loads(result_text[start:end])
         else:
-            non_python_files: list[Path] = []
-            if mod_path.is_dir():
-                non_python_files = [f for f in mod_path.rglob("*") if f.is_file()]
-            elif mod_path.is_file():
-                non_python_files = [mod_path]
+            findings = json.loads(result_text)
 
-            all_imports_np: set[str] = set()
-            for np_file in non_python_files:
-                all_imports_np |= _extract_non_python_imports(np_file)
-
-            if all_imports_np:
-                for dep_name in mod.depends_on:
-                    dep_mod = spec.get_module(dep_name)
-                    dep_path_str = dep_mod.path if dep_mod else dep_name
-                    dep_parts = dep_path_str.split("/")
-                    if not any(p in all_imports_np for p in dep_parts):
-                        warnings.append(
-                            f"Module '{mod.name}' declares dependency on '{dep_name}' "
-                            f"but no matching import found (approximate, non-Python)"
-                        )
+        for finding in findings:
+            finding_type = finding.get("type", "")
+            source = finding.get("source", "")
+            target = finding.get("target", "")
+            detail = finding.get("detail", "")
+            msg = f"Module '{source}' → '{target}': {detail}"
+            if finding_type == "phantom":
+                warnings.append(f"Phantom edge: {msg}")
+            elif finding_type == "missing":
+                warnings.append(f"Missing edge: {msg}")
+    except (json.JSONDecodeError, TypeError, KeyError):
+        warnings.append("Could not parse Haiku import verification output")
 
     return errors, warnings
 
@@ -278,8 +250,10 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
 async def validate_spec(project_path: Path) -> ValidationResult:
     """Validate .factory/GRAPH-SPEC.md against the actual project.
 
-    Runs path existence checks, import cross-referencing, orphan/hub detection,
-    and coupling metric computation.
+    Tier 1: Structural checks (pure Python) — path existence, orphan/hub detection,
+    coupling metrics.
+    Tier 2: Import cross-referencing (Haiku) — language-agnostic verification that
+    declared dependency edges match actual imports.
 
     Writes results to .factory/spec_validation.md.
     """
@@ -292,7 +266,7 @@ async def validate_spec(project_path: Path) -> ValidationResult:
     result.errors.extend(path_errors)
     result.warnings.extend(path_warnings)
 
-    import_errors, import_warnings = _check_imports(spec, project_path)
+    import_errors, import_warnings = await _check_imports_haiku(spec, project_path)
     result.errors.extend(import_errors)
     result.warnings.extend(import_warnings)
 
