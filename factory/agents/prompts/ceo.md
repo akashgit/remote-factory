@@ -515,7 +515,7 @@ Stuck detection: if 3+ consecutive experiments in the same category are reverted
 
 ## Repo Spec (if available)
 
-If `.factory/repo_spec.md` exists, use it for experiment design and triage.
+If `.factory/GRAPH-SPEC.md` exists, use it for experiment design and triage.
 - Before approving a hypothesis, check: is this a safe leaf change or a hub change needing careful sequencing?
 - Use `factory spec impact <module>` to generate spec slices for the Builder's task description
 - When multiple hypotheses are proposed, use coupling data to decide parallel vs sequential execution

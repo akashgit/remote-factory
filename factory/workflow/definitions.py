@@ -487,14 +487,14 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Non-blocking spec update — runs if .factory/repo_spec.md exists
+    # Non-blocking spec update — runs if .factory/GRAPH-SPEC.md exists
     nodes["spec_update"] = FnNode(
         id="spec_update",
         command=(
             'python3 -c "'
             "from pathlib import Path; "
             "import subprocess, sys; "
-            "p = Path('{project_path}/.factory/repo_spec.md'); "
+            "p = Path('{project_path}/.factory/GRAPH-SPEC.md'); "
             "sys.exit(0) if not p.is_file() else None; "
             "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
             "capture_output=True, text=True); "
@@ -1705,7 +1705,7 @@ def spec_generate_workflow() -> Workflow:
         reads={".factory/spec_raw.md"},
     )
 
-    # Researcher annotation — produces repo_spec.md
+    # Researcher annotation — produces GRAPH-SPEC.md
     nodes["annotate"] = AgentNode(
         id="annotate",
         role=AgentRole.RESEARCHER,
@@ -1714,10 +1714,10 @@ def spec_generate_workflow() -> Workflow:
             "Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md. "
             "Add module role descriptions, architectural layers, non-obvious dependencies, "
             "change impact analysis, and hub/leaf classification. "
-            "Write output to .factory/repo_spec.md."
+            "Write output to .factory/GRAPH-SPEC.md."
         ),
         reads={".factory/spec_raw.md"},
-        writes={".factory/repo_spec.md"},
+        writes={".factory/GRAPH-SPEC.md"},
     )
 
     # CEO gate — check annotation quality
@@ -1726,20 +1726,20 @@ def spec_generate_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the annotated spec at .factory/repo_spec.md. "
+            "Review the annotated spec at .factory/GRAPH-SPEC.md. "
             "Check: do module descriptions match the actual code? "
             "Are change impact assessments reasonable? "
             "Is hub/leaf classification correct? "
             "PROCEED if the spec is accurate. RELOOP if descriptions are wrong."
         ),
-        reads={".factory/repo_spec.md"},
+        reads={".factory/GRAPH-SPEC.md"},
     )
 
     # Validation — run automated consistency checks
     nodes["validate"] = FnNode(
         id="validate",
         command="factory spec validate {project_path}",
-        reads={".factory/repo_spec.md"},
+        reads={".factory/GRAPH-SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 
@@ -1750,10 +1750,10 @@ def spec_generate_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Final quality gate for the repo spec. "
-            "Read .factory/repo_spec.md. Is it complete, well-structured, "
+            "Read .factory/GRAPH-SPEC.md. Is it complete, well-structured, "
             "and under 8K tokens? PROCEED to finish."
         ),
-        reads={".factory/repo_spec.md"},
+        reads={".factory/GRAPH-SPEC.md"},
     )
 
     edges = [
@@ -1796,7 +1796,7 @@ def spec_update_workflow() -> Workflow:
         writes={".factory/spec_update_scope.md"},
     )
 
-    # Haiku patcher — incrementally update repo_spec.md
+    # Haiku patcher — incrementally update GRAPH-SPEC.md
     nodes["patch"] = AgentNode(
         id="patch",
         role=AgentRole.RESEARCHER,
@@ -1805,14 +1805,14 @@ def spec_update_workflow() -> Workflow:
             "Patch the repo spec based on scoped changes. "
             "Read the spec_patcher prompt at factory/agents/prompts/spec_patcher.md. "
             "Read .factory/spec_update_scope.md for the list of affected modules and new files. "
-            "Read .factory/repo_spec.md for the current spec. "
+            "Read .factory/GRAPH-SPEC.md for the current spec. "
             "Read changed source files and update affected module entries. "
             "Add new module entries for unmapped files. "
             "Remove modules whose paths no longer exist. "
-            "Write updated spec to .factory/repo_spec.md."
+            "Write updated spec to .factory/GRAPH-SPEC.md."
         ),
         reads={".factory/spec_update_scope.md"},
-        writes={".factory/repo_spec.md"},
+        writes={".factory/GRAPH-SPEC.md"},
     )
 
     # CEO gate — check patch quality
@@ -1821,19 +1821,19 @@ def spec_update_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the patched spec at .factory/repo_spec.md. "
+            "Review the patched spec at .factory/GRAPH-SPEC.md. "
             "Check: do updates match the diff scope? Were all affected modules touched? "
             "Were new files mapped to modules? Were deleted modules removed? "
             "PROCEED if updates are reasonable. RELOOP to patch if issues."
         ),
-        reads={".factory/repo_spec.md", ".factory/spec_update_scope.md"},
+        reads={".factory/GRAPH-SPEC.md", ".factory/spec_update_scope.md"},
     )
 
     # Revalidation — run automated consistency checks
     nodes["revalidate"] = FnNode(
         id="revalidate",
         command="factory spec validate {project_path}",
-        reads={".factory/repo_spec.md"},
+        reads={".factory/GRAPH-SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 

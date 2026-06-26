@@ -159,9 +159,9 @@ async def generate_spec(project_path: Path) -> Path:
     Runs the extraction → annotation pipeline:
     1. Collect source files and batch them
     2. Run Haiku extraction agent to produce spec_raw.md
-    3. Run Researcher annotation agent to produce repo_spec.md
+    3. Run Researcher annotation agent to produce GRAPH-SPEC.md
 
-    Returns the path to the generated repo_spec.md.
+    Returns the path to the generated GRAPH-SPEC.md.
     """
     from factory.agents.runner import invoke_agent
 
@@ -210,7 +210,7 @@ async def generate_spec(project_path: Path) -> Path:
     annotate_task = (
         f"Annotate and enrich the raw spec at {spec_raw} for the project at {project_path}.\n\n"
         f"Read {spec_raw} and key source files.\n"
-        f"Write the annotated repo spec to {factory_dir / 'repo_spec.md'}."
+        f"Write the annotated repo spec to {factory_dir / 'GRAPH-SPEC.md'}."
     )
 
     result, code = await invoke_agent(
@@ -223,7 +223,7 @@ async def generate_spec(project_path: Path) -> Path:
     if code != 0:
         raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
 
-    repo_spec = factory_dir / "repo_spec.md"
+    repo_spec = factory_dir / "GRAPH-SPEC.md"
     if not repo_spec.exists():
         raise FileNotFoundError(
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"

@@ -424,7 +424,7 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 
 ## Repo Spec (if available)
 
-If `.factory/repo_spec.md` exists, read it before generating hypotheses.
+If `.factory/GRAPH-SPEC.md` exists, read it before generating hypotheses.
 - Use dependency edges to assess blast radius of proposed changes
 - Use shared contracts to predict cascading changes
 - Avoid proposing narrow changes to hub modules without accounting for all dependents

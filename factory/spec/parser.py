@@ -1,4 +1,4 @@
-"""Spec Markdown parser — parse .factory/repo_spec.md into structured models."""
+"""Spec Markdown parser — parse .factory/GRAPH-SPEC.md into structured models."""
 
 from __future__ import annotations
 
@@ -66,7 +66,7 @@ class ChangeImpact:
 
 @dataclass
 class RepoSpec:
-    """Parsed representation of .factory/repo_spec.md."""
+    """Parsed representation of .factory/GRAPH-SPEC.md."""
 
     modules: list[ModuleSpec] = field(default_factory=list)
     dependency_edges: list[DependencyEdge] = field(default_factory=list)
@@ -247,7 +247,7 @@ def _parse_change_impact(content: str) -> list[ChangeImpact]:
 
 
 def parse_spec(spec_path: Path) -> RepoSpec:
-    """Parse .factory/repo_spec.md into a structured RepoSpec model.
+    """Parse .factory/GRAPH-SPEC.md into a structured RepoSpec model.
 
     Raises FileNotFoundError if the spec file does not exist.
     """

@@ -91,9 +91,9 @@ def scope_diff(project_path: Path, experiment_id: int | None = None) -> DiffScop
     """Scope a diff against the existing repo spec.
 
     If experiment_id is provided, reads .factory/experiments/{id}/changes.diff.
-    Otherwise, diffs between HEAD and the commit that last touched repo_spec.md.
+    Otherwise, diffs between HEAD and the commit that last touched GRAPH-SPEC.md.
     """
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         raise FileNotFoundError(f"No repo spec found at {spec_path}")
 
@@ -106,7 +106,7 @@ def scope_diff(project_path: Path, experiment_id: int | None = None) -> DiffScop
         diff_text = diff_path.read_text()
     else:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", ".factory/repo_spec.md"],
+            ["git", "log", "-1", "--format=%H", "--", ".factory/GRAPH-SPEC.md"],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -209,14 +209,14 @@ async def update_spec(project_path: Path) -> Path:
 
     Orchestration entry point for manual trigger:
     1. Scope the diff
-    2. Run patcher agent to update repo_spec.md
+    2. Run patcher agent to update GRAPH-SPEC.md
     3. Re-validate
 
-    Returns the path to the updated repo_spec.md.
+    Returns the path to the updated GRAPH-SPEC.md.
     """
     from factory.agents.runner import invoke_agent
 
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         raise FileNotFoundError(f"No repo spec found at {spec_path}")
 

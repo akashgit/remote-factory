@@ -109,7 +109,7 @@ When `fixed_surfaces` are declared:
 
 ## Repo Spec (if available)
 
-If `.factory/repo_spec.md` exists, read it before implementing.
+If `.factory/GRAPH-SPEC.md` exists, read it before implementing.
 - Check which modules depend on files you're changing
 - If you modify a shared contract (Pydantic model, interface, schema), update ALL consumers listed in the spec
 - Use entry points to identify which CLI commands exercise your changes
