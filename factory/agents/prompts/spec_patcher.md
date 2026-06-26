@@ -50,4 +50,4 @@ After making changes, update the **Change Impact** table to reflect the current 
 
 ## Output
 
-Write the complete updated `GRAPH-SPEC.md` to `.factory/GRAPH-SPEC.md`. The output must be a valid spec file with all sections: Modules, Dependency Edges, Shared Contracts, Entry Points, Change Impact.
+Write the complete updated `GRAPH-SPEC.md` to `.factory/GRAPH-SPEC.md`. The output must be a valid RFC-style spec file with all sections: Normative Language, 1. Project Identity, 2. Goals, 3. Technical Stack, 4. Architecture (4.1 Abstraction Levels, 4.2 Module Graph, 4.3 Dependency Edges, 4.4 Shared Contracts, 4.5 Entry Points), 5. Change Impact, 6. Coupling Metrics. Maintain RFC 2119 normative language consistency across updated sections.
