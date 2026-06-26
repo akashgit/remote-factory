@@ -138,6 +138,12 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 
 ---
 
+## Eval System
+
+Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
+
+---
+
 ## Built with re:factory
 
 | Project | What it does | Mode |
@@ -197,6 +203,56 @@ BOBSHELL_API_KEY = "..."
 ```
 
 Run `uv run factory config show` to see resolved config, or `uv run factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
+
+---
+
+## LLM Tracing (LangFuse)
+
+LangFuse provides LLM observability and tracing — track agent invocations, token usage, and execution flow across all factory runs.
+
+### Quick Start
+
+```bash
+# Start LangFuse services
+scripts/langfuse-setup start
+
+# Set the env vars the factory needs
+export LANGFUSE_HOST=http://localhost:3000
+export LANGFUSE_BASE_URL=http://localhost:3000
+export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+export TELEMETRY_PLATFORM=langfuse
+```
+
+The dev credentials above match the docker-compose setup. Add them to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
+
+### Viewing Traces
+
+1. Start LangFuse: `scripts/langfuse-setup start`
+2. Run the factory: `uv run factory ceo /path/to/project`
+3. Open `http://localhost:3000` in your browser
+4. Login: `dev@localhost.local` / `devpassword123`
+
+### CLI Commands
+
+```bash
+scripts/langfuse-setup start    # Start LangFuse services
+scripts/langfuse-setup stop     # Stop services
+scripts/langfuse-setup status   # Show status and credentials
+```
+
+### Requirements
+
+- **Docker** or **Podman** — any of `docker compose`, `docker-compose`, or `podman-compose` works
+
+### Disabling Tracing
+
+To disable tracing without stopping LangFuse:
+```bash
+export LANGFUSE_TRACING_ENABLED=false
+```
+
+For LLM connection setup, trace structure details, and troubleshooting, see [`infra/langfuse/README.md`](infra/langfuse/README.md).
 
 ---
 
