@@ -480,8 +480,8 @@ async def test_claude_usage_telemetry(sample_project: Path) -> None:
 
 
 @pytest.mark.slow
-async def test_tmux_persist_degrades_for_non_claude(sample_project: Path) -> None:
-    """tmux_persist=True on non-Claude runners warns but doesn't crash."""
+async def test_tmux_persist_errors_for_non_claude(sample_project: Path) -> None:
+    """tmux_persist=True on non-Claude runners returns code 1 with an error message."""
     for name in AVAILABLE_RUNNERS:
         if name == "claude":
             continue
@@ -493,9 +493,12 @@ async def test_tmux_persist_degrades_for_non_claude(sample_project: Path) -> Non
             timeout=60.0,
             tmux_persist=True,
         )
-        assert code == 0, (
-            f"{name} should succeed despite unsupported tmux_persist "
+        assert code == 1, (
+            f"{name} should fail with code 1 for unsupported tmux_persist "
             f"(code={code}): {stdout[:200]}"
+        )
+        assert "not supported" in stdout.lower(), (
+            f"{name} should mention 'not supported' in error output: {stdout[:200]}"
         )
 
 

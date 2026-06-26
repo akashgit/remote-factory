@@ -139,9 +139,14 @@ class CodexRunner:
 
     async def headless(self, request: AgentRunRequest) -> AgentRunResult:
         """Run a headless Codex CLI invocation via ``codex exec``."""
+        from factory.models import AgentRunResult
+
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
-            log.warning("codex_tmux_not_supported")
+            return AgentRunResult(
+                stdout="Error: --tmux-persist is not supported with the codex runner. Use --runner claude.",
+                return_code=1,
+            )
         background = request.extras.get("background", False)
         if background:
             log.warning("codex_bg_not_supported", hint="--bg is a claude-only feature")

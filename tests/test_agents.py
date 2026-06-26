@@ -581,7 +581,7 @@ class TestBackgroundDispatch:
 
     def test_parse_bg_session_id(self):
         """_parse_bg_session_id extracts session ID from claude --bg output."""
-        from factory.runners._tmux_persist import _parse_bg_session_id
+        from factory.runners._background import _parse_bg_session_id
 
         output = "backgrounded · abc123def · factory-ceo"
         assert _parse_bg_session_id(output) == "abc123def"

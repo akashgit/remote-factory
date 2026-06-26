@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -3104,11 +3105,31 @@ def _persist_spec(project_path: Path, spec: str) -> None:
 
 
 _TMUX_SESSION_PREFIX = "factory-"
+_TMUX_SESSIONS_FILE = Path("~/.factory/tmux_sessions.json").expanduser()
 
 
 def _tmux_session_name(project_path: Path) -> str:
     """Derive a tmux session name from a project path."""
-    return f"{_TMUX_SESSION_PREFIX}{project_path.name}"
+    path_hash = hashlib.sha1(str(project_path).encode()).hexdigest()[:6]
+    return f"{_TMUX_SESSION_PREFIX}{project_path.name}-{path_hash}"
+
+
+def _load_tmux_session_mapping() -> dict[str, str]:
+    """Load the session→project mapping from ~/.factory/tmux_sessions.json."""
+    if _TMUX_SESSIONS_FILE.exists():
+        try:
+            return json.loads(_TMUX_SESSIONS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_tmux_session_mapping(session: str, project_path: str) -> None:
+    """Save a session→project mapping entry to ~/.factory/tmux_sessions.json."""
+    mapping = _load_tmux_session_mapping()
+    mapping[session] = project_path
+    _TMUX_SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _TMUX_SESSIONS_FILE.write_text(json.dumps(mapping, indent=2))
 
 
 def _tmux_available() -> bool:
@@ -3118,6 +3139,52 @@ def _tmux_available() -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+
+def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
+    """Build the 'factory run ...' command string from parsed args."""
+    parts = [f"factory run {project_path}"]
+    if args.mode:
+        parts.append(f"--mode {args.mode}")
+    if args.loop:
+        parts.append("--loop")
+    if args.interval:
+        parts.append(f"--interval {args.interval}")
+    if args.max_cycles is not None:
+        parts.append(f"--max-cycles {args.max_cycles}")
+    if model:
+        parts.append(f"--model {shlex.quote(model)}")
+    if getattr(args, "no_github", False):
+        parts.append("--no-github")
+    if getattr(args, "profile", None):
+        parts.append(f"--profile {shlex.quote(args.profile)}")
+    if getattr(args, "focus", None):
+        parts.append(f"--focus {shlex.quote(args.focus)}")
+    if getattr(args, "refine", None):
+        parts.append(f"--refine {shlex.quote(args.refine)}")
+    if getattr(args, "clean_pr", None) is True:
+        parts.append("--clean-pr")
+    elif getattr(args, "clean_pr", None) is False:
+        parts.append("--no-clean-pr")
+    if getattr(args, "runner", None):
+        parts.append(f"--runner {shlex.quote(args.runner)}")
+    if getattr(args, "prompt", None):
+        parts.append(f"--prompt {shlex.quote(args.prompt)}")
+    if getattr(args, "branch", None):
+        parts.append(f"--branch {shlex.quote(args.branch)}")
+    if getattr(args, "min_growth", None) is not None:
+        parts.append(f"--min-growth {args.min_growth}")
+    if getattr(args, "max_new", None) is not None:
+        parts.append(f"--max-new {args.max_new}")
+    if getattr(args, "discover_only", False):
+        parts.append("--discover-only")
+    if getattr(args, "bg_agents", False):
+        parts.append("--bg-agents")
+    if getattr(args, "tmux_persist", False):
+        parts.append("--tmux-persist")
+    if getattr(args, "use_profile", False):
+        parts.append("--use-profile")
+    return " ".join(parts)
 
 
 def cmd_tmux(args: argparse.Namespace) -> int:
@@ -3143,28 +3210,15 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         return 0
 
     # Build the factory run command — propagate env vars, use bare `factory`
-    run_cmd_parts = [
-        f"export CLAUDE_CODE_USE_VERTEX={shlex.quote(os.environ.get('CLAUDE_CODE_USE_VERTEX', '1'))}",
-        f"export CLOUD_ML_REGION={shlex.quote(os.environ.get('CLOUD_ML_REGION', ''))}",
-        f"export ANTHROPIC_VERTEX_PROJECT_ID={shlex.quote(os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', ''))}",
-        'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
-    ]
+    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "BOBSHELL_", "OPENAI_", "CODEX_", "CLAUDE_CODE_", "CLOUD_ML_")
+    run_cmd_parts = []
+    for key, val in sorted(os.environ.items()):
+        if key.startswith(_ENV_PREFIXES):
+            run_cmd_parts.append(f"export {key}={shlex.quote(val)}")
+    run_cmd_parts.append(f"export PATH={shlex.quote(os.environ.get('PATH', '/usr/bin'))}")
 
     model = _resolve_model(args)
-    run_args = f"factory run {project_path}"
-    if args.mode:
-        run_args += f" --mode {args.mode}"
-    if args.loop:
-        run_args += " --loop"
-    if args.interval:
-        run_args += f" --interval {args.interval}"
-    if args.max_cycles is not None:
-        run_args += f" --max-cycles {args.max_cycles}"
-    if model:
-        run_args += f" --model {shlex.quote(model)}"
-    if getattr(args, "no_github", False):
-        run_args += " --no-github"
-
+    run_args = _build_tmux_run_args(args, project_path, model)
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
 
@@ -3175,6 +3229,8 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     if result.returncode != 0:
         print(f"Error: failed to create tmux session '{session}'", file=sys.stderr)
         return 1
+
+    _save_tmux_session_mapping(session, str(project_path))
 
     print(f"Factory launched in tmux session: {session}")
     print(f"  tmux attach -t {session}    # attach")
@@ -3201,22 +3257,30 @@ def cmd_tmux_ls(args: argparse.Namespace) -> int:
         print("No tmux sessions running.")
         return 0
 
+    mapping = _load_tmux_session_mapping()
     factory_sessions = []
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
         name = parts[0]
         if name.startswith(_TMUX_SESSION_PREFIX):
             created = datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d %H:%M") if len(parts) > 1 else "?"
-            factory_sessions.append((name, created))
+            project = mapping.get(name, "?")
+            factory_sessions.append({"session": name, "started": created, "project": project})
 
     if not factory_sessions:
-        print("No factory sessions running.")
+        if getattr(args, "json_output", False):
+            print("[]")
+        else:
+            print("No factory sessions running.")
         return 0
 
-    print(f"{'Session':<30} {'Started':<20}")
-    print("-" * 50)
-    for name, created in factory_sessions:
-        print(f"{name:<30} {created:<20}")
+    if getattr(args, "json_output", False):
+        print(json.dumps(factory_sessions, indent=2))
+    else:
+        print(f"{'Session':<35} {'Started':<20} {'Project'}")
+        print("-" * 80)
+        for s in factory_sessions:
+            print(f"{s['session']:<35} {s['started']:<20} {s['project']}")
     return 0
 
 
@@ -3230,8 +3294,7 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
         session = args.session
     elif args.path:
         session = _tmux_session_name(Path(args.path).resolve())
-    else:
-        # Stop all factory sessions
+    elif getattr(args, "stop_all", False):
         result = subprocess.run(
             ["tmux", "list-sessions", "-F", "#{session_name}"],
             capture_output=True,
@@ -3253,6 +3316,25 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
         else:
             print(f"Stopped {killed} session(s).")
         return 0
+    else:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True,
+            text=True,
+        )
+        sessions = []
+        if result.returncode == 0:
+            for name in result.stdout.strip().splitlines():
+                if name.startswith(_TMUX_SESSION_PREFIX):
+                    sessions.append(name)
+        if sessions:
+            print("Factory sessions that would be stopped:")
+            for s in sessions:
+                print(f"  {s}")
+        else:
+            print("No factory sessions running.")
+        print("\nUse --all to stop all factory sessions.")
+        return 1
 
     # Kill specific session
     check = subprocess.run(
@@ -4397,14 +4479,51 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--focus", default=None,
+        help="Target a specific item: backlog name, issue number, URL, or shorthand",
+    )
+    p.add_argument(
+        "--refine", default=None, metavar="REQUEST",
+        help="Refinement mode: classify and implement a user-directed change",
+    )
+    tmux_clean_pr = p.add_mutually_exclusive_group()
+    tmux_clean_pr.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
+                                help="Enable clean PR mode")
+    tmux_clean_pr.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
+                                help="Disable clean PR mode")
+    p.add_argument(
+        "--prompt", default=None,
+        help="Path to a prompt/spec file",
+    )
+    p.add_argument("--branch", default=None,
+                    help="Target branch for PRs")
+    p.add_argument("--min-growth", type=int, default=None,
+                    help="Minimum guaranteed growth hypotheses")
+    p.add_argument("--max-new", type=int, default=None,
+                    help="Max new items added to backlog per cycle")
+    p.add_argument("--discover-only", action="store_true", default=False,
+                    help="Only run discovery and review — do not chain into improve")
+    p.add_argument("--bg-agents", action="store_true", default=False,
+                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
+    p.add_argument("--tmux-persist", action="store_true", default=False,
+                    help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--use-profile", action="store_true", default=False,
+                    help="Inject user profile (~/.factory/profile.md) into agent prompts")
 
     # tmux-ls — list factory tmux sessions
-    sub.add_parser("tmux-ls", help="List running factory tmux sessions")
+    p = sub.add_parser("tmux-ls", help="List running factory tmux sessions")
+    p.add_argument("--json", action="store_true", default=False, dest="json_output",
+                    help="Output as JSON array for programmatic consumption")
 
     # tmux-stop — stop factory tmux sessions
     p = sub.add_parser("tmux-stop", help="Stop factory tmux session(s)")
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
+    p.add_argument("--all", action="store_true", default=False, dest="stop_all",
+                    help="Stop ALL factory tmux sessions (required when no --session/--path given)")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser

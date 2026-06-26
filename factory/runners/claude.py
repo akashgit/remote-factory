@@ -125,7 +125,7 @@ class ClaudeRunner:
 
         background = request.extras.get("background", False)
         if background:
-            from factory.runners._tmux_persist import run_in_background
+            from factory.runners._background import run_in_background
 
             stdout, rc, usage = await run_in_background(
                 request.prompt, request.task, request.cwd, request.role,
