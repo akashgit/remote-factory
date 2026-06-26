@@ -1,8 +1,10 @@
-"""Tests for factory.spec.validate — path checks, import cross-ref, orphan/hub, coupling."""
+"""Tests for factory.spec.validate — path checks, Haiku import verification, orphan/hub, coupling."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -26,21 +28,17 @@ def _make_python_project(tmp_path: Path) -> Path:
     project = tmp_path / "myproject"
     project.mkdir()
 
-    # models module
     models = project / "myapp" / "models.py"
     models.parent.mkdir(parents=True)
     (project / "myapp" / "__init__.py").write_text("")
     models.write_text("class User:\n    pass\n\nclass Config:\n    pass\n")
 
-    # store module
     store = project / "myapp" / "store.py"
     store.write_text("from myapp import models\n\nclass Store:\n    pass\n")
 
-    # api module
     api = project / "myapp" / "api.py"
     api.write_text("from myapp import models\nfrom myapp import store\n")
 
-    # utils module (orphan — nobody imports it)
     utils = project / "myapp" / "utils.py"
     utils.write_text("def slugify(s: str) -> str:\n    return s.lower()\n")
 
@@ -86,15 +84,42 @@ BASIC_SPEC = """\
 """
 
 
+def _mock_haiku_no_findings() -> AsyncMock:
+    """Return a mock invoke_agent that reports no import issues."""
+    return AsyncMock(return_value=("[]", 0))
+
+
+def _mock_haiku_with_phantom() -> AsyncMock:
+    """Return a mock invoke_agent that reports a phantom edge."""
+    findings = json.dumps(
+        [
+            {
+                "type": "phantom",
+                "source": "utils",
+                "target": "models",
+                "detail": "utils declares dependency on models but no import found",
+            }
+        ]
+    )
+    return AsyncMock(return_value=(findings, 0))
+
+
+def _mock_haiku_failure() -> AsyncMock:
+    """Return a mock invoke_agent that fails."""
+    return AsyncMock(return_value=("error occurred", 1))
+
+
 class TestPathChecks:
-    async def test_valid_paths_no_errors(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_valid_paths_no_errors(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         path_errors = [e for e in result.errors if "does not exist" in e]
         assert path_errors == []
 
-    async def test_missing_path_produces_error(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_missing_path_produces_error(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         spec_with_bad_path = BASIC_SPEC.replace("myapp/utils.py", "myapp/nonexistent.py")
         _write_spec(project, spec_with_bad_path)
@@ -103,7 +128,10 @@ class TestPathChecks:
         assert len(path_errors) == 1
         assert "utils" in path_errors[0]
 
-    async def test_missing_path_fails_validation(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_missing_path_fails_validation(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
         project = _make_python_project(tmp_path)
         spec_with_bad_path = BASIC_SPEC.replace("myapp/utils.py", "myapp/nonexistent.py")
         _write_spec(project, spec_with_bad_path)
@@ -112,14 +140,18 @@ class TestPathChecks:
 
 
 class TestImportCrossReference:
-    async def test_valid_imports_no_warnings(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_valid_imports_no_warnings(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
-        import_warns = [w for w in result.warnings if "no import of" in w]
+        import_warns = [w for w in result.warnings if "Phantom" in w or "Missing" in w]
         assert import_warns == []
 
-    async def test_phantom_dependency_produces_warning(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_with_phantom)
+    async def test_phantom_dependency_produces_warning(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
         project = _make_python_project(tmp_path)
         spec_with_phantom = BASIC_SPEC.replace(
             "### utils\n- **Path:** myapp/utils.py\n- **Role:** Utility functions\n"
@@ -129,14 +161,33 @@ class TestImportCrossReference:
         )
         _write_spec(project, spec_with_phantom)
         result = await validate_spec(project)
-        import_warns = [w for w in result.warnings if "declares dependency" in w]
-        assert len(import_warns) >= 1
-        assert "utils" in import_warns[0]
-        assert "models" in import_warns[0]
+        phantom_warns = [w for w in result.warnings if "Phantom" in w]
+        assert len(phantom_warns) >= 1
+        assert "utils" in phantom_warns[0]
+
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_haiku_called_with_model(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        project = _make_python_project(tmp_path)
+        _write_spec(project, BASIC_SPEC)
+        await validate_spec(project)
+        mock_agent.assert_awaited_once()
+        call_kwargs = mock_agent.call_args
+        assert call_kwargs.kwargs.get("model") == "haiku"
+
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_failure)
+    async def test_haiku_failure_produces_warning(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
+        project = _make_python_project(tmp_path)
+        _write_spec(project, BASIC_SPEC)
+        result = await validate_spec(project)
+        fail_warns = [w for w in result.warnings if "verification failed" in w]
+        assert len(fail_warns) == 1
 
 
 class TestOrphanDetection:
-    async def test_orphan_module_flagged(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_orphan_module_flagged(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
@@ -144,7 +195,8 @@ class TestOrphanDetection:
         orphan_names = [w for w in orphan_warns if "utils" in w]
         assert len(orphan_names) >= 1
 
-    async def test_consumed_module_not_orphan(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_consumed_module_not_orphan(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
@@ -154,7 +206,8 @@ class TestOrphanDetection:
 
 
 class TestHubDetection:
-    async def test_hub_module_flagged(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_hub_module_flagged(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         """A module with >=5 dependents gets flagged as a hub."""
         project = tmp_path / "hubproject"
         project.mkdir()
@@ -184,7 +237,8 @@ class TestHubDetection:
         assert len(hub_warns) >= 1
         assert "core" in hub_warns[0]
 
-    async def test_low_dependent_count_not_hub(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_low_dependent_count_not_hub(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
@@ -193,42 +247,48 @@ class TestHubDetection:
 
 
 class TestCouplingMetrics:
-    async def test_afferent_coupling(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_afferent_coupling(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         assert "models" in result.metrics
         assert result.metrics["models"].afferent == 2
 
-    async def test_efferent_coupling(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_efferent_coupling(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         assert "api" in result.metrics
         assert result.metrics["api"].efferent == 2
 
-    async def test_instability_stable_module(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_instability_stable_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         models_m = result.metrics["models"]
         assert models_m.instability == 0.0
 
-    async def test_instability_unstable_module(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_instability_unstable_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         api_m = result.metrics["api"]
         assert api_m.instability > 0.5
 
-    async def test_instability_range(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_instability_range(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
         for name, m in result.metrics.items():
             assert 0.0 <= m.instability <= 1.0, f"{name} instability out of range"
 
-    async def test_zero_coupling_module(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_zero_coupling_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         result = await validate_spec(project)
@@ -239,14 +299,16 @@ class TestCouplingMetrics:
 
 
 class TestValidationReport:
-    async def test_report_written(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_report_written(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         await validate_spec(project)
         report_path = project / ".factory" / "spec_validation.md"
         assert report_path.is_file()
 
-    async def test_report_contains_summary(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_report_contains_summary(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         await validate_spec(project)
@@ -254,7 +316,10 @@ class TestValidationReport:
         assert "## Summary" in report
         assert "PASS" in report
 
-    async def test_report_contains_coupling_table(self, tmp_path: Path) -> None:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_haiku_no_findings)
+    async def test_report_contains_coupling_table(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         await validate_spec(project)
