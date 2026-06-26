@@ -13,10 +13,10 @@ from factory.spec.validate import (
 
 
 def _write_spec(project: Path, spec_content: str) -> Path:
-    """Write a repo_spec.md into the project's .factory/ directory."""
+    """Write a GRAPH-SPEC.md into the project's .factory/ directory."""
     factory_dir = project / ".factory"
     factory_dir.mkdir(parents=True, exist_ok=True)
-    spec_path = factory_dir / "repo_spec.md"
+    spec_path = factory_dir / "GRAPH-SPEC.md"
     spec_path.write_text(spec_content)
     return spec_path
 

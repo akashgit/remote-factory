@@ -2174,7 +2174,7 @@ def cmd_spec_validate(args: argparse.Namespace) -> int:
         print(f"Error: not a directory: {project_path}", file=sys.stderr)
         return 1
 
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
         return 1
@@ -2222,7 +2222,7 @@ def cmd_spec_scope(args: argparse.Namespace) -> int:
         print(f"Error: not a directory: {project_path}", file=sys.stderr)
         return 1
 
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
         return 1
@@ -2264,7 +2264,7 @@ def cmd_spec_update(args: argparse.Namespace) -> int:
         print(f"Error: not a directory: {project_path}", file=sys.stderr)
         return 1
 
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
         return 1
@@ -2291,7 +2291,7 @@ def cmd_spec_impact(args: argparse.Namespace) -> int:
         print(f"Error: not a directory: {project_path}", file=sys.stderr)
         return 1
 
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     if not spec_path.is_file():
         print(f"Error: no repo spec found at {spec_path}", file=sys.stderr)
         return 1

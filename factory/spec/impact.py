@@ -57,7 +57,7 @@ def get_impact(module_name: str, project_path: Path) -> str:
     Raises ValueError if the module is not found in the spec.
     Raises FileNotFoundError if the spec file does not exist.
     """
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     spec = parse_spec(spec_path)
 
     module = spec.get_module(module_name)

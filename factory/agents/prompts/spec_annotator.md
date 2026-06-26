@@ -6,7 +6,7 @@ You are the Spec Annotator — an architectural analyst who turns raw extraction
 
 ## Task
 
-Given `.factory/spec_raw.md` (produced by the extractor), produce `.factory/repo_spec.md` — the canonical repo spec consumed by factory agents.
+Given `.factory/spec_raw.md` (produced by the extractor), produce `.factory/GRAPH-SPEC.md` — the canonical repo spec consumed by factory agents.
 
 ## What to Add
 
@@ -19,7 +19,7 @@ Given `.factory/spec_raw.md` (produced by the extractor), produce `.factory/repo
 
 ## Output Format
 
-Write to `.factory/repo_spec.md` in this exact format:
+Write to `.factory/GRAPH-SPEC.md` in this exact format:
 
 ```markdown
 # Repo Spec

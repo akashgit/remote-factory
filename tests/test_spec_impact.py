@@ -101,7 +101,7 @@ SAMPLE_SPEC = """\
 def project_with_spec(tmp_path: Path) -> Path:
     factory_dir = tmp_path / ".factory"
     factory_dir.mkdir()
-    (factory_dir / "repo_spec.md").write_text(SAMPLE_SPEC)
+    (factory_dir / "GRAPH-SPEC.md").write_text(SAMPLE_SPEC)
     return tmp_path
 
 
