@@ -27,18 +27,14 @@ cd remote-factory
 uv sync
 ```
 
-Then just run:
+Then start with one of the two main workflows:
 
 ```bash
-uv run factory
-```
+# Design — brainstorm an idea, refine it, then build
+uv run factory ceo "my idea" --mode design
 
-The **welcome wizard** launches automatically — a conversational agent that asks what you want to do, classifies your input (an idea, a file path, a GitHub URL, or a description), and presents the right command. No flags to memorize. Paste an idea and the wizard handles the rest.
-
-You can also skip the wizard and call commands directly:
-
-```bash
-uv run factory ceo "Build a personal homepage with a blog" --mode design
+# Improve — point at an existing project for continuous improvement
+uv run factory ceo /path/to/project --mode improve
 ```
 
 See the [full setup guide](docs/setup.md) for authentication and environment variables.
@@ -50,7 +46,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | I want to… | Command |
 |---|---|
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
-| **Improve an existing project** | `uv run factory ceo /path/to/project` |
+| **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
 | **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
 
@@ -83,10 +79,10 @@ You can also pass a spec file or URL directly — `uv run factory ceo spec.md` �
 
 ## Improve + Focus Workflow
 
-Point re:factory at an existing project and it enters Improve mode automatically:
+Point re:factory at an existing project for continuous improvement:
 
 ```bash
-uv run factory ceo ~/factory-projects/my-app
+uv run factory ceo ~/factory-projects/my-app --mode improve
 ```
 
 Each cycle: **observe** → **hypothesize** → **build** → **review** → **measure** → **decide** (keep or revert) → **archive**. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
@@ -150,8 +146,8 @@ Built something with re:factory? Open a PR to add it here.
 
 ```bash
 # Core workflow
-uv run factory ceo <path|url|idea>              # Build or improve
-uv run factory ceo <path> --mode design         # Discuss, then execute
+uv run factory ceo "idea" --mode design         # Design from a raw idea
+uv run factory ceo <path> --mode improve        # Improve an existing project
 uv run factory ceo <path> --focus "..."         # One target, one experiment
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
 uv run factory ceo <path> --loop                # Continuous improvement loop
