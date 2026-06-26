@@ -164,7 +164,7 @@ def eval_observability(project_path: Path) -> dict:
     try:
         from factory.study import _analyze_observability
 
-        result = _analyze_observability(project_path, "python")
+        result = _analyze_observability(project_path, "unknown")
         score = result.get("observability_score", 0.0)
         fn_cov = result.get("function_coverage", 0.0)
         structured = result.get("structured_logging", False)
