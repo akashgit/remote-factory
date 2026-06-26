@@ -2374,6 +2374,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     no_github = getattr(args, "no_github", False)
+    if no_github:
+        os.environ["FACTORY_NO_GITHUB"] = "1"
     refine_request = getattr(args, "refine", None)
 
     if refine_request:
@@ -3670,6 +3672,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
     no_github = getattr(args, "no_github", False)
+    if no_github:
+        os.environ["FACTORY_NO_GITHUB"] = "1"
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
