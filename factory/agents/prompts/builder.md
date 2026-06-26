@@ -107,7 +107,7 @@ When `fixed_surfaces` are declared:
 - Do NOT read `fixed_surfaces` files and use their content to inform your implementation. This is ground truth leakage.
 - Before committing, verify **no `fixed_surfaces` files** appear in `git diff --name-only`.
 
-## Repo Spec (if available)
+## GRAPH-SPEC (if available)
 
 If `.factory/GRAPH-SPEC.md` exists, read it before implementing.
 - Check which modules depend on files you're changing
