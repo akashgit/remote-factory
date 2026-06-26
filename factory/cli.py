@@ -3146,16 +3146,12 @@ def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: st
 
     Uses 'factory ceo' (not 'factory run') so the session inside tmux
     is interactive — the user can attach and interact with the CEO directly.
+    --loop/--interval/--max-cycles are factory-run-only flags and are
+    NOT forwarded to factory ceo.
     """
     parts = [f"factory ceo {project_path}"]
     if args.mode:
         parts.append(f"--mode {args.mode}")
-    if args.loop:
-        parts.append("--loop")
-    if args.interval:
-        parts.append(f"--interval {args.interval}")
-    if args.max_cycles is not None:
-        parts.append(f"--max-cycles {args.max_cycles}")
     if model:
         parts.append(f"--model {shlex.quote(model)}")
     if getattr(args, "no_github", False):
