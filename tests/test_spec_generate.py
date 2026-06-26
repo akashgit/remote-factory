@@ -6,7 +6,7 @@ from pathlib import Path
 
 from factory.spec.generate import (
     APPROX_CHARS_PER_TOKEN,
-    HAIKU_BATCH_TOKEN_LIMIT,
+    BATCH_TOKEN_LIMIT,
     collect_source_files,
     group_into_batches,
 )
@@ -107,7 +107,7 @@ class TestGroupIntoBatches:
         assert len(batches[0]) == 5
 
     def test_multiple_batches_large_files(self, tmp_path: Path) -> None:
-        char_limit = HAIKU_BATCH_TOKEN_LIMIT * APPROX_CHARS_PER_TOKEN
+        char_limit = BATCH_TOKEN_LIMIT * APPROX_CHARS_PER_TOKEN
         content = "x" * (char_limit // 2 + 1)
         for i in range(3):
             (tmp_path / f"big{i}.py").write_text(content)
@@ -167,12 +167,12 @@ class TestSpecGenerateWorkflow:
         }
         assert expected == set(wf.nodes.keys())
 
-    def test_extract_is_haiku(self) -> None:
+    def test_extract_is_opus(self) -> None:
         wf = spec_generate_workflow()
         extract = wf.nodes["extract"]
         assert isinstance(extract, AgentNode)
         assert extract.role == AgentRole.RESEARCHER
-        assert extract.model == "haiku"
+        assert extract.model == "opus"
 
     def test_annotate_is_researcher(self) -> None:
         wf = spec_generate_workflow()

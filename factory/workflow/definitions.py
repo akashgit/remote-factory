@@ -1676,11 +1676,11 @@ def spec_generate_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # Haiku extraction — produces spec_raw.md
+    # Opus extraction — produces spec_raw.md
     nodes["extract"] = AgentNode(
         id="extract",
         role=AgentRole.RESEARCHER,
-        model="haiku",
+        model="opus",
         prompt_template=(
             "Extract a structural module map from the project. "
             "Read the spec_extractor prompt at factory/agents/prompts/spec_extractor.md. "
@@ -1796,11 +1796,11 @@ def spec_update_workflow() -> Workflow:
         writes={".factory/spec_update_scope.md"},
     )
 
-    # Haiku patcher — incrementally update GRAPH-SPEC.md
+    # Opus patcher — incrementally update GRAPH-SPEC.md
     nodes["patch"] = AgentNode(
         id="patch",
         role=AgentRole.RESEARCHER,
-        model="haiku",
+        model="opus",
         prompt_template=(
             "Patch the repo spec based on scoped changes. "
             "Read the spec_patcher prompt at factory/agents/prompts/spec_patcher.md. "
