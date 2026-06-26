@@ -12,7 +12,7 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - [ ] Modifies ONLY files within the declared scope (issue scope OR `factory.md` mutable surfaces)
 - [ ] Validates scope before each file write (scope + file-size gate <500 lines)
 - [ ] Runs tests/lint/type-checks before committing (`pytest`/`npm test`/`ruff`/`mypy` visible in trace)
-- [ ] Opens exactly one draft PR per invocation (`gh pr create` in trace)
+- [ ] Opens exactly one PR per invocation (`gh pr create` in trace)
 - [ ] PR body contains `Closes #<ISSUE_NUM>` and a `## Changes` summary
 - [ ] PR targets the correct base branch (`--base $TARGET_BRANCH`)
 - [ ] Commits are atomic — `git add` names specific files, not `.` or `-A`
