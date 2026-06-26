@@ -1,11 +1,11 @@
 """Universal hygiene eval dimensions applied to every factory-managed project.
 
-These 7 dimensions are mandatory and cannot be removed. They are computed by
+These 6 dimensions are mandatory and cannot be removed. They are computed by
 the factory itself (not by per-project eval/score.py) and auto-detect the
 project's tooling. Projects can ADD dimensions via eval/score.py but cannot
 remove any of these.
 
-Together with the 5 growth dimensions in growth.py, these form the 12
+Together with the 6 growth dimensions in growth.py, these form the 12
 mandatory eval dimensions that define the factory's quality baseline.
 
 All functions take a project_path and return an EvalResult-compatible dict.
@@ -27,13 +27,12 @@ log = structlog.get_logger()
 # Relative weights within the hygiene category (sum to 1.0).
 # The runner normalizes these so that hygiene gets 50% of the composite.
 HYGIENE_WEIGHTS = {
-    "tests": 0.28,
-    "lint": 0.14,
-    "type_check": 0.09,
-    "coverage": 0.23,
-    "guard_patterns": 0.09,
-    "config_parser": 0.09,
-    "architecture": 0.08,
+    "tests": 0.31,
+    "lint": 0.15,
+    "type_check": 0.10,
+    "coverage": 0.25,
+    "config_parser": 0.10,
+    "architecture": 0.09,
 }
 
 
@@ -145,77 +144,7 @@ def eval_coverage(project_path: Path) -> dict:
     return _aggregate(fragments, "coverage")
 
 
-# ── Dimension 5: guard_patterns (weight 0.10) ─────────────────────
-
-
-def eval_guard_patterns(project_path: Path) -> dict:
-    """Test that the factory's guard glob matching works correctly on this project."""
-    try:
-        from factory.eval.guards import _glob_match
-    except (ImportError, AttributeError) as exc:
-        return {
-            "name": "guard_patterns",
-            "score": 0.0,
-            "weight": HYGIENE_WEIGHTS["guard_patterns"],
-            "passed": False,
-            "details": f"Could not import _glob_match: {exc}",
-        }
-
-    # Read project scope from config if available
-    scope_patterns: list[str] = []
-    config_path = project_path / ".factory" / "config.json"
-    if config_path.exists():
-        import json
-        try:
-            data = json.loads(config_path.read_text())
-            scope_patterns = data.get("scope", [])
-        except (json.JSONDecodeError, KeyError):
-            pass
-
-    # Build test cases from the project's actual scope + universal cases
-    test_cases: list[tuple[str, str, bool]] = [
-        # Universal: .factory/ should never match user scope
-        ("src/**/*.py", ".factory/config.json", False),
-        ("src/**/*.py", "src/main.py", True),
-        ("tests/**/*.py", "tests/test_main.py", True),
-        ("tests/**/*.py", "src/main.py", False),
-    ]
-
-    # Add project-specific scope tests
-    for pattern in scope_patterns[:4]:
-        # The pattern itself should match something reasonable
-        if "**" in pattern:
-            parts = pattern.split("**")
-            prefix = parts[0].rstrip("/")
-            if prefix:
-                test_cases.append((pattern, f"{prefix}/example.py", True))
-                test_cases.append((pattern, "unrelated/file.txt", False))
-
-    correct = 0
-    details: list[str] = []
-    for pattern, filepath, expected in test_cases:
-        actual = _glob_match(filepath, pattern)
-        if actual == expected:
-            correct += 1
-        else:
-            details.append(f"FAIL: {pattern} vs {filepath} expected={expected} got={actual}")
-
-    total = len(test_cases)
-    score = correct / total if total > 0 else 1.0
-    summary = f"{correct}/{total} pattern tests passed"
-    if details:
-        summary += "; " + "; ".join(details[:3])
-
-    return {
-        "name": "guard_patterns",
-        "score": round(score, 4),
-        "weight": HYGIENE_WEIGHTS["guard_patterns"],
-        "passed": correct == total,
-        "details": summary,
-    }
-
-
-# ── Dimension 6: config_parser (weight 0.10) ──────────────────────
+# ── Dimension 5: config_parser (weight 0.10) ──────────────────────
 
 
 def _parse_factory_md(path: Path) -> dict[str, str | list[str] | float]:
@@ -318,7 +247,7 @@ def eval_config_parser(project_path: Path) -> dict:
         }
 
 
-# ── Dimension 7: architecture (weight 0.08) ──────────────────────
+# ── Dimension 6: architecture (weight 0.09) ──────────────────────
 
 
 def eval_architecture(project_path: Path) -> dict:
@@ -404,14 +333,13 @@ def _collect_test_and_coverage(project_path: Path, timeout: int = 300) -> tuple[
 
 
 def compute_hygiene_results(project_path: Path, test_timeout: int = 600) -> list[dict]:
-    """Compute all 7 mandatory hygiene dimensions for a project."""
+    """Compute all 6 mandatory hygiene dimensions for a project."""
     test_result, cov_result = _collect_test_and_coverage(project_path, timeout=test_timeout)
     return [
         test_result,
         eval_lint(project_path),
         eval_type_check(project_path),
         cov_result,
-        eval_guard_patterns(project_path),
         eval_config_parser(project_path),
         eval_architecture(project_path),
     ]

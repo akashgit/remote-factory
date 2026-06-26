@@ -14,7 +14,6 @@ Auto-detected from project tooling. These measure basic code quality:
 | `lint` | No lint errors | Runs detected linter (ruff, eslint, etc.) |
 | `type_check` | Type checking passes | Runs mypy, pyright, tsc, etc. |
 | `coverage` | Test coverage level | Parses coverage reports |
-| `guard_patterns` | Guard rules respected | Checks scope, immutability rules |
 | `config_parser` | `factory.md` is valid | Validates configuration |
 
 Implementation: `factory/eval/hygiene.py`

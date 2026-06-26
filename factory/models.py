@@ -170,7 +170,6 @@ class TierWeights(BaseModel):
     lint: float | None = None
     type_check: float | None = None
     coverage: float | None = None
-    guard_patterns: float | None = None
     config_parser: float | None = None
     capability_surface: float | None = None
     experiment_diversity: float | None = None

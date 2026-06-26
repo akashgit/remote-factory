@@ -166,7 +166,7 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 
 The eval system has up to **three tiers** of dimensions:
 
-**Hygiene dimensions:** tests, lint, type_check, coverage, guard_patterns, config_parser
+**Hygiene dimensions:** tests, lint, type_check, coverage, config_parser, architecture
 **Growth dimensions:** capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness
 **Project eval dimensions (optional):** user-defined in factory.md `## Project Eval` — e.g. benchmark accuracy, latency, win rate
 
@@ -203,7 +203,7 @@ Crash recovery is handled by you directly at Step 0 (Assess Sprint State). You r
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses should target growth.
 
 **How to tell hygiene from growth:**
-- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, guard_patterns, config_parser, bugfixes, cleanup, refactoring, CI fixes, dependency updates
+- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, config_parser, architecture, bugfixes, cleanup, refactoring, CI fixes, dependency updates
 - GROWTH (the ONLY things that count): capability_surface (new features/endpoints/commands), experiment_diversity, observability (structured logging/tracing), research_grounding (evidence-based work), factory_effectiveness
 
 **Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. Before writing `PLAN APPROVED`, verify:

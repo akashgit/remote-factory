@@ -1,7 +1,7 @@
 """EvalRunner — compute mandatory dimensions and merge with project-specific evals.
 
 The factory's eval system has mandatory dimensions that apply to every project:
-  - 6 hygiene dimensions (tests, lint, type_check, coverage, guard_patterns, config_parser)
+  - 6 hygiene dimensions (tests, lint, type_check, coverage, config_parser, architecture)
   - 5 growth dimensions (capability_surface, experiment_diversity, observability,
     research_grounding, factory_effectiveness)
 

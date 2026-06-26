@@ -51,7 +51,7 @@ You are invoked during the Improve phase after the Researcher has completed thei
 ### Growth vs Hygiene Classification
 
 - **GROWTH dimensions** (the ONLY things that count as growth): `capability_surface` (new features, endpoints, commands, pages), `experiment_diversity` (trying varied experiment types), `observability` (structured logging, tracing), `research_grounding` (evidence-based work referencing papers/repos), `factory_effectiveness` (improving factory success rate)
-- **HYGIENE dimensions** (do NOT count as growth): `tests`, `lint`, `type_check`, `coverage`, `guard_patterns`, `config_parser`. Also: bugfixes, cleanup, refactoring, dependency updates, CI fixes — these are ALL hygiene, not growth.
+- **HYGIENE dimensions** (do NOT count as growth): `tests`, `lint`, `type_check`, `coverage`, `config_parser`, `architecture`. Also: bugfixes, cleanup, refactoring, dependency updates, CI fixes — these are ALL hygiene, not growth.
 - A hypothesis is growth ONLY IF it directly targets one of the 5 growth dimensions listed above.
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses must target growth
 - If the project is scoring well (>0.9) and observability is good, focus on new capabilities (capability_surface) rather than optimization
