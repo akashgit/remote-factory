@@ -11,7 +11,7 @@
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 
-**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — re:factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
+**Describe what you want — re:factory builds it, tests it, and keeps improving it.** Design an idea from scratch or point at an existing project for continuous improvement. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
@@ -54,8 +54,6 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | **Improve an existing project** | `uv run factory ceo /path/to/project` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
 | **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
-| **Contribute to an upstream repo** | `uv run factory ceo https://github.com/user/repo --clean-pr` |
-| **Optimize a metric (research)** | `uv run factory ceo "build a harness to solve HMMT Feb 2026 C7" --mode research` |
 
 ---
 
@@ -140,143 +138,18 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 
 ---
 
-## Clean PR Mode
-
-When contributing factory-managed code to an upstream repository, you typically don't want eval scripts, benchmarks, `.factory/` data, or eval test files in the PR. Clean PR Mode strips these non-essential artifacts from the commit before pushing, keeping only the production code.
-
-```bash
-# Enable via CLI flag
-uv run factory ceo https://github.com/user/repo --clean-pr
-
-# Strip artifacts from an existing experiment
-uv run factory clean-pr ~/my-project --exp 3
-```
-
-Configure in `factory.md` for persistent use:
-
-```markdown
-## Clean PR
-- clean_pr: true
-- clean_pr_include: ["src/**", "lib/**"]
-- clean_pr_exclude: ["src/internal/**"]
-```
-
-Default excludes: `eval/score.py`, `benchmarks/**`, `tests/eval_*`, `.factory/**`. Resolution precedence: CLI flag > `config.json` > default (`false`). The welcome wizard auto-suggests `--clean-pr` when the input is a GitHub URL.
-
----
-
-## Auto-Research Mode
-
-Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. re:factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
-
-```bash
-uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
-```
-
-The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
-
-### Inner loop + outer loop
-
-re:factory operates at two levels, like a researcher who both runs experiments and redesigns the experimental apparatus:
-
-**Inner loop (auto-research):** Build a solver, run it, analyze failures, tweak prompts and logic, re-run. This is the [Karpathy-style](https://www.youtube.com/watch?v=hM_h0UA7upI) pattern — a fixed harness iterating toward a target metric.
-
-**Outer loop (meta-harness):** When inner-loop improvements plateau, re:factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
-
-Configure these in `factory.md` to control automatic loop transitions:
-
-```markdown
-## Inner Loop
-- runs_per_cycle: 5
-- aggregate: mean
-- plateau_threshold: 3
-- max_inner_runs_per_cycle: 10
-
-## Outer Loop Surfaces
-- max_outer_cycles: 5
-- inner: prompts/*.md
-- outer: src/**/*.py
-```
-
-re:factory runs the harness N times per cycle, aggregates scores, and when improvements plateau for the configured threshold, automatically expands the scope to outer surfaces. See the [Configuration Reference](docs/configuration.md#inner-loop) for field details.
-
-### Example: HMMT math competition solver
-
-re:factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
-
-**Round 1 — inner loop (prompt-level fixes):**
-
-re:factory created a 5-agent pipeline (Explorer → Theorist → Computationalist → Critic → Synthesizer) with computational tools (LP-based separability checking, brute-force enumeration). The pipeline ran multiple times:
-
-- Runs 1-2: Agents spent all output tokens on thinking, returned 0 chars. re:factory fixed token limits.
-- Runs 3-6: Explorer and Computationalist found 1574, but the Synthesizer "corrected" it to 1572. Classic synthesis failure — the agent added interpretation that degraded a correct upstream answer.
-- re:factory experiment 001: Added a consensus override guard, competition math conventions, and mandatory verification to the Synthesizer prompt. The pipeline started producing 1574, but still hit 1572 in ~50% of runs.
-
-**Round 2 — outer loop (architectural restructuring):**
-
-Prompt-level fixes couldn't make the Synthesizer reliable. re:factory's Strategist recognized the plateau and generated an architectural hypothesis: instead of one pipeline with one prompt, create **12 distinct prompt strategies** and test them as A/B experiments.
-
-re:factory added `agents/strategies.py` (1055 lines), three new agent roles (Auditor, Debater, Judge), and modified the orchestrator to support strategy selection. Then it ran all 12 strategies:
-
-| Strategy | Answer | Result |
-|---|---|---|
-| raw-output-only | 1574 | PASS |
-| geometric-verification | 1574 | PASS |
-| problem-reformulation | 1574 | PASS |
-| counterfactual-contrast | 1574 | PASS |
-| bias-inoculation | 1572 | FAIL |
-| consistency-enforcement | 1572 | FAIL |
-| deferred-interpretation | 1572 | FAIL |
-| adversarial-debate | 1572 | FAIL |
-
-**Key discovery:** Strategies that give the Synthesizer *concrete evidence* (immutable tool output, geometric proof, reframed problem text) override the bias. Softer interventions (warnings, procedural rules, debate) don't. This is a finding about LLM behavior that emerged from re:factory's own experimentation loop — not something a human specified.
-
-### Continuous optimization
-
-Once the project is set up, wrap it in a loop for continuous optimization — each cycle is a full experiment pass:
-
-```bash
-uv run factory ceo ~/my-solver --loop
-uv run factory ceo ~/my-solver --loop --interval 900    # Custom interval
-uv run factory tmux ~/my-solver --loop                  # Detached tmux session
-```
-
-re:factory auto-detects the research target in `factory.md` and enters research mode. Failed experiments don't stop the loop — re:factory learns from them and moves on.
-
-| Project | Metric | What re:factory optimizes |
-|---------|--------|---------------------------|
-| SWE-bench solver | resolve rate | Agent logic, prompts, localization strategies |
-| HMMT math solver | solve rate | Agent prompts, pipeline architecture, strategy selection |
-| Text/Sketch → CAD | query accuracy | Query builder, schema mapping, entity resolution |
-
-See [Getting Started — Research Mode](docs/getting-started.md#research-mode-in-detail) for phase tables, leakage guards, and progression details.
-
----
-
-## Eval System
-
-Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
-
----
-
-## Self-Evolving Agents (ACE)
-
-re:factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `uv run factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
-
----
-
 ## Built with re:factory
 
 | Project | What it does | Mode |
 |---------|-------------|------|
-| **SWE-bench solver** | Autonomous agent that resolves GitHub issues, improved via failure analysis | Research |
-| **HMMT math solver** | Multi-agent team that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
-| **Text/Sketch → CAD** | Natural language and sketches to executable CadQuery Python code for 3D models | Research |
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues, improved via failure analysis | Build + Improve |
+| **HMMT math solver** | Multi-agent team that solved HMMT Feb 2025 Combinatorics Problem 7 | Build + Improve |
+| **Text/Sketch → CAD** | Natural language and sketches to executable CadQuery Python code for 3D models | Build + Improve |
 | **HLS design space explorer** | Per-function AI agents + ILP solver for HLS optimization — 92% execution time reduction | Build |
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
 | **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
 | **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Design + Improve |
-| **re:factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
+| **re:factory itself** | Runs on itself — continuously improved via its own experiment outcomes | Improve |
 
 Built something with re:factory? Open a PR to add it here.
 
@@ -290,37 +163,11 @@ uv run factory ceo <path|url|idea>              # Build or improve
 uv run factory ceo <path> --mode design         # Discuss, then execute
 uv run factory ceo <path> --focus "..."         # One target, one experiment
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
-uv run factory ceo <path> --loop                # Continuous loop (research projects)
+uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
-
-# Agents & analysis
-uv run factory agent <role> --task "..." --project <path>
-uv run factory eval <path>                      # Run evals
-uv run factory precheck <path>                  # Hard precheck gate
-uv run factory study <path>                     # Analyze code
-uv run factory diff <path> --exp1 N --exp2 M    # Compare experiments
-uv run factory history <path>                   # Experiment history
-
-# Backlog
-uv run factory backlog-list <path>
-uv run factory backlog-add <path> "..."
-uv run factory backlog-remove <path> "..."
-
-# Token usage & cost
-uv run factory usage <path>                     # Per-agent token breakdown
-uv run factory usage <path> --json              # Machine-readable output
-
-# Operations
-uv run factory dashboard                        # Live web dashboard on :8420
-uv run factory discover <path>                  # Auto-detect eval profile
-uv run factory config show                      # Show resolved config
-uv run factory refine-status <path>              # Refinement state + regrounding
-uv run factory clean-pr <path> --exp N          # Strip artifacts from experiment PR
-uv run factory tmux-ls                          # List active tmux sessions
-uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```
 
-See `uv run factory --help` for the complete list. re:factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
+See `uv run factory --help` for the complete list.
 
 ---
 
@@ -350,56 +197,6 @@ BOBSHELL_API_KEY = "..."
 ```
 
 Run `uv run factory config show` to see resolved config, or `uv run factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
-
----
-
-## LLM Tracing (LangFuse)
-
-LangFuse provides LLM observability and tracing — track agent invocations, token usage, and execution flow across all factory runs.
-
-### Quick Start
-
-```bash
-# Start LangFuse services
-scripts/langfuse-setup start
-
-# Set the env vars the factory needs
-export LANGFUSE_HOST=http://localhost:3000
-export LANGFUSE_BASE_URL=http://localhost:3000
-export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
-export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
-export TELEMETRY_PLATFORM=langfuse
-```
-
-The dev credentials above match the docker-compose setup. Add them to your `~/.bashrc` or `~/.zshrc` to persist across sessions.
-
-### Viewing Traces
-
-1. Start LangFuse: `scripts/langfuse-setup start`
-2. Run the factory: `uv run factory ceo /path/to/project`
-3. Open `http://localhost:3000` in your browser
-4. Login: `dev@localhost.local` / `devpassword123`
-
-### CLI Commands
-
-```bash
-scripts/langfuse-setup start    # Start LangFuse services
-scripts/langfuse-setup stop     # Stop services
-scripts/langfuse-setup status   # Show status and credentials
-```
-
-### Requirements
-
-- **Docker** or **Podman** — any of `docker compose`, `docker-compose`, or `podman-compose` works
-
-### Disabling Tracing
-
-To disable tracing without stopping LangFuse:
-```bash
-export LANGFUSE_TRACING_ENABLED=false
-```
-
-For LLM connection setup, trace structure details, and troubleshooting, see [`infra/langfuse/README.md`](infra/langfuse/README.md).
 
 ---
 
