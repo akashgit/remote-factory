@@ -517,7 +517,7 @@ Stuck detection: if 3+ consecutive experiments in the same category are reverted
 
 ---
 
-## Repo Spec (if available)
+## GRAPH-SPEC (if available)
 
 If `.factory/GRAPH-SPEC.md` exists, use it for experiment design and triage.
 - Before approving a hypothesis, check: is this a safe leaf change or a hub change needing careful sequencing?

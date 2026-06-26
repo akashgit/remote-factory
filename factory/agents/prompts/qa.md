@@ -346,7 +346,7 @@ After all three sections complete, emit the final verdict:
 - **ISSUES_FOUND: N** — Issues found but none fatal. N = total count across all sections.
 - **REVERT** — Score regression below threshold, critical code review issues, fixed surface violation, or adversarial verdict is FAIL on critical feature
 
-## Repo Spec (if available)
+## GRAPH-SPEC (if available)
 
 If `.factory/GRAPH-SPEC.md` exists, read it for targeted verification.
 - Use change impact predictions to scope your review — verify all predicted consumers, not just directly modified files
