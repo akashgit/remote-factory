@@ -241,7 +241,7 @@ async def update_spec(project_path: Path) -> Path:
         project_path,
         timeout=300.0,
         dangerously_skip_permissions=True,
-        model="haiku",
+        model="opus",
     )
     if code != 0:
         raise RuntimeError(f"Spec patch failed (exit {code}): {result[:500]}")
