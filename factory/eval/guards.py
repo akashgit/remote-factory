@@ -2,6 +2,7 @@
 
 import fnmatch
 import subprocess
+from datetime import datetime
 from pathlib import Path, PurePath
 
 
@@ -171,6 +172,80 @@ def check_fixed_surfaces(
     return None
 
 
+_TEST_FILE_PATTERNS = ("test_", "_test.", "/tests/")
+
+
+def _is_test_file(filepath: str) -> bool:
+    """Check if a filepath looks like a test file."""
+    basename = filepath.split("/")[-1]
+    return (
+        basename.startswith("test_")
+        or "_test." in basename
+        or "/tests/" in ("/" + filepath)
+    )
+
+
+def check_test_deletion(project_path: Path, baseline_sha: str) -> str | None:
+    """Guard: test files must not be deleted.
+
+    Runs ``git diff --name-status`` between baseline and HEAD, filters for
+    deleted (D) entries that match test file patterns. Returns a violation
+    string listing deleted test files, or None if clean.
+    """
+    try:
+        diff_output = _run_git(
+            ["diff", "--name-status", f"{baseline_sha}..HEAD"], project_path,
+        )
+    except subprocess.CalledProcessError:
+        return "Cannot determine deleted files (git diff failed)"
+
+    if not diff_output.strip():
+        return None
+
+    deleted_tests: list[str] = []
+    for line in diff_output.strip().splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        status, filepath = parts
+        if status != "D":
+            continue
+        basename = filepath.split("/")[-1]
+        if basename in _AUTO_GENERATED_FILES:
+            continue
+        if _is_test_file(filepath):
+            deleted_tests.append(filepath)
+
+    if deleted_tests:
+        return f"Test files deleted: {', '.join(deleted_tests)}"
+    return None
+
+
+def check_eval_not_skipped(
+    project_path: Path,
+    cycle_started_at: datetime | None = None,
+) -> str | None:
+    """Guard: eval must have been run during the current cycle.
+
+    Checks that ``.factory/last_eval.json`` exists and its modification time
+    is after ``cycle_started_at``. If ``cycle_started_at`` is None, only
+    checks existence.
+    """
+    last_eval = project_path / ".factory" / "last_eval.json"
+    if not last_eval.is_file():
+        return "Eval was skipped: .factory/last_eval.json does not exist"
+
+    if cycle_started_at is not None:
+        mtime = datetime.fromtimestamp(last_eval.stat().st_mtime)
+        if mtime < cycle_started_at:
+            return (
+                f"Eval was skipped: .factory/last_eval.json is stale "
+                f"(modified {mtime.isoformat()}, cycle started {cycle_started_at.isoformat()})"
+            )
+
+    return None
+
+
 def snapshot_eval_tree(project_path: Path) -> str:
     """Take a snapshot of eval/ tree for later comparison."""
     try:
@@ -185,6 +260,7 @@ def check_all(
     eval_tree_before: str | None = None,
     allowed_scope: list[str] | None = None,
     fixed_surfaces: list[str] | None = None,
+    cycle_started_at: datetime | None = None,
 ) -> list[str]:
     """Run all guards, return list of violation strings (empty = pass)."""
     violations: list[str] = []
@@ -209,6 +285,15 @@ def check_all(
 
     if fixed_surfaces:
         v = check_fixed_surfaces(project_path, baseline_sha, fixed_surfaces)
+        if v:
+            violations.append(v)
+
+    v = check_test_deletion(project_path, baseline_sha)
+    if v:
+        violations.append(v)
+
+    if cycle_started_at is not None:
+        v = check_eval_not_skipped(project_path, cycle_started_at)
         if v:
             violations.append(v)
 

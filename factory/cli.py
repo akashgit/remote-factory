@@ -855,8 +855,20 @@ def cmd_guard(args: argparse.Namespace) -> int:
         if args.check_surfaces:
             fixed_surfaces = config.fixed_surfaces
 
+    cycle_started_at = None
+    cycle_path = project_path / ".factory" / "state" / "cycle.json"
+    if cycle_path.is_file():
+        try:
+            cycle_data = json.loads(cycle_path.read_text())
+            started_at_str = cycle_data.get("started_at")
+            if started_at_str:
+                cycle_started_at = datetime.fromisoformat(started_at_str)
+        except (json.JSONDecodeError, OSError, ValueError):
+            pass
+
     violations = check_all(
         project_path, args.baseline, allowed_scope=scope, fixed_surfaces=fixed_surfaces,
+        cycle_started_at=cycle_started_at,
     )
     _emit_cli_event(project_path, "guard.completed", {
         "violations": len(violations),

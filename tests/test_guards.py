@@ -1,6 +1,8 @@
 """Tests for factory.eval.guards — safety checks."""
 
+import json
 import subprocess
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -8,10 +10,12 @@ import pytest
 from factory.eval.guards import (
     _glob_match,
     check_eval_immutable,
+    check_eval_not_skipped,
     check_experiment_branch,
     check_fixed_surfaces,
     check_git_clean,
     check_scope,
+    check_test_deletion,
     snapshot_eval_tree,
     check_all,
 )
@@ -225,3 +229,80 @@ class TestCheckAll:
             fixed_surfaces=["truth.json"],
         )
         assert any("Fixed surface" in v for v in violations)
+
+
+class TestCheckTestDeletion:
+    def test_detects_deleted_test_file(self, git_project):
+        (git_project / "tests").mkdir()
+        (git_project / "tests" / "test_foo.py").write_text("def test_x(): pass\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add test"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "tests" / "test_foo.py").unlink()
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "delete test"], git_project)
+        result = check_test_deletion(git_project, baseline)
+        assert result is not None
+        assert "test_foo.py" in result
+
+    def test_ignores_non_test_files(self, git_project):
+        (git_project / "src" / "utils.py").write_text("x = 1\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add utils"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "src" / "utils.py").unlink()
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "delete utils"], git_project)
+        result = check_test_deletion(git_project, baseline)
+        assert result is None
+
+    def test_detects_test_in_nested_dir(self, git_project):
+        (git_project / "tests").mkdir()
+        (git_project / "tests" / "unit").mkdir()
+        (git_project / "tests" / "unit" / "test_bar.py").write_text("def test_y(): pass\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add nested test"], git_project)
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "tests" / "unit" / "test_bar.py").unlink()
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "delete nested test"], git_project)
+        result = check_test_deletion(git_project, baseline)
+        assert result is not None
+        assert "test_bar.py" in result
+
+    def test_clean_when_no_deletions(self, git_project):
+        baseline = _git(["rev-parse", "HEAD"], git_project).stdout.strip()
+        (git_project / "src" / "new.py").write_text("new\n")
+        _git(["add", "."], git_project)
+        _git(["commit", "-m", "add file"], git_project)
+        result = check_test_deletion(git_project, baseline)
+        assert result is None
+
+
+class TestCheckEvalNotSkipped:
+    def test_passes_when_recent(self, git_project):
+        factory_dir = git_project / ".factory"
+        factory_dir.mkdir()
+        last_eval = factory_dir / "last_eval.json"
+        last_eval.write_text(json.dumps({"total": 0.8}))
+        cycle_started_at = datetime.now() - timedelta(minutes=5)
+        result = check_eval_not_skipped(git_project, cycle_started_at)
+        assert result is None
+
+    def test_fails_when_missing(self, git_project):
+        result = check_eval_not_skipped(git_project)
+        assert result is not None
+        assert "does not exist" in result
+
+    def test_fails_when_stale(self, git_project):
+        factory_dir = git_project / ".factory"
+        factory_dir.mkdir()
+        last_eval = factory_dir / "last_eval.json"
+        last_eval.write_text(json.dumps({"total": 0.8}))
+        import os
+        stale_time = (datetime.now() - timedelta(hours=2)).timestamp()
+        os.utime(last_eval, (stale_time, stale_time))
+        cycle_started_at = datetime.now() - timedelta(minutes=5)
+        result = check_eval_not_skipped(git_project, cycle_started_at)
+        assert result is not None
+        assert "stale" in result
