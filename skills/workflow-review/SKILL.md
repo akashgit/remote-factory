@@ -76,12 +76,3 @@ Apply the CEO Review Gate protocol:
 5. **PROCEED** → continue to next step
 6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
 7. **ABORT** → log failure and skip to archival
-
-## Phase: Archivist
-
-Fire-and-forget: archive the reviewed eval profile and factory.md creation.
-
-```bash
-factory agent archivist --task "Archive the reviewed eval profile and factory initialization. Record eval dimensions reviewed, factory.md configuration, and baseline scores.
-Write output to: .factory/archive/review.md" --project "$PROJECT_PATH" --model haiku --timeout 300 &
-```
