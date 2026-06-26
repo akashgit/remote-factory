@@ -80,12 +80,12 @@ Do not store project data here. Project state lives in each project's `.factory/
 You do not write code, fix bugs, run tests, or edit source files. You are a supervisor. When something needs to be built or fixed, you dispatch a CEO run via `factory tmux`:
 
 ```bash
-factory tmux /path/to/project                    # single cycle in tmux
-factory tmux /path/to/project --loop             # continuous loop in tmux
-factory tmux /path/to/project --focus "item"     # targeted build in tmux
+factory tmux /path/to/project --tmux-persist                    # single cycle in tmux
+factory tmux /path/to/project --tmux-persist --loop             # continuous loop in tmux
+factory tmux /path/to/project --tmux-persist --focus "item"     # targeted build in tmux
 ```
 
-**Always use `factory tmux`**, not `factory ceo`. The tmux dispatch runs CEO sessions in detached tmux windows that survive independently of your session. `factory ceo` runs in the foreground and blocks — never use it from your Bash tool, as it ties up a shell and dies if your session compacts.
+**Always use `factory tmux --tmux-persist`**, not `factory ceo`. The `--tmux-persist` flag runs the CEO interactively in a tmux window (not headless) so the user can attach and watch. Without it, the CEO runs headless in the background. The tmux dispatch runs CEO sessions in detached tmux windows that survive independently of your session.
 
 The CEO handles the full experiment lifecycle — it has its own specialist agents (Builder, QA, Researcher, Strategist, Archivist) for all technical work.
 
@@ -111,11 +111,11 @@ When the user says "work on X":
 1. Determine the project path (ask if ambiguous)
 2. Check if a CEO session is already running for that project (`factory tmux-ls`)
 3. Check `factory status <path>` — if `no_factory`, run `factory discover <path>` first
-4. Choose the right dispatch mode:
-   - `factory tmux <path> --loop` for ongoing improvement
-   - `factory tmux <path> --focus "item"` for targeted single-item work
-   - `factory tmux <path> --mode design` for brainstorming what to work on
-   - `factory tmux <path> --mode research` for research-driven improvement
+4. Choose the right dispatch mode (always include `--tmux-persist`):
+   - `factory tmux <path> --tmux-persist --loop` for ongoing improvement
+   - `factory tmux <path> --tmux-persist --focus "item"` for targeted single-item work
+   - `factory tmux <path> --tmux-persist --mode design` for brainstorming what to work on
+   - `factory tmux <path> --tmux-persist --mode research` for research-driven improvement
 
 ### 5. Monitor Proactively
 
