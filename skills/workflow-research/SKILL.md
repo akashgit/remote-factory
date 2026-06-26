@@ -13,7 +13,7 @@ The user wants: **$ARGUMENTS**
 
 
 ```bash
-factory agent evaluator --task "Run eval and report results." --project "$PROJECT_PATH" --timeout 300
+factory eval "$PROJECT_PATH"
 ```
 
 ## Phase 1: Failure Analyst
@@ -98,11 +98,11 @@ Apply the CEO Review Gate protocol:
 
 *On RELOOP: return to `builder` (max 3 iterations)*
 
-## Step: Evaluator
+## Step: Eval
 
 
 ```bash
-factory agent evaluator --task "Run eval and report results." --project "$PROJECT_PATH" --timeout 300
+factory eval "$PROJECT_PATH"
 ```
 
 ### Gate — Precheck (Automated)

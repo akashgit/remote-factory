@@ -64,7 +64,7 @@ Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" -
 
 
 ```bash
-factory agent reviewer --task "Verify the refinement. Run all 3 verification sections: 1. Health Check — run factory eval. Report composite score and delta. 2. Code Review — read PR diff, evaluate 7-category checklist. Run factory guard with --check-scope. 3. Adversarial QA — run/test the project, verify the refinement works.
+factory agent qa --task "Verify the refinement. Run all 3 verification sections: 1. Health Check — run factory eval. Report composite score and delta. 2. Code Review — read PR diff, evaluate 7-category checklist. Run factory guard with --check-scope. 3. Adversarial QA — run/test the project, verify the refinement works.
 Read: .factory/reviews/builder-latest.md
 Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```

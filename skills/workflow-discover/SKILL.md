@@ -35,3 +35,12 @@ Apply the CEO Review Gate protocol:
 ```bash
 factory detect $PROJECT_PATH
 ```
+
+## Phase: Archivist
+
+Fire-and-forget: archive the discovered eval dimensions.
+
+```bash
+factory agent archivist --task "Archive the discovered eval dimensions and generated eval harness. Read .factory/eval_profile.json and eval/score.py. Record what dimensions were discovered and why.
+Write output to: .factory/archive/discover.md" --project "$PROJECT_PATH" --model haiku --timeout 300 &
+```
