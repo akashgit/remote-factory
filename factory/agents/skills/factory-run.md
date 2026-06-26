@@ -2,35 +2,35 @@
 
 Use this skill to launch, monitor, and manage factory CEO runs.
 
-**Always use `factory tmux --tmux-persist`** for all dispatch. This runs the CEO interactively in a tmux window (not headless) so you or the user can attach and watch.
+**Always use `factory ceo <path> --tmux-persist`** for dispatch. This launches the CEO interactively in its own tmux session (not headless) so the user can attach and watch. Do NOT use `factory tmux --tmux-persist` — that creates double-nested tmux sessions.
 
 ## Dispatch Modes
 
-**Long-running improvement (preferred for multi-project):**
+**Single cycle (default):**
 ```bash
-factory tmux <project_path> --tmux-persist --loop
-factory tmux <project_path> --tmux-persist --loop --interval 1800  # custom interval (seconds)
+factory ceo <project_path> --tmux-persist
 ```
-Runs in a detached tmux session. Sessions persist and you can check back later.
+Launches in a detached tmux session. The user can attach to interact.
 
-**Single cycle:**
+**Long-running improvement loop:**
 ```bash
-factory tmux <project_path> --tmux-persist
+factory ceo <project_path> --tmux-persist --loop
+factory ceo <project_path> --tmux-persist --loop --interval 1800  # custom interval (seconds)
 ```
 
 **Targeted single-item build:**
 ```bash
-factory tmux <project_path> --tmux-persist --focus "<backlog item or issue>"
-factory tmux <project_path> --tmux-persist --focus 42          # GitHub issue number
-factory tmux <project_path> --tmux-persist --focus "owner/repo#42"
+factory ceo <project_path> --tmux-persist --focus "<backlog item or issue>"
+factory ceo <project_path> --tmux-persist --focus 42          # GitHub issue number
+factory ceo <project_path> --tmux-persist --focus "owner/repo#42"
 ```
 
 **Mode selection:**
 ```bash
-factory tmux <project_path> --tmux-persist --mode improve   # default — score-driven improvement
-factory tmux <project_path> --tmux-persist --mode design    # brainstorm what to work on first
-factory tmux <project_path> --tmux-persist --mode research  # research-driven improvement
-factory tmux <project_path> --tmux-persist --mode meta      # improve the factory itself + ACE evolution
+factory ceo <project_path> --tmux-persist --mode improve   # default — score-driven improvement
+factory ceo <project_path> --tmux-persist --mode design    # brainstorm what to work on first
+factory ceo <project_path> --tmux-persist --mode research  # research-driven improvement
+factory ceo <project_path> --tmux-persist --mode meta      # improve the factory itself + ACE evolution
 ```
 
 ## Monitor Running Sessions
@@ -58,9 +58,9 @@ factory tmux-stop --path <project_path>
 
 | Scenario | Command |
 |---|---|
-| Managing 2+ projects simultaneously | `factory tmux <path> --tmux-persist --loop` for each |
-| User asks "work on this project" | `factory tmux <path> --tmux-persist` |
-| User asks to build one specific thing | `factory tmux <path> --tmux-persist --focus "<item>"` |
-| User wants to discuss what to work on | `factory tmux <path> --tmux-persist --mode design` |
+| Managing 2+ projects simultaneously | `factory ceo <path> --tmux-persist --loop` for each |
+| User asks "work on this project" | `factory ceo <path> --tmux-persist` |
+| User asks to build one specific thing | `factory ceo <path> --tmux-persist --focus "<item>"` |
+| User wants to discuss what to work on | `factory ceo <path> --tmux-persist --mode design` |
 
 Always check `factory tmux-ls` before dispatching to avoid launching duplicate sessions for the same project.
