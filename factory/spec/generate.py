@@ -1,4 +1,4 @@
-"""Spec generation orchestration — collect source files, batch for Haiku, run pipeline."""
+"""Spec generation orchestration — collect source files, batch for Opus, run pipeline."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ SOURCE_EXTENSIONS = frozenset(
     }
 )
 
-HAIKU_BATCH_TOKEN_LIMIT = 80_000
+BATCH_TOKEN_LIMIT = 160_000
 APPROX_CHARS_PER_TOKEN = 4
 
 
@@ -114,7 +114,7 @@ def collect_source_files(project_path: Path) -> list[Path]:
 def group_into_batches(
     files: list[Path],
     project_path: Path,
-    token_limit: int = HAIKU_BATCH_TOKEN_LIMIT,
+    token_limit: int = BATCH_TOKEN_LIMIT,
 ) -> list[list[Path]]:
     """Group source files into batches that fit within a token limit.
 
@@ -158,7 +158,7 @@ async def generate_spec(project_path: Path) -> Path:
 
     Runs the extraction → annotation pipeline:
     1. Collect source files and batch them
-    2. Run Haiku extraction agent to produce spec_raw.md
+    2. Run Opus extraction agent to produce spec_raw.md
     3. Run Researcher annotation agent to produce GRAPH-SPEC.md
 
     Returns the path to the generated GRAPH-SPEC.md.
@@ -196,7 +196,7 @@ async def generate_spec(project_path: Path) -> Path:
         project_path,
         timeout=600.0,
         dangerously_skip_permissions=True,
-        model="haiku",
+        model="opus",
     )
     if code != 0:
         raise RuntimeError(f"Spec extraction failed (exit {code}): {result[:500]}")

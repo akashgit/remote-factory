@@ -323,12 +323,12 @@ class TestSpecUpdateWorkflow:
         assert isinstance(node, FnNode)
         assert "factory spec scope" in node.command
 
-    def test_patch_is_haiku_agent(self) -> None:
+    def test_patch_is_opus_agent(self) -> None:
         wf = spec_update_workflow()
         node = wf.nodes["patch"]
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.RESEARCHER
-        assert node.model == "haiku"
+        assert node.model == "opus"
 
     def test_gates_are_ceo(self) -> None:
         wf = spec_update_workflow()
