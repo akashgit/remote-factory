@@ -61,14 +61,20 @@ BATCH_TOKEN_LIMIT = 160_000
 APPROX_CHARS_PER_TOKEN = 4
 
 
-def _is_gitignored(path: Path, project_path: Path) -> bool:
-    """Check if a path is gitignored using git check-ignore."""
+def _get_gitignored(paths: list[Path], project_path: Path) -> set[Path]:
+    """Return the subset of paths that are gitignored, using a single subprocess."""
+    if not paths:
+        return set()
     result = subprocess.run(
-        ["git", "check-ignore", "-q", str(path)],
+        ["git", "check-ignore", "--stdin"],
+        input="\n".join(str(p) for p in paths),
         cwd=project_path,
         capture_output=True,
+        text=True,
     )
-    return result.returncode == 0
+    if result.returncode not in (0, 1):
+        return set()
+    return {Path(line) for line in result.stdout.splitlines() if line}
 
 
 def _is_excluded_dir(part: str) -> bool:
@@ -88,7 +94,7 @@ def collect_source_files(project_path: Path) -> list[Path]:
     Returns paths relative to project_path, sorted for deterministic output.
     """
     has_git = (project_path / ".git").is_dir()
-    source_files: list[Path] = []
+    candidates: list[Path] = []
 
     for path in sorted(project_path.rglob("*")):
         if not path.is_file():
@@ -102,13 +108,14 @@ def collect_source_files(project_path: Path) -> list[Path]:
         if path.suffix not in SOURCE_EXTENSIONS:
             continue
 
-        if has_git and _is_gitignored(path, project_path):
-            continue
+        candidates.append(rel)
 
-        source_files.append(rel)
+    if has_git and candidates:
+        ignored = _get_gitignored([project_path / c for c in candidates], project_path)
+        candidates = [c for c in candidates if (project_path / c) not in ignored]
 
-    log.info("spec.collect_source_files", count=len(source_files), project=str(project_path))
-    return source_files
+    log.info("spec.collect_source_files", count=len(candidates), project=str(project_path))
+    return candidates
 
 
 def group_into_batches(
