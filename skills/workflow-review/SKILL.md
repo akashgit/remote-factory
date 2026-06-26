@@ -56,9 +56,7 @@ factory init $PROJECT_PATH
 
 
 ```bash
-factory agent qa --task "Run eval: factory eval $PROJECT_PATH. Capture composite score and per-dimension breakdown. Report delta from baseline.
-Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
+factory eval "$PROJECT_PATH"
 ```
 
 ## Step: Commit

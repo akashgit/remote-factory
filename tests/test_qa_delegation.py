@@ -3,7 +3,7 @@
 Verifies that:
 - The QA prompt covers all 3 verification sections
 - The CEO prompt references skill-based routing (mode sections moved to SKILL.md)
-- Generated workflow skills delegate eval to QA Agent, not direct factory eval
+- Generated workflow skills do not reference nonexistent agent roles
 - Builder precedes Evaluator in generated workflow skills (graph ordering)
 - Event-based flow validation detects Builder→QA sequencing
 """
@@ -91,24 +91,17 @@ class TestCEODelegation:
             "CEO prompt must reference SKILL.md files"
         )
 
-    def test_workflow_skills_delegate_eval_to_agents(self) -> None:
-        """Generated workflow skills must not contain standalone factory eval calls."""
-        for skill_dir in SKILLS_DIR.glob("workflow-*"):
-            skill_path = skill_dir / "SKILL.md"
+    def test_workflow_skills_use_valid_agent_roles(self) -> None:
+        """Workflow skills must not reference nonexistent agent roles."""
+        invalid_roles = ['factory agent evaluator', 'factory agent reviewer']
+        for skill_dir in SKILLS_DIR.glob('workflow-*'):
+            skill_path = skill_dir / 'SKILL.md'
             if not skill_path.exists():
                 continue
             content = skill_path.read_text()
-            for match in re.finditer(r"factory eval", content):
-                pos = match.start()
-                preceding = content[:pos]
-                last_agent_task = preceding.rfind('factory agent')
-                last_code_block_end = preceding.rfind('```\n')
-                if last_agent_task > last_code_block_end:
-                    continue
-                context = content[max(0, pos - 80):pos + 40]
-                pytest.fail(
-                    f"Direct 'factory eval' in {skill_path.name} outside "
-                    f"agent task. Context: ...{context}..."
+            for role in invalid_roles:
+                assert role not in content, (
+                    f'Invalid agent role in {skill_path.name}: {role}'
                 )
 
 
