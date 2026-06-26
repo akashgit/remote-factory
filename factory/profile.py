@@ -143,16 +143,6 @@ def collect_evidence(project_paths: list[Path]) -> dict[str, str]:
     }
 
 
-def _build_synthesis_task(evidence: dict[str, str]) -> str:
-    parts = ["Synthesize a user profile from the following evidence.\n"]
-    for section, content in evidence.items():
-        if content.strip():
-            parts.append(f"## {section}\n\n{content}\n")
-        else:
-            parts.append(f"## {section}\n\n(no data)\n")
-    return "\n".join(parts)
-
-
 def save_profile(content: str, source_projects: list[str], runner_name: str) -> Path:
     """Write profile to ~/.factory/profile.md with YAML frontmatter."""
     ts = datetime.now(timezone.utc).isoformat()
@@ -174,36 +164,6 @@ def save_profile(content: str, source_projects: list[str], runner_name: str) -> 
     _PROFILE_PATH.write_text(full_content)
     log.info("profile_saved", path=str(_PROFILE_PATH))
     return _PROFILE_PATH
-
-
-async def synthesize_profile(
-    evidence: dict[str, str],
-    runner_name: str | None = None,
-) -> str:
-    """Invoke the profiler agent via headless runner to synthesize a profile."""
-    from factory.agents.runner import resolve_prompt
-    from factory.runners import get_runner
-
-    prompt = resolve_prompt("profiler")
-    task = _build_synthesis_task(evidence)
-
-    from factory.models import AgentRunRequest
-
-    runner = get_runner(runner_name)
-    run_result = await runner.headless(AgentRunRequest(
-        prompt=prompt,
-        task=task,
-        cwd=Path.cwd(),
-        timeout=120.0,
-        skip_permissions=True,
-        role="profiler",
-    ))
-
-    if run_result.return_code != 0:
-        log.warning("profile_synthesis_failed", code=run_result.return_code)
-        return f"Profile synthesis failed (exit code {run_result.return_code}):\n{run_result.stdout}"
-
-    return run_result.stdout
 
 
 def load_profile(path: Path | None = None) -> str | None:

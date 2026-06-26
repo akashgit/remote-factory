@@ -2115,38 +2115,8 @@ def cmd_profile(args: argparse.Namespace) -> int:
         return 0
 
     if sub == "build":
-        from factory.profile import collect_evidence, save_profile, synthesize_profile
-        from factory.registry import get_project_paths
-
-        raw_paths = getattr(args, "paths", None)
-        if raw_paths:
-            project_paths = [Path(p).resolve() for p in raw_paths]
-        else:
-            project_paths = get_project_paths()
-            if not project_paths:
-                print("No registered projects found. Pass project paths explicitly.", file=sys.stderr)
-                return 1
-
-        evidence = collect_evidence(project_paths)
-        dry_run = getattr(args, "dry_run", False)
-
-        if dry_run:
-            for section, content in evidence.items():
-                print(f"\n{'=' * 60}")
-                print(f"  {section}")
-                print(f"{'=' * 60}")
-                print(content or "(empty)")
-            return 0
-
-        runner_name = _resolve_runner(args)
-        profile_text = _run(synthesize_profile(evidence, runner_name))
-        if profile_text.startswith("Profile synthesis failed"):
-            print(profile_text, file=sys.stderr)
-            return 1
-        source_names = [p.name for p in project_paths]
-        path = save_profile(profile_text, source_names, runner_name or "claude")
-        print(f"Profile written to {path}")
-        return 0
+        print("factory profile build has been removed. Profiles can still be loaded from ~/.factory/profile.md", file=sys.stderr)
+        return 1
 
     print(f"Unknown profile subcommand: {sub}", file=sys.stderr)
     return 1

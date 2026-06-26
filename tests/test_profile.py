@@ -1,13 +1,12 @@
-"""Tests for factory.profile — evidence collection, synthesis, loading, and injection."""
+"""Tests for factory.profile — evidence collection, loading, and injection."""
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from factory.profile import (
     _MAX_SECTION_CHARS,
-    _build_synthesis_task,
     _read_ace_playbooks,
     _read_auto_memory,
     _truncate,
@@ -229,70 +228,3 @@ class TestReadAcePlaybooks:
         assert result == ""
 
 
-class TestBuildSynthesisTask:
-    def test_formats_non_empty_sections(self) -> None:
-        evidence = {
-            "experiment_history": "exp data here",
-            "ceo_verdicts": "verdict data",
-        }
-        result = _build_synthesis_task(evidence)
-        assert "## experiment_history" in result
-        assert "exp data here" in result
-        assert "## ceo_verdicts" in result
-        assert "verdict data" in result
-        assert "(no data)" not in result
-
-    def test_formats_empty_sections(self) -> None:
-        evidence = {
-            "experiment_history": "",
-            "auto_memory": "  ",
-        }
-        result = _build_synthesis_task(evidence)
-        assert "(no data)" in result
-
-    def test_mixed_empty_and_non_empty(self) -> None:
-        evidence = {
-            "experiment_history": "some data",
-            "ceo_verdicts": "",
-            "auto_memory": "memory content",
-        }
-        result = _build_synthesis_task(evidence)
-        assert "some data" in result
-        assert "memory content" in result
-        no_data_count = result.count("(no data)")
-        assert no_data_count == 1
-
-    def test_starts_with_synthesis_instruction(self) -> None:
-        result = _build_synthesis_task({"a": "b"})
-        assert result.startswith("Synthesize a user profile")
-
-
-class TestSynthesizeProfile:
-    async def test_invokes_runner(self, tmp_path: Path) -> None:
-        from factory.models import AgentRunResult
-        from factory.profile import synthesize_profile
-
-        mock_runner = AsyncMock()
-        mock_runner.headless = AsyncMock(return_value=AgentRunResult(
-            stdout="Synthesized profile text", return_code=0,
-        ))
-
-        with patch("factory.runners.get_runner", return_value=mock_runner), \
-             patch("factory.agents.runner.resolve_prompt", return_value="profiler prompt"):
-            result = await synthesize_profile({"section": "data"}, "claude")
-        assert result == "Synthesized profile text"
-        mock_runner.headless.assert_called_once()
-
-    async def test_handles_failure(self, tmp_path: Path) -> None:
-        from factory.models import AgentRunResult
-        from factory.profile import synthesize_profile
-
-        mock_runner = AsyncMock()
-        mock_runner.headless = AsyncMock(return_value=AgentRunResult(
-            stdout="Error output", return_code=1,
-        ))
-
-        with patch("factory.runners.get_runner", return_value=mock_runner), \
-             patch("factory.agents.runner.resolve_prompt", return_value="prompt"):
-            result = await synthesize_profile({"section": "data"})
-        assert "failed" in result.lower()
