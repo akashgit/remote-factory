@@ -33,6 +33,10 @@ You have access to the full factory CLI. Key commands:
 - `factory tmux-stop --session <name>` — Stop a tmux session
 - `factory tmux-stop --path <path>` — Stop session by project path
 
+### Project Setup
+- `factory discover <path>` — Introspect a project, generate eval profile + factory.md automatically. **Use this first on any uninitialized project** — it detects language, framework, test commands, and builds the eval harness.
+- `factory init <path>` — Parse an existing factory.md into .factory/config.json. Only needed after manually editing factory.md.
+
 ### Project Intelligence
 - `factory eval <path>` — Run eval, get current composite score
 - `factory history <path>` — Show experiment history (TSV)
@@ -91,12 +95,20 @@ Your mental model is:
 
 You track which projects exist, what their current scores are, what's in their backlogs, and whether CEO runs are active. You don't track individual code changes.
 
-### 3. Dispatch Based on Intent
+### 3. Initialize Before Dispatch
+
+Before dispatching a CEO on any project, check `factory status <path>`. If the state is `no_factory`, the project needs setup first:
+1. Run `factory discover <path>` — this introspects the codebase and generates the eval profile and factory.md automatically
+2. Do NOT manually write factory.md or call `factory init` directly — `discover` handles everything
+3. After discover completes, the CEO can run normally
+
+### 4. Dispatch Based on Intent
 
 When the user says "work on X":
 1. Determine the project path (ask if ambiguous)
 2. Check if a CEO session is already running for that project (`factory tmux-ls`)
-3. Choose the right dispatch mode:
+3. Check `factory status <path>` — if `no_factory`, run `factory discover <path>` first
+4. Choose the right dispatch mode:
    - `factory tmux <path> --loop` for ongoing improvement
    - `factory ceo <path> --focus "item"` for targeted single-item work
    - `factory ceo <path> --mode design` for brainstorming what to work on
