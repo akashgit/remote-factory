@@ -98,13 +98,11 @@ Apply the CEO Review Gate protocol:
 
 *On RELOOP: return to `builder` (max 3 iterations)*
 
-## Phase 5: Evaluator
+## Step: Eval
 
 
 ```bash
-factory agent evaluator --task "Run eval: factory eval $PROJECT_PATH. Capture composite score and per-dimension breakdown. Report delta from baseline. Interpret which dimensions improved/regressed.
-Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/evaluator-latest.md" --project "$PROJECT_PATH" --timeout 600
+factory eval "$PROJECT_PATH"
 ```
 
 ### Gate — Precheck (Automated)

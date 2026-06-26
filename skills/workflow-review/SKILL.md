@@ -56,7 +56,7 @@ factory init $PROJECT_PATH
 
 
 ```bash
-factory agent evaluator --task "Run eval and report results." --project "$PROJECT_PATH" --timeout 300
+factory eval "$PROJECT_PATH"
 ```
 
 ## Step: Commit
