@@ -47,8 +47,6 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 |---|---|
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve` |
-| **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
-| **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
 
 ---
 
@@ -77,9 +75,9 @@ You can also pass a spec file or URL directly — `uv run factory ceo spec.md` �
 
 ---
 
-## Improve + Focus Workflow
+## Improve Workflow
 
-Point re:factory at an existing project for continuous improvement:
+Improve mode is re:factory's continuous improvement loop for existing projects. Point it at a codebase and it autonomously observes the project state, generates hypotheses for improvements, builds and tests changes, and keeps or reverts each experiment based on eval scores.
 
 ```bash
 uv run factory ceo ~/factory-projects/my-app --mode improve
@@ -90,9 +88,9 @@ Each cycle: **observe** → **hypothesize** → **build** → **review** → **m
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-uv run factory ceo ~/my-app --focus "add dark mode toggle"
-uv run factory ceo ~/my-app --focus 42                       # GitHub issue
-uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
+uv run factory ceo ~/my-app --mode improve --focus "add dark mode toggle"
+uv run factory ceo ~/my-app --mode improve --focus 42                       # GitHub issue
+uv run factory ceo ~/my-app --mode improve --focus "owner/repo#42"          # Issue shorthand
 ```
 
 Other ways to steer: file GitHub issues (the Strategist reads them), add to the backlog manually, or pass a spec file with `--prompt`.
@@ -148,7 +146,6 @@ Built something with re:factory? Open a PR to add it here.
 # Core workflow
 uv run factory ceo "idea" --mode design         # Design from a raw idea
 uv run factory ceo <path> --mode improve        # Improve an existing project
-uv run factory ceo <path> --focus "..."         # One target, one experiment
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
 uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
