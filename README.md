@@ -50,7 +50,6 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | I want to… | Command |
 |---|---|
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
-| **Build from a spec or repo** | `uv run factory ceo spec.md` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project` |
 | **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
 | **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
@@ -78,21 +77,7 @@ uv run factory ceo ~/factory-projects/my-app --mode design
 uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 ```
 
----
-
-## Build Workflow
-
-When you already have a spec file, a GitHub repo, or a clear description, re:factory builds directly — no design step needed:
-
-```bash
-uv run factory ceo ~/ideas/spec.md
-uv run factory ceo https://github.com/user/repo
-uv run factory ceo "Build a personal homepage with a blog"
-```
-
-The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. Override the output directory with `--dir my-site`. (If you start with a raw idea via `--mode design`, the CEO refines it into a spec first, then transitions into this same build pipeline automatically. `--mode interactive` remains accepted as an alias.)
-
-After the first build, a backlog appears at `.factory/strategy/backlog.md` — deferred features that feed future improvement cycles. Manage it with `uv run factory backlog-list`, `uv run factory backlog-add`, and `uv run factory backlog-remove`.
+You can also pass a spec file or URL directly — `uv run factory ceo spec.md` — and re:factory builds without the design conversation.
 
 ---
 
