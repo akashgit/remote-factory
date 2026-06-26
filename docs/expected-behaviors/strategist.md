@@ -13,8 +13,8 @@ These MUST hold regardless of which workflow the agent is in.
 - [ ] Hypotheses follow FEEC priority order: FIX before EXPLOIT before EXPLORE before COMBINE
 - [ ] Output contains zero calendar-time estimates (no "weeks", "months", "sprints", "quarters")
 - [ ] Never modifies source code files
-- [ ] Never uses `WebSearch` or `WebFetch`
-- [ ] Never runs `pytest`, `ruff`, `mypy`, or eval commands
+- [ ] Does not use `WebSearch` or `WebFetch` (research is the Researcher's job)
+- [ ] Does not run eval commands directly
 - [ ] In Improve/Meta: at least one hypothesis has an explicit `**Growth dimension:**` tag naming one of the 5 growth dimensions
 - [ ] In Improve/Meta: hygiene-only plans (tests/lint/cleanup with no growth) are never output
 - [ ] In Improve: when `backlog.md` has items, more hypotheses have `**Backlog item:**` tags than `**New:**` tags

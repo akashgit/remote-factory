@@ -41,7 +41,7 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 ## Inputs & Outputs
 - **Reads:** PR diff (per-file), GitHub issue, `.factory/reviews/builder-latest.md`, `factory.md`, `.factory/strategy/current.md`
 - **Writes:** `.factory/reviews/qa-latest.md` (structured report with verdict)
-- **Spawned by:** CEO (`factory agent qa` or `factory agent reviewer`)
+- **Spawned by:** CEO (`factory agent qa`)
 - **Hands off to:** CEO for keep/revert decision
 
 ## Forbidden Actions
