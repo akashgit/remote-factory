@@ -254,8 +254,12 @@ class TestWorkflowToSkillMd:
         lines = result.split("\n")
         phase_lines = [line for line in lines if line.startswith("## Phase")]
         phase_titles = [line.lower() for line in phase_lines]
-        researcher_standalone = [t for t in phase_titles if "researcher" in t and "parallel" not in t]
-        assert len(researcher_standalone) == 0, "Fork targets should not appear as standalone phases"
+        researcher_standalone = [
+            t for t in phase_titles if "researcher" in t and "parallel" not in t
+        ]
+        assert len(researcher_standalone) == 0, (
+            "Fork targets should not appear as standalone phases"
+        )
 
     def test_study_node_generates_observe_phase(self) -> None:
         study = Study(
@@ -305,10 +309,10 @@ class TestExportAllSkills:
 class TestValidateSkill:
     def test_valid_skill_no_issues(self) -> None:
         content = (
-            '---\nname: workflow-build\n'
+            "---\nname: workflow-build\n"
             'description: "Build things."\n'
-            'disable-model-invocation: true\n'
-            '---\n\n# Build\nDo stuff.\n'
+            "disable-model-invocation: true\n"
+            "---\n\n# Build\nDo stuff.\n"
         )
         assert validate_skill(content) == []
 
@@ -378,17 +382,24 @@ class TestRealWorkflowSkills:
         assert "workflow-refine" in content
         assert "refiner" in content.lower()
 
-    def test_all_eight_skills_exported(self, tmp_path: Path) -> None:
+    def test_all_skills_exported(self, tmp_path: Path) -> None:
         from factory.workflow.definitions import register_all
 
         workflows = register_all()
         paths = export_all_skills(tmp_path, workflows=workflows)
-        assert len(paths) == 8, f"Expected 8 skills, got {len(paths)}"
+        assert len(paths) == 10, f"Expected 10 skills, got {len(paths)}"
         dirs = {p.parent.name for p in paths}
         expected = {
-            "workflow-build", "workflow-design", "workflow-discover",
-            "workflow-review", "workflow-improve", "workflow-research",
-            "workflow-meta", "workflow-refine",
+            "workflow-build",
+            "workflow-design",
+            "workflow-discover",
+            "workflow-review",
+            "workflow-improve",
+            "workflow-research",
+            "workflow-meta",
+            "workflow-refine",
+            "workflow-spec-generate",
+            "workflow-spec-update",
         }
         assert dirs == expected, f"Missing: {expected - dirs}"
         for p in paths:
