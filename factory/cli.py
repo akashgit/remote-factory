@@ -3368,7 +3368,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
 
     project_path = Path(getattr(args, "path", None) or Path.cwd()).resolve()
 
-    workspace = setup_workspace(project_path)
+    setup_workspace(project_path)
     reset = getattr(args, "reset", False)
     session_file = project_path / ".refactory" / "session.json"
     is_new_session = reset or not session_file.exists()
