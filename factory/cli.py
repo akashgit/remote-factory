@@ -3142,8 +3142,12 @@ def _tmux_available() -> bool:
 
 
 def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
-    """Build the 'factory run ...' command string from parsed args."""
-    parts = [f"factory run {project_path}"]
+    """Build the 'factory ceo ...' command string from parsed args.
+
+    Uses 'factory ceo' (not 'factory run') so the session inside tmux
+    is interactive — the user can attach and interact with the CEO directly.
+    """
+    parts = [f"factory ceo {project_path}"]
     if args.mode:
         parts.append(f"--mode {args.mode}")
     if args.loop:
