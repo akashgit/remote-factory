@@ -348,7 +348,7 @@ After all three sections complete, emit the final verdict:
 
 ## Repo Spec (if available)
 
-If `.factory/repo_spec.md` exists, read it for targeted verification.
+If `.factory/GRAPH-SPEC.md` exists, read it for targeted verification.
 - Use change impact predictions to scope your review — verify all predicted consumers, not just directly modified files
 - Check whether the Builder updated all consumers of changed contracts
 - Use entry points to identify CLI commands or endpoints to exercise during adversarial QA

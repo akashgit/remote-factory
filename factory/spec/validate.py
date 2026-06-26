@@ -276,14 +276,14 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
 
 
 async def validate_spec(project_path: Path) -> ValidationResult:
-    """Validate .factory/repo_spec.md against the actual project.
+    """Validate .factory/GRAPH-SPEC.md against the actual project.
 
     Runs path existence checks, import cross-referencing, orphan/hub detection,
     and coupling metric computation.
 
     Writes results to .factory/spec_validation.md.
     """
-    spec_path = project_path / ".factory" / "repo_spec.md"
+    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     spec = parse_spec(spec_path)
 
     result = ValidationResult()

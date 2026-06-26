@@ -1,4 +1,4 @@
-"""Tests for factory.spec.parser — Markdown parsing of repo_spec.md."""
+"""Tests for factory.spec.parser — Markdown parsing of GRAPH-SPEC.md."""
 
 from __future__ import annotations
 
@@ -101,7 +101,7 @@ SAMPLE_SPEC = """\
 
 @pytest.fixture
 def spec_file(tmp_path: Path) -> Path:
-    p = tmp_path / "repo_spec.md"
+    p = tmp_path / "GRAPH-SPEC.md"
     p.write_text(SAMPLE_SPEC)
     return p
 
