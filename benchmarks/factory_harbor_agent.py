@@ -169,16 +169,24 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Run factory ceo in interactive mode (no --headless).
-        # --headless triggers run_subprocess(max_timeout=3600s) which kills
-        # active CEO sessions after 1 hour. Interactive mode uses
-        # subprocess.run() with no wall-clock cap.
+        # Run factory ceo without --headless and without --mode build.
+        #
+        # --headless: triggers run_subprocess(max_timeout=3600s) which kills
+        #   active CEO sessions after 1 hour. Interactive mode uses
+        #   subprocess.run() with no wall-clock cap.
+        #
+        # --mode build: skips the experiment lifecycle (keep/revert verdict)
+        #   so changes stay on the factory/run-XXX worktree branch and never
+        #   merge to main. The verifier then tests unmodified code → reward=0.
+        #   Without --mode, factory auto-detects and runs the full improve
+        #   cycle including keep → merge to main.
         await self.exec_as_agent(
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --mode build "
+                "factory ceo . "
                 "--prompt /tmp/task-instruction.md "
+                "--no-github "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
             ),
             env=env,
