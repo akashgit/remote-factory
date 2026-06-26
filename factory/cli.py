@@ -4616,9 +4616,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.command:
         if sys.stdin.isatty() and sys.stderr.isatty():
-            if (Path.cwd() / ".git").is_dir():
-                return cmd_refactory(args)
-            return _welcome_wizard()
+            return cmd_refactory(args)
         parser.print_help()
         return 1
 
