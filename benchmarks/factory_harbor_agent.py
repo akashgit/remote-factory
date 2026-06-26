@@ -1,4 +1,11 @@
-"""Harbor agent that runs ``factory ceo`` as a benchmark solver."""
+"""Harbor agent that runs ``factory ceo`` as a benchmark solver.
+
+Uses interactive mode (no ``--headless``) to avoid the 3600s
+``max_timeout`` wall-clock cap in ``runners/_subprocess.py`` that
+kills active CEO sessions mid-work. Interactive mode uses
+``subprocess.run()`` with no timeout, matching foreground factory
+sessions that run for 8+ hours.
+"""
 
 import os
 import re
@@ -13,7 +20,7 @@ class FactoryCeo(BaseInstalledAgent):
     """Runs ``factory ceo`` to solve benchmark tasks.
 
     Installs Claude Code + the factory CLI inside the container, then
-    invokes ``factory ceo . --headless --prompt <instruction>``.
+    invokes ``factory ceo . --prompt <instruction>``.
     """
 
     @staticmethod
@@ -162,12 +169,15 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Run factory ceo in headless mode
+        # Run factory ceo in interactive mode (no --headless).
+        # --headless triggers run_subprocess(max_timeout=3600s) which kills
+        # active CEO sessions after 1 hour. Interactive mode uses
+        # subprocess.run() with no wall-clock cap.
         await self.exec_as_agent(
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --headless --mode build "
+                "factory ceo . --mode build "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
             ),
