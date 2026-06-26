@@ -979,6 +979,22 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_record_phase(args: argparse.Namespace) -> int:
+    """Record a completed build phase in build_phases_done.json."""
+    from factory.store import ExperimentStore
+
+    project_path = Path(args.path).resolve()
+    store = ExperimentStore(project_path)
+    pr_number = getattr(args, "pr", None)
+    store.record_build_phase(args.phase, pr_number=pr_number)
+    _emit_cli_event(project_path, "build.phase_recorded", {
+        "phase": args.phase,
+        "pr": pr_number,
+    })
+    print(f"Recorded build phase {args.phase}")
+    return 0
+
+
 def cmd_message(args: argparse.Namespace) -> int:
     """Queue a message for the CEO agent."""
     from factory.messages import write_message
@@ -4002,6 +4018,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", default=False,
                     help="Bypass precheck gate (for pre-existing failures)")
 
+    # record-phase
+    p = sub.add_parser("record-phase", help="Record a completed build phase")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("phase", type=int, help="Phase number that was completed")
+    p.add_argument("--pr", type=int, default=None, help="PR number for this phase")
+
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")
     p.add_argument("path", help="Path to the project")
@@ -4566,6 +4588,7 @@ def main(argv: list[str] | None = None) -> int:
         "guard": cmd_guard,
         "begin": cmd_begin,
         "finalize": cmd_finalize,
+        "record-phase": cmd_record_phase,
         "history": cmd_history,
         "notify": cmd_notify,
         "study": cmd_study,

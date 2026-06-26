@@ -633,6 +633,24 @@ class ExperimentStore:
         log.debug("read_eval_profile_loaded", dimension_count=len(data.get("dimensions", [])))
         return EvalProfile(**data)
 
+    def record_build_phase(self, phase_num: int, pr_number: int | None = None) -> None:
+        """Record a completed build phase in build_phases_done.json."""
+        phases_path = self.factory_dir / "build_phases_done.json"
+        if phases_path.exists():
+            data = json.loads(phases_path.read_text())
+        else:
+            data = {"completed": []}
+
+        entry: dict[str, int | str | None] = {
+            "phase": phase_num,
+            "pr": pr_number,
+            "timestamp": datetime.now().isoformat(),
+        }
+        data["completed"].append(entry)
+
+        phases_path.write_text(json.dumps(data, indent=2) + "\n")
+        log.info("record_build_phase", phase=phase_num, pr=pr_number)
+
     async def read_strategy(self) -> str | None:
         """Read strategy/current.md, return None if missing."""
         strategy_path = self.factory_dir / "strategy" / "current.md"

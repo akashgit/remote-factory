@@ -126,9 +126,9 @@ def _count_hypotheses(project_path: Path) -> int:
         return 0
 
     content = strategy_file.read_text()
-    # Match headings like "#### H1:" or "### H2:" etc.
-    matches = re.findall(r"^#{2,4}\s+H(\d+):", content, re.MULTILINE)
-    return len(matches)
+    h_matches = re.findall(r"^#{2,4}\s+H(\d+):", content, re.MULTILINE)
+    phase_matches = re.findall(r"^#{2,4}\s+Phase\s+(\d+):", content, re.MULTILINE)
+    return len(h_matches) + len(phase_matches)
 
 
 def _count_verdicts(project_path: Path, since_ts: datetime | None = None) -> int:
@@ -181,6 +181,18 @@ def _count_verdicts(project_path: Path, since_ts: datetime | None = None) -> int
         if exp_dir.is_dir() and (exp_dir / "verdict.json").exists():
             count += 1
     return count
+
+
+def _count_build_phases_done(project_path: Path) -> int:
+    """Count completed phases from .factory/build_phases_done.json."""
+    phases_path = project_path / ".factory" / "build_phases_done.json"
+    if not phases_path.exists():
+        return 0
+    try:
+        data = json.loads(phases_path.read_text())
+        return len(data.get("completed", []))
+    except (json.JSONDecodeError, ValueError):
+        return 0
 
 
 def _has_eval_profile(project_path: Path) -> bool:
@@ -249,13 +261,10 @@ def _detect_incomplete(
         )
 
     elif mode == "build":
-        # For build mode, check if Builder completed at least one hypothesis
-        # In build mode, the strategy file should have phases marked as hypotheses
         planned = _count_hypotheses(project_path)
         completed = _count_verdicts(project_path, since_ts=cycle_started_at)
 
         if planned == 0:
-            # No strategy means we're in scaffold phase — check for eval profile
             if not _has_eval_profile(project_path):
                 return IncompleteGap(
                     mode=mode,
@@ -268,6 +277,20 @@ def _detect_incomplete(
 
         if completed >= planned:
             return None
+
+        if completed == 0:
+            phases_done = _count_build_phases_done(project_path)
+            if phases_done >= planned:
+                return None
+            if phases_done > 0:
+                next_phase = phases_done + 1
+                return IncompleteGap(
+                    mode=mode,
+                    planned=planned,
+                    completed=phases_done,
+                    next_item=f"Phase{next_phase}",
+                    reason=f"build.incomplete: {phases_done}/{planned} phases recorded in build_phases_done.json",
+                )
 
         next_h = completed + 1
         return IncompleteGap(

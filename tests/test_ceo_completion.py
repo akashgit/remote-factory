@@ -127,6 +127,49 @@ class TestBudgetAllowsRespawn:
         assert _budget_allows_respawn(None, tmp_path) is True
 
 
+class TestCountHypotheses:
+    """Tests for _count_hypotheses() with both H and Phase heading formats."""
+
+    def test_count_hypotheses_matches_phase_headings(self, tmp_path: Path) -> None:
+        """Strategy file with Phase headings returns correct count."""
+        from factory.ceo_completion import _count_hypotheses
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Build Plan\n\n### Phase 1: Scaffold\n\n### Phase 2: Core logic\n"
+        )
+
+        assert _count_hypotheses(tmp_path) == 2
+
+    def test_count_hypotheses_matches_h_headings(self, tmp_path: Path) -> None:
+        """Strategy file with H-style headings still returns correct count."""
+        from factory.ceo_completion import _count_hypotheses
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Hypotheses\n\n#### H1: Improve caching\n\n#### H2: Add retry logic\n"
+        )
+
+        assert _count_hypotheses(tmp_path) == 2
+
+    def test_count_hypotheses_mixed_headings(self, tmp_path: Path) -> None:
+        """Strategy file with both Phase and H markers counts both."""
+        from factory.ceo_completion import _count_hypotheses
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "## Plan\n\n"
+            "### Phase 1: Setup\n\n"
+            "### Phase 2: Build\n\n"
+            "#### H1: Fix edge case\n\n"
+        )
+
+        assert _count_hypotheses(tmp_path) == 3
+
+
 class TestDetectIncomplete:
     """Tests for _detect_incomplete()."""
 
@@ -193,6 +236,56 @@ class TestDetectIncomplete:
 
         gap = _detect_incomplete(tmp_path, "improve")
         assert gap is None
+
+    def test_build_completion_via_phases_done_json(self, tmp_path: Path) -> None:
+        """Build mode is complete when build_phases_done.json has all phases."""
+        from factory.ceo_completion import _detect_incomplete
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Phase 1: Scaffold\n\n### Phase 2: Core\n\n### Phase 3: Tests\n"
+        )
+
+        phases_data = {
+            "completed": [
+                {"phase": 1, "pr": 10, "timestamp": "2026-06-26T10:00:00"},
+                {"phase": 2, "pr": 11, "timestamp": "2026-06-26T11:00:00"},
+                {"phase": 3, "pr": 12, "timestamp": "2026-06-26T12:00:00"},
+            ]
+        }
+        (tmp_path / ".factory" / "build_phases_done.json").write_text(
+            json.dumps(phases_data)
+        )
+
+        gap = _detect_incomplete(tmp_path, "build")
+        assert gap is None
+
+    def test_build_incomplete_when_phases_missing(self, tmp_path: Path) -> None:
+        """Build mode is incomplete when build_phases_done.json has fewer phases than planned."""
+        from factory.ceo_completion import _detect_incomplete
+
+        strategy_dir = tmp_path / ".factory" / "strategy"
+        strategy_dir.mkdir(parents=True)
+        (strategy_dir / "current.md").write_text(
+            "### Phase 1: Scaffold\n\n### Phase 2: Core\n\n### Phase 3: Tests\n"
+        )
+
+        phases_data = {
+            "completed": [
+                {"phase": 1, "pr": 10, "timestamp": "2026-06-26T10:00:00"},
+            ]
+        }
+        (tmp_path / ".factory" / "build_phases_done.json").write_text(
+            json.dumps(phases_data)
+        )
+
+        gap = _detect_incomplete(tmp_path, "build")
+        assert gap is not None
+        assert gap.planned == 3
+        assert gap.completed == 1
+        assert gap.next_item == "Phase2"
+        assert "build_phases_done.json" in gap.reason
 
     def test_discover_complete_when_profile_exists(self, tmp_path: Path) -> None:
         """Discover mode is complete when eval_profile.json exists."""
