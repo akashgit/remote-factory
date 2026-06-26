@@ -190,6 +190,8 @@ def _count_build_phases_done(project_path: Path) -> int:
         return 0
     try:
         data = json.loads(phases_path.read_text())
+        if not isinstance(data, dict):
+            return 0
         return len(data.get("completed", []))
     except (json.JSONDecodeError, ValueError):
         return 0

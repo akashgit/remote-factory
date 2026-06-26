@@ -1268,6 +1268,74 @@ class TestCeoPromptResearchMode:
         assert "workflow-research" in ceo_prompt
 
 
+class TestRecordBuildPhase:
+    """Tests for ExperimentStore.record_build_phase() write path."""
+
+    def test_record_build_phase_basic(self, tmp_path: Path) -> None:
+        """Record a phase, verify JSON content."""
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(tmp_path)
+        (tmp_path / ".factory").mkdir()
+        store.record_build_phase(1, pr_number=42)
+
+        phases_path = tmp_path / ".factory" / "build_phases_done.json"
+        data = json.loads(phases_path.read_text())
+        assert len(data["completed"]) == 1
+        assert data["completed"][0]["phase"] == 1
+        assert data["completed"][0]["pr"] == 42
+
+    def test_record_build_phase_deduplicates(self, tmp_path: Path) -> None:
+        """Recording the same phase twice results in only 1 entry."""
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(tmp_path)
+        (tmp_path / ".factory").mkdir()
+        store.record_build_phase(1, pr_number=10)
+        store.record_build_phase(1, pr_number=10)
+
+        phases_path = tmp_path / ".factory" / "build_phases_done.json"
+        data = json.loads(phases_path.read_text())
+        assert len(data["completed"]) == 1
+
+    def test_record_build_phase_handles_malformed_json(self, tmp_path: Path) -> None:
+        """Corrupt file is recovered gracefully."""
+        from factory.store import ExperimentStore
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "build_phases_done.json").write_text("NOT VALID JSON {{{")
+
+        store = ExperimentStore(tmp_path)
+        store.record_build_phase(1, pr_number=5)
+
+        data = json.loads((factory_dir / "build_phases_done.json").read_text())
+        assert len(data["completed"]) == 1
+        assert data["completed"][0]["phase"] == 1
+
+    def test_count_build_phases_done_non_dict_json(self, tmp_path: Path) -> None:
+        """A JSON array in build_phases_done.json returns 0."""
+        from factory.ceo_completion import _count_build_phases_done
+
+        factory_dir = tmp_path / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "build_phases_done.json").write_text("[1, 2, 3]")
+
+        assert _count_build_phases_done(tmp_path) == 0
+
+    def test_record_build_phase_creates_factory_dir(self, tmp_path: Path) -> None:
+        """record_build_phase creates .factory/ if it doesn't exist."""
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(tmp_path)
+        store.record_build_phase(1, pr_number=7)
+
+        phases_path = tmp_path / ".factory" / "build_phases_done.json"
+        assert phases_path.exists()
+        data = json.loads(phases_path.read_text())
+        assert len(data["completed"]) == 1
+
+
 class TestCeoCompletionBackgroundBypass:
     """Tests for background=True bypassing the respawn loop."""
 

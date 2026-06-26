@@ -635,18 +635,29 @@ class ExperimentStore:
 
     def record_build_phase(self, phase_num: int, pr_number: int | None = None) -> None:
         """Record a completed build phase in build_phases_done.json."""
+        self.factory_dir.mkdir(parents=True, exist_ok=True)
         phases_path = self.factory_dir / "build_phases_done.json"
         if phases_path.exists():
-            data = json.loads(phases_path.read_text())
+            try:
+                data = json.loads(phases_path.read_text())
+            except (json.JSONDecodeError, ValueError):
+                data = {"completed": []}
+            if not isinstance(data, dict):
+                data = {"completed": []}
         else:
             data = {"completed": []}
+
+        existing_phases = {e["phase"] for e in data.get("completed", []) if isinstance(e, dict)}
+        if phase_num in existing_phases:
+            log.info("record_build_phase_duplicate", phase=phase_num)
+            return
 
         entry: dict[str, int | str | None] = {
             "phase": phase_num,
             "pr": pr_number,
             "timestamp": datetime.now().isoformat(),
         }
-        data["completed"].append(entry)
+        data.setdefault("completed", []).append(entry)
 
         phases_path.write_text(json.dumps(data, indent=2) + "\n")
         log.info("record_build_phase", phase=phase_num, pr=pr_number)
