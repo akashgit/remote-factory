@@ -380,17 +380,18 @@ class TestRealWorkflowSkills:
         assert "workflow-refine" in content
         assert "refiner" in content.lower()
 
-    def test_all_nine_skills_exported(self, tmp_path: Path) -> None:
+    def test_all_ten_skills_exported(self, tmp_path: Path) -> None:
         from factory.workflow.definitions import register_all
 
         workflows = register_all()
         paths = export_all_skills(tmp_path, workflows=workflows)
-        assert len(paths) == 9, f"Expected 9 skills, got {len(paths)}"
+        assert len(paths) == 10, f"Expected 10 skills, got {len(paths)}"
         dirs = {p.parent.name for p in paths}
         expected = {
             "workflow-build", "workflow-design", "workflow-discover",
             "workflow-review", "workflow-improve", "workflow-research",
             "workflow-meta", "workflow-refine", "workflow-create",
+            "workflow-benchmark",
         }
         assert dirs == expected, f"Missing: {expected - dirs}"
         for p in paths:

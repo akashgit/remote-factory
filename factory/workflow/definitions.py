@@ -1633,7 +1633,8 @@ def benchmark_workflow() -> Workflow:
             "| sed 's|refs/remotes/origin/||' || echo main) && "
             "CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD) && "
             "git checkout \"$BASE_BRANCH\" && "
-            "git merge --no-edit \"$CURRENT_BRANCH\" && "
+            "(git merge --no-edit \"$CURRENT_BRANCH\" || "
+            "echo 'WARN: merge failed, reverting to original branch') && "
             "git checkout \"$CURRENT_BRANCH\""
         ),
         reads={".factory/experiments/verdict.json"},

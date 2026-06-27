@@ -6,7 +6,6 @@ from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     FnNode,
-    GateNode,
     Study,
     VerdictType,
 )
