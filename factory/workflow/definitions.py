@@ -1523,7 +1523,7 @@ def skill_refine_workflow() -> Workflow:
         model="opus",
         prompt_template=(
             "Review and refine the templatized skill document. "
-            "You may ONLY modify values inside {{slot_name::value}} markers. "
+            "You may ONLY modify values inside double-brace slot markers (format: name::default). "
             "Do NOT change any text outside markers, annotations, or structure. "
             "Use the provided context bundle (agent prompts, CLI docs, edge topology) "
             "to make informed improvements to timeouts, task prompts, gate prompts, "
