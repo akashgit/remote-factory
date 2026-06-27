@@ -120,6 +120,7 @@ class AgentNode(Node):
     prompt_template: str = ""
     tools: list[str] = Field(default_factory=list)
     timeout: int | None = None
+    max_iterations: int = 1
 
 
 class FnNode(Node):

@@ -18,6 +18,23 @@ from factory.workflow.templates import extract, resolve
 
 _ANNOTATION_PATTERN = re.compile(r"<!--\s*(.*?)\s*-->", re.DOTALL)
 
+_SLOT_PREFIXES = (
+    "timeout_",
+    "task_prompt_",
+    "gate_prompt_",
+    "max_iterations_",
+    "failure_action_",
+    "finalize_command_",
+)
+
+
+def _slot_belongs_to_node(slot_name: str, node_id: str) -> bool:
+    """Check if a slot name belongs to a node by extracting the node_id after the prefix."""
+    for prefix in _SLOT_PREFIXES:
+        if slot_name.startswith(prefix):
+            return slot_name[len(prefix):] == node_id
+    return False
+
 
 def split_skill(templatized: str) -> tuple[str, dict[str, Any]]:
     """Split templatized markdown into clean prose and annotations.
@@ -27,7 +44,7 @@ def split_skill(templatized: str) -> tuple[str, dict[str, Any]]:
     annotations = extract_annotations(templatized)
     slots = dict(extract(templatized))
     for node_id, meta in annotations.items():
-        node_slots = {k: v for k, v in slots.items() if k.endswith(f"_{node_id}")}
+        node_slots = {k: v for k, v in slots.items() if _slot_belongs_to_node(k, node_id)}
         if node_slots:
             meta["slots"] = node_slots
 

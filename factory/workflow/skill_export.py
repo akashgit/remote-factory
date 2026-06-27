@@ -412,9 +412,8 @@ def _gate_to_checkpoint(
 def _resolve_max_iterations(edge: Edge, workflow: Workflow) -> int:
     """Resolve max_iterations from the RELOOP edge target's AgentNode."""
     target_node = workflow.nodes.get(edge.target)
-    if isinstance(target_node, AgentNode):
-        if hasattr(target_node, "max_iterations") and target_node.max_iterations != 1:  # type: ignore[attr-defined]
-            return target_node.max_iterations  # type: ignore[attr-defined]
+    if isinstance(target_node, AgentNode) and target_node.max_iterations != 1:
+        return target_node.max_iterations
     return 3
 
 
@@ -593,9 +592,12 @@ def export_all_skills(
 ) -> list[Path]:
     """Export all registered workflows as SKILL.md files.
 
-    Writes each to output_dir/workflow-<name>/SKILL.md.
-    Returns paths to generated files.
+    Generates templatized content, then resolves it to clean prose for
+    SKILL.md and writes structured annotations to SKILL.annotations.yaml.
+    Returns paths to generated SKILL.md files.
     """
+    from factory.workflow.splitter import annotations_to_yaml, split_skill
+
     if workflows is None:
         from factory.workflow.definitions import register_all
         workflows = register_all()
@@ -603,15 +605,21 @@ def export_all_skills(
     generated: list[Path] = []
 
     for name, wf in workflows.items():
-        skill_md = workflow_to_skill_md(wf)
+        templatized = workflow_to_skill_md(wf)
+        clean_md, annotations = split_skill(templatized)
 
         skill_dir = output_dir / f"workflow-{name}"
         skill_dir.mkdir(parents=True, exist_ok=True)
+
         skill_path = skill_dir / "SKILL.md"
-        skill_path.write_text(skill_md)
+        skill_path.write_text(clean_md)
+
+        if annotations:
+            ann_path = skill_dir / "SKILL.annotations.yaml"
+            ann_path.write_text(annotations_to_yaml(annotations))
 
         generated.append(skill_path)
-        log.info("skill_export.wrote", path=str(skill_path), lines=skill_md.count("\n") + 1)
+        log.info("skill_export.wrote", path=str(skill_path), lines=clean_md.count("\n") + 1)
 
     return generated
 

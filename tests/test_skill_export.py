@@ -136,6 +136,36 @@ class TestAgentToInstruction:
         assert "<!-- edges:" in result
 
 
+# ── _fn_to_instruction ──────────────────────────────────────────
+
+
+class TestFnToInstruction:
+    def test_basic_command(self) -> None:
+        fn = FnNode(id="fn_eval", command="factory eval {project_path}")
+        wf = _minimal_workflow(nodes={"fn_eval": fn}, start="fn_eval")
+        result = _fn_to_instruction(fn, wf)
+        assert "$PROJECT_PATH" in result
+        assert "<!-- node: FnNode id=fn_eval" in result
+
+    def test_template_placeholder_gets_slot(self) -> None:
+        fn = FnNode(id="fn_finalize", command="factory review --verdict $VERDICT --project {project_path}")
+        wf = _minimal_workflow(nodes={"fn_finalize": fn}, start="fn_finalize")
+        result = _fn_to_instruction(fn, wf)
+        assert "{{finalize_command_fn_finalize::" in result
+
+    def test_reads_writes_annotations(self) -> None:
+        fn = FnNode(
+            id="fn_score",
+            command="factory eval {project_path}",
+            reads={"eval_profile.json"},
+            writes={"eval_after.json"},
+        )
+        wf = _minimal_workflow(nodes={"fn_score": fn}, start="fn_score")
+        result = _fn_to_instruction(fn, wf)
+        assert "<!-- reads: eval_profile.json -->" in result
+        assert "<!-- writes: eval_after.json -->" in result
+
+
 # ── _fork_to_instruction ────────────────────────────────────────
 
 
