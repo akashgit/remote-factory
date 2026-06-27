@@ -1,0 +1,73 @@
+dag_sort:
+  type: FnNode
+  id: dag_sort
+  command: factory workflow show {project_path}
+  reads: []
+  writes:
+  - .factory/strategy/dag-order.md
+  edges_out:
+  - target: templatize
+    condition: null
+templatize:
+  type: FnNode
+  id: templatize
+  command: factory workflow export-skills --templatize {project_path}
+  reads:
+  - .factory/strategy/dag-order.md
+  writes:
+  - .factory/strategy/templatized-skill.md
+  edges_out:
+  - target: review_agent
+    condition: null
+review_agent:
+  type: AgentNode
+  id: review_agent
+  role: skill_reviewer
+  blocking: 'true'
+  reads:
+  - .factory/strategy/templatized-skill.md
+  writes:
+  - .factory/strategy/refined-skill.md
+  edges_out:
+  - target: guard
+    condition: null
+  slots:
+    task_prompt_review_agent: 'Review and refine the templatized skill document. You
+      may ONLY modify values inside double-brace slot markers (format: name::default).
+      Do NOT change any text outside markers, annotations, or structure. Use the provided
+      context bundle (agent prompts, CLI docs, edge topology) to make informed improvements
+      to timeouts, task prompts, gate prompts, failure actions, and finalize commands.
+
+      Read: .factory/strategy/templatized-skill.md
+
+      Write output to: .factory/strategy/refined-skill.md'
+    timeout_review_agent: '600'
+guard:
+  type: GateNode
+  id: guard
+  evaluator_type: fn
+  evaluator_command: python3 -c "from factory.workflow.guard import check; from pathlib
+    import Path; s = Path('{project_path}/.factory/strategy/templatized-skill.md').read_text();
+    r = Path('{project_path}/.factory/strategy/refined-skill.md').read_text(); result
+    = check(s, r); print(result.verdict)"
+  reads:
+  - .factory/strategy/refined-skill.md
+  - .factory/strategy/templatized-skill.md
+  edges_out:
+  - target: split
+    condition: PROCEED
+  - target: review_agent
+    condition: RELOOP
+  slots:
+    failure_action_guard: ''
+    max_iterations_guard: '3'
+split:
+  type: FnNode
+  id: split
+  command: factory workflow export-skills --split {project_path}
+  reads:
+  - .factory/strategy/refined-skill.md
+  writes:
+  - skills/SKILL.annotations.yaml
+  - skills/SKILL.md
+  edges_out: []

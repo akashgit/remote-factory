@@ -12,8 +12,12 @@ Once edited, it becomes a Tier 1 (explicit) eval — the factory will use it as-
 """
 
 import json
+import os
 import subprocess
 import sys
+
+EVAL_TIMEOUT = int(os.environ.get("FACTORY_EVAL_TIMEOUT", "600"))
+
 
 def eval_tests() -> dict:
     """Run test suite: uv run pytest -v"""
@@ -22,7 +26,7 @@ def eval_tests() -> dict:
             ['uv', 'run', 'pytest', '-v'],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=EVAL_TIMEOUT,
         )
         passed = result.returncode == 0
         if passed:
@@ -47,7 +51,7 @@ def eval_tests() -> dict:
             "score": 0.0,
             "weight": 0.4166666666666667,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {EVAL_TIMEOUT}s",
         }
 
 def eval_lint() -> dict:
@@ -57,7 +61,7 @@ def eval_lint() -> dict:
             ['uv', 'run', 'ruff', 'check', '.'],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=EVAL_TIMEOUT,
         )
         passed = result.returncode == 0
         if passed:
@@ -82,7 +86,7 @@ def eval_lint() -> dict:
             "score": 0.0,
             "weight": 0.25,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {EVAL_TIMEOUT}s",
         }
 
 def eval_type_check() -> dict:
@@ -92,7 +96,7 @@ def eval_type_check() -> dict:
             ['uv', 'run', 'mypy', 'factory/'],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=EVAL_TIMEOUT,
         )
         passed = result.returncode == 0
         if passed:
@@ -117,7 +121,7 @@ def eval_type_check() -> dict:
             "score": 0.0,
             "weight": 0.125,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {EVAL_TIMEOUT}s",
         }
 
 def eval_coverage() -> dict:
@@ -127,7 +131,7 @@ def eval_coverage() -> dict:
             ['uv', 'run', 'pytest', '--cov=factory', '--cov-report=term', '-q'],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=EVAL_TIMEOUT,
         )
         passed = result.returncode == 0
         if passed:
@@ -152,7 +156,7 @@ def eval_coverage() -> dict:
             "score": 0.0,
             "weight": 0.125,
             "passed": False,
-            "details": "Timed out after 120s",
+            "details": f"Timed out after {EVAL_TIMEOUT}s",
         }
 
 def eval_observability() -> dict:

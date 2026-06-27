@@ -31,7 +31,7 @@ class TestStrategistPrompt:
     def test_has_design_space_section(self, strategist_prompt: str) -> None:
         assert "## Design Space Exploration" in strategist_prompt
 
-    def test_lists_all_10_dimensions(self, strategist_prompt: str) -> None:
+    def test_lists_all_dimensions(self, strategist_prompt: str) -> None:
         dimensions = [
             "Features", "Bug fixes", "Instrumentation", "Flow changes",
             "New agents", "Prompt engineering", "Eval improvements",

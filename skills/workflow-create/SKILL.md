@@ -11,7 +11,6 @@ The user wants: **$ARGUMENTS**
 
 ## Phase 1: Research (Parallel)
 
-
 Spawn 3 agents in parallel:
 
 ```bash
@@ -35,7 +34,6 @@ wait
 
 ## Barrier: Research
 
-
 Wait for all parallel agents to complete: `researcher_existing`, `researcher_intent`, `researcher_practices`
 
 Read combined outputs: `.factory/strategy/research-existing.md`, `.factory/strategy/research-intent.md`, `.factory/strategy/research-practices.md`
@@ -57,7 +55,6 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 2: Strategist
 
-
 ```bash
 factory agent strategist --task "Synthesize a complete workflow specification for a new factory mode. Read ALL tagged research files at .factory/strategy/research-*.md. Produce a complete specification including: 1) Python code for the workflow function (nodes dict, edges list, trigger) 2) WORKFLOW_META entry (description, argument_hint) 3) CLI wiring changes (build_parser mode choices, cmd_ceo routing, _build_ceo_task section) 4) Test cases (graph validation, skill export, trigger function, registration) 5) Node details: for each node, specify id, type, role, prompt_template, reads, writes 6) Edge details: for each edge, specify source, target, condition 7) Interactive vs headless behavior Follow conventions from existing workflows — use the same patterns for builder→gate→QA→gate loops, archivist placement, and research forks. Write the specification to .factory/strategy/current.md.
 Read: .factory/strategy/research-combined.md
@@ -74,7 +71,6 @@ Present findings to the user. Wait for approval or feedback.
 
 ## Phase 3: Archivist Plan
 
-
 ```bash
 factory agent archivist --task "Archive the approved workflow specification for the new mode.
 Read: .factory/strategy/current.md
@@ -84,11 +80,10 @@ Write output to: .factory/archive/create-plan.md" --project "$PROJECT_PATH" --ti
 
 ## Phase 4: Builder
 
-
 ```bash
 factory agent builder --task "Implement the new factory mode from the approved workflow specification. Read the approved spec at .factory/strategy/current.md. Read CLAUDE.md for project conventions. Implementation checklist: 1) Add the workflow function to factory/workflow/definitions.py 2) Register it in register_all() 3) Add WORKFLOW_META entry in factory/workflow/skill_export.py 4) Wire --mode in factory/cli.py (build_parser, cmd_ceo, _build_ceo_task) 5) Run factory workflow validate <name> to verify the graph 6) Run factory workflow export-skills to generate the SKILL.md 7) Write tests in tests/ 8) Run pytest and ruff check to verify Commit changes and open a draft PR.
 Read: .factory/strategy/current.md
-Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 1800
 ```
 
 ### CEO Review — Build
@@ -106,11 +101,10 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 5: Qa
 
-
 ```bash
 factory agent qa --task "Verify the new factory mode end-to-end. 1. Health Check — run pytest, ruff check, mypy. Report results. 2. Code Review — read PR diff, evaluate correctness, architecture, edge cases, security. Verify workflow graph validates. 3. Adversarial QA — actually test the new mode:    - Run: factory workflow validate <name>    - Run: factory workflow show <name>    - Run: factory workflow export-skills --verify    - Verify SKILL.md was generated under skills/workflow-<name>/    - Check CLI recognizes --mode <name> (factory ceo --help)    - Check the workflow handles both interactive and headless paths Write results to .factory/reviews/qa-latest.md
 Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 1800
 ```
 
 ### CEO Review — Qa
@@ -132,8 +126,11 @@ Apply the CEO Review Gate protocol:
 factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 ```
 
-## Phase 6: Archivist Build
+- **PROCEED** → continue to `archivist_build`
 
+If gate fails: the change violated a constraint or score regressed. Route to `archivist_build` for error handling.
+
+## Phase 6: Archivist Build
 
 ```bash
 factory agent archivist --task "Archive the new mode build results and learnings.

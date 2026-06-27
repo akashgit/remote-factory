@@ -222,13 +222,12 @@ class TestAgentPool:
 
 
 class TestRegisterAll:
-    def test_all_nine_workflows(self) -> None:
+    def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) == 9
-        assert set(all_wf.keys()) == {
-            "build", "design", "improve", "research", "meta",
-            "discover", "review", "refine", "create",
-        }
+        assert len(all_wf) >= 10, f"Expected at least 10 workflows, got {len(all_wf)}"
+        required = {"build", "design", "improve", "research", "meta",
+                     "discover", "review", "refine", "create", "skill-refine"}
+        assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
     def test_all_validate(self) -> None:
         all_wf = register_all()

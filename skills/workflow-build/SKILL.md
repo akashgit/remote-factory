@@ -11,7 +11,6 @@ The user wants: **$ARGUMENTS**
 
 ## Phase 1: Research (Parallel)
 
-
 Spawn 3 agents in parallel:
 
 ```bash
@@ -35,7 +34,6 @@ wait
 
 ## Barrier: Research
 
-
 Wait for all parallel agents to complete: `researcher_similar`, `researcher_techstack`, `researcher_pitfalls`
 
 Read combined outputs: `.factory/strategy/research-pitfalls.md`, `.factory/strategy/research-similar.md`, `.factory/strategy/research-techstack.md`
@@ -56,7 +54,6 @@ Apply the CEO Review Gate protocol:
 *On RELOOP: return to `fork_research` (max 3 iterations)*
 
 ## Phase 2: Strategist
-
 
 ```bash
 factory agent strategist --task "Synthesize a project specification from research. Read ALL tagged research files at .factory/strategy/research-*.md. Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. Every Phase must have substantive What/Why/Expected impact fields. Build EVERYTHING in this pass. Only defer items requiring human intervention. Write the plan to .factory/strategy/current.md.
@@ -79,7 +76,6 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 3: Archivist Plan
 
-
 ```bash
 factory agent archivist --task "Archive the approved research and strategy.
 Read: .factory/strategy/current.md
@@ -89,11 +85,10 @@ Write output to: .factory/archive/plan.md" --project "$PROJECT_PATH" --timeout 3
 
 ## Phase 4: Builder
 
-
 ```bash
 factory agent builder --task "Implement the next phase from .factory/strategy/current.md. Read the CEO's plan approval at .factory/reviews/ceo-verdict-strategist.md. Read CLAUDE.md and factory.md if they exist. Implement exactly what the current phase describes. Run tests. Commit changes and open a draft PR.
 Read: .factory/strategy/current.md
-Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 1200
 ```
 
 ### CEO Review — Build
@@ -111,11 +106,10 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 5: Qa
 
-
 ```bash
 factory agent qa --task "Run health check (factory eval + score delta), code review (correctness, architecture, edge cases, security), and adversarial QA (run/test the built feature). Write results to .factory/reviews/qa-latest.md
 Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 1800
 ```
 
 ### CEO Review — Qa
@@ -137,8 +131,11 @@ Apply the CEO Review Gate protocol:
 factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 ```
 
-## Phase 6: Archivist Build
+- **PROCEED** → continue to `archivist_build`
 
+If gate fails: the change violated a constraint or score regressed. Route to `archivist_build` for error handling.
+
+## Phase 6: Archivist Build
 
 ```bash
 factory agent archivist --task "Archive the build phase results.
