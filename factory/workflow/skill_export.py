@@ -101,6 +101,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '<project_path> --refine "<request>"',
     },
+    "create": {
+        "description": (
+            "Create mode — meta-mode for creating new factory modes from user descriptions. "
+            "Takes a description (text, spec file, or flow) and produces a fully working "
+            "workflow definition, SKILL.md, CLI wiring, and tests. Use when the user says "
+            "'create a mode for X', 'add a new workflow', or wants to extend the factory "
+            "with a custom pipeline."
+        ),
+        "argument_hint": '"mode description" or /path/to/spec.md',
+    },
 }
 
 

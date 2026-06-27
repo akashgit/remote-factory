@@ -1,4 +1,4 @@
-"""Tier 3: Workflow definition tests — verify all 5 workflows pass validation."""
+"""Tier 3: Workflow definition tests — verify all workflows pass validation."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from __future__ import annotations
 from factory.models import ProjectState
 from factory.workflow.definitions import (
     build_workflow,
+    create_workflow,
     design_workflow,
     improve_workflow,
     meta_workflow,
@@ -16,7 +17,9 @@ from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
     FnNode,
+    ForkNode,
     GateNode,
+    JoinNode,
 )
 
 
@@ -216,12 +219,12 @@ class TestAgentPool:
 
 
 class TestRegisterAll:
-    def test_all_eight_workflows(self) -> None:
+    def test_all_nine_workflows(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) == 8
+        assert len(all_wf) == 9
         assert set(all_wf.keys()) == {
             "build", "design", "improve", "research", "meta",
-            "discover", "review", "refine",
+            "discover", "review", "refine", "create",
         }
 
     def test_all_validate(self) -> None:
@@ -229,3 +232,81 @@ class TestRegisterAll:
         for name, wf in all_wf.items():
             issues = wf.validate_graph()
             assert issues == [], f"{name} has validation issues: {issues}"
+
+
+# ── W₉ Create structure ────────────────────────────────────────
+
+
+class TestCreateStructure:
+    def test_create_valid(self) -> None:
+        wf = create_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"create workflow has issues: {issues}"
+
+    def test_create_trigger(self) -> None:
+        wf = create_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "create"})
+        assert wf.trigger(ProjectState.NO_REPO, {"mode": "create"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+
+    def test_create_name(self) -> None:
+        wf = create_workflow()
+        assert wf.name == "create"
+
+    def test_create_has_parallel_research(self) -> None:
+        wf = create_workflow()
+        assert "fork_research" in wf.nodes
+        assert "join_research" in wf.nodes
+        fork = wf.nodes["fork_research"]
+        assert isinstance(fork, ForkNode)
+        assert len(fork.targets) == 3
+        join = wf.nodes["join_research"]
+        assert isinstance(join, JoinNode)
+        assert len(join.sources) == 3
+
+    def test_create_has_user_gate(self) -> None:
+        """Create mode has a user approval gate at strategy."""
+        wf = create_workflow()
+        gate = wf.nodes.get("gate_strategy")
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "user"
+
+    def test_create_has_builder_qa_loop(self) -> None:
+        """Create mode has the standard builder → QA → gate loop."""
+        wf = create_workflow()
+        assert "builder" in wf.nodes
+        assert "qa" in wf.nodes
+        assert "gate_qa" in wf.nodes
+        assert "gate_build" in wf.nodes
+        reloop_edges = [e for e in wf.edges if e.source == "gate_qa" and e.target == "builder"]
+        assert len(reloop_edges) == 1
+
+    def test_create_has_precheck(self) -> None:
+        wf = create_workflow()
+        assert "gate_precheck" in wf.nodes
+        precheck = wf.nodes["gate_precheck"]
+        assert isinstance(precheck, GateNode)
+        assert precheck.evaluator_type == "fn"
+
+    def test_create_archivists_nonblocking(self) -> None:
+        wf = create_workflow()
+        for nid in ("archivist_plan", "archivist_build"):
+            node = wf.nodes.get(nid)
+            assert node is not None, f"missing {nid}"
+            assert node.blocking is False
+
+    def test_create_start_node(self) -> None:
+        wf = create_workflow()
+        assert wf.start_node == "fork_research"
+
+    def test_create_skill_export(self) -> None:
+        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
+
+        wf = create_workflow()
+        skill_md = workflow_to_skill_md(wf)
+        issues = validate_skill(skill_md)
+        assert issues == [], f"create skill has issues: {issues}"
+        assert "workflow-create" in skill_md
+        assert "User Approval" in skill_md

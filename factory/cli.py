@@ -214,6 +214,7 @@ Given the user's input, return a JSON object with two keys: "follow_ups" and "su
 | `factory ceo {path} --mode improve --focus {issue}` | Target a specific GitHub issue number |
 | `factory ceo {path} --mode design` | Discuss what to work on in an existing project |
 | `factory ceo {path} --mode meta` | Self-improve the factory's own agents |
+| `factory ceo {path} --mode create` | Create a new factory mode (workflow + skill) |
 
 ## Information requirements per mode
 
@@ -288,7 +289,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 6. For new ideas, commands should use the literal user text in quotes — no placeholders
 7. For existing projects, use {path} placeholder and add a path follow-up
 8. If the user mentions fixing/improving an EXISTING project, do NOT wrap input as a new idea
-9. Every generated command MUST include an explicit `--mode` flag (improve, design, research, meta, or build)
+9. Every generated command MUST include an explicit `--mode` flag (improve, design, research, meta, build, or create)
 10. When the input is a GitHub URL (clone scenario), always append `--clean-pr` to the generated command
 
 User input: """
@@ -411,7 +412,10 @@ _CLI_REF = """\
     factory ceo ~/projects/my-app --mode design
 
   Self-improve the factory:
-    factory ceo /path/to/factory --mode meta\
+    factory ceo /path/to/factory --mode meta
+
+  Create a new factory mode:
+    factory ceo /path/to/factory --mode create\
 """
 
 
@@ -2481,6 +2485,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    if mode == "create":
+        if headless:
+            flag = "--bg" if bg else "--headless"
+            print(f"Error: --mode create requires foreground mode "
+                  f"(incompatible with {flag})", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --mode create and --prompt are mutually exclusive. "
+                  "Create mode generates the workflow from a description.",
+                  file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --mode create and --focus are mutually exclusive.",
+                  file=sys.stderr)
+            return 1
+
     if mode == "research":
         if prompt_file:
             print("Error: --mode research and --prompt are mutually exclusive. "
@@ -2488,12 +2508,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    create_description: str | None = None
     design_idea: str | None = None
     design_existing: bool = False
     research_ideation: str | None = None
     deferred_spec: str | None = None
     needs_materialize = False
-    if mode == "design" and _design_is_existing:
+    if mode == "create":
+        resolved_path = Path(raw_path).expanduser().resolve()
+        if not _safe_is_dir(resolved_path):
+            print("Error: --mode create requires an existing project directory. "
+                  "Pass the factory project path: factory ceo /path/to/factory --mode create",
+                  file=sys.stderr)
+            return 1
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
+        create_description = context
+    elif mode == "design" and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
     elif mode == "design":
@@ -2614,8 +2644,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
-    interactive = design_existing or bool(design_idea) or bool(research_ideation)
-    ceo_mode = "build" if interactive else mode
+    interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+    ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -2642,6 +2672,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,
+        create_description=create_description,
     )
 
     session_name = _derive_session_name(
@@ -3481,6 +3512,7 @@ def _build_ceo_task(
     refine_request: str | None = None,
     clean_pr: bool = False,
     display_mode: str | None = None,
+    create_description: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -3541,6 +3573,23 @@ def _build_ceo_task(
             f"config to .factory/strategy/current.md, then proceed to Build mode. "
             f"During Review mode (factory.md creation), populate the research sections "
             f"from the approved spec.\n"
+        )
+
+    if create_description:
+        task += (
+            f"\n\n## Create Mode (New Factory Mode)\n\n"
+            f"**Mode description from user:**\n{create_description}\n\n"
+            f"You are in Create mode — a meta-mode for creating new factory modes.\n\n"
+            f"Follow the Create workflow (skills/workflow-create/SKILL.md):\n"
+            f"1. Research existing workflow patterns and the user's intent\n"
+            f"2. Synthesize a complete workflow specification\n"
+            f"3. Present the spec to the user for interactive approval\n"
+            f"4. Implement: workflow definition, SKILL.md, CLI wiring, tests\n"
+            f"5. QA verification (graph validates, SKILL.md generates, CLI recognizes mode)\n"
+            f"6. Open PR for review\n\n"
+            f"The implementation targets THIS project (the factory codebase). "
+            f"Key files to modify: factory/workflow/definitions.py, "
+            f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
         )
 
     if prompt_file:
@@ -3634,6 +3683,12 @@ def _build_ceo_task(
             "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
             "untouched), run the research command, compare results against the target, and "
             "make a keep/revert decision. Respect research_constraints and cost_budget."
+        )
+    elif mode == "create":
+        task += (
+            "\n\nRun Create mode: read `skills/workflow-create/SKILL.md` for the full "
+            "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
+            "CLI wiring + tests) from the user's description above."
         )
 
     if no_github:
@@ -4379,11 +4434,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "create"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, design (research + brainstorm → spec → build), "
-             "research (autonomous research optimization), or review (on-demand PR review)",
+             "research (autonomous research optimization), review (on-demand PR review), "
+             "or create (meta-mode for creating new factory modes)",
     )
     p.add_argument(
         "--focus", default=None,

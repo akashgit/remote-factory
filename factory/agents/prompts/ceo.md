@@ -310,6 +310,7 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 - `--mode research` (with `research_target` configured) → read `skills/workflow-research/SKILL.md`
 - `--mode meta` → read `skills/workflow-meta/SKILL.md`
 - `--refine "<request>"` → read `skills/workflow-refine/SKILL.md`
+- `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 
