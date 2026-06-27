@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -13,6 +14,7 @@ from factory.strategy import (
 )
 from factory.precheck import (
     check_anti_pattern,
+    check_qa_execution,
     check_score_direction,
     check_scope,
     check_surfaces,
@@ -239,6 +241,119 @@ class TestCheckSurfaces:
         r = check_surfaces(Path("/tmp/test"), "abc123")
         assert not r.passed
         assert "not found" in r.detail.lower()
+
+
+# ── precheck: check_qa_execution ─────────────────────────────
+
+
+def _write_events(tmp_path: Path, events: list[dict]) -> None:
+    """Helper to write events.jsonl in a .factory/ dir."""
+    factory_dir = tmp_path / ".factory"
+    factory_dir.mkdir(exist_ok=True)
+    lines = [json.dumps(e) for e in events]
+    (factory_dir / "events.jsonl").write_text("\n".join(lines) + "\n")
+
+
+class TestCheckQaExecution:
+    def test_qa_execution_guard_pass(self, tmp_path: Path) -> None:
+        """events.jsonl has qa.completed after experiment.begin → passes."""
+        _write_events(tmp_path, [
+            {
+                "type": "experiment.begin",
+                "timestamp": "2026-06-27T10:00:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"exp_id": 1},
+            },
+            {
+                "type": "agent.completed",
+                "timestamp": "2026-06-27T10:05:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {},
+            },
+            {
+                "type": "agent.completed",
+                "timestamp": "2026-06-27T10:10:00+00:00",
+                "project": "test",
+                "agent": "qa",
+                "data": {},
+            },
+        ])
+        result = check_qa_execution(tmp_path, exp_id=1)
+        assert result.passed
+        assert result.name == "qa_execution"
+
+    def test_qa_execution_guard_pass_with_qa_completed_type(self, tmp_path: Path) -> None:
+        """qa.completed event type also satisfies the check."""
+        _write_events(tmp_path, [
+            {
+                "type": "experiment.begin",
+                "timestamp": "2026-06-27T10:00:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"exp_id": 1},
+            },
+            {
+                "type": "qa.completed",
+                "timestamp": "2026-06-27T10:10:00+00:00",
+                "project": "test",
+                "agent": "qa",
+                "data": {},
+            },
+        ])
+        result = check_qa_execution(tmp_path, exp_id=1)
+        assert result.passed
+
+    def test_qa_execution_guard_fail(self, tmp_path: Path) -> None:
+        """builder.completed without qa.completed → fails."""
+        _write_events(tmp_path, [
+            {
+                "type": "experiment.begin",
+                "timestamp": "2026-06-27T10:00:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"exp_id": 1},
+            },
+            {
+                "type": "agent.completed",
+                "timestamp": "2026-06-27T10:05:00+00:00",
+                "project": "test",
+                "agent": "builder",
+                "data": {},
+            },
+        ])
+        result = check_qa_execution(tmp_path, exp_id=1)
+        assert not result.passed
+        assert "Sacred Rule 9" in result.detail
+
+    def test_qa_execution_guard_no_exp_id(self, tmp_path: Path) -> None:
+        """When exp_id is None, QA check is skipped (backwards compatible)."""
+        _write_events(tmp_path, [
+            {
+                "type": "experiment.begin",
+                "timestamp": "2026-06-27T10:00:00+00:00",
+                "project": "test",
+                "agent": None,
+                "data": {"exp_id": 1},
+            },
+        ])
+        result = run_precheck(
+            score_before=0.7,
+            score_after=0.85,
+            threshold=0.8,
+            hypothesis="test",
+            history=[],
+            project_path=tmp_path,
+            exp_id=None,
+        )
+        check_names = [c.name for c in result.checks]
+        assert "qa_execution" not in check_names
+
+    def test_qa_execution_guard_no_events_file(self, tmp_path: Path) -> None:
+        """No events.jsonl → passes (no experiment.begin found)."""
+        result = check_qa_execution(tmp_path, exp_id=1)
+        assert result.passed
 
 
 # ── precheck: run_precheck ────────────────────────────────────

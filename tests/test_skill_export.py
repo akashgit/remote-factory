@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -395,3 +397,35 @@ class TestRealWorkflowSkills:
             content = p.read_text()
             issues = validate_skill(content)
             assert issues == [], f"{p.parent.name} validation: {issues}"
+
+
+# ── QA phase enforcement ──────────────────────────────────────────
+
+
+def _workflows_with_builder() -> list[str]:
+    """Return names of workflows containing a Builder AgentNode."""
+    from factory.workflow.definitions import register_all
+
+    names = []
+    for name, wf in register_all().items():
+        has_builder = any(
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
+            for n in wf.nodes.values()
+        )
+        if has_builder:
+            names.append(name)
+    return sorted(names)
+
+
+class TestSkillQaEnforcement:
+    """Every workflow with a Builder must include a QA phase in its exported SKILL.md."""
+
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
+    def test_builder_workflow_has_qa_in_skill(self, workflow_name: str) -> None:
+        from factory.workflow.definitions import register_all
+
+        wf = register_all()[workflow_name]
+        content = workflow_to_skill_md(wf)
+        assert "factory agent qa" in content, (
+            f"workflow-{workflow_name} SKILL.md is missing 'factory agent qa' invocation"
+        )
