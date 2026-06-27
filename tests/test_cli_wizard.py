@@ -40,16 +40,16 @@ class TestTTYDetection:
             code = main([])
         assert code == 1
 
-    def test_tty_launches_wizard(self) -> None:
-        """TTY with no subcommand dispatches to _welcome_wizard."""
-        with patch("factory.cli._welcome_wizard", return_value=0) as mock_wizard, \
+    def test_tty_launches_refactory(self) -> None:
+        """TTY with no subcommand always dispatches to cmd_refactory."""
+        with patch("factory.cli.cmd_refactory", return_value=0) as mock_refactory, \
              patch("sys.stdin") as mock_stdin, \
              patch("sys.stderr") as mock_stderr:
             mock_stdin.isatty.return_value = True
             mock_stderr.isatty.return_value = True
             code = main([])
         assert code == 0
-        mock_wizard.assert_called_once()
+        mock_refactory.assert_called_once()
 
     def test_stdin_not_tty_stderr_tty(self, capsys: pytest.CaptureFixture[str]) -> None:
         """If stdin is not a TTY (piped), falls through to help."""

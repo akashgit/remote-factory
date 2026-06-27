@@ -133,9 +133,9 @@ class TestBuildTmuxRunArgs:
         result = _build_tmux_run_args(args, Path("/tmp/project"), "opus-4")
 
         assert "--mode improve" in result
-        assert "--loop" in result
-        assert "--interval 900" in result
-        assert "--max-cycles 5" in result
+        assert "--loop" not in result
+        assert "--interval" not in result
+        assert "--max-cycles" not in result
         assert "--model" in result
         assert "--no-github" in result
         assert "--profile" in result
@@ -172,7 +172,7 @@ class TestBuildTmuxRunArgs:
             bg_agents=False, tmux_persist=False, use_profile=False,
         )
         result = _build_tmux_run_args(args, Path("/tmp/p"), None)
-        assert result == "factory run /tmp/p"
+        assert result == "factory ceo /tmp/p"
 
 
 class TestCmdTmuxStop:

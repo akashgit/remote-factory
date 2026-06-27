@@ -74,3 +74,12 @@ profiler:
     Synthesize a user's working style, preferences, and decision patterns from
     factory session evidence into a coherent prose profile. Use when generating
     or updating a user profile from experiment data.
+
+refactory:
+  model: opus
+  tools: [Bash, Read, Write, Edit, Grep, Glob, WebSearch, WebFetch]
+  description: >-
+    Persistent factory supervisor that manages CEO agent lifecycles,
+    context/compaction for child sessions, and playbook evolution via ACE.
+    Launched via bare 'factory' command or 'factory refactory'. Not spawned
+    by the CEO — it's the layer above.

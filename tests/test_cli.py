@@ -1561,7 +1561,7 @@ class TestCmdHomeReturnsFactoryDir:
 
 class TestCmdTmuxBareCLI:
     def test_tmux_command_uses_bare_factory(self):
-        """cmd_tmux generates a shell command using bare 'factory run', not uv run."""
+        """cmd_tmux generates a shell command using bare 'factory ceo', not uv run."""
         from factory.cli import cmd_tmux
         import argparse
 
@@ -1590,7 +1590,7 @@ class TestCmdTmuxBareCLI:
 
             new_session_call = mock_run.call_args_list[1]
             shell_cmd = new_session_call[0][0][-1]  # last arg is the shell command
-            assert "factory run" in shell_cmd
+            assert "factory ceo" in shell_cmd
             assert "uv run python -m factory" not in shell_cmd
             assert "cd " not in shell_cmd
             assert "source .venv/bin/activate" not in shell_cmd

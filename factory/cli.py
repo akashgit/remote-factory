@@ -3142,16 +3142,16 @@ def _tmux_available() -> bool:
 
 
 def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
-    """Build the 'factory run ...' command string from parsed args."""
-    parts = [f"factory run {project_path}"]
+    """Build the 'factory ceo ...' command string from parsed args.
+
+    Uses 'factory ceo' (not 'factory run') so the session inside tmux
+    is interactive — the user can attach and interact with the CEO directly.
+    --loop/--interval/--max-cycles are factory-run-only flags and are
+    NOT forwarded to factory ceo.
+    """
+    parts = [f"factory ceo {project_path}"]
     if args.mode:
         parts.append(f"--mode {args.mode}")
-    if args.loop:
-        parts.append("--loop")
-    if args.interval:
-        parts.append(f"--interval {args.interval}")
-    if args.max_cycles is not None:
-        parts.append(f"--max-cycles {args.max_cycles}")
     if model:
         parts.append(f"--model {shlex.quote(model)}")
     if getattr(args, "no_github", False):
@@ -3349,6 +3349,60 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
     print(f"Stopped: {session}")
     return 0
 
+
+def cmd_refactory(args: argparse.Namespace) -> int:
+    """Launch the re:factory persistent supervisor agent.
+
+    Sets up the workspace, resolves the session ID, and replaces the current
+    process with an interactive claude session via os.execvp.
+    """
+    import shutil
+
+    from factory.agents.runner import resolve_prompt
+    from factory.refactory import get_session_id, setup_workspace
+
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
+        return 1
+
+    project_path = Path(getattr(args, "path", None) or Path.cwd()).resolve()
+
+    setup_workspace(project_path)
+    reset = getattr(args, "reset", False)
+    session_file = project_path / ".refactory" / "session.json"
+    is_new_session = reset or not session_file.exists()
+    session_id = get_session_id(project_path, reset=reset)
+    model = getattr(args, "model", None)
+
+    prompt = resolve_prompt("refactory")
+    prompt_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix="refactory-prompt-", delete=False,
+    )
+    prompt_file.write(prompt)
+    prompt_file.close()
+
+    if is_new_session:
+        cmd = [
+            "claude",
+            "--session-id", session_id,
+            "--append-system-prompt-file", prompt_file.name,
+            "--dangerously-skip-permissions",
+        ]
+    else:
+        cmd = [
+            "claude",
+            "--resume", session_id,
+            "--append-system-prompt-file", prompt_file.name,
+            "--dangerously-skip-permissions",
+        ]
+
+    if model:
+        cmd.extend(["--model", model])
+
+    os.chdir(project_path)
+    os.execvp("claude", cmd)
+    return 0  # unreachable after execvp
 
 
 def _has_research_target(project_path: Path) -> bool:
@@ -4525,6 +4579,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--all", action="store_true", default=False, dest="stop_all",
                     help="Stop ALL factory tmux sessions (required when no --session/--path given)")
 
+    # refactory — persistent supervisor agent
+    p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
+    p.add_argument("path", nargs="?", default=None,
+                    help="Project directory (default: current working directory)")
+    p.add_argument("--reset", action="store_true", default=False,
+                    help="Reset session (new session ID, fresh start)")
+    p.add_argument("--model", default=None,
+                    help="Claude model override")
+
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
     add_workflow_parser(sub)
@@ -4553,7 +4616,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.command:
         if sys.stdin.isatty() and sys.stderr.isatty():
-            return _welcome_wizard()
+            return cmd_refactory(args)
         parser.print_help()
         return 1
 
@@ -4618,6 +4681,7 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
+        "refactory": cmd_refactory,
         "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),
     }
 
