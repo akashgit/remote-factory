@@ -2374,12 +2374,21 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     focus = getattr(args, "focus", None)
     dir_name = getattr(args, "dir", None)
 
+    # Benchmark mode: full factory pipeline + auto-merge to base branch on exit.
+    merge_on_exit = False
+    if mode == "benchmark":
+        merge_on_exit = True
+        headless = False  # avoid 3600s max_timeout in run_subprocess
+        mode = "auto"  # let factory auto-detect build vs improve
+
     if not raw_path:
         print("Error: provide a project path, GitHub URL, idea file, or prompt",
               file=sys.stderr)
         return 1
 
     no_github = getattr(args, "no_github", False)
+    if merge_on_exit:
+        no_github = True  # benchmark mode implies no GitHub
     if no_github:
         os.environ["FACTORY_NO_GITHUB"] = "1"
     refine_request = getattr(args, "refine", None)
@@ -2737,6 +2746,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         finally:
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
+            if merge_on_exit:
+                from factory.worktree import merge_to_base
+                merge_to_base(project_path, wt_branch, base_branch)
             remove_worktree(project_path, wt_path, wt_branch)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
@@ -2762,6 +2774,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     finally:
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
+        if merge_on_exit:
+            from factory.worktree import merge_to_base
+            merge_to_base(project_path, wt_branch, base_branch)
         remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil

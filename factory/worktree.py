@@ -58,6 +58,42 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     return wt_dir, branch
 
 
+def merge_to_base(project_path: Path, branch: str, base_branch: str = "main") -> bool:
+    """Merge worktree branch to base branch before cleanup.
+
+    Used in benchmark mode where there is no human to merge PRs.
+    Returns True on success, False on failure (logs warning, does not raise).
+    """
+    project_path = project_path.resolve()
+
+    result = subprocess.run(
+        ["git", "log", f"{base_branch}..{branch}", "--oneline"],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    if not result.stdout.strip():
+        log.info("worktree_merge_skip", branch=branch, reason="no_commits_ahead")
+        return True
+
+    result = subprocess.run(
+        ["git", "merge", branch, "--no-edit"],
+        cwd=project_path, capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        log.info("worktree_merged", branch=branch, base=base_branch)
+        try:
+            from factory.events import emit_event
+            emit_event(project_path, "worktree.merged", data={
+                "branch": branch,
+                "base_branch": base_branch,
+            })
+        except Exception:
+            pass
+        return True
+
+    log.warning("worktree_merge_failed", branch=branch, stderr=result.stderr[:200])
+    return False
+
+
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
