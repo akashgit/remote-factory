@@ -56,7 +56,7 @@ factory init $PROJECT_PATH
 
 
 ```bash
-factory eval "$PROJECT_PATH"
+factory eval $PROJECT_PATH
 ```
 
 ## Step: Commit

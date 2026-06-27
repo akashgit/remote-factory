@@ -14,7 +14,6 @@ The user wants: **$ARGUMENTS**
 
 ```bash
 factory agent refiner --task "Classify and scope a refinement request. Read CLAUDE.md and factory.md. Analyze the codebase to identify which files need to change, estimate scope, and classify the request as Tier 1, 2, or 3. Produce the structured classification output with a Builder task description.
-Read: CLAUDE.md, factory.md
 Write output to: .factory/reviews/refiner-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
@@ -60,7 +59,7 @@ Read: .factory/reviews/refiner-latest.md
 Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
-## Phase 3: Reviewer — Qa
+## Phase 3: Qa
 
 
 ```bash

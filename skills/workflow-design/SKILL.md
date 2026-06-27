@@ -12,14 +12,25 @@ The user wants: **$ARGUMENTS**
 ## Phase 1: Research (Parallel)
 
 
-Spawn 3 researchers in parallel using a SINGLE Bash tool call with shell `&` + `wait`. Do NOT use `run_in_background: True` or separate Bash calls — all commands must run in one shell:
+Spawn 3 agents in parallel:
 
 ```bash
-factory agent researcher --review-tag similar --task "Similar projects research. Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities. Write output to: .factory/strategy/research-similar.md" --project "$PROJECT_PATH" --timeout 600 &
-factory agent researcher --review-tag techstack --task "Tech stack research. Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons. Write output to: .factory/strategy/research-techstack.md" --project "$PROJECT_PATH" --timeout 600 &
-factory agent researcher --review-tag pitfalls --task "Pitfalls and scope research. Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds. Write output to: .factory/strategy/research-pitfalls.md" --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag similar --task "Similar projects research. Search the web for similar projects, existing solutions, and prior art. Analyze their strengths, weaknesses, and market positioning. Check .factory/archive/ for prior knowledge on similar builds. Write findings to .factory/strategy/research-similar.md covering: similar projects found (with links), what they do well and what's missing, differentiation opportunities.
+Write output to: .factory/strategy/research-similar.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
+factory agent researcher --review-tag techstack --task "Tech stack research. Identify the best technology stack for this type of project. Find architecture patterns and best practices. Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md covering: recommended tech stack with rationale, architecture patterns, framework comparisons.
+Write output to: .factory/strategy/research-techstack.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
+factory agent researcher --review-tag pitfalls --task "Pitfalls and scope research. Identify potential pitfalls and common mistakes for this type of project. Research MVP scope best practices. Check .factory/archive/ for lessons from past builds. Write findings to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid, MVP scope recommendation, lessons from similar past builds.
+Write output to: .factory/strategy/research-pitfalls.md" --project "$PROJECT_PATH" --timeout 600 &
+```
+
+```bash
 wait
-echo "All researchers complete"
 ```
 
 ## Barrier: Research
@@ -93,12 +104,27 @@ Apply the CEO Review Gate protocol:
 
 *On RELOOP: return to `builder` (max 3 iterations)*
 
-## Step: Eval
+## Phase 5: Qa
 
 
 ```bash
-factory eval "$PROJECT_PATH"
+factory agent qa --task "Run health check (factory eval + score delta), code review (correctness, architecture, edge cases, security), and adversarial QA (run/test the built feature). Write results to .factory/reviews/qa-latest.md
+Read: .factory/reviews/builder-latest.md
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```
+
+### CEO Review — Qa
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/qa-latest.md`
+3. Assess: Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.
+4. Write verdict to `.factory/reviews/ceo-verdict-qa.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
 
 ### Gate — Precheck (Automated)
 
@@ -111,7 +137,7 @@ factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 
 ```bash
 factory agent archivist --task "Archive the build phase results.
-Read: .factory/reviews/evaluator-latest.md
+Read: .factory/reviews/qa-latest.md
 Write output to: .factory/archive/build.md" --project "$PROJECT_PATH" --timeout 300 --model haiku &
 ```
 *(fire-and-forget — CEO continues immediately)*

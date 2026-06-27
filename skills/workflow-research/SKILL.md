@@ -13,7 +13,7 @@ The user wants: **$ARGUMENTS**
 
 
 ```bash
-factory eval "$PROJECT_PATH"
+factory eval $PROJECT_PATH
 ```
 
 ## Phase 1: Failure Analyst
@@ -98,12 +98,27 @@ Apply the CEO Review Gate protocol:
 
 *On RELOOP: return to `builder` (max 3 iterations)*
 
-## Step: Eval
+## Phase 5: Qa
 
 
 ```bash
-factory eval "$PROJECT_PATH"
+factory agent qa --task "Run health check (factory eval + score delta), code review (correctness, architecture, edge cases, security), adversarial QA (run/test the built feature), and verify mutable/fixed surface constraint compliance. Write results to .factory/reviews/qa-latest.md
+Read: .factory/reviews/builder-latest.md
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```
+
+### CEO Review — Qa
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/qa-latest.md`
+3. Assess: Review QA results. PROCEED if all checks pass. RELOOP to builder (max 3 iterations) if issues found.
+4. Write verdict to `.factory/reviews/ceo-verdict-qa.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `builder` (max 3 iterations)*
 
 ### Gate — Precheck (Automated)
 
@@ -118,7 +133,7 @@ factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 factory finalize $PROJECT_PATH --id 1 --verdict keep --hypothesis 'hypothesis'
 ```
 
-## Phase 5: Archivist
+## Phase 6: Archivist
 
 
 ```bash

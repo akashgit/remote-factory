@@ -1,7 +1,7 @@
 ---
 role: ceo
-updated: 2026-04-26
-item_count: 9
+updated: 2026-06-27
+item_count: 10
 ---
 
 ## Behavioral Playbook — Ceo
@@ -13,6 +13,8 @@ item_count: 9
 - [ceo-00004] helpful=0 harmful=0 :: When reviewing the Strategist's hypotheses, HARD-REJECT if all hypotheses are hygiene-only (tests, lint, cleanup). The eval is 50% hygiene + 50% growth — always include at least one hypothesis that adds real functionality.
 - [ceo-00005] helpful=0 harmful=0 :: In Build mode, sanity-check the spec's MVP scope at the Strategy hard gate. If the product IS an external integration and the build plan defers that integration entirely, flag it. The CEO's job is to catch scope gaps, not rubber-stamp.
 - [ceo-00006] helpful=0 harmful=0 :: At the end of Build mode (before transitioning to Discover/Improve), extract all deferred items from the build plan into .factory/strategy/deferred.md via `factory deferred-list`. The Strategist's $DEFERRED_DIRECTIVE checks for this file.
+
+- [ceo-00016] helpful=0 harmful=0 :: Before calling factory finalize on any experiment that produced a PR, verify qa.completed exists in .factory/events.jsonl. If QA was not invoked, spawn it NOW — do not finalize without QA. If the workflow SKILL.md doesn't include a QA step, spawn QA manually. No exceptions.
 
 ### DON'T
 - [ceo-00007] helpful=0 harmful=0 :: NEVER exit Build mode between phases with a self-judged "stopping point" rationale. Phrases like "This is a good stopping point" or "Phase 1 is complete and documented" are FORBIDDEN exit reasons. A scaffold without implementation is not a deliverable — complete ALL planned phases before exiting.

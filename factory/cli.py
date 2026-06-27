@@ -917,6 +917,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 history=history_dicts,
                 project_path=project_path,
                 hard_constraints=config.hard_constraints,
+                exp_id=args.id,
             )
 
             if not precheck_result.passed:

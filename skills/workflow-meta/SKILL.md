@@ -104,3 +104,25 @@ factory agent builder --task "Delete the approved redundant tests. Verify remain
 Read: .factory/strategy/test-analysis.md
 Write output to: .factory/reviews/test-pruning-latest.md" --project "$PROJECT_PATH" --timeout 600
 ```
+
+## Phase 6: Qa Verify
+
+
+```bash
+factory agent qa --task "Verify the test suite still passes after pruning. Run health check and confirm no regressions. Write results to .factory/reviews/qa-verify-latest.md
+Read: .factory/reviews/test-pruning-latest.md
+Write output to: .factory/reviews/qa-verify-latest.md" --project "$PROJECT_PATH" --timeout 600
+```
+
+### CEO Review — Qa Verify
+
+Apply the CEO Review Gate protocol:
+1. Read the agent output for the preceding step
+2. Read artifacts: `.factory/reviews/qa-verify-latest.md`
+3. Assess: Review QA verification of test pruning. PROCEED if tests still pass. RELOOP to test_builder (max 3 iterations) if regressions found.
+4. Write verdict to `.factory/reviews/ceo-verdict-qa-verify.md`
+5. **PROCEED** → continue to next step
+6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
+7. **ABORT** → log failure and skip to archival
+
+*On RELOOP: return to `test_builder` (max 3 iterations)*

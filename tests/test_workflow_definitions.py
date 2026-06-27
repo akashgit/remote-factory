@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections import defaultdict, deque
+
+import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import (
@@ -310,3 +313,74 @@ class TestCreateStructure:
         assert issues == [], f"create skill has issues: {issues}"
         assert "workflow-create" in skill_md
         assert "User Approval" in skill_md
+
+
+# ── Builder → QA reachability audit ────────────────────────────
+
+
+def _workflows_with_builder() -> list[str]:
+    """Return names of workflows containing a Builder AgentNode."""
+    names = []
+    for name, wf in register_all().items():
+        has_builder = any(
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
+            for n in wf.nodes.values()
+        )
+        if has_builder:
+            names.append(name)
+    return sorted(names)
+
+
+def _is_reachable(workflow_name: str, source_id: str, target_id: str) -> bool:
+    """Check if target_id is reachable from source_id via forward edges."""
+    wf = register_all()[workflow_name]
+    adj: dict[str, list[str]] = defaultdict(list)
+    for edge in wf.edges:
+        adj[edge.source].append(edge.target)
+
+    visited: set[str] = set()
+    queue: deque[str] = deque([source_id])
+    while queue:
+        nid = queue.popleft()
+        if nid == target_id:
+            return True
+        if nid in visited:
+            continue
+        visited.add(nid)
+        queue.extend(adj.get(nid, []))
+    return False
+
+
+class TestBuilderQaReachability:
+    """Every workflow with a Builder must also have a QA node reachable from it."""
+
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
+    def test_builder_has_qa_node(self, workflow_name: str) -> None:
+        wf = register_all()[workflow_name]
+        qa_nodes = [
+            nid for nid, n in wf.nodes.items()
+            if isinstance(n, AgentNode) and n.role == AgentRole.QA
+        ]
+        assert qa_nodes, (
+            f"workflow '{workflow_name}' has a Builder but no QA AgentNode"
+        )
+
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
+    def test_qa_reachable_from_builder(self, workflow_name: str) -> None:
+        wf = register_all()[workflow_name]
+        builder_ids = [
+            nid for nid, n in wf.nodes.items()
+            if isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
+        ]
+        qa_ids = [
+            nid for nid, n in wf.nodes.items()
+            if isinstance(n, AgentNode) and n.role == AgentRole.QA
+        ]
+        for bid in builder_ids:
+            reachable = any(
+                _is_reachable(workflow_name, bid, qid) for qid in qa_ids
+            )
+            assert reachable, (
+                f"workflow '{workflow_name}': QA node is not reachable from "
+                f"Builder node '{bid}' via edges"
+            )

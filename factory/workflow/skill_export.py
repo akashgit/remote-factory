@@ -203,17 +203,8 @@ def _agent_to_instruction(node: AgentNode, *, is_parallel: bool = False) -> str:
 
 
 def _fn_to_instruction(node: FnNode) -> str:
-    """Convert an FnNode to a CLI command instruction.
-
-    Eval commands are delegated to the evaluator agent rather than
-    invoked directly — the QA pipeline requires agent-mediated eval.
-    """
+    """Convert an FnNode to a CLI command instruction."""
     cmd = node.command.replace("{project_path}", "$PROJECT_PATH")
-    if "factory eval" in cmd:
-        return (
-            '```bash\nfactory agent evaluator --task "Run eval and report results." '
-            '--project "$PROJECT_PATH" --timeout 300\n```'
-        )
     return f"```bash\n{cmd}\n```"
 
 
