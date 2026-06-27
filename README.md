@@ -47,6 +47,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 |---|---|
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve` |
+| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create "description"` |
 
 ---
 
@@ -117,6 +118,24 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 
 ---
 
+## Create New Modes
+
+Create mode lets you build new factory modes — new workflows, new pipelines, new factories — from a description. Describe what the mode should do, and re:factory researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
+
+```bash
+# From a description
+uv run factory ceo /path/to/factory --mode create "a mode that audits security vulnerabilities"
+
+# From a spec file
+uv run factory ceo /path/to/factory --mode create ~/specs/audit-mode.md
+```
+
+The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
+
+Create mode is interactive — it requires your approval at the strategy gate before building. Point it at the factory repo itself to extend re:factory with custom pipelines.
+
+---
+
 ## Eval System
 
 Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
@@ -147,6 +166,7 @@ Built something with re:factory? Open a PR to add it here.
 uv run factory ceo "idea" --mode design         # Design from a raw idea
 uv run factory ceo <path> --mode improve        # Improve an existing project
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
+uv run factory ceo <path> --mode create "..."  # Create a new factory mode
 uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
 ```
