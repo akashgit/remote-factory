@@ -1,0 +1,268 @@
+baseline:
+  type: FnNode
+  id: baseline
+  command: factory eval {project_path}
+  reads: []
+  writes:
+  - .factory/experiments/baseline.json
+  edges_out:
+  - target: failure_analyst
+    condition: null
+failure_analyst:
+  type: AgentNode
+  id: failure_analyst
+  role: failure_analyst
+  blocking: 'true'
+  reads:
+  - .factory/experiments/baseline.json
+  writes:
+  - .factory/strategy/failure_analysis.md
+  edges_out:
+  - target: researcher
+    condition: null
+  slots:
+    task_prompt_failure_analyst: 'Analyze research run results. Read run artifacts
+      at .factory/research/runs/. Read research target config from .factory/config.json.
+      Classify failures by type and severity. Compute failure distribution. Suggest
+      interventions within mutable surfaces only. Write to .factory/strategy/failure_analysis.md.
+
+      Read: .factory/experiments/baseline.json
+
+      Write output to: .factory/strategy/failure_analysis.md'
+    timeout_failure_analyst: '600'
+researcher:
+  type: AgentNode
+  id: researcher
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/strategy/failure_analysis.md
+  writes:
+  - .factory/strategy/research-local.md
+  edges_out:
+  - target: gate_research
+    condition: null
+  slots:
+    task_prompt_researcher: 'Failure-targeted research. Read failure analysis at .factory/strategy/failure_analysis.md.
+      Search the web for solutions to the dominant failure modes. Check .factory/archive/
+      for prior knowledge on these patterns. Write findings to .factory/strategy/research-local.md.
+
+      Read: .factory/strategy/failure_analysis.md
+
+      Write output to: .factory/strategy/research-local.md'
+    timeout_researcher: '600'
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-local.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: researcher
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Are observations grounded in data? Did web research
+      surface useful patterns? Any blind spots in the analysis?
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/failure_analysis.md
+  - .factory/strategy/research-local.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Generate research hypotheses targeting dominant failure
+      modes. Each hypothesis must improve over the previous baseline score. Each hypothesis
+      must name specific files from mutable_surfaces to modify. Hypotheses MUST NOT
+      modify files in fixed_surfaces. Prioritize by expected impact on the target
+      metric. Write 1-3 hypotheses to .factory/strategy/current.md.
+
+      Read: .factory/strategy/failure_analysis.md, .factory/strategy/research-local.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: begin
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_strategy: 'HARD GATE. Check: specific enough to implement? Scoped
+      to one PR? Expected eval impact realistic? Follows FEEC priority? Not redundant
+      with reverted experiment? At least one growth hypothesis? Backlog convergence?
+      Write PLAN APPROVED with approved hypotheses in priority order.'
+    max_iterations_gate_strategy: '3'
+begin:
+  type: FnNode
+  id: begin
+  command: factory begin {project_path} --hypothesis "$HYPOTHESIS"
+  reads: []
+  writes:
+  - .factory/experiments/current_id
+  edges_out:
+  - target: builder
+    condition: null
+  slots:
+    finalize_command_begin: factory begin $PROJECT_PATH --hypothesis "$HYPOTHESIS"
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Implement the current hypothesis from .factory/strategy/current.md.
+      Read CLAUDE.md and factory.md. Read the CEO strategy approval. Implement exactly
+      what the hypothesis describes. Run tests. Commit and open a draft PR.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '1200'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: qa
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_build: Read builder output and PR diff. Does work match the hypothesis?
+      No scope creep? Tests included? REDIRECT if off-scope.
+    max_iterations_gate_build: '3'
+qa:
+  type: AgentNode
+  id: qa
+  role: qa
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_qa
+    condition: null
+  slots:
+    task_prompt_qa: 'Run health check (factory eval + score delta), code review (correctness,
+      architecture, edge cases, security), adversarial QA (run/test the built feature),
+      and verify mutable/fixed surface constraint compliance. Write results to .factory/reviews/qa-latest.md
+
+      Read: .factory/reviews/builder-latest.md
+
+      Write output to: .factory/reviews/qa-latest.md'
+    timeout_qa: '1800'
+    gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. RELOOP to
+      builder (max 3 iterations) if issues found.
+    max_iterations_gate_qa: '3'
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_precheck
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. RELOOP to
+      builder (max 3 iterations) if issues found.
+    max_iterations_gate_qa: '3'
+gate_precheck:
+  type: GateNode
+  id: gate_precheck
+  evaluator_type: fn
+  evaluator_command: factory precheck {project_path} --score-before 0 --score-after
+    0
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: finalize
+    condition: PROCEED
+  - target: archivist
+    condition: HALT
+  slots:
+    failure_action_gate_precheck: 'If gate fails: the change violated a constraint
+      or score regressed. Route to `archivist` for error handling.'
+finalize:
+  type: FnNode
+  id: finalize
+  command: factory finalize {project_path} --id $EXP_ID --verdict $VERDICT --hypothesis
+    "$HYPOTHESIS"
+  reads:
+  - .factory/reviews/qa-latest.md
+  writes:
+  - .factory/experiments/verdict.json
+  edges_out:
+  - target: archivist
+    condition: null
+  slots:
+    finalize_command_finalize: factory finalize $PROJECT_PATH --id $EXP_ID --verdict
+      $VERDICT --hypothesis "$HYPOTHESIS"
+archivist:
+  type: AgentNode
+  id: archivist
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/experiments/verdict.json
+  writes:
+  - .factory/archive/experiment.md
+  edges_out:
+  - target: plateau_gate
+    condition: null
+  slots:
+    task_prompt_archivist: 'Archive experiment results and learnings.
+
+      Read: .factory/experiments/verdict.json
+
+      Write output to: .factory/archive/experiment.md'
+    timeout_archivist: '300'
+plateau_gate:
+  type: GateNode
+  id: plateau_gate
+  evaluator_type: fn
+  evaluator_command: python3 -c "import json, pathlib, sys; tsv = pathlib.Path('{project_path}/.factory/results.tsv');
+    lines = [l for l in tsv.read_text().strip().splitlines()[1:] if l.strip()] if
+    tsv.exists() else []; scores = []; [scores.append(float(p)) for l in lines for
+    i, p in enumerate(l.split(chr(9))) if i == 2 and p]; recent = scores[-3:] if len(scores)
+    >= 3 else scores; improved = len(recent) < 2 or recent[-1] > recent[-2]; print('RELOOP'
+    if improved else 'PROCEED')"
+  reads:
+  - .factory/experiments/verdict.json
+  edges_out:
+  - target: baseline
+    condition: RELOOP
+  slots:
+    failure_action_plateau_gate: ''
+    max_iterations_plateau_gate: '3'

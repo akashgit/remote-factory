@@ -11,13 +11,11 @@ The user wants: **$ARGUMENTS**
 
 ## Step: Baseline
 
-
 ```bash
 factory eval $PROJECT_PATH
 ```
 
 ## Phase 1: Failure Analyst
-
 
 ```bash
 factory agent failure_analyst --task "Analyze research run results. Read run artifacts at .factory/research/runs/. Read research target config from .factory/config.json. Classify failures by type and severity. Compute failure distribution. Suggest interventions within mutable surfaces only. Write to .factory/strategy/failure_analysis.md.
@@ -26,7 +24,6 @@ Write output to: .factory/strategy/failure_analysis.md" --project "$PROJECT_PATH
 ```
 
 ## Phase 2: Researcher
-
 
 ```bash
 factory agent researcher --task "Failure-targeted research. Read failure analysis at .factory/strategy/failure_analysis.md. Search the web for solutions to the dominant failure modes. Check .factory/archive/ for prior knowledge on these patterns. Write findings to .factory/strategy/research-local.md.
@@ -49,7 +46,6 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 3: Strategist
 
-
 ```bash
 factory agent strategist --task "Generate research hypotheses targeting dominant failure modes. Each hypothesis must improve over the previous baseline score. Each hypothesis must name specific files from mutable_surfaces to modify. Hypotheses MUST NOT modify files in fixed_surfaces. Prioritize by expected impact on the target metric. Write 1-3 hypotheses to .factory/strategy/current.md.
 Read: .factory/strategy/failure_analysis.md, .factory/strategy/research-local.md
@@ -71,18 +67,16 @@ Apply the CEO Review Gate protocol:
 
 ## Step: Begin
 
-
 ```bash
-factory begin $PROJECT_PATH --hypothesis "Implement hypothesis"
+factory begin $PROJECT_PATH --hypothesis "$HYPOTHESIS"
 ```
 
 ## Phase 4: Builder
 
-
 ```bash
 factory agent builder --task "Implement the current hypothesis from .factory/strategy/current.md. Read CLAUDE.md and factory.md. Read the CEO strategy approval. Implement exactly what the hypothesis describes. Run tests. Commit and open a draft PR.
 Read: .factory/strategy/current.md
-Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 1200
 ```
 
 ### CEO Review — Build
@@ -100,11 +94,10 @@ Apply the CEO Review Gate protocol:
 
 ## Phase 5: Qa
 
-
 ```bash
 factory agent qa --task "Run health check (factory eval + score delta), code review (correctness, architecture, edge cases, security), adversarial QA (run/test the built feature), and verify mutable/fixed surface constraint compliance. Write results to .factory/reviews/qa-latest.md
 Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 1800
 ```
 
 ### CEO Review — Qa
@@ -126,15 +119,17 @@ Apply the CEO Review Gate protocol:
 factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 ```
 
+- **PROCEED** → continue to `finalize`
+
+If gate fails: the change violated a constraint or score regressed. Route to `archivist` for error handling.
+
 ## Step: Finalize
 
-
 ```bash
-factory finalize $PROJECT_PATH --id 1 --verdict keep --hypothesis 'hypothesis'
+factory finalize $PROJECT_PATH --id $EXP_ID --verdict $VERDICT --hypothesis "$HYPOTHESIS"
 ```
 
 ## Phase 6: Archivist
-
 
 ```bash
 factory agent archivist --task "Archive experiment results and learnings.

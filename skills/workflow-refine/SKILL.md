@@ -11,7 +11,6 @@ The user wants: **$ARGUMENTS**
 
 ## Phase 1: Refiner
 
-
 ```bash
 factory agent refiner --task "Classify and scope a refinement request. Read CLAUDE.md and factory.md. Analyze the codebase to identify which files need to change, estimate scope, and classify the request as Tier 1, 2, or 3. Produce the structured classification output with a Builder task description.
 Write output to: .factory/reviews/refiner-latest.md" --project "$PROJECT_PATH" --timeout 600
@@ -36,15 +35,15 @@ Apply the CEO Review Gate protocol:
 python3 -c "from pathlib import Path; text = Path('$PROJECT_PATH/.factory/reviews/refiner-latest.md').read_text(); print('HALT' if 'Tier 3' in text or 'tier 3' in text or 'TIER 3' in text else 'PROCEED')"
 ```
 
+- **PROCEED** → continue to `begin`
+
 ## Step: Begin
 
-
 ```bash
-factory begin $PROJECT_PATH --hypothesis "Refine: user refinement request"
+factory begin $PROJECT_PATH --hypothesis "$HYPOTHESIS"
 ```
 
 ## Step: Create Issue
-
 
 ```bash
 gh issue create --title "Refine: refinement request" --label "refinement" --body "Factory refinement experiment."
@@ -52,20 +51,18 @@ gh issue create --title "Refine: refinement request" --label "refinement" --body
 
 ## Phase 2: Builder
 
-
 ```bash
 factory agent builder --task "Implement the refinement described in the Refiner's output. Read the GitHub issue. Read CLAUDE.md and factory.md. Implement exactly what the issue describes. Run tests. Commit and open a draft PR.
 Read: .factory/reviews/refiner-latest.md
-Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" --timeout 1200
 ```
 
 ## Phase 3: Qa
 
-
 ```bash
 factory agent qa --task "Verify the refinement. Run all 3 verification sections: 1. Health Check — run factory eval. Report composite score and delta. 2. Code Review — read PR diff, evaluate 7-category checklist. Run factory guard with --check-scope. 3. Adversarial QA — run/test the project, verify the refinement works.
 Read: .factory/reviews/builder-latest.md
-Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --timeout 1800
 ```
 
 ### CEO Review — Qa
@@ -87,15 +84,17 @@ Apply the CEO Review Gate protocol:
 factory precheck $PROJECT_PATH --score-before 0 --score-after 0
 ```
 
+- **PROCEED** → continue to `finalize`
+
+If gate fails: the change violated a constraint or score regressed. Route to `archivist` for error handling.
+
 ## Step: Finalize
 
-
 ```bash
-factory finalize $PROJECT_PATH --id 1 --verdict keep --hypothesis 'Refine: request'
+factory finalize $PROJECT_PATH --id $EXP_ID --verdict $VERDICT --hypothesis "$HYPOTHESIS"
 ```
 
 ## Phase 4: Archivist
-
 
 ```bash
 factory agent archivist --task "Archive refinement experiment results and learnings.

@@ -4,6 +4,9 @@ The converter parses the graph structure — nodes, edges, gates, fork/join
 topology — and generates standardized prose instructions. Two execution
 formats from one source: flexible prose (SKILL.md) for interactive use,
 rigid graph (WorkflowExecutor) for headless automation.
+
+The templatize path emits {{slot_name::default_value}} markers and
+<!-- --> annotation comments for the verified skill generation pipeline.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ import structlog
 
 from factory.workflow.primitives import (
     AgentNode,
+    DEFAULT_AGENT_POOL,
     Edge,
     FnNode,
     ForkNode,
@@ -25,6 +29,7 @@ from factory.workflow.primitives import (
     VerdictType,
     Workflow,
 )
+from factory.workflow.templates import emit
 
 log = structlog.get_logger()
 
@@ -111,6 +116,14 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or /path/to/spec.md',
     },
+    "skill-refine": {
+        "description": (
+            "Verified skill generation pipeline — templatize, review, guard, split. "
+            "Converts Pydantic workflow graphs into verified SKILL.md files with "
+            "annotations. Use to regenerate skills after workflow definition changes."
+        ),
+        "argument_hint": "<project_path>",
+    },
 }
 
 
@@ -165,13 +178,38 @@ def _topological_sort(workflow: Workflow) -> list[str]:
     return ordered
 
 
+# ── edge helpers ──────────────────────────────────────────────────
+
+
+def _outgoing_edges(workflow: Workflow, node_id: str) -> list[Edge]:
+    """Return all edges originating from node_id."""
+    return [e for e in workflow.edges if e.source == node_id]
+
+
+def _format_edges(edges: list[Edge]) -> str:
+    """Format outgoing edges for annotation comments."""
+    if not edges:
+        return "none"
+    parts = []
+    for e in edges:
+        cond = e.condition.value if e.condition else "unconditional"
+        parts.append(f"{cond} → {e.target}")
+    return ", ".join(parts)
+
+
 # ── node → instruction converters ──────────────────────────────
 
 
-def _agent_to_instruction(node: AgentNode, *, is_parallel: bool = False) -> str:
-    """Convert an AgentNode to a CLI invocation instruction."""
+def _agent_to_instruction(
+    node: AgentNode,
+    workflow: Workflow,
+    *,
+    is_parallel: bool = False,
+) -> str:
+    """Convert an AgentNode to a CLI invocation instruction with template slots."""
     role = node.role.value
-    timeout = 600 if role != "archivist" else 300
+    pool_entry = DEFAULT_AGENT_POOL.get(role)
+    default_timeout = node.timeout or (pool_entry.timeout if pool_entry else 600)
     model_flag = " --model haiku" if role == "archivist" else ""
 
     prompt = node.prompt_template or f"Execute {role} task for the project."
@@ -189,12 +227,27 @@ def _agent_to_instruction(node: AgentNode, *, is_parallel: bool = False) -> str:
         tag = node.id.replace("researcher_", "")
         tag_flag = f" --review-tag {tag}"
 
+    timeout_slot = emit(f"timeout_{node.id}", str(default_timeout))
+    task_slot = emit(f"task_prompt_{node.id}", prompt)
+
     cmd = (
-        f'factory agent {role}{tag_flag} --task "{prompt}"'
-        f' --project "$PROJECT_PATH" --timeout {timeout}{model_flag}{bg_suffix}'
+        f'factory agent {role}{tag_flag} --task "{task_slot}"'
+        f' --project "$PROJECT_PATH" --timeout {timeout_slot}{model_flag}{bg_suffix}'
     )
 
-    lines = [f"```bash\n{cmd}\n```"]
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    reads_ann = ", ".join(sorted(node.reads)) if node.reads else "none"
+    writes_ann = ", ".join(sorted(node.writes)) if node.writes else "none"
+
+    annotations = [
+        f"<!-- node: AgentNode id={node.id} role={role} blocking={str(node.blocking).lower()} -->",
+        f"<!-- reads: {reads_ann} -->",
+        f"<!-- writes: {writes_ann} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [*annotations, "", f"```bash\n{cmd}\n```"]
 
     if not node.blocking:
         lines.append("*(fire-and-forget — CEO continues immediately)*")
@@ -202,19 +255,61 @@ def _agent_to_instruction(node: AgentNode, *, is_parallel: bool = False) -> str:
     return "\n".join(lines)
 
 
-def _fn_to_instruction(node: FnNode) -> str:
-    """Convert an FnNode to a CLI command instruction."""
+def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
+    """Convert an FnNode to a CLI command instruction with template slots."""
     cmd = node.command.replace("{project_path}", "$PROJECT_PATH")
-    return f"```bash\n{cmd}\n```"
+
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    reads_ann = ", ".join(sorted(node.reads)) if node.reads else "none"
+    writes_ann = ", ".join(sorted(node.writes)) if node.writes else "none"
+
+    annotations = [
+        f"<!-- node: FnNode id={node.id} -->",
+        f"<!-- command: {node.command} -->",
+        f"<!-- reads: {reads_ann} -->",
+        f"<!-- writes: {writes_ann} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    if _has_template_placeholders(cmd):
+        finalize_slot = emit(f"finalize_command_{node.id}", cmd)
+        annotations.append(
+            "<!-- NOTE: command contains template values requiring CEO substitution -->"
+        )
+        lines = [*annotations, "", f"```bash\n{finalize_slot}\n```"]
+    else:
+        lines = [*annotations, "", f"```bash\n{cmd}\n```"]
+
+    return "\n".join(lines)
 
 
-def _study_to_instruction(node: Study) -> str:
+def _has_template_placeholders(text: str) -> bool:
+    """Check if a command has $VARIABLE placeholders that need CEO substitution."""
+    placeholders = {"$EXP_ID", "$VERDICT", "$HYPOTHESIS", "$REQUEST"}
+    return any(p in text for p in placeholders)
+
+
+def _study_to_instruction(node: Study, workflow: Workflow) -> str:
     """Convert a Study node to a factory study instruction."""
     cmd = node.command.replace("{project_path}", "$PROJECT_PATH")
     focus = ""
     if node.focus:
         focus = f' --focus "{node.focus}"'
+
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    writes_ann = ", ".join(sorted(node.writes)) if node.writes else "none"
+
+    annotations = [
+        f"<!-- node: Study id={node.id} -->",
+        f"<!-- command: {node.command} -->",
+        f"<!-- writes: {writes_ann} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
     return (
+        "\n".join(annotations) + "\n\n"
         f"Run local study to gather observations:\n\n"
         f"```bash\n{cmd}{focus}\n```\n\n"
         f"Writes observations to `.factory/strategy/observations.md`."
@@ -224,25 +319,73 @@ def _study_to_instruction(node: Study) -> str:
 def _gate_to_checkpoint(
     node: GateNode,
     reloop_edges: list[Edge],
+    workflow: Workflow,
 ) -> str:
-    """Convert a GateNode to a steering checkpoint."""
+    """Convert a GateNode to a steering checkpoint with template slots."""
     gate_name = node.id.replace("gate_", "").replace("_", " ").title()
+
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    reads_ann = ", ".join(sorted(node.reads)) if node.reads else "none"
+
+    halt_edges = [e for e in out_edges if e.condition == VerdictType.HALT]
+    proceed_edges = [e for e in out_edges if e.condition == VerdictType.PROCEED]
 
     lines: list[str] = []
 
     if node.evaluator_type == "user":
+        ann = [
+            f"<!-- gate: GateNode id={node.id} evaluator_type=user -->",
+            f"<!-- reads: {reads_ann} -->",
+            f"<!-- edges: {edges_str} -->",
+        ]
+        lines.extend(ann)
+        lines.append("")
         lines.append(f"### Steering Point — {gate_name} (User Approval)")
         lines.append("")
         lines.append("Present findings to the user. Wait for approval or feedback.")
         lines.append("- **Approve** → proceed to next step")
         lines.append("- **Feedback** → re-run the previous step with corrections")
     elif node.evaluator_type == "fn":
+        evaluator_cmd = ""
+        if node.evaluator_command:
+            evaluator_cmd = node.evaluator_command
+        ann = [
+            f"<!-- gate: GateNode id={node.id} evaluator_type=fn -->",
+            f"<!-- evaluator_command: {evaluator_cmd} -->",
+            f"<!-- reads: {reads_ann} -->",
+            f"<!-- edges: {edges_str} -->",
+        ]
+        lines.extend(ann)
+        lines.append("")
         lines.append(f"### Gate — {gate_name} (Automated)")
         lines.append("")
         if node.evaluator_command:
             cmd = node.evaluator_command.replace("{project_path}", "$PROJECT_PATH")
             lines.append(f"```bash\n{cmd}\n```")
+
+        if proceed_edges:
+            proceed_target = proceed_edges[0].target
+            lines.append(f"\n- **PROCEED** → continue to `{proceed_target}`")
+
+        failure_default = ""
+        if halt_edges:
+            halt_target = halt_edges[0].target
+            failure_default = (
+                f"If gate fails: the change violated a constraint or score regressed. "
+                f"Route to `{halt_target}` for error handling."
+            )
+        failure_slot = emit(f"failure_action_{node.id}", failure_default)
+        lines.append(f"\n{failure_slot}")
     else:
+        gate_prompt_slot = emit(f"gate_prompt_{node.id}", node.gate_prompt)
+        ann = [
+            f"<!-- gate: GateNode id={node.id} evaluator_type=agent evaluator_role={node.evaluator_role.value if node.evaluator_role else 'CEO'} -->",
+            f"<!-- reads: {reads_ann} -->",
+            f"<!-- edges: {edges_str} -->",
+        ]
+        lines.extend(ann)
+        lines.append("")
         lines.append(f"### CEO Review — {gate_name}")
         lines.append("")
         lines.append("Apply the CEO Review Gate protocol:")
@@ -250,8 +393,7 @@ def _gate_to_checkpoint(
         if node.reads:
             reads = ", ".join(f"`{r}`" for r in sorted(node.reads))
             lines.append(f"2. Read artifacts: {reads}")
-        if node.gate_prompt:
-            lines.append(f"3. Assess: {node.gate_prompt}")
+        lines.append(f"3. Assess: {gate_prompt_slot}")
         lines.append(
             f"4. Write verdict to `.factory/reviews/ceo-verdict-{gate_name.lower().replace(' ', '-')}.md`"
         )
@@ -260,33 +402,60 @@ def _gate_to_checkpoint(
         lines.append("7. **ABORT** → log failure and skip to archival")
 
     for edge in reloop_edges:
-        max_iter = 3
-        for e2 in reloop_edges:
-            if e2.source == node.id and e2.condition == VerdictType.RELOOP:
-                pass
-        lines.append(f"\n*On RELOOP: return to `{edge.target}` (max {max_iter} iterations)*")
+        max_iter = _resolve_max_iterations(edge, workflow)
+        max_iter_slot = emit(f"max_iterations_{node.id}", str(max_iter))
+        lines.append(f"\n*On RELOOP: return to `{edge.target}` (max {max_iter_slot} iterations)*")
 
     return "\n".join(lines)
 
 
+def _resolve_max_iterations(edge: Edge, workflow: Workflow) -> int:
+    """Resolve max_iterations from the RELOOP edge target's AgentNode."""
+    target_node = workflow.nodes.get(edge.target)
+    if isinstance(target_node, AgentNode):
+        if hasattr(target_node, "max_iterations") and target_node.max_iterations != 1:  # type: ignore[attr-defined]
+            return target_node.max_iterations  # type: ignore[attr-defined]
+    return 3
+
+
 def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
     """Convert a ForkNode to parallel agent spawning instructions."""
-    lines = [f"Spawn {len(node.targets)} agents in parallel:\n"]
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+
+    annotations = [
+        f"<!-- node: ForkNode id={node.id} targets={','.join(node.targets)} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [*annotations, "", f"Spawn {len(node.targets)} agents in parallel:\n"]
 
     for target_id in node.targets:
         target_node = workflow.nodes.get(target_id)
         if isinstance(target_node, AgentNode):
-            lines.append(_agent_to_instruction(target_node, is_parallel=True))
+            lines.append(_agent_to_instruction(target_node, workflow, is_parallel=True))
             lines.append("")
 
     lines.append("```bash\nwait\n```")
     return "\n".join(lines)
 
 
-def _join_to_instruction(node: JoinNode) -> str:
+def _join_to_instruction(node: JoinNode, workflow: Workflow) -> str:
     """Convert a JoinNode to a wait-for-all instruction."""
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+    reads_ann = ", ".join(sorted(node.reads)) if node.reads else "none"
+    writes_ann = ", ".join(sorted(node.writes)) if node.writes else "none"
+
+    annotations = [
+        f"<!-- node: JoinNode id={node.id} sources={','.join(node.sources)} -->",
+        f"<!-- reads: {reads_ann} -->",
+        f"<!-- writes: {writes_ann} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
     sources = ", ".join(f"`{s}`" for s in node.sources)
-    lines = [f"Wait for all parallel agents to complete: {sources}"]
+    lines = [*annotations, "", f"Wait for all parallel agents to complete: {sources}"]
     if node.reads:
         reads = ", ".join(f"`{r}`" for r in sorted(node.reads))
         lines.append(f"\nRead combined outputs: {reads}")
@@ -326,6 +495,9 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
     Parses the workflow graph structure (nodes, edges, gates, fork/join)
     and generates standardized prose instructions that the CEO follows
     flexibly. Gates become steering points for user interaction.
+
+    Emits {{slot_name::default_value}} template markers and <!-- -->
+    annotation comments for the verified skill generation pipeline.
     """
     name = workflow.name
     meta = WORKFLOW_META.get(name, {})
@@ -334,7 +506,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
 
     frontmatter = _build_frontmatter(name, description, argument_hint)
 
-    title = name.replace("_", " ").title()
+    title = name.replace("_", " ").replace("-", " ").title()
     header = f"# {title} Workflow\n\nThe user wants: **$ARGUMENTS**"
 
     reloop_map: dict[str, list[Edge]] = defaultdict(list)
@@ -367,17 +539,17 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
         elif isinstance(node, JoinNode):
             node_title = nid.replace("join_", "").replace("_", " ").title()
             sections.append(f"## Barrier: {node_title}\n")
-            sections.append(_join_to_instruction(node))
+            sections.append(_join_to_instruction(node, workflow))
 
         elif isinstance(node, GateNode):
             sections.append(
-                _gate_to_checkpoint(node, reloop_map.get(nid, []))
+                _gate_to_checkpoint(node, reloop_map.get(nid, []), workflow)
             )
 
         elif isinstance(node, Study):
             node_title = "Observe"
             sections.append(f"## Phase {phase_num}: {node_title}\n")
-            sections.append(_study_to_instruction(node))
+            sections.append(_study_to_instruction(node, workflow))
             phase_num += 1
 
         elif isinstance(node, AgentNode):
@@ -388,13 +560,13 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             else:
                 section_title = f"{role_title} — {node_title}"
             sections.append(f"## Phase {phase_num}: {section_title}\n")
-            sections.append(_agent_to_instruction(node))
+            sections.append(_agent_to_instruction(node, workflow))
             phase_num += 1
 
         elif isinstance(node, FnNode):
             node_title = nid.replace("_", " ").title()
             sections.append(f"## Step: {node_title}\n")
-            sections.append(_fn_to_instruction(node))
+            sections.append(_fn_to_instruction(node, workflow))
 
     body = "\n\n".join(sections)
 

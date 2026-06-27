@@ -1,0 +1,269 @@
+fork_research:
+  type: ForkNode
+  id: fork_research
+  targets: researcher_similar,researcher_techstack,researcher_pitfalls
+  edges_out:
+  - target: researcher_similar
+    condition: null
+  - target: researcher_techstack
+    condition: null
+  - target: researcher_pitfalls
+    condition: null
+researcher_similar:
+  type: AgentNode
+  id: researcher_similar
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-similar.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_similar: 'Similar projects research. Search the web for
+      similar projects, existing solutions, and prior art. Analyze their strengths,
+      weaknesses, and market positioning. Check .factory/archive/ for prior knowledge
+      on similar builds. Write findings to .factory/strategy/research-similar.md covering:
+      similar projects found (with links), what they do well and what''s missing,
+      differentiation opportunities.
+
+      Write output to: .factory/strategy/research-similar.md'
+    timeout_researcher_similar: '600'
+researcher_techstack:
+  type: AgentNode
+  id: researcher_techstack
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-techstack.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_techstack: 'Tech stack research. Identify the best technology
+      stack for this type of project. Find architecture patterns and best practices.
+      Evaluate framework/library options with trade-offs. Write findings to .factory/strategy/research-techstack.md
+      covering: recommended tech stack with rationale, architecture patterns, framework
+      comparisons.
+
+      Write output to: .factory/strategy/research-techstack.md'
+    timeout_researcher_techstack: '600'
+researcher_pitfalls:
+  type: AgentNode
+  id: researcher_pitfalls
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-pitfalls.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_pitfalls: 'Pitfalls and scope research. Identify potential
+      pitfalls and common mistakes for this type of project. Research MVP scope best
+      practices. Check .factory/archive/ for lessons from past builds. Write findings
+      to .factory/strategy/research-pitfalls.md covering: potential pitfalls to avoid,
+      MVP scope recommendation, lessons from similar past builds.
+
+      Write output to: .factory/strategy/research-pitfalls.md'
+    timeout_researcher_pitfalls: '600'
+join_research:
+  type: JoinNode
+  id: join_research
+  sources: researcher_similar,researcher_techstack,researcher_pitfalls
+  reads:
+  - .factory/strategy/research-pitfalls.md
+  - .factory/strategy/research-similar.md
+  - .factory/strategy/research-techstack.md
+  writes:
+  - .factory/strategy/research-combined.md
+  edges_out:
+  - target: gate_research
+    condition: null
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-combined.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: fork_research
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Is the research relevant? Does it cover the technology
+      landscape adequately? Check for gaps in similar projects, tech stack analysis,
+      and pitfall coverage.
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-combined.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Synthesize a project specification from research. Read
+      ALL tagged research files at .factory/strategy/research-*.md. Produce a complete
+      phased build plan. Phase 1 must be project scaffold + eval harness. Every Phase
+      must have substantive What/Why/Expected impact fields. Build EVERYTHING in this
+      pass. Only defer items requiring human intervention. Write the plan to .factory/strategy/current.md.
+
+      Read: .factory/strategy/research-combined.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: user
+  reads:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: archivist_plan
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    max_iterations_gate_strategy: '3'
+archivist_plan:
+  type: AgentNode
+  id: archivist_plan
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/archive/plan.md
+  edges_out:
+  - target: builder
+    condition: null
+  slots:
+    task_prompt_archivist_plan: 'Archive the approved research and strategy.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/archive/plan.md'
+    timeout_archivist_plan: '300'
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Implement the next phase from .factory/strategy/current.md.
+      Read the CEO''s plan approval at .factory/reviews/ceo-verdict-strategist.md.
+      Read CLAUDE.md and factory.md if they exist. Implement exactly what the current
+      phase describes. Run tests. Commit changes and open a draft PR.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '1200'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: qa
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_build: Read builder output. Check git log and diff. Does the
+      work match the plan for this phase? If the Builder opened a PR, read it. REDIRECT
+      if off-scope or missed key requirements.
+    max_iterations_gate_build: '3'
+qa:
+  type: AgentNode
+  id: qa
+  role: qa
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_qa
+    condition: null
+  slots:
+    task_prompt_qa: 'Run health check (factory eval + score delta), code review (correctness,
+      architecture, edge cases, security), and adversarial QA (run/test the built
+      feature). Write results to .factory/reviews/qa-latest.md
+
+      Read: .factory/reviews/builder-latest.md
+
+      Write output to: .factory/reviews/qa-latest.md'
+    timeout_qa: '1800'
+    gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. RELOOP to
+      builder (max 3 iterations) if issues found.
+    max_iterations_gate_qa: '3'
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_precheck
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. RELOOP to
+      builder (max 3 iterations) if issues found.
+    max_iterations_gate_qa: '3'
+gate_precheck:
+  type: GateNode
+  id: gate_precheck
+  evaluator_type: fn
+  evaluator_command: factory precheck {project_path} --score-before 0 --score-after
+    0
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: archivist_build
+    condition: PROCEED
+  - target: archivist_build
+    condition: HALT
+  slots:
+    failure_action_gate_precheck: 'If gate fails: the change violated a constraint
+      or score regressed. Route to `archivist_build` for error handling.'
+archivist_build:
+  type: AgentNode
+  id: archivist_build
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/qa-latest.md
+  writes:
+  - .factory/archive/build.md
+  edges_out: []
+  slots:
+    task_prompt_archivist_build: 'Archive the build phase results.
+
+      Read: .factory/reviews/qa-latest.md
+
+      Write output to: .factory/archive/build.md'
+    timeout_archivist_build: '300'

@@ -1,0 +1,223 @@
+insights:
+  type: FnNode
+  id: insights
+  command: factory insights {project_path}
+  reads: []
+  writes:
+  - .factory/strategy/insights.md
+  edges_out:
+  - target: researcher
+    condition: null
+researcher:
+  type: AgentNode
+  id: researcher
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/strategy/insights.md
+  writes:
+  - .factory/strategy/research-local.md
+  edges_out:
+  - target: gate_research
+    condition: null
+  slots:
+    task_prompt_researcher: 'Read cross-project insights at .factory/strategy/insights.md
+      and current playbooks. Identify recurring patterns, anti-patterns, and improvement
+      opportunities. Compare agent performance across projects. Write findings to
+      .factory/strategy/research-local.md.
+
+      Read: .factory/strategy/insights.md
+
+      Write output to: .factory/strategy/research-local.md'
+    timeout_researcher: '600'
+    task_prompt_test_researcher: 'Analyze test inventory for redundant, dead, or flaky
+      tests. Identify tests that overlap, test nothing meaningful, or are consistently
+      flaky. Write findings to .factory/strategy/test-analysis.md with specific test
+      names and reasons for removal.
+
+      Read: .factory/strategy/test-inventory.md
+
+      Write output to: .factory/strategy/test-analysis.md'
+    timeout_test_researcher: '600'
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-local.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: researcher
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Are cross-project patterns well-supported by data?
+      Are proposed improvements actionable? Any blind spots?
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-local.md
+  writes:
+  - .factory/strategy/playbook-diffs.md
+  edges_out:
+  - target: gate_user
+    condition: null
+  slots:
+    task_prompt_strategist: 'Propose specific playbook edits based on cross-project
+      research. For each agent role, propose DO/DON''T bullet additions or removals
+      with supporting evidence from experiment data. Write diffs to .factory/strategy/playbook-diffs.md.
+
+      Read: .factory/strategy/research-local.md
+
+      Write output to: .factory/strategy/playbook-diffs.md'
+    timeout_strategist: '600'
+gate_user:
+  type: GateNode
+  id: gate_user
+  evaluator_type: user
+  reads:
+  - .factory/strategy/playbook-diffs.md
+  edges_out:
+  - target: apply_playbooks
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    max_iterations_gate_user: '3'
+apply_playbooks:
+  type: FnNode
+  id: apply_playbooks
+  command: factory ace {project_path}
+  reads:
+  - .factory/strategy/playbook-diffs.md
+  writes:
+  - .factory/archive/playbooks-applied.md
+  edges_out:
+  - target: archivist
+    condition: null
+archivist:
+  type: AgentNode
+  id: archivist
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/archive/playbooks-applied.md
+  writes:
+  - .factory/archive/meta.md
+  edges_out:
+  - target: test_collect
+    condition: null
+  slots:
+    task_prompt_archivist: 'Archive playbook evolution results.
+
+      Read: .factory/archive/playbooks-applied.md
+
+      Write output to: .factory/archive/meta.md'
+    timeout_archivist: '300'
+test_collect:
+  type: FnNode
+  id: test_collect
+  command: pytest --co -q 2>/dev/null || true
+  reads: []
+  writes:
+  - .factory/strategy/test-inventory.md
+  edges_out:
+  - target: test_researcher
+    condition: null
+test_researcher:
+  type: AgentNode
+  id: test_researcher
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/strategy/test-inventory.md
+  writes:
+  - .factory/strategy/test-analysis.md
+  edges_out:
+  - target: gate_test_prune
+    condition: null
+  slots:
+    task_prompt_test_researcher: 'Analyze test inventory for redundant, dead, or flaky
+      tests. Identify tests that overlap, test nothing meaningful, or are consistently
+      flaky. Write findings to .factory/strategy/test-analysis.md with specific test
+      names and reasons for removal.
+
+      Read: .factory/strategy/test-inventory.md
+
+      Write output to: .factory/strategy/test-analysis.md'
+    timeout_test_researcher: '600'
+gate_test_prune:
+  type: GateNode
+  id: gate_test_prune
+  evaluator_type: user
+  reads:
+  - .factory/strategy/test-analysis.md
+  edges_out:
+  - target: test_builder
+    condition: PROCEED
+  - target: test_researcher
+    condition: RELOOP
+  slots:
+    max_iterations_gate_test_prune: '3'
+test_builder:
+  type: AgentNode
+  id: test_builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/test-analysis.md
+  writes:
+  - .factory/reviews/test-pruning-latest.md
+  edges_out:
+  - target: qa_verify
+    condition: null
+  slots:
+    task_prompt_test_builder: 'Delete the approved redundant tests. Verify remaining
+      suite still passes.
+
+      Read: .factory/strategy/test-analysis.md
+
+      Write output to: .factory/reviews/test-pruning-latest.md'
+    timeout_test_builder: '1800'
+qa_verify:
+  type: AgentNode
+  id: qa_verify
+  role: qa
+  blocking: 'true'
+  reads:
+  - .factory/reviews/test-pruning-latest.md
+  writes:
+  - .factory/reviews/qa-verify-latest.md
+  edges_out:
+  - target: gate_qa_verify
+    condition: null
+  slots:
+    task_prompt_qa_verify: 'Verify the test suite still passes after pruning. Run
+      health check and confirm no regressions. Write results to .factory/reviews/qa-verify-latest.md
+
+      Read: .factory/reviews/test-pruning-latest.md
+
+      Write output to: .factory/reviews/qa-verify-latest.md'
+    timeout_qa_verify: '1800'
+    gate_prompt_gate_qa_verify: Review QA verification of test pruning. PROCEED if
+      tests still pass. RELOOP to test_builder (max 3 iterations) if regressions found.
+    max_iterations_gate_qa_verify: '3'
+gate_qa_verify:
+  type: GateNode
+  id: gate_qa_verify
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-verify-latest.md
+  edges_out:
+  - target: test_builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa_verify: Review QA verification of test pruning. PROCEED if
+      tests still pass. RELOOP to test_builder (max 3 iterations) if regressions found.
+    max_iterations_gate_qa_verify: '3'

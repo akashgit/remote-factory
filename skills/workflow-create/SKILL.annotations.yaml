@@ -1,0 +1,295 @@
+fork_research:
+  type: ForkNode
+  id: fork_research
+  targets: researcher_existing,researcher_intent,researcher_practices
+  edges_out:
+  - target: researcher_existing
+    condition: null
+  - target: researcher_intent
+    condition: null
+  - target: researcher_practices
+    condition: null
+researcher_existing:
+  type: AgentNode
+  id: researcher_existing
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-existing.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_existing: 'Existing workflow analysis. Read factory/workflow/definitions.py
+      and analyze all existing workflow definitions (build, design, improve, research,
+      meta, discover, review, refine). Document common patterns: node sequences, gate
+      conventions, fork/join patterns, archivist placement, edge wiring, trigger functions,
+      reads/writes declarations. Read factory/workflow/primitives.py for available
+      node types and their fields. Read factory/workflow/skill_export.py for WORKFLOW_META
+      format. Write findings to .factory/strategy/research-existing.md covering: node
+      type usage patterns, common subgraphs (builder→gate→qa→gate loop), trigger function
+      conventions, data flow patterns.
+
+      Write output to: .factory/strategy/research-existing.md'
+    timeout_researcher_existing: '600'
+researcher_intent:
+  type: AgentNode
+  id: researcher_intent
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-intent.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_intent: 'Mode description analysis. Read the user''s mode
+      description from the CEO task. Parse and structure it into a workflow specification:
+      - Purpose and trigger conditions - Agent roles needed (which specialists) -
+      Gate logic (user vs agent vs fn evaluators) - Data flow (what files are read/written)
+      - Interactive vs headless requirements - Input format (text, file, drawing,
+      flow) Write findings to .factory/strategy/research-intent.md covering: structured
+      requirements, node candidates, suggested graph topology.
+
+      Write output to: .factory/strategy/research-intent.md'
+    timeout_researcher_intent: '600'
+researcher_practices:
+  type: AgentNode
+  id: researcher_practices
+  role: researcher
+  blocking: 'true'
+  reads: []
+  writes:
+  - .factory/strategy/research-practices.md
+  edges_out:
+  - target: join_research
+    condition: null
+  slots:
+    task_prompt_researcher_practices: 'Workflow design best practices. Search the
+      web for workflow and pipeline design patterns relevant to the described mode.
+      Look for: DAG design patterns, agent orchestration patterns, quality gate strategies,
+      error recovery approaches. Check .factory/archive/ for lessons from past mode
+      creation or workflow changes. Write findings to .factory/strategy/research-practices.md
+      covering: relevant design patterns, pitfalls to avoid, testing strategies.
+
+      Write output to: .factory/strategy/research-practices.md'
+    timeout_researcher_practices: '600'
+join_research:
+  type: JoinNode
+  id: join_research
+  sources: researcher_existing,researcher_intent,researcher_practices
+  reads:
+  - .factory/strategy/research-existing.md
+  - .factory/strategy/research-intent.md
+  - .factory/strategy/research-practices.md
+  writes:
+  - .factory/strategy/research-combined.md
+  edges_out:
+  - target: gate_research
+    condition: null
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research-combined.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: fork_research
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: Are the existing workflow patterns well-documented?
+      Is the user's intent clearly structured into workflow requirements? Are best
+      practices relevant to this type of mode? Any gaps?
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/strategy/research-combined.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Synthesize a complete workflow specification for a new
+      factory mode. Read ALL tagged research files at .factory/strategy/research-*.md.
+      Produce a complete specification including: 1) Python code for the workflow
+      function (nodes dict, edges list, trigger) 2) WORKFLOW_META entry (description,
+      argument_hint) 3) CLI wiring changes (build_parser mode choices, cmd_ceo routing,
+      _build_ceo_task section) 4) Test cases (graph validation, skill export, trigger
+      function, registration) 5) Node details: for each node, specify id, type, role,
+      prompt_template, reads, writes 6) Edge details: for each edge, specify source,
+      target, condition 7) Interactive vs headless behavior Follow conventions from
+      existing workflows — use the same patterns for builder→gate→QA→gate loops, archivist
+      placement, and research forks. Write the specification to .factory/strategy/current.md.
+
+      Read: .factory/strategy/research-combined.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: user
+  reads:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: archivist_plan
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    max_iterations_gate_strategy: '3'
+archivist_plan:
+  type: AgentNode
+  id: archivist_plan
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/archive/create-plan.md
+  edges_out:
+  - target: builder
+    condition: null
+  slots:
+    task_prompt_archivist_plan: 'Archive the approved workflow specification for the
+      new mode.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/archive/create-plan.md'
+    timeout_archivist_plan: '300'
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/strategy/current.md
+  writes:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Implement the new factory mode from the approved workflow
+      specification. Read the approved spec at .factory/strategy/current.md. Read
+      CLAUDE.md for project conventions. Implementation checklist: 1) Add the workflow
+      function to factory/workflow/definitions.py 2) Register it in register_all()
+      3) Add WORKFLOW_META entry in factory/workflow/skill_export.py 4) Wire --mode
+      in factory/cli.py (build_parser, cmd_ceo, _build_ceo_task) 5) Run factory workflow
+      validate <name> to verify the graph 6) Run factory workflow export-skills to
+      generate the SKILL.md 7) Write tests in tests/ 8) Run pytest and ruff check
+      to verify Commit changes and open a draft PR.
+
+      Read: .factory/strategy/current.md
+
+      Write output to: .factory/reviews/builder-latest.md'
+    timeout_builder: '1800'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: qa
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_build: 'Read builder output and PR diff. Does work match the
+      approved spec? Verify: workflow function exists, registered in register_all(),
+      WORKFLOW_META entry added, CLI wiring complete, tests written. REDIRECT if any
+      component is missing.'
+    max_iterations_gate_build: '3'
+qa:
+  type: AgentNode
+  id: qa
+  role: qa
+  blocking: 'true'
+  reads:
+  - .factory/reviews/builder-latest.md
+  writes:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_qa
+    condition: null
+  slots:
+    task_prompt_qa: 'Verify the new factory mode end-to-end. 1. Health Check — run
+      pytest, ruff check, mypy. Report results. 2. Code Review — read PR diff, evaluate
+      correctness, architecture, edge cases, security. Verify workflow graph validates.
+      3. Adversarial QA — actually test the new mode:    - Run: factory workflow validate
+      <name>    - Run: factory workflow show <name>    - Run: factory workflow export-skills
+      --verify    - Verify SKILL.md was generated under skills/workflow-<name>/    -
+      Check CLI recognizes --mode <name> (factory ceo --help)    - Check the workflow
+      handles both interactive and headless paths Write results to .factory/reviews/qa-latest.md
+
+      Read: .factory/reviews/builder-latest.md
+
+      Write output to: .factory/reviews/qa-latest.md'
+    timeout_qa: '1800'
+    gate_prompt_gate_qa: 'Review QA results for the new mode. PROCEED if all checks
+      pass: workflow validates, SKILL.md generated, tests pass, CLI recognizes mode.
+      RELOOP to builder (max 3 iterations) if issues found.'
+    max_iterations_gate_qa: '3'
+gate_qa:
+  type: GateNode
+  id: gate_qa
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: gate_precheck
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_qa: 'Review QA results for the new mode. PROCEED if all checks
+      pass: workflow validates, SKILL.md generated, tests pass, CLI recognizes mode.
+      RELOOP to builder (max 3 iterations) if issues found.'
+    max_iterations_gate_qa: '3'
+gate_precheck:
+  type: GateNode
+  id: gate_precheck
+  evaluator_type: fn
+  evaluator_command: factory precheck {project_path} --score-before 0 --score-after
+    0
+  reads:
+  - .factory/reviews/qa-latest.md
+  edges_out:
+  - target: archivist_build
+    condition: PROCEED
+  - target: archivist_build
+    condition: HALT
+  slots:
+    failure_action_gate_precheck: 'If gate fails: the change violated a constraint
+      or score regressed. Route to `archivist_build` for error handling.'
+archivist_build:
+  type: AgentNode
+  id: archivist_build
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/reviews/qa-latest.md
+  writes:
+  - .factory/archive/create-build.md
+  edges_out: []
+  slots:
+    task_prompt_archivist_build: 'Archive the new mode build results and learnings.
+
+      Read: .factory/reviews/qa-latest.md
+
+      Write output to: .factory/archive/create-build.md'
+    timeout_archivist_build: '300'

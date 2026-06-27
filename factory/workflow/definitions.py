@@ -40,6 +40,7 @@ __all__ = [
     "review_workflow",
     "refine_workflow",
     "create_workflow",
+    "skill_refine_workflow",
     "register_all",
 ]
 
@@ -272,8 +273,9 @@ def build_workflow() -> Workflow:
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → archivist (proceed) or halt
+        # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -400,7 +402,7 @@ def improve_workflow() -> Workflow:
     # Per-hypothesis: begin → builder → gate → QA → gate_qa(max 3) → precheck → finalize → archivist
     nodes["begin"] = FnNode(
         id="begin",
-        command='factory begin {project_path} --hypothesis "Implement hypothesis"',
+        command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
         writes={".factory/experiments/current_id"},
     )
 
@@ -460,7 +462,12 @@ def improve_workflow() -> Workflow:
 
     nodes["finalize"] = FnNode(
         id="finalize",
-        command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'hypothesis'",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+        ),
         reads={".factory/reviews/qa-latest.md"},
         writes={".factory/experiments/verdict.json"},
     )
@@ -499,8 +506,9 @@ def improve_workflow() -> Workflow:
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → finalize (proceed) or halt
+        # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
         # Finalize → archivist
         Edge(source="finalize", target="archivist"),
     ]
@@ -590,6 +598,7 @@ def research_workflow() -> Workflow:
     wf.nodes["qa"] = AgentNode(
         id="qa",
         role=AgentRole.QA,
+        timeout=1800,
         prompt_template=(
             "Run health check (factory eval + score delta), code review "
             "(correctness, architecture, edge cases, security), adversarial QA "
@@ -645,6 +654,7 @@ def research_workflow() -> Workflow:
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
         # Finalize → archivist → plateau gate
         Edge(source="finalize", target="archivist"),
         Edge(source="archivist", target="plateau_gate"),
@@ -779,6 +789,7 @@ def meta_workflow() -> Workflow:
     nodes["test_builder"] = AgentNode(
         id="test_builder",
         role=AgentRole.BUILDER,
+        timeout=1800,
         prompt_template=(
             "Delete the approved redundant tests. "
             "Verify remaining suite still passes."
@@ -790,6 +801,7 @@ def meta_workflow() -> Workflow:
     nodes["qa_verify"] = AgentNode(
         id="qa_verify",
         role=AgentRole.QA,
+        timeout=1800,
         prompt_template=(
             "Verify the test suite still passes after pruning. "
             "Run health check and confirm no regressions. "
@@ -1078,7 +1090,7 @@ def refine_workflow() -> Workflow:
     # R2: Begin experiment
     nodes["begin"] = FnNode(
         id="begin",
-        command='factory begin {project_path} --hypothesis "Refine: user refinement request"',
+        command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
         writes={".factory/experiments/current_id"},
     )
 
@@ -1145,7 +1157,12 @@ def refine_workflow() -> Workflow:
     # R7: Finalize
     nodes["finalize"] = FnNode(
         id="finalize",
-        command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'Refine: request'",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+        ),
         reads={".factory/reviews/qa-latest.md"},
         writes={".factory/experiments/verdict.json"},
     )
@@ -1175,8 +1192,9 @@ def refine_workflow() -> Workflow:
         Edge(source="qa", target="gate_qa"),
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → finalize → archivist
+        # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
         Edge(source="finalize", target="archivist"),
     ]
 
@@ -1335,6 +1353,7 @@ def create_workflow() -> Workflow:
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
+        timeout=1800,
         prompt_template=(
             "Implement the new factory mode from the approved workflow specification. "
             "Read the approved spec at .factory/strategy/current.md. "
@@ -1372,6 +1391,7 @@ def create_workflow() -> Workflow:
     nodes["qa"] = AgentNode(
         id="qa",
         role=AgentRole.QA,
+        timeout=1800,
         prompt_template=(
             "Verify the new factory mode end-to-end. "
             "1. Health Check — run pytest, ruff check, mypy. Report results. "
@@ -1453,8 +1473,9 @@ def create_workflow() -> Workflow:
         # gate_qa
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
-        # Precheck → archivist
+        # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -1469,11 +1490,100 @@ def create_workflow() -> Workflow:
     )
 
 
+# ── W₁₀: Skill Refine ────────────────────────────────────────────
+
+
+def skill_refine_workflow() -> Workflow:
+    """W₁₀: Verified skill generation pipeline.
+
+    dag_sort → templatize → review_agent → guard(RELOOP → review_agent, max 2) →
+    split → SKILL.md + SKILL.annotations.yaml
+
+    On 3rd guard failure, falls back to unrefined templatize output.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["dag_sort"] = FnNode(
+        id="dag_sort",
+        command="factory workflow show {project_path}",
+        writes={".factory/strategy/dag-order.md"},
+    )
+
+    nodes["templatize"] = FnNode(
+        id="templatize",
+        command="factory workflow export-skills --templatize {project_path}",
+        reads={".factory/strategy/dag-order.md"},
+        writes={".factory/strategy/templatized-skill.md"},
+    )
+
+    nodes["review_agent"] = AgentNode(
+        id="review_agent",
+        role=AgentRole.SKILL_REVIEWER,
+        model="opus",
+        prompt_template=(
+            "Review and refine the templatized skill document. "
+            "You may ONLY modify values inside {{slot_name::value}} markers. "
+            "Do NOT change any text outside markers, annotations, or structure. "
+            "Use the provided context bundle (agent prompts, CLI docs, edge topology) "
+            "to make informed improvements to timeouts, task prompts, gate prompts, "
+            "failure actions, and finalize commands."
+        ),
+        reads={".factory/strategy/templatized-skill.md"},
+        writes={".factory/strategy/refined-skill.md"},
+    )
+
+    nodes["guard"] = GateNode(
+        id="guard",
+        evaluator_type="fn",
+        evaluator_command=(
+            "python3 -c \""
+            "from factory.workflow.guard import check; "
+            "from pathlib import Path; "
+            "s = Path('{project_path}/.factory/strategy/templatized-skill.md').read_text(); "
+            "r = Path('{project_path}/.factory/strategy/refined-skill.md').read_text(); "
+            "result = check(s, r); "
+            "print(result.verdict)"
+            "\""
+        ),
+        reads={
+            ".factory/strategy/templatized-skill.md",
+            ".factory/strategy/refined-skill.md",
+        },
+    )
+
+    nodes["split"] = FnNode(
+        id="split",
+        command="factory workflow export-skills --split {project_path}",
+        reads={".factory/strategy/refined-skill.md"},
+        writes={"skills/SKILL.md", "skills/SKILL.annotations.yaml"},
+    )
+
+    edges = [
+        Edge(source="dag_sort", target="templatize"),
+        Edge(source="templatize", target="review_agent"),
+        Edge(source="review_agent", target="guard"),
+        Edge(source="guard", target="split", condition=VerdictType.PROCEED),
+        Edge(source="guard", target="review_agent", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "skill-refine"
+
+    return Workflow(
+        name="skill-refine",
+        nodes=nodes,
+        edges=edges,
+        start_node="dag_sort",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 9 workflow definitions."""
+    """Build and return all 10 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1484,4 +1594,5 @@ def register_all() -> dict[str, Workflow]:
         "meta": meta_workflow(),
         "refine": refine_workflow(),
         "create": create_workflow(),
+        "skill-refine": skill_refine_workflow(),
     }

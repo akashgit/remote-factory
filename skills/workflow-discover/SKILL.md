@@ -11,7 +11,6 @@ The user wants: **$ARGUMENTS**
 
 ## Step: Discover
 
-
 ```bash
 factory discover $PROJECT_PATH
 ```
@@ -30,7 +29,6 @@ Apply the CEO Review Gate protocol:
 *On RELOOP: return to `discover` (max 3 iterations)*
 
 ## Step: Redetect
-
 
 ```bash
 factory detect $PROJECT_PATH
