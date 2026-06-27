@@ -30,15 +30,6 @@ researcher:
 
       Write output to: .factory/strategy/research-local.md'
     timeout_researcher: '600'
-    task_prompt_test_researcher: 'Analyze test inventory for redundant, dead, or flaky
-      tests. Identify tests that overlap, test nothing meaningful, or are consistently
-      flaky. Write findings to .factory/strategy/test-analysis.md with specific test
-      names and reasons for removal.
-
-      Read: .factory/strategy/test-inventory.md
-
-      Write output to: .factory/strategy/test-analysis.md'
-    timeout_test_researcher: '600'
 gate_research:
   type: GateNode
   id: gate_research
@@ -204,9 +195,6 @@ qa_verify:
 
       Write output to: .factory/reviews/qa-verify-latest.md'
     timeout_qa_verify: '1800'
-    gate_prompt_gate_qa_verify: Review QA verification of test pruning. PROCEED if
-      tests still pass. RELOOP to test_builder (max 3 iterations) if regressions found.
-    max_iterations_gate_qa_verify: '3'
 gate_qa_verify:
   type: GateNode
   id: gate_qa_verify

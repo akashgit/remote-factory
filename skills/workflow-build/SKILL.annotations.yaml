@@ -222,9 +222,6 @@ qa:
 
       Write output to: .factory/reviews/qa-latest.md'
     timeout_qa: '1800'
-    gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. RELOOP to
-      builder (max 3 iterations) if issues found.
-    max_iterations_gate_qa: '3'
 gate_qa:
   type: GateNode
   id: gate_qa

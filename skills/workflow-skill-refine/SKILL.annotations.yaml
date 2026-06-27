@@ -32,8 +32,15 @@ review_agent:
   - target: guard
     condition: null
   slots:
-    task_prompt_review_agent: Review and refine the templatized skill document. You
-      may ONLY modify values inside {{slot_name::value
+    task_prompt_review_agent: 'Review and refine the templatized skill document. You
+      may ONLY modify values inside double-brace slot markers (format: name::default).
+      Do NOT change any text outside markers, annotations, or structure. Use the provided
+      context bundle (agent prompts, CLI docs, edge topology) to make informed improvements
+      to timeouts, task prompts, gate prompts, failure actions, and finalize commands.
+
+      Read: .factory/strategy/templatized-skill.md
+
+      Write output to: .factory/strategy/refined-skill.md'
     timeout_review_agent: '600'
 guard:
   type: GateNode

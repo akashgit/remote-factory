@@ -9,11 +9,6 @@ discover:
   edges_out:
   - target: gate_discover
     condition: null
-  slots:
-    gate_prompt_gate_discover: 'Verify the discovered eval profile makes sense. Read
-      .factory/eval_profile.json and eval/score.py. Check: Are the dimensions relevant
-      to this project? Does score.py look correct? Any missing dimensions?'
-    max_iterations_gate_discover: '3'
 gate_discover:
   type: GateNode
   id: gate_discover

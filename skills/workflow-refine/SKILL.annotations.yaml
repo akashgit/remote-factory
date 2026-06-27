@@ -17,10 +17,6 @@ refiner:
 
       Write output to: .factory/reviews/refiner-latest.md'
     timeout_refiner: '600'
-    gate_prompt_gate_refiner: Review Refiner classification. Is the tier classification
-      reasonable? Are the identified files correct? Is the Builder task description
-      specific enough? REDIRECT if the classification is wrong.
-    max_iterations_gate_refiner: '3'
 gate_refiner:
   type: GateNode
   id: gate_refiner
@@ -118,9 +114,6 @@ qa:
 
       Write output to: .factory/reviews/qa-latest.md'
     timeout_qa: '1800'
-    gate_prompt_gate_qa: Read QA output. Did all verification sections pass? Are there
-      issues that need Builder fixes? REDIRECT to Builder if issues found (max 3 iterations).
-    max_iterations_gate_qa: '3'
 gate_qa:
   type: GateNode
   id: gate_qa

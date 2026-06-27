@@ -24,9 +24,9 @@ factory workflow export-skills --templatize $PROJECT_PATH
 ## Phase 1: Skill Reviewer — Review Agent
 
 ```bash
-factory agent skill_reviewer --task "Review and refine the templatized skill document. You may ONLY modify values inside {{slot_name::value markers. Do NOT change any text outside markers, annotations, or structure. Use the provided context bundle (agent prompts, CLI docs, edge topology) to make informed improvements to timeouts, task prompts, gate prompts, failure actions, and finalize commands.
+factory agent skill_reviewer --task "Review and refine the templatized skill document. You may ONLY modify values inside double-brace slot markers (format: name::default). Do NOT change any text outside markers, annotations, or structure. Use the provided context bundle (agent prompts, CLI docs, edge topology) to make informed improvements to timeouts, task prompts, gate prompts, failure actions, and finalize commands.
 Read: .factory/strategy/templatized-skill.md
-Write output to: .factory/strategy/refined-skill.md}}" --project "$PROJECT_PATH" --timeout 600
+Write output to: .factory/strategy/refined-skill.md" --project "$PROJECT_PATH" --timeout 600
 ```
 
 ### Gate — Guard (Automated)
