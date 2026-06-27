@@ -2509,6 +2509,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    if mode == "benchmark":
+        os.environ["FACTORY_NO_GITHUB"] = "1"
+        no_github = True
+
     create_description: str | None = None
     design_idea: str | None = None
     design_existing: bool = False
@@ -2703,6 +2707,28 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     )
 
     if headless:
+        # Benchmark mode: force interactive path to avoid 3600s timeout cap
+        # in runners/_subprocess.py. Benchmark tasks (Legacy-Bench, Harbor)
+        # can run >1 hour due to complex multi-file legacy codebases.
+        if mode == "benchmark":
+            try:
+                from factory.models import AgentRunRequest as _RunReq
+
+                prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile)
+                runner = get_runner(runner_name)
+                return runner.interactive_run(_RunReq(
+                    prompt=prompt, task=task, cwd=wt_path,
+                    model=model, role="ceo", skip_permissions=True,
+                    session_name=session_name,
+                ))
+            finally:
+                _stop_ceo_tailer(ceo_tailer)
+                complete_cycle_session(project_path, cycle_span_id)
+                remove_worktree(project_path, wt_path, wt_branch)
+                if needs_materialize and _is_scaffold_only(project_path):
+                    import shutil
+                    shutil.rmtree(project_path, ignore_errors=True)
+
         # Non-interactive pipe mode (for scripting, cron, tmux)
         # Uses completion guard to auto-resume on premature exit
         from factory.ceo_completion import run_ceo_with_completion_guard
@@ -3691,6 +3717,21 @@ def _build_ceo_task(
             "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above."
         )
+    elif mode == "benchmark":
+        task += (
+            "\n\nRun Benchmark mode: read `skills/workflow-benchmark/SKILL.md` for the full "
+            "step-by-step playbook. This mode runs the full factory pipeline "
+            "(study → research → strategy → build → QA → eval → archival) as a solver "
+            "in a containerized benchmark environment.\n\n"
+            "**Sacred Rule 6 SUSPENDED** — do NOT create PRs. All changes are committed "
+            "locally. After a KEEP verdict, auto-merge the experiment branch to the base "
+            "branch using `git merge --no-edit`.\n\n"
+            "**GitHub integration DISABLED** — FACTORY_NO_GITHUB=1 is set. Do not attempt "
+            "any GitHub operations (no issue creation, no PR posting, no cloning).\n\n"
+            "The prompt file contains the task instruction (bug description, expected behavior, "
+            "constraints). Pass its content to Researcher, Strategist, and Builder as their "
+            "primary context."
+        )
 
     if no_github:
         task += (
@@ -4435,12 +4476,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "create"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "create", "benchmark"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, design (research + brainstorm → spec → build), "
              "research (autonomous research optimization), review (on-demand PR review), "
-             "or create (meta-mode for creating new factory modes)",
+             "create (meta-mode for creating new factory modes), "
+             "or benchmark (full pipeline with auto-merge for containerized benchmarks)",
     )
     p.add_argument(
         "--focus", default=None,

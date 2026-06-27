@@ -1,4 +1,4 @@
-"""All 9 workflow definitions as Python functions returning Workflow objects.
+"""All 10 workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
@@ -9,6 +9,7 @@ W₆: Discover Mode
 W₇: Review Mode
 W₈: Refine Mode
 W₉: Create Mode (meta-mode for creating new factory modes)
+W₁₀: Benchmark Mode (= W₃ with auto-merge, no GitHub, interactive subprocess)
 """
 
 from __future__ import annotations
@@ -40,6 +41,7 @@ __all__ = [
     "review_workflow",
     "refine_workflow",
     "create_workflow",
+    "benchmark_workflow",
     "register_all",
 ]
 
@@ -1469,11 +1471,233 @@ def create_workflow() -> Workflow:
     )
 
 
+# ── W₁₀: Benchmark Mode ─────────────────────────────────────────
+
+
+def benchmark_workflow() -> Workflow:
+    """W₁₀: Benchmark Mode — full factory pipeline with auto-merge for containerized benchmarks.
+
+    Study → Researcher → CEO gate → Strategist → CEO gate →
+    per-hypothesis: begin → Builder → CEO gate → QA → gate_qa(max 3) →
+    Precheck → finalize → auto_merge(if keep) → Archivist(async)
+
+    Optimized for Legacy-Bench: complex multi-file legacy codebases.
+    Sacred Rule 6 suspended — no PRs, local merge to main.
+    Implies --no-github. Uses interactive subprocess path (no 3600s timeout cap).
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Study
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    # Researcher — CRITICAL for legacy codebases
+    nodes["researcher"] = AgentNode(
+        id="researcher",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Deep research for the project. "
+            "Read observations at .factory/strategy/observations.md. "
+            "Analyze codebase structure, eval scores, and experiment history. "
+            "For legacy codebases: trace multi-file data flows, identify business "
+            "logic patterns, parse binary file formats, map dependencies. "
+            "Check .factory/archive/ for prior knowledge. "
+            "Write findings to .factory/strategy/research-local.md."
+        ),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/research-local.md"},
+    )
+
+    # CEO gate on research
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Are observations grounded in data? Did the analysis surface "
+            "the root cause or key structural insights? Any blind spots?"
+        ),
+        reads={".factory/strategy/research-local.md"},
+    )
+
+    # Strategist
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Generate prioritized hypotheses. "
+            "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
+            "Read Hypothesis Budget from observations for constraints. "
+            "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
+            "Each hypothesis must be specific, scoped to one PR, tied to observations, "
+            "with expected impact on eval dimensions. "
+            "Tag backlog items with **Backlog item:** and new items with **New:**. "
+            "Write to .factory/strategy/current.md."
+        ),
+        reads={".factory/strategy/research-local.md", ".factory/strategy/observations.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    # CEO gate on strategy — HARD GATE
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "HARD GATE. Check: specific enough to implement? Scoped to one PR? "
+            "Expected eval impact realistic? Follows FEEC priority? "
+            "Not redundant with reverted experiment? "
+            "Write PLAN APPROVED with approved hypotheses in priority order."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Per-hypothesis loop
+    nodes["begin"] = FnNode(
+        id="begin",
+        command='factory begin {project_path} --hypothesis "Implement hypothesis"',
+        writes={".factory/experiments/current_id"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the current hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md. Read the CEO strategy approval. "
+            "Implement exactly what the hypothesis describes. Run tests. "
+            "Commit locally — do NOT create a PR (Sacred Rule 6 suspended in benchmark mode)."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and diff. Does work match the hypothesis? "
+            "No scope creep? Tests included? REDIRECT if off-scope."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Run health check (factory eval + score delta), code review "
+            "(correctness, architecture, edge cases, security), and adversarial QA "
+            "(run/test the built feature). Write results to .factory/reviews/qa-latest.md"
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results. PROCEED if all checks pass. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command="factory finalize {project_path} --id 1 --verdict keep --hypothesis 'hypothesis'",
+        reads={".factory/reviews/qa-latest.md"},
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    # Auto-merge: merge worktree branch to base branch (only runs if verdict=keep)
+    nodes["auto_merge"] = FnNode(
+        id="auto_merge",
+        command=(
+            "cd {project_path} && "
+            "BASE_BRANCH=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null "
+            "| sed 's|refs/remotes/origin/||' || echo main) && "
+            "CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD) && "
+            "git checkout \"$BASE_BRANCH\" && "
+            "git merge --no-edit \"$CURRENT_BRANCH\" && "
+            "git checkout \"$CURRENT_BRANCH\""
+        ),
+        reads={".factory/experiments/verdict.json"},
+    )
+
+    # Archivist (async, non-blocking)
+    nodes["archivist"] = AgentNode(
+        id="archivist",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive experiment results and learnings.",
+        reads={".factory/experiments/verdict.json"},
+        writes={".factory/archive/experiment.md"},
+        blocking=False,
+    )
+
+    edges = [
+        # Study → researcher
+        Edge(source="study", target="researcher"),
+        # Researcher → research gate
+        Edge(source="researcher", target="gate_research"),
+        # Research gate
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
+        # Strategist → strategy gate
+        Edge(source="strategist", target="gate_strategy"),
+        # Strategy gate
+        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # begin → builder
+        Edge(source="begin", target="builder"),
+        # Builder → build gate
+        Edge(source="builder", target="gate_build"),
+        # Build gate → QA (proceed) or builder (reloop)
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        # QA → gate_qa
+        Edge(source="qa", target="gate_qa"),
+        # gate_qa → precheck (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Precheck → finalize (proceed) or halt
+        Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
+        # Finalize → auto_merge → archivist
+        Edge(source="finalize", target="auto_merge"),
+        Edge(source="auto_merge", target="archivist"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "benchmark"
+
+    return Workflow(
+        name="benchmark",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 9 workflow definitions."""
+    """Build and return all 10 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1484,4 +1708,5 @@ def register_all() -> dict[str, Workflow]:
         "meta": meta_workflow(),
         "refine": refine_workflow(),
         "create": create_workflow(),
+        "benchmark": benchmark_workflow(),
     }

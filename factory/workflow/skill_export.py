@@ -111,6 +111,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or /path/to/spec.md',
     },
+    "benchmark": {
+        "description": (
+            "Benchmark mode — run the full factory pipeline as a solver in containerized "
+            "benchmark harnesses (Legacy-Bench, Harbor, SWE-bench). Runs study, research, "
+            "hypothesis generation, build/QA loop, and auto-merges kept changes to the base "
+            "branch. Sacred Rule 6 suspended — no PRs, local merge only. Use when "
+            "--mode benchmark is passed."
+        ),
+        "argument_hint": "<project_path> --prompt <instruction_file>",
+    },
 }
 
 
