@@ -1,4 +1,4 @@
-"""All 8 workflow definitions as Python functions returning Workflow objects.
+"""All 9 workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
@@ -8,6 +8,7 @@ W₅: Meta Mode
 W₆: Discover Mode
 W₇: Review Mode
 W₈: Refine Mode
+W₉: Create Mode (meta-mode for creating new factory modes)
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ __all__ = [
     "discover_workflow",
     "review_workflow",
     "refine_workflow",
+    "create_workflow",
     "register_all",
 ]
 
@@ -1190,11 +1192,288 @@ def refine_workflow() -> Workflow:
     )
 
 
+# ── W₉: Create Mode ──────────────────────────────────────────────
+
+
+def create_workflow() -> Workflow:
+    """W₉: Create Mode — meta-mode for creating new factory modes.
+
+    Takes a user description and produces a fully working workflow definition,
+    SKILL.md, CLI wiring, and tests.
+
+    Fork(3 researchers) → Join → CEO gate → Strategist → User gate →
+    Archivist(async) → Builder → CEO gate → QA → gate_qa(max 3) →
+    Precheck gate → Archivist(async)
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Fork: 3 parallel researchers
+    nodes["fork_research"] = ForkNode(
+        id="fork_research",
+        targets=["researcher_existing", "researcher_intent", "researcher_practices"],
+    )
+
+    nodes["researcher_existing"] = AgentNode(
+        id="researcher_existing",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Existing workflow analysis. "
+            "Read factory/workflow/definitions.py and analyze all existing workflow "
+            "definitions (build, design, improve, research, meta, discover, review, refine). "
+            "Document common patterns: node sequences, gate conventions, fork/join patterns, "
+            "archivist placement, edge wiring, trigger functions, reads/writes declarations. "
+            "Read factory/workflow/primitives.py for available node types and their fields. "
+            "Read factory/workflow/skill_export.py for WORKFLOW_META format. "
+            "Write findings to .factory/strategy/research-existing.md covering: "
+            "node type usage patterns, common subgraphs (builder→gate→qa→gate loop), "
+            "trigger function conventions, data flow patterns."
+        ),
+        writes={".factory/strategy/research-existing.md"},
+    )
+
+    nodes["researcher_intent"] = AgentNode(
+        id="researcher_intent",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Mode description analysis. "
+            "Read the user's mode description from the CEO task. "
+            "Parse and structure it into a workflow specification: "
+            "- Purpose and trigger conditions "
+            "- Agent roles needed (which specialists) "
+            "- Gate logic (user vs agent vs fn evaluators) "
+            "- Data flow (what files are read/written) "
+            "- Interactive vs headless requirements "
+            "- Input format (text, file, drawing, flow) "
+            "Write findings to .factory/strategy/research-intent.md covering: "
+            "structured requirements, node candidates, suggested graph topology."
+        ),
+        writes={".factory/strategy/research-intent.md"},
+    )
+
+    nodes["researcher_practices"] = AgentNode(
+        id="researcher_practices",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Workflow design best practices. "
+            "Search the web for workflow and pipeline design patterns relevant "
+            "to the described mode. Look for: DAG design patterns, agent orchestration "
+            "patterns, quality gate strategies, error recovery approaches. "
+            "Check .factory/archive/ for lessons from past mode creation or workflow changes. "
+            "Write findings to .factory/strategy/research-practices.md covering: "
+            "relevant design patterns, pitfalls to avoid, testing strategies."
+        ),
+        writes={".factory/strategy/research-practices.md"},
+    )
+
+    # Join
+    nodes["join_research"] = JoinNode(
+        id="join_research",
+        sources=["researcher_existing", "researcher_intent", "researcher_practices"],
+        reads={
+            ".factory/strategy/research-existing.md",
+            ".factory/strategy/research-intent.md",
+            ".factory/strategy/research-practices.md",
+        },
+        writes={".factory/strategy/research-combined.md"},
+    )
+
+    # CEO gate on research quality
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Are the existing workflow patterns well-documented? "
+            "Is the user's intent clearly structured into workflow requirements? "
+            "Are best practices relevant to this type of mode? Any gaps?"
+        ),
+        reads={".factory/strategy/research-combined.md"},
+    )
+
+    # Strategist synthesizes workflow specification
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Synthesize a complete workflow specification for a new factory mode. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Produce a complete specification including: "
+            "1) Python code for the workflow function (nodes dict, edges list, trigger) "
+            "2) WORKFLOW_META entry (description, argument_hint) "
+            "3) CLI wiring changes (build_parser mode choices, cmd_ceo routing, _build_ceo_task section) "
+            "4) Test cases (graph validation, skill export, trigger function, registration) "
+            "5) Node details: for each node, specify id, type, role, prompt_template, reads, writes "
+            "6) Edge details: for each edge, specify source, target, condition "
+            "7) Interactive vs headless behavior "
+            "Follow conventions from existing workflows — use the same patterns for "
+            "builder→gate→QA→gate loops, archivist placement, and research forks. "
+            "Write the specification to .factory/strategy/current.md."
+        ),
+        reads={".factory/strategy/research-combined.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    # User gate for workflow spec approval — interactive
+    nodes["gate_strategy"] = GateNode(
+        id="gate_strategy",
+        evaluator_type="user",
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Archivist (async, non-blocking)
+    nodes["archivist_plan"] = AgentNode(
+        id="archivist_plan",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the approved workflow specification for the new mode.",
+        reads={".factory/strategy/current.md"},
+        writes={".factory/archive/create-plan.md"},
+        blocking=False,
+    )
+
+    # Builder implements everything
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Implement the new factory mode from the approved workflow specification. "
+            "Read the approved spec at .factory/strategy/current.md. "
+            "Read CLAUDE.md for project conventions. "
+            "Implementation checklist: "
+            "1) Add the workflow function to factory/workflow/definitions.py "
+            "2) Register it in register_all() "
+            "3) Add WORKFLOW_META entry in factory/workflow/skill_export.py "
+            "4) Wire --mode in factory/cli.py (build_parser, cmd_ceo, _build_ceo_task) "
+            "5) Run factory workflow validate <name> to verify the graph "
+            "6) Run factory workflow export-skills to generate the SKILL.md "
+            "7) Write tests in tests/ "
+            "8) Run pytest and ruff check to verify "
+            "Commit changes and open a draft PR."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    # CEO gate on build
+    nodes["gate_build"] = GateNode(
+        id="gate_build",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read builder output and PR diff. Does work match the approved spec? "
+            "Verify: workflow function exists, registered in register_all(), "
+            "WORKFLOW_META entry added, CLI wiring complete, tests written. "
+            "REDIRECT if any component is missing."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    # QA verification
+    nodes["qa"] = AgentNode(
+        id="qa",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Verify the new factory mode end-to-end. "
+            "1. Health Check — run pytest, ruff check, mypy. Report results. "
+            "2. Code Review — read PR diff, evaluate correctness, architecture, "
+            "edge cases, security. Verify workflow graph validates. "
+            "3. Adversarial QA — actually test the new mode: "
+            "   - Run: factory workflow validate <name> "
+            "   - Run: factory workflow show <name> "
+            "   - Run: factory workflow export-skills --verify "
+            "   - Verify SKILL.md was generated under skills/workflow-<name>/ "
+            "   - Check CLI recognizes --mode <name> (factory ceo --help) "
+            "   - Check the workflow handles both interactive and headless paths "
+            "Write results to .factory/reviews/qa-latest.md"
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    # CEO gate on QA (max 3 iterations)
+    nodes["gate_qa"] = GateNode(
+        id="gate_qa",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review QA results for the new mode. PROCEED if all checks pass: "
+            "workflow validates, SKILL.md generated, tests pass, CLI recognizes mode. "
+            "RELOOP to builder (max 3 iterations) if issues found."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    # Precheck gate
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    # Archivist (async)
+    nodes["archivist_build"] = AgentNode(
+        id="archivist_build",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the new mode build results and learnings.",
+        reads={".factory/reviews/qa-latest.md"},
+        writes={".factory/archive/create-build.md"},
+        blocking=False,
+    )
+
+    # Edges
+    edges = [
+        # Fork to researchers
+        Edge(source="fork_research", target="researcher_existing"),
+        Edge(source="fork_research", target="researcher_intent"),
+        Edge(source="fork_research", target="researcher_practices"),
+        # Researchers to join
+        Edge(source="researcher_existing", target="join_research"),
+        Edge(source="researcher_intent", target="join_research"),
+        Edge(source="researcher_practices", target="join_research"),
+        # Join → research gate
+        Edge(source="join_research", target="gate_research"),
+        # Research gate
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+        # Strategist → user gate
+        Edge(source="strategist", target="gate_strategy"),
+        # User gate
+        Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # Archivist → builder
+        Edge(source="archivist_plan", target="builder"),
+        # Builder → build gate
+        Edge(source="builder", target="gate_build"),
+        # Build gate
+        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        # QA → gate_qa
+        Edge(source="qa", target="gate_qa"),
+        # gate_qa
+        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Precheck → archivist
+        Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "create"
+
+    return Workflow(
+        name="create",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_research",
+        trigger=trigger,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 8 workflow definitions."""
+    """Build and return all 9 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1204,4 +1483,5 @@ def register_all() -> dict[str, Workflow]:
         "research": research_workflow(),
         "meta": meta_workflow(),
         "refine": refine_workflow(),
+        "create": create_workflow(),
     }
