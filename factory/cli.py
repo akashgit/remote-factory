@@ -1952,7 +1952,8 @@ def cmd_sessions_resume(args: argparse.Namespace) -> int:
         print("It may have been pruned. Use 'factory sessions-list' to check.", file=sys.stderr)
         return 1
 
-    wt_path = Path(meta.worktree_path)
+    target = getattr(args, "target", None)
+    wt_path = Path(target) if target else Path(meta.worktree_path)
     if wt_path.exists():
         print(f"Error: worktree path already exists: {wt_path}", file=sys.stderr)
         print("Remove it first or use a different session.", file=sys.stderr)
@@ -4486,6 +4487,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("sessions-resume", help="Reconstruct worktree from a past session")
     p.add_argument("path", help="Path to the project")
     p.add_argument("run_id", help="Run ID of the session to resume")
+    p.add_argument("--target", help="Override worktree path (use instead of stored path)")
 
     # log
     p = sub.add_parser("log", help="Append a structured event to .factory/events.jsonl")

@@ -6,8 +6,10 @@ session listing, resumption, and reconstruction.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -61,7 +63,15 @@ def save_run(project_path: Path, metadata: RunMetadata) -> None:
     runs = _runs_dir(project_path)
     runs.mkdir(parents=True, exist_ok=True)
     path = runs / f"{metadata.run_id}.json"
-    path.write_text(metadata.model_dump_json(indent=2) + "\n")
+    fd, tmp = tempfile.mkstemp(dir=runs, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(metadata.model_dump_json(indent=2) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     log.info("run_saved", run_id=metadata.run_id, status=metadata.status.value)
 
     try:
@@ -111,8 +121,17 @@ def update_run(project_path: Path, run_id: str, **kwargs: object) -> RunMetadata
     data.update(kwargs)
     updated = RunMetadata.model_validate(data)
 
-    path = _runs_dir(project_path) / f"{run_id}.json"
-    path.write_text(updated.model_dump_json(indent=2) + "\n")
+    runs = _runs_dir(project_path)
+    path = runs / f"{run_id}.json"
+    fd, tmp = tempfile.mkstemp(dir=runs, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(updated.model_dump_json(indent=2) + "\n")
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
     log.info("run_updated", run_id=run_id, **{k: str(v) for k, v in kwargs.items()})
 
     try:
@@ -135,7 +154,30 @@ def delete_run(project_path: Path, run_id: str) -> bool:
         return False
     path.unlink()
     log.info("run_deleted", run_id=run_id)
+
+    try:
+        from factory.events import emit_event
+        emit_event(project_path, "run.deleted", data={"run_id": run_id})
+    except Exception:
+        pass
+
     return True
+
+
+def _branch_in_use_by_worktree(project_path: Path, branch: str) -> bool:
+    """Check if a branch is currently checked out in any git worktree."""
+    result = subprocess.run(
+        ["git", "worktree", "list", "--porcelain"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return False
+    for line in result.stdout.splitlines():
+        if line.startswith("branch ") and line.endswith(f"/{branch}"):
+            return True
+    return False
 
 
 def prune_runs(
@@ -147,6 +189,7 @@ def prune_runs(
 ) -> list[str]:
     """Delete run metadata and branches older than N days (or all completed runs).
 
+    Running sessions are always skipped, even with prune_all=True.
     Returns list of human-readable descriptions of pruned items.
     """
     runs = list_runs(project_path)
@@ -154,7 +197,7 @@ def prune_runs(
     pruned: list[str] = []
 
     for meta in runs:
-        if meta.status == SessionRunStatus.running and not prune_all:
+        if meta.status == SessionRunStatus.running:
             continue
 
         created = datetime.fromisoformat(meta.created_at)
@@ -171,11 +214,14 @@ def prune_runs(
 
         delete_run(project_path, meta.run_id)
 
-        subprocess.run(
-            ["git", "branch", "-D", meta.branch],
-            cwd=project_path,
-            capture_output=True,
-        )
+        if _branch_in_use_by_worktree(project_path, meta.branch):
+            log.warning("branch_in_use", branch=meta.branch, run_id=meta.run_id)
+        else:
+            subprocess.run(
+                ["git", "branch", "-D", meta.branch],
+                cwd=project_path,
+                capture_output=True,
+            )
         pruned.append(f"Pruned: {desc}")
         log.info("run_pruned", run_id=meta.run_id, branch=meta.branch)
 

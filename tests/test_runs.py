@@ -172,3 +172,19 @@ class TestPruneRuns:
         pruned = prune_runs(project, prune_all=True)
         assert len(pruned) == 2
         assert list_runs(project) == []
+
+    def test_prune_all_skips_running(self, tmp_path: Path) -> None:
+        project = tmp_path / "proj"
+        (project / ".factory").mkdir(parents=True)
+
+        recent_ts = datetime.now(timezone.utc).isoformat()
+        save_run(project, _make_run("00000001", created_at=recent_ts, status=SessionRunStatus.running))
+        save_run(project, _make_run("00000002", created_at=recent_ts, status=SessionRunStatus.completed))
+
+        pruned = prune_runs(project, prune_all=True)
+        assert len(pruned) == 1
+        assert "00000002" in pruned[0]
+
+        remaining = list_runs(project)
+        assert len(remaining) == 1
+        assert remaining[0].run_id == "00000001"
