@@ -11,7 +11,6 @@ The user wants: **$ARGUMENTS**
 
 ## Step: Eval Test
 
-
 ```bash
 cd $PROJECT_PATH && python eval/score.py
 ```
@@ -31,22 +30,19 @@ Apply the CEO Review Gate protocol:
 
 ## Step: Mark Reviewed
 
-
 ```bash
 python3 -c "import json; from pathlib import Path; p = Path('$PROJECT_PATH/.factory/eval_profile.json'); d = json.loads(p.read_text()); d['human_reviewed'] = True; p.write_text(json.dumps(d, indent=2))"
 ```
 
 ## Phase 1: Ceo — Create Factory Md
 
-
 ```bash
 factory agent ceo --task "Create factory.md from template. Copy the factory config template to the project root. Fill in: Goal, Scope, Guards, Eval command, Threshold, and Smoke Test. If .factory/eval_spec.json exists, populate the Eval Spec section. If .factory/strategy/current.md has a Research Configuration section, populate research sections (Research Target, Mutable/Fixed Surfaces, etc.).
 Read: .factory/eval_profile.json
-Write output to: factory.md" --project "$PROJECT_PATH" --timeout 600
+Write output to: factory.md" --project "$PROJECT_PATH" --timeout 3600
 ```
 
 ## Step: Factory Init
-
 
 ```bash
 factory init $PROJECT_PATH
@@ -54,13 +50,11 @@ factory init $PROJECT_PATH
 
 ## Step: Baseline Eval
 
-
 ```bash
-factory agent evaluator --task "Run eval and report results." --project "$PROJECT_PATH" --timeout 300
+factory eval $PROJECT_PATH
 ```
 
 ## Step: Commit
-
 
 ```bash
 cd $PROJECT_PATH && git add factory.md eval/score.py .factory/ && git commit -m "factory: initialize factory config and baseline eval"

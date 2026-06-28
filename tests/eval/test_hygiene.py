@@ -6,7 +6,6 @@ from factory.eval.hygiene import (
     compute_hygiene_results,
     eval_config_parser,
     eval_coverage,
-    eval_guard_patterns,
     eval_lint,
     eval_tests,
     eval_type_check,
@@ -18,9 +17,9 @@ class TestHygieneWeights:
         total = sum(HYGIENE_WEIGHTS.values())
         assert abs(total - 1.0) < 1e-9
 
-    def test_all_seven_dimensions(self):
+    def test_all_six_dimensions(self):
         assert set(HYGIENE_WEIGHTS.keys()) == {
-            "tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser",
+            "tests", "lint", "type_check", "coverage", "config_parser",
             "architecture",
         }
 
@@ -89,23 +88,6 @@ class TestEvalCoverage:
         assert result["score"] == 0.5
 
 
-class TestEvalGuardPatterns:
-    def test_basic_patterns(self, tmp_path):
-        result = eval_guard_patterns(tmp_path)
-        assert result["name"] == "guard_patterns"
-        assert result["score"] > 0.0
-
-    def test_with_factory_config(self, tmp_path):
-        import json
-        factory_dir = tmp_path / ".factory"
-        factory_dir.mkdir()
-        config = {"scope": ["src/**/*.py", "tests/**/*.py"], "goal": "", "guards": [],
-                  "eval_command": "", "eval_threshold": 0.8, "constraints": []}
-        (factory_dir / "config.json").write_text(json.dumps(config))
-        result = eval_guard_patterns(tmp_path)
-        assert result["name"] == "guard_patterns"
-
-
 class TestEvalConfigParser:
     def test_no_factory_md_returns_neutral(self, tmp_path):
         result = eval_config_parser(tmp_path)
@@ -126,11 +108,11 @@ class TestEvalConfigParser:
 
 
 class TestComputeHygieneResults:
-    def test_returns_all_seven(self, tmp_path):
+    def test_returns_all_six(self, tmp_path):
         results = compute_hygiene_results(tmp_path)
-        assert len(results) == 7
+        assert len(results) == 6
         names = {r["name"] for r in results}
-        assert names == {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser", "architecture"}
+        assert names == {"tests", "lint", "type_check", "coverage", "config_parser", "architecture"}
 
     def test_all_have_required_keys(self, tmp_path):
         results = compute_hygiene_results(tmp_path)
@@ -144,4 +126,4 @@ class TestComputeHygieneResults:
     def test_accepts_test_timeout_parameter(self, tmp_path):
         """compute_hygiene_results should accept test_timeout parameter."""
         results = compute_hygiene_results(tmp_path, test_timeout=900)
-        assert len(results) == 7
+        assert len(results) == 6

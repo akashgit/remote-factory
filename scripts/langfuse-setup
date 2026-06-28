@@ -9,10 +9,12 @@
 # Web UI: http://localhost:3000
 # Login:  dev@localhost.local / devpassword123
 #
-# Factory env vars (add to shell or .env):
+# Factory env vars (auto-written to .env.local on start):
 #   export LANGFUSE_HOST=http://localhost:3000
+#   export LANGFUSE_BASE_URL=http://localhost:3000
 #   export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
 #   export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+#   export TELEMETRY_PLATFORM=langfuse
 
 set -euo pipefail
 
@@ -39,11 +41,23 @@ case "${1:-status}" in
         echo ""
         echo "Langfuse starting at http://localhost:3000"
         echo "Login: dev@localhost.local / devpassword123"
+
+        # Write .env.local so tracing works with: set -a && source .env.local && set +a
+        ENV_FILE="$SCRIPT_DIR/.env.local"
+        if [ ! -f "$ENV_FILE" ]; then
+            cat > "$ENV_FILE" <<'ENVEOF'
+LANGFUSE_HOST=http://localhost:3000
+LANGFUSE_BASE_URL=http://localhost:3000
+LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key
+LANGFUSE_SECRET_KEY=sk-lf-dev-local-key
+TELEMETRY_PLATFORM=langfuse
+ENVEOF
+            echo ""
+            echo "Created .env.local with Langfuse credentials."
+        fi
         echo ""
-        echo "Set these env vars for factory telemetry:"
-        echo "  export LANGFUSE_HOST=http://localhost:3000"
-        echo "  export LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key"
-        echo "  export LANGFUSE_SECRET_KEY=sk-lf-dev-local-key"
+        echo "Enable tracing before running the factory:"
+        echo "  set -a && source .env.local && set +a"
         ;;
     stop)
         echo "Stopping Langfuse..."
@@ -56,10 +70,8 @@ case "${1:-status}" in
         echo "Web UI: http://localhost:3000"
         echo "Login:  dev@localhost.local / devpassword123"
         echo ""
-        echo "Factory env vars:"
-        echo "  LANGFUSE_HOST=http://localhost:3000"
-        echo "  LANGFUSE_PUBLIC_KEY=pk-lf-dev-local-key"
-        echo "  LANGFUSE_SECRET_KEY=sk-lf-dev-local-key"
+        echo "Enable tracing:"
+        echo "  set -a && source .env.local && set +a"
         ;;
     *)
         echo "Usage: $0 {start|stop|status}"

@@ -1,0 +1,99 @@
+name: Nightly Release
+
+on:
+  schedule:
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new commits since last nightly
+        id: check
+        run: |
+          LAST_NIGHTLY=$(git tag --list 'nightly-*' --sort=-creatordate | head -n1)
+          if [ -n "$LAST_NIGHTLY" ]; then
+            NEW_COMMITS=$(git rev-list "$LAST_NIGHTLY"..HEAD --count)
+            if [ "$NEW_COMMITS" -eq 0 ]; then
+              echo "No new commits since $LAST_NIGHTLY — skipping release."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Set release variables
+        if: steps.check.outputs.skip != 'true'
+        id: vars
+        run: |
+          TAG="nightly-$(date -u +%Y-%m-%d)"
+          TITLE="Nightly $(date -u +%Y-%m-%d)"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+
+      - name: Delete existing release for today if re-running
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Deleting existing release $TAG"
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+
+      - name: Find latest stable tag for notes
+        if: steps.check.outputs.skip != 'true'
+        id: stable
+        run: |
+          STABLE_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n1)
+          if [ -n "$STABLE_TAG" ]; then
+            echo "tag=$STABLE_TAG" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create nightly release
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          TITLE="${{ steps.vars.outputs.title }}"
+          STABLE="${{ steps.stable.outputs.tag }}"
+
+          NOTES_ARGS=""
+          if [ -n "$STABLE" ]; then
+            NOTES_ARGS="--notes-start-tag $STABLE"
+          fi
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TITLE" \
+            --prerelease \
+            --generate-notes \
+            $NOTES_ARGS
+
+      - name: Cleanup old nightly releases
+        if: steps.check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          KEEP=7
+          NIGHTLIES=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName \
+            -q '[.[] | select(.tagName | startswith("nightly-"))][].tagName')
+
+          COUNT=0
+          for TAG in $NIGHTLIES; do
+            COUNT=$((COUNT + 1))
+            if [ "$COUNT" -gt "$KEEP" ]; then
+              echo "Deleting old nightly release: $TAG"
+              gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+            fi
+          done

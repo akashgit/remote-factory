@@ -16,7 +16,7 @@ class TestRunEval:
         assert "lint" in names
         assert "type_check" in names
         assert "coverage" in names
-        assert "guard_patterns" in names
+        assert "architecture" in names
         assert "config_parser" in names
         assert "capability_surface" in names
         assert "experiment_diversity" in names
@@ -85,7 +85,7 @@ class TestRunEval:
     async def test_weight_split_is_50_50(self, tmp_path):
         """Hygiene dimensions get 50% total weight, growth gets 50%."""
         result = await run_eval("true", tmp_path, threshold=0.0)
-        hygiene_names = {"tests", "lint", "type_check", "coverage", "guard_patterns", "config_parser", "architecture"}
+        hygiene_names = {"tests", "lint", "type_check", "coverage", "config_parser", "architecture"}
         growth_names = {
             "capability_surface", "experiment_diversity", "observability",
             "research_grounding", "factory_effectiveness", "spec_compliance",

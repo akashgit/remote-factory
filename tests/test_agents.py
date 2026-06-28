@@ -1,6 +1,7 @@
 """Tests for factory.agents — prompt loading and resolution."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -580,7 +581,7 @@ class TestBackgroundDispatch:
 
     def test_parse_bg_session_id(self):
         """_parse_bg_session_id extracts session ID from claude --bg output."""
-        from factory.runners._tmux_persist import _parse_bg_session_id
+        from factory.runners._background import _parse_bg_session_id
 
         output = "backgrounded · abc123def · factory-ceo"
         assert _parse_bg_session_id(output) == "abc123def"
@@ -711,4 +712,67 @@ class TestBgAgents:
             bg = False
         assert bg is False
         assert bg_agents is True
+
+
+class TestNoGithubPropagation:
+    """Tests for --no-github env var propagation to sub-agents."""
+
+    @pytest.mark.asyncio
+    async def test_invoke_agent_appends_no_github_directive(self, tmp_path, monkeypatch):
+        """When FACTORY_NO_GITHUB=1, invoke_agent appends GitHub Disabled section."""
+        import factory.agents.runner as runner_module
+        from factory.agents.runner import invoke_agent
+
+        monkeypatch.setenv("FACTORY_NO_GITHUB", "1")
+        (tmp_path / ".factory").mkdir(exist_ok=True)
+
+        captured_prompt: list[str] = []
+
+        class MockRunner:
+            name = "claude"
+            async def headless(self, request):
+                captured_prompt.append(request.prompt)
+                from factory.models import AgentRunResult
+                return AgentRunResult(stdout="ok", return_code=0)
+
+        monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
+
+        await invoke_agent("researcher", "test task", tmp_path)
+        assert len(captured_prompt) == 1
+        assert "## GitHub Disabled" in captured_prompt[0]
+        assert "Do NOT run any gh CLI commands" in captured_prompt[0]
+
+    @pytest.mark.asyncio
+    async def test_invoke_agent_no_directive_when_unset(self, tmp_path, monkeypatch):
+        """When FACTORY_NO_GITHUB is not set, no GitHub Disabled section is appended."""
+        import factory.agents.runner as runner_module
+        from factory.agents.runner import invoke_agent
+
+        monkeypatch.delenv("FACTORY_NO_GITHUB", raising=False)
+        (tmp_path / ".factory").mkdir(exist_ok=True)
+
+        captured_prompt: list[str] = []
+
+        class MockRunner:
+            name = "claude"
+            async def headless(self, request):
+                captured_prompt.append(request.prompt)
+                from factory.models import AgentRunResult
+                return AgentRunResult(stdout="ok", return_code=0)
+
+        monkeypatch.setattr(runner_module, "get_runner", lambda *args, **kwargs: MockRunner())
+
+        await invoke_agent("researcher", "test task", tmp_path)
+        assert len(captured_prompt) == 1
+        assert "## GitHub Disabled" not in captured_prompt[0]
+
+    def test_env_var_propagates_to_subprocess_env(self, monkeypatch):
+        """FACTORY_NO_GITHUB=1 is visible in os.environ for child processes."""
+        monkeypatch.setenv("FACTORY_NO_GITHUB", "1")
+        assert os.environ.get("FACTORY_NO_GITHUB") == "1"
+
+    def test_env_var_absent_by_default(self, monkeypatch):
+        """FACTORY_NO_GITHUB is not set when --no-github is not passed."""
+        monkeypatch.delenv("FACTORY_NO_GITHUB", raising=False)
+        assert os.environ.get("FACTORY_NO_GITHUB") is None
 

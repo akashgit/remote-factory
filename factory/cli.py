@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -213,6 +214,7 @@ Given the user's input, return a JSON object with two keys: "follow_ups" and "su
 | `factory ceo {path} --mode improve --focus {issue}` | Target a specific GitHub issue number |
 | `factory ceo {path} --mode design` | Discuss what to work on in an existing project |
 | `factory ceo {path} --mode meta` | Self-improve the factory's own agents |
+| `factory ceo {path} --mode create` | Create a new factory mode (workflow + skill) |
 
 ## Information requirements per mode
 
@@ -287,7 +289,7 @@ Return ONLY a JSON object (no markdown, no explanation):
 6. For new ideas, commands should use the literal user text in quotes — no placeholders
 7. For existing projects, use {path} placeholder and add a path follow-up
 8. If the user mentions fixing/improving an EXISTING project, do NOT wrap input as a new idea
-9. Every generated command MUST include an explicit `--mode` flag (improve, design, research, meta, or build)
+9. Every generated command MUST include an explicit `--mode` flag (improve, design, research, meta, build, or create)
 10. When the input is a GitHub URL (clone scenario), always append `--clean-pr` to the generated command
 
 User input: """
@@ -410,7 +412,10 @@ _CLI_REF = """\
     factory ceo ~/projects/my-app --mode design
 
   Self-improve the factory:
-    factory ceo /path/to/factory --mode meta\
+    factory ceo /path/to/factory --mode meta
+
+  Create a new factory mode:
+    factory ceo /path/to/factory --mode create\
 """
 
 
@@ -747,6 +752,15 @@ def cmd_discover(args: argparse.Namespace) -> int:
             json.dumps(eval_spec, indent=2) + "\n"
         )
 
+    from factory.discovery.spec import generate_spec, resolve_spec
+
+    spec_path, spec_source = resolve_spec(project_path)
+    if spec_source == "absent":
+        spec_content = generate_spec(project_path, profile)
+        spec_path = store.factory_dir / "SPEC.md"
+        spec_path.write_text(spec_content)
+        spec_source = "generated"
+
     dims = [d.name for d in eval_profile.dimensions]
     _emit_cli_event(project_path, "discover.completed", {
         "language": profile.language,
@@ -759,6 +773,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
         "project": profile.model_dump(),
         "eval_profile": eval_profile.model_dump(),
         "eval_spec": eval_spec,
+        "spec": {"path": str(spec_path), "source": spec_source},
     }
     print(json.dumps(output, indent=2))
 
@@ -902,6 +917,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
                 history=history_dicts,
                 project_path=project_path,
                 hard_constraints=config.hard_constraints,
+                exp_id=args.id,
             )
 
             if not precheck_result.passed:
@@ -2364,6 +2380,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         return 1
 
     no_github = getattr(args, "no_github", False)
+    if no_github:
+        os.environ["FACTORY_NO_GITHUB"] = "1"
     refine_request = getattr(args, "refine", None)
 
     if refine_request:
@@ -2468,6 +2486,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    if mode == "create":
+        if headless:
+            flag = "--bg" if bg else "--headless"
+            print(f"Error: --mode create requires foreground mode "
+                  f"(incompatible with {flag})", file=sys.stderr)
+            return 1
+        if prompt_file:
+            print("Error: --mode create and --prompt are mutually exclusive. "
+                  "Create mode generates the workflow from a description.",
+                  file=sys.stderr)
+            return 1
+        if focus:
+            print("Error: --mode create and --focus are mutually exclusive.",
+                  file=sys.stderr)
+            return 1
+
     if mode == "research":
         if prompt_file:
             print("Error: --mode research and --prompt are mutually exclusive. "
@@ -2475,12 +2509,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
 
+    create_description: str | None = None
     design_idea: str | None = None
     design_existing: bool = False
     research_ideation: str | None = None
     deferred_spec: str | None = None
     needs_materialize = False
-    if mode == "design" and _design_is_existing:
+    if mode == "create":
+        resolved_path = Path(raw_path).expanduser().resolve()
+        if not _safe_is_dir(resolved_path):
+            print("Error: --mode create requires an existing project directory. "
+                  "Pass the factory project path: factory ceo /path/to/factory --mode create",
+                  file=sys.stderr)
+            return 1
+        project_path, context = _resolve_input(raw_path, dir_name=dir_name)
+        create_description = context
+    elif mode == "design" and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
     elif mode == "design":
@@ -2602,8 +2646,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
-    interactive = design_existing or bool(design_idea) or bool(research_ideation)
-    ceo_mode = "build" if interactive else mode
+    interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+    ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -2630,6 +2674,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,
+        create_description=create_description,
     )
 
     session_name = _derive_session_name(
@@ -3093,11 +3138,31 @@ def _persist_spec(project_path: Path, spec: str) -> None:
 
 
 _TMUX_SESSION_PREFIX = "factory-"
+_TMUX_SESSIONS_FILE = Path("~/.factory/tmux_sessions.json").expanduser()
 
 
 def _tmux_session_name(project_path: Path) -> str:
     """Derive a tmux session name from a project path."""
-    return f"{_TMUX_SESSION_PREFIX}{project_path.name}"
+    path_hash = hashlib.sha1(str(project_path).encode()).hexdigest()[:6]
+    return f"{_TMUX_SESSION_PREFIX}{project_path.name}-{path_hash}"
+
+
+def _load_tmux_session_mapping() -> dict[str, str]:
+    """Load the session→project mapping from ~/.factory/tmux_sessions.json."""
+    if _TMUX_SESSIONS_FILE.exists():
+        try:
+            return json.loads(_TMUX_SESSIONS_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
+
+
+def _save_tmux_session_mapping(session: str, project_path: str) -> None:
+    """Save a session→project mapping entry to ~/.factory/tmux_sessions.json."""
+    mapping = _load_tmux_session_mapping()
+    mapping[session] = project_path
+    _TMUX_SESSIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _TMUX_SESSIONS_FILE.write_text(json.dumps(mapping, indent=2))
 
 
 def _tmux_available() -> bool:
@@ -3107,6 +3172,52 @@ def _tmux_available() -> bool:
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+
+def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
+    """Build the 'factory ceo ...' command string from parsed args.
+
+    Uses 'factory ceo' (not 'factory run') so the session inside tmux
+    is interactive — the user can attach and interact with the CEO directly.
+    --loop/--interval/--max-cycles are factory-run-only flags and are
+    NOT forwarded to factory ceo.
+    """
+    parts = [f"factory ceo {project_path}"]
+    if args.mode:
+        parts.append(f"--mode {args.mode}")
+    if model:
+        parts.append(f"--model {shlex.quote(model)}")
+    if getattr(args, "no_github", False):
+        parts.append("--no-github")
+    if getattr(args, "profile", None):
+        parts.append(f"--profile {shlex.quote(args.profile)}")
+    if getattr(args, "focus", None):
+        parts.append(f"--focus {shlex.quote(args.focus)}")
+    if getattr(args, "refine", None):
+        parts.append(f"--refine {shlex.quote(args.refine)}")
+    if getattr(args, "clean_pr", None) is True:
+        parts.append("--clean-pr")
+    elif getattr(args, "clean_pr", None) is False:
+        parts.append("--no-clean-pr")
+    if getattr(args, "runner", None):
+        parts.append(f"--runner {shlex.quote(args.runner)}")
+    if getattr(args, "prompt", None):
+        parts.append(f"--prompt {shlex.quote(args.prompt)}")
+    if getattr(args, "branch", None):
+        parts.append(f"--branch {shlex.quote(args.branch)}")
+    if getattr(args, "min_growth", None) is not None:
+        parts.append(f"--min-growth {args.min_growth}")
+    if getattr(args, "max_new", None) is not None:
+        parts.append(f"--max-new {args.max_new}")
+    if getattr(args, "discover_only", False):
+        parts.append("--discover-only")
+    if getattr(args, "bg_agents", False):
+        parts.append("--bg-agents")
+    if getattr(args, "tmux_persist", False):
+        parts.append("--tmux-persist")
+    if getattr(args, "use_profile", False):
+        parts.append("--use-profile")
+    return " ".join(parts)
 
 
 def cmd_tmux(args: argparse.Namespace) -> int:
@@ -3132,28 +3243,15 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         return 0
 
     # Build the factory run command — propagate env vars, use bare `factory`
-    run_cmd_parts = [
-        f"export CLAUDE_CODE_USE_VERTEX={shlex.quote(os.environ.get('CLAUDE_CODE_USE_VERTEX', '1'))}",
-        f"export CLOUD_ML_REGION={shlex.quote(os.environ.get('CLOUD_ML_REGION', ''))}",
-        f"export ANTHROPIC_VERTEX_PROJECT_ID={shlex.quote(os.environ.get('ANTHROPIC_VERTEX_PROJECT_ID', ''))}",
-        'export PATH="$HOME/google-cloud-sdk/bin:$HOME/.local/bin:$PATH"',
-    ]
+    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "BOBSHELL_", "OPENAI_", "CODEX_", "CLAUDE_CODE_", "CLOUD_ML_")
+    run_cmd_parts = []
+    for key, val in sorted(os.environ.items()):
+        if key.startswith(_ENV_PREFIXES):
+            run_cmd_parts.append(f"export {key}={shlex.quote(val)}")
+    run_cmd_parts.append(f"export PATH={shlex.quote(os.environ.get('PATH', '/usr/bin'))}")
 
     model = _resolve_model(args)
-    run_args = f"factory run {project_path}"
-    if args.mode:
-        run_args += f" --mode {args.mode}"
-    if args.loop:
-        run_args += " --loop"
-    if args.interval:
-        run_args += f" --interval {args.interval}"
-    if args.max_cycles is not None:
-        run_args += f" --max-cycles {args.max_cycles}"
-    if model:
-        run_args += f" --model {shlex.quote(model)}"
-    if getattr(args, "no_github", False):
-        run_args += " --no-github"
-
+    run_args = _build_tmux_run_args(args, project_path, model)
     run_cmd_parts.append(run_args)
     shell_cmd = " && ".join(run_cmd_parts)
 
@@ -3164,6 +3262,8 @@ def cmd_tmux(args: argparse.Namespace) -> int:
     if result.returncode != 0:
         print(f"Error: failed to create tmux session '{session}'", file=sys.stderr)
         return 1
+
+    _save_tmux_session_mapping(session, str(project_path))
 
     print(f"Factory launched in tmux session: {session}")
     print(f"  tmux attach -t {session}    # attach")
@@ -3190,22 +3290,30 @@ def cmd_tmux_ls(args: argparse.Namespace) -> int:
         print("No tmux sessions running.")
         return 0
 
+    mapping = _load_tmux_session_mapping()
     factory_sessions = []
     for line in result.stdout.strip().splitlines():
         parts = line.split("\t")
         name = parts[0]
         if name.startswith(_TMUX_SESSION_PREFIX):
             created = datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d %H:%M") if len(parts) > 1 else "?"
-            factory_sessions.append((name, created))
+            project = mapping.get(name, "?")
+            factory_sessions.append({"session": name, "started": created, "project": project})
 
     if not factory_sessions:
-        print("No factory sessions running.")
+        if getattr(args, "json_output", False):
+            print("[]")
+        else:
+            print("No factory sessions running.")
         return 0
 
-    print(f"{'Session':<30} {'Started':<20}")
-    print("-" * 50)
-    for name, created in factory_sessions:
-        print(f"{name:<30} {created:<20}")
+    if getattr(args, "json_output", False):
+        print(json.dumps(factory_sessions, indent=2))
+    else:
+        print(f"{'Session':<35} {'Started':<20} {'Project'}")
+        print("-" * 80)
+        for s in factory_sessions:
+            print(f"{s['session']:<35} {s['started']:<20} {s['project']}")
     return 0
 
 
@@ -3219,8 +3327,7 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
         session = args.session
     elif args.path:
         session = _tmux_session_name(Path(args.path).resolve())
-    else:
-        # Stop all factory sessions
+    elif getattr(args, "stop_all", False):
         result = subprocess.run(
             ["tmux", "list-sessions", "-F", "#{session_name}"],
             capture_output=True,
@@ -3242,6 +3349,25 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
         else:
             print(f"Stopped {killed} session(s).")
         return 0
+    else:
+        result = subprocess.run(
+            ["tmux", "list-sessions", "-F", "#{session_name}"],
+            capture_output=True,
+            text=True,
+        )
+        sessions = []
+        if result.returncode == 0:
+            for name in result.stdout.strip().splitlines():
+                if name.startswith(_TMUX_SESSION_PREFIX):
+                    sessions.append(name)
+        if sessions:
+            print("Factory sessions that would be stopped:")
+            for s in sessions:
+                print(f"  {s}")
+        else:
+            print("No factory sessions running.")
+        print("\nUse --all to stop all factory sessions.")
+        return 1
 
     # Kill specific session
     check = subprocess.run(
@@ -3256,6 +3382,60 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
     print(f"Stopped: {session}")
     return 0
 
+
+def cmd_refactory(args: argparse.Namespace) -> int:
+    """Launch the re:factory persistent supervisor agent.
+
+    Sets up the workspace, resolves the session ID, and replaces the current
+    process with an interactive claude session via os.execvp.
+    """
+    import shutil
+
+    from factory.agents.runner import resolve_prompt
+    from factory.refactory import get_session_id, setup_workspace
+
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
+        return 1
+
+    project_path = Path(getattr(args, "path", None) or Path.cwd()).resolve()
+
+    setup_workspace(project_path)
+    reset = getattr(args, "reset", False)
+    session_file = project_path / ".refactory" / "session.json"
+    is_new_session = reset or not session_file.exists()
+    session_id = get_session_id(project_path, reset=reset)
+    model = getattr(args, "model", None)
+
+    prompt = resolve_prompt("refactory")
+    prompt_file = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".md", prefix="refactory-prompt-", delete=False,
+    )
+    prompt_file.write(prompt)
+    prompt_file.close()
+
+    if is_new_session:
+        cmd = [
+            "claude",
+            "--session-id", session_id,
+            "--append-system-prompt-file", prompt_file.name,
+            "--dangerously-skip-permissions",
+        ]
+    else:
+        cmd = [
+            "claude",
+            "--resume", session_id,
+            "--append-system-prompt-file", prompt_file.name,
+            "--dangerously-skip-permissions",
+        ]
+
+    if model:
+        cmd.extend(["--model", model])
+
+    os.chdir(project_path)
+    os.execvp("claude", cmd)
+    return 0  # unreachable after execvp
 
 
 def _has_research_target(project_path: Path) -> bool:
@@ -3334,6 +3514,7 @@ def _build_ceo_task(
     refine_request: str | None = None,
     clean_pr: bool = False,
     display_mode: str | None = None,
+    create_description: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -3394,6 +3575,23 @@ def _build_ceo_task(
             f"config to .factory/strategy/current.md, then proceed to Build mode. "
             f"During Review mode (factory.md creation), populate the research sections "
             f"from the approved spec.\n"
+        )
+
+    if create_description:
+        task += (
+            f"\n\n## Create Mode (New Factory Mode)\n\n"
+            f"**Mode description from user:**\n{create_description}\n\n"
+            f"You are in Create mode — a meta-mode for creating new factory modes.\n\n"
+            f"Follow the Create workflow (skills/workflow-create/SKILL.md):\n"
+            f"1. Research existing workflow patterns and the user's intent\n"
+            f"2. Synthesize a complete workflow specification\n"
+            f"3. Present the spec to the user for interactive approval\n"
+            f"4. Implement: workflow definition, SKILL.md, CLI wiring, tests\n"
+            f"5. QA verification (graph validates, SKILL.md generates, CLI recognizes mode)\n"
+            f"6. Open PR for review\n\n"
+            f"The implementation targets THIS project (the factory codebase). "
+            f"Key files to modify: factory/workflow/definitions.py, "
+            f"factory/workflow/skill_export.py, factory/cli.py, tests/.\n"
         )
 
     if prompt_file:
@@ -3487,6 +3685,12 @@ def _build_ceo_task(
             "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
             "untouched), run the research command, compare results against the target, and "
             "make a keep/revert decision. Respect research_constraints and cost_budget."
+        )
+    elif mode == "create":
+        task += (
+            "\n\nRun Create mode: read `skills/workflow-create/SKILL.md` for the full "
+            "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
+            "CLI wiring + tests) from the user's description above."
         )
 
     if no_github:
@@ -3661,6 +3865,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     focus = getattr(args, "focus", None)
     discover_only = getattr(args, "discover_only", False)
     no_github = getattr(args, "no_github", False)
+    if no_github:
+        os.environ["FACTORY_NO_GITHUB"] = "1"
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
@@ -4230,11 +4436,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review"],
+        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "create"],
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, design (research + brainstorm → spec → build), "
-             "research (autonomous research optimization), or review (on-demand PR review)",
+             "research (autonomous research optimization), review (on-demand PR review), "
+             "or create (meta-mode for creating new factory modes)",
     )
     p.add_argument(
         "--focus", default=None,
@@ -4387,14 +4594,60 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
     p.add_argument("--runner", default=None,
                     help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
+    p.add_argument("--profile", default=None,
+                    help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--focus", default=None,
+        help="Target a specific item: backlog name, issue number, URL, or shorthand",
+    )
+    p.add_argument(
+        "--refine", default=None, metavar="REQUEST",
+        help="Refinement mode: classify and implement a user-directed change",
+    )
+    tmux_clean_pr = p.add_mutually_exclusive_group()
+    tmux_clean_pr.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
+                                help="Enable clean PR mode")
+    tmux_clean_pr.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
+                                help="Disable clean PR mode")
+    p.add_argument(
+        "--prompt", default=None,
+        help="Path to a prompt/spec file",
+    )
+    p.add_argument("--branch", default=None,
+                    help="Target branch for PRs")
+    p.add_argument("--min-growth", type=int, default=None,
+                    help="Minimum guaranteed growth hypotheses")
+    p.add_argument("--max-new", type=int, default=None,
+                    help="Max new items added to backlog per cycle")
+    p.add_argument("--discover-only", action="store_true", default=False,
+                    help="Only run discovery and review — do not chain into improve")
+    p.add_argument("--bg-agents", action="store_true", default=False,
+                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
+    p.add_argument("--tmux-persist", action="store_true", default=False,
+                    help="Run agent interactively in a tmux window instead of headless (claude only)")
+    p.add_argument("--use-profile", action="store_true", default=False,
+                    help="Inject user profile (~/.factory/profile.md) into agent prompts")
 
     # tmux-ls — list factory tmux sessions
-    sub.add_parser("tmux-ls", help="List running factory tmux sessions")
+    p = sub.add_parser("tmux-ls", help="List running factory tmux sessions")
+    p.add_argument("--json", action="store_true", default=False, dest="json_output",
+                    help="Output as JSON array for programmatic consumption")
 
     # tmux-stop — stop factory tmux sessions
     p = sub.add_parser("tmux-stop", help="Stop factory tmux session(s)")
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
+    p.add_argument("--all", action="store_true", default=False, dest="stop_all",
+                    help="Stop ALL factory tmux sessions (required when no --session/--path given)")
+
+    # refactory — persistent supervisor agent
+    p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
+    p.add_argument("path", nargs="?", default=None,
+                    help="Project directory (default: current working directory)")
+    p.add_argument("--reset", action="store_true", default=False,
+                    help="Reset session (new session ID, fresh start)")
+    p.add_argument("--model", default=None,
+                    help="Claude model override")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
@@ -4403,13 +4656,28 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _load_env_local() -> None:
+    """Auto-load .env.local if present, exporting vars into os.environ."""
+    for candidate in [Path(".env.local"), Path.home() / "remote-factory" / ".env.local"]:
+        if candidate.exists():
+            for line in candidate.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, _, value = line.partition("=")
+                    os.environ.setdefault(key.strip(), value.strip())
+            break
+
+
 def main(argv: list[str] | None = None) -> int:
+    _load_env_local()
     parser = build_parser()
     args = parser.parse_args(argv)
 
     if not args.command:
         if sys.stdin.isatty() and sys.stderr.isatty():
-            return _welcome_wizard()
+            return cmd_refactory(args)
         parser.print_help()
         return 1
 
@@ -4474,6 +4742,7 @@ def main(argv: list[str] | None = None) -> int:
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
         "tmux-stop": cmd_tmux_stop,
+        "refactory": cmd_refactory,
         "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),
     }
 

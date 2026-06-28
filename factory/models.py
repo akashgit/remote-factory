@@ -170,7 +170,6 @@ class TierWeights(BaseModel):
     lint: float | None = None
     type_check: float | None = None
     coverage: float | None = None
-    guard_patterns: float | None = None
     config_parser: float | None = None
     capability_surface: float | None = None
     experiment_diversity: float | None = None
@@ -291,6 +290,7 @@ class ProjectProfile(BaseModel):
     has_linter: bool
     has_type_checker: bool
     has_ci: bool
+    has_spec: bool = False
     test_command: str | None = None
     lint_command: str | None = None
     type_check_command: str | None = None

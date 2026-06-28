@@ -11,7 +11,7 @@
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 
-**A self-evolving, stateful, decomposed meta-harness.** Describe what you want — re:factory builds it, tests it, and keeps improving it, autonomously. A CEO agent orchestrates eight specialists that observe, hypothesize, build, review, measure, and learn from every experiment. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
+**Describe what you want — re:factory builds it, tests it, and keeps improving it.** Design an idea from scratch or point at an existing project for continuous improvement. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
@@ -27,18 +27,17 @@ cd remote-factory
 uv sync
 ```
 
-Then just run:
+Then start with one of the two main workflows:
 
 ```bash
-uv run factory
-```
+# Design — brainstorm an idea, refine it, then build
+uv run factory ceo "my idea" --mode design
 
-The **welcome wizard** launches automatically — a conversational agent that asks what you want to do, classifies your input (an idea, a file path, a GitHub URL, or a description), and presents the right command. No flags to memorize. Paste an idea and the wizard handles the rest.
+# Improve — point at an existing project for continuous improvement
+uv run factory ceo /path/to/project --mode improve --focus "issue # or whatever you want to improve or fix"
 
-You can also skip the wizard and call commands directly:
-
-```bash
-uv run factory ceo "Build a personal homepage with a blog" --mode design
+# Co-improve — if you want to iterate on the implementation plan before implementation starts for an improvement
+uv run factory ceo /path/to/project --mode design --focus "issue # or whatever you want to improve or fix"
 ```
 
 See the [full setup guide](docs/setup.md) for authentication and environment variables.
@@ -50,12 +49,9 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | I want to… | Command |
 |---|---|
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
-| **Build from a spec or repo** | `uv run factory ceo spec.md` |
-| **Improve an existing project** | `uv run factory ceo /path/to/project` |
-| **Fix or add one thing** | `uv run factory ceo /path --focus "add dark mode"` |
-| **Target a GitHub issue** | `uv run factory ceo /path --focus 42` |
-| **Contribute to an upstream repo** | `uv run factory ceo https://github.com/user/repo --clean-pr` |
-| **Optimize a metric (research)** | `uv run factory ceo "build a harness to solve HMMT Feb 2026 C7" --mode research` |
+| **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
+| **Co-improve an existing project** | `uv run factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
+| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create "description"` |
 
 ---
 
@@ -80,30 +76,16 @@ uv run factory ceo ~/factory-projects/my-app --mode design
 uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 ```
 
----
-
-## Build Workflow
-
-When you already have a spec file, a GitHub repo, or a clear description, re:factory builds directly — no design step needed:
-
-```bash
-uv run factory ceo ~/ideas/spec.md
-uv run factory ceo https://github.com/user/repo
-uv run factory ceo "Build a personal homepage with a blog"
-```
-
-The pipeline: **Researcher** surveys best practices → **Strategist** creates a plan → **Builder** implements and commits → **E2E gate** confirms it runs. Override the output directory with `--dir my-site`. (If you start with a raw idea via `--mode design`, the CEO refines it into a spec first, then transitions into this same build pipeline automatically. `--mode interactive` remains accepted as an alias.)
-
-After the first build, a backlog appears at `.factory/strategy/backlog.md` — deferred features that feed future improvement cycles. Manage it with `uv run factory backlog-list`, `uv run factory backlog-add`, and `uv run factory backlog-remove`.
+You can also pass a spec file or URL directly — `uv run factory ceo spec.md` — and re:factory builds without the design conversation.
 
 ---
 
-## Improve + Focus Workflow
+## Improve Workflow
 
-Point re:factory at an existing project and it enters Improve mode automatically:
+Improve mode is re:factory's continuous improvement loop for existing projects. Point it at a codebase and it autonomously observes the project state, generates hypotheses for improvements, builds and tests changes, and keeps or reverts each experiment based on eval scores.
 
 ```bash
-uv run factory ceo ~/factory-projects/my-app
+uv run factory ceo ~/factory-projects/my-app --mode improve
 ```
 
 Each cycle: **observe** → **hypothesize** → **build** → **review** → **measure** → **decide** (keep or revert) → **archive**. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
@@ -111,12 +93,10 @@ Each cycle: **observe** → **hypothesize** → **build** → **review** → **m
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-uv run factory ceo ~/my-app --focus "add dark mode toggle"
-uv run factory ceo ~/my-app --focus 42                       # GitHub issue
-uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
+uv run factory ceo ~/my-app --mode improve --focus "add dark mode toggle"
+uv run factory ceo ~/my-app --mode improve --focus 42                       # GitHub issue
+uv run factory ceo ~/my-app --mode improve --focus "owner/repo#42"          # Issue shorthand
 ```
-
-Other ways to steer: file GitHub issues (the Strategist reads them), add to the backlog manually, or pass a spec file with `--prompt`.
 
 ---
 
@@ -140,116 +120,21 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 
 ---
 
-## Clean PR Mode
+## Create New Modes
 
-When contributing factory-managed code to an upstream repository, you typically don't want eval scripts, benchmarks, `.factory/` data, or eval test files in the PR. Clean PR Mode strips these non-essential artifacts from the commit before pushing, keeping only the production code.
-
-```bash
-# Enable via CLI flag
-uv run factory ceo https://github.com/user/repo --clean-pr
-
-# Strip artifacts from an existing experiment
-uv run factory clean-pr ~/my-project --exp 3
-```
-
-Configure in `factory.md` for persistent use:
-
-```markdown
-## Clean PR
-- clean_pr: true
-- clean_pr_include: ["src/**", "lib/**"]
-- clean_pr_exclude: ["src/internal/**"]
-```
-
-Default excludes: `eval/score.py`, `benchmarks/**`, `tests/eval_*`, `.factory/**`. Resolution precedence: CLI flag > `config.json` > default (`false`). The welcome wizard auto-suggests `--clean-pr` when the input is a GitHub URL.
-
----
-
-## Auto-Research Mode
-
-Auto-Research mode optimizes a **measurable metric** against a dataset — benchmarks, model tuning, prompt optimization, solver agents. re:factory is a meta-harness: give it a research objective and it builds the evaluation harness, then iteratively improves both the system under test *and* the harness itself.
+Create mode lets you build new factory modes — new workflows, new pipelines, new factories — from a description. Describe what the mode should do, and re:factory researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
 
 ```bash
-uv run factory ceo "build a harness to solve SWE-bench lite" --mode research
+# From a description
+uv run factory ceo /path/to/factory --mode create "a mode that audits security vulnerabilities"
+
+# From a spec file
+uv run factory ceo /path/to/factory --mode create ~/specs/audit-mode.md
 ```
 
-The CEO collects your research target (metric, run command), mutable surfaces (files the Builder can change), and fixed surfaces (ground truth — never touched). Each cycle runs: **baseline** → **failure analysis** → **research** → **hypothesize** → **build** → **re-measure** → **keep/revert**. The metric ratchets forward — it can never go below the previous best.
+The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
 
-### Inner loop + outer loop
-
-re:factory operates at two levels, like a researcher who both runs experiments and redesigns the experimental apparatus:
-
-**Inner loop (auto-research):** Build a solver, run it, analyze failures, tweak prompts and logic, re-run. This is the [Karpathy-style](https://www.youtube.com/watch?v=hM_h0UA7upI) pattern — a fixed harness iterating toward a target metric.
-
-**Outer loop (meta-harness):** When inner-loop improvements plateau, re:factory restructures the harness itself — adding new agents, changing the pipeline architecture, introducing A/B strategy frameworks. The system under test evolves, not just its parameters.
-
-Configure these in `factory.md` to control automatic loop transitions:
-
-```markdown
-## Inner Loop
-- runs_per_cycle: 5
-- aggregate: mean
-- plateau_threshold: 3
-- max_inner_runs_per_cycle: 10
-
-## Outer Loop Surfaces
-- max_outer_cycles: 5
-- inner: prompts/*.md
-- outer: src/**/*.py
-```
-
-re:factory runs the harness N times per cycle, aggregates scores, and when improvements plateau for the configured threshold, automatically expands the scope to outer surfaces. See the [Configuration Reference](docs/configuration.md#inner-loop) for field details.
-
-### Example: HMMT math competition solver
-
-re:factory built a multi-agent system to solve [HMMT February 2026 Combinatorics Problem 7](https://www.hmmt.org/) (decagonal prism plane partitions, answer: 1574). Here's what actually happened:
-
-**Round 1 — inner loop (prompt-level fixes):**
-
-re:factory created a 5-agent pipeline (Explorer → Theorist → Computationalist → Critic → Synthesizer) with computational tools (LP-based separability checking, brute-force enumeration). The pipeline ran multiple times:
-
-- Runs 1-2: Agents spent all output tokens on thinking, returned 0 chars. re:factory fixed token limits.
-- Runs 3-6: Explorer and Computationalist found 1574, but the Synthesizer "corrected" it to 1572. Classic synthesis failure — the agent added interpretation that degraded a correct upstream answer.
-- re:factory experiment 001: Added a consensus override guard, competition math conventions, and mandatory verification to the Synthesizer prompt. The pipeline started producing 1574, but still hit 1572 in ~50% of runs.
-
-**Round 2 — outer loop (architectural restructuring):**
-
-Prompt-level fixes couldn't make the Synthesizer reliable. re:factory's Strategist recognized the plateau and generated an architectural hypothesis: instead of one pipeline with one prompt, create **12 distinct prompt strategies** and test them as A/B experiments.
-
-re:factory added `agents/strategies.py` (1055 lines), three new agent roles (Auditor, Debater, Judge), and modified the orchestrator to support strategy selection. Then it ran all 12 strategies:
-
-| Strategy | Answer | Result |
-|---|---|---|
-| raw-output-only | 1574 | PASS |
-| geometric-verification | 1574 | PASS |
-| problem-reformulation | 1574 | PASS |
-| counterfactual-contrast | 1574 | PASS |
-| bias-inoculation | 1572 | FAIL |
-| consistency-enforcement | 1572 | FAIL |
-| deferred-interpretation | 1572 | FAIL |
-| adversarial-debate | 1572 | FAIL |
-
-**Key discovery:** Strategies that give the Synthesizer *concrete evidence* (immutable tool output, geometric proof, reframed problem text) override the bias. Softer interventions (warnings, procedural rules, debate) don't. This is a finding about LLM behavior that emerged from re:factory's own experimentation loop — not something a human specified.
-
-### Continuous optimization
-
-Once the project is set up, wrap it in a loop for continuous optimization — each cycle is a full experiment pass:
-
-```bash
-uv run factory ceo ~/my-solver --loop
-uv run factory ceo ~/my-solver --loop --interval 900    # Custom interval
-uv run factory tmux ~/my-solver --loop                  # Detached tmux session
-```
-
-re:factory auto-detects the research target in `factory.md` and enters research mode. Failed experiments don't stop the loop — re:factory learns from them and moves on.
-
-| Project | Metric | What re:factory optimizes |
-|---------|--------|---------------------------|
-| SWE-bench solver | resolve rate | Agent logic, prompts, localization strategies |
-| HMMT math solver | solve rate | Agent prompts, pipeline architecture, strategy selection |
-| Text/Sketch → CAD | query accuracy | Query builder, schema mapping, entity resolution |
-
-See [Getting Started — Research Mode](docs/getting-started.md#research-mode-in-detail) for phase tables, leakage guards, and progression details.
+Create mode is interactive — it requires your approval at the strategy gate before building. Point it at the factory repo itself to extend re:factory with custom pipelines.
 
 ---
 
@@ -259,9 +144,28 @@ Every change is measured by an 11-dimension composite score across three tiers: 
 
 ---
 
-## Self-Evolving Agents (ACE)
+## Verified Skill Generation
 
-re:factory improves itself. Every keep/revert decision becomes training data — **ACE (Autonomous Context Engineering)** runs a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes. Rules that correlate with kept experiments get reinforced; rules from reverts get pruned. Run `uv run factory ceo /path --mode meta` on a regular cadence. See [ACE Self-Improvement](docs/ace.md).
+Workflow graphs (Pydantic definitions) are converted to SKILL.md prose files that the CEO follows at runtime. This conversion goes through a verified pipeline to prevent information loss:
+
+```
+Workflow (Pydantic) → templatize → review agent → guard → split
+                         │              │           │        │
+                    {{slot::default}}   opus    structural   SKILL.md +
+                    + annotations     refines    diff check  annotations.yaml
+```
+
+The pipeline produces two artifacts per workflow:
+- **SKILL.md** — clean prose the CEO reads at runtime
+- **SKILL.annotations.yaml** — structured metadata per node for programmatic verification
+
+Regenerate all skills after changing workflow definitions:
+
+```bash
+uv run factory workflow export-skills
+```
+
+A regression test (`test_annotations_match_source`) runs in CI to catch drift between workflow definitions and exported skills.
 
 ---
 
@@ -276,7 +180,7 @@ re:factory improves itself. Every keep/revert decision becomes training data —
 | **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
 | **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
 | **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Design + Improve |
-| **re:factory itself** | Runs on itself in meta mode — agent playbooks are evolved from its own experiment outcomes | Meta |
+| **re:factory itself** | Runs on itself — continuously improved via its own experiment outcomes | Meta |
 
 Built something with re:factory? Open a PR to add it here.
 
@@ -286,41 +190,15 @@ Built something with re:factory? Open a PR to add it here.
 
 ```bash
 # Core workflow
-uv run factory ceo <path|url|idea>              # Build or improve
-uv run factory ceo <path> --mode design         # Discuss, then execute
-uv run factory ceo <path> --focus "..."         # One target, one experiment
+uv run factory ceo "idea" --mode design         # Design from a raw idea
+uv run factory ceo <path> --mode improve        # Improve an existing project
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
-uv run factory ceo <path> --loop                # Continuous loop (research projects)
+uv run factory ceo <path> --mode create "..."  # Create a new factory mode
+uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
-
-# Agents & analysis
-uv run factory agent <role> --task "..." --project <path>
-uv run factory eval <path>                      # Run evals
-uv run factory precheck <path>                  # Hard precheck gate
-uv run factory study <path>                     # Analyze code
-uv run factory diff <path> --exp1 N --exp2 M    # Compare experiments
-uv run factory history <path>                   # Experiment history
-
-# Backlog
-uv run factory backlog-list <path>
-uv run factory backlog-add <path> "..."
-uv run factory backlog-remove <path> "..."
-
-# Token usage & cost
-uv run factory usage <path>                     # Per-agent token breakdown
-uv run factory usage <path> --json              # Machine-readable output
-
-# Operations
-uv run factory dashboard                        # Live web dashboard on :8420
-uv run factory discover <path>                  # Auto-detect eval profile
-uv run factory config show                      # Show resolved config
-uv run factory refine-status <path>              # Refinement state + regrounding
-uv run factory clean-pr <path> --exp N          # Strip artifacts from experiment PR
-uv run factory tmux-ls                          # List active tmux sessions
-uv run factory tmux-stop --path <path>          # Stop a tmux session
 ```
 
-See `uv run factory --help` for the complete list. re:factory supports crash-resilient resume — the CEO reconstructs context from the event log and `.factory/` state on restart.
+See `uv run factory --help` for the complete list.
 
 ---
 

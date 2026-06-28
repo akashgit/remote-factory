@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -16,6 +18,7 @@ from factory.workflow.primitives import (
 )
 from factory.workflow.skill_export import (
     _agent_to_instruction,
+    _fn_to_instruction,
     _fork_to_instruction,
     _gate_to_checkpoint,
     export_all_skills,
@@ -71,28 +74,33 @@ def _minimal_workflow(
 class TestAgentToInstruction:
     def test_blocking_agent_no_ampersand(self) -> None:
         node = _make_agent("builder", blocking=True)
-        result = _agent_to_instruction(node)
+        wf = _minimal_workflow(nodes={"builder": node}, start="builder")
+        result = _agent_to_instruction(node, wf)
         assert " &" not in result
 
     def test_nonblocking_agent_has_ampersand(self) -> None:
         node = _make_agent("archivist", AgentRole.ARCHIVIST, blocking=False)
-        result = _agent_to_instruction(node)
+        wf = _minimal_workflow(nodes={"archivist": node}, start="archivist")
+        result = _agent_to_instruction(node, wf)
         assert " &" in result
         assert "fire-and-forget" in result
 
     def test_parallel_flag_forces_ampersand(self) -> None:
         node = _make_agent("researcher_a", AgentRole.RESEARCHER, blocking=True)
-        result = _agent_to_instruction(node, is_parallel=True)
+        wf = _minimal_workflow(nodes={"researcher_a": node}, start="researcher_a")
+        result = _agent_to_instruction(node, wf, is_parallel=True)
         assert " &" in result
 
     def test_parallel_researcher_gets_review_tag(self) -> None:
         node = _make_agent("researcher_web", AgentRole.RESEARCHER)
-        result = _agent_to_instruction(node, is_parallel=True)
+        wf = _minimal_workflow(nodes={"researcher_web": node}, start="researcher_web")
+        result = _agent_to_instruction(node, wf, is_parallel=True)
         assert "--review-tag web" in result
 
     def test_archivist_gets_haiku_model(self) -> None:
         node = _make_agent("archivist", AgentRole.ARCHIVIST)
-        result = _agent_to_instruction(node)
+        wf = _minimal_workflow(nodes={"archivist": node}, start="archivist")
+        result = _agent_to_instruction(node, wf)
         assert "--model haiku" in result
 
     def test_reads_and_writes_in_prompt(self) -> None:
@@ -101,9 +109,61 @@ class TestAgentToInstruction:
             reads={"observations.md"},
             writes={"changes.diff"},
         )
-        result = _agent_to_instruction(node)
+        wf = _minimal_workflow(nodes={"builder": node}, start="builder")
+        result = _agent_to_instruction(node, wf)
         assert "observations.md" in result
         assert "changes.diff" in result
+
+    def test_emits_timeout_slot(self) -> None:
+        node = _make_agent("builder")
+        wf = _minimal_workflow(nodes={"builder": node}, start="builder")
+        result = _agent_to_instruction(node, wf)
+        assert "{{timeout_builder::" in result
+
+    def test_emits_task_prompt_slot(self) -> None:
+        node = _make_agent("builder", prompt="Build the thing.")
+        wf = _minimal_workflow(nodes={"builder": node}, start="builder")
+        result = _agent_to_instruction(node, wf)
+        assert "{{task_prompt_builder::" in result
+
+    def test_emits_annotation_comments(self) -> None:
+        node = _make_agent("builder")
+        wf = _minimal_workflow(nodes={"builder": node}, start="builder")
+        result = _agent_to_instruction(node, wf)
+        assert "<!-- node: AgentNode id=builder" in result
+        assert "<!-- reads:" in result
+        assert "<!-- writes:" in result
+        assert "<!-- edges:" in result
+
+
+# ── _fn_to_instruction ──────────────────────────────────────────
+
+
+class TestFnToInstruction:
+    def test_basic_command(self) -> None:
+        fn = FnNode(id="fn_eval", command="factory eval {project_path}")
+        wf = _minimal_workflow(nodes={"fn_eval": fn}, start="fn_eval")
+        result = _fn_to_instruction(fn, wf)
+        assert "$PROJECT_PATH" in result
+        assert "<!-- node: FnNode id=fn_eval" in result
+
+    def test_template_placeholder_gets_slot(self) -> None:
+        fn = FnNode(id="fn_finalize", command="factory review --verdict $VERDICT --project {project_path}")
+        wf = _minimal_workflow(nodes={"fn_finalize": fn}, start="fn_finalize")
+        result = _fn_to_instruction(fn, wf)
+        assert "{{finalize_command_fn_finalize::" in result
+
+    def test_reads_writes_annotations(self) -> None:
+        fn = FnNode(
+            id="fn_score",
+            command="factory eval {project_path}",
+            reads={"eval_profile.json"},
+            writes={"eval_after.json"},
+        )
+        wf = _minimal_workflow(nodes={"fn_score": fn}, start="fn_score")
+        result = _fn_to_instruction(fn, wf)
+        assert "<!-- reads: eval_profile.json -->" in result
+        assert "<!-- writes: eval_after.json -->" in result
 
 
 # ── _fork_to_instruction ────────────────────────────────────────
@@ -161,7 +221,8 @@ class TestForkToInstruction:
 class TestGateToCheckpoint:
     def test_user_gate(self) -> None:
         gate = GateNode(id="gate_strategy", evaluator_type="user")
-        result = _gate_to_checkpoint(gate, [])
+        wf = _minimal_workflow(nodes={"gate_strategy": gate}, start="gate_strategy")
+        result = _gate_to_checkpoint(gate, [], wf)
         assert "User Approval" in result
         assert "Approve" in result
 
@@ -171,7 +232,8 @@ class TestGateToCheckpoint:
             evaluator_type="fn",
             evaluator_command="factory eval {project_path}",
         )
-        result = _gate_to_checkpoint(gate, [])
+        wf = _minimal_workflow(nodes={"gate_eval": gate}, start="gate_eval")
+        result = _gate_to_checkpoint(gate, [], wf)
         assert "Automated" in result
         assert "$PROJECT_PATH" in result
 
@@ -182,21 +244,58 @@ class TestGateToCheckpoint:
             reads={"reviews/qa-latest.md"},
             gate_prompt="Assess quality.",
         )
-        result = _gate_to_checkpoint(gate, [])
+        wf = _minimal_workflow(nodes={"gate_review": gate}, start="gate_review")
+        result = _gate_to_checkpoint(gate, [], wf)
         assert "CEO Review" in result
         assert "qa-latest.md" in result
         assert "Assess quality" in result
 
     def test_reloop_edges_shown(self) -> None:
         gate = GateNode(id="gate_build")
+        builder = _make_agent("builder")
         reloop = Edge(
             source="gate_build",
             target="builder",
             condition=VerdictType.RELOOP,
         )
-        result = _gate_to_checkpoint(gate, [reloop])
+        wf = _minimal_workflow(
+            nodes={"gate_build": gate, "builder": builder},
+            edges=[reloop],
+            start="gate_build",
+        )
+        result = _gate_to_checkpoint(gate, [reloop], wf)
         assert "RELOOP" in result
         assert "builder" in result
+
+    def test_emits_gate_prompt_slot(self) -> None:
+        gate = GateNode(
+            id="gate_review",
+            evaluator_type="agent",
+            gate_prompt="Check quality.",
+        )
+        wf = _minimal_workflow(nodes={"gate_review": gate}, start="gate_review")
+        result = _gate_to_checkpoint(gate, [], wf)
+        assert "{{gate_prompt_gate_review::" in result
+
+    def test_emits_failure_action_slot(self) -> None:
+        gate = GateNode(
+            id="gate_precheck",
+            evaluator_type="fn",
+            evaluator_command="factory precheck {project_path}",
+        )
+        wf = _minimal_workflow(nodes={"gate_precheck": gate}, start="gate_precheck")
+        result = _gate_to_checkpoint(gate, [], wf)
+        assert "{{failure_action_gate_precheck::" in result
+
+    def test_emits_annotation_comments(self) -> None:
+        gate = GateNode(
+            id="gate_review",
+            evaluator_type="agent",
+            gate_prompt="Check.",
+        )
+        wf = _minimal_workflow(nodes={"gate_review": gate}, start="gate_review")
+        result = _gate_to_checkpoint(gate, [], wf)
+        assert "<!-- gate: GateNode id=gate_review" in result
 
 
 # ── workflow_to_skill_md ─────────────────────────────────────────
@@ -378,20 +477,48 @@ class TestRealWorkflowSkills:
         assert "workflow-refine" in content
         assert "refiner" in content.lower()
 
-    def test_all_eight_skills_exported(self, tmp_path: Path) -> None:
+    def test_all_registered_skills_exported(self, tmp_path: Path) -> None:
         from factory.workflow.definitions import register_all
 
         workflows = register_all()
         paths = export_all_skills(tmp_path, workflows=workflows)
-        assert len(paths) == 8, f"Expected 8 skills, got {len(paths)}"
+        assert len(paths) == len(workflows), f"Expected {len(workflows)} skills, got {len(paths)}"
         dirs = {p.parent.name for p in paths}
-        expected = {
-            "workflow-build", "workflow-design", "workflow-discover",
-            "workflow-review", "workflow-improve", "workflow-research",
-            "workflow-meta", "workflow-refine",
-        }
+        expected = {f"workflow-{name}" for name in workflows}
         assert dirs == expected, f"Missing: {expected - dirs}"
         for p in paths:
             content = p.read_text()
             issues = validate_skill(content)
             assert issues == [], f"{p.parent.name} validation: {issues}"
+
+
+# ── QA phase enforcement ──────────────────────────────────────────
+
+
+def _workflows_with_builder() -> list[str]:
+    """Return names of workflows containing a Builder AgentNode."""
+    from factory.workflow.definitions import register_all
+
+    names = []
+    for name, wf in register_all().items():
+        has_builder = any(
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
+            for n in wf.nodes.values()
+        )
+        if has_builder:
+            names.append(name)
+    return sorted(names)
+
+
+class TestSkillQaEnforcement:
+    """Every workflow with a Builder must include a QA phase in its exported SKILL.md."""
+
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
+    def test_builder_workflow_has_qa_in_skill(self, workflow_name: str) -> None:
+        from factory.workflow.definitions import register_all
+
+        wf = register_all()[workflow_name]
+        content = workflow_to_skill_md(wf)
+        assert "factory agent qa" in content, (
+            f"workflow-{workflow_name} SKILL.md is missing 'factory agent qa' invocation"
+        )

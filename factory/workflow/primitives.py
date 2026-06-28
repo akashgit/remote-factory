@@ -22,6 +22,7 @@ class AgentRole(str, Enum):
     CEO = "ceo"
     ARCHIVIST = "archivist"
     REFINER = "refiner"
+    SKILL_REVIEWER = "skill_reviewer"
 
 
 class AgentConfig(BaseModel):
@@ -31,17 +32,19 @@ class AgentConfig(BaseModel):
 
     role: AgentRole
     model: str
+    timeout: int = 600
 
 
 DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
-    "researcher": AgentConfig(role=AgentRole.RESEARCHER, model="sonnet"),
-    "strategist": AgentConfig(role=AgentRole.STRATEGIST, model="opus"),
-    "builder": AgentConfig(role=AgentRole.BUILDER, model="opus"),
-    "qa": AgentConfig(role=AgentRole.QA, model="opus"),
-    "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus"),
-    "ceo": AgentConfig(role=AgentRole.CEO, model="opus"),
-    "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku"),
-    "refiner": AgentConfig(role=AgentRole.REFINER, model="opus"),
+    "researcher": AgentConfig(role=AgentRole.RESEARCHER, model="sonnet", timeout=600),
+    "strategist": AgentConfig(role=AgentRole.STRATEGIST, model="opus", timeout=600),
+    "builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=1200),
+    "qa": AgentConfig(role=AgentRole.QA, model="opus", timeout=1800),
+    "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
+    "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
+    "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
+    "refiner": AgentConfig(role=AgentRole.REFINER, model="opus", timeout=600),
+    "skill_reviewer": AgentConfig(role=AgentRole.SKILL_REVIEWER, model="opus", timeout=600),
 }
 
 
@@ -116,6 +119,8 @@ class AgentNode(Node):
     model: str = ""
     prompt_template: str = ""
     tools: list[str] = Field(default_factory=list)
+    timeout: int | None = None
+    max_iterations: int = 1
 
 
 class FnNode(Node):

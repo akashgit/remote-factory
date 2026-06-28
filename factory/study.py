@@ -883,6 +883,40 @@ def study_project_local(
     else:
         lines.append("No similar projects found.")
 
+    # SPEC.md status
+    from factory.discovery.spec import resolve_spec
+
+    spec_path, spec_source = resolve_spec(project_path)
+    lines.extend(["", "## SPEC.md"])
+    if spec_source == "committed":
+        lines.append(
+            "SPEC.md found at project root (committed). "
+            "The Strategist SHOULD use SPEC.md Diff for plan traceability."
+        )
+    elif spec_source == "generated":
+        lines.append(
+            "SPEC.md auto-generated at .factory/SPEC.md. "
+            "The Strategist SHOULD use SPEC.md Diff for plan traceability."
+        )
+    else:
+        lines.append(
+            "No SPEC.md found. Run 'factory discover <path>' to generate one "
+            "at .factory/SPEC.md."
+        )
+    if spec_path is not None:
+        try:
+            spec_lines = [
+                ln for ln in spec_path.read_text().splitlines()
+                if ln.strip() and not ln.strip().startswith("# ")
+            ]
+            if spec_lines:
+                lines.append("")
+                lines.append("**Spec summary:**")
+                for sl in spec_lines[:5]:
+                    lines.append(f"  {sl}")
+        except OSError:
+            pass
+
     # Open GitHub issues — split by ownership
     open_issues = _fetch_open_issues(project_path)
     gh_user = _get_github_user()

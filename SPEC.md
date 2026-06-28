@@ -90,6 +90,8 @@ Important boundary:
    - Converts user input or configuration into a project context.
    - Binds the repository, checkout, and state locations required by the
      selected implementation.
+   - Resolves or generates the project specification document (see Section
+     4.11).
 3. `Work Item Source`
    - Reads work from prompts, backlog entries, issues, tickets, or research
      targets.
@@ -345,7 +347,33 @@ Examples:
 Memory records SHOULD distinguish durable learnings from reconstructable runtime
 state.
 
-### 4.11 Deployment Profile
+### 4.11 Specification
+
+A `Specification` is a structured, normative description of the project's
+identity, goals, technical stack, architecture, and requirements.
+
+Resolution order:
+
+1. A committed specification at the project root (e.g., `SPEC.md`) is
+   authoritative.
+2. If no committed specification exists, the Project Resolver SHOULD generate
+   one from introspected project metadata and place it in the project's durable
+   state directory (e.g., `.factory/SPEC.md`).
+3. A generated specification captures discovered state — it uses descriptive
+   language for what exists and RFC 2119 normative language only for the
+   standard boilerplate.
+
+Rules:
+
+- Implementations MUST NOT overwrite a committed specification with a generated
+  one.
+- A generated specification SHOULD be updated when discovery re-runs.
+- The lifecycle coordinator and contract builder SHOULD reference the
+  specification when deriving execution contracts and validating scope.
+- When a specification exists, plan outputs SHOULD include a specification diff
+  describing which requirements are added, modified, or removed.
+
+### 4.12 Deployment Profile
 
 A `DeploymentProfile` is a named assembly of component implementations.
 
@@ -363,7 +391,7 @@ The `cli-local` deployment profile is the primary product surface for this
 specification. Other profiles MAY expose different surfaces, but SHOULD
 preserve the lifecycle semantics of this specification.
 
-### 4.12 Shared State Records (OPTIONAL)
+### 4.13 Shared State Records (OPTIONAL)
 
 Implementations that support shared, externally reconciled, or multi-actor
 state MAY represent project state as `StateRecord`s.
@@ -404,7 +432,9 @@ a work item.
 ### 5.2 Scope
 
 The system binds the work item to a project context and derives an execution
-contract.
+contract. When a project specification exists (committed or generated), the
+scoping phase SHOULD use it to inform contract derivation and scope
+validation.
 
 ### 5.3 Dispatch
 

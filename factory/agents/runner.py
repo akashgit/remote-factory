@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 AgentRole = Literal[
     "researcher", "strategist", "builder", "qa",
     "archivist", "ceo", "failure_analyst", "refiner", "profiler",
+    "refactory",
 ]
 
 # Consecutive failure tracking
@@ -153,6 +154,16 @@ async def invoke_agent(
     global _consecutive_failures
 
     prompt = resolve_prompt(role, project_path, use_profile=use_profile)
+
+    if os.environ.get("FACTORY_NO_GITHUB") == "1":
+        prompt += (
+            "\n\n## GitHub Disabled\n\n"
+            "GitHub integration is disabled for this session (--no-github). "
+            "Do NOT run any gh CLI commands (gh issue, gh pr, gh api, etc.). "
+            "Do NOT create pull requests or reference GitHub issues. "
+            "Work locally only — create commits, run tests, but skip all GitHub operations. "
+            "When a step would normally involve GitHub, skip it and note that it was skipped.\n"
+        )
 
     logger.info("Invoking %s agent for %s", role, project_path.name)
 

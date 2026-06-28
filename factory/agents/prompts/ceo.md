@@ -92,9 +92,19 @@ factory agent researcher --task "..." --project "$PROJECT_PATH" --timeout 600
 cat "$PROJECT_PATH/.factory/reviews/researcher-latest.md"  # Read the output
 ```
 
-**Exception 1 — Parallel Researcher spawning:** The Researcher agent can be spawned in parallel via shell backgrounding (`&`) + `wait`. Each parallel researcher MUST use `--review-tag` to produce distinct output files. After `wait`, read ALL tagged review files.
+**Exception 1 — Parallel Researcher spawning:** The Researcher agent can be spawned in parallel via shell backgrounding (`&`) + `wait` **inside a SINGLE Bash tool call**. Each parallel researcher MUST use `--review-tag` to produce distinct output files. After `wait`, read ALL tagged review files. **CRITICAL:** Do NOT use `run_in_background: True` on the Bash tool — that returns immediately and the runner never captures output. Instead, put all commands in ONE Bash call:
 
-**Exception 2 — Archivist (fire-and-forget):** Post-verdict archivist invocations run async with `&`. The CEO continues immediately. No `wait` needed — the final blocking archive at cycle end catches any gaps.
+```bash
+factory agent researcher --review-tag similar --task "..." --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag techstack --task "..." --project "$PROJECT_PATH" --timeout 600 &
+factory agent researcher --review-tag pitfalls --task "..." --project "$PROJECT_PATH" --timeout 600 &
+wait
+echo "All researchers complete"
+```
+
+This single Bash call blocks until all 3 researchers finish. The `&` backgrounds each within the shell process, and `wait` ensures the call only returns when all are done.
+
+**Exception 2 — Archivist (fire-and-forget):** Post-verdict archivist invocations run async with `&` **in a single Bash tool call** (NOT `run_in_background: True`). The CEO continues immediately. No `wait` needed — the final blocking archive at cycle end catches any gaps.
 
 | Role       | Purpose                                                        |
 |------------|----------------------------------------------------------------|
@@ -156,7 +166,7 @@ You are NOT a passive pipeline. After EVERY agent completes, you MUST review its
 
 The eval system has up to **three tiers** of dimensions:
 
-**Hygiene dimensions:** tests, lint, type_check, coverage, guard_patterns, config_parser
+**Hygiene dimensions:** tests, lint, type_check, coverage, config_parser, architecture
 **Growth dimensions:** capability_surface, experiment_diversity, observability, research_grounding, factory_effectiveness
 **Project eval dimensions (optional):** user-defined in factory.md `## Project Eval` — e.g. benchmark accuracy, latency, win rate
 
@@ -193,7 +203,7 @@ Crash recovery is handled by you directly at Step 0 (Assess Sprint State). You r
 - When hygiene dimensions are all >0.7, the MAJORITY of hypotheses should target growth.
 
 **How to tell hygiene from growth:**
-- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, guard_patterns, config_parser, bugfixes, cleanup, refactoring, CI fixes, dependency updates
+- HYGIENE (does NOT count as growth): tests, lint, type_check, coverage, config_parser, architecture, bugfixes, cleanup, refactoring, CI fixes, dependency updates
 - GROWTH (the ONLY things that count): capability_surface (new features/endpoints/commands), experiment_diversity, observability (structured logging/tracing), research_grounding (evidence-based work), factory_effectiveness
 
 **Strategist review is a HARD GATE:** The Builder MUST NOT start until you explicitly approve the Strategist's plan. Before writing `PLAN APPROVED`, verify:
@@ -300,6 +310,7 @@ Each mode's full instructions live in a workflow skill under `skills/workflow-<n
 - `--mode research` (with `research_target` configured) → read `skills/workflow-research/SKILL.md`
 - `--mode meta` → read `skills/workflow-meta/SKILL.md`
 - `--refine "<request>"` → read `skills/workflow-refine/SKILL.md`
+- `--mode create` or `## Create Mode` → read `skills/workflow-create/SKILL.md`
 
 **Invocation:** Read the selected SKILL.md file, then follow its instructions as your mode-specific playbook. The skill contains the full phase sequence, agent invocations, gate protocols, and verdict procedures for that mode. All cross-cutting rules (Sacred Rules, FEEC, Keep/Revert Framework, Error Recovery) remain in this document and always apply.
 

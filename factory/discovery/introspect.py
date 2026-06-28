@@ -279,6 +279,7 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         has_linter=lint_cmd is not None,
         has_type_checker=type_check_cmd is not None,
         has_ci=_has_ci(project_path),
+        has_spec=(project_path / "SPEC.md").exists(),
         test_command=test_cmd,
         lint_command=lint_cmd,
         type_check_command=type_check_cmd,

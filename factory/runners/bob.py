@@ -202,7 +202,10 @@ class BobRunner:
 
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
-            log.warning("bob_tmux_not_supported")
+            return AgentRunResult(
+                stdout="Error: --tmux-persist is not supported with the bob runner. Use --runner claude.",
+                return_code=1,
+            )
         background = request.extras.get("background", False)
         if background:
             log.warning("bob_bg_not_supported", hint="--bg is a claude-only feature")
