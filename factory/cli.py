@@ -1870,6 +1870,124 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions_list(args: argparse.Namespace) -> int:
+    """List past factory sessions from the run index."""
+    from factory.runs import SessionRunStatus, list_runs
+
+    project_path = Path(args.path).resolve()
+    runs = list_runs(project_path)
+
+    status_filter = getattr(args, "status", None)
+    if status_filter:
+        runs = [r for r in runs if r.status == SessionRunStatus(status_filter)]
+
+    if getattr(args, "json", False):
+        print(json.dumps([r.model_dump() for r in runs], indent=2))
+        return 0
+
+    if not runs:
+        print("No sessions found.")
+        return 0
+
+    header = f"{'RUN ID':<12} {'STATUS':<12} {'MODE':<10} {'BRANCH':<30} {'CREATED':<26} {'EXPERIMENTS'}"
+    print(header)
+    print("-" * len(header))
+    for r in runs:
+        exp_ids = ",".join(str(e) for e in r.experiment_ids) if r.experiment_ids else "-"
+        mode = r.mode or "-"
+        print(f"{r.run_id:<12} {r.status.value:<12} {mode:<10} {r.branch:<30} {r.created_at:<26} {exp_ids}")
+
+    return 0
+
+
+def cmd_sessions_prune(args: argparse.Namespace) -> int:
+    """Prune old session metadata and branches."""
+    from factory.runs import prune_runs
+
+    project_path = Path(args.path).resolve()
+    older_than = getattr(args, "older_than", 30)
+    dry_run = getattr(args, "dry_run", False)
+    prune_all = getattr(args, "all", False)
+
+    pruned = prune_runs(
+        project_path,
+        older_than_days=older_than,
+        dry_run=dry_run,
+        prune_all=prune_all,
+    )
+
+    if not pruned:
+        print("Nothing to prune.")
+    else:
+        for msg in pruned:
+            print(msg)
+        print(f"\n{len(pruned)} session(s) {'would be pruned' if dry_run else 'pruned'}.")
+
+    return 0
+
+
+def cmd_sessions_resume(args: argparse.Namespace) -> int:
+    """Reconstruct a worktree from a preserved session branch."""
+    from factory.runs import load_run
+
+    project_path = Path(args.path).resolve()
+    run_id = args.run_id
+
+    meta = load_run(project_path, run_id)
+    if meta is None:
+        print(f"Error: no session found with run ID '{run_id}'.", file=sys.stderr)
+        print("Use 'factory sessions-list <path>' to see available sessions.", file=sys.stderr)
+        return 1
+
+    branch_check = subprocess.run(
+        ["git", "rev-parse", "--verify", meta.branch],
+        cwd=project_path,
+        capture_output=True,
+    )
+    if branch_check.returncode != 0:
+        print(f"Error: branch '{meta.branch}' no longer exists.", file=sys.stderr)
+        print("It may have been pruned. Use 'factory sessions-list' to check.", file=sys.stderr)
+        return 1
+
+    wt_path = Path(meta.worktree_path)
+    if wt_path.exists():
+        print(f"Error: worktree path already exists: {wt_path}", file=sys.stderr)
+        print("Remove it first or use a different session.", file=sys.stderr)
+        return 1
+
+    wt_path.parent.mkdir(parents=True, exist_ok=True)
+    result = subprocess.run(
+        ["git", "worktree", "add", str(wt_path), meta.branch],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Error reconstructing worktree: {result.stderr.strip()}", file=sys.stderr)
+        return 1
+
+    factory_dir = project_path / ".factory"
+    wt_factory = wt_path / ".factory"
+    if wt_factory.exists() or wt_factory.is_symlink():
+        import shutil
+        if wt_factory.is_dir() and not wt_factory.is_symlink():
+            shutil.rmtree(wt_factory)
+        else:
+            wt_factory.unlink()
+    wt_factory.symlink_to(factory_dir)
+
+    print(f"Worktree reconstructed at: {wt_path}")
+    print(f"Branch: {meta.branch}")
+    if meta.claude_session_id:
+        print("\nTo resume the Claude session:")
+        print(f"  cd {wt_path} && claude --resume --session-id {meta.claude_session_id}")
+    else:
+        print("\nNo Claude session ID recorded. To work in the restored worktree:")
+        print(f"  cd {wt_path}")
+
+    return 0
+
+
 def cmd_research(args: argparse.Namespace) -> int:
     """Print citation index table and coverage summary."""
     from factory.research_index import build_citation_index, citation_coverage
@@ -4344,6 +4462,28 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")
     p.add_argument("path", help="Path to the project")
 
+    # sessions-list
+    p = sub.add_parser("sessions-list", help="List past factory sessions")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--status", choices=["running", "completed", "error"],
+                   help="Filter by session status")
+    p.add_argument("--json", action="store_true", help="Output as JSON")
+
+    # sessions-prune
+    p = sub.add_parser("sessions-prune", help="Clean up old session branches and metadata")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--older-than", type=int, default=30,
+                   help="Prune sessions older than N days (default: 30)")
+    p.add_argument("--dry-run", action="store_true",
+                   help="Show what would be pruned without acting")
+    p.add_argument("--all", action="store_true",
+                   help="Prune all completed sessions regardless of age")
+
+    # sessions-resume
+    p = sub.add_parser("sessions-resume", help="Reconstruct worktree from a past session")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("run_id", help="Run ID of the session to resume")
+
     # log
     p = sub.add_parser("log", help="Append a structured event to .factory/events.jsonl")
     p.add_argument("path", help="Path to the project")
@@ -4753,6 +4893,9 @@ def main(argv: list[str] | None = None) -> int:
         "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
+        "sessions-list": cmd_sessions_list,
+        "sessions-prune": cmd_sessions_prune,
+        "sessions-resume": cmd_sessions_resume,
         "log": cmd_log,
         "vault-init": cmd_vault_init,
         "message": cmd_message,
