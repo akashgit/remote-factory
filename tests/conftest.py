@@ -46,9 +46,9 @@ def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
         return
 
     def _fake_create(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
-        return project_path, "factory/run-fake0000"
+        return project_path, "factory/run-face0000"
 
-    def _fake_remove(project_path: Path, worktree_path: Path, branch: str) -> None:
+    def _fake_remove(project_path: Path, worktree_path: Path, branch: str, *, preserve_branch: bool = True) -> None:
         pass
 
     def _fake_prune(project_path: Path) -> list[str]:
