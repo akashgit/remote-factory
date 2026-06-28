@@ -2545,6 +2545,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
+    run_id = getattr(args, "run_id", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
@@ -2599,7 +2600,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
     base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch)
+    wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     interactive = design_existing or bool(design_idea) or bool(research_ideation)
     ceo_mode = "build" if interactive else mode
@@ -4292,6 +4293,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="PR number for --mode review (required when mode=review)")
     p.add_argument("--repo", default=None,
                     help="Repository (owner/repo) for --mode review (optional, defaults to current repo)")
+    p.add_argument("--run-id", default=None,
+                    help="Run ID for worktree naming (used as-is, e.g. full UUID). "
+                         "If not provided, generates a random 8-char ID. Used by refactory-server for tracking.")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
