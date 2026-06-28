@@ -51,7 +51,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
 | **Co-improve an existing project** | `uv run factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
-| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create` |
+| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create --focus "mode description"` |
 
 ---
 
@@ -122,10 +122,10 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 
 ## Create New Modes
 
-Create mode lets you build new factory modes — new workflows, new pipelines, new factories. It's fully interactive — the CEO agent asks what you want to create, researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
+Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
 
 ```bash
-uv run factory ceo /path/to/factory --mode create
+uv run factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
 ```
 
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
@@ -189,7 +189,7 @@ Built something with re:factory? Open a PR to add it here.
 uv run factory ceo "idea" --mode design         # Design from a raw idea
 uv run factory ceo <path> --mode improve        # Improve an existing project
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
-uv run factory ceo <path> --mode create         # Create a new factory mode (interactive)
+uv run factory ceo <path> --mode create --focus "description"  # Create a new factory mode
 uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
 ```
