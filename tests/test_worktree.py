@@ -111,7 +111,7 @@ class TestCreateWorktree:
 
 
 class TestRemoveWorktree:
-    def test_removes_worktree_completely(self, git_project: Path) -> None:
+    def test_removes_directory_preserves_branch(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
         assert wt_path.exists()
 
@@ -123,7 +123,7 @@ class TestRemoveWorktree:
             ["git", "branch", "--list", branch],
             cwd=git_project, capture_output=True, text=True,
         )
-        assert branch not in result.stdout
+        assert branch in result.stdout
 
     def test_safe_on_already_removed_path(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
@@ -139,6 +139,74 @@ class TestRemoveWorktree:
             cwd=git_project, capture_output=True, text=True,
         )
         assert str(wt_path) not in result.stdout
+
+
+class TestBranchPreservation:
+    def test_remove_worktree_preserves_branch_by_default(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+        remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch in result.stdout
+
+    def test_remove_worktree_deletes_branch_when_not_preserved(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+        remove_worktree(git_project, wt_path, branch, preserve_branch=False)
+
+        assert not wt_path.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch not in result.stdout
+
+    def test_prune_stale_preserves_branches_by_default(self, git_project: Path) -> None:
+        run_id = "aabb0011"
+        branch = f"factory/run-{run_id}"
+        subprocess.run(
+            ["git", "branch", branch],
+            cwd=git_project, capture_output=True, check=True,
+        )
+        wt_dir = git_project / ".factory-worktrees"
+        wt_dir.mkdir(parents=True, exist_ok=True)
+        orphan = wt_dir / f"run-{run_id}"
+        orphan.mkdir()
+        (orphan / "file.txt").write_text("stale")
+
+        prune_stale(git_project)
+
+        assert not orphan.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch in result.stdout
+
+    def test_prune_stale_deletes_branches_when_requested(self, git_project: Path) -> None:
+        run_id = "ccdd0022"
+        branch = f"factory/run-{run_id}"
+        subprocess.run(
+            ["git", "branch", branch],
+            cwd=git_project, capture_output=True, check=True,
+        )
+        wt_dir = git_project / ".factory-worktrees"
+        wt_dir.mkdir(parents=True, exist_ok=True)
+        orphan = wt_dir / f"run-{run_id}"
+        orphan.mkdir()
+        (orphan / "file.txt").write_text("stale")
+
+        prune_stale(git_project, delete_branches=True)
+
+        assert not orphan.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch not in result.stdout
 
 
 class TestPruneStale:
