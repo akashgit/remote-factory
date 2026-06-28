@@ -161,7 +161,7 @@ jobs:
           if [ '${{ github.event_name }}' = 'workflow_dispatch' ]; then
             echo "value=$BENCHMARK_TIMEOUT" >> "$GITHUB_OUTPUT"
           elif [ '${{ github.event_name }}' = 'schedule' ]; then
-            echo 'value=3600' >> "$GITHUB_OUTPUT"
+            echo 'value=7200' >> "$GITHUB_OUTPUT"
           else
             echo 'value=7200' >> "$GITHUB_OUTPUT"
           fi
