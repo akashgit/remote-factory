@@ -1502,6 +1502,7 @@ class TestCreateModeFocus:
         assert "## Create Mode (New Factory Mode)" in task
         assert "a mode for validating PRs" in task
         assert "Mode description from user" in task
+        assert "## Focus Directive" not in task
 
     def test_build_ceo_task_no_create_description(self, tmp_path):
         """_build_ceo_task omits the Create Mode section when create_description is None."""

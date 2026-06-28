@@ -2608,7 +2608,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
     if focus and mode not in ("improve", "research", "create") and not design_existing:
-        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
+        print(f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
@@ -3596,7 +3596,7 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
-    if focus:
+    if focus and not create_description:
         task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
         if issue_number:
             issue_label = f"#{issue_number}"
@@ -3911,7 +3911,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode not in ("improve", "research", "create"):
+    if focus and mode not in ("improve", "research"):
         print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
