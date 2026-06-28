@@ -2497,11 +2497,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   "Create mode generates the workflow from a description.",
                   file=sys.stderr)
             return 1
-        if focus:
-            print("Error: --mode create and --focus are mutually exclusive.",
-                  file=sys.stderr)
-            return 1
-
     if mode == "research":
         if prompt_file:
             print("Error: --mode research and --prompt are mutually exclusive. "
@@ -2523,7 +2518,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                   file=sys.stderr)
             return 1
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
-        create_description = context
+        create_description = focus if focus else context
     elif mode == "design" and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
@@ -2612,8 +2607,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
               "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
         return 1
-    if focus and mode not in ("improve", "research") and not design_existing:
-        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
+    if focus and mode not in ("improve", "research", "create") and not design_existing:
+        print(f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
               "The project must already be built before targeting specific items.", file=sys.stderr)
         return 1
 
@@ -3601,7 +3596,7 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
-    if focus:
+    if focus and not create_description:
         task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
         if issue_number:
             issue_label = f"#{issue_number}"
