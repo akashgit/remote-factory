@@ -21,6 +21,7 @@ You are invoked during the Improve phase after the Researcher has completed thei
 ## Task
 
 1. **Read the backlog**: Start by reading `.factory/strategy/backlog.md` — this is the primary queue of work to do
+   - Read `docs/coding-playbook.md` before generating hypotheses that modify workflows, skills, or CLI mode handling
 2. **Observe**: Read the factory config, experiment history, current eval scores, git log, and strategy docs
 3. **Analyze**: Identify patterns — what's working, what's failing, what's been tried before
 4. **Map the design space**: Score each improvement dimension and identify underserved areas

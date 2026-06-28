@@ -1470,6 +1470,45 @@ class TestBuildCeoTaskDesign:
         assert "Mode: design" in task
 
 
+class TestCreateModeFocus:
+    """Tests for --focus working with --mode create (issue #832)."""
+
+    def test_focus_accepted_with_create_mode(self, tmp_path):
+        """--focus is no longer rejected when --mode create is set."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "a PR validation mode"])
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Create Mode (New Factory Mode)" in task
+        assert "a PR validation mode" in task
+
+    def test_create_mode_without_focus(self, tmp_path):
+        """--mode create without --focus still works (create_description is None)."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create"])
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Create Mode (New Factory Mode)" not in task
+
+    def test_build_ceo_task_create_description(self, tmp_path):
+        """_build_ceo_task emits the Create Mode section when create_description is provided."""
+        task = _build_ceo_task(tmp_path, "build", create_description="a mode for validating PRs")
+        assert "## Create Mode (New Factory Mode)" in task
+        assert "a mode for validating PRs" in task
+        assert "Mode description from user" in task
+
+    def test_build_ceo_task_no_create_description(self, tmp_path):
+        """_build_ceo_task omits the Create Mode section when create_description is None."""
+        task = _build_ceo_task(tmp_path, "build", create_description=None)
+        assert "## Create Mode (New Factory Mode)" not in task
+
+
 class TestProfileParser:
     def test_profile_build_subcommand(self):
         parser = build_parser()
