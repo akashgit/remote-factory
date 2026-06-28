@@ -51,7 +51,7 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 | **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
 | **Co-improve an existing project** | `uv run factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
-| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create "description"` |
+| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create --focus "description"` |
 
 ---
 
@@ -125,11 +125,7 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 Create mode lets you build new factory modes — new workflows, new pipelines, new factories — from a description. Describe what the mode should do, and re:factory researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
 
 ```bash
-# From a description
-uv run factory ceo /path/to/factory --mode create "a mode that audits security vulnerabilities"
-
-# From a spec file
-uv run factory ceo /path/to/factory --mode create ~/specs/audit-mode.md
+uv run factory ceo /path/to/factory --mode create --focus "a mode that audits security vulnerabilities"
 ```
 
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
@@ -193,7 +189,7 @@ Built something with re:factory? Open a PR to add it here.
 uv run factory ceo "idea" --mode design         # Design from a raw idea
 uv run factory ceo <path> --mode improve        # Improve an existing project
 uv run factory ceo <path> --refine "..."        # Single targeted refinement
-uv run factory ceo <path> --mode create "..."  # Create a new factory mode
+uv run factory ceo <path> --mode create --focus "..."  # Create a new factory mode
 uv run factory ceo <path> --loop                # Continuous improvement loop
 uv run factory tmux <path> --loop               # Loop in detached tmux session
 ```
