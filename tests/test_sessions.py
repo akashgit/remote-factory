@@ -7,7 +7,7 @@ from factory.cli import main
 from factory.runs import RunMetadata, SessionRunStatus, save_run
 
 
-def _save_test_run(project: Path, run_id: str = "test0001") -> None:
+def _save_test_run(project: Path, run_id: str = "ae5f0001") -> None:
     save_run(project, RunMetadata(
         run_id=run_id,
         branch=f"factory/run-{run_id}",

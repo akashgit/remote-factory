@@ -47,7 +47,7 @@ class TestSaveAndLoad:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
-        assert load_run(project, "nonexistent") is None
+        assert load_run(project, "dead0000") is None
 
 
 class TestListRuns:
@@ -99,7 +99,7 @@ class TestUpdateRun:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
-        assert update_run(project, "nope", status=SessionRunStatus.error) is None
+        assert update_run(project, "dead0000", status=SessionRunStatus.error) is None
 
 
 class TestDeleteRun:
@@ -116,7 +116,7 @@ class TestDeleteRun:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
-        assert delete_run(project, "nope") is False
+        assert delete_run(project, "dead0000") is False
 
 
 class TestPruneRuns:
@@ -127,47 +127,47 @@ class TestPruneRuns:
         old_ts = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
         recent_ts = datetime.now(timezone.utc).isoformat()
 
-        save_run(project, _make_run("old00001", created_at=old_ts, status=SessionRunStatus.completed))
-        save_run(project, _make_run("new00001", created_at=recent_ts, status=SessionRunStatus.completed))
+        save_run(project, _make_run("01d00001", created_at=old_ts, status=SessionRunStatus.completed))
+        save_run(project, _make_run("ee000001", created_at=recent_ts, status=SessionRunStatus.completed))
 
         pruned = prune_runs(project, older_than_days=30)
         assert len(pruned) == 1
-        assert "old00001" in pruned[0]
+        assert "01d00001" in pruned[0]
 
         remaining = list_runs(project)
         assert len(remaining) == 1
-        assert remaining[0].run_id == "new00001"
+        assert remaining[0].run_id == "ee000001"
 
     def test_prune_dry_run(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
         old_ts = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
-        save_run(project, _make_run("old00001", created_at=old_ts, status=SessionRunStatus.completed))
+        save_run(project, _make_run("01d00001", created_at=old_ts, status=SessionRunStatus.completed))
 
         pruned = prune_runs(project, older_than_days=30, dry_run=True)
         assert len(pruned) == 1
         assert "Would prune" in pruned[0]
-        assert load_run(project, "old00001") is not None
+        assert load_run(project, "01d00001") is not None
 
     def test_prune_skips_running(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
         old_ts = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
-        save_run(project, _make_run("old00001", created_at=old_ts, status=SessionRunStatus.running))
+        save_run(project, _make_run("01d00001", created_at=old_ts, status=SessionRunStatus.running))
 
         pruned = prune_runs(project, older_than_days=30)
         assert len(pruned) == 0
-        assert load_run(project, "old00001") is not None
+        assert load_run(project, "01d00001") is not None
 
     def test_prune_all(self, tmp_path: Path) -> None:
         project = tmp_path / "proj"
         (project / ".factory").mkdir(parents=True)
 
         recent_ts = datetime.now(timezone.utc).isoformat()
-        save_run(project, _make_run("run00001", created_at=recent_ts, status=SessionRunStatus.completed))
-        save_run(project, _make_run("run00002", created_at=recent_ts, status=SessionRunStatus.error))
+        save_run(project, _make_run("00000001", created_at=recent_ts, status=SessionRunStatus.completed))
+        save_run(project, _make_run("00000002", created_at=recent_ts, status=SessionRunStatus.error))
 
         pruned = prune_runs(project, prune_all=True)
         assert len(pruned) == 2

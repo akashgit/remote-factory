@@ -1933,7 +1933,10 @@ def cmd_sessions_resume(args: argparse.Namespace) -> int:
     project_path = Path(args.path).resolve()
     run_id = args.run_id
 
-    meta = load_run(project_path, run_id)
+    try:
+        meta = load_run(project_path, run_id)
+    except ValueError:
+        meta = None
     if meta is None:
         print(f"Error: no session found with run ID '{run_id}'.", file=sys.stderr)
         print("Use 'factory sessions-list <path>' to see available sessions.", file=sys.stderr)

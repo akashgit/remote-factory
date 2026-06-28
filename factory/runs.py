@@ -6,6 +6,7 @@ session listing, resumption, and reconstruction.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from datetime import datetime, timezone
 from enum import Enum
@@ -15,6 +16,13 @@ import structlog
 from pydantic import BaseModel, ConfigDict
 
 log = structlog.get_logger()
+
+_RUN_ID_RE = re.compile(r"^[a-f0-9]{8}$")
+
+
+def _validate_run_id(run_id: str) -> None:
+    if not _RUN_ID_RE.match(run_id):
+        raise ValueError(f"Invalid run_id: {run_id!r} (must match ^[a-f0-9]{{8}}$)")
 
 
 class SessionRunStatus(str, Enum):
@@ -49,6 +57,7 @@ def _runs_dir(project_path: Path) -> Path:
 
 def save_run(project_path: Path, metadata: RunMetadata) -> None:
     """Write run metadata to .factory/runs/{run_id}.json and emit run.created event."""
+    _validate_run_id(metadata.run_id)
     runs = _runs_dir(project_path)
     runs.mkdir(parents=True, exist_ok=True)
     path = runs / f"{metadata.run_id}.json"
@@ -68,6 +77,7 @@ def save_run(project_path: Path, metadata: RunMetadata) -> None:
 
 def load_run(project_path: Path, run_id: str) -> RunMetadata | None:
     """Load run metadata by ID. Returns None if not found."""
+    _validate_run_id(run_id)
     path = _runs_dir(project_path) / f"{run_id}.json"
     if not path.exists():
         return None
@@ -92,6 +102,7 @@ def list_runs(project_path: Path) -> list[RunMetadata]:
 
 def update_run(project_path: Path, run_id: str, **kwargs: object) -> RunMetadata | None:
     """Partial update of run metadata. Returns updated metadata, or None if not found."""
+    _validate_run_id(run_id)
     meta = load_run(project_path, run_id)
     if meta is None:
         return None
@@ -118,6 +129,7 @@ def update_run(project_path: Path, run_id: str, **kwargs: object) -> RunMetadata
 
 def delete_run(project_path: Path, run_id: str) -> bool:
     """Delete run metadata file. Returns True if deleted, False if not found."""
+    _validate_run_id(run_id)
     path = _runs_dir(project_path) / f"{run_id}.json"
     if not path.exists():
         return False
