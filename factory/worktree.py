@@ -81,11 +81,7 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         capture_output=True,
     )
 
-    subprocess.run(
-        ["git", "branch", "-D", branch],
-        cwd=project_path,
-        capture_output=True,
-    )
+    log.info("worktree_branch_preserved", branch=branch)
 
 
 def prune_stale(project_path: Path) -> list[str]:

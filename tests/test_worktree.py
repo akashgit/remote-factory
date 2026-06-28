@@ -111,7 +111,7 @@ class TestCreateWorktree:
 
 
 class TestRemoveWorktree:
-    def test_removes_worktree_completely(self, git_project: Path) -> None:
+    def test_removes_worktree_preserves_branch(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
         assert wt_path.exists()
 
@@ -123,7 +123,7 @@ class TestRemoveWorktree:
             ["git", "branch", "--list", branch],
             cwd=git_project, capture_output=True, text=True,
         )
-        assert branch not in result.stdout
+        assert branch in result.stdout
 
     def test_safe_on_already_removed_path(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
