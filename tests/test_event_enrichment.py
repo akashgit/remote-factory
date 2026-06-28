@@ -202,6 +202,42 @@ def test_cmd_finalize_emits_enriched_event(tmp_path: Path) -> None:
     assert data["cost_usd"] == 2.50
 
 
+def test_finalize_autodetects_pr_number(tmp_path: Path) -> None:
+    """cmd_finalize auto-detects PR number via gh when args.pr is None."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    _setup_factory_dir(project)
+
+    ns = argparse.Namespace(
+        path=str(project),
+        id=1,
+        verdict="keep",
+        hypothesis="Auto PR detection",
+        summary="Testing auto PR",
+        cost=1.00,
+        issue=42,
+        pr=None,
+        score_before=0.50,
+        score_after=0.60,
+        notes="",
+        force=True,
+    )
+
+    mock_store = MagicMock()
+    fake_gh_result = MagicMock(returncode=0, stdout=b"123\n")
+
+    with patch("factory.store.ExperimentStore", return_value=mock_store), \
+         patch("factory.cli._run", return_value=None), \
+         patch("subprocess.run", return_value=fake_gh_result):
+        from factory.cli import cmd_finalize
+        cmd_finalize(ns)
+
+    events = load_events(project)
+    finalize_events = [e for e in events if e["type"] == "experiment.finalize"]
+    assert len(finalize_events) == 1
+    assert finalize_events[0]["data"]["pr_number"] == 123
+
+
 def test_finalize_event_with_null_scores(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     project.mkdir()

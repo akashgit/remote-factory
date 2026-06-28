@@ -33,6 +33,21 @@ def _run(coro):  # noqa: ANN001, ANN202
     return asyncio.run(coro)
 
 
+def _detect_pr_number(project_path: Path) -> int | None:
+    try:
+        result = subprocess.run(
+            ["gh", "pr", "view", "--json", "number", "-q", ".number"],
+            capture_output=True,
+            timeout=10,
+            cwd=project_path,
+        )
+        if result.returncode == 0:
+            return int(result.stdout.decode().strip())
+    except (subprocess.TimeoutExpired, FileNotFoundError, ValueError, OSError):
+        pass
+    return None
+
+
 def _read_target_branch(project_path: Path) -> str:
     """Read target branch from .factory/config.json, falling back to git detection."""
     config_path = project_path / ".factory" / "config.json"
@@ -938,6 +953,10 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         })
         print("Finalize gate: precheck SKIPPED (--force)")
 
+    pr_number = args.pr
+    if pr_number is None:
+        pr_number = _detect_pr_number(project_path)
+
     cost = args.cost
     if cost is None:
         from factory.events import load_events, sum_agent_costs
@@ -957,7 +976,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         hypothesis=args.hypothesis or "",
         change_summary=args.summary or "",
         issue_number=args.issue,
-        pr_number=args.pr,
+        pr_number=pr_number,
         score_before=score_before,
         score_after=score_after,
         delta=None,
@@ -973,7 +992,7 @@ def cmd_finalize(args: argparse.Namespace) -> int:
         "exp_id": args.id,
         "verdict": verdict,
         "hypothesis": (args.hypothesis or "")[:200],
-        "pr_number": args.pr,
+        "pr_number": pr_number,
         "issue_number": args.issue,
         "score_before": score_before,
         "score_after": score_after,
