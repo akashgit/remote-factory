@@ -58,9 +58,21 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     return wt_dir, branch
 
 
-def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
-    """Remove a worktree and its branch. Safe to call on already-removed paths."""
-    log.info("worktree_remove", branch=branch, path=str(worktree_path))
+def remove_worktree(
+    project_path: Path,
+    worktree_path: Path,
+    branch: str,
+    *,
+    preserve_branch: bool = True,
+) -> None:
+    """Remove a worktree directory. Safe to call on already-removed paths.
+
+    When preserve_branch is True (default), the git branch is kept so the
+    session can be reconstructed later. Pass preserve_branch=False to also
+    delete the branch (used by explicit prune commands).
+    """
+    log.info("worktree_remove", branch=branch, path=str(worktree_path),
+             preserve_branch=preserve_branch)
 
     run_id = branch.removeprefix("factory/run-")
     try:
@@ -68,6 +80,7 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         emit_event(project_path, "worktree.removed", data={
             "run_id": run_id,
             "branch": branch,
+            "preserve_branch": preserve_branch,
         })
     except Exception:
         pass
@@ -81,15 +94,21 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         capture_output=True,
     )
 
-    subprocess.run(
-        ["git", "branch", "-D", branch],
-        cwd=project_path,
-        capture_output=True,
-    )
+    if not preserve_branch:
+        subprocess.run(
+            ["git", "branch", "-D", branch],
+            cwd=project_path,
+            capture_output=True,
+        )
 
 
-def prune_stale(project_path: Path) -> list[str]:
-    """Clean up stale worktrees from crashed runs. Returns list of pruned entries."""
+def prune_stale(project_path: Path, *, delete_branches: bool = False) -> list[str]:
+    """Clean up stale worktree directories from crashed runs.
+
+    Returns list of pruned entries. When delete_branches is False (default),
+    orphaned branches are preserved for session recovery. Use
+    ``runs.prune_runs()`` for explicit branch cleanup.
+    """
     project_path = project_path.resolve()
     if not project_path.exists():
         return []
@@ -119,12 +138,13 @@ def prune_stale(project_path: Path) -> list[str]:
                 shutil.rmtree(d)
                 pruned.append(f"Removed orphaned directory: {d.name}")
                 log.info("worktree_pruned_orphan", name=d.name)
-                branch = f"factory/run-{run_id}"
-                subprocess.run(
-                    ["git", "branch", "-D", branch],
-                    cwd=project_path,
-                    capture_output=True,
-                )
+                if delete_branches:
+                    branch = f"factory/run-{run_id}"
+                    subprocess.run(
+                        ["git", "branch", "-D", branch],
+                        cwd=project_path,
+                        capture_output=True,
+                    )
 
     if pruned:
         log.info("worktree_prune_complete", pruned_count=len(pruned))

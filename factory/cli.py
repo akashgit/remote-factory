@@ -16,7 +16,7 @@ import sys
 import tempfile
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from collections.abc import Callable
 from typing import TYPE_CHECKING
@@ -2645,6 +2645,18 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
+    _run_id = wt_branch.removeprefix("factory/run-")
+    from factory.runs import RunMetadata, SessionRunStatus, save_run, update_run
+    save_run(project_path, RunMetadata(
+        run_id=_run_id,
+        branch=wt_branch,
+        worktree_path=str(wt_path),
+        base_branch=base_branch,
+        status=SessionRunStatus.running,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        mode=mode,
+    ))
+
     interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
     if clean_pr_flag is not None:
@@ -2737,7 +2749,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         finally:
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
-            remove_worktree(project_path, wt_path, wt_branch)
+            _fin_status = SessionRunStatus.error if sys.exc_info()[1] else SessionRunStatus.completed
+            update_run(project_path, _run_id,
+                       status=_fin_status, completed_at=datetime.now(timezone.utc).isoformat())
+            remove_worktree(project_path, wt_path, wt_branch, preserve_branch=True)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
                 shutil.rmtree(project_path, ignore_errors=True)
@@ -2762,7 +2777,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     finally:
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
-        remove_worktree(project_path, wt_path, wt_branch)
+        _fin_status = SessionRunStatus.error if sys.exc_info()[1] else SessionRunStatus.completed
+        update_run(project_path, _run_id,
+                   status=_fin_status, completed_at=datetime.now(timezone.utc).isoformat())
+        remove_worktree(project_path, wt_path, wt_branch, preserve_branch=True)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil
             shutil.rmtree(project_path, ignore_errors=True)
@@ -3818,6 +3836,18 @@ def _run_single_cycle(
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch)
 
+    _run_id = wt_branch.removeprefix("factory/run-")
+    from factory.runs import RunMetadata, SessionRunStatus, save_run, update_run
+    save_run(project_path, RunMetadata(
+        run_id=_run_id,
+        branch=wt_branch,
+        worktree_path=str(wt_path),
+        base_branch=base_branch,
+        status=SessionRunStatus.running,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        mode=mode,
+    ))
+
     try:
         task = _build_ceo_task(
             wt_path, mode, context, focus=focus, prompt_file=prompt_file,
@@ -3848,7 +3878,10 @@ def _run_single_cycle(
         print(result)
         return code
     finally:
-        remove_worktree(project_path, wt_path, wt_branch)
+        _fin_status = SessionRunStatus.error if sys.exc_info()[1] else SessionRunStatus.completed
+        update_run(project_path, _run_id,
+                   status=_fin_status, completed_at=datetime.now(timezone.utc).isoformat())
+        remove_worktree(project_path, wt_path, wt_branch, preserve_branch=True)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
