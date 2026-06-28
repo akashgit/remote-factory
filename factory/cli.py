@@ -1870,6 +1870,172 @@ def cmd_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sessions(args: argparse.Namespace) -> int:
+    """Dispatch sessions subcommand."""
+    sub = getattr(args, "sessions_command", None)
+    if not sub:
+        print("Usage: factory sessions {list,prune,resume}")
+        return 1
+    session_handlers = {
+        "list": cmd_sessions_list,
+        "prune": cmd_sessions_prune,
+        "resume": cmd_sessions_resume,
+    }
+    handler = session_handlers.get(sub)
+    if handler is None:
+        print(f"Unknown sessions subcommand: {sub}", file=sys.stderr)
+        return 1
+    return handler(args)
+
+
+def cmd_sessions_list(args: argparse.Namespace) -> int:
+    """List factory sessions from the run index."""
+    from factory.run_index import list_runs
+
+    project_path = Path(args.path).resolve()
+    runs = list_runs(project_path)
+
+    status_filter = getattr(args, "status", None)
+    if status_filter:
+        runs = [r for r in runs if r.status == status_filter]
+
+    if not runs:
+        print("No sessions found.")
+        return 0
+
+    header = f"{'Run ID':<20} {'Mode':<12} {'Status':<12} {'Created':<26} {'Branch'}"
+    print(header)
+    print("-" * len(header))
+    for r in runs:
+        print(f"{r.run_id:<20} {r.mode:<12} {r.status:<12} {r.created_at:<26} {r.branch}")
+    return 0
+
+
+def cmd_sessions_prune(args: argparse.Namespace) -> int:
+    """Delete run metadata and git branches for completed/crashed sessions."""
+    from factory.run_index import delete_run, list_runs
+
+    project_path = Path(args.path).resolve()
+    runs = list_runs(project_path)
+    dry_run = getattr(args, "dry_run", False)
+
+    status_filter = getattr(args, "status", None)
+    if status_filter:
+        prune_statuses = {status_filter}
+    else:
+        prune_statuses = {"completed", "crashed"}
+
+    runs = [r for r in runs if r.status in prune_statuses]
+
+    older_than = getattr(args, "older_than", None)
+    if older_than:
+        from datetime import datetime, timedelta
+
+        if older_than.endswith("d"):
+            days = int(older_than[:-1])
+        elif older_than.endswith("h"):
+            days = 0
+            hours = int(older_than[:-1])
+            cutoff = datetime.now() - timedelta(hours=hours)
+        else:
+            days = int(older_than)
+
+        if older_than.endswith("d") or not older_than.endswith("h"):
+            cutoff = datetime.now() - timedelta(days=days)
+
+        runs = [
+            r for r in runs
+            if datetime.fromisoformat(r.created_at) < cutoff
+        ]
+
+    if not runs:
+        print("Nothing to prune.")
+        return 0
+
+    for r in runs:
+        if dry_run:
+            print(f"Would prune: {r.run_id} (branch={r.branch}, status={r.status})")
+        else:
+            subprocess.run(
+                ["git", "branch", "-D", r.branch],
+                cwd=project_path,
+                capture_output=True,
+            )
+            delete_run(project_path, r.run_id)
+            print(f"Pruned: {r.run_id} (branch={r.branch})")
+
+    if dry_run:
+        print(f"\n{len(runs)} session(s) would be pruned. Pass without --dry-run to execute.")
+    else:
+        print(f"\n{len(runs)} session(s) pruned.")
+    return 0
+
+
+def cmd_sessions_resume(args: argparse.Namespace) -> int:
+    """Reconstruct a worktree from a preserved branch and resume."""
+    from factory.run_index import read_run, update_status
+
+    project_path = Path(args.path).resolve()
+    run_id = args.run_id
+
+    meta = read_run(project_path, run_id)
+    if meta is None:
+        print(f"No session found with run_id={run_id}", file=sys.stderr)
+        return 1
+
+    if meta.status == "active":
+        print(f"Session {run_id} is already active.")
+
+    wt_path = Path(meta.worktree_path)
+    if not wt_path.exists():
+        result = subprocess.run(
+            ["git", "branch", "--list", meta.branch],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if meta.branch not in result.stdout:
+            print(f"Branch {meta.branch} no longer exists. Cannot resume.", file=sys.stderr)
+            return 1
+
+        wt_path.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            ["git", "worktree", "add", str(wt_path), meta.branch],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"Failed to reconstruct worktree: {result.stderr.strip()}", file=sys.stderr)
+            return 1
+
+        factory_dir = project_path / ".factory"
+        wt_factory = wt_path / ".factory"
+        if wt_factory.exists() or wt_factory.is_symlink():
+            if wt_factory.is_dir() and not wt_factory.is_symlink():
+                import shutil
+                shutil.rmtree(wt_factory)
+            else:
+                wt_factory.unlink()
+        wt_factory.symlink_to(factory_dir)
+
+        print(f"Reconstructed worktree at {wt_path}")
+    else:
+        print(f"Worktree already exists at {wt_path}")
+
+    update_status(project_path, run_id, "active")
+
+    from factory.checkpoint import format_checkpoint, load_checkpoint
+    checkpoint = load_checkpoint(project_path)
+    if checkpoint:
+        print("\n=== Resume Context ===")
+        print(format_checkpoint(checkpoint))
+    else:
+        print(f"\nSession {run_id} is active. No checkpoint found — start fresh from branch {meta.branch}.")
+
+    return 0
+
+
 def cmd_research(args: argparse.Namespace) -> int:
     """Print citation index table and coverage summary."""
     from factory.research_index import build_citation_index, citation_coverage
@@ -4311,6 +4477,28 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")
     p.add_argument("path", help="Path to the project")
 
+    # sessions — session management
+    sessions_parser = sub.add_parser("sessions", help="Manage factory sessions (list, prune, resume)")
+    sessions_sub = sessions_parser.add_subparsers(dest="sessions_command")
+
+    p_sess_list = sessions_sub.add_parser("list", help="List factory sessions")
+    p_sess_list.add_argument("path", help="Path to the project")
+    p_sess_list.add_argument("--status", choices=["active", "completed", "crashed"],
+                              default=None, help="Filter by status")
+
+    p_sess_prune = sessions_sub.add_parser("prune", help="Prune completed/crashed sessions")
+    p_sess_prune.add_argument("path", help="Path to the project")
+    p_sess_prune.add_argument("--older-than", default=None,
+                               help="Only prune sessions older than this (e.g. 7d, 24h)")
+    p_sess_prune.add_argument("--status", choices=["active", "completed", "crashed"],
+                               default=None, help="Prune only sessions with this status")
+    p_sess_prune.add_argument("--dry-run", action="store_true", default=False,
+                               help="Show what would be pruned without deleting")
+
+    p_sess_resume = sessions_sub.add_parser("resume", help="Resume a previous session")
+    p_sess_resume.add_argument("path", help="Path to the project")
+    p_sess_resume.add_argument("run_id", help="Run ID to resume")
+
     # log
     p = sub.add_parser("log", help="Append a structured event to .factory/events.jsonl")
     p.add_argument("path", help="Path to the project")
@@ -4720,6 +4908,7 @@ def main(argv: list[str] | None = None) -> int:
         "review": cmd_review,
         "checkpoint": cmd_checkpoint,
         "resume": cmd_resume,
+        "sessions": cmd_sessions,
         "log": cmd_log,
         "vault-init": cmd_vault_init,
         "message": cmd_message,

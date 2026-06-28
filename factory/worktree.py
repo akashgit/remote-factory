@@ -55,6 +55,22 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     except Exception:
         pass
 
+    try:
+        from factory.run_index import RunMetadata, write_run
+        from datetime import datetime
+
+        meta = RunMetadata(
+            run_id=run_id,
+            branch=branch,
+            worktree_path=str(wt_dir),
+            created_at=datetime.now().isoformat(),
+            mode="unknown",
+            status="active",
+        )
+        write_run(project_path, meta)
+    except Exception:
+        pass
+
     return wt_dir, branch
 
 
@@ -81,11 +97,11 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         capture_output=True,
     )
 
-    subprocess.run(
-        ["git", "branch", "-D", branch],
-        cwd=project_path,
-        capture_output=True,
-    )
+    try:
+        from factory.run_index import update_status
+        update_status(project_path, run_id, "completed")
+    except Exception:
+        pass
 
 
 def prune_stale(project_path: Path) -> list[str]:

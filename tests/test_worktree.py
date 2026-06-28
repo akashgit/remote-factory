@@ -111,7 +111,7 @@ class TestCreateWorktree:
 
 
 class TestRemoveWorktree:
-    def test_removes_worktree_completely(self, git_project: Path) -> None:
+    def test_removes_worktree_dir_but_preserves_branch(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
         assert wt_path.exists()
 
@@ -123,7 +123,7 @@ class TestRemoveWorktree:
             ["git", "branch", "--list", branch],
             cwd=git_project, capture_output=True, text=True,
         )
-        assert branch not in result.stdout
+        assert branch in result.stdout
 
     def test_safe_on_already_removed_path(self, git_project: Path) -> None:
         wt_path, branch = create_worktree(git_project)
@@ -283,6 +283,28 @@ class TestSymlinkResolution:
         config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
         assert config_via_symlink == config_direct
+
+
+class TestRunIndexIntegration:
+    def test_create_worktree_writes_run_metadata(self, git_project: Path) -> None:
+        from factory.run_index import list_runs
+
+        wt_path, branch = create_worktree(git_project)
+
+        runs = list_runs(git_project)
+        assert len(runs) == 1
+        assert runs[0].branch == branch
+        assert runs[0].status == "active"
+
+    def test_remove_worktree_marks_completed(self, git_project: Path) -> None:
+        from factory.run_index import list_runs
+
+        wt_path, branch = create_worktree(git_project)
+        remove_worktree(git_project, wt_path, branch)
+
+        runs = list_runs(git_project)
+        assert len(runs) == 1
+        assert runs[0].status == "completed"
 
 
 class TestFilelockConcurrency:
