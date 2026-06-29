@@ -2464,9 +2464,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"3. Run step 2d (Hard Precheck Gate)\n"
             f"4. Post verdict via "
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER "
+            f"--reason \"$REASON\" "
             f"--qa-body-file .factory/reviews/qa-latest.md"
             f"{repo_flag}\n"
+            f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
+            f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
         )
 
         if not headless:
@@ -2525,9 +2527,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"{f'- REPO={repo}' + chr(10) if repo else ''}"
             f"\nPost the final verdict via:\n"
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER "
+            f"--reason \"$REASON\" "
             f"--qa-body-file .factory/reviews/qa-latest.md"
             f"{repo_flag}\n"
+            f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
+            f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
             f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
             f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
