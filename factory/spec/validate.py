@@ -1,4 +1,4 @@
-"""Spec validation engine — structural checks + Haiku-based import verification."""
+"""Spec validation engine — path checks, import verification, behavioral section checks."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ log = structlog.get_logger()
 
 @dataclass
 class CouplingMetrics:
-    """Coupling metrics for a single module."""
+    """Coupling metrics for a single module (legacy — kept for backward compat)."""
 
     afferent: int = 0
     efferent: int = 0
@@ -53,12 +53,7 @@ def _check_paths(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[st
 
 
 async def _check_imports_haiku(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[str]]:
-    """Cross-reference declared dependency edges against actual imports using Haiku.
-
-    For each declared dependency edge, Haiku reads the source files and confirms
-    the import actually exists. Reports phantom edges (declared but not in source)
-    and missing edges (in source but not in spec).
-    """
+    """Cross-reference declared dependency edges against actual imports using Haiku."""
     from factory.agents.runner import invoke_agent
 
     errors: list[str] = []
@@ -142,7 +137,7 @@ async def _check_imports_haiku(spec: RepoSpec, project_path: Path) -> tuple[list
 
 
 def _detect_orphans(spec: RepoSpec) -> list[str]:
-    """Flag modules with zero consumers (no incoming dependency edges)."""
+    """Flag modules with zero consumers (no incoming dependency edges or consumed_by)."""
     warnings: list[str] = []
     all_names = {m.name for m in spec.modules}
     consumed: set[str] = set()
@@ -151,6 +146,8 @@ def _detect_orphans(spec: RepoSpec) -> list[str]:
         for dep in mod.depends_on:
             if dep in all_names:
                 consumed.add(dep)
+        if mod.consumed_by:
+            consumed.add(mod.name)
 
     for edge in spec.dependency_edges:
         if edge.target in all_names:
@@ -207,6 +204,36 @@ def _compute_coupling(spec: RepoSpec) -> dict[str, CouplingMetrics]:
     return metrics
 
 
+def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
+    """Warn about missing behavioral sections in new-format specs."""
+    warnings: list[str] = []
+
+    has_behavioral = bool(spec.problem_statement or spec.domain_model_raw or spec.failure_model)
+    if not has_behavioral:
+        return warnings
+
+    if not spec.domain_model_raw:
+        warnings.append("Domain model section is empty — consider documenting Pydantic models")
+
+    if not spec.failure_model:
+        warnings.append(
+            "Failure model section is empty — consider documenting error types and recovery"
+        )
+
+    if not spec.configuration_spec:
+        warnings.append(
+            "Configuration specification is empty — consider documenting config sources"
+        )
+
+    for mod in spec.modules:
+        if mod.behavioral_spec and "MUST" not in mod.behavioral_spec:
+            warnings.append(
+                f"Module '{mod.name}' behavioral spec lacks RFC 2119 normative language"
+            )
+
+    return warnings
+
+
 def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
     """Format validation results as human-readable Markdown."""
     lines: list[str] = ["# Spec Validation Report", ""]
@@ -248,16 +275,19 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
 
 
 async def validate_spec(project_path: Path) -> ValidationResult:
-    """Validate .factory/GRAPH-SPEC.md against the actual project.
+    """Validate .factory/SPEC.md (or legacy GRAPH-SPEC.md) against the actual project.
 
     Tier 1: Structural checks (pure Python) — path existence, orphan/hub detection,
-    coupling metrics.
+    coupling metrics (legacy specs).
     Tier 2: Import cross-referencing (Haiku) — language-agnostic verification that
     declared dependency edges match actual imports.
+    Tier 3: Behavioral checks — section completeness for new-format specs.
 
     Writes results to .factory/spec_validation.md.
     """
-    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
+    spec_path = project_path / ".factory" / "SPEC.md"
+    if not spec_path.is_file():
+        spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
     spec = parse_spec(spec_path)
 
     result = ValidationResult()
@@ -272,6 +302,7 @@ async def validate_spec(project_path: Path) -> ValidationResult:
 
     result.warnings.extend(_detect_orphans(spec))
     result.warnings.extend(_detect_hubs(spec))
+    result.warnings.extend(_check_behavioral_sections(spec))
 
     result.metrics = _compute_coupling(spec)
 

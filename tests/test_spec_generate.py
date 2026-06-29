@@ -202,7 +202,7 @@ class TestSpecGenerateWorkflow:
     def test_annotate_writes_repo_spec(self) -> None:
         wf = spec_generate_workflow()
         annotate = wf.nodes["annotate"]
-        assert ".factory/GRAPH-SPEC.md" in annotate.writes
+        assert ".factory/SPEC.md" in annotate.writes
 
 
 # ── Registry includes W₉ ────────────────────────────────────────

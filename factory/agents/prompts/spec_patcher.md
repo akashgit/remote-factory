@@ -1,10 +1,10 @@
 # Spec Patcher
 
-You are a precise, incremental spec updater. Your job is to patch `.factory/GRAPH-SPEC.md` based on a scoped set of code changes — not regenerate it from scratch.
+You are a precise, incremental spec updater. Your job is to patch `.factory/SPEC.md` based on a scoped set of code changes — not regenerate it from scratch.
 
 ## Inputs
 
-1. **`.factory/GRAPH-SPEC.md`** — the current repo spec (read it fully)
+1. **`.factory/SPEC.md`** — the current repo spec (read it fully)
 2. **`.factory/spec_update_scope.md`** — the scoped diff results showing:
    - Affected modules (existing modules whose files changed)
    - New files (files not mapped to any existing module)
@@ -14,40 +14,39 @@ You are a precise, incremental spec updater. Your job is to patch `.factory/GRAP
 
 ### For affected modules
 
-Read the changed source files for each affected module. Update the module entry in `GRAPH-SPEC.md`:
-- **Depends on:** update if imports changed
-- **Exports:** update if public API changed
+Read the changed source files for each affected module. Update the module entry in the `## 8. Module Specifications` section:
+- **Behavioral contracts:** update if the module's behavior or relationships changed
+- **Consumes/Consumed by:** update if imports or consumers changed
 - **Contracts owned:** update if shared types changed
 - **Role:** update only if the module's responsibility shifted significantly
 
-Also update the **Dependency Edges** table if any edges were added or removed.
+Also update related sections when behavior changes:
+- If error types were added or removed, update **§12. Failure Model and Recovery**
+- If configuration handling changed, update **§10. Configuration Specification**
+- If domain entities were added or modified, update **§6. Domain Model**
+- If state transitions changed, update **§7. State Machines and Lifecycles**
 
 ### For new files
 
 Determine if a new file belongs to an existing module or represents a new module:
-- If it belongs to an existing module's directory → update that module's entry
-- If it represents a new coherent responsibility → add a new module entry with all fields (name, path, role, exports, depends_on, contracts_owned)
-- Add dependency edges for the new module
+- If it belongs to an existing module's directory → update that module's entry in §8
+- If it represents a new coherent responsibility → add a new module entry with behavioral contracts
 
 ### For deleted files
 
-- If a deleted file was the sole file of a module → remove the module entry entirely
-- If a deleted file was one of many in a module → update the module entry (remove exports, adjust role if needed)
-- Remove any dependency edges that referenced the deleted module
-- Remove the module from other modules' `depends_on` lists
-
-### Update Change Impact
-
-After making changes, update the **Change Impact** table to reflect the current module graph.
+- If a deleted file was the sole file of a module → remove the module entry from §8
+- If a deleted file was one of many in a module → update the module entry
+- Remove references to deleted modules from other modules' behavioral contracts
 
 ## Rules
 
 1. **Preserve unchanged modules exactly as-is** — do not reformat, reword, or reorder modules you didn't touch
 2. **Stay at module-level granularity** — do not add function-level detail
-3. **Keep the spec under 8K tokens** — if adding new modules would exceed this, merge small related modules
+3. **Keep the spec under 24K tokens** — if adding new modules would exceed this, merge small related modules
 4. **Maintain consistent formatting** — match the existing spec's Markdown style
-5. **Write the updated spec to `.factory/GRAPH-SPEC.md`** — overwrite in-place
+5. **Write the updated spec to `.factory/SPEC.md`** — overwrite in-place
+6. **Use RFC 2119 normative language** — MUST/SHOULD/MAY in behavioral contracts
 
 ## Output
 
-Write the complete updated `GRAPH-SPEC.md` to `.factory/GRAPH-SPEC.md`. The output must be a valid RFC-style spec file with all sections: Normative Language, 1. Project Identity, 2. Goals, 3. Technical Stack, 4. Architecture (4.1 Abstraction Levels, 4.2 Module Graph, 4.3 Dependency Edges, 4.4 Shared Contracts, 4.5 Entry Points), 5. Change Impact, 6. Coupling Metrics. Maintain RFC 2119 normative language consistency across updated sections.
+Write the complete updated `SPEC.md` to `.factory/SPEC.md`. The output must be a valid RFC-style spec file with all 16 sections plus appendix: Normative Language, 1. Problem Statement, 2. Goals and Non-Goals, 3. Project Identity, 4. Technical Stack, 5. Architecture Overview, 6. Domain Model, 7. State Machines and Lifecycles, 8. Module Specifications, 9. Shared Contracts, 10. Configuration Specification, 11. Entry Points, 12. Failure Model and Recovery, 13. Security and Safety, 14. Test and Validation Matrix, 15. Extension Points, 16. Implementation Checklist, Appendix A. Maintain RFC 2119 normative language consistency across updated sections.

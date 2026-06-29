@@ -1,4 +1,4 @@
-"""GRAPH-SPEC resolution and generation for the discovery pipeline."""
+"""SPEC resolution and generation for the discovery pipeline."""
 
 from __future__ import annotations
 
@@ -11,23 +11,27 @@ log = structlog.get_logger()
 
 
 def resolve_spec(project_path: Path) -> tuple[Path | None, str]:
-    """Locate an existing GRAPH-SPEC.md — committed (project root) takes priority over generated (.factory/)."""
-    committed = project_path / "GRAPH-SPEC.md"
-    if committed.exists():
-        log.debug("resolve_spec", source="committed", path=str(committed))
-        return committed, "committed"
+    """Locate an existing SPEC.md — committed (project root) takes priority over generated (.factory/).
 
-    generated = project_path / ".factory" / "GRAPH-SPEC.md"
-    if generated.exists():
-        log.debug("resolve_spec", source="generated", path=str(generated))
-        return generated, "generated"
+    Falls back to GRAPH-SPEC.md for backward compatibility with older specs.
+    """
+    for name in ("SPEC.md", "GRAPH-SPEC.md"):
+        committed = project_path / name
+        if committed.exists():
+            log.debug("resolve_spec", source="committed", path=str(committed))
+            return committed, "committed"
+
+        generated = project_path / ".factory" / name
+        if generated.exists():
+            log.debug("resolve_spec", source="generated", path=str(generated))
+            return generated, "generated"
 
     log.debug("resolve_spec", source="absent")
     return None, "absent"
 
 
 def generate_spec(project_path: Path) -> str:
-    """Generate a GRAPH-SPEC by delegating to the agent-driven pipeline.
+    """Generate a SPEC by delegating to the agent-driven pipeline.
 
     Wraps the async factory.spec.generate.generate_spec() for sync callers.
     Returns the spec content as a string.
