@@ -147,7 +147,7 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --dataset "${HARBOR_DATASET}" \
         "${AGENT_ARGS[@]}" \
         --model "${MODEL}" \
-        --include-task-name "${INSTANCE_ID}" \
+        --include-task-name "*${INSTANCE_ID}" \
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
@@ -170,7 +170,7 @@ else
         --dataset "${HARBOR_DATASET}" \
         "${AGENT_ARGS[@]}" \
         --model "${MODEL}" \
-        --include-task-name "${INSTANCE_ID}" \
+        --include-task-name "*${INSTANCE_ID}" \
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
@@ -199,16 +199,21 @@ OUTPUT_TOKENS=0
 CACHE_READ_TOKENS=0
 CACHE_CREATION_TOKENS=0
 
-HARBOR_RESULT=$(find "${JOBS_DIR}" -name 'result.json' -maxdepth 2 2>/dev/null | head -1)
+HARBOR_RESULT=$(find "${JOBS_DIR}" -maxdepth 1 -name 'result.json' 2>/dev/null | head -1)
 if [ -n "${HARBOR_RESULT}" ]; then
     COST_DATA=$(python3 -c "
-import json
+import json, sys
 with open('${HARBOR_RESULT}') as f:
     data = json.load(f)
-cost = 0
-for trial in data.get('trials', {}).values():
-    cost += trial.get('cost_usd', 0) or 0
+stats = data.get('stats', {})
+cost = stats.get('cost_usd', 0) or 0
+input_t = stats.get('n_input_tokens', 0) or 0
+output_t = stats.get('n_output_tokens', 0) or 0
+cache_t = stats.get('n_cache_tokens', 0) or 0
 print(f'COST_USD={cost}')
+print(f'INPUT_TOKENS={input_t}')
+print(f'OUTPUT_TOKENS={output_t}')
+print(f'CACHE_READ_TOKENS={cache_t}')
 " 2>/dev/null)
     eval "${COST_DATA}" 2>/dev/null || true
 fi
