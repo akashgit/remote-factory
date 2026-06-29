@@ -155,6 +155,19 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
+        # Initialize git for factory's expectations
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'git config user.name "Factory Agent" && '
+                'git config user.email "factory@agent.local" && '
+                'if ! git branch --list main | grep -q main; then '
+                '  git checkout -b main 2>/dev/null || true; '
+                'fi'
+            ),
+            env=env,
+        )
+
         # Write task instruction to a file for --prompt
         await self.exec_as_agent(
             environment,
