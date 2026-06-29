@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # benchmarks/run-featurebench.sh — Standalone CI pipeline for FeatureBench.
-# Runs the complete solve+eval cycle: load instance, clone repo, run Claude Code solver,
-# capture patch, evaluate with FeatureBench harness.
+# Thin wrapper around Harbor, which handles the entire lifecycle:
+# container orchestration, agent execution, verification, and scoring.
 
 # ── Shared library ──
 
@@ -13,17 +13,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 INSTANCE_ID="${1:-pypa__packaging.013f3b03.test_metadata.e00b5801.lv1}"
 SOLVER_TIMEOUT="${2:-3600}"
-SPLIT="${3:-fast}"
+SPLIT="${3:-lite}"
 
 BENCHMARK="featurebench"
 RUN_ID="ci-featurebench-${TIMESTAMP}"
 RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-featurebench.json"
 
-FB_CMD="uvx --from featurebench fb"
-FB_PYTHON="uvx --from featurebench python"
+# Map split name to Harbor dataset
+case "${SPLIT}" in
+    lite)       HARBOR_DATASET="featurebench-lite" ;;
+    full|fast)  HARBOR_DATASET="featurebench" ;;
+    *)          HARBOR_DATASET="featurebench-${SPLIT}" ;;
+esac
 
-DATASET="LiberCoders/FeatureBench"
-WORKSPACE=""
+JOBS_DIR=""
 
 PASSED=0
 RESOLVED=0
@@ -34,12 +37,12 @@ TOTAL=1
 
 cleanup() {
     local exit_code=$?
-    if [ -n "${WORKSPACE}" ] && [ -d "${WORKSPACE}" ]; then
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
         if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
-            log "Preserving workspace at ${WORKSPACE} (PRESERVE_WORKSPACE=1)"
+            log "Preserving harbor jobs at ${JOBS_DIR} (PRESERVE_WORKSPACE=1)"
         else
-            log "Cleaning up workspace"
-            rm -rf "${WORKSPACE}"
+            log "Cleaning up harbor jobs directory"
+            rm -rf "${JOBS_DIR}"
         fi
     fi
     PASSED="${RESOLVED}"
@@ -59,8 +62,8 @@ trap cleanup EXIT
 show_banner "FeatureBench"
 log "Step 1: Configuration"
 echo "    Instance ID:     ${INSTANCE_ID}"
-echo "    Dataset:         ${DATASET}"
 echo "    Split:           ${SPLIT}"
+echo "    Harbor dataset:  ${HARBOR_DATASET}"
 echo "    Solver timeout:  ${SOLVER_TIMEOUT}s ($(( SOLVER_TIMEOUT / 3600 ))h $(( (SOLVER_TIMEOUT % 3600) / 60 ))m)"
 echo "    Run ID:          ${RUN_ID}"
 echo "    Timestamp:       ${TIMESTAMP}"
@@ -72,20 +75,8 @@ log "Step 2: Validating prerequisites"
 
 MISSING=()
 
-if ! command -v python3 &>/dev/null; then
-    MISSING+=("python3 >= 3.12 (install via your system package manager)")
-fi
-
 if ! command -v docker &>/dev/null && [ ! -x /usr/bin/docker ]; then
     MISSING+=("docker (install from https://docs.docker.com/get-docker/)")
-fi
-
-if ! command -v claude &>/dev/null; then
-    MISSING+=("claude (Claude Code CLI — install from https://docs.anthropic.com/en/docs/claude-code)")
-fi
-
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ] && ! command -v factory &>/dev/null; then
-    MISSING+=("factory (Factory CLI — install from the factory repo)")
 fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
@@ -96,509 +87,274 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     exit 1
 fi
 
-echo "    python3: found"
 echo "    docker: found"
-echo "    claude: found"
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
-    echo "    factory: found"
-fi
-echo "    solver: ${BENCHMARK_SOLVER:-factory}"
 
 ensure_uvx
 
-# Verify featurebench is usable via uvx
-echo "    featurebench: checking availability via uvx..."
-if ! ${FB_CMD} --help &>/dev/null; then
-    echo "    featurebench: installing via uvx..."
-    ${FB_CMD} --help >/dev/null || {
-        echo "    ERROR: Failed to install/run featurebench via uvx"
+echo "    harbor: checking availability via uvx..."
+if ! uvx harbor --version &>/dev/null 2>&1; then
+    echo "    harbor: installing via uvx..."
+    uvx harbor --version || {
+        echo "    ERROR: Failed to install/run harbor via uvx"
         exit 1
     }
 fi
-echo "    featurebench: available"
+echo "    harbor: available"
 
-check_gcloud_creds warning
-setup_vertex_env
+# API key configuration — Harbor's claude-code agent needs API access
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "    ANTHROPIC_API_KEY: set"
+else
+    setup_vertex_env
+    if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+        echo "    Vertex AI: configured (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
+    else
+        echo "    WARNING: No ANTHROPIC_API_KEY or Vertex AI configuration found."
+        echo "    Harbor's claude-code agent requires API access."
+    fi
+fi
 
 echo "    All prerequisites satisfied."
 echo ""
 
-# ── Step 3: Load instance from HuggingFace ──
+# ── Step 3: Run Harbor evaluation ──
 
-log "Step 3: Loading instance ${INSTANCE_ID} from ${DATASET}"
+log "Step 3: Running Harbor evaluation"
 
-INSTANCE_JSON="$(mktemp /tmp/featurebench-instance-XXXXXX.json)"
-
-${FB_PYTHON} -c "
-import json, sys
-from datasets import load_dataset
-
-ds = load_dataset('${DATASET}', split='${SPLIT}')
-matches = [x for x in ds if x['instance_id'] == '${INSTANCE_ID}']
-if not matches:
-    print('ERROR: Instance ${INSTANCE_ID} not found in ${DATASET} (split=${SPLIT})', file=sys.stderr)
-    sys.exit(1)
-instance = matches[0]
-repo = instance['repo']
-# Normalize repo format: __ -> / for GitHub clone URLs
-if '/' not in repo and '__' in repo:
-    repo = repo.replace('__', '/', 1)
-json.dump({
-    'instance_id': instance['instance_id'],
-    'repo': repo,
-    'base_commit': instance['base_commit'],
-    'problem_statement': instance['problem_statement'],
-    'patch': instance.get('patch', ''),
-}, open('${INSTANCE_JSON}', 'w'), indent=2)
-print(f'Loaded: {instance[\"instance_id\"]}')
-print(f'Repo:   {repo}')
-print(f'Commit: {instance[\"base_commit\"][:12]}...')
-"
-
-if [ ! -s "${INSTANCE_JSON}" ]; then
-    echo "    ERROR: Failed to load instance data"
-    exit 1
-fi
-
-REPO="$(python3 -c "import json; print(json.load(open('${INSTANCE_JSON}'))['repo'])")"
-BASE_COMMIT="$(python3 -c "import json; print(json.load(open('${INSTANCE_JSON}'))['base_commit'])")"
-
-echo "    Instance loaded successfully."
-echo ""
-
-# ── Step 4: Setup workspace ──
-
-log "Step 4: Setting up workspace"
-
-WORKSPACE="$(mktemp -d /tmp/featurebench-workspace-XXXXXX)"
-echo "    Workspace: ${WORKSPACE}"
-echo "    Cloning https://github.com/${REPO}..."
-
-git clone --quiet "https://github.com/${REPO}.git" "${WORKSPACE}/repo"
-cd "${WORKSPACE}/repo"
-git checkout --quiet "${BASE_COMMIT}"
-
-echo "    Checked out ${BASE_COMMIT:0:12}"
-echo "    Working directory: ${WORKSPACE}/repo"
-
-# Apply mask patch — removes function bodies the solver must implement
-MASK_PATCH="${WORKSPACE}/mask_patch.diff"
-python3 -c "import json; open('${MASK_PATCH}', 'w').write(json.load(open('${INSTANCE_JSON}'))['patch'])"
-if [ ! -s "${MASK_PATCH}" ]; then
-    echo "ERROR: No mask patch in dataset — cannot run FeatureBench without masked code" >&2
-    STATUS="error"
-    cleanup
-    exit 1
-fi
-
-if ! git apply --whitespace=nowarn "${MASK_PATCH}" 2>/dev/null; then
-    echo "ERROR: Mask patch failed to apply to ${BASE_COMMIT:0:12}" >&2
-    STATUS="error"
-    cleanup
-    exit 1
-fi
-
-git add -A && git commit --quiet --amend --no-edit
-git reflog expire --expire=now --all && git gc --prune=now --quiet
-MASKED_COMMIT=$(git rev-parse HEAD)
-echo "    Applied mask patch (function bodies removed, baked into commit ${MASKED_COMMIT:0:12})"
-
-echo ""
-
-# ── Step 5: Run solver (Factory CEO) ──
-
-log "Step 5: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
+JOBS_DIR="$(mktemp -d /tmp/featurebench-jobs-XXXXXX)"
+echo "    Jobs directory: ${JOBS_DIR}"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-SOLVER_PROMPT_FILE="${WORKSPACE}/solver_prompt.txt"
-python3 -c "
-import json, os
+# Agent timeout multiplier scales the per-task timeout from task.toml.
+# Default task timeout is typically 120s; multiplier adjusts to our desired solver timeout.
+TIMEOUT_MULTIPLIER=$(( SOLVER_TIMEOUT / 120 ))
+[ "${TIMEOUT_MULTIPLIER}" -lt 1 ] && TIMEOUT_MULTIPLIER=1
 
-with open('${INSTANCE_JSON}') as f:
-    instance = json.load(f)
+MODEL="anthropic/claude-opus-4-6"
 
-problem_statement = instance['problem_statement']
-problem_statement = problem_statement.replace('/testbed/', './')
+echo "    Model:           ${MODEL}"
+echo "    Timeout mult:    ${TIMEOUT_MULTIPLIER}x"
+echo "    Task:            ${INSTANCE_ID}"
+echo ""
 
-prompt = '''You are implementing a new feature in an open-source Python project.
+cd "${HARNESS_DIR}"
 
-## Problem Statement
-
-''' + problem_statement + '''
-
-## Instructions
-
-1. Read the problem statement carefully — it describes a feature to implement
-2. Explore the repository to understand the codebase architecture
-3. Implement the feature as described in the problem statement
-4. The problem statement contains detailed interface specifications — follow them exactly
-5. The source files have had their function bodies REMOVED — you must write the implementations
-6. Look for functions/methods that have empty bodies or just contain pass/blank lines
-7. The evaluation will use NEW tests (not the ones in the repo) to verify your implementation
-8. Focus on implementing the interfaces, classes, and functions described in the problem statement
-9. Make sure you do not break existing functionality
-
-IMPORTANT: Function bodies have been removed from the source files.
-You MUST implement them based on the specifications in the problem statement.
-
-The repository is available at the current working directory.'''
-with open('${SOLVER_PROMPT_FILE}', 'w') as f:
-    f.write(prompt)
-"
-
-if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
-    echo "    Using Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
-fi
-
-cd "${WORKSPACE}/repo"
-
-export_claude_env
-
-# Temporarily allow failures — Steps 6-9 must always run regardless of solver/post-processing outcome
-set +e
-
-SOLVER_LOG="${WORKSPACE}/solver_output.log"
-SOLVER_EXIT=0
+HARBOR_EXIT=0
 
 if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
-    # Raw Claude Code path
-    timeout "${SOLVER_TIMEOUT}" claude -p "$(cat "${SOLVER_PROMPT_FILE}")" \
-        --model "${ANTHROPIC_MODEL}" \
-        --verbose --max-turns 200 \
-        --permission-mode bypassPermissions \
-        --output-format stream-json \
-        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
-    SOLVER_EXIT=${PIPESTATUS[0]}
+    AGENT_ARGS=(--agent claude-code --extra-instruction-path "${HARNESS_DIR}/benchmarks/featurebench-extra-instructions.md")
+    echo "    Agent:           claude-code (Harbor built-in + extra instructions)"
 else
-    # Factory CEO path — build mode with spec file
-    PROBLEM_STMT=$(python3 -c "
-import json
-with open('${INSTANCE_JSON}') as f:
-    inst = json.load(f)
-ps = inst['problem_statement'].replace('/testbed/', './')
-print(ps)
-")
-
-    cat > "${WORKSPACE}/repo/factory.md" << FACTORYEOF
----
-goal: Implement empty function bodies as described below
----
-
-## Scope
-src/**/*.py
-
-## Eval
-eval_command: python -m pytest tests/ -x -q --timeout 60
-eval_threshold: 0.3
-
-## Smoke Test
-python -c "import packaging; print('OK')"
-
-## Task
-
-${PROBLEM_STMT}
-FACTORYEOF
-
-    cd "${WORKSPACE}/repo"
-
-    FACTORY_CEO_MAX_RESPAWNS=0 \
-    timeout "${SOLVER_TIMEOUT}" factory ceo . \
-        --headless \
-        --no-github \
-        --mode build \
-        --prompt factory.md \
-        2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
-    SOLVER_EXIT=${PIPESTATUS[0]}
+    AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
+    export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
+    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FactoryCeo)
+    echo "    Agent:           factory (FactoryCeo)"
 fi
 
-if [ "${SOLVER_EXIT}" -eq 124 ]; then
-    echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
-elif [ "${SOLVER_EXIT}" -ne 0 ]; then
-    echo "    Solver exited with code ${SOLVER_EXIT}"
+if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+    GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
+    echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
+    uvx harbor run \
+        --dataset "${HARBOR_DATASET}" \
+        "${AGENT_ARGS[@]}" \
+        --model "${MODEL}" \
+        --include-task-name "${INSTANCE_ID}" \
+        --n-concurrent 1 \
+        --jobs-dir "${JOBS_DIR}" \
+        --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --ae "CLAUDE_CODE_USE_VERTEX=1" \
+        --ae "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
+        --ae "CLOUD_ML_REGION=${CLOUD_ML_REGION:-us-east5}" \
+        --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json" \
+        --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
+        --ae "ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
+        --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
+        --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        --mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]' \
+        2>&1 || HARBOR_EXIT=$?
+else
+    echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
+    uvx harbor run \
+        --dataset "${HARBOR_DATASET}" \
+        "${AGENT_ARGS[@]}" \
+        --model "${MODEL}" \
+        --include-task-name "${INSTANCE_ID}" \
+        --n-concurrent 1 \
+        --jobs-dir "${JOBS_DIR}" \
+        --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
+        --ae "ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
+        --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
+        --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        2>&1 || HARBOR_EXIT=$?
 fi
 
-# Extract cost and token data from solver output
+if [ "${HARBOR_EXIT}" -ne 0 ]; then
+    echo "    Harbor exited with code ${HARBOR_EXIT}"
+fi
+
+# Temporarily allow failures — cost/reward extraction uses grep/find which return
+# non-zero on no match; pipefail would kill the script before reaching STATUS=success.
+set +e
+
+# Extract cost from Harbor result
 COST_USD=0
 INPUT_TOKENS=0
 OUTPUT_TOKENS=0
 CACHE_READ_TOKENS=0
 CACHE_CREATION_TOKENS=0
 
-if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
-    if [ -f "${SOLVER_LOG}" ]; then
-        COST_DATA=$(grep '"type":"result"' "${SOLVER_LOG}" 2>/dev/null | tail -1 | python3 -c "
+HARBOR_RESULT=$(find "${JOBS_DIR}" -name 'result.json' -maxdepth 2 2>/dev/null | head -1)
+if [ -n "${HARBOR_RESULT}" ]; then
+    COST_DATA=$(python3 -c "
+import json
+with open('${HARBOR_RESULT}') as f:
+    data = json.load(f)
+cost = 0
+for trial in data.get('trials', {}).values():
+    cost += trial.get('cost_usd', 0) or 0
+print(f'COST_USD={cost}')
+" 2>/dev/null)
+    eval "${COST_DATA}" 2>/dev/null || true
+fi
+
+if [ "${COST_USD}" = "0" ] || [ -z "${COST_USD}" ]; then
+    AGENT_LOG=$(find "${JOBS_DIR}" -name 'claude-code.txt' -o -name 'claude_code_stream_output.jsonl' -o -name 'factory-ceo.txt' 2>/dev/null | head -1)
+    if [ -n "${AGENT_LOG}" ]; then
+        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" 2>/dev/null | tail -1 | python3 -c "
 import sys, json
-try:
-    data = json.loads(sys.stdin.readline())
-    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
-    u = data.get('usage', {})
-    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
-    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
-    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
-    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
-except: pass
+for line in sys.stdin:
+    try:
+        data = json.loads(line.strip())
+        if 'total_cost_usd' in data:
+            print(f'COST_USD={data[\"total_cost_usd\"]}')
+            u = data.get('usage', {})
+            print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+            print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    except: pass
 " 2>/dev/null || true)
         eval "${COST_DATA}" 2>/dev/null || true
     fi
-else
-    EVENTS_FILE="${WORKSPACE}/repo/.factory/events.jsonl"
-    if [ -f "${EVENTS_FILE}" ]; then
-        COST_DATA=$(python3 -c "
-import json
-total_cost = 0
-total_input = 0
-total_output = 0
-total_cache_read = 0
-total_cache_create = 0
-for line in open('${EVENTS_FILE}'):
-    try:
-        e = json.loads(line)
-        if e.get('type') == 'agent.completed':
-            d = e.get('data', {})
-            total_cost += d.get('total_cost_usd', 0) or 0
-            total_input += d.get('input_tokens', 0)
-            total_output += d.get('output_tokens', 0)
-            total_cache_read += d.get('cache_read_tokens', 0)
-    except: pass
-print(f'COST_USD={total_cost}')
-print(f'INPUT_TOKENS={total_input}')
-print(f'OUTPUT_TOKENS={total_output}')
-print(f'CACHE_READ_TOKENS={total_cache_read}')
-print(f'CACHE_CREATION_TOKENS={total_cache_create}')
-" 2>/dev/null)
-        eval "${COST_DATA}" 2>/dev/null || true
-    fi
 fi
-
-# Post-processing: recover factory branch/worktree changes (factory solver only)
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
-    cd "${WORKSPACE}/repo"
-
-    # Strategy 1: Merge surviving factory branch
-    FACTORY_BRANCH=$(git branch --list 'factory/*' | head -1 | tr -d ' *')
-    if [ -n "$FACTORY_BRANCH" ]; then
-        echo "Merging factory branch: $FACTORY_BRANCH"
-        git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
-    fi
-
-    # Strategy 2: Recover orphaned commits via git fsck
-    # Pick the orphan that descends from HEAD (not BASE_COMMIT — the amend changed the SHA)
-    RECOVERY_BASE=$(git rev-parse HEAD)
-    if [ -z "$FACTORY_BRANCH" ]; then
-        echo "No factory branch, finding orphaned commits..."
-        ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep 'unreachable commit' | awk '{print $3}')
-        if [ -n "$ORPHAN_COMMITS" ]; then
-            BEST_COMMIT=""
-            BEST_TIME=0
-            for SHA in $ORPHAN_COMMITS; do
-                if ! git merge-base --is-ancestor "${RECOVERY_BASE}" "$SHA" 2>/dev/null; then
-                    continue
-                fi
-                COMMIT_TIME=$(git show -s --format='%ct' "$SHA" 2>/dev/null || echo 0)
-                if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
-                    BEST_TIME=$COMMIT_TIME
-                    BEST_COMMIT=$SHA
-                fi
-            done
-            if [ -n "$BEST_COMMIT" ]; then
-                echo "Recovering from orphan tip: $BEST_COMMIT (descends from ${RECOVERY_BASE:0:12})"
-                echo "  Message: $(git log -1 --format='%s' $BEST_COMMIT 2>/dev/null)"
-                git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
-                git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
-                rm -rf .factory/ eval/ factory.md 2>/dev/null || true
-            else
-                echo "No orphan commits descend from ${RECOVERY_BASE:0:12}"
-            fi
-        fi
-    fi
-
-    # Strategy 3: Recover from surviving worktree directories
-    for wt in .factory-worktrees/*/; do
-        if [ -d "$wt" ]; then
-            echo "Recovering files from worktree: $wt"
-            rsync -a --exclude='.git' --exclude='.factory' "$wt" ./ 2>/dev/null || true
-        fi
-    done
-fi
-
-set -e
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
-# ── Step 6: Capture patch ──
+# ── Step 4: Extract and report results ──
 
-log "Step 6: Capturing patch"
+log "Step 4: Extracting results"
 
-cd "${WORKSPACE}/repo"
-PATCH_FILE="${WORKSPACE}/model_patch.diff"
+# Harbor writes reward files inside its jobs directory.
+# Path pattern: jobs/<name>/trials/<task>/attempt_<n>/logs/verifier/reward.txt
+# Search for reward.json first (multi-metric), then reward.txt (single score).
+REWARD_FILE=""
 
-# Diff against the masked commit so the patch captures only the solver's
-# function body additions (masked→implemented)
-git diff "${MASKED_COMMIT}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
-
-# Fallback: if committed diff is empty, try unstaged diff too
-if [ ! -s "${PATCH_FILE}" ]; then
-    echo "    No committed changes found, trying unstaged diff..."
-    git diff -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
-fi
-
-PATCH_SIZE="$(wc -c < "${PATCH_FILE}")"
-if [ "${PATCH_SIZE}" -eq 0 ]; then
-    echo "    WARNING: Solver produced no changes (empty diff)"
-    echo "    Evaluation will proceed but instance will not be resolved."
-else
-    PATCH_LINES="$(wc -l < "${PATCH_FILE}")"
-    PATCH_FILES="$(git diff "${MASKED_COMMIT}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
-    echo "    Patch: ${PATCH_LINES} lines across ${PATCH_FILES} file(s)"
-fi
-echo ""
-
-# ── Step 7: Write predictions.jsonl ──
-
-log "Step 7: Writing predictions.jsonl"
-
-PREDICTIONS_DIR="$(mktemp -d /tmp/featurebench-predictions-XXXXXX)"
-PREDICTIONS_FILE="${PREDICTIONS_DIR}/predictions.jsonl"
-
-python3 -c "
-import json
-
-with open('${PATCH_FILE}') as f:
-    model_patch = f.read()
-
-prediction = {
-    'instance_id': '${INSTANCE_ID}',
-    'model_name_or_path': 'claude-code',
-    'model_patch': model_patch,
-    'n_attempt': 1,
-    'success': True,
-}
-with open('${PREDICTIONS_FILE}', 'w') as f:
-    json.dump(prediction, f)
-    f.write('\n')
-print('    Written to ${PREDICTIONS_FILE}')
-"
-
-echo ""
-
-# ── Step 8: Run FeatureBench evaluation ──
-
-log "Step 8: Running FeatureBench evaluation"
-echo "    This may take several minutes (Docker image pull + evaluation)..."
-
-cd "${HARNESS_DIR}"
-
-EVAL_EXIT=0
-${FB_CMD} eval \
-    -p "${PREDICTIONS_FILE}" \
-    --split "${SPLIT}" \
-    --task-id "${INSTANCE_ID}" \
-    --n-concurrent 1 \
-    2>&1 || EVAL_EXIT=$?
-
-if [ "${EVAL_EXIT}" -ne 0 ]; then
-    echo "    ERROR: FeatureBench evaluation failed with exit code ${EVAL_EXIT}"
-    exit 1
-fi
-
-echo "    Evaluation complete."
-echo ""
-
-# ── Step 9: Extract and report results ──
-
-log "Step 9: Extracting results"
-
-RESULTS_JSON=""
-
-# Check predictions directory first (fb eval writes here)
-for candidate in "${PREDICTIONS_DIR}"/eval_outputs/"${INSTANCE_ID}"/attempt-*/report.json; do
+for candidate in $(find "${JOBS_DIR}" -name 'reward.json' 2>/dev/null); do
     if [ -f "${candidate}" ]; then
-        RESULTS_JSON="${candidate}"
+        REWARD_FILE="${candidate}"
+        break
     fi
 done
 
-# Fallback: check predictions dir top-level report
-if [ -z "${RESULTS_JSON}" ] && [ -f "${PREDICTIONS_DIR}/report.json" ]; then
-    RESULTS_JSON="${PREDICTIONS_DIR}/report.json"
-fi
-
-# Fallback: check harness runs directory
-if [ -z "${RESULTS_JSON}" ]; then
-    for candidate in "${HARNESS_DIR}"/runs/*/eval_outputs/"${INSTANCE_ID}"/attempt-*/report.json; do
+if [ -z "${REWARD_FILE}" ]; then
+    for candidate in $(find "${JOBS_DIR}" -name 'reward.txt' 2>/dev/null); do
         if [ -f "${candidate}" ]; then
-            RESULTS_JSON="${candidate}"
-        fi
-    done
-fi
-
-if [ -z "${RESULTS_JSON}" ]; then
-    for candidate in "${HARNESS_DIR}"/runs/*/report.json; do
-        if [ -f "${candidate}" ]; then
-            RESULTS_JSON="${candidate}"
-        fi
-    done
-fi
-
-if [ -z "${RESULTS_JSON}" ]; then
-    for candidate in "${HARNESS_DIR}"/*.json; do
-        if [ -f "${candidate}" ] && python3 -c "
-import json, sys
-with open('${candidate}') as f:
-    data = json.load(f)
-if 'attempt_1' in data or '${INSTANCE_ID}' in data:
-    sys.exit(0)
-sys.exit(1)
-" 2>/dev/null; then
-            RESULTS_JSON="${candidate}"
+            REWARD_FILE="${candidate}"
             break
         fi
     done
 fi
 
-if [ -n "${RESULTS_JSON}" ] && [ -f "${RESULTS_JSON}" ]; then
-    echo "    Results file: ${RESULTS_JSON}"
-    eval "$(python3 -c "
+if [ -n "${REWARD_FILE}" ] && [ -f "${REWARD_FILE}" ]; then
+    echo "    Reward file: ${REWARD_FILE}"
+
+    if [[ "${REWARD_FILE}" == *.json ]]; then
+        eval "$(python3 -c "
 import json
-
-with open('${RESULTS_JSON}') as f:
+with open('${REWARD_FILE}') as f:
     data = json.load(f)
+if isinstance(data, dict):
+    values = [v for v in data.values() if isinstance(v, (int, float))]
+    score = sum(values) / len(values) if values else 0.0
+    resolved = 1 if score > 0.5 else 0
+    pass_rate = score
+elif isinstance(data, (int, float)):
+    resolved = 1 if float(data) > 0.5 else 0
+    pass_rate = float(data)
+else:
+    resolved = 0
+    pass_rate = 0.0
+print(f'RESOLVED={resolved}')
+print(f'TOTAL=1')
+print(f'PASS_RATE={pass_rate}')
+")"
+    else
+        REWARD_VALUE="$(cat "${REWARD_FILE}" | tr -d '[:space:]')"
+        echo "    Reward value: ${REWARD_VALUE}"
+        if [ "${REWARD_VALUE}" = "1" ] || [ "${REWARD_VALUE}" = "1.0" ]; then
+            RESOLVED=1
+            PASS_RATE=1.0
+        else
+            RESOLVED=0
+            PASS_RATE="${REWARD_VALUE}"
+        fi
+        TOTAL=1
+    fi
+else
+    # Fallback: search for summary/results files
+    SUMMARY_FILE=""
+    for candidate in $(find "${JOBS_DIR}" -name 'results*.json' -o -name 'summary*.json' 2>/dev/null); do
+        if [ -f "${candidate}" ]; then
+            SUMMARY_FILE="${candidate}"
+            break
+        fi
+    done
 
+    if [ -n "${SUMMARY_FILE}" ] && [ -f "${SUMMARY_FILE}" ]; then
+        echo "    Summary file: ${SUMMARY_FILE}"
+        eval "$(python3 -c "
+import json
+with open('${SUMMARY_FILE}') as f:
+    data = json.load(f)
 resolved = 0
-total = 0
+total = 1
 pass_rate = 0.0
-
-# Per-instance report: {instance_id: {resolved: bool, pass_rate: float, ...}}
-if '${INSTANCE_ID}' in data:
-    result = data['${INSTANCE_ID}']
-    total = 1
-    if result.get('resolved', False):
-        resolved = 1
-    pass_rate = result.get('pass_rate', 0.0)
-
-# Summary report: {attempt_1: {resolved_rate: float, pass_rate: float, ...}}
-elif 'attempt_1' in data:
-    attempt = data['attempt_1']
-    total = attempt.get('total_instances', attempt.get('completed_instances', 1))
-    resolved = attempt.get('resolved_instances', 0)
-    pass_rate = attempt.get('pass_rate', 0.0)
-
-# Flat dict with resolved/pass_rate keys
-elif 'resolved' in data:
-    total = 1
-    if data.get('resolved', False):
-        resolved = 1
-    pass_rate = data.get('pass_rate', 0.0)
-
+if isinstance(data, dict):
+    if 'reward' in data:
+        resolved = 1 if float(data['reward']) > 0.5 else 0
+        pass_rate = float(data['reward'])
+    elif 'score' in data:
+        resolved = 1 if float(data['score']) > 0.5 else 0
+        pass_rate = float(data['score'])
+    elif 'results' in data:
+        results = data['results']
+        if isinstance(results, dict):
+            total = len(results)
+            resolved = sum(1 for v in results.values()
+                         if isinstance(v, dict) and v.get('reward', 0) > 0.5)
+        elif isinstance(results, list):
+            total = len(results)
+            resolved = sum(1 for v in results
+                         if isinstance(v, dict) and v.get('reward', 0) > 0.5)
+        pass_rate = resolved / max(total, 1)
 print(f'RESOLVED={resolved}')
 print(f'TOTAL={max(total, 1)}')
 print(f'PASS_RATE={pass_rate}')
 ")"
-else
-    echo "    No results files found. Marking as unresolved."
-    RESOLVED=0
-    TOTAL=1
-    PASS_RATE=0
+    else
+        echo "    No results files found. Marking as unresolved."
+        echo "    Contents of jobs directory:"
+        find "${JOBS_DIR}" -type f 2>/dev/null | head -20 || echo "      (empty)"
+        RESOLVED=0
+        TOTAL=1
+        PASS_RATE=0
+    fi
 fi
 
 echo ""
@@ -611,6 +367,8 @@ fi
 echo "  Pass Rate: ${PASS_RATE}"
 echo "============================================"
 echo ""
+
+set -e
 
 STATUS="success"
 
