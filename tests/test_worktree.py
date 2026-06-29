@@ -100,6 +100,26 @@ class TestCreateWorktree:
         wt_path, _ = create_worktree(git_project, base_branch="develop")
         assert (wt_path / "extra.txt").exists()
 
+    def test_uses_provided_run_id(self, git_project: Path) -> None:
+        uuid_str = "d854881a-800d-44ff-beb5-b9fd77cc3fb9"
+        wt_path, branch = create_worktree(git_project, run_id=uuid_str)
+
+        # First 8 chars of UUID should be used
+        assert branch == "factory/run-d854881a"
+        assert wt_path.name == "run-d854881a"
+
+    def test_run_id_truncated_to_8_chars(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project, run_id="abcdef1234567890")
+
+        assert branch == "factory/run-abcdef12"
+        assert wt_path.name == "run-abcdef12"
+
+    def test_short_run_id_used_as_is(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project, run_id="abc")
+
+        assert branch == "factory/run-abc"
+        assert wt_path.name == "run-abc"
+
     def test_multiple_worktrees_coexist(self, git_project: Path) -> None:
         wt1, br1 = create_worktree(git_project)
         wt2, br2 = create_worktree(git_project)

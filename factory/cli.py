@@ -2668,6 +2668,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
+    run_id = getattr(args, "run_id", None)
     model = _resolve_model(args)
     runner_name = _resolve_runner(args)
     use_profile = getattr(args, "use_profile", False)
@@ -2722,7 +2723,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
     base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch)
+    wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
@@ -3880,6 +3881,7 @@ def _run_single_cycle(
     clean_pr: bool = False,
     tmux_persist: bool = False,
     background: bool = False,
+    run_id: str | None = None,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -3895,7 +3897,7 @@ def _run_single_cycle(
     pending_ids = [m.id for m in pending]
 
     base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch)
+    wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     try:
         task = _build_ceo_task(
@@ -3948,6 +3950,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     min_growth = getattr(args, "min_growth", None)
     max_new = getattr(args, "max_new", None)
     branch = getattr(args, "branch", None)
+    run_id = getattr(args, "run_id", None)
     model = _resolve_model(args)
     use_profile_flag = getattr(args, "use_profile", False)
     tmux_persist = _resolve_tmux_persist(args)
@@ -4039,6 +4042,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             clean_pr=clean_pr_resolved,
             tmux_persist=tmux_persist,
             background=background,
+            run_id=run_id,
             **budget_kwargs,
         )
         if code != 0:
@@ -4081,6 +4085,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 clean_pr=clean_pr_resolved,
                 tmux_persist=tmux_persist,
                 background=background,
+                run_id=run_id,
                 **budget_kwargs,
             )
             _chain_modes(
@@ -4579,6 +4584,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="PR number for --mode review or --mode qa (required when mode=review or mode=qa)")
     p.add_argument("--repo", default=None,
                     help="Repository (owner/repo) for --mode review or --mode qa (optional, defaults to current repo)")
+    p.add_argument("--run-id", default=None, dest="run_id",
+                    help="Use a specific run ID (e.g., UUID from external orchestrator). "
+                         "First 8 chars are used for worktree naming")
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
@@ -4646,6 +4654,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="Dispatch agent as a background session via claude agent view (claude only)")
     p.add_argument("--bg-agents", action="store_true", default=False,
                     help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
+    p.add_argument("--run-id", default=None, dest="run_id",
+                    help="Use a specific run ID (e.g., UUID from external orchestrator). "
+                         "First 8 chars are used for worktree naming")
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")

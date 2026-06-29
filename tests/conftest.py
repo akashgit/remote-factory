@@ -45,7 +45,7 @@ def _mock_worktree(tmp_path: Path, request: pytest.FixtureRequest) -> None:
         yield  # type: ignore[misc]
         return
 
-    def _fake_create(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
+    def _fake_create(project_path: Path, base_branch: str = "main", run_id: str | None = None) -> tuple[Path, str]:
         return project_path, "factory/run-fake0000"
 
     def _fake_remove(project_path: Path, worktree_path: Path, branch: str) -> None:
