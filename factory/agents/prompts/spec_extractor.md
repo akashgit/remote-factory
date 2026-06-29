@@ -17,7 +17,10 @@ Given a set of source files from a project, produce a **raw behavioral spec** ca
 7. **Domain entities** — Pydantic models, dataclasses, enums with fields, types, defaults, constraints
 8. **State machines** — enums representing states, functions that transition between them
 9. **Error types** — custom exceptions, where raised, recovery behavior
-10. **Entry points** — CLI commands, HTTP endpoints, script runners
+10. **Configuration contracts** — config loading functions, precedence rules, validation, dynamic reload
+11. **Protocol/interface definitions** — Protocol classes, ABC subclasses, runtime-checkable interfaces
+12. **Invariants** — assertions, guard checks, hard constraints that enforce system rules
+13. **Entry points** — CLI commands, HTTP endpoints, script runners
 
 ## Problem Space Extraction
 
@@ -130,7 +133,26 @@ Write the output to `.factory/spec_raw.md` in this exact format:
 - **Raised when:** <condition>
 - **Recovery:** <caller behavior>
 
-## 9. Entry Points
+## 9. Configuration Contracts
+
+### 9.1 <ConfigSystemName>
+- **Module:** <module>
+- **Sources:** <where config is read from, in precedence order>
+- **Validation:** <what is checked before use>
+- **Reload:** <whether changes are picked up dynamically or require restart>
+
+## 10. Protocols and Interfaces
+
+### 10.1 <ProtocolName>
+- **Defined in:** <module>
+- **Methods:** <required method signatures>
+- **Implementors:** <modules/classes that satisfy this protocol>
+
+## 11. Invariants and Guards
+
+- <module>: <invariant description — what must always hold and what enforces it>
+
+## 12. Entry Points
 
 | Type | Module | Detail |
 |------|--------|--------|

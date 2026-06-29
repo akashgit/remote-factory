@@ -205,99 +205,6 @@ class TestOrphanDetection:
         assert orphan_names == []
 
 
-class TestHubDetection:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_hub_module_flagged(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        """A module with >=5 dependents gets flagged as a hub."""
-        project = tmp_path / "hubproject"
-        project.mkdir()
-
-        core = project / "core"
-        core.mkdir()
-        (core / "__init__.py").write_text("")
-        (core / "base.py").write_text("class Base: pass")
-
-        modules_spec = (
-            "### core\n- **Path:** core/\n- **Role:** Core module\n- **Depends on:** none\n\n"
-        )
-        for i in range(6):
-            mod_dir = project / f"mod{i}"
-            mod_dir.mkdir()
-            (mod_dir / "__init__.py").write_text("")
-            (mod_dir / "main.py").write_text("from core import base")
-            modules_spec += (
-                f"### mod{i}\n- **Path:** mod{i}/\n- **Role:** Module {i}\n"
-                f"- **Depends on:** core\n\n"
-            )
-
-        spec = f"# Repo Spec\n\n## Modules\n\n{modules_spec}"
-        _write_spec(project, spec)
-        result = await validate_spec(project)
-        hub_warns = [w for w in result.warnings if "Hub module" in w]
-        assert len(hub_warns) >= 1
-        assert "core" in hub_warns[0]
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_low_dependent_count_not_hub(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        hub_warns = [w for w in result.warnings if "Hub module" in w]
-        assert hub_warns == []
-
-
-class TestCouplingMetrics:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_afferent_coupling(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        assert "models" in result.metrics
-        assert result.metrics["models"].afferent == 2
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_efferent_coupling(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        assert "api" in result.metrics
-        assert result.metrics["api"].efferent == 2
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_instability_stable_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        models_m = result.metrics["models"]
-        assert models_m.instability == 0.0
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_instability_unstable_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        api_m = result.metrics["api"]
-        assert api_m.instability > 0.5
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_instability_range(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        for name, m in result.metrics.items():
-            assert 0.0 <= m.instability <= 1.0, f"{name} instability out of range"
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_zero_coupling_module(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        utils_m = result.metrics["utils"]
-        assert utils_m.afferent == 0
-        assert utils_m.efferent == 0
-        assert utils_m.instability == 0.0
-
-
 class TestValidationReport:
     @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
     async def test_report_written(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
@@ -317,15 +224,12 @@ class TestValidationReport:
         assert "PASS" in report
 
     @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_report_contains_coupling_table(
-        self, mock_agent: AsyncMock, tmp_path: Path
-    ) -> None:
+    async def test_report_no_coupling_table(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         project = _make_python_project(tmp_path)
         _write_spec(project, BASIC_SPEC)
         await validate_spec(project)
         report = (project / ".factory" / "spec_validation.md").read_text()
-        assert "## Coupling Metrics" in report
-        assert "Ca (afferent)" in report
+        assert "## Coupling Metrics" not in report
 
 
 class TestValidationResult:
