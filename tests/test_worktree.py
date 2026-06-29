@@ -267,6 +267,56 @@ class TestCreateWorktreeWithMaster:
             remove_worktree(git_project_master, wt_path, branch)
 
 
+class TestSHAResolution:
+    def test_create_worktree_resolves_head(self, git_project: Path) -> None:
+        """create_worktree('HEAD') resolves to the current commit SHA."""
+        expected_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, branch = create_worktree(git_project, "HEAD")
+
+        wt_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=wt_path, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        assert wt_sha == expected_sha
+
+    def test_create_worktree_resolves_amended_head(self, git_project: Path) -> None:
+        """After an amend, create_worktree('HEAD') branches from the new commit."""
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(git_project.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+
+        (git_project / "new_file.txt").write_text("amended content")
+        subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "--amend", "--no-edit"],
+            cwd=git_project, capture_output=True, check=True, env=env,
+        )
+        amended_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, branch = create_worktree(git_project, "HEAD")
+
+        wt_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=wt_path, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        assert wt_sha == amended_sha
+        assert (wt_path / "new_file.txt").exists()
+
+
 class TestSymlinkResolution:
     def test_store_resolves_through_symlink(self, git_project: Path) -> None:
         """ExperimentStore via worktree symlink writes to main .factory/."""

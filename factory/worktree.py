@@ -16,17 +16,30 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     Returns (worktree_path, branch_name).
     """
     project_path = project_path.resolve()
+
+    # Resolve symbolic refs (HEAD, branch names) to commit SHAs so the
+    # worktree always branches from a deterministic point — critical when
+    # HEAD was just amended (e.g. FeatureBench mask-patch scenario).
+    result = subprocess.run(
+        ["git", "rev-parse", base_branch],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    base_commit = result.stdout.strip()
+
     run_id = secrets.token_hex(4)
     branch = f"factory/run-{run_id}"
     factory_dir = project_path / ".factory"
     wt_parent = project_path / ".factory-worktrees"
     wt_dir = wt_parent / f"run-{run_id}"
 
-    log.info("worktree_create", branch=branch, path=str(wt_dir))
+    log.info("worktree_create", branch=branch, base=base_commit[:12], path=str(wt_dir))
 
     wt_parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["git", "worktree", "add", str(wt_dir), "-b", branch, base_branch],
+        ["git", "worktree", "add", str(wt_dir), "-b", branch, base_commit],
         cwd=project_path,
         check=True,
         capture_output=True,

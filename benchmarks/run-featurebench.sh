@@ -184,16 +184,24 @@ echo "    Working directory: ${WORKSPACE}/repo"
 # Apply mask patch — removes function bodies the solver must implement
 MASK_PATCH="${WORKSPACE}/mask_patch.diff"
 python3 -c "import json; open('${MASK_PATCH}', 'w').write(json.load(open('${INSTANCE_JSON}'))['patch'])"
-if [ -s "${MASK_PATCH}" ]; then
-    git apply --whitespace=nowarn "${MASK_PATCH}" 2>/dev/null \
-        && git add -A && git commit --quiet --amend --no-edit \
-        && git reflog expire --expire=now --all && git gc --prune=now --quiet \
-        && MASKED_COMMIT=$(git rev-parse HEAD) \
-        && echo "    Applied mask patch (function bodies removed, baked into commit ${MASKED_COMMIT:0:12})" \
-        || echo "    WARNING: Mask patch failed to apply"
-else
-    echo "    No mask patch in dataset"
+if [ ! -s "${MASK_PATCH}" ]; then
+    echo "ERROR: No mask patch in dataset — cannot run FeatureBench without masked code" >&2
+    STATUS="error"
+    cleanup
+    exit 1
 fi
+
+if ! git apply --whitespace=nowarn "${MASK_PATCH}" 2>/dev/null; then
+    echo "ERROR: Mask patch failed to apply to ${BASE_COMMIT:0:12}" >&2
+    STATUS="error"
+    cleanup
+    exit 1
+fi
+
+git add -A && git commit --quiet --amend --no-edit
+git reflog expire --expire=now --all && git gc --prune=now --quiet
+MASKED_COMMIT=$(git rev-parse HEAD)
+echo "    Applied mask patch (function bodies removed, baked into commit ${MASKED_COMMIT:0:12})"
 
 echo ""
 
@@ -262,7 +270,7 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
 else
-    # Factory CEO path — pre-seed factory state so factory detect returns has_factory
+    # Factory CEO path — build mode with spec file
     PROBLEM_STMT=$(python3 -c "
 import json
 with open('${INSTANCE_JSON}') as f:
@@ -291,45 +299,14 @@ python -c "import packaging; print('OK')"
 ${PROBLEM_STMT}
 FACTORYEOF
 
-    mkdir -p "${WORKSPACE}/repo/.factory"
-    cat > "${WORKSPACE}/repo/.factory/config.json" << CONFIGEOF
-{
-  "eval_command": "python -m pytest tests/ -x -q --timeout 60",
-  "eval_threshold": 0.3,
-  "target_branch": "HEAD",
-  "smoke_test": "python -c \"import packaging; print(OK)\"",
-  "hard_constraints": [],
-  "eval_spec": []
-}
-CONFIGEOF
-
-    cat > "${WORKSPACE}/repo/.factory/eval_profile.json" << EVALEOF
-{
-  "dimensions": [
-    {"name": "tests", "weight": 1.0, "command": "python -m pytest tests/ -x -q --timeout 60"}
-  ],
-  "human_reviewed": true
-}
-EVALEOF
-
-    mkdir -p "${WORKSPACE}/repo/eval"
-    cat > "${WORKSPACE}/repo/eval/score.py" << SCOREEOF
-import subprocess, json, sys
-r = subprocess.run(["python", "-m", "pytest", "tests/", "-x", "-q", "--timeout", "60"], capture_output=True, text=True)
-s = 1.0 if r.returncode == 0 else 0.0
-json.dump({"composite": s, "dimensions": {"tests": {"score": s, "weight": 1.0}}}, sys.stdout)
-SCOREEOF
-
     cd "${WORKSPACE}/repo"
-    git add -A
-    git commit -m "factory: pre-seed config for improve mode"
 
     FACTORY_CEO_MAX_RESPAWNS=0 \
     timeout "${SOLVER_TIMEOUT}" factory ceo . \
         --headless \
         --no-github \
-        --mode improve \
-        --focus "Implement all empty function bodies in the source files. Functions have had their bodies removed and need to be reimplemented based on their signatures, docstrings, and the project context." \
+        --mode build \
+        --prompt factory.md \
         2>&1 | tee "${SOLVER_LOG}" | tail -50 || true
     SOLVER_EXIT=${PIPESTATUS[0]}
 fi
@@ -456,10 +433,9 @@ log "Step 6: Capturing patch"
 cd "${WORKSPACE}/repo"
 PATCH_FILE="${WORKSPACE}/model_patch.diff"
 
-# Diff against the masked commit (not BASE_COMMIT) so the patch captures
-# the full function body additions from masked→implemented
-DIFF_BASE="${MASKED_COMMIT:-${BASE_COMMIT}}"
-git diff "${DIFF_BASE}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
+# Diff against the masked commit so the patch captures only the solver's
+# function body additions (masked→implemented)
+git diff "${MASKED_COMMIT}" -- . ':!.factory' ':!eval' ':!factory.md' > "${PATCH_FILE}"
 
 # Fallback: if committed diff is empty, try unstaged diff too
 if [ ! -s "${PATCH_FILE}" ]; then
@@ -473,7 +449,7 @@ if [ "${PATCH_SIZE}" -eq 0 ]; then
     echo "    Evaluation will proceed but instance will not be resolved."
 else
     PATCH_LINES="$(wc -l < "${PATCH_FILE}")"
-    PATCH_FILES="$(git diff "${DIFF_BASE}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
+    PATCH_FILES="$(git diff "${MASKED_COMMIT}" --name-only -- . ':!.factory' ':!eval' ':!factory.md' | wc -l)"
     echo "    Patch: ${PATCH_LINES} lines across ${PATCH_FILES} file(s)"
 fi
 echo ""
