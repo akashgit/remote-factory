@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 from pathlib import Path
+from typing import Any
 
 import structlog
 
@@ -14,7 +15,7 @@ from factory.workflow.primitives import Workflow
 log = structlog.get_logger()
 
 
-def _sort_recursive(obj: object) -> object:
+def _sort_recursive(obj: object) -> Any:
     """Recursively sort dicts by key and lists by value for deterministic serialization."""
     if isinstance(obj, dict):
         return {k: _sort_recursive(v) for k, v in sorted(obj.items())}
