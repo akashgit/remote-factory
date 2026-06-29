@@ -74,6 +74,15 @@ def _ensure_skills_inner(project_dir: Path) -> list[Path]:
         export_all_skills(cache_dir, workflows)
         workflow_dirs = sorted(cache_dir.glob("workflow-*"))
 
+        cache_parent = cache_dir.parent
+        evicted = 0
+        for sibling in cache_parent.iterdir():
+            if sibling != cache_dir and sibling.is_dir():
+                shutil.rmtree(sibling, ignore_errors=True)
+                evicted += 1
+        if evicted:
+            log.info("skill_cache.evicted", count=evicted)
+
     generated: list[Path] = []
     for src in workflow_dirs:
         dst = skills_target / src.name

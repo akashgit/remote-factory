@@ -89,6 +89,33 @@ class TestEnsureSkills:
 
         assert len(paths) > 0
 
+    def test_cache_miss_evicts_stale_checksums(self, tmp_path: Path, monkeypatch: object) -> None:
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        ensure_skills(project)
+
+        cache_root = tmp_path / ".factory" / "cache" / "skills"
+        first_dirs = list(cache_root.iterdir())
+        assert len(first_dirs) == 1
+        old_checksum_dir = first_dirs[0]
+
+        different_workflow = {
+            "alt": _make_workflow("alt", "echo changed"),
+        }
+        monkeypatch.setattr(
+            "factory.workflow.definitions.register_all",
+            lambda: different_workflow,
+        )
+
+        ensure_skills(project)
+
+        remaining = [d for d in cache_root.iterdir() if d.is_dir()]
+        assert len(remaining) == 1
+        assert remaining[0] != old_checksum_dir
+
     def test_only_workflow_dirs_copied(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
 
