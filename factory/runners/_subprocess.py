@@ -51,7 +51,7 @@ async def run_subprocess(
             produced for this many seconds.
         max_timeout: Hard wall-clock backstop via ``asyncio.wait_for``.
             Catches pathological trickle-output that keeps the inactivity
-            watchdog alive indefinitely. Defaults to 3600s (1 hour).
+            watchdog alive indefinitely. Defaults to 36000s (10 hours).
     """
     stream = should_stream()
     prefix = f"[{runner_name}:{role}]" if stream else None
