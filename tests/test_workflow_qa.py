@@ -101,6 +101,12 @@ class TestQaWorkflow:
         assert "builder" not in gate.gate_prompt.lower()
         assert "HALT" in gate.gate_prompt
 
+        # Prompt is derived from improve's gate_qa — first sentence must match.
+        improve_gate = improve_workflow().nodes["gate_qa"]
+        assert isinstance(improve_gate, GateNode)
+        first_sentence = improve_gate.gate_prompt.split(". ")[0] + "."
+        assert gate.gate_prompt.startswith(first_sentence)
+
     def test_post_review_node(self) -> None:
         wf = qa_workflow()
         post = wf.nodes["post_review"]

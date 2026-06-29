@@ -2497,6 +2497,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
             f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
             f"{repo_flag}\n"
+            f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
+            f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
 
         if not headless:

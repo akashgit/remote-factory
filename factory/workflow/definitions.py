@@ -13,6 +13,8 @@ W₉: Create Mode (meta-mode for creating new factory modes)
 
 from __future__ import annotations
 
+import re
+
 from typing import Any
 
 from factory.models import ProjectState
@@ -550,26 +552,16 @@ def qa_workflow() -> Workflow:
     # In QA mode it's the start node — clear the predecessor dependency.
     qa_node = sub.nodes["qa"]
     assert isinstance(qa_node, AgentNode)
-    sub.nodes["qa"] = AgentNode(
-        id=qa_node.id,
-        role=qa_node.role,
-        prompt_template=qa_node.prompt_template,
-        reads=set(),
-        writes=qa_node.writes,
-    )
+    sub.nodes["qa"] = qa_node.model_copy(update={"reads": set()})
 
     gate_qa = sub.nodes["gate_qa"]
     assert isinstance(gate_qa, GateNode)
-    sub.nodes["gate_qa"] = GateNode(
-        id="gate_qa",
-        evaluator_type=gate_qa.evaluator_type,
-        evaluator_role=gate_qa.evaluator_role,
-        gate_prompt=(
-            "Review QA results. PROCEED if all checks pass. "
-            "HALT if issues found — this is a verification-only mode with no fix loop."
-        ),
-        reads=gate_qa.reads,
+    derived_prompt = re.sub(
+        r'RELOOP to builder \(max \d+ iterations\) if issues found\.',
+        'HALT if issues found — no fix loop in QA mode.',
+        gate_qa.gate_prompt,
     )
+    sub.nodes["gate_qa"] = gate_qa.model_copy(update={"gate_prompt": derived_prompt})
 
     sub.nodes["post_review"] = FnNode(
         id="post_review",

@@ -71,6 +71,12 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "CEO review gate, precheck, and posts verdict as GitHub PR review."
         ),
         "argument_hint": "<project_path> --pr <number>",
+        "preamble": (
+            "**Output constraint:** Your ONLY GitHub output artifact is the "
+            "`factory review` command in the final step. Do NOT run `gh pr comment`, "
+            "`gh issue comment`, or post any other comments on the PR. "
+            "All analysis stays in .factory/reviews/ files."
+        ),
     },
     "research": {
         "description": (
@@ -516,6 +522,10 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
 
     title = name.replace("_", " ").replace("-", " ").title()
     header = f"# {title} Workflow\n\nThe user wants: **$ARGUMENTS**"
+
+    preamble = meta.get("preamble")
+    if preamble:
+        header += f"\n\n{preamble}"
 
     reloop_map: dict[str, list[Edge]] = defaultdict(list)
     for edge in workflow.edges:

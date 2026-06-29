@@ -30,7 +30,7 @@ gate_qa:
     condition: HALT
   slots:
     gate_prompt_gate_qa: Review QA results. PROCEED if all checks pass. HALT if issues
-      found — this is a verification-only mode with no fix loop.
+      found — no fix loop in QA mode.
 gate_precheck:
   type: GateNode
   id: gate_precheck

@@ -9,6 +9,8 @@ argument-hint: "<project_path> --pr <number>"
 
 The user wants: **$ARGUMENTS**
 
+**Output constraint:** Your ONLY GitHub output artifact is the `factory review` command in the final step. Do NOT run `gh pr comment`, `gh issue comment`, or post any other comments on the PR. All analysis stays in .factory/reviews/ files.
+
 ## Phase 1: Qa
 
 ```bash
@@ -21,7 +23,7 @@ Write output to: .factory/reviews/qa-latest.md" --project "$PROJECT_PATH" --time
 Apply the CEO Review Gate protocol:
 1. Read the agent output for the preceding step
 2. Read artifacts: `.factory/reviews/qa-latest.md`
-3. Assess: Review QA results. PROCEED if all checks pass. HALT if issues found — this is a verification-only mode with no fix loop.
+3. Assess: Review QA results. PROCEED if all checks pass. HALT if issues found — no fix loop in QA mode.
 4. Write verdict to `.factory/reviews/ceo-verdict-qa.md`
 5. **PROCEED** → continue to next step
 6. **REDIRECT** → re-invoke the preceding agent with corrections (max 2)
