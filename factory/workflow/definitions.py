@@ -2070,7 +2070,7 @@ def spec_generate_workflow() -> Workflow:
         writes={".factory/SPEC.md"},
     )
 
-    # CEO gate — check annotation quality
+    # CEO gate — check annotation quality and section completeness
     nodes["gate_annotate"] = GateNode(
         id="gate_annotate",
         evaluator_type="agent",
@@ -2080,7 +2080,27 @@ def spec_generate_workflow() -> Workflow:
             "Check: do module behavioral contracts match the actual code? "
             "Does the spec use RFC 2119 normative language (MUST/SHOULD/MAY)? "
             "Are there scoring tables (there should NOT be)? "
-            "PROCEED if the spec is accurate. RELOOP if behavioral contracts are wrong."
+            "SECTION COMPLETENESS CHECK — verify ALL of the following sections are present "
+            "and non-empty: "
+            "§1 Problem Statement, "
+            "§2 Goals and Non-Goals (including §2.1 Goals, §2.2 Non-Goals, §2.3 Design Philosophy), "
+            "§3 Project Identity, "
+            "§4 Technical Stack, "
+            "§5 Architecture Overview, "
+            "§6 Domain Model, "
+            "§7 State Machines and Lifecycles, "
+            "§8 Module Specifications, "
+            "§9 Shared Contracts, "
+            "§10 Configuration Specification, "
+            "§11 Entry Points, "
+            "§12 Failure Model and Recovery, "
+            "§13 Security and Safety, "
+            "§14 Test and Validation Matrix, "
+            "§15 Extension Points, "
+            "§16 Implementation Checklist, "
+            "Appendix A: Reference Algorithms. "
+            "RELOOP if ANY section is missing or empty. "
+            "PROCEED only if ALL 16 sections + Appendix A are present and non-empty."
         ),
         reads={".factory/SPEC.md"},
     )
