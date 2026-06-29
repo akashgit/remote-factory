@@ -246,3 +246,119 @@ class TestMissingSpec:
     async def test_missing_spec_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
             await validate_spec(tmp_path)
+
+
+class TestSectionCompleteness:
+    """Tests for _check_section_completeness — verifies detection of missing spec sections."""
+
+    def _make_complete_spec(self) -> "RepoSpec":
+        from factory.spec.parser import ProjectIdentity, RepoSpec
+
+        return RepoSpec(
+            identity=ProjectIdentity(name="test-project"),
+            problem_statement="A test project for validation.",
+            goals="Run tests automatically.",
+            non_goals="Not a production system.",
+            design_philosophy="Keep it simple.",
+            configuration_spec="CLI flag > env var > default.",
+            security="No trust boundaries.",
+            extension_points="Plugin registry at factory/runners/.",
+            implementation_checklist="Must pass all tests.",
+        )
+
+    def test_complete_spec_returns_no_warnings(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        warnings = _check_section_completeness(spec)
+        assert warnings == []
+
+    def test_missing_problem_statement(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.problem_statement = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§1 Problem Statement" in w for w in warnings)
+
+    def test_missing_goals(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.goals = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§2.1 Goals" in w for w in warnings)
+
+    def test_missing_non_goals(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.non_goals = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§2.2 Non-Goals" in w for w in warnings)
+
+    def test_missing_design_philosophy(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.design_philosophy = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§2.3 Design Philosophy" in w for w in warnings)
+
+    def test_missing_identity_name(self) -> None:
+        from factory.spec.parser import ProjectIdentity
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.identity = ProjectIdentity()
+        warnings = _check_section_completeness(spec)
+        assert any("§3 Project Identity" in w for w in warnings)
+
+    def test_missing_configuration_spec(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.configuration_spec = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§10 Configuration" in w for w in warnings)
+
+    def test_missing_security(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.security = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§13 Security" in w for w in warnings)
+
+    def test_missing_extension_points(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.extension_points = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§15 Extension Points" in w for w in warnings)
+
+    def test_missing_implementation_checklist(self) -> None:
+        from factory.spec.validate import _check_section_completeness
+
+        spec = self._make_complete_spec()
+        spec.implementation_checklist = ""
+        warnings = _check_section_completeness(spec)
+        assert any("§16 Implementation Checklist" in w for w in warnings)
+
+    def test_all_sections_missing_returns_all_warnings(self) -> None:
+        from factory.spec.parser import RepoSpec
+        from factory.spec.validate import _check_section_completeness
+
+        spec = RepoSpec()
+        warnings = _check_section_completeness(spec)
+        assert len(warnings) == 9
+        assert any("§1" in w for w in warnings)
+        assert any("§2.1" in w for w in warnings)
+        assert any("§2.2" in w for w in warnings)
+        assert any("§2.3" in w for w in warnings)
+        assert any("§3" in w for w in warnings)
+        assert any("§10" in w for w in warnings)
+        assert any("§13" in w for w in warnings)
+        assert any("§15" in w for w in warnings)
+        assert any("§16" in w for w in warnings)
