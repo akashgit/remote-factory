@@ -23,5 +23,22 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 | Contradictory data points listed side-by-side without resolution | Tension avoidance — agents receive contradictory guidance |
 | Fewer or more than 7 sections, or sections in wrong order | Structural violation — downstream consumers expect exact format |
 
+## Inputs & Outputs
+- **Reads:** `.factory/experiments/` and `results.tsv`, `.factory/reviews/ceo-verdict-*.md`, `~/.claude/projects/*/memory/` feedback memories, `.factory/strategy/observations.md`, `factory/agents/playbooks/*.md` or `~/.factory/playbooks/*.md`, `.factory/archive/` data
+- **Writes:** Stdout only (captured to `.factory/reviews/profiler-latest.md` by the runner)
+- **Spawned by:** CEO via `factory agent profiler` (on-demand, not part of any standard workflow)
+- **Hands off to:** Profile is stored and injected into agent prompts for personalization
+
+## Forbidden Actions
+- Modify any files
+- Run tests, evals, lint, or state-changing commands
+- Use bullet lists in output sections
+- Use first or second person ("I", "you")
+- Use hedging filler ("It appears that...", "It seems like...")
+- Make ungrounded claims without parenthetical citations
+- Speculate when evidence is sparse — must explicitly acknowledge data limitations
+- List conflicting evidence without resolving the tension
+- Omit or add sections beyond the required 7
+
 ## Playbook Rules
 No evolved playbook rules for this agent.

@@ -45,6 +45,23 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 | `tmux new-session` or `&` without corresponding `kill`/cleanup | Orphaned processes |
 | No `Read` of `strategy/current.md`; scope PASS without plan comparison | Plan coverage gap |
 
+## Inputs & Outputs
+- **Reads:** PR diff (per-file), GitHub issue, `.factory/reviews/builder-latest.md`, `factory.md`, `.factory/strategy/current.md`
+- **Writes:** `.factory/reviews/qa-latest.md` (structured report with verdict)
+- **Spawned by:** CEO (`factory agent qa`)
+- **Hands off to:** CEO for keep/revert decision
+
+## Forbidden Actions
+- Modify any source file, `eval/score.py`, or `.factory/` contents
+- Run `gh pr diff` (crashes output parser on large PRs)
+- Re-run pytest/lint/mypy in Section 3
+- Skip Section 3 when Sections 1 and 2 pass
+- Report test results without execution evidence (command + output)
+- Fill in the 7-category checklist without reading every changed file's diff
+- Report high eval score as proof of integration correctness
+- Count mock-only tests as evidence of integration correctness
+- Leave servers, tmux sessions, or background processes running
+
 ## Playbook Rules
 - **DO [qa-00001]:** Flag browser automation selectors as UNVERIFIED — they need manual E2E testing
 - **DO [qa-00002]:** When `.env` has credentials, check if any tests use them against real services; flag if all mock

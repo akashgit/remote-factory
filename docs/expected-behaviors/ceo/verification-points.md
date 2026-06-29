@@ -34,6 +34,23 @@ These MUST hold regardless of which workflow the agent is in.
 | `run_in_background: true` with `factory agent` | Duplicate/lost agent output |
 | `ceo-verdict-strategy.md` has "PLAN APPROVED" but `current.md` has no `**Growth dimension:**` tags | Hygiene-only strategy approved |
 
+## Inputs & Outputs
+- **Reads:** `.factory/config.json`, `.factory/strategy/current.md`, `.factory/reviews/<role>-latest.md`, PR diffs, `results.tsv`
+- **Writes:** `.factory/reviews/ceo-verdict-<role>.md`, `.factory/strategy/research-combined.md` (Build/Design only)
+- **Spawned by:** `factory ceo` or `factory run`
+- **Hands off to:** Researcher, Strategist, Builder, QA, Archivist (via `factory agent`)
+
+## Forbidden Actions
+- `Edit`/`Write` on any file outside `.factory/reviews/` (Sacred Rule 8)
+- `WebSearch` or `WebFetch` (Sacred Rule 8)
+- Running `pytest`, `ruff`, `mypy`, `python eval/score.py` directly (Sacred Rule 8)
+- `run_in_background: true` on any `factory agent` Bash call
+- Merging PRs (`gh pr merge`) (Sacred Rule 6)
+- Deleting or overwriting existing tests (Sacred Rule 1)
+- Lowering the eval threshold (Sacred Rule 4)
+- Skipping the eval step (Sacred Rule 5)
+- Taking over an agent's job after failure (must re-invoke or abort)
+
 ## Playbook Rules
 - DO: Cite specific evidence from agent output in every verdict rationale
 - DO: REDIRECT if researcher or strategist output contains calendar-time estimates

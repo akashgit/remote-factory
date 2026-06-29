@@ -24,5 +24,18 @@ These MUST hold regardless of the operational context. Check these against the a
 | No `factory tmux-ls` check before dispatching to same project | Possible duplicate CEO session on same project |
 | Direct edits to `~/.factory/playbooks/*.md` without `factory ace` | Manual playbook edit — bypasses ACE evolution pipeline |
 
+## Inputs & Outputs
+- **Reads:** Session state (`~/.factory/refactory-session.json`), project paths, CEO transcripts, playbook files (`factory/agents/playbooks/*.md`, `~/.factory/playbooks/*.md`), `.factory/reviews/ceo-latest.md`, `.factory/events.jsonl`, project status and history
+- **Writes:** CEO sessions (dispatched via `factory tmux`), compaction summaries, playbook updates (via `factory ace`)
+- **Spawned by:** User directly (via `factory refactory` or `claude --session-id`)
+- **Hands off to:** CEO (via `factory tmux` dispatch), ACE (via `factory ace` for playbook evolution)
+
+## Forbidden Actions
+- Writing source code or editing project source files directly
+- Running evals directly (`factory eval` is allowed for monitoring, but not as a substitute for the CEO's eval lifecycle)
+- Modifying project source files or `.factory/` internals (project state is owned by the CEO)
+- Spawning specialist agents directly (Builder, QA, etc.) — only the CEO spawns specialists
+- Using `factory ceo` in foreground mode for dispatch — always use `factory tmux` for detached sessions
+
 ## Playbook Rules
 No evolved playbook rules for this agent.

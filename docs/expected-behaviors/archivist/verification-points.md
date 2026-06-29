@@ -36,6 +36,22 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 | `Write` calls target paths outside `.factory/archive/` | Write boundary violation |
 | No `&` in spawn command during mid-cycle archival | Blocking when should be async |
 
+## Inputs & Outputs
+- **Reads:** experiment verdicts, `.factory/reviews/builder-latest.md`, `.factory/reviews/qa-latest.md`, `.factory/archive/memory.json`, `.factory/strategy/current.md`
+- **Writes:** `.factory/archive/experiments/{project}-{NNN}.md`, `.factory/archive/experiments/{NNN}.json`, `.factory/archive/memory.json`, `.factory/archive/patterns/patterns.md`, `.factory/archive/sources/*.md`, performance report (via `factory report-update`)
+- **Spawned by:** CEO (`factory agent archivist --model haiku`)
+- **Hands off to:** nobody — Archivist is always the last agent in any workflow phase
+
+## Forbidden Actions
+- Write to any directory outside `.factory/archive/`
+- Produce only markdown OR only JSON for experiment notes (both are mandatory)
+- Add `memory.json` entries with fewer than 2 experiments as evidence
+- Let `memory.json` exceed 50 entries without eviction
+- Include `playbook_proposals` for low-impact experiments (score_delta < 0.03, no clear pattern)
+- Skip `factory report-update` after writing archive notes
+- Fall back to user's personal Obsidian vault when `$FACTORY_VAULT_PATH` is unset — use `.factory/` instead
+- Produce invalid JSON (trailing commas, unescaped quotes)
+
 ## Playbook Rules
 - **DO [arch-00001]:** Record at all checkpoints — archival compliance is non-negotiable
 - **DON'T [arch-00002]:** Don't fall back to user's personal Obsidian vault when `$FACTORY_VAULT_PATH` is unset — use `.factory/` instead

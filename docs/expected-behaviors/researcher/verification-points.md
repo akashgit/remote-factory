@@ -31,6 +31,20 @@ These MUST hold regardless of which workflow the agent is in.
 | Output file missing required sections | Incomplete report — CEO will REDIRECT |
 | `**Mutable surface:**` references files in `fixed_surfaces` list (Mode 4) | Fixed surface recommendation violation |
 
+## Inputs & Outputs
+- **Reads:** `.factory/strategy/observations.md`, `.factory/strategy/backlog.md`, `.factory/archive/`, `.factory/strategy/failure_analysis.md` (Mode 4), `.factory/config.json`, project source/README
+- **Writes:** `.factory/strategy/research.md` (or tagged variants), optionally `.factory/archive/sources/<name>.md`; Mode 1: `.factory/eval_profile.json`, `eval/score.py`
+- **Spawned by:** CEO via `factory agent researcher`
+- **Hands off to:** CEO (review gate), then Strategist (consumes research)
+
+## Forbidden Actions
+- Modifying any source code file
+- Running tests, linters, or eval commands
+- Generating hypotheses or build plans
+- Including calendar-time estimates in output
+- Mode 4: general domain research (must be failure-targeted)
+- Mode 4: recommending changes to `fixed_surfaces` files
+
 ## Playbook Rules
 - DO: Always run local study first — it's fast baseline context
 - DO: Write report even if external search fails

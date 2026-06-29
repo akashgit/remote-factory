@@ -31,6 +31,20 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 | `git checkout -b` or `git branch` commands in trace | Worktree branch confusion |
 | No `gh issue comment` when exiting on a blocker | Blocked but no comment |
 
+## Inputs & Outputs
+- **Reads:** GitHub issue, `CLAUDE.md`, `factory.md`, `.factory/strategy/current.md`, source files in scope
+- **Writes:** source code changes, git commits, one GitHub PR, `.factory/reviews/builder-latest.md` (captured stdout)
+- **Spawned by:** CEO (`factory agent builder`)
+- **Hands off to:** CEO review gate -> QA Agent
+
+## Forbidden Actions
+- Modify files outside declared scope in `factory.md` or the issue
+- Modify `eval/score.py` or any file in `.factory/`
+- Read `fixed_surfaces` files or use their content to inform implementation
+- Create a new git branch (worktree branch is pre-configured)
+- Execute `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE/DATABASE`, `chmod 777`
+- Defer work items without valid reason (valid: needs credentials, needs human decision, needs external provisioning)
+
 ## Playbook Rules
 - **DO [bldr-00001]:** When writing browser automation, add a comment flagging selectors as UNVERIFIED
 - **DON'T [bldr-00002]:** Don't use `page.wait_for_load_state("networkidle")` after iframe operations — use frame-level waits or `domcontentloaded`
