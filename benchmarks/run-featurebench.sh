@@ -13,7 +13,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 INSTANCE_ID="${1:-pypa__packaging.013f3b03.test_metadata.e00b5801.lv1}"
 SOLVER_TIMEOUT="${2:-3600}"
-SPLIT="${3:-lite}"
+SPLIT="${3:-full}"
 
 BENCHMARK="featurebench"
 RUN_ID="ci-featurebench-${TIMESTAMP}"
