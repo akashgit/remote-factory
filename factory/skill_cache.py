@@ -14,6 +14,18 @@ from factory.workflow.primitives import Workflow
 log = structlog.get_logger()
 
 
+def _sort_recursive(obj: object) -> object:
+    """Recursively sort dicts by key and lists by value for deterministic serialization."""
+    if isinstance(obj, dict):
+        return {k: _sort_recursive(v) for k, v in sorted(obj.items())}
+    if isinstance(obj, list):
+        try:
+            return sorted(_sort_recursive(item) for item in obj)
+        except TypeError:
+            return [_sort_recursive(item) for item in obj]
+    return obj
+
+
 def _compute_checksum(workflows: dict[str, Workflow]) -> str:
     """Deterministic checksum from workflow Pydantic models.
 
@@ -21,6 +33,7 @@ def _compute_checksum(workflows: dict[str, Workflow]) -> str:
     then SHA-256 hashes the canonical JSON.  Returns the first 16 hex chars.
     """
     payload = {name: wf.model_dump(mode="json") for name, wf in sorted(workflows.items())}
+    payload = _sort_recursive(payload)
     blob = json.dumps(payload, sort_keys=True).encode()
     return hashlib.sha256(blob).hexdigest()[:16]
 

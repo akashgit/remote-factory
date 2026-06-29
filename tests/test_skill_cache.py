@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from factory.skill_cache import _compute_checksum, ensure_skills
+from factory.skill_cache import _compute_checksum, _sort_recursive, ensure_skills
 from factory.workflow.definitions import register_all
-from factory.workflow.primitives import FnNode, Workflow
+from factory.workflow.primitives import AgentNode, AgentRole, FnNode, Workflow
 
 
 def _make_workflow(name: str = "test", cmd: str = "echo hi") -> Workflow:
@@ -23,6 +23,33 @@ class TestComputeChecksum:
     def test_deterministic(self) -> None:
         workflows = register_all()
         assert _compute_checksum(workflows) == _compute_checksum(workflows)
+
+    def test_deterministic_with_set_fields(self) -> None:
+        """set[str] fields (reads/writes) must not cause hash variation."""
+        def _make_wf_with_sets() -> dict[str, Workflow]:
+            return {
+                "w": Workflow(
+                    name="w",
+                    nodes={
+                        "a": AgentNode(
+                            id="a",
+                            role=AgentRole.RESEARCHER,
+                            reads={"z", "a", "m", "b"},
+                            writes={"x", "c", "w"},
+                        ),
+                    },
+                    edges=[],
+                    start_node="a",
+                ),
+            }
+
+        checksums = {_compute_checksum(_make_wf_with_sets()) for _ in range(20)}
+        assert len(checksums) == 1
+
+    def test_sort_recursive(self) -> None:
+        obj = {"b": [3, 1, 2], "a": {"y": [2, 1], "x": 1}}
+        result = _sort_recursive(obj)
+        assert result == {"a": {"x": 1, "y": [1, 2]}, "b": [1, 2, 3]}
 
     def test_changes_on_modification(self) -> None:
         wf1 = {"x": _make_workflow("x", "echo 1")}
