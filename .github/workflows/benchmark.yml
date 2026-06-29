@@ -66,7 +66,7 @@ jobs:
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: featurebench
             solver: factory
-            default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
+            default_instance: 'sympy__sympy.c1097516.test_nullspace.f14fc970.lv1'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           - benchmark: terminalbench
             solver: factory
@@ -83,7 +83,7 @@ jobs:
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'swebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: featurebench
             solver: claude-code
-            default_instance: 'pypa__packaging.013f3b03.test_metadata.e00b5801.lv1'
+            default_instance: 'sympy__sympy.c1097516.test_nullspace.f14fc970.lv1'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'featurebench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
           - benchmark: terminalbench
             solver: claude-code
