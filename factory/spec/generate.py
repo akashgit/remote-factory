@@ -166,9 +166,9 @@ async def generate_spec(project_path: Path) -> Path:
     Runs the extraction → annotation pipeline:
     1. Collect source files and batch them
     2. Run Opus extraction agent to produce spec_raw.md
-    3. Run Researcher annotation agent to produce GRAPH-SPEC.md
+    3. Run Researcher annotation agent to produce SPEC.md
 
-    Returns the path to the generated GRAPH-SPEC.md.
+    Returns the path to the generated SPEC.md.
     """
     from factory.agents.runner import invoke_agent
 
@@ -189,11 +189,12 @@ async def generate_spec(project_path: Path) -> Path:
     )
 
     extract_task = (
-        f"Extract a structural module map from this project at {project_path}.\n\n"
+        f"Extract a behavioral module map from this project at {project_path}.\n\n"
         f"## Source Files ({len(source_files)} total, {len(batches)} batch(es))\n\n"
         f"{file_listing}\n\n"
         f"## Batches\n\n{batch_info}\n\n"
         f"Read these source files and produce the spec_raw.md output.\n"
+        f"Extract domain entities, state machines, error types, and module relationships.\n"
         f"Write the output to {factory_dir / 'spec_raw.md'}."
     )
 
@@ -217,7 +218,9 @@ async def generate_spec(project_path: Path) -> Path:
     annotate_task = (
         f"Annotate and enrich the raw spec at {spec_raw} for the project at {project_path}.\n\n"
         f"Read {spec_raw} and key source files.\n"
-        f"Write the annotated repo spec to {factory_dir / 'GRAPH-SPEC.md'}."
+        f"Produce a behavioral spec with RFC 2119 normative language, domain model,\n"
+        f"state machines, failure model, and module behavioral contracts.\n"
+        f"Write the annotated repo spec to {factory_dir / 'SPEC.md'}."
     )
 
     result, code = await invoke_agent(
@@ -230,7 +233,7 @@ async def generate_spec(project_path: Path) -> Path:
     if code != 0:
         raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
 
-    repo_spec = factory_dir / "GRAPH-SPEC.md"
+    repo_spec = factory_dir / "SPEC.md"
     if not repo_spec.exists():
         raise FileNotFoundError(
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"

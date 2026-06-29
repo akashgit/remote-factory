@@ -475,15 +475,16 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Non-blocking spec update — runs if .factory/GRAPH-SPEC.md exists
+    # Non-blocking spec update — runs if .factory/SPEC.md or .factory/GRAPH-SPEC.md exists
     nodes["spec_update"] = FnNode(
         id="spec_update",
         command=(
             'python3 -c "'
             "from pathlib import Path; "
             "import subprocess, sys; "
-            "p = Path('{project_path}/.factory/GRAPH-SPEC.md'); "
-            "sys.exit(0) if not p.is_file() else None; "
+            "s = Path('{project_path}/.factory/SPEC.md'); "
+            "g = Path('{project_path}/.factory/GRAPH-SPEC.md'); "
+            "sys.exit(0) if not s.is_file() and not g.is_file() else None; "
             "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
             "capture_output=True, text=True); "
             "print(r.stdout); print(r.stderr, file=sys.stderr); "
@@ -1216,7 +1217,7 @@ def refine_workflow() -> Workflow:
 
 
 def spec_generate_workflow() -> Workflow:
-    """W₉: Spec Generate — extract module graph, annotate, validate.
+    """W₉: Spec Generate — extract behavioral spec, annotate, validate.
 
     extract → gate_extract → annotate → gate_annotate →
     validate → gate_validate → done
@@ -1230,9 +1231,10 @@ def spec_generate_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         model="opus",
         prompt_template=(
-            "Extract a structural module map from the project. "
+            "Extract a behavioral module map from the project. "
             "Read the spec_extractor prompt at factory/agents/prompts/spec_extractor.md. "
-            "Identify module boundaries, internal imports, public exports, and shared types. "
+            "Identify module boundaries, domain entities, state machines, error types, "
+            "and module relationships expressed as prose. "
             "Stay at module-level granularity. "
             "Write output to .factory/spec_raw.md in the structured Markdown format."
         ),
@@ -1246,26 +1248,26 @@ def spec_generate_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Review the extracted spec at .factory/spec_raw.md. "
-            "Check: are modules identified correctly? Are dependency edges plausible? "
-            "Any major gaps — modules that clearly exist but are missing? "
+            "Check: are modules identified correctly? Are domain entities captured? "
+            "Are state machines documented? Any major gaps? "
             "PROCEED if the extraction is usable. RELOOP if major gaps."
         ),
         reads={".factory/spec_raw.md"},
     )
 
-    # Researcher annotation — produces GRAPH-SPEC.md
+    # Researcher annotation — produces SPEC.md
     nodes["annotate"] = AgentNode(
         id="annotate",
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Annotate the raw spec at .factory/spec_raw.md. "
             "Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md. "
-            "Add module role descriptions, architectural layers, non-obvious dependencies, "
-            "change impact analysis, and hub/leaf classification. "
-            "Write output to .factory/GRAPH-SPEC.md."
+            "Produce a behavioral spec with RFC 2119 normative language, "
+            "domain model, state machines, failure model, and module behavioral contracts. "
+            "Write output to .factory/SPEC.md."
         ),
         reads={".factory/spec_raw.md"},
-        writes={".factory/GRAPH-SPEC.md"},
+        writes={".factory/SPEC.md"},
     )
 
     # CEO gate — check annotation quality
@@ -1274,20 +1276,20 @@ def spec_generate_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the annotated spec at .factory/GRAPH-SPEC.md. "
-            "Check: do module descriptions match the actual code? "
-            "Are change impact assessments reasonable? "
-            "Is hub/leaf classification correct? "
-            "PROCEED if the spec is accurate. RELOOP if descriptions are wrong."
+            "Review the annotated spec at .factory/SPEC.md. "
+            "Check: do module behavioral contracts match the actual code? "
+            "Does the spec use RFC 2119 normative language (MUST/SHOULD/MAY)? "
+            "Are there scoring tables (there should NOT be)? "
+            "PROCEED if the spec is accurate. RELOOP if behavioral contracts are wrong."
         ),
-        reads={".factory/GRAPH-SPEC.md"},
+        reads={".factory/SPEC.md"},
     )
 
     # Validation — run automated consistency checks
     nodes["validate"] = FnNode(
         id="validate",
         command="factory spec validate {project_path}",
-        reads={".factory/GRAPH-SPEC.md"},
+        reads={".factory/SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 
@@ -1298,10 +1300,10 @@ def spec_generate_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Final quality gate for the repo spec. "
-            "Read .factory/GRAPH-SPEC.md. Is it complete, well-structured, "
-            "and under 8K tokens? PROCEED to finish."
+            "Read .factory/SPEC.md. Is it complete, well-structured, "
+            "and under 24K tokens? PROCEED to finish."
         ),
-        reads={".factory/GRAPH-SPEC.md"},
+        reads={".factory/SPEC.md"},
     )
 
     edges = [
@@ -1344,7 +1346,7 @@ def spec_update_workflow() -> Workflow:
         writes={".factory/spec_update_scope.md"},
     )
 
-    # Opus patcher — incrementally update GRAPH-SPEC.md
+    # Opus patcher — incrementally update SPEC.md
     nodes["patch"] = AgentNode(
         id="patch",
         role=AgentRole.RESEARCHER,
@@ -1353,14 +1355,14 @@ def spec_update_workflow() -> Workflow:
             "Patch the repo spec based on scoped changes. "
             "Read the spec_patcher prompt at factory/agents/prompts/spec_patcher.md. "
             "Read .factory/spec_update_scope.md for the list of affected modules and new files. "
-            "Read .factory/GRAPH-SPEC.md for the current spec. "
-            "Read changed source files and update affected module entries. "
+            "Read .factory/SPEC.md for the current spec. "
+            "Read changed source files and update affected module behavioral contracts. "
             "Add new module entries for unmapped files. "
             "Remove modules whose paths no longer exist. "
-            "Write updated spec to .factory/GRAPH-SPEC.md."
+            "Write updated spec to .factory/SPEC.md."
         ),
         reads={".factory/spec_update_scope.md"},
-        writes={".factory/GRAPH-SPEC.md"},
+        writes={".factory/SPEC.md"},
     )
 
     # CEO gate — check patch quality
@@ -1369,19 +1371,19 @@ def spec_update_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the patched spec at .factory/GRAPH-SPEC.md. "
+            "Review the patched spec at .factory/SPEC.md. "
             "Check: do updates match the diff scope? Were all affected modules touched? "
             "Were new files mapped to modules? Were deleted modules removed? "
             "PROCEED if updates are reasonable. RELOOP to patch if issues."
         ),
-        reads={".factory/GRAPH-SPEC.md", ".factory/spec_update_scope.md"},
+        reads={".factory/SPEC.md", ".factory/spec_update_scope.md"},
     )
 
     # Revalidation — run automated consistency checks
     nodes["revalidate"] = FnNode(
         id="revalidate",
         command="factory spec validate {project_path}",
-        reads={".factory/GRAPH-SPEC.md"},
+        reads={".factory/SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 
