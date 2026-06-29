@@ -2738,6 +2738,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
+    from factory.skill_cache import ensure_skills
+    ensure_skills(wt_path)
+
     interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
     if clean_pr_flag is not None:
@@ -3911,6 +3914,9 @@ def _run_single_cycle(
 
     base_branch = branch or _read_target_branch(project_path)
     wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+
+    from factory.skill_cache import ensure_skills
+    ensure_skills(wt_path)
 
     try:
         task = _build_ceo_task(
