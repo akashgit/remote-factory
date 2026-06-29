@@ -1,4 +1,4 @@
-"""All 9 workflow definitions as Python functions returning Workflow objects.
+"""All workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
@@ -37,6 +37,7 @@ __all__ = [
     "design_workflow",
     "improve_workflow",
     "qa_workflow",
+    "deep_qa_workflow",
     "research_workflow",
     "meta_workflow",
     "discover_workflow",
@@ -585,6 +586,194 @@ def qa_workflow() -> Workflow:
 
     sub.trigger = trigger
     return sub
+
+
+# ── W₃c: Deep QA Mode ─────────────────────────────────────────
+
+
+def deep_qa_workflow() -> Workflow:
+    """W₃c: Deep QA Mode — decomposed QA with 3 sequential specialists.
+
+    Replaces the monolithic QA agent with three specialist agents, each
+    followed by a CEO gate for early termination:
+
+    health_checker → gate_health → code_reviewer → gate_review →
+    adversarial_tester → gate_adversarial → join_verdict →
+    gate_precheck → post_review
+
+    HALT edges from gate_health, gate_review, gate_adversarial all
+    skip remaining agents and route directly to post_review.
+    No RELOOP edges — deep-qa is standalone verification.
+    """
+    nodes: dict[str, AgentNode | FnNode | GateNode | ForkNode | JoinNode | Study] = {}
+
+    # ── 3 specialist agents (all AgentRole.QA) ────────────────
+
+    nodes["health_checker"] = AgentNode(
+        id="health_checker",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Run the health check ONLY — do NOT perform code review or adversarial testing. "
+            "Execute 'factory eval {project_path}', parse the JSON output, extract the "
+            "composite score and per-dimension breakdown. Compare against the baseline "
+            "score (score_before). Calculate the delta, check threshold compliance. "
+            "Write a structured report to .factory/reviews/health-check.md with a "
+            "score table, composite score, delta, and threshold result. "
+            "If eval fails completely (no valid score), report REVERT immediately."
+        ),
+        reads=set(),
+        writes={".factory/reviews/health-check.md"},
+    )
+
+    nodes["code_reviewer"] = AgentNode(
+        id="code_reviewer",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Perform code review ONLY — do NOT run eval or adversarial testing. "
+            "Get changed files via 'git diff --name-only <baseline>..HEAD', then read "
+            "each file's diff individually via 'git diff <baseline>..HEAD -- <file>'. "
+            "Do NOT run 'gh pr diff' (too large). "
+            "Evaluate against the 7-category checklist: correctness, security, edge cases, "
+            "missing tests, style, scope compliance, guardrail compliance. "
+            "Check spec fidelity via 'gh issue view <issue_number>'. "
+            "Check plan completion against .factory/strategy/current.md. "
+            "If research mode: verify no fixed_surfaces modified. "
+            "Write structured results to .factory/reviews/code-review.md."
+        ),
+        reads=set(),
+        writes={".factory/reviews/code-review.md"},
+    )
+
+    nodes["adversarial_tester"] = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Perform adversarial QA ONLY — do NOT re-run eval, lint, or type checking. "
+            "Switch to skeptical user identity. Determine project type from factory.md "
+            "and README.md (CLI/TUI/API/Library/Research/UI). Derive a test plan from "
+            "acceptance criteria via 'gh issue view <issue_number>' BEFORE executing. "
+            "Run the smoke test from factory.md. Execute type-aware feature testing "
+            "matching the detected project type. Verify all acceptance criteria. "
+            "Check Builder's claimed blockers. "
+            "Write structured results to .factory/reviews/adversarial-qa.md with "
+            "project type, test plan, smoke test result, feature tests, edge cases, "
+            "acceptance criteria verification, and adversarial verdict (PASS/FAIL). "
+            "When in doubt, FAIL — burden of proof is on the Builder."
+        ),
+        reads=set(),
+        writes={".factory/reviews/adversarial-qa.md"},
+    )
+
+    # ── 3 CEO gates ───────────────────────────────────────────
+
+    nodes["gate_health"] = GateNode(
+        id="gate_health",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read health check results at .factory/reviews/health-check.md. "
+            "If eval completely failed (no valid composite score), emit HALT — "
+            "this triggers immediate REVERT, skipping code review and adversarial testing. "
+            "If eval passed and composite score is valid, emit PROCEED. "
+            "Do NOT RELOOP — health check is a deterministic measurement, "
+            "no fix loop in deep-qa mode."
+        ),
+        reads={".factory/reviews/health-check.md"},
+    )
+
+    nodes["gate_review"] = GateNode(
+        id="gate_review",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read code review results at .factory/reviews/code-review.md. "
+            "Count critical issues in the Issues section (severity = [Critical]). "
+            "If critical_count > 0, emit HALT — this triggers ISSUES_FOUND verdict, "
+            "skipping adversarial testing. "
+            "If critical_count == 0, emit PROCEED to adversarial testing. "
+            "Do NOT RELOOP — no fix loop in deep-qa mode."
+        ),
+        reads={".factory/reviews/code-review.md"},
+    )
+
+    nodes["gate_adversarial"] = GateNode(
+        id="gate_adversarial",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Read adversarial QA results at .factory/reviews/adversarial-qa.md. "
+            "Check the Adversarial Verdict line at the bottom. "
+            "If verdict is FAIL, emit HALT — this triggers FAIL verdict. "
+            "If verdict is PASS, emit PROCEED to verdict synthesis. "
+            "Do NOT RELOOP — adversarial tester is a one-shot evaluation "
+            "in deep-qa mode."
+        ),
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    # ── Join verdict (FnNode — deterministic synthesis) ───────
+
+    nodes["join_verdict"] = FnNode(
+        id="join_verdict",
+        command=(
+            "cat {project_path}/.factory/reviews/health-check.md "
+            "{project_path}/.factory/reviews/code-review.md "
+            "{project_path}/.factory/reviews/adversarial-qa.md "
+            "> {project_path}/.factory/reviews/qa-latest.md"
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    # ── Precheck gate (fn) + post_review (FnNode) ────────────
+
+    nodes["gate_precheck"] = GateNode(
+        id="gate_precheck",
+        evaluator_type="fn",
+        evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    nodes["post_review"] = FnNode(
+        id="post_review",
+        command=(
+            "factory review --verdict $VERDICT --pr $PR_NUMBER"
+            " --score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
+    # ── Edges (12 total: 4 unconditional + 8 conditional) ────
+
+    edges = [
+        Edge(source="health_checker", target="gate_health"),
+        Edge(source="gate_health", target="code_reviewer", condition=VerdictType.PROCEED),
+        Edge(source="gate_health", target="post_review", condition=VerdictType.HALT),
+        Edge(source="code_reviewer", target="gate_review"),
+        Edge(source="gate_review", target="adversarial_tester", condition=VerdictType.PROCEED),
+        Edge(source="gate_review", target="post_review", condition=VerdictType.HALT),
+        Edge(source="adversarial_tester", target="gate_adversarial"),
+        Edge(source="gate_adversarial", target="join_verdict", condition=VerdictType.PROCEED),
+        Edge(source="gate_adversarial", target="post_review", condition=VerdictType.HALT),
+        Edge(source="join_verdict", target="gate_precheck"),
+        Edge(source="gate_precheck", target="post_review", condition=VerdictType.PROCEED),
+        Edge(source="gate_precheck", target="post_review", condition=VerdictType.HALT),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "deep-qa"
+
+    return Workflow(
+        name="deep-qa",
+        nodes=nodes,
+        edges=edges,
+        start_node="health_checker",
+        trigger=trigger,
+    )
 
 
 # ── W₄: Research Mode ───────────────────────────────────────────
@@ -1645,7 +1834,7 @@ def skill_refine_workflow() -> Workflow:
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 11 workflow definitions."""
+    """Build and return all 12 workflow definitions."""
     return {
         "build": build_workflow(),
         "design": design_workflow(),
@@ -1653,6 +1842,7 @@ def register_all() -> dict[str, Workflow]:
         "review": review_workflow(),
         "improve": improve_workflow(),
         "qa": qa_workflow(),
+        "deep-qa": deep_qa_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
         "refine": refine_workflow(),

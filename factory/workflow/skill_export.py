@@ -78,6 +78,22 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "All analysis stays in .factory/reviews/ files."
         ),
     },
+    "deep-qa": {
+        "description": (
+            "Deep QA mode — decomposed QA verification pipeline with 3 sequential "
+            "specialists (health check, code review, adversarial QA). Each specialist "
+            "is followed by a CEO gate for early termination. Posts verdict as GitHub "
+            "PR review. Use when the user says 'deep qa', 'detailed qa', or wants "
+            "granular QA with per-dimension gating."
+        ),
+        "argument_hint": "<project_path> --pr <number>",
+        "preamble": (
+            "**Output constraint:** Your ONLY GitHub output artifact is the "
+            "`factory review` command in the final step. Do NOT run `gh pr comment`, "
+            "`gh issue comment`, or post any other comments on the PR. "
+            "All analysis stays in .factory/reviews/ files."
+        ),
+    },
     "research": {
         "description": (
             "Research mode — extends improve with baseline measurement, failure analysis, "

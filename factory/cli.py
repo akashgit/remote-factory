@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
-CEO_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "qa", "create"]
+CEO_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "qa", "deep-qa", "create"]
 RUN_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"]
 
 if TYPE_CHECKING:
@@ -2538,6 +2538,74 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             project_path,
             task,
             mode="qa",
+            runner_name=runner_name,
+            model=model,
+            timeout=7200.0,
+            max_respawns=1,
+        ))
+        print(result)
+        return code
+
+    # ── deep-qa mode early exit ───────────────────────────────
+    if mode == "deep-qa":
+        pr_number = getattr(args, "pr", None)
+        if pr_number is None:
+            print("Error: --mode deep-qa requires --pr <number>", file=sys.stderr)
+            return 1
+
+        repo = getattr(args, "repo", None)
+        model = _resolve_model(args)
+        runner_name = _resolve_runner(args)
+
+        project_path = Path(raw_path).expanduser().resolve()
+        if not project_path.is_dir():
+            print(f"Error: project path must be an existing directory for deep-qa mode: {raw_path}",
+                  file=sys.stderr)
+            return 1
+
+        _print_banner("deep-qa")
+
+        repo_flag = f" --repo {repo}" if repo else ""
+        repo_clause = f" in repo `{repo}`" if repo else ""
+        task = (
+            f"Project: {project_path}\nMode: deep-qa\n\n"
+            f"## Deep QA Verification Directive\n\n"
+            f"Run the deep QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
+            f"This mode decomposes QA into 3 sequential specialists:\n"
+            f"1. **Health Checker** — run eval, compare scores, report delta\n"
+            f"2. **Code Reviewer** — read PR diff file-by-file, 7-category checklist\n"
+            f"3. **Adversarial Tester** — skeptical user testing, acceptance criteria\n\n"
+            f"Each specialist is followed by a CEO gate. HALT at any gate skips "
+            f"remaining specialists and posts the verdict.\n\n"
+            f"Read and follow the workflow-deep-qa SKILL.md playbook at "
+            f"skills/workflow-deep-qa/SKILL.md.\n\n"
+            f"Key parameters:\n"
+            f"- PR_NUMBER={pr_number}\n"
+            f"- PROJECT_PATH={project_path}\n"
+            f"{f'- REPO={repo}' + chr(10) if repo else ''}"
+            f"\nPost the final verdict via:\n"
+            f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
+            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
+            f"{repo_flag}\n"
+            f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
+            f"The factory review command above is the ONLY GitHub output artifact.\n"
+        )
+
+        if not headless:
+            from factory.models import AgentRunRequest
+
+            prompt = resolve_prompt("ceo", project_path)
+            runner = get_runner(runner_name)
+            return runner.interactive_run(AgentRunRequest(
+                prompt=prompt, task=task, cwd=project_path,
+                model=model, role="ceo", skip_permissions=True,
+            ))
+
+        from factory.ceo_completion import run_ceo_with_completion_guard
+        result, code = _run(run_ceo_with_completion_guard(
+            project_path,
+            task,
+            mode="deep-qa",
             runner_name=runner_name,
             model=model,
             timeout=7200.0,
