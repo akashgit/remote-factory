@@ -24,6 +24,9 @@ from typing import TYPE_CHECKING
 log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
+CEO_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "qa", "create"]
+RUN_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"]
+
 if TYPE_CHECKING:
     from factory.messages import Message
 
@@ -4511,7 +4514,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "qa", "create"],
+        choices=CEO_MODES,
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, design (research + brainstorm → spec → build), "
@@ -4587,7 +4590,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research"],
+        choices=RUN_MODES,
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
              "build, discover, improve, meta, or research",
@@ -4650,7 +4653,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--session", default=None, help="Custom tmux session name")
     p.add_argument(
         "--mode",
-        choices=["auto", "auto-fresh", "build", "discover", "improve", "meta", "research", "qa"],
+        choices=CEO_MODES,
         default="auto",
         help="Run mode (default: auto, respects in-flight cycle)",
     )

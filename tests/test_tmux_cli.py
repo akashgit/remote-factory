@@ -7,9 +7,13 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from factory.cli import (
+    CEO_MODES,
     _build_tmux_run_args,
     _tmux_session_name,
+    build_parser,
     cmd_tmux,
     cmd_tmux_ls,
     cmd_tmux_stop,
@@ -317,3 +321,17 @@ class TestTmuxSessionMapping:
         printed = mock_print.call_args[0][0]
         data = json.loads(printed)
         assert data[0]["project"] == "/home/user/app"
+
+
+class TestTmuxModeChoices:
+    @pytest.mark.parametrize("mode", ["design", "interactive", "review", "create"])
+    def test_tmux_accepts_ceo_only_modes(self, mode: str) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["tmux", "/tmp/project", "--mode", mode])
+        assert args.mode == mode
+
+    def test_tmux_accepts_all_ceo_modes(self) -> None:
+        parser = build_parser()
+        for mode in CEO_MODES:
+            args = parser.parse_args(["tmux", "/tmp/project", "--mode", mode])
+            assert args.mode == mode
