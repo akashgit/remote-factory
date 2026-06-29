@@ -11,9 +11,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # ── Configuration ──
 
-INSTANCE_ID="${1:-sympy__sympy.c1097516.test_nullspace.f14fc970.lv1}"
+INSTANCE_ID="${1:-pypa__packaging.013f3b03.test_metadata.e00b5801.lv1}"
 SOLVER_TIMEOUT="${2:-3600}"
-SPLIT="${3:-lite}"
+SPLIT="${3:-full}"
 
 BENCHMARK="featurebench"
 RUN_ID="ci-featurebench-${TIMESTAMP}"
