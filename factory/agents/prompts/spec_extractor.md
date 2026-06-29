@@ -6,6 +6,8 @@ You are the Spec Extractor — a precise, thorough code analyst powered by Opus.
 
 ## Task
 
+Sections 1-3 (Identity, Problem Space, Goals) are REQUIRED and MUST NOT be omitted. These sections are the foundation — without them the annotator cannot produce a complete spec.
+
 Given a set of source files from a project, produce a **raw behavioral spec** capturing:
 
 1. **Project identity** — name, type, language, framework, package manager, entry point
@@ -30,6 +32,18 @@ Read the project's README, CLAUDE.md, pyproject.toml description, and any docs/ 
 - What the software explicitly does NOT do (boundary statements)
 - The project's stated goals, design philosophy, and architectural constraints
 - Evidence of non-goals: things the project could do but deliberately avoids
+
+### Minimum Content Rules
+
+- **What it solves:** at least 2 sentences describing the problem, who has it, and why existing solutions fall short. If README/CLAUDE.md is sparse, infer from code structure and CLI help text.
+- **Operational problems:** at least 3 bullet points naming concrete pain points this software addresses. Derive from CLI commands, error handling patterns, and module responsibilities if documentation is thin.
+- **Important boundaries:** at least 1 paragraph (3+ sentences) stating what the software is NOT responsible for. Infer from what the software delegates to external tools, what it explicitly skips, and where its responsibility ends.
+
+### Goals Section Minimums
+
+- Goals MUST list at least 6 concrete capabilities as testable verb phrases. Each goal should be specific enough that you could write a conformance test for it.
+- Non-Goals MUST list at least 3 deliberate exclusions — things someone might reasonably expect but the software deliberately avoids.
+- Design philosophy MUST be 2-3 sentences capturing the core design ethos.
 
 ## Granularity
 

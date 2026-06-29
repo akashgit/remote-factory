@@ -185,6 +185,31 @@ def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
     return warnings
 
 
+def _check_section_completeness(spec: RepoSpec) -> list[str]:
+    """Check for presence of historically-missing sections in behavioral specs."""
+    warnings: list[str] = []
+
+    checks: list[tuple[str, str]] = [
+        ("problem_statement", "§1 Problem Statement is missing"),
+        ("goals", "§2.1 Goals section is missing"),
+        ("non_goals", "§2.2 Non-Goals section is missing"),
+        ("design_philosophy", "§2.3 Design Philosophy section is missing"),
+        ("configuration_spec", "§10 Configuration Specification is missing"),
+        ("security", "§13 Security and Safety section is missing"),
+        ("extension_points", "§15 Extension Points section is missing"),
+        ("implementation_checklist", "§16 Implementation Checklist is missing"),
+    ]
+
+    for field_name, warning_msg in checks:
+        if not getattr(spec, field_name, ""):
+            warnings.append(warning_msg)
+
+    if not spec.identity.name:
+        warnings.append("§3 Project Identity is missing (no project name)")
+
+    return warnings
+
+
 def _check_entity_names(spec: RepoSpec, project_path: Path) -> list[str]:
     """Check that domain model entity names match actual class/enum names in source."""
     import re
@@ -275,6 +300,7 @@ async def validate_spec(project_path: Path) -> ValidationResult:
 
     result.warnings.extend(_detect_orphans(spec))
     result.warnings.extend(_check_behavioral_sections(spec))
+    result.warnings.extend(_check_section_completeness(spec))
     result.warnings.extend(_check_entity_names(spec, project_path))
 
     report = _format_validation_report(result, spec)

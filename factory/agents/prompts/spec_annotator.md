@@ -201,6 +201,69 @@ contract, but this specification does not prescribe one universal policy.
 <pseudocode for 3-5 critical algorithms>
 ```
 
+## Completeness Checklist
+
+Before writing output, verify EVERY section below is present and non-empty. If `spec_raw.md` is missing raw material for a section, synthesize from source code — do NOT skip.
+
+- [ ] §1 Problem Statement
+- [ ] §2.1 Goals
+- [ ] §2.2 Non-Goals
+- [ ] §2.3 Design Philosophy
+- [ ] §3 Project Identity
+- [ ] §4 Technical Stack
+- [ ] §5 Architecture Overview
+- [ ] §6 Domain Model
+- [ ] §7 State Machines and Lifecycles
+- [ ] §8 Module Specifications
+- [ ] §9 Shared Contracts
+- [ ] §10 Configuration Specification
+- [ ] §11 Entry Points
+- [ ] §12 Failure Model and Recovery
+- [ ] §13 Security and Safety
+- [ ] §14 Test and Validation Matrix
+- [ ] §15 Extension Points
+- [ ] §16 Implementation Checklist
+- [ ] Appendix A: Reference Algorithms
+
+## Per-Section Minimum Content
+
+### §1 Problem Statement
+MUST open with one sentence stating what the software IS. MUST list 4-6 specific operational problems it solves. Each problem should be a concrete pain point — pattern: "It [verb]s [thing] instead of [bad alternative]." MUST end with an "Important boundary" paragraph stating what the software is NOT responsible for.
+
+### §2.1 Goals
+MUST list 6-10 specific, testable capabilities as concrete verb phrases. Each goal must pass the test: "Could you write a conformance test for this?" If not, it's too vague.
+
+### §2.2 Non-Goals
+MUST list 4-6 things someone might reasonably expect but the software deliberately excludes, with reasoning. Pattern: "[Capability]. ([Why excluded or what alternative exists].)"
+
+### §3 Project Identity
+MUST include name, type, language, framework, package manager, and entry point as a structured block.
+
+### §10 Configuration Specification
+MUST document the configuration precedence chain (e.g., CLI flag > env var > config file > default). MUST list all config keys with their types, defaults, and valid ranges. MUST describe validation rules and what happens when invalid values are provided.
+
+### §13 Security and Safety
+MUST describe trust boundaries (what is trusted vs. untrusted input). MUST document filesystem safety invariants (where the system writes, path traversal prevention). MUST describe secret handling (how secrets are loaded, whether they are logged, leakage detection).
+
+### §15 Extension Points
+MUST list all plugin registries with file paths (e.g., runner registration, language evaluator, workflow registration, notification adapters). For each, describe the registration mechanism and what a new plugin must provide.
+
+### §16 Implementation Checklist
+MUST separate required conformance criteria (things an implementation MUST do) from recommended extensions (things an implementation SHOULD do). Each item should be concrete and verifiable.
+
+### Appendix A: Reference Algorithms
+MUST include pseudocode for 3-5 critical algorithms. Identify the most complex or non-obvious algorithms in the codebase and provide step-by-step pseudocode with invariants.
+
+## Module Section Depth
+
+Each module section in §8 MUST describe:
+1. **Role** — what this module is responsible for
+2. **What it consumes** — which modules/contracts it reads from, expressed as behavioral rules
+3. **What consumes it** — which modules depend on this one, expressed as behavioral rules
+4. **What breaks if it changes** — at least one statement about downstream impact
+
+Minimum 3 behavioral contract statements per module using RFC 2119 language (MUST/SHOULD/MAY).
+
 ## Rules
 
 - Preserve all modules from `spec_raw.md` — do not drop modules
