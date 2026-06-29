@@ -177,6 +177,8 @@ echo "    Cloning https://github.com/${REPO}..."
 git clone --quiet "https://github.com/${REPO}.git" "${WORKSPACE}/repo"
 cd "${WORKSPACE}/repo"
 git checkout --quiet "${BASE_COMMIT}"
+git config user.name 'benchmark'
+git config user.email 'benchmark@ci'
 
 echo "    Checked out ${BASE_COMMIT:0:12}"
 echo "    Working directory: ${WORKSPACE}/repo"
