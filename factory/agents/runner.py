@@ -60,6 +60,50 @@ IDENTITY_REANCHOR = """\
 # Directory containing base agent prompts (shipped with the factory)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 
+# Directory containing expected-behavior docs (shipped with the factory)
+_EXPECTED_BEHAVIORS_DIR = Path(__file__).parent.parent.parent / "docs" / "expected-behaviors"
+
+# Canonical role name -> filename slug (handles underscore vs hyphen)
+_ROLE_SLUG: dict[str, str] = {
+    "failure_analyst": "failure-analyst",
+}
+
+
+def load_expected_behavior(role: AgentRole) -> dict[str, str | None]:
+    """Load expected-behavior documents for an agent role.
+
+    Returns a dict with keys ``"soul"`` and ``"verification_points"``.
+    Values are the file contents as strings, or ``None`` when a file
+    does not exist.
+
+    Resolution priority:
+    1. Directory format: ``docs/expected-behaviors/<slug>/soul.md`` +
+       ``docs/expected-behaviors/<slug>/verification-points.md``
+    2. Flat file fallback: ``docs/expected-behaviors/<slug>.md``
+       (returned under the ``"soul"`` key since the flat file combines
+       both concerns).
+    """
+    slug = _ROLE_SLUG.get(role, role)
+
+    dir_path = _EXPECTED_BEHAVIORS_DIR / slug
+    soul_path = dir_path / "soul.md"
+    vp_path = dir_path / "verification-points.md"
+
+    if soul_path.exists() or vp_path.exists():
+        return {
+            "soul": soul_path.read_text() if soul_path.exists() else None,
+            "verification_points": vp_path.read_text() if vp_path.exists() else None,
+        }
+
+    flat_path = _EXPECTED_BEHAVIORS_DIR / f"{slug}.md"
+    if flat_path.exists():
+        return {
+            "soul": flat_path.read_text(),
+            "verification_points": None,
+        }
+
+    return {"soul": None, "verification_points": None}
+
 
 def resolve_prompt(
     role: AgentRole,
