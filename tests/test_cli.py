@@ -1032,8 +1032,8 @@ class TestCmdCeoReview:
         assert "step 2c-qa" in task
         assert "iteration 1/1" in task
         assert "step 2d" in task
-        assert "--score-before" in task
-        assert "--score-after" in task
+        assert "--reason" in task
+        assert "--qa-body-file" in task
         assert "factory review --verdict" in task
 
     def test_review_mode_headless_with_repo(self, tmp_path, capsys):
@@ -1097,8 +1097,8 @@ class TestCmdCeoQa:
         assert "Mode: qa" in task
         assert "PR #42" in task
         assert "factory review --verdict" in task
-        assert "--score-before" in task
-        assert "--score-after" in task
+        assert "--reason" in task
+        assert "--qa-body-file" in task
         assert "workflow-qa SKILL.md" in task
         assert "Do NOT post any PR comments" in task
 

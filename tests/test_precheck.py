@@ -516,6 +516,38 @@ class TestFormatReview:
         assert "Score Comparison" in body
         assert "n/a" in body
 
+    def test_qa_body_rendered(self):
+        payload = ReviewPayload(
+            verdict="KEEP",
+            reason="All good",
+            score_before=0.8,
+            score_after=0.9,
+            threshold=0.8,
+            guard_results={},
+            precheck_summary="",
+            code_notes=[],
+            qa_body="Found 2 issues:\n- Missing error handling\n- No input validation",
+        )
+        body = format_review(payload)
+        assert "### QA Analysis" in body
+        assert "Found 2 issues:" in body
+        assert "Missing error handling" in body
+
+    def test_qa_body_empty_omitted(self):
+        payload = ReviewPayload(
+            verdict="KEEP",
+            reason="All good",
+            score_before=0.8,
+            score_after=0.9,
+            threshold=0.8,
+            guard_results={},
+            precheck_summary="",
+            code_notes=[],
+            qa_body="",
+        )
+        body = format_review(payload)
+        assert "### QA Analysis" not in body
+
     def test_minimal_payload(self):
         payload = ReviewPayload(
             verdict="KEEP",
@@ -632,6 +664,51 @@ class TestCLIParser:
         assert args.verdict == "KEEP"
         assert args.pr == 99
         assert args.dry_run is True
+
+    def test_review_parser_qa_body_file(self):
+        from factory.cli import build_parser
+
+        parser = build_parser()
+        args = parser.parse_args([
+            "review",
+            "--verdict", "KEEP",
+            "--qa-body-file", "/tmp/qa-latest.md",
+        ])
+        assert args.qa_body_file == "/tmp/qa-latest.md"
+
+    def test_cmd_review_qa_body_file(self, tmp_path, capsys):
+        from factory.cli import cmd_review, build_parser
+
+        body_file = tmp_path / "qa-report.md"
+        body_file.write_text("## Health Check\nAll tests pass.")
+
+        parser = build_parser()
+        args = parser.parse_args([
+            "review",
+            "--verdict", "KEEP",
+            "--qa-body-file", str(body_file),
+            "--dry-run",
+        ])
+        result = cmd_review(args)
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "### QA Analysis" in captured.out
+        assert "All tests pass." in captured.out
+
+    def test_cmd_review_qa_body_file_missing(self, tmp_path, capsys):
+        from factory.cli import cmd_review, build_parser
+
+        parser = build_parser()
+        args = parser.parse_args([
+            "review",
+            "--verdict", "KEEP",
+            "--qa-body-file", str(tmp_path / "nonexistent.md"),
+            "--dry-run",
+        ])
+        result = cmd_review(args)
+        assert result == 0
+        captured = capsys.readouterr()
+        assert "### QA Analysis" not in captured.out
 
     def test_review_parser_minimal(self):
         from factory.cli import build_parser

@@ -1779,6 +1779,12 @@ def cmd_review(args: argparse.Namespace) -> int:
                 k, v = pair.split(":", 1)
                 guard_results[k.strip()] = v.strip()
 
+    qa_body = ""
+    if args.qa_body_file:
+        body_path = Path(args.qa_body_file)
+        if body_path.exists():
+            qa_body = body_path.read_text().strip()
+
     payload = ReviewPayload(
         verdict=args.verdict.upper(),
         reason=args.reason or "",
@@ -1788,6 +1794,7 @@ def cmd_review(args: argparse.Namespace) -> int:
         guard_results=guard_results,
         precheck_summary=args.precheck_summary or "",
         code_notes=[n.strip() for n in args.code_notes.split("|")] if args.code_notes else [],
+        qa_body=qa_body,
         experiment_id=args.experiment_id,
         hypothesis=args.hypothesis or "",
     )
@@ -2457,8 +2464,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"3. Run step 2d (Hard Precheck Gate)\n"
             f"4. Post verdict via "
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
+            f"--reason \"$REASON\" "
+            f"--qa-body-file .factory/reviews/qa-latest.md"
             f"{repo_flag}\n"
+            f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
+            f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
         )
 
         if not headless:
@@ -2517,8 +2527,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"{f'- REPO={repo}' + chr(10) if repo else ''}"
             f"\nPost the final verdict via:\n"
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
+            f"--reason \"$REASON\" "
+            f"--qa-body-file .factory/reviews/qa-latest.md"
             f"{repo_flag}\n"
+            f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
+            f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
             f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
             f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
@@ -4364,6 +4377,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--hypothesis", default=None, help="Experiment hypothesis text")
     p.add_argument("--pr", type=int, default=None, help="PR number to post review on")
     p.add_argument("--repo", default=None, help="GitHub repo (owner/name) for the PR")
+    p.add_argument("--qa-body-file", default=None,
+                    help="Path to file containing QA analysis to include in review")
     p.add_argument("--dry-run", action="store_true", default=False,
                     help="Print review without posting")
 

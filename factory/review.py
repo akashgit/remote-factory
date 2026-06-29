@@ -22,6 +22,7 @@ class ReviewPayload:
     guard_results: dict[str, str]  # {check_name: "PASS" | "FAIL"}
     precheck_summary: str
     code_notes: list[str]
+    qa_body: str = ""
     experiment_id: int | None = None
     hypothesis: str = ""
 
@@ -88,6 +89,12 @@ def format_review(payload: ReviewPayload) -> str:
         lines.append("")
         for note in payload.code_notes:
             lines.append(f"- {note}")
+        lines.append("")
+
+    if payload.qa_body:
+        lines.append("### QA Analysis")
+        lines.append("")
+        lines.append(payload.qa_body)
         lines.append("")
 
     lines.append("---")
