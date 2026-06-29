@@ -14,21 +14,11 @@ log = structlog.get_logger()
 
 
 @dataclass
-class CouplingMetrics:
-    """Coupling metrics for a single module (legacy — kept for backward compat)."""
-
-    afferent: int = 0
-    efferent: int = 0
-    instability: float = 0.0
-
-
-@dataclass
 class ValidationResult:
     """Result of spec validation."""
 
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
-    metrics: dict[str, CouplingMetrics] = field(default_factory=dict)
 
     @property
     def passed(self) -> bool:
@@ -160,50 +150,6 @@ def _detect_orphans(spec: RepoSpec) -> list[str]:
     return warnings
 
 
-def _detect_hubs(spec: RepoSpec) -> list[str]:
-    """Flag modules with >=5 dependents as high-impact change targets."""
-    warnings: list[str] = []
-    all_names = {m.name for m in spec.modules}
-    dependent_count: dict[str, int] = {m.name: 0 for m in spec.modules}
-
-    for mod in spec.modules:
-        for dep in mod.depends_on:
-            if dep in dependent_count:
-                dependent_count[dep] += 1
-
-    for edge in spec.dependency_edges:
-        if edge.target in all_names and edge.source in all_names:
-            dependent_count.setdefault(edge.target, 0)
-
-    for name, count in dependent_count.items():
-        if count >= 5:
-            warnings.append(
-                f"Hub module: '{name}' has {count} dependents (high-impact change target)"
-            )
-
-    return warnings
-
-
-def _compute_coupling(spec: RepoSpec) -> dict[str, CouplingMetrics]:
-    """Compute afferent (Ca) and efferent (Ce) coupling per module."""
-    all_names = {m.name for m in spec.modules}
-    metrics: dict[str, CouplingMetrics] = {m.name: CouplingMetrics() for m in spec.modules}
-
-    for mod in spec.modules:
-        metrics[mod.name].efferent = len([d for d in mod.depends_on if d in all_names])
-
-    for mod in spec.modules:
-        for dep in mod.depends_on:
-            if dep in metrics:
-                metrics[dep].afferent += 1
-
-    for name, m in metrics.items():
-        total = m.afferent + m.efferent
-        m.instability = m.efferent / total if total > 0 else 0.0
-
-    return metrics
-
-
 def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
     """Warn about missing behavioral sections in new-format specs."""
     warnings: list[str] = []
@@ -220,6 +166,11 @@ def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
             "Failure model section is empty — consider documenting error types and recovery"
         )
 
+    if not spec.state_machines_raw:
+        warnings.append(
+            "State machines section is empty — consider documenting state enums and transitions"
+        )
+
     if not spec.configuration_spec:
         warnings.append(
             "Configuration specification is empty — consider documenting config sources"
@@ -230,6 +181,38 @@ def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
             warnings.append(
                 f"Module '{mod.name}' behavioral spec lacks RFC 2119 normative language"
             )
+
+    return warnings
+
+
+def _check_entity_names(spec: RepoSpec, project_path: Path) -> list[str]:
+    """Check that domain model entity names match actual class/enum names in source."""
+    import re
+
+    warnings: list[str] = []
+    if not spec.domain_model_raw:
+        return warnings
+
+    entity_pattern = re.compile(r"^#{3,5}\s+(?:\d+(?:\.\d+)*\s+)?(\w+)", re.MULTILINE)
+    entity_names = entity_pattern.findall(spec.domain_model_raw)
+
+    for name in entity_names:
+        found = False
+        for mod in spec.modules:
+            if not mod.path:
+                continue
+            full_path = project_path / mod.path
+            if not full_path.exists():
+                continue
+            try:
+                source = full_path.read_text()
+            except OSError:
+                continue
+            if re.search(rf"\bclass\s+{re.escape(name)}\b", source):
+                found = True
+                break
+        if not found:
+            warnings.append(f"Domain model entity '{name}' not found as a class in any module")
 
     return warnings
 
@@ -259,16 +242,6 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
         lines.append("")
         for warn in result.warnings:
             lines.append(f"- {warn}")
-        lines.append("")
-
-    if result.metrics:
-        lines.append("## Coupling Metrics")
-        lines.append("")
-        lines.append("| Module | Ca (afferent) | Ce (efferent) | I (instability) |")
-        lines.append("|--------|--------------|--------------|-----------------|")
-        for name in sorted(result.metrics):
-            m = result.metrics[name]
-            lines.append(f"| {name} | {m.afferent} | {m.efferent} | {m.instability:.2f} |")
         lines.append("")
 
     return "\n".join(lines)
@@ -301,10 +274,8 @@ async def validate_spec(project_path: Path) -> ValidationResult:
     result.warnings.extend(import_warnings)
 
     result.warnings.extend(_detect_orphans(spec))
-    result.warnings.extend(_detect_hubs(spec))
     result.warnings.extend(_check_behavioral_sections(spec))
-
-    result.metrics = _compute_coupling(spec)
+    result.warnings.extend(_check_entity_names(spec, project_path))
 
     report = _format_validation_report(result, spec)
     output_path = project_path / ".factory" / "spec_validation.md"
