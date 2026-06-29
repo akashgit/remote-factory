@@ -42,5 +42,5 @@ If gate fails: the change violated a constraint or score regressed. Route to `po
 ## Step: Post Review
 
 ```bash
-factory review --verdict $VERDICT --pr $PR_NUMBER --score-before $SCORE_BEFORE --score-after $SCORE_AFTER --qa-body-file .factory/reviews/qa-latest.md
+factory review --verdict $VERDICT --pr $PR_NUMBER --reason $REASON --qa-body-file .factory/reviews/qa-latest.md
 ```
