@@ -116,6 +116,9 @@ When the user says "work on X":
    - `factory tmux <path> --focus "item"` for targeted single-item work
    - `factory tmux <path> --mode design` for brainstorming what to work on
    - `factory tmux <path> --mode research` for research-driven improvement
+   - `factory tmux <path> --mode create --focus "mode description"` for creating new factory modes
+
+   Create mode is a meta-mode: it requires the factory project path (not a target project), uses `--focus` to provide the mode description, and generates new workflow definitions, CLI wiring, and tests for a new factory mode.
 
 ### 5. Monitor Proactively
 

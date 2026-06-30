@@ -31,6 +31,7 @@ factory tmux <project_path> --mode improve   # default — score-driven improvem
 factory tmux <project_path> --mode design    # brainstorm what to work on first
 factory tmux <project_path> --mode research  # research-driven improvement
 factory tmux <project_path> --mode meta      # improve the factory itself + ACE evolution
+factory tmux <factory_project_path> --mode create --focus "mode description"  # create new factory mode
 ```
 
 ## Monitor Running Sessions
@@ -62,5 +63,6 @@ factory tmux-stop --path <project_path>
 | User asks "work on this project" | `factory tmux <path>` |
 | User asks to build one specific thing | `factory tmux <path> --focus "<item>"` |
 | User wants to discuss what to work on | `factory tmux <path> --mode design` |
+| User wants to create a new factory mode | `factory tmux /path/to/factory --mode create --focus "description"` |
 
 Always check `factory tmux-ls` before dispatching to avoid launching duplicate sessions for the same project.
