@@ -84,6 +84,7 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
             if val and var not in env:
                 env[var] = val
 
+        env['FACTORY_CEO_RESPAWN_DISABLED'] = '1'
         env = {k: v for k, v in env.items() if v}
 
         await self.exec_as_agent(
@@ -309,6 +310,7 @@ class FactoryCeo(BaseInstalledAgent):
             if val and var not in env:
                 env[var] = val
 
+        env['FACTORY_CEO_RESPAWN_DISABLED'] = '1'
         env = {k: v for k, v in env.items() if v}
 
         # Create Claude Code config directories
