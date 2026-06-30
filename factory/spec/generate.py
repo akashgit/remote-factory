@@ -166,9 +166,9 @@ async def generate_spec(project_path: Path) -> Path:
     Runs the extraction → annotation pipeline:
     1. Collect source files and batch them
     2. Run Opus extraction agent to produce spec_raw.md
-    3. Run Researcher annotation agent to produce SPEC.md
+    3. Run Researcher annotation agent to produce GRAPH-SPEC.md
 
-    Returns the path to the generated SPEC.md.
+    Returns the path to the generated GRAPH-SPEC.md.
     """
     from factory.agents.runner import invoke_agent
 
@@ -220,7 +220,7 @@ async def generate_spec(project_path: Path) -> Path:
         f"Read {spec_raw} and key source files.\n"
         f"Produce a behavioral spec with RFC 2119 normative language, domain model,\n"
         f"state machines, failure model, and module behavioral contracts.\n"
-        f"Write the annotated repo spec to {factory_dir / 'SPEC.md'}."
+        f"Write the annotated repo spec to {factory_dir / 'GRAPH-SPEC.md'}."
     )
 
     result, code = await invoke_agent(
@@ -233,7 +233,7 @@ async def generate_spec(project_path: Path) -> Path:
     if code != 0:
         raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
 
-    repo_spec = factory_dir / "SPEC.md"
+    repo_spec = factory_dir / "GRAPH-SPEC.md"
     if not repo_spec.exists():
         raise FileNotFoundError(
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"
