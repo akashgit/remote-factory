@@ -6,6 +6,7 @@ import contextlib
 import json
 import signal
 import subprocess
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -194,6 +195,50 @@ class TestGroupedHelp:
     def test_group_count_is_nine(self):
         from factory.cli import _COMMAND_GROUPS
         assert len(_COMMAND_GROUPS) == 9
+
+
+class TestRefactoryAgentFilter:
+    """Tests for --refactory-agent help filtering."""
+
+    EXPECTED_COMMANDS = {
+        "ceo", "run", "tmux", "tmux-ls", "tmux-stop", "tmux-capture",
+        "discover", "init", "detect",
+        "eval", "history", "study", "status", "backlog-list", "backlog-add",
+        "checkpoint", "resume",
+        "ace", "ace-stats",
+    }
+
+    def test_filtered_help_shows_only_expected_commands(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["factory", "--help", "--refactory-agent"])
+        parser = build_parser()
+        help_text = parser.format_help()
+        import re as _re
+        displayed = set(_re.findall(r"^  (\S+)", help_text, _re.MULTILINE))
+        assert displayed == self.EXPECTED_COMMANDS
+
+    def test_filtered_help_has_group_headers(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["factory", "--help", "--refactory-agent"])
+        help_text = build_parser().format_help()
+        for header in ("Entry Points:", "Project Setup:", "Project Intelligence:",
+                       "Validation & Recovery:", "Self-Evolution:"):
+            assert header in help_text, f"Missing group header: {header}"
+
+    def test_filtered_help_omits_empty_groups(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["factory", "--help", "--refactory-agent"])
+        help_text = build_parser().format_help()
+        for header in ("Experiment Lifecycle:", "Knowledge & Archive:", "Configuration:"):
+            assert header not in help_text, f"Group should be hidden: {header}"
+
+    def test_filtered_help_no_other_section(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["factory", "--help", "--refactory-agent"])
+        help_text = build_parser().format_help()
+        assert "\nOther:\n" not in help_text
+
+    def test_unfiltered_help_unaffected(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["factory", "--help"])
+        help_text = build_parser().format_help()
+        assert "Experiment Lifecycle:" in help_text
+        assert "begin" in help_text
 
 
 class TestCmdCeoDesign:

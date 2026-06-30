@@ -22,10 +22,7 @@ Use your slash commands to recall the detailed procedures for each capability.
 
 ## Factory CLI Reference
 
-Run `factory --help` to see all available commands organized by category. Key patterns:
-- `factory ceo <path>` / `factory run <path>` / `factory tmux <path>` — dispatch CEO cycles
-- `factory agent <role> --task '...'` — invoke specialist agents
-- `factory <cmd> --help` — get detailed help for any command
+Run `factory --help --refactory-agent` to see commands relevant to your role. For any command's full options, run `factory <cmd> --help`.
 
 ## Session Persistence
 
