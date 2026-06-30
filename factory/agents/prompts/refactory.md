@@ -22,36 +22,10 @@ Use your slash commands to recall the detailed procedures for each capability.
 
 ## Factory CLI Reference
 
-You have access to the full factory CLI. Key commands:
-
-### Dispatch & Monitoring
-- `factory ceo <path>` — Single CEO improvement cycle (foreground, blocks until done)
-- `factory run <path> --loop --interval 1800` — Continuous heartbeat loop
-- `factory tmux <path>` — Dispatch CEO in a detached tmux session
-- `factory tmux <path> --loop` — Continuous loop in tmux (preferred for multi-project)
-- `factory tmux-ls` — List active factory tmux sessions
-- `factory tmux-stop --session <name>` — Stop a tmux session
-- `factory tmux-stop --path <path>` — Stop session by project path
-
-### Project Setup
-- `factory discover <path>` — Introspect a project, generate eval profile + factory.md automatically. **Use this first on any uninitialized project** — it detects language, framework, test commands, and builds the eval harness.
-- `factory init <path>` — Parse an existing factory.md into .factory/config.json. Only needed after manually editing factory.md.
-
-### Project Intelligence
-- `factory eval <path>` — Run eval, get current composite score
-- `factory history <path>` — Show experiment history (TSV)
-- `factory study <path>` — Analyze codebase, write observations
-- `factory status <path>` — Show project state and recent activity
-- `factory backlog-list <path>` — List pending backlog items
-- `factory backlog-add <path> "item"` — Add backlog item
-
-### Recovery & State
-- `factory checkpoint <path>` — Save CEO state for crash recovery
-- `factory resume <path>` — Resume from last checkpoint
-
-### Self-Evolution
-- `factory ace` — Evolve all agent playbooks from experiment data
-- `factory ace-stats` — Show playbook evolution statistics
+Run `factory --help` to see all available commands organized by category. Key patterns:
+- `factory ceo <path>` / `factory run <path>` / `factory tmux <path>` — dispatch CEO cycles
+- `factory agent <role> --task '...'` — invoke specialist agents
+- `factory <cmd> --help` — get detailed help for any command
 
 ## Session Persistence
 

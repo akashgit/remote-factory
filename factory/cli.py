@@ -4232,8 +4232,84 @@ def _emit_cli_event(project_path: Path, event_type: str, data: dict) -> None:
 # ── parser construction ────────────────────────────────────────
 
 
+_COMMAND_GROUPS: list[tuple[str, list[str]]] = [
+    ("Entry Points", [
+        "ceo", "run", "tmux", "tmux-ls", "tmux-capture", "tmux-stop", "refactory", "dashboard",
+        "agent",
+    ]),
+    ("Project Setup", ["home", "detect", "discover", "init"]),
+    ("Experiment Lifecycle", [
+        "begin", "finalize", "guard", "precheck", "log", "emit", "review",
+    ]),
+    ("Project Intelligence", [
+        "eval", "history", "study", "status", "summary", "diff", "explain", "export",
+        "research", "insights", "report-update", "baseline", "clean-pr",
+    ]),
+    ("Backlog & Refinement", [
+        "backlog-add", "backlog-list", "backlog-remove", "deferred-list", "deferred-remove",
+        "refine-status", "refine-begin", "refine-complete", "message",
+    ]),
+    ("Knowledge & Archive", [
+        "archive", "vault-init", "backfill-citations", "backfill-archive",
+    ]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow"]),
+    ("Configuration", [
+        "config", "profile", "install", "self-update", "runners", "usage", "serve-mcp",
+    ]),
+    ("Validation & Recovery", [
+        "leakage-check", "validate-research", "checkpoint", "resume", "notify", "registry-list",
+    ]),
+]
+
+
+class _GroupedHelpParser(argparse.ArgumentParser):
+    """ArgumentParser that renders subcommands in labelled groups."""
+
+    def format_help(self) -> str:
+        if self._subparsers is None:
+            return super().format_help()
+
+        sub_action: argparse._SubParsersAction | None = None  # type: ignore[type-arg]
+        for action in self._subparsers._group_actions:
+            if isinstance(action, argparse._SubParsersAction):
+                sub_action = action
+                break
+
+        if sub_action is None:
+            return super().format_help()
+
+        parts = [f"usage: {self.prog} [-h] <command> ...\n"]
+        if self.description:
+            parts.append(f"{self.description}\n")
+
+        help_map: dict[str, str] = {}
+        for sub_act in sub_action._choices_actions:
+            help_map[sub_act.dest] = sub_act.help or ""
+
+        grouped_cmds: set[str] = set()
+        for group_name, cmds in _COMMAND_GROUPS:
+            lines = []
+            for cmd in cmds:
+                if cmd in sub_action._name_parser_map and cmd in help_map:
+                    lines.append(f"  {cmd:25s}{help_map[cmd]}")
+                    grouped_cmds.add(cmd)
+            if lines:
+                parts.append(f"\n{group_name}:\n" + "\n".join(lines))
+
+        ungrouped = [
+            c for c in help_map
+            if c not in grouped_cmds and c in sub_action._name_parser_map
+        ]
+        if ungrouped:
+            lines = [f"  {cmd:25s}{help_map[cmd]}" for cmd in ungrouped]
+            parts.append("\nOther:\n" + "\n".join(lines))
+
+        parts.append("")
+        return "\n".join(parts)
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = _GroupedHelpParser(
         prog="factory",
         description="Remote Factory — domain-agnostic multi-agent software evolution loop",
     )
@@ -4843,7 +4919,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
-    add_workflow_parser(sub)
+    add_workflow_parser(sub)  # type: ignore[arg-type]
 
     return parser
 
