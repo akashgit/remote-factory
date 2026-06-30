@@ -222,7 +222,7 @@ class TestBaselineCLI:
         with (
             patch("factory.baseline.fetch_baseline", return_value=baseline_data) as mock_fetch,
             patch("subprocess.run", return_value=merge_base_result) as mock_run,
-            patch("factory.cli._read_target_branch", return_value="main"),
+            patch("factory.cli.eval_cmds._read_target_branch", return_value="main"),
         ):
             rc = cmd_baseline(args)
 

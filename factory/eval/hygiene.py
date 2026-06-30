@@ -302,13 +302,47 @@ def eval_architecture(project_path: Path) -> dict:
     bottleneck = data.get("bottleneck", "unknown")
     passed = result.returncode == 0
 
-    return {
+    arch_result: dict = {
         "name": "architecture",
         "score": round(score, 4),
         "weight": HYGIENE_WEIGHTS["architecture"],
         "passed": passed,
         "details": f"quality_signal={quality_signal}/10000, bottleneck={bottleneck}",
     }
+
+    scan_metrics = _run_sentrux_scan(project_path)
+    if scan_metrics:
+        arch_result["scan_metrics"] = scan_metrics
+
+    return arch_result
+
+
+def _run_sentrux_scan(project_path: Path) -> dict | None:
+    """Run ``sentrux scan .`` and return the 5 individual metrics, or None on failure."""
+    try:
+        result = subprocess.run(
+            ["sentrux", "scan", "."],
+            cwd=project_path,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+    try:
+        data = json.loads(result.stdout.strip())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+    metric_keys = ("modularity", "acyclicity", "depth", "equality", "redundancy")
+    metrics = {}
+    for key in metric_keys:
+        val = data.get(key)
+        if val is not None:
+            metrics[key] = round(float(val), 4)
+
+    return metrics if metrics else None
 
 
 # ── Public API ─────────────────────────────────────────────────────
