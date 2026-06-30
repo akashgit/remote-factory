@@ -235,9 +235,9 @@ def _setup_fixture_project(tmp_path: Path) -> Path:
     project = tmp_path / "myproject"
     project.mkdir()
 
+    (project / "GRAPH-SPEC.md").write_text(FIXTURE_SPEC)
     factory_dir = project / ".factory"
     factory_dir.mkdir()
-    (factory_dir / "GRAPH-SPEC.md").write_text(FIXTURE_SPEC)
 
     exp_dir = factory_dir / "experiments" / "1"
     exp_dir.mkdir(parents=True)
@@ -283,9 +283,8 @@ class TestScopeDiff:
 
         project = tmp_path / "no_diff_project"
         project.mkdir()
-        factory_dir = project / ".factory"
-        factory_dir.mkdir()
-        (factory_dir / "GRAPH-SPEC.md").write_text(FIXTURE_SPEC)
+        (project / "GRAPH-SPEC.md").write_text(FIXTURE_SPEC)
+        (project / ".factory").mkdir()
 
         with pytest.raises(FileNotFoundError, match="No diff found"):
             scope_diff(project, experiment_id=99)

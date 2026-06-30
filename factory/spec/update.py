@@ -93,11 +93,14 @@ def scope_diff(project_path: Path, experiment_id: int | None = None) -> DiffScop
     If experiment_id is provided, reads .factory/experiments/{id}/changes.diff.
     Otherwise, diffs between HEAD and the commit that last touched GRAPH-SPEC.md.
     """
-    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
-    if not spec_path.is_file():
-        raise FileNotFoundError(f"No repo spec found at {spec_path}")
+    from factory.discovery.spec import resolve_spec
+
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        raise FileNotFoundError(f"No repo spec found in {project_path}")
 
     spec = parse_spec(spec_path)
+    spec_rel = str(spec_path.relative_to(project_path))
 
     if experiment_id is not None:
         diff_path = project_path / ".factory" / "experiments" / str(experiment_id) / "changes.diff"
@@ -106,7 +109,7 @@ def scope_diff(project_path: Path, experiment_id: int | None = None) -> DiffScop
         diff_text = diff_path.read_text()
     else:
         result = subprocess.run(
-            ["git", "log", "-1", "--format=%H", "--", ".factory/GRAPH-SPEC.md"],
+            ["git", "log", "-1", "--format=%H", "--", spec_rel],
             cwd=project_path,
             capture_output=True,
             text=True,
@@ -216,9 +219,11 @@ async def update_spec(project_path: Path) -> Path:
     """
     from factory.agents.runner import invoke_agent
 
-    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
-    if not spec_path.is_file():
-        raise FileNotFoundError(f"No repo spec found at {spec_path}")
+    from factory.discovery.spec import resolve_spec
+
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        raise FileNotFoundError(f"No repo spec found in {project_path}")
 
     scope = scope_diff(project_path)
 

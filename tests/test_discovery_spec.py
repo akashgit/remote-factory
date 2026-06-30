@@ -11,42 +11,19 @@ from factory.discovery.spec import (
 )
 
 
-def test_resolve_spec_committed(tmp_path: Path):
+def test_resolve_spec_found(tmp_path: Path):
     (tmp_path / "GRAPH-SPEC.md").write_text("# Spec")
-    path, source = resolve_spec(tmp_path)
-    assert source == "committed"
-    assert path == tmp_path / "GRAPH-SPEC.md"
-
-
-def test_resolve_spec_generated(tmp_path: Path):
-    factory_dir = tmp_path / ".factory"
-    factory_dir.mkdir()
-    (factory_dir / "GRAPH-SPEC.md").write_text("# Generated Spec")
-    path, source = resolve_spec(tmp_path)
-    assert source == "generated"
-    assert path == factory_dir / "GRAPH-SPEC.md"
-
-
-def test_resolve_spec_committed_takes_priority(tmp_path: Path):
-    (tmp_path / "GRAPH-SPEC.md").write_text("# Committed")
-    factory_dir = tmp_path / ".factory"
-    factory_dir.mkdir()
-    (factory_dir / "GRAPH-SPEC.md").write_text("# Generated")
-    path, source = resolve_spec(tmp_path)
-    assert source == "committed"
+    path = resolve_spec(tmp_path)
     assert path == tmp_path / "GRAPH-SPEC.md"
 
 
 def test_resolve_spec_absent(tmp_path: Path):
-    path, source = resolve_spec(tmp_path)
-    assert source == "absent"
+    path = resolve_spec(tmp_path)
     assert path is None
 
 
 def test_generate_spec_delegates_to_spec_module(tmp_path: Path):
-    factory_dir = tmp_path / ".factory"
-    factory_dir.mkdir()
-    spec_path = factory_dir / "GRAPH-SPEC.md"
+    spec_path = tmp_path / "GRAPH-SPEC.md"
     spec_path.write_text("# GRAPH-SPEC\n\nGenerated content.")
 
     mock_generate = AsyncMock(return_value=spec_path)

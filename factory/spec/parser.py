@@ -1,4 +1,4 @@
-"""Spec Markdown parser — parse .factory/SPEC.md into structured models."""
+"""Spec Markdown parser — parse GRAPH-SPEC.md into structured models."""
 
 from __future__ import annotations
 
@@ -94,7 +94,7 @@ class CouplingMetricEntry:
 
 @dataclass
 class RepoSpec:
-    """Parsed representation of .factory/SPEC.md (or legacy GRAPH-SPEC.md)."""
+    """Parsed representation of GRAPH-SPEC.md."""
 
     identity: ProjectIdentity = field(default_factory=ProjectIdentity)
     goals: str = ""
@@ -501,7 +501,7 @@ def _parse_checklist(content: str) -> str:
 
 
 def parse_spec(spec_path: Path) -> RepoSpec:
-    """Parse .factory/SPEC.md (or legacy GRAPH-SPEC.md) into a structured RepoSpec model.
+    """Parse GRAPH-SPEC.md into a structured RepoSpec model.
 
     Supports both the new behavioral format and the legacy structural format.
     Raises FileNotFoundError if the spec file does not exist.

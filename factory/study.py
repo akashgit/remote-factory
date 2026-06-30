@@ -951,19 +951,13 @@ def study_project_local(project_path: Path, *, focus: str | None = None, **kwarg
     else:
         lines.append("No similar projects found.")
 
-    # SPEC.md status
     from factory.discovery.spec import resolve_spec
 
-    spec_path, spec_source = resolve_spec(project_path)
+    spec_path = resolve_spec(project_path)
     lines.extend(["", "## GRAPH-SPEC"])
-    if spec_source == "committed":
+    if spec_path is not None:
         lines.append(
-            "GRAPH-SPEC.md found at project root (committed). "
-            "The Strategist SHOULD use GRAPH-SPEC Diff for plan traceability."
-        )
-    elif spec_source == "generated":
-        lines.append(
-            "GRAPH-SPEC.md auto-generated at .factory/GRAPH-SPEC.md. "
+            "GRAPH-SPEC.md found at project root. "
             "The Strategist SHOULD use GRAPH-SPEC Diff for plan traceability."
         )
     else:
