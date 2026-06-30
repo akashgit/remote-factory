@@ -109,7 +109,7 @@ class TestTmuxStopE2E:
             assert check.returncode == 0
 
             result = subprocess.run(
-                [sys.executable, "-m", "factory.cli", "tmux-stop", "--session", session],
+                [sys.executable, "-m", "factory.cli", "tmux-stop", "--session", session, "--force"],
                 capture_output=True, text=True,
                 cwd=str(tmp_path),
             )
