@@ -4232,6 +4232,14 @@ def _emit_cli_event(project_path: Path, event_type: str, data: dict) -> None:
 # ── parser construction ────────────────────────────────────────
 
 
+_REFACTORY_AGENT_COMMANDS: frozenset[str] = frozenset({
+    "ceo", "run", "tmux", "tmux-ls", "tmux-stop", "tmux-capture",
+    "discover", "init", "detect",
+    "eval", "history", "study", "status", "backlog-list", "backlog-add",
+    "checkpoint", "resume",
+    "ace", "ace-stats",
+})
+
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ("Entry Points", [
         "ceo", "run", "tmux", "tmux-ls", "tmux-capture", "tmux-stop", "refactory", "dashboard",
@@ -4286,23 +4294,28 @@ class _GroupedHelpParser(argparse.ArgumentParser):
         for sub_act in sub_action._choices_actions:
             help_map[sub_act.dest] = sub_act.help or ""
 
+        refactory_filter = "--refactory-agent" in sys.argv
+
         grouped_cmds: set[str] = set()
         for group_name, cmds in _COMMAND_GROUPS:
             lines = []
             for cmd in cmds:
                 if cmd in sub_action._name_parser_map and cmd in help_map:
+                    if refactory_filter and cmd not in _REFACTORY_AGENT_COMMANDS:
+                        continue
                     lines.append(f"  {cmd:25s}{help_map[cmd]}")
                     grouped_cmds.add(cmd)
             if lines:
                 parts.append(f"\n{group_name}:\n" + "\n".join(lines))
 
-        ungrouped = [
-            c for c in help_map
-            if c not in grouped_cmds and c in sub_action._name_parser_map
-        ]
-        if ungrouped:
-            lines = [f"  {cmd:25s}{help_map[cmd]}" for cmd in ungrouped]
-            parts.append("\nOther:\n" + "\n".join(lines))
+        if not refactory_filter:
+            ungrouped = [
+                c for c in help_map
+                if c not in grouped_cmds and c in sub_action._name_parser_map
+            ]
+            if ungrouped:
+                lines = [f"  {cmd:25s}{help_map[cmd]}" for cmd in ungrouped]
+                parts.append("\nOther:\n" + "\n".join(lines))
 
         parts.append("")
         return "\n".join(parts)
@@ -4312,6 +4325,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = _GroupedHelpParser(
         prog="factory",
         description="Remote Factory — domain-agnostic multi-agent software evolution loop",
+    )
+    parser.add_argument(
+        "--refactory-agent", action="store_true",
+        help="Show only commands used by the re:factory agent",
     )
     sub = parser.add_subparsers(dest="command")
 
