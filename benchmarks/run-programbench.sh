@@ -132,6 +132,7 @@ echo "    Results directory: ${RESULTS_DIR}"
 GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
 
 docker run -d --name "${CONTAINER_NAME}" \
+    --cap-add=NET_ADMIN \
     -v "${RESULTS_DIR}:/results" \
     "${IMAGE}" \
     sleep infinity
@@ -248,6 +249,65 @@ docker exec --user agent "${CONTAINER_NAME}" bash -c '
 echo "    Workspace prepared."
 echo ""
 
+# ── Step 5.6: Configure network allowlist ──
+
+log "Step 5.6: Configuring network allowlist"
+
+VERTEX_REGION="${CLOUD_ML_REGION:-global}"
+LANGFUSE_DOMAIN=""
+if [ -n "${LANGFUSE_BASE_URL:-}" ]; then
+    LANGFUSE_DOMAIN="$(echo "${LANGFUSE_BASE_URL}" | sed 's|https\?://||; s|/.*||')"
+elif [ -n "${LANGFUSE_HOST:-}" ]; then
+    LANGFUSE_DOMAIN="$(echo "${LANGFUSE_HOST}" | sed 's|https\?://||; s|/.*||')"
+fi
+
+docker exec "${CONTAINER_NAME}" bash -c '
+    apt-get install -y -qq iptables >/dev/null 2>&1
+
+    ALLOWED_HOSTS=(
+        "'"${VERTEX_REGION}"'-aiplatform.googleapis.com"
+        "oauth2.googleapis.com"
+        "www.googleapis.com"
+        "storage.googleapis.com"
+        "registry.npmjs.org"
+    )
+
+    LANGFUSE_DOMAIN="'"${LANGFUSE_DOMAIN}"'"
+    if [ -n "$LANGFUSE_DOMAIN" ]; then
+        ALLOWED_HOSTS+=("$LANGFUSE_DOMAIN")
+    fi
+
+    # Allow loopback
+    iptables -A OUTPUT -o lo -j ACCEPT
+
+    # Allow established/related connections
+    iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
+    # Allow DNS
+    iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
+    iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+
+    # Resolve and allow each host on ports 80 and 443
+    for host in "${ALLOWED_HOSTS[@]}"; do
+        ips=$(getent ahosts "$host" 2>/dev/null | awk "{print \$1}" | sort -u)
+        if [ -z "$ips" ]; then
+            echo "    WARNING: Could not resolve $host"
+            continue
+        fi
+        for ip in $ips; do
+            iptables -A OUTPUT -d "$ip" -p tcp -m multiport --dports 80,443 -j ACCEPT
+        done
+        echo "    Allowed: $host ($(echo $ips | tr \\n " "))"
+    done
+
+    # Default deny outbound
+    iptables -P OUTPUT DROP
+
+    echo "    Network allowlist active (OUTPUT policy: DROP)."
+'
+
+echo ""
+
 # ── Step 6: Run solver ──
 
 log "Step 6: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
@@ -310,6 +370,11 @@ timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
     -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
     -e NODE_EXTRA_CA_CERTS= \
     -e SSL_CERT_FILE= \
+    -e LANGFUSE_HOST="${LANGFUSE_HOST:-}" \
+    -e LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
+    -e LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
+    -e LANGFUSE_BASE_URL="${LANGFUSE_BASE_URL:-}" \
+    -e TELEMETRY_PLATFORM="${TELEMETRY_PLATFORM:-}" \
     "${CONTAINER_NAME}" \
     bash -c "${SOLVER_CMD}" \
     2>&1 | tee "${RESULTS_DIR}/solver_output.log" | tail -50 || true
