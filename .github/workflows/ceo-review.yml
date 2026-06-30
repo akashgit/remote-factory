@@ -49,7 +49,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install factory
-        run: uv sync
+        run: uv sync --extra telemetry
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -71,6 +71,9 @@ jobs:
           ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
           CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           uv run factory ceo . --mode qa --pr ${{ steps.pr.outputs.number }} --headless
 

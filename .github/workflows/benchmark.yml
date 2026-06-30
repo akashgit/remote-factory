@@ -134,7 +134,7 @@ jobs:
       - name: Install Factory CLI
         if: steps.gate.outputs.run == 'true' && matrix.solver == 'factory'
         run: |
-          uv tool install 'remote-factory @ git+https://github.com/akashgit/remote-factory.git'
+          uv tool install 'remote-factory[telemetry] @ git+https://github.com/akashgit/remote-factory.git'
           export PATH="$HOME/.local/bin:$PATH"
           echo "PATH=$HOME/.local/bin:$PATH" >> "$GITHUB_ENV"
           factory --help > /dev/null
@@ -176,6 +176,9 @@ jobs:
           CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
           MAX_THINKING_TOKENS: "128000"
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
           benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}
