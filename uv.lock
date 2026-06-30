@@ -1531,6 +1531,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "filelock" },
+    { name = "langfuse" },
     { name = "mcp" },
     { name = "networkx" },
     { name = "pydantic" },
@@ -1566,6 +1567,7 @@ docs = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=3.0" },
+    { name = "langfuse", specifier = ">=3.0" },
     { name = "langfuse", marker = "extra == 'telemetry'", specifier = ">=3.0" },
     { name = "mcp", specifier = ">=1.27.0" },
     { name = "networkx", specifier = ">=3.6.1" },
