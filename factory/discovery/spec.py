@@ -11,11 +11,11 @@ log = structlog.get_logger()
 
 
 def resolve_spec(project_path: Path) -> tuple[Path | None, str]:
-    """Locate an existing SPEC.md — committed (project root) takes priority over generated (.factory/).
+    """Locate an existing GRAPH-SPEC.md — committed (project root) takes priority over generated (.factory/).
 
-    Falls back to GRAPH-SPEC.md for backward compatibility with older specs.
+    Falls back to SPEC.md for backward compatibility with older specs.
     """
-    for name in ("SPEC.md", "GRAPH-SPEC.md"):
+    for name in ("GRAPH-SPEC.md", "SPEC.md"):
         committed = project_path / name
         if committed.exists():
             log.debug("resolve_spec", source="committed", path=str(committed))
