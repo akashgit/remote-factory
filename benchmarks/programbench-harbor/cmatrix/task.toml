@@ -16,6 +16,11 @@ network_mode = "allowlist"
 allowed_hosts = [
   "us-east5-aiplatform.googleapis.com",
   "oauth2.googleapis.com",
+  "216.239.32.0/24",
+  "216.239.34.0/24",
+  "216.239.36.0/24",
+  "216.239.38.0/24",
+  "142.251.0.0/16",
 ]
 build_timeout_sec = 900.0
 cpus = 2
