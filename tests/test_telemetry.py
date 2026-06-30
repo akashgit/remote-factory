@@ -16,16 +16,12 @@ def _reset_telemetry():
     """Reset telemetry module state between tests."""
     old_client = telemetry_mod._client
     old_obs = telemetry_mod._observations.copy()
-    old_names = telemetry_mod._trace_names.copy()
     telemetry_mod._client = None
     telemetry_mod._observations.clear()
-    telemetry_mod._trace_names.clear()
     yield
     telemetry_mod._client = old_client
     telemetry_mod._observations.clear()
     telemetry_mod._observations.update(old_obs)
-    telemetry_mod._trace_names.clear()
-    telemetry_mod._trace_names.update(old_names)
 
 
 class TestIsEnabled:
@@ -61,7 +57,7 @@ class TestBeginTrace:
         mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
             result = telemetry_mod.begin_trace("my-project", "cycle-1", model="opus")
 
         assert result == ("trace-abc", "span-abc")
@@ -80,7 +76,7 @@ class TestBeginTrace:
         mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
             telemetry_mod.begin_trace("proj", "c1")
 
         mock_client.start_observation.assert_called_once_with(
@@ -175,10 +171,8 @@ class TestEndTrace:
         mock_obs = MagicMock()
         telemetry_mod._client = mock_client
         telemetry_mod._observations["span-1"] = mock_obs
-        telemetry_mod._trace_names["trace-1"] = ("factory:proj/c1", {"project": "proj"})
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
-            telemetry_mod.end_trace("trace-1", span_id="span-1")
+        telemetry_mod.end_trace("trace-1", span_id="span-1")
 
         mock_obs.update.assert_called_once_with(output={"status": "completed"})
         mock_obs.end.assert_called_once()
@@ -189,9 +183,8 @@ class TestFlush:
     def test_flushes_when_client_exists(self) -> None:
         mock_client = MagicMock()
         telemetry_mod._client = mock_client
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
-            telemetry_mod.flush()
-        assert mock_client.flush.call_count == 2
+        telemetry_mod.flush()
+        mock_client.flush.assert_called_once()
 
     def test_noop_when_no_client(self) -> None:
         telemetry_mod._client = None
