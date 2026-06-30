@@ -177,6 +177,7 @@ jobs:
           MAX_THINKING_TOKENS: "128000"
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
           LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
