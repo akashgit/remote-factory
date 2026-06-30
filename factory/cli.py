@@ -2591,26 +2591,35 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
 
+        from factory.agents.runner import begin_cycle_session, complete_cycle_session
+        cycle_span_id = begin_cycle_session(project_path, cycle_id="deep-qa", model=model)
+
         if not headless:
             from factory.models import AgentRunRequest
 
             prompt = resolve_prompt("ceo", project_path)
             runner = get_runner(runner_name)
-            return runner.interactive_run(AgentRunRequest(
-                prompt=prompt, task=task, cwd=project_path,
-                model=model, role="ceo", skip_permissions=True,
-            ))
+            try:
+                return runner.interactive_run(AgentRunRequest(
+                    prompt=prompt, task=task, cwd=project_path,
+                    model=model, role="ceo", skip_permissions=True,
+                ))
+            finally:
+                complete_cycle_session(project_path, cycle_span_id)
 
         from factory.ceo_completion import run_ceo_with_completion_guard
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode="deep-qa",
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-            max_respawns=1,
-        ))
+        try:
+            result, code = _run(run_ceo_with_completion_guard(
+                project_path,
+                task,
+                mode="deep-qa",
+                runner_name=runner_name,
+                model=model,
+                timeout=7200.0,
+                max_respawns=1,
+            ))
+        finally:
+            complete_cycle_session(project_path, cycle_span_id)
         print(result)
         return code
 
