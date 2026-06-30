@@ -3269,6 +3269,14 @@ def _tmux_available() -> bool:
         return False
 
 
+def _tmux_session_alive(session: str) -> bool:
+    """Check if a tmux session exists and is alive."""
+    return subprocess.run(
+        ["tmux", "has-session", "-t", session],
+        capture_output=True,
+    ).returncode == 0
+
+
 def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
     """Build the 'factory ceo ...' command string from parsed args.
 
@@ -3360,6 +3368,26 @@ def cmd_tmux(args: argparse.Namespace) -> int:
 
     _save_tmux_session_mapping(session, str(project_path))
 
+    time.sleep(3)
+
+    if not _tmux_session_alive(session):
+        print(f"Error: session '{session}' exited immediately after launch", file=sys.stderr)
+        return 1
+
+    capture = subprocess.run(
+        ["tmux", "capture-pane", "-t", session, "-p"],
+        capture_output=True,
+        text=True,
+    )
+    if capture.returncode == 0:
+        pane_text = capture.stdout
+        _error_markers = ("Error:", "exited", "no server")
+        if any(marker in pane_text for marker in _error_markers):
+            log.warning("tmux_post_dispatch_warning", session=session)
+            print(f"Warning: session '{session}' may have errors:", file=sys.stderr)
+            for line in pane_text.strip().splitlines()[-10:]:
+                print(f"  {line}", file=sys.stderr)
+
     print(f"Factory launched in tmux session: {session}")
     print(f"  tmux attach -t {session}    # attach")
     print(f"  tmux kill-session -t {session}  # stop")
@@ -3409,6 +3437,45 @@ def cmd_tmux_ls(args: argparse.Namespace) -> int:
         print("-" * 80)
         for s in factory_sessions:
             print(f"{s['session']:<35} {s['started']:<20} {s['project']}")
+    return 0
+
+
+def cmd_tmux_capture(args: argparse.Namespace) -> int:
+    """Capture recent output from a factory tmux session."""
+    if not _tmux_available():
+        print("Error: tmux is not installed.", file=sys.stderr)
+        return 1
+
+    session = getattr(args, "session", None)
+    if not session and getattr(args, "path", None):
+        project_path = Path(args.path).resolve()
+        mapping = _load_tmux_session_mapping()
+        for s, p in mapping.items():
+            if Path(p).resolve() == project_path:
+                session = s
+                break
+        if not session:
+            session = _tmux_session_name(project_path)
+
+    if not session:
+        print("Error: specify --session or path to identify the session", file=sys.stderr)
+        return 1
+
+    if not _tmux_session_alive(session):
+        print(f"Error: session '{session}' not found", file=sys.stderr)
+        return 1
+
+    lines = getattr(args, "lines", -100)
+    result = subprocess.run(
+        ["tmux", "capture-pane", "-t", session, "-p", "-S", str(lines)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Error: failed to capture pane for '{session}'", file=sys.stderr)
+        return 1
+
+    print(result.stdout, end="")
     return 0
 
 
@@ -3471,6 +3538,15 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
     )
     if check.returncode != 0:
         print(f"Session '{session}' not found.")
+        return 1
+
+    mapping = _load_tmux_session_mapping()
+    if session not in mapping and not getattr(args, "force", False):
+        print(
+            f"Warning: session '{session}' is not in the factory session registry.",
+            file=sys.stderr,
+        )
+        print("It may not be a factory-managed session. Use --force to kill it anyway.", file=sys.stderr)
         return 1
 
     subprocess.run(["tmux", "kill-session", "-t", session])
@@ -4741,12 +4817,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--json", action="store_true", default=False, dest="json_output",
                     help="Output as JSON array for programmatic consumption")
 
+    # tmux-capture — capture output from a factory tmux session
+    p = sub.add_parser("tmux-capture", help="Capture recent output from a factory tmux session")
+    p.add_argument("path", nargs="?", default=None, help="Project path (derives session name)")
+    p.add_argument("--session", default=None, help="Session name to capture from")
+    p.add_argument("--lines", type=int, default=-100, help="Number of lines to capture (default: -100)")
+
     # tmux-stop — stop factory tmux sessions
     p = sub.add_parser("tmux-stop", help="Stop factory tmux session(s)")
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
     p.add_argument("--all", action="store_true", default=False, dest="stop_all",
                     help="Stop ALL factory tmux sessions (required when no --session/--path given)")
+    p.add_argument("--force", action="store_true", default=False,
+                    help="Force-kill a session even if it's not in the factory registry")
 
     # refactory — persistent supervisor agent
     p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
@@ -4849,6 +4933,7 @@ def main(argv: list[str] | None = None) -> int:
         "run": cmd_run,
         "tmux": cmd_tmux,
         "tmux-ls": cmd_tmux_ls,
+        "tmux-capture": cmd_tmux_capture,
         "tmux-stop": cmd_tmux_stop,
         "refactory": cmd_refactory,
         "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),

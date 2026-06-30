@@ -33,6 +33,17 @@ factory tmux <project_path> --mode research  # research-driven improvement
 factory tmux <project_path> --mode meta      # improve the factory itself + ACE evolution
 ```
 
+## Post-Dispatch Verification
+
+After every `factory tmux <path>` dispatch, always verify the session started successfully before reporting to the user:
+
+```bash
+tmux has-session -t <session_name> 2>/dev/null && echo "alive" || echo "dead"
+factory tmux-capture <path>     # or: tmux capture-pane -t <session_name> -p | tail -20
+```
+
+If the session exited or shows error output (`Error:`, `exited`, `no server`), report the failure immediately. Never assume a dispatch succeeded without checking.
+
 ## Monitor Running Sessions
 
 ```bash

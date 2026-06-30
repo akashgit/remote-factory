@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -12,9 +13,11 @@ import pytest
 from factory.cli import (
     CEO_MODES,
     _build_tmux_run_args,
+    _tmux_session_alive,
     _tmux_session_name,
     build_parser,
     cmd_tmux,
+    cmd_tmux_capture,
     cmd_tmux_ls,
     cmd_tmux_stop,
 )
@@ -87,12 +90,15 @@ class TestEnvVarWhitelist:
             patch("factory.cli._tmux_available", return_value=True),
             patch("factory.cli._resolve_model", return_value=None),
             patch("factory.cli._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("factory.cli.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", env, clear=True),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=1),  # has-session (not found)
                 MagicMock(returncode=0),  # new-session
+                MagicMock(returncode=0, stdout="", stderr=""),  # capture-pane
             ]
             cmd_tmux(args)
 
@@ -286,12 +292,15 @@ class TestTmuxSessionMapping:
             patch("factory.cli._tmux_available", return_value=True),
             patch("factory.cli._resolve_model", return_value=None),
             patch("factory.cli._TMUX_SESSIONS_FILE", sessions_file),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("factory.cli.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=1),  # has-session
                 MagicMock(returncode=0),  # new-session
+                MagicMock(returncode=0, stdout="", stderr=""),  # capture-pane
             ]
             cmd_tmux(args)
 
@@ -335,3 +344,317 @@ class TestTmuxModeChoices:
         for mode in CEO_MODES:
             args = parser.parse_args(["tmux", "/tmp/project", "--mode", mode])
             assert args.mode == mode
+
+
+class TestTmuxSessionAlive:
+    def test_returns_true_when_session_exists(self) -> None:
+        with patch("factory.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0)
+            assert _tmux_session_alive("factory-app-abc123") is True
+        mock_run.assert_called_once_with(
+            ["tmux", "has-session", "-t", "factory-app-abc123"],
+            capture_output=True,
+        )
+
+    def test_returns_false_when_session_missing(self) -> None:
+        with patch("factory.cli.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=1)
+            assert _tmux_session_alive("factory-app-abc123") is False
+
+
+class TestCmdTmuxCapture:
+    def test_captures_with_session_name(self) -> None:
+        args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.return_value = MagicMock(
+                returncode=0, stdout="line1\nline2\n",
+            )
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 0
+        mock_run.assert_called_once_with(
+            ["tmux", "capture-pane", "-t", "factory-app-abc123", "-p", "-S", "-100"],
+            capture_output=True,
+            text=True,
+        )
+        mock_print.assert_called_once_with("line1\nline2\n", end="")
+
+    def test_session_not_found(self) -> None:
+        args = argparse.Namespace(session="factory-gone-abc123", path=None, lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._tmux_session_alive", return_value=False),
+            patch("builtins.print") as mock_print,
+        ):
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 1
+        mock_print.assert_called_once()
+        assert "not found" in mock_print.call_args[0][0]
+
+    def test_tmux_not_available(self) -> None:
+        args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=False),
+            patch("builtins.print") as mock_print,
+        ):
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 1
+        assert "not installed" in mock_print.call_args[0][0]
+
+    def test_no_session_or_path(self) -> None:
+        args = argparse.Namespace(session=None, path=None, lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("builtins.print") as mock_print,
+        ):
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 1
+        assert "specify" in mock_print.call_args[0][0]
+
+    def test_path_based_lookup_from_mapping(self) -> None:
+        args = argparse.Namespace(session=None, path="/tmp/myproject", lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={"factory-myproject-abc123": "/tmp/myproject"}),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print"),
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="output\n")
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 0
+        mock_run.assert_called_once_with(
+            ["tmux", "capture-pane", "-t", "factory-myproject-abc123", "-p", "-S", "-100"],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_path_based_fallback_to_session_name(self) -> None:
+        args = argparse.Namespace(session=None, path="/tmp/unmapped", lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print"),
+        ):
+            mock_run.return_value = MagicMock(returncode=0, stdout="output\n")
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 0
+
+    def test_capture_pane_failure(self) -> None:
+        args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.return_value = MagicMock(returncode=1, stdout="", stderr="error")
+            rc = cmd_tmux_capture(args)
+
+        assert rc == 1
+        assert "failed to capture" in mock_print.call_args[0][0]
+
+
+class TestCmdTmuxPostDispatchVerification:
+    def test_warns_when_error_markers_in_pane_output(self) -> None:
+        args = argparse.Namespace(
+            path="/tmp/myproject",
+            session=None,
+            mode="auto",
+            loop=False,
+            interval=1800,
+            max_cycles=None,
+            attach=False,
+            no_github=False,
+            model=None,
+            runner=None,
+            profile=None,
+            focus=None,
+            refine=None,
+            clean_pr=None,
+            prompt=None,
+            branch=None,
+            min_growth=None,
+            max_new=None,
+            discover_only=False,
+            bg_agents=False,
+            tmux_persist=False,
+            use_profile=False,
+        )
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._resolve_model", return_value=None),
+            patch("factory.cli._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_session_alive", return_value=True),
+            patch("factory.cli.time.sleep"),
+            patch("subprocess.run") as mock_run,
+            patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.side_effect = [
+                MagicMock(returncode=1),  # has-session (not found)
+                MagicMock(returncode=0),  # new-session
+                MagicMock(returncode=0, stdout="Error: something went wrong\n", stderr=""),  # capture-pane
+            ]
+            rc = cmd_tmux(args)
+
+        assert rc == 0
+        stderr_calls = [c for c in mock_print.call_args_list if c[1].get("file") is sys.stderr]
+        assert any("may have errors" in str(c) for c in stderr_calls)
+
+    def test_returns_error_when_session_dies_immediately(self) -> None:
+        args = argparse.Namespace(
+            path="/tmp/myproject",
+            session=None,
+            mode="auto",
+            loop=False,
+            interval=1800,
+            max_cycles=None,
+            attach=False,
+            no_github=False,
+            model=None,
+            runner=None,
+            profile=None,
+            focus=None,
+            refine=None,
+            clean_pr=None,
+            prompt=None,
+            branch=None,
+            min_growth=None,
+            max_new=None,
+            discover_only=False,
+            bg_agents=False,
+            tmux_persist=False,
+            use_profile=False,
+        )
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._resolve_model", return_value=None),
+            patch("factory.cli._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_session_alive", return_value=False),
+            patch("factory.cli.time.sleep"),
+            patch("subprocess.run") as mock_run,
+            patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.side_effect = [
+                MagicMock(returncode=1),  # has-session (not found)
+                MagicMock(returncode=0),  # new-session
+            ]
+            rc = cmd_tmux(args)
+
+        assert rc == 1
+        stderr_calls = [c for c in mock_print.call_args_list if c[1].get("file") is sys.stderr]
+        assert any("exited immediately" in str(c) for c in stderr_calls)
+
+
+class TestCmdTmuxStopEdgeCases:
+    def test_tmux_not_available(self) -> None:
+        args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=False),
+            patch("builtins.print") as mock_print,
+        ):
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 1
+        assert "not installed" in mock_print.call_args[0][0]
+
+    def test_path_derives_session_name(self) -> None:
+        args = argparse.Namespace(session=None, path="/tmp/myproject", stop_all=False, force=False)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={}),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.return_value = MagicMock(returncode=1)  # has-session → not found
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 1
+        assert any("not found" in str(c) for c in mock_print.call_args_list)
+
+    def test_session_not_found_in_tmux(self) -> None:
+        args = argparse.Namespace(session="factory-gone-abc123", path=None, stop_all=False, force=False)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.return_value = MagicMock(returncode=1)  # has-session → not found
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 1
+        assert any("not found" in str(c) for c in mock_print.call_args_list)
+
+
+class TestCmdTmuxStopOwnership:
+    def test_warns_and_blocks_unregistered_session(self) -> None:
+        args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=False)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={}),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)  # has-session
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 1
+        stderr_calls = [c for c in mock_print.call_args_list if c[1].get("file") is sys.stderr]
+        assert any("not in the factory session registry" in str(c) for c in stderr_calls)
+        kill_calls = [c for c in mock_run.call_args_list if "kill-session" in str(c)]
+        assert len(kill_calls) == 0
+
+    def test_force_kills_unregistered_session(self) -> None:
+        args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=True)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={}),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print"),
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 0
+
+    def test_registered_session_killed_without_force(self) -> None:
+        args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
+
+        with (
+            patch("factory.cli._tmux_available", return_value=True),
+            patch("factory.cli._load_tmux_session_mapping", return_value={"factory-app-abc123": "/tmp/app"}),
+            patch("subprocess.run") as mock_run,
+            patch("builtins.print"),
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            rc = cmd_tmux_stop(args)
+
+        assert rc == 0

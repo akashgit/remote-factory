@@ -1671,11 +1671,14 @@ class TestCmdTmuxBareCLI:
         import argparse
 
         with patch("factory.cli._tmux_available", return_value=True), \
+             patch("factory.cli._tmux_session_alive", return_value=True), \
+             patch("factory.cli.time.sleep"), \
              patch("subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {"returncode": 1})()  # has-session fails
             mock_run.side_effect = [
                 type("R", (), {"returncode": 1})(),  # has-session → no existing session
                 type("R", (), {"returncode": 0})(),   # new-session → success
+                type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # capture-pane
             ]
             args = argparse.Namespace(
                 path="/tmp/test-project",

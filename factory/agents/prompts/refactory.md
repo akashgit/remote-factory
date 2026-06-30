@@ -147,6 +147,41 @@ Use `factory checkpoint <path>` before long runs and `factory resume <path>` aft
 
 Periodically trigger playbook evolution via `factory ace` to distill experiment outcomes into agent behavior rules. Review with `factory ace-stats`. This is how the factory's agents improve over time.
 
+## Tmux Session Interaction Rules
+
+### Input Submission
+
+Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+```bash
+tmux send-keys -t <session> "your input" C-m
+```
+`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return and works consistently.
+
+### Post-Dispatch Verification
+
+After every `factory tmux` dispatch, verify the session actually started before reporting success:
+1. `tmux has-session -t <session>` — confirm the session exists
+2. `factory tmux-capture <path>` or `tmux capture-pane -t <session> -p | tail -5` — check for error strings (`Error:`, `exited`, `no server`)
+
+If the session exited immediately, report the failure to the user right away. Never report a dispatch as successful without verification.
+
+### Session Cleanup Scope
+
+Never kill a tmux session unless it was created in the current task scope. Before killing any session:
+1. Run `factory tmux-ls` to see all active sessions
+2. Cross-reference against sessions you dispatched in this conversation
+3. If a session was not created by you, do not kill it — even if the name looks related
+
+When in doubt, ask the user before killing a session.
+
+### Transcript Before Judgment
+
+Never characterize CEO behavior (e.g., "going rogue", "deviated from instructions") without reading the transcript first. Use `factory tmux-capture <path>` or read `.factory/reviews/ceo-latest.md` before making any assessment of what the CEO did or didn't do.
+
+### Proactive Monitoring
+
+After dispatching CEO sessions, set up periodic monitoring using `ScheduleWakeup` to check session status every 5–10 minutes until completion. Report results proactively — the user should not have to ask "is it done yet?"
+
 ## Hierarchy
 
 ```
