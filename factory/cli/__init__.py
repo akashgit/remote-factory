@@ -3,31 +3,45 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import hashlib
-import json
-import os
-import re
-import shlex
-import signal
-import subprocess
-import structlog
 import sys
-import tempfile
-import threading
-import time
-from datetime import datetime
-from pathlib import Path
-from collections.abc import Callable
-from typing import TYPE_CHECKING
 
-log = structlog.get_logger()
-
-from factory.cli._helpers import CEO_MODES, RUN_MODES, _BRAILLE_FRAMES, _DASHBOARD_PORT, _WIZARD_INPUT_PATH, _dashboard_is_running, _detect_pr_number, _emit_cli_event, _ensure_dashboard, _load_env_local, _print_banner, _read_target_branch, _run, _safe_is_dir, _safe_is_file, _show_spinner
+from factory.cli._helpers import CEO_MODES, RUN_MODES, _load_env_local
+from factory.cli._helpers import _emit_cli_event as _emit_cli_event
+from factory.cli._helpers import _print_banner as _print_banner
+from factory.cli._helpers import _show_spinner as _show_spinner
 from factory.cli.admin import cmd_config, cmd_detect, cmd_discover, cmd_emit, cmd_home, cmd_init, cmd_install, cmd_log, cmd_notify, cmd_profile, cmd_self_update, cmd_study, cmd_usage
 from factory.cli.agents import cmd_ace, cmd_ace_stats, cmd_agent, cmd_runners_list
 from factory.cli.backlog import cmd_backlog_add, cmd_backlog_list, cmd_backlog_remove
-from factory.cli.ceo import _CLI_REF, _FILLER_WORDS, _TMUX_SESSIONS_FILE, _TMUX_SESSION_PREFIX, _VERB_RE, _WIZARD_PROMPT, _ask_follow_ups, _auto_detect_mode, _build_ceo_task, _build_tmux_run_args, _chain_modes, _classify_with_llm, _dedupe_project_path, _derive_session_name, _ensure_repo, _extract_project_name, _extract_short_description, _get_projects_dir, _has_research_target, _is_github_url, _is_scaffold_only, _load_tmux_session_mapping, _materialize_project, _persist_spec, _quick_classify, _read_prompt_file, _resolve_background, _resolve_bg_agents, _resolve_focus_issue, _resolve_input, _resolve_model, _resolve_runner, _resolve_tmux_persist, _run_single_cycle, _save_tmux_session_mapping, _slugify, _start_ceo_tailer, _stop_ceo_tailer, _substitute_answers, _tmux_available, _tmux_session_alive, _tmux_session_name, _welcome_wizard, cmd_ceo, cmd_refactory, cmd_run, cmd_tmux, cmd_tmux_capture, cmd_tmux_ls, cmd_tmux_stop
+from factory.cli.ceo import (
+    _CLI_REF as _CLI_REF,
+    _ask_follow_ups as _ask_follow_ups,
+    _auto_detect_mode as _auto_detect_mode,
+    _build_ceo_task as _build_ceo_task,
+    _build_tmux_run_args as _build_tmux_run_args,
+    _classify_with_llm as _classify_with_llm,
+    _dedupe_project_path as _dedupe_project_path,
+    _ensure_repo as _ensure_repo,
+    _extract_project_name as _extract_project_name,
+    _has_research_target as _has_research_target,
+    _is_github_url as _is_github_url,
+    _is_scaffold_only as _is_scaffold_only,
+    _materialize_project as _materialize_project,
+    _persist_spec as _persist_spec,
+    _quick_classify as _quick_classify,
+    _resolve_background as _resolve_background,
+    _resolve_bg_agents as _resolve_bg_agents,
+    _resolve_focus_issue as _resolve_focus_issue,
+    _resolve_input as _resolve_input,
+    _resolve_model as _resolve_model,
+    _slugify as _slugify,
+    _start_ceo_tailer as _start_ceo_tailer,
+    _stop_ceo_tailer as _stop_ceo_tailer,
+    _substitute_answers as _substitute_answers,
+    _tmux_session_alive as _tmux_session_alive,
+    _tmux_session_name as _tmux_session_name,
+    _welcome_wizard as _welcome_wizard,
+    cmd_ceo, cmd_refactory, cmd_run, cmd_tmux, cmd_tmux_capture, cmd_tmux_ls, cmd_tmux_stop,
+)
 from factory.cli.eval_cmds import cmd_baseline, cmd_eval, cmd_guard, cmd_precheck
 from factory.cli.infra import cmd_archive, cmd_backfill_archive, cmd_checkpoint, cmd_dashboard, cmd_resume, cmd_serve_mcp, cmd_vault_init
 from factory.cli.registry import cmd_digest, cmd_insights, cmd_registry_list, cmd_report_update

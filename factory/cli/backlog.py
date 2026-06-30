@@ -2,27 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import hashlib
-import json
-import os
-import re
-import shlex
-import signal
-import subprocess
 import structlog
 import sys
-import tempfile
-import threading
-import time
-from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-log = structlog.get_logger()
 
 from factory.cli._helpers import _emit_cli_event
+
+log = structlog.get_logger()
 
 def cmd_backlog_remove(args: argparse.Namespace) -> int:
     from factory.study import remove_backlog_item

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
 import hashlib
 import json
 import os
@@ -20,12 +19,12 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-log = structlog.get_logger()
-
 from factory.cli._helpers import _WIZARD_INPUT_PATH, _emit_cli_event, _ensure_dashboard, _print_banner, _read_target_branch, _run, _safe_is_dir, _safe_is_file, _show_spinner
 
 if TYPE_CHECKING:
     from factory.messages import Message
+
+log = structlog.get_logger()
 
 def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
     """Deterministic fast path for paths, files, and URLs. Returns None if LLM needed."""

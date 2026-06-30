@@ -2,27 +2,13 @@
 from __future__ import annotations
 
 import argparse
-import asyncio
-import hashlib
 import json
-import os
-import re
-import shlex
-import signal
-import subprocess
 import structlog
-import sys
-import tempfile
-import threading
-import time
-from datetime import datetime
 from pathlib import Path
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-log = structlog.get_logger()
 
 from factory.cli._helpers import _run
+
+log = structlog.get_logger()
 
 def cmd_leakage_check(args: argparse.Namespace) -> int:
     """Check text for ground truth leakage against fixed surface fingerprints."""
