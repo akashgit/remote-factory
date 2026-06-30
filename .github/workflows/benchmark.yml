@@ -176,9 +176,10 @@ jobs:
           CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
           MAX_THINKING_TOKENS: "128000"
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
-          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
           benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}
