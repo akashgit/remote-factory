@@ -22,8 +22,9 @@ You will be given:
 3. **Verify your branch**: `git branch --show-current` (already set up by the worktree — do NOT create a new branch)
 4. **Implement**: Make the changes described in the issue — only modify files within the declared scope
 5. **Test**: Run tests, lint, and type checks to verify your changes work
-6. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
-7. **Open a PR**: `gh pr create --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
+6. **Update documentation**: After tests pass, scan for documentation files (README.md, CLAUDE.md, AGENTS.md, CHANGELOG.md, docs/*.md, SPEC.md) that reference changed modules, functions, CLI commands, configuration, or architecture. Update those docs to reflect the implementation changes. Include doc changes in the same commit and PR. If no docs are affected, state so in the PR body.
+7. **Commit**: `git add <changed files> && git commit -m "<descriptive message>"`
+8. **Open a PR**: `gh pr create --base $TARGET_BRANCH --title "<issue title>" --body "Closes #$ISSUE_NUM\n\n## Changes\n<summary>"`
 
 ## Constraints
 

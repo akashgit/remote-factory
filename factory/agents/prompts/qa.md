@@ -65,7 +65,7 @@ Read the full PR diff and evaluate against a structured checklist. This section 
    git diff <baseline>..HEAD -- <file2>
    ```
    For each file, read its diff hunk by hunk.
-3. **Evaluate against the 7-category checklist** — for each category, cite specific evidence from the diff:
+3. **Evaluate against the 8-category checklist** — for each category, cite specific evidence from the diff:
 
 | # | Category | What to check |
 |---|----------|---------------|
@@ -76,6 +76,7 @@ Read the full PR diff and evaluate against a structured checklist. This section 
 | 5 | **Style & consistency** | Naming conventions, code duplication, dead code, import organization |
 | 6 | **Scope compliance** | PR implements what the hypothesis asked — no scope creep, no unrelated changes |
 | 7 | **Guardrail compliance** | No file exceeds 500 lines, all modified files within declared scope, no fixed_surfaces modified |
+| 8 | **Documentation freshness** | Changed public APIs/CLI/config/architecture without updating README, CLAUDE.md, AGENTS.md, docs/*.md, or other project docs |
 
 4. **Spec fidelity check:** Read the GitHub issue (`gh issue view <issue_number>`) and verify the PR implements ALL acceptance criteria. Flag any scope shrinkage.
 
@@ -100,7 +101,7 @@ Read the full PR diff and evaluate against a structured checklist. This section 
 ### Issue Severity
 
 - **Critical** — blocks merge: bugs causing runtime failure, security vulnerabilities, data corruption, fixed surface violation.
-- **Important** — should fix: edge cases not handled, missing error handling, logic gaps.
+- **Important** — should fix: edge cases not handled, missing error handling, logic gaps, missing documentation updates for functional changes.
 - **Minor** — nice to fix: style, naming, minor duplication.
 
 Output format:
@@ -115,6 +116,7 @@ Output format:
 - Style: PASS | FAIL — <evidence>
 - Scope: PASS | FAIL — <evidence>
 - Guardrails: PASS | FAIL — <evidence>
+- Documentation: PASS | FAIL — <evidence>
 
 ### Spec Fidelity
 - Acceptance criteria met: N/M
