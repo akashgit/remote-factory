@@ -66,7 +66,6 @@ cleanup() {
             rm -rf "${RESULTS_DIR}"
         fi
     fi
-    PASSED="${RESOLVED}"
     DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
     write_result
     if [ "${STATUS}" = "success" ]; then
