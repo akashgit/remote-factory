@@ -23,7 +23,6 @@ mcp_servers = []
 [environment.env]
 
 [agent]
-network_mode = 'allowlist'
 timeout_sec = 3600.0
 
 [verifier]
