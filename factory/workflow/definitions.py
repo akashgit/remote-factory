@@ -668,15 +668,17 @@ def deep_qa_workflow() -> Workflow:
 
     nodes["gate_health"] = GateNode(
         id="gate_health",
-        evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
-        gate_prompt=(
-            "Read health check results at .factory/reviews/health-check.md. "
-            "If eval completely failed (no valid composite score), emit HALT — "
-            "this triggers immediate REVERT, skipping code review and adversarial testing. "
-            "If eval passed and composite score is valid, emit PROCEED. "
-            "Do NOT RELOOP — health check is a deterministic measurement, "
-            "no fix loop in deep-qa mode."
+        evaluator_type="fn",
+        evaluator_command=(
+            "python3 -c \""
+            "import re, sys, pathlib; "
+            "text = pathlib.Path('{project_path}/.factory/reviews/health-check.md').read_text(); "
+            "m = re.search(r'\\\\*\\\\*Composite:\\\\*\\\\*\\\\s*([\\\\d.]+)', text); "
+            "score = float(m.group(1)) if m else -1; "
+            "has_table = '| Dimension |' in text; "
+            "print(f'score={{score}} table={{has_table}}'); "
+            "sys.exit(0 if score >= 0 and has_table else 1)"
+            "\""
         ),
         reads={".factory/reviews/health-check.md"},
     )
@@ -684,14 +686,16 @@ def deep_qa_workflow() -> Workflow:
     nodes["gate_review"] = GateNode(
         id="gate_review",
         evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
+        evaluator_role=AgentRole.QA,
         gate_prompt=(
-            "Read code review results at .factory/reviews/code-review.md. "
-            "Count critical issues in the Issues section (severity = [Critical]). "
-            "If critical_count > 0, emit HALT — this triggers ISSUES_FOUND verdict, "
-            "skipping adversarial testing. "
-            "If critical_count == 0, emit PROCEED to adversarial testing. "
-            "Do NOT RELOOP — no fix loop in deep-qa mode."
+            "You are a gate checker. Read .factory/reviews/code-review.md and verify two things:\n"
+            "1. STRUCTURE — the review contains all 7 checklist categories "
+            "(Correctness, Security, Edge cases, Missing tests, Style, Scope, Guardrails) "
+            "each with a PASS/FAIL verdict and file:line evidence.\n"
+            "2. CRITICAL ISSUES — count issues marked [Critical] in the Issues section.\n\n"
+            "Emit PROCEED if the structure is valid AND critical_count == 0.\n"
+            "Emit HALT if any category is missing from the checklist, or critical_count > 0.\n"
+            "Do NOT RELOOP."
         ),
         reads={".factory/reviews/code-review.md"},
     )
@@ -699,14 +703,16 @@ def deep_qa_workflow() -> Workflow:
     nodes["gate_adversarial"] = GateNode(
         id="gate_adversarial",
         evaluator_type="agent",
-        evaluator_role=AgentRole.CEO,
+        evaluator_role=AgentRole.QA,
         gate_prompt=(
-            "Read adversarial QA results at .factory/reviews/adversarial-qa.md. "
-            "Check the Adversarial Verdict line at the bottom. "
-            "If verdict is FAIL, emit HALT — this triggers FAIL verdict. "
-            "If verdict is PASS, emit PROCEED to verdict synthesis. "
-            "Do NOT RELOOP — adversarial tester is a one-shot evaluation "
-            "in deep-qa mode."
+            "You are a gate checker. Read .factory/reviews/adversarial-qa.md and verify:\n"
+            "1. REAL TESTING — the report contains actual command executions with output "
+            "(bash commands, curl calls, tmux sessions, or python -c invocations). "
+            "If the report only contains code reading, grepping, or file analysis "
+            "without running the software, emit HALT with reason 'no real testing'.\n"
+            "2. VERDICT — check the Adversarial Verdict line. "
+            "If verdict is FAIL, emit HALT. If verdict is PASS, emit PROCEED.\n"
+            "Do NOT RELOOP."
         ),
         reads={".factory/reviews/adversarial-qa.md"},
     )

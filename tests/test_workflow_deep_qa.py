@@ -95,14 +95,21 @@ class TestDeepQaStructure:
         ]
         assert set(qa_agents) == {"health_checker", "code_reviewer", "adversarial_tester"}
 
-    def test_3_ceo_gates(self) -> None:
+    def test_gate_types(self) -> None:
         wf = deep_qa_workflow()
-        ceo_gates = [
-            nid for nid, n in wf.nodes.items()
-            if isinstance(n, GateNode) and n.evaluator_type == "agent"
-            and n.evaluator_role == AgentRole.CEO
-        ]
-        assert set(ceo_gates) == {"gate_health", "gate_review", "gate_adversarial"}
+        gate_health = wf.nodes["gate_health"]
+        assert isinstance(gate_health, GateNode)
+        assert gate_health.evaluator_type == "fn"
+
+        gate_review = wf.nodes["gate_review"]
+        assert isinstance(gate_review, GateNode)
+        assert gate_review.evaluator_type == "agent"
+        assert gate_review.evaluator_role == AgentRole.QA
+
+        gate_adversarial = wf.nodes["gate_adversarial"]
+        assert isinstance(gate_adversarial, GateNode)
+        assert gate_adversarial.evaluator_type == "agent"
+        assert gate_adversarial.evaluator_role == AgentRole.QA
 
     def test_join_verdict_is_fn_node(self) -> None:
         wf = deep_qa_workflow()
