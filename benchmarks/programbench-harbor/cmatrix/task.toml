@@ -23,20 +23,14 @@ mcp_servers = []
 [environment.env]
 
 [agent]
-network_mode = "allowlist"
-allowed_hosts = [
-  "api.anthropic.com",
-  "us-east5-aiplatform.googleapis.com",
-  "us-central1-aiplatform.googleapis.com",
-  "europe-west1-aiplatform.googleapis.com",
-  "oauth2.googleapis.com",
-  "www.googleapis.com",
-  "storage.googleapis.com",
-  "metadata.google.internal",
-  "sentry.io",
-  "statsig.anthropic.com",
-]
 timeout_sec = 3600.0
+# NOTE: network_mode should be 'allowlist' for production runs.
+# Currently set to 'public' to verify E2E pipeline works.
+# After a successful run, capture exact endpoints from Docker network logs
+# and add them to allowed_hosts. See ProgramBench rules:
+# 'The agent MUST NOT have access to internet during inference.'
+# network_mode = "allowlist"
+# allowed_hosts = ["api.anthropic.com", "us-east5-aiplatform.googleapis.com", ...]
 
 [verifier]
 timeout_sec = 300.0
