@@ -155,15 +155,21 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Initialize git for factory's expectations
+        # Initialize git for factory's expectations.
+        # The workspace may be at / (root), so .gitignore must exclude
+        # system directories before git-add to avoid stat errors on /proc etc.
         await self.exec_as_agent(
             environment,
             command=(
+                'set -e; '
+                'if [ ! -d .git ]; then git init -b main; fi && '
                 'git config user.name "Factory Agent" && '
                 'git config user.email "factory@agent.local" && '
-                'if ! git branch --list main | grep -q main; then '
-                '  git checkout -b main 2>/dev/null || true; '
-                'fi'
+                'printf "/proc\\n/sys\\n/dev\\n/run\\n/tmp\\n/var\\n/root\\n'
+                '/home\\n/usr\\n/bin\\n/sbin\\n/lib\\n/lib64\\n/etc\\n'
+                '/boot\\n/mnt\\n/opt\\n/srv\\n/media\\n/logs\\n" > .gitignore && '
+                'git add -A && '
+                'git commit -m "initial state" --allow-empty'
             ),
             env=env,
         )
@@ -183,6 +189,7 @@ class FactoryCeo(BaseInstalledAgent):
                 "factory ceo . --headless --mode build "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
+                "; exit 0"
             ),
             env=env,
         )
