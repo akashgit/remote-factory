@@ -2592,11 +2592,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         )
 
         from factory.agents.runner import begin_cycle_session, complete_cycle_session
+        import time as _time
+
         cycle_span_id = begin_cycle_session(project_path, cycle_id="deep-qa", model=model)
+        _ceo_start = _time.time()
 
         if not headless:
             from factory.models import AgentRunRequest
+            from factory.runners.claude import _make_ceo_message_emitter
 
+            ceo_tailer = _start_ceo_tailer(
+                project_path, cycle_span_id, _ceo_start,
+                on_line=_make_ceo_message_emitter(project_path),
+            )
             prompt = resolve_prompt("ceo", project_path)
             runner = get_runner(runner_name)
             try:
@@ -2605,9 +2613,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                     model=model, role="ceo", skip_permissions=True,
                 ))
             finally:
+                _stop_ceo_tailer(ceo_tailer)
                 complete_cycle_session(project_path, cycle_span_id)
 
         from factory.ceo_completion import run_ceo_with_completion_guard
+        ceo_tailer = _start_ceo_tailer(project_path, cycle_span_id, _ceo_start)
         try:
             result, code = _run(run_ceo_with_completion_guard(
                 project_path,
@@ -2619,6 +2629,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 max_respawns=1,
             ))
         finally:
+            _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
         print(result)
         return code
