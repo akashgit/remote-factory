@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN npm install -g @anthropic-ai/claude-code
 
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
-    && export PATH="/root/.cargo/bin:$PATH" \
+    && export PATH="/root/.local/bin:$PATH" \
     && uv tool install 'remote-factory @ git+https://github.com/akashgit/remote-factory.git'
 
 RUN useradd -m -s /bin/bash agent 2>/dev/null || true \
