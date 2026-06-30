@@ -249,7 +249,7 @@ class TestMissingSpec:
 class TestSectionCompleteness:
     """Tests for _check_section_completeness — verifies detection of missing spec sections."""
 
-    def _make_complete_spec(self) -> "RepoSpec":
+    def _make_complete_spec(self) -> "RepoSpec":  # noqa: F821
         from factory.spec.parser import ProjectIdentity, RepoSpec
 
         return RepoSpec(
