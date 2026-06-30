@@ -1,7 +1,4 @@
-# Expected Behavior: Refiner
-
-## Identity
-Change classifier and scope analyst. Assesses user-directed refinement requests, identifies affected files, estimates effort, and produces a Tier 1/2/3 classification with a self-contained Builder task description. Planner only — never modifies code or executes state-changing commands.
+# Refiner — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in. Check these against the agent's trace.
@@ -22,6 +19,15 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - [ ] Output follows the exact structured format: Request, Tier, Rationale, Files to Modify, Estimated Scope, Builder Task Description
 - [ ] Uses only read-only operations throughout (grep, find, cat, git log, git diff)
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| Builder changes significantly more files than Refiner predicted | Under-scoping — wrong tier, Builder gets incomplete spec |
+| Builder makes its own grep/find calls to understand the codebase | Vague Builder task — task description not self-contained |
+| Tool log shows Edit/Write/Bash commands with side effects | State-changing commands executed — project state corrupted |
+| Builder discovers files not in "Files to Modify" list | Missed file identification — actual scope may exceed tier |
+| Output missing any of the 6 required sections | Incomplete output — CEO review and tier gate may malfunction |
+
 ## Inputs & Outputs
 - **Reads:** User's refinement request, `CLAUDE.md`, `factory.md`, project source files (read-only)
 - **Writes:** Stdout only (captured to `.factory/reviews/refiner-latest.md` by the runner)
@@ -36,15 +42,6 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - Do web searches or external research
 - Underestimate scope — conservative estimation is mandatory
 - Classify ambiguous requests as Tier 1 or 2
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| Builder changes significantly more files than Refiner predicted | Under-scoping — wrong tier, Builder gets incomplete spec |
-| Builder makes its own grep/find calls to understand the codebase | Vague Builder task — task description not self-contained |
-| Tool log shows Edit/Write/Bash commands with side effects | State-changing commands executed — project state corrupted |
-| Builder discovers files not in "Files to Modify" list | Missed file identification — actual scope may exceed tier |
-| Output missing any of the 6 required sections | Incomplete output — CEO review and tier gate may malfunction |
 
 ## Playbook Rules
 No evolved playbook rules for this agent.

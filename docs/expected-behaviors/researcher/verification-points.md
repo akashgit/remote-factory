@@ -1,7 +1,4 @@
-# Expected Behavior: Researcher Agent
-
-## Identity
-The Researcher is the factory's investigator and knowledge synthesizer. It surveys codebases, searches the web, reads archives, and produces structured research reports. It never writes code, runs evals, or generates hypotheses — it provides findings for the Strategist and CEO to act on.
+# Researcher Agent — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in.
@@ -23,6 +20,17 @@ These MUST hold regardless of which workflow the agent is in.
 - [ ] In Mode 4: maps every finding to a mutable surface; flags fixed-surface needs as constraints, not recommendations
 - [ ] In Mode 1: writes `.factory/eval_profile.json` and `eval/score.py`; sets `human_reviewed: false`
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| Output contains "weeks", "months", "sprints", "quarters" | Calendar-time estimate violation — CEO will REDIRECT |
+| `WebSearch` count > 8 (standard) or > 5 (targeted) | Excessive web search — token waste |
+| No `factory study` call before first `WebSearch` (Modes 2/3) | Missing local study baseline |
+| No `Read` of `.factory/archive/` before `WebSearch` (Modes 3/4) | Archive skip — may duplicate prior research |
+| WebSearch queries don't reference failure categories (Mode 4) | General research instead of failure-targeted |
+| Output file missing required sections | Incomplete report — CEO will REDIRECT |
+| `**Mutable surface:**` references files in `fixed_surfaces` list (Mode 4) | Fixed surface recommendation violation |
+
 ## Inputs & Outputs
 - **Reads:** `.factory/strategy/observations.md`, `.factory/strategy/backlog.md`, `.factory/archive/`, `.factory/strategy/failure_analysis.md` (Mode 4), `.factory/config.json`, project source/README
 - **Writes:** `.factory/strategy/research.md` (or tagged variants), optionally `.factory/archive/sources/<name>.md`; Mode 1: `.factory/eval_profile.json`, `eval/score.py`
@@ -36,17 +44,6 @@ These MUST hold regardless of which workflow the agent is in.
 - Including calendar-time estimates in output
 - Mode 4: general domain research (must be failure-targeted)
 - Mode 4: recommending changes to `fixed_surfaces` files
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| Output contains "weeks", "months", "sprints", "quarters" | Calendar-time estimate violation — CEO will REDIRECT |
-| `WebSearch` count > 8 (standard) or > 5 (targeted) | Excessive web search — token waste |
-| No `factory study` call before first `WebSearch` (Modes 2/3) | Missing local study baseline |
-| No `Read` of `.factory/archive/` before `WebSearch` (Modes 3/4) | Archive skip — may duplicate prior research |
-| WebSearch queries don't reference failure categories (Mode 4) | General research instead of failure-targeted |
-| Output file missing required sections | Incomplete report — CEO will REDIRECT |
-| `**Mutable surface:**` references files in `fixed_surfaces` list (Mode 4) | Fixed surface recommendation violation |
 
 ## Playbook Rules
 - DO: Always run local study first — it's fast baseline context

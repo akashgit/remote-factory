@@ -1,7 +1,4 @@
-# Expected Behavior: QA Agent
-
-## Identity
-The QA Agent is the single quality gate between the Builder's work and a keep/revert decision. It runs three sequential verification sections — Health Check, Code Review, Adversarial QA — and emits a structured verdict. It is strictly read-only: it observes, measures, tests, and reports but never modifies source files.
+# QA Agent — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in. Check these against the agent's trace.
@@ -38,6 +35,16 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - [ ] Does NOT make keep/revert decisions — reports findings, CEO decides
 - [ ] Does NOT own the iteration loop — CEO controls Builder-QA cycles
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| No `Bash` tool calls in Section 3 | Skipped adversarial testing |
+| `gh pr diff` command in trace | Diff crash risk — should use per-file `git diff` |
+| Fewer test scenarios than acceptance criteria; CLEAN verdict anyway | False CLEAN verdict |
+| All tests mock external services; no real integration tests flagged | Mock-only integration approval |
+| `tmux new-session` or `&` without corresponding `kill`/cleanup | Orphaned processes |
+| No `Read` of `strategy/current.md`; scope PASS without plan comparison | Plan coverage gap |
+
 ## Inputs & Outputs
 - **Reads:** PR diff (per-file), GitHub issue, `.factory/reviews/builder-latest.md`, `factory.md`, `.factory/strategy/current.md`
 - **Writes:** `.factory/reviews/qa-latest.md` (structured report with verdict)
@@ -54,16 +61,6 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - Report high eval score as proof of integration correctness
 - Count mock-only tests as evidence of integration correctness
 - Leave servers, tmux sessions, or background processes running
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| No `Bash` tool calls in Section 3 | Skipped adversarial testing |
-| `gh pr diff` command in trace | Diff crash risk — should use per-file `git diff` |
-| Fewer test scenarios than acceptance criteria; CLEAN verdict anyway | False CLEAN verdict |
-| All tests mock external services; no real integration tests flagged | Mock-only integration approval |
-| `tmux new-session` or `&` without corresponding `kill`/cleanup | Orphaned processes |
-| No `Read` of `strategy/current.md`; scope PASS without plan comparison | Plan coverage gap |
 
 ## Playbook Rules
 - **DO [qa-00001]:** Flag browser automation selectors as UNVERIFIED — they need manual E2E testing

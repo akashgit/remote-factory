@@ -1,7 +1,4 @@
-# Expected Behavior: Strategist Agent
-
-## Identity
-The Strategist is the factory's hypothesis generator and strategic architect. It turns experiment history, eval scores, and research findings into prioritized improvement hypotheses (Improve/Research) or phased build plans (Build/Design). It never writes code, does research, or runs evals.
+# Strategist Agent — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in.
@@ -29,6 +26,19 @@ These MUST hold regardless of which workflow the agent is in.
 - [ ] In Build/Design: Deferred section contains only items requiring human intervention, not buildable features
 - [ ] After 3+ consecutive reverts in same FEEC category: acknowledges stuck pattern and shifts category
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| `current.md` has no `**Growth dimension:**` tag (Improve/Meta) | All-hygiene plan — CEO will REDIRECT |
+| More `**New:**` tags than `**Backlog item:**` tags when backlog non-empty | Backlog ignored — CEO will REDIRECT |
+| Operational item with `**Type:** code` instead of `operational`/`mixed` | Code-only for operational item — CEO will REDIRECT |
+| Output contains "weeks", "months", "sprints" | Calendar-time estimate — CEO will REDIRECT |
+| `**Mutable surface:**` references a `fixed_surfaces` file | Fixed surface violation (Research mode) |
+| Hypothesis text contains specific values from test data or negation hints | Ground truth leakage (Research mode) |
+| 3+ consecutive reverts in same category, new plan proposes same category | Stuck loop not detected |
+| `**What:**` field lacks specific files or changes | Vague hypothesis — Builder will need clarification |
+| Build plan Phase 1 is not scaffold + eval | Missing scaffold phase — CEO will REDIRECT |
+
 ## Inputs & Outputs
 - **Reads:** `.factory/strategy/research.md` (or `research-local.md`, `research-combined.md`), `.factory/strategy/observations.md`, `.factory/strategy/backlog.md`, `.factory/reviews/ceo-verdict-researcher.md`, `.factory/config.json`, experiment history, `failure_analysis.md` (Research mode)
 - **Writes:** `.factory/strategy/current.md` (hypotheses or build plan), `.factory/strategy/playbook-diffs.md` (Meta only)
@@ -45,19 +55,6 @@ These MUST hold regardless of which workflow the agent is in.
 - Research mode: proposing changes to `fixed_surfaces`
 - Research mode: reading `fixed_surfaces` content to inform hypotheses
 - Research mode: encoding expected outputs or using negation-as-hint in hypothesis text
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| `current.md` has no `**Growth dimension:**` tag (Improve/Meta) | All-hygiene plan — CEO will REDIRECT |
-| More `**New:**` tags than `**Backlog item:**` tags when backlog non-empty | Backlog ignored — CEO will REDIRECT |
-| Operational item with `**Type:** code` instead of `operational`/`mixed` | Code-only for operational item — CEO will REDIRECT |
-| Output contains "weeks", "months", "sprints" | Calendar-time estimate — CEO will REDIRECT |
-| `**Mutable surface:**` references a `fixed_surfaces` file | Fixed surface violation (Research mode) |
-| Hypothesis text contains specific values from test data or negation hints | Ground truth leakage (Research mode) |
-| 3+ consecutive reverts in same category, new plan proposes same category | Stuck loop not detected |
-| `**What:**` field lacks specific files or changes | Vague hypothesis — Builder will need clarification |
-| Build plan Phase 1 is not scaffold + eval | Missing scaffold phase — CEO will REDIRECT |
 
 ## Playbook Rules
 - DO: Read the backlog first — it is the primary work queue
