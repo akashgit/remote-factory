@@ -9,6 +9,15 @@ import pytest
 PROMPTS_DIR = Path(__file__).parent.parent / "factory" / "agents" / "prompts"
 
 
+def _generate_build_skill() -> str:
+    from factory.workflow.definitions import register_all
+    from factory.workflow.skill_export import workflow_to_skill_md
+    from factory.workflow.splitter import resolve_to_clean
+
+    wfs = register_all()
+    return resolve_to_clean(workflow_to_skill_md(wfs["build"]))
+
+
 @pytest.fixture
 def strategist_prompt() -> str:
     return (PROMPTS_DIR / "strategist.md").read_text()
@@ -145,16 +154,14 @@ class TestCeoPrompt:
 
     def test_build_mode_has_full_pipeline(self, ceo_prompt: str) -> None:
         """Build workflow skill has researcher, strategist, and builder phases."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-build" / "SKILL.md"
-        build_skill = skill_path.read_text()
+        build_skill = _generate_build_skill()
         assert "researcher" in build_skill.lower()
         assert "strategist" in build_skill.lower()
         assert "builder" in build_skill.lower()
 
     def test_build_mode_does_not_skip_to_builder(self, ceo_prompt: str) -> None:
         """Build workflow skill includes research and strategy phases before builder."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-build" / "SKILL.md"
-        build_skill = skill_path.read_text()
+        build_skill = _generate_build_skill()
         researcher_pos = build_skill.lower().index("researcher")
         builder_pos = build_skill.lower().index("builder")
         assert researcher_pos < builder_pos
@@ -299,13 +306,13 @@ class TestCeoPrompt:
 
     def test_plan_loop_spawns_researcher(self, ceo_prompt: str) -> None:
         """Build workflow skill includes researcher agent."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-build" / "SKILL.md"
-        assert "researcher" in skill_path.read_text().lower()
+        build_skill = _generate_build_skill()
+        assert "researcher" in build_skill.lower()
 
     def test_plan_loop_spawns_strategist(self, ceo_prompt: str) -> None:
         """Build workflow skill includes strategist agent."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-build" / "SKILL.md"
-        assert "strategist" in skill_path.read_text().lower()
+        build_skill = _generate_build_skill()
+        assert "strategist" in build_skill.lower()
 
     def test_plan_loop_has_iteration_limit(self, ceo_prompt: str) -> None:
         """Build workflow has gate nodes with RELOOP edges (iteration limits)."""
@@ -318,8 +325,8 @@ class TestCeoPrompt:
 
     def test_plan_loop_persists_spec(self, ceo_prompt: str) -> None:
         """Build workflow skill references current.md for strategy."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-build" / "SKILL.md"
-        assert "current.md" in skill_path.read_text()
+        build_skill = _generate_build_skill()
+        assert "current.md" in build_skill
 
     def test_plan_loop_transitions_to_build(self, ceo_prompt: str) -> None:
         """Build workflow has builder after strategist in graph order."""
