@@ -171,8 +171,21 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
 else
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
     export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
-    AGENT_ARGS=(--agent-import-path factory_harbor_agent:ProgramBenchFactoryCeo)
+    AGENT_ARGS=(--agent factory_harbor_agent:ProgramBenchFactoryCeo)
     echo "    Agent:           factory (ProgramBenchFactoryCeo)"
+fi
+
+# Build --agent-allow-host flags for agent-specific network access.
+# These are runtime flags (not task.toml) per Harbor maintainer guidance:
+# task.toml [agent] should only list hosts the TASK needs, not the agent.
+AGENT_ALLOW_HOSTS=()
+
+if [ -n "${LANGFUSE_HOST:-}" ]; then
+    LANGFUSE_HOSTNAME=$(echo "${LANGFUSE_HOST}" | sed 's|https\?://||' | sed 's|/.*||')
+    AGENT_ALLOW_HOSTS+=(--agent-allow-host "${LANGFUSE_HOSTNAME}")
+elif [ -n "${LANGFUSE_BASE_URL:-}" ]; then
+    LANGFUSE_HOSTNAME=$(echo "${LANGFUSE_BASE_URL}" | sed 's|https\?://||' | sed 's|/.*||')
+    AGENT_ALLOW_HOSTS+=(--agent-allow-host "${LANGFUSE_HOSTNAME}")
 fi
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
@@ -185,6 +198,17 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --agent-allow-host api.anthropic.com \
+        --agent-allow-host us-east5-aiplatform.googleapis.com \
+        --agent-allow-host us-central1-aiplatform.googleapis.com \
+        --agent-allow-host europe-west1-aiplatform.googleapis.com \
+        --agent-allow-host oauth2.googleapis.com \
+        --agent-allow-host www.googleapis.com \
+        --agent-allow-host storage.googleapis.com \
+        --agent-allow-host metadata.google.internal \
+        --agent-allow-host sentry.io \
+        --agent-allow-host statsig.anthropic.com \
+        "${AGENT_ALLOW_HOSTS[@]}" \
         --ae "CLAUDE_CODE_USE_VERTEX=1" \
         --ae "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         --ae "CLOUD_ML_REGION=${CLOUD_ML_REGION:-us-east5}" \
@@ -212,6 +236,10 @@ else
         --n-concurrent 1 \
         --jobs-dir "${JOBS_DIR}" \
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --agent-allow-host api.anthropic.com \
+        --agent-allow-host sentry.io \
+        --agent-allow-host statsig.anthropic.com \
+        "${AGENT_ALLOW_HOSTS[@]}" \
         --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
         --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
