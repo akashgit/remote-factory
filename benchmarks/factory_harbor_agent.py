@@ -137,7 +137,7 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --headless --mode build "
+                "factory ceo . --headless --mode build --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"
@@ -172,6 +172,7 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
                 "    done; "
                 '    if [ -n "$BEST_COMMIT" ]; then '
                 '      echo "Recovering from orphan tip: $BEST_COMMIT"; '
+                '      echo "  Message: $(git log -1 --format=\'%%s\' $BEST_COMMIT 2>/dev/null)"; '
                 '      git checkout "$BEST_COMMIT" -- . 2>/dev/null || true; '
                 "      git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true; "
                 "      rm -rf .factory/ eval/ factory.md 2>/dev/null || true; "
@@ -368,7 +369,7 @@ class FactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --headless --mode build "
+                "factory ceo . --headless --mode build --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"

@@ -307,6 +307,14 @@ fi
 
 echo ""
 
+# Extract factory events log for debugging
+EVENTS_FILE=$(find "${JOBS_DIR}" -path '*/.factory/events.jsonl' -type f 2>/dev/null | head -1)
+if [ -n "${EVENTS_FILE}" ]; then
+    mkdir -p "${RESULTS_DIR}"
+    cp "${EVENTS_FILE}" "${RESULTS_DIR}/events.jsonl"
+    echo "    Extracted events.jsonl for debugging"
+fi
+
 # ── Step 5: Run ProgramBench evaluation on the host ──
 
 log "Step 5: Running ProgramBench evaluation"
