@@ -84,7 +84,6 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
             if val and var not in env:
                 env[var] = val
 
-        env['FACTORY_CEO_RESPAWN_DISABLED'] = '1'
         env = {k: v for k, v in env.items() if v}
 
         await self.exec_as_agent(
@@ -138,6 +137,7 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+                'export FACTORY_CEO_RESPAWN_DISABLED=1; '
                 "factory ceo . --headless --mode build --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
@@ -310,7 +310,6 @@ class FactoryCeo(BaseInstalledAgent):
             if val and var not in env:
                 env[var] = val
 
-        env['FACTORY_CEO_RESPAWN_DISABLED'] = '1'
         env = {k: v for k, v in env.items() if v}
 
         # Create Claude Code config directories
@@ -371,6 +370,7 @@ class FactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+                'export FACTORY_CEO_RESPAWN_DISABLED=1; '
                 "factory ceo . --headless --mode build --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
