@@ -220,7 +220,7 @@ async def generate_spec(project_path: Path) -> Path:
         f"Read {spec_raw} and key source files.\n"
         f"Produce a behavioral spec with RFC 2119 normative language, domain model,\n"
         f"state machines, failure model, and module behavioral contracts.\n"
-        f"Write the annotated repo spec to {factory_dir / 'GRAPH-SPEC.md'}."
+        f"Write the annotated repo spec to {project_path / 'GRAPH-SPEC.md'}."
     )
 
     result, code = await invoke_agent(
@@ -233,7 +233,7 @@ async def generate_spec(project_path: Path) -> Path:
     if code != 0:
         raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
 
-    repo_spec = factory_dir / "GRAPH-SPEC.md"
+    repo_spec = project_path / "GRAPH-SPEC.md"
     if not repo_spec.exists():
         raise FileNotFoundError(
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"

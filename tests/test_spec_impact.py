@@ -163,9 +163,7 @@ measurable, reversible SDLC cycles.
 
 @pytest.fixture
 def project_with_spec(tmp_path: Path) -> Path:
-    factory_dir = tmp_path / ".factory"
-    factory_dir.mkdir()
-    (factory_dir / "GRAPH-SPEC.md").write_text(SAMPLE_SPEC)
+    (tmp_path / "GRAPH-SPEC.md").write_text(SAMPLE_SPEC)
     return tmp_path
 
 

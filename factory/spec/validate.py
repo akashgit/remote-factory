@@ -273,7 +273,7 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
 
 
 async def validate_spec(project_path: Path) -> ValidationResult:
-    """Validate .factory/SPEC.md (or legacy GRAPH-SPEC.md) against the actual project.
+    """Validate GRAPH-SPEC.md against the actual project.
 
     Tier 1: Structural checks (pure Python) — path existence, orphan/hub detection,
     coupling metrics (legacy specs).
@@ -283,9 +283,11 @@ async def validate_spec(project_path: Path) -> ValidationResult:
 
     Writes results to .factory/spec_validation.md.
     """
-    spec_path = project_path / ".factory" / "SPEC.md"
-    if not spec_path.is_file():
-        spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
+    from factory.discovery.spec import resolve_spec
+
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        raise FileNotFoundError(f"No repo spec found in {project_path}")
     spec = parse_spec(spec_path)
 
     result = ValidationResult()

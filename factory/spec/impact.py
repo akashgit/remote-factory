@@ -59,7 +59,11 @@ def get_impact(module_name: str, project_path: Path) -> str:
     Raises ValueError if the module is not found in the spec.
     Raises FileNotFoundError if the spec file does not exist.
     """
-    spec_path = project_path / ".factory" / "GRAPH-SPEC.md"
+    from factory.discovery.spec import resolve_spec
+
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        raise FileNotFoundError(f"No repo spec found in {project_path}")
     spec = parse_spec(spec_path)
 
     module = spec.get_module(module_name)
