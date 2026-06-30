@@ -26,9 +26,15 @@ mcp_servers = []
 network_mode = "allowlist"
 allowed_hosts = [
   "api.anthropic.com",
-  "*.aiplatform.googleapis.com",
+  "us-east5-aiplatform.googleapis.com",
+  "us-central1-aiplatform.googleapis.com",
+  "europe-west1-aiplatform.googleapis.com",
   "oauth2.googleapis.com",
+  "www.googleapis.com",
+  "storage.googleapis.com",
   "metadata.google.internal",
+  "sentry.io",
+  "statsig.anthropic.com",
 ]
 timeout_sec = 3600.0
 
