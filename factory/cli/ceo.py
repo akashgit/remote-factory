@@ -580,17 +580,18 @@ def _stop_ceo_tailer(tailer: object | None) -> None:
         from factory.telemetry import _observations, end_span, flush
 
         count = tailer.stop_and_drain()  # type: ignore[attr-defined]
-        trace_id = os.environ.get("FACTORY_TRACE_ID", "")
         span_id = getattr(tailer, "span_id", None)
-        if trace_id and span_id:
+        if span_id:
             obs = _observations.get(span_id)
             if obs is not None:
                 obs.update(
-                    output={"status": "completed", "lines_captured": count},
+                    output=f"CEO session completed ({count} observations ingested)",
+                    metadata={"status": "completed", "observations_count": count},
                 )
                 obs.end()
                 _observations.pop(span_id, None)
             else:
+                trace_id = os.environ.get("FACTORY_TRACE_ID", "")
                 end_span(trace_id, span_id, status="completed")
             flush()
     except Exception:
