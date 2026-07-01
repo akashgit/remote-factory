@@ -17,7 +17,7 @@ SPLIT="${3:-full}"
 
 BENCHMARK="featurebench"
 RUN_ID="ci-featurebench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-featurebench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-featurebench-${BENCHMARK_SOLVER:-factory}.json"
 
 # Map split name to Harbor dataset
 case "${SPLIT}" in
