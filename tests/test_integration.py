@@ -1,7 +1,6 @@
 """Integration tests — end-to-end workflows."""
 
 import json
-from unittest.mock import patch
 
 import pytest
 
@@ -30,8 +29,7 @@ class TestDiscoverToInit:
         compile(script, str(path), "exec")
 
     def test_discover_cli_produces_valid_json(self, python_project, capsys):
-        with patch("factory.discovery.spec.generate_spec", return_value="# GRAPH-SPEC\nstub"):
-            result = main(["discover", str(python_project)])
+        result = main(["discover", str(python_project)])
         assert result == 0
         output = json.loads(capsys.readouterr().out)
         assert "project" in output
@@ -74,11 +72,8 @@ class TestExperimentLifecycle:
         store = ExperimentStore(project)
 
         config = FactoryConfig(
-            goal="test",
-            scope=[],
-            guards=[],
-            eval_command="echo ok",
-            eval_threshold=0.5,
+            goal="test", scope=[], guards=[],
+            eval_command="echo ok", eval_threshold=0.5,
             constraints=[],
         )
         await store.init(config)
@@ -89,18 +84,11 @@ class TestExperimentLifecycle:
 
         # Finalize
         record = ExperimentRecord(
-            id=exp_id,
-            timestamp=datetime.now(),
-            hypothesis="Test hypothesis",
-            change_summary="test",
-            issue_number=None,
-            pr_number=None,
-            score_before=0.5,
-            score_after=0.7,
-            delta=0.2,
-            verdict="keep",
-            cost_usd=0.5,
-            notes="",
+            id=exp_id, timestamp=datetime.now(),
+            hypothesis="Test hypothesis", change_summary="test",
+            issue_number=None, pr_number=None,
+            score_before=0.5, score_after=0.7, delta=0.2,
+            verdict="keep", cost_usd=0.5, notes="",
         )
         await store.finalize(exp_id, record)
 

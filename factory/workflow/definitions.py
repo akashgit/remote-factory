@@ -583,23 +583,6 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Non-blocking spec update — runs if GRAPH-SPEC.md exists at project root
-    nodes["spec_update"] = FnNode(
-        id="spec_update",
-        command=(
-            'python3 -c "'
-            "from pathlib import Path; "
-            "import subprocess, sys; "
-            "sys.exit(0) if not Path('{project_path}/GRAPH-SPEC.md').is_file() else None; "
-            "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
-            "capture_output=True, text=True); "
-            "print(r.stdout); print(r.stderr, file=sys.stderr); "
-            "sys.exit(0)"
-            '"'
-        ),
-        blocking=False,
-    )
-
     edges = [
         # Study → researcher
         Edge(source="study", target="researcher"),
@@ -633,9 +616,8 @@ def improve_workflow() -> Workflow:
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → spec_update (non-blocking)
+        # Finalize → archivist
         Edge(source="finalize", target="archivist"),
-        Edge(source="archivist", target="spec_update"),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
@@ -854,10 +836,9 @@ def research_workflow() -> Workflow:
         Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
-        # Finalize → archivist → spec_update (non-blocking) → plateau gate
+        # Finalize → archivist → plateau gate
         Edge(source="finalize", target="archivist"),
-        Edge(source="archivist", target="spec_update"),
-        Edge(source="spec_update", target="plateau_gate"),
+        Edge(source="archivist", target="plateau_gate"),
         # Plateau gate: proceed (done) or reloop to baseline
         Edge(source="plateau_gate", target="baseline", condition=VerdictType.RELOOP),
     ]
