@@ -103,7 +103,8 @@ class TestIsEnabled:
         assert telemetry_mod.is_enabled() is True
         assert telemetry_mod._client is mock_client
 
-    def test_returns_true_on_subsequent_calls(self) -> None:
+    def test_returns_true_on_subsequent_calls(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
         telemetry_mod._client = MagicMock()
         assert telemetry_mod.is_enabled() is True
 
