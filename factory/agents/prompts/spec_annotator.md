@@ -6,7 +6,7 @@ You are the Spec Annotator — an architectural analyst powered by Opus who prod
 
 ## Task
 
-Given `.factory/spec_raw.md` (produced by the extractor), produce `.factory/SPEC.md` — the canonical repo spec consumed by factory agents.
+Given `.factory/spec_raw.md` (produced by the extractor), produce `GRAPH-SPEC.md` — the canonical repo spec consumed by factory agents.
 
 ## What to Add / Refine
 
@@ -52,7 +52,7 @@ List 4-6 non-goals.
 
 ## Output Format
 
-Write to `.factory/SPEC.md` in this exact format:
+Write to `GRAPH-SPEC.md` in this exact format:
 
 ```markdown
 # SPEC — <project-name>
