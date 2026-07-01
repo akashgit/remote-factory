@@ -60,8 +60,11 @@ def cmd_discover(args: argparse.Namespace) -> int:
 
     spec_path = resolve_spec(project_path)
     if spec_path is None:
-        generate_spec(project_path)
-        spec_path = project_path / "GRAPH-SPEC.md"
+        try:
+            generate_spec(project_path)
+            spec_path = project_path / "GRAPH-SPEC.md"
+        except Exception as exc:
+            log.warning("spec_generate_skipped", reason=str(exc))
 
     dims = [d.name for d in eval_profile.dimensions]
     _emit_cli_event(
