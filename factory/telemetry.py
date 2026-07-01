@@ -29,6 +29,8 @@ _observations: dict[str, Any] = {}
 def is_enabled() -> bool:
     """Check if Langfuse is configured and lazily initialise the client."""
     global _client
+    if os.environ.get("FACTORY_DISABLE_TELEMETRY", "").lower() in ("1", "true"):
+        return False
     if _client is not None:
         return True
     if not _HAS_LANGFUSE:
@@ -38,10 +40,15 @@ def is_enabled() -> bool:
         return False
     try:
         _client = Langfuse()
+        if not _client.auth_check():
+            log.warning("langfuse_auth_failed", host=host)
+            _client = None
+            return False
         log.debug("langfuse_initialized", host=host)
         return True
     except Exception as exc:
         log.warning("langfuse_init_failed", error=str(exc))
+        _client = None
         return False
 
 

@@ -37,7 +37,9 @@ class TestIsEnabled:
 
     def test_returns_true_when_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
         mock_client = MagicMock()
+        mock_client.auth_check.return_value = True
         mock_langfuse_cls = MagicMock(return_value=mock_client)
         monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
         monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
@@ -46,8 +48,55 @@ class TestIsEnabled:
 
     def test_returns_true_with_langfuse_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
         monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.example.com")
         mock_client = MagicMock()
+        mock_client.auth_check.return_value = True
+        mock_langfuse_cls = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
+        assert telemetry_mod.is_enabled() is True
+        assert telemetry_mod._client is mock_client
+
+    def test_returns_false_when_kill_switch_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.setenv("FACTORY_DISABLE_TELEMETRY", "1")
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        assert telemetry_mod.is_enabled() is False
+
+    def test_returns_false_when_kill_switch_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.setenv("FACTORY_DISABLE_TELEMETRY", "true")
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        assert telemetry_mod.is_enabled() is False
+
+    def test_returns_false_when_auth_check_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
+        mock_client = MagicMock()
+        mock_client.auth_check.return_value = False
+        mock_langfuse_cls = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
+        assert telemetry_mod.is_enabled() is False
+        assert telemetry_mod._client is None
+
+    def test_returns_false_when_auth_check_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
+        mock_client = MagicMock()
+        mock_client.auth_check.side_effect = RuntimeError("connection refused")
+        mock_langfuse_cls = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
+        assert telemetry_mod.is_enabled() is False
+        assert telemetry_mod._client is None
+
+    def test_returns_true_when_auth_check_passes(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        monkeypatch.delenv("FACTORY_DISABLE_TELEMETRY", raising=False)
+        mock_client = MagicMock()
+        mock_client.auth_check.return_value = True
         mock_langfuse_cls = MagicMock(return_value=mock_client)
         monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
         monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)

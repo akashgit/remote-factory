@@ -16,7 +16,7 @@ jobs:
       contains(github.event.comment.body, '@ceo-review') &&
       contains(fromJSON('["akashgit", "xukai92", "colehurwitz", "shivchander", "osilkin98", "gx-ai-architect", "RobotSail"]'), github.event.comment.user.login)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: React with eyes
@@ -74,6 +74,7 @@ jobs:
           LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          FACTORY_DISABLE_TELEMETRY: '1'
         run: |
           uv run factory ceo . --mode qa --pr ${{ steps.pr.outputs.number }} --headless
 
