@@ -2796,6 +2796,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     ceo_tailer = _start_ceo_tailer(
         wt_path, cycle_span_id, _ceo_start,
         on_line=_make_ceo_message_emitter(wt_path),
+        is_headless=headless,
     )
 
     if headless:
@@ -2867,15 +2868,23 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 def _start_ceo_tailer(
     wt_path: Path, cycle_span_id: str | None, start_time: float,
     on_line: Callable[[bytes], None] | None = None,
+    is_headless: bool = False,
 ) -> object | None:
-    """Create the CEO span eagerly and start a TranscriptTailer."""
+    """Create the CEO span eagerly and start a TranscriptTailer.
+
+    When *is_headless* is True, skip span creation — the agent runner's
+    ``invoke_agent("ceo")`` owns the single CEO span via
+    ``_begin_span_safe()`` / ``_complete_span_safe()``.  The tailer still
+    runs for the *on_line* callback (ceo.message events) but with
+    ``span_id=""`` so it doesn't compete with batch ingestion.
+    """
     try:
         from factory.telemetry import TranscriptTailer, begin_span, flush, is_enabled
 
         trace_id = ""
         ceo_span_id = ""
 
-        if cycle_span_id and is_enabled():
+        if cycle_span_id and is_enabled() and not is_headless:
             trace_id = os.environ.get("FACTORY_TRACE_ID", "")
             if trace_id:
                 span = begin_span(trace_id, cycle_span_id, "ceo")
@@ -2900,17 +2909,37 @@ def _start_ceo_tailer(
 
 
 def _stop_ceo_tailer(tailer: object | None) -> None:
-    """Stop the tailer, do final drain, and end the CEO span."""
+    """Stop the tailer, do final drain, and end the CEO span.
+
+    Mirrors the ``obs.update() → obs.end() → flush()`` sequence used by
+    ``_complete_span_safe()`` in the agent runner so that the CEO span
+    materialises as a visible observation in Langfuse.
+    """
     if tailer is None:
         return
     try:
-        from factory.telemetry import end_span
+        from factory.telemetry import _observations, flush
 
-        tailer.stop_and_drain()  # type: ignore[attr-defined]
-        trace_id = os.environ.get("FACTORY_TRACE_ID", "")
+        count = tailer.stop_and_drain()  # type: ignore[attr-defined]
         span_id = getattr(tailer, "span_id", None)
-        if trace_id and span_id:
-            end_span(trace_id, span_id, status="completed")
+        if not span_id:
+            return
+
+        obs = _observations.get(span_id)
+        if obs is not None:
+            obs.update(
+                output=f"CEO session completed ({count} observations ingested)",
+                metadata={"status": "completed", "observations_count": count},
+            )
+            obs.end()
+            _observations.pop(span_id, None)
+            flush()
+        else:
+            from factory.telemetry import end_span
+
+            trace_id = os.environ.get("FACTORY_TRACE_ID", "")
+            if trace_id:
+                end_span(trace_id, span_id, status="completed")
     except Exception:
         pass
 
