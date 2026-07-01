@@ -30,6 +30,34 @@ def load_creds() -> tuple[str, str, str]:
     return host, pk, sk
 
 
+def list_traces(
+    from_ts: datetime,
+    to_ts: datetime,
+    name: str | None = None,
+    limit: int = 100,
+) -> list[dict]:
+    """List traces from Langfuse filtered by time window.
+
+    Returns the 'data' array from the response (first page only).
+    """
+    host, pk, sk = load_creds()
+    params: dict[str, str | int] = {
+        "fromTimestamp": from_ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "toTimestamp": to_ts.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
+        "limit": limit,
+    }
+    if name:
+        params["name"] = name
+    r = requests.get(
+        f"{host}/api/public/traces",
+        params=params,
+        auth=(pk, sk),
+        timeout=60,
+    )
+    r.raise_for_status()
+    return r.json().get("data", [])
+
+
 def fetch_trace(trace_id: str, *, use_cache: bool = True) -> dict:
     """Fetch a trace from Langfuse, with optional local file cache.
 
