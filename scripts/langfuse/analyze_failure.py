@@ -72,12 +72,12 @@ def run_llm_analysis(trace_dump: str, benchmark: str, instance_id: str) -> str |
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--max-turns", "1"],
+            ["claude", "-p", prompt, "--max-turns", "3"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=180,
         )
-        if result.returncode == 0 and result.stdout.strip():
+        if result.stdout.strip():
             return result.stdout.strip()
     except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
         pass
