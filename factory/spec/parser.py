@@ -135,7 +135,7 @@ def _parse_comma_list(text: str) -> list[str]:
     """Split a comma-separated string into a trimmed list, filtering empties."""
     if not text or text.strip().lower() in ("none", "—", "-", "n/a", ""):
         return []
-    return [item.strip() for item in text.split(",") if item.strip()]
+    return [item.strip().strip("`") for item in text.split(",") if item.strip()]
 
 
 def _extract_field(block: str, field_name: str) -> str:
