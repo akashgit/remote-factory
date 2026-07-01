@@ -193,13 +193,6 @@ jobs:
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
           benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}
 
-      - name: Upload results
-        uses: actions/upload-artifact@v4
-        if: always() && steps.gate.outputs.run == 'true'
-        with:
-          name: benchmark-results-${{ matrix.benchmark }}-${{ matrix.solver }}
-          path: benchmarks/results/
-
       - name: Print summary
         if: always() && steps.gate.outputs.run == 'true'
         run: |
@@ -238,6 +231,13 @@ jobs:
               fi
             fi
           done
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.run == 'true'
+        with:
+          name: benchmark-results-${{ matrix.benchmark }}-${{ matrix.solver }}
+          path: benchmarks/results/
 
   report:
     needs: benchmark
