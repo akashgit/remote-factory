@@ -21,7 +21,7 @@ usage() {
     echo "  --results-dir DIR   Directory containing *-full.json files (default: benchmarks/results)"
     echo "  --run-id ID         Run identifier (default: auto-generated from timestamp)"
     echo "  -h, --help          Show this help message"
-    exit 0
+    exit "${1:-0}"
 }
 
 # ── Argument parsing ──
@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
         --results-dir) RESULTS_DIR="$2"; shift 2 ;;
         --run-id)      RUN_ID="$2"; shift 2 ;;
         -h|--help)     usage ;;
-        *)             echo "ERROR: Unknown option '$1'"; usage ;;
+        *)             echo "ERROR: Unknown option '$1'"; usage 1 ;;
     esac
 done
 

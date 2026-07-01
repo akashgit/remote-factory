@@ -32,7 +32,7 @@ usage() {
     echo "  --split S                      Dataset split (featurebench only: full, lite)"
     echo "  --preserve                     Preserve Harbor jobs directory after completion"
     echo "  -h, --help                     Show this help message"
-    exit 0
+    exit "${1:-0}"
 }
 
 # ── Argument parsing ──
@@ -52,7 +52,7 @@ while [ $# -gt 0 ]; do
         --split)       SPLIT="$2"; shift 2 ;;
         --preserve)    PRESERVE_WORKSPACE="1"; shift ;;
         -h|--help)     usage ;;
-        *)             echo "ERROR: Unknown option '$1'"; usage ;;
+        *)             echo "ERROR: Unknown option '$1'"; usage 1 ;;
     esac
 done
 
