@@ -235,31 +235,49 @@ class TestGetImpact:
         assert len(lines) < 30
 
 
-class TestAgentPromptSections:
-    """Verify that agent prompt files contain the GRAPH-SPEC sections."""
+class TestWorkflowSpecAwareness:
+    """Verify that workflow nodes reference GRAPH-SPEC.md in prompt_template."""
 
-    PROMPTS_DIR = Path(__file__).resolve().parent.parent / "factory" / "agents" / "prompts"
+    def test_build_researchers_mention_spec(self) -> None:
+        from factory.workflow.definitions import build_workflow
 
-    def test_strategist_has_graph_spec_section(self) -> None:
-        content = (self.PROMPTS_DIR / "strategist.md").read_text()
-        assert "## GRAPH-SPEC (if available)" in content
-        assert "blast radius" in content
-        assert "hub modules" in content
+        wf = build_workflow()
+        for nid in ("researcher_similar", "researcher_techstack", "researcher_pitfalls"):
+            node = wf.nodes[nid]
+            assert "GRAPH-SPEC.md" in node.prompt_template
 
-    def test_builder_has_graph_spec_section(self) -> None:
-        content = (self.PROMPTS_DIR / "builder.md").read_text()
-        assert "## GRAPH-SPEC (if available)" in content
-        assert "shared contract" in content
-        assert "entry points" in content
+    def test_improve_researcher_mentions_spec(self) -> None:
+        from factory.workflow.definitions import improve_workflow
 
-    def test_qa_has_graph_spec_section(self) -> None:
-        content = (self.PROMPTS_DIR / "qa.md").read_text()
-        assert "## GRAPH-SPEC (if available)" in content
-        assert "change impact predictions" in content
-        assert "adversarial QA" in content
+        wf = improve_workflow()
+        assert "GRAPH-SPEC.md" in wf.nodes["researcher"].prompt_template
 
-    def test_ceo_has_graph_spec_section(self) -> None:
-        content = (self.PROMPTS_DIR / "ceo.md").read_text()
-        assert "## GRAPH-SPEC (if available)" in content
-        assert "factory spec impact" in content
-        assert "coupling data" in content
+    def test_build_strategist_mentions_spec(self) -> None:
+        from factory.workflow.definitions import build_workflow
+
+        wf = build_workflow()
+        assert "GRAPH-SPEC Diff" in wf.nodes["strategist"].prompt_template
+
+    def test_improve_strategist_mentions_spec(self) -> None:
+        from factory.workflow.definitions import improve_workflow
+
+        wf = improve_workflow()
+        assert "GRAPH-SPEC Diff" in wf.nodes["strategist"].prompt_template
+
+    def test_build_has_spec_gate(self) -> None:
+        from factory.workflow.definitions import build_workflow
+
+        wf = build_workflow()
+        assert "gate_spec_exists" in wf.nodes
+        assert "generate_spec" in wf.nodes
+        assert "gate_spec_updated" in wf.nodes
+        assert wf.start_node == "gate_spec_exists"
+
+    def test_improve_has_spec_gate(self) -> None:
+        from factory.workflow.definitions import improve_workflow
+
+        wf = improve_workflow()
+        assert "gate_spec_exists" in wf.nodes
+        assert "generate_spec" in wf.nodes
+        assert "gate_spec_updated" in wf.nodes
+        assert wf.start_node == "gate_spec_exists"

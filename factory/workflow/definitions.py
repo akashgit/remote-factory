@@ -58,12 +58,32 @@ __all__ = [
 def build_workflow() -> Workflow:
     """W₁: Build Mode — new project from idea/spec.
 
-    Fork(3 researchers) → Join → CEO gate → Strategist → CEO gate →
-    Archivist(async) → Builder → CEO gate → QA → gate_qa(max 3) →
-    Precheck gate → Archivist(async)
+    gate_spec_exists → [generate_spec →] Fork(3 researchers) → Join → CEO gate →
+    Strategist → CEO gate → gate_spec_updated → Archivist(async) →
+    Builder → CEO gate → QA → gate_qa(max 3) → Precheck gate → Archivist(async)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
+
+    # Spec existence gate — check if GRAPH-SPEC.md exists before research
+    nodes["gate_spec_exists"] = GateNode(
+        id="gate_spec_exists",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "p = Path('{project_path}/GRAPH-SPEC.md'); "
+            "print('PROCEED' if p.is_file() else 'HALT')"
+            '"'
+        ),
+    )
+
+    # Generate spec if absent — runs factory spec generate
+    nodes["generate_spec"] = FnNode(
+        id="generate_spec",
+        command="factory spec generate {project_path}",
+        writes={"GRAPH-SPEC.md"},
+    )
 
     # Fork: 3 parallel researchers
     nodes["fork_research"] = ForkNode(
@@ -76,6 +96,7 @@ def build_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Similar projects research. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Search the web for similar projects, existing solutions, and prior art. "
             "Analyze their strengths, weaknesses, and market positioning. "
             "Check .factory/archive/ for prior knowledge on similar builds. "
@@ -90,6 +111,7 @@ def build_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Tech stack research. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Identify the best technology stack for this type of project. "
             "Find architecture patterns and best practices. "
             "Evaluate framework/library options with trade-offs. "
@@ -104,6 +126,7 @@ def build_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Pitfalls and scope research. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Identify potential pitfalls and common mistakes for this type of project. "
             "Research MVP scope best practices. "
             "Check .factory/archive/ for lessons from past builds. "
@@ -145,6 +168,9 @@ def build_workflow() -> Workflow:
         prompt_template=(
             "Synthesize a project specification from research. "
             "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "Read GRAPH-SPEC.md at the project root for existing behavioral spec. "
+            "If GRAPH-SPEC.md exists, include a GRAPH-SPEC Diff section describing "
+            "which spec sections are ADDED, MODIFIED, or REMOVED by this plan. "
             "Produce a complete phased build plan. Phase 1 must be project scaffold + eval harness. "
             "Every Phase must have substantive What/Why/Expected impact fields. "
             "Build EVERYTHING in this pass. Only defer items requiring human intervention. "
@@ -167,6 +193,23 @@ def build_workflow() -> Workflow:
             "4) Phase 1 is scaffold + eval harness. "
             "5) Deferred section only contains items requiring human intervention. "
             "Write PLAN APPROVED in verdict if all checks pass."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Gate: verify strategist included GRAPH-SPEC Diff if spec exists
+    nodes["gate_spec_updated"] = GateNode(
+        id="gate_spec_updated",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "spec = Path('{project_path}/GRAPH-SPEC.md'); "
+            "plan = Path('{project_path}/.factory/strategy/current.md'); "
+            "has_spec = spec.is_file(); "
+            "has_diff = 'GRAPH-SPEC Diff' in plan.read_text() if plan.is_file() else False; "
+            "print('PROCEED' if not has_spec or has_diff else 'RELOOP')"
+            '"'
         ),
         reads={".factory/strategy/current.md"},
     )
@@ -250,6 +293,10 @@ def build_workflow() -> Workflow:
 
     # Edges
     edges = [
+        # Spec gate → generate (halt) or research (proceed)
+        Edge(source="gate_spec_exists", target="fork_research", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_exists", target="generate_spec", condition=VerdictType.HALT),
+        Edge(source="generate_spec", target="fork_research"),
         # Fork to researchers
         Edge(source="fork_research", target="researcher_similar"),
         Edge(source="fork_research", target="researcher_techstack"),
@@ -265,9 +312,12 @@ def build_workflow() -> Workflow:
         Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
         # Strategist → strategy gate
         Edge(source="strategist", target="gate_strategy"),
-        # Strategy gate → archivist (proceed) or back (reloop)
-        Edge(source="gate_strategy", target="archivist_plan", condition=VerdictType.PROCEED),
+        # Strategy gate → spec update check (proceed) or back (reloop)
+        Edge(source="gate_strategy", target="gate_spec_updated", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # Spec update gate → archivist (proceed) or strategist (reloop)
+        Edge(source="gate_spec_updated", target="archivist_plan", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_updated", target="strategist", condition=VerdictType.RELOOP),
         # Archivist → builder
         Edge(source="archivist_plan", target="builder"),
         # Builder → build gate
@@ -292,7 +342,7 @@ def build_workflow() -> Workflow:
         name="build",
         nodes=nodes,
         edges=edges,
-        start_node="fork_research",
+        start_node="gate_spec_exists",
         trigger=trigger,
     )
 
@@ -330,12 +380,33 @@ def design_workflow() -> Workflow:
 def improve_workflow() -> Workflow:
     """W₃: Improve Mode — study → research → strategy → per-hypothesis build/QA loop.
 
-    Study → Researcher → CEO gate → Strategist → CEO gate →
+    gate_spec_exists → [generate_spec →] Study → Researcher → CEO gate →
+    Strategist → CEO gate → gate_spec_updated →
     per-hypothesis: begin → Builder → CEO gate → QA → gate_qa(max 3) →
-    Precheck → finalize → Archivist(async)
+    Precheck → finalize → Archivist(async) → spec_update
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
+
+    # Spec existence gate
+    nodes["gate_spec_exists"] = GateNode(
+        id="gate_spec_exists",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "p = Path('{project_path}/GRAPH-SPEC.md'); "
+            "print('PROCEED' if p.is_file() else 'HALT')"
+            '"'
+        ),
+    )
+
+    # Generate spec if absent
+    nodes["generate_spec"] = FnNode(
+        id="generate_spec",
+        command="factory spec generate {project_path}",
+        writes={"GRAPH-SPEC.md"},
+    )
 
     # Study
     nodes["study"] = Study(
@@ -350,6 +421,7 @@ def improve_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Deep research for the project. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Read observations at .factory/strategy/observations.md. "
             "Analyze codebase structure, eval scores, and experiment history. "
             "Search the web for best practices relevant to weak dimensions. "
@@ -378,6 +450,9 @@ def improve_workflow() -> Workflow:
         role=AgentRole.STRATEGIST,
         prompt_template=(
             "Generate prioritized hypotheses. "
+            "Read GRAPH-SPEC.md at the project root for existing behavioral spec. "
+            "If GRAPH-SPEC.md exists, include a GRAPH-SPEC Diff section describing "
+            "which spec sections are ADDED, MODIFIED, or REMOVED by each hypothesis. "
             "Read the backlog at .factory/strategy/backlog.md — clear as many items as possible. "
             "Read Hypothesis Budget from observations for constraints. "
             "Read CEO research review at .factory/reviews/ceo-verdict-researcher.md. "
@@ -401,6 +476,23 @@ def improve_workflow() -> Workflow:
             "Not redundant with reverted experiment? "
             "At least one growth hypothesis? Backlog convergence? "
             "Write PLAN APPROVED with approved hypotheses in priority order."
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # Gate: verify strategist included GRAPH-SPEC Diff if spec exists
+    nodes["gate_spec_updated"] = GateNode(
+        id="gate_spec_updated",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "spec = Path('{project_path}/GRAPH-SPEC.md'); "
+            "plan = Path('{project_path}/.factory/strategy/current.md'); "
+            "has_spec = spec.is_file(); "
+            "has_diff = 'GRAPH-SPEC Diff' in plan.read_text() if plan.is_file() else False; "
+            "print('PROCEED' if not has_spec or has_diff else 'RELOOP')"
+            '"'
         ),
         reads={".factory/strategy/current.md"},
     )
@@ -505,6 +597,10 @@ def improve_workflow() -> Workflow:
     )
 
     edges = [
+        # Spec gate → generate (halt) or study (proceed)
+        Edge(source="gate_spec_exists", target="study", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_exists", target="generate_spec", condition=VerdictType.HALT),
+        Edge(source="generate_spec", target="study"),
         # Study → researcher
         Edge(source="study", target="researcher"),
         # Researcher → research gate
@@ -514,9 +610,12 @@ def improve_workflow() -> Workflow:
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
         # Strategist → strategy gate
         Edge(source="strategist", target="gate_strategy"),
-        # Strategy gate
-        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        # Strategy gate → spec update check (proceed) or back (reloop)
+        Edge(source="gate_strategy", target="gate_spec_updated", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # Spec update gate → begin (proceed) or strategist (reloop)
+        Edge(source="gate_spec_updated", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_updated", target="strategist", condition=VerdictType.RELOOP),
         # begin → builder
         Edge(source="begin", target="builder"),
         # Builder → build gate
@@ -544,7 +643,7 @@ def improve_workflow() -> Workflow:
         name="improve",
         nodes=nodes,
         edges=edges,
-        start_node="study",
+        start_node="gate_spec_exists",
         trigger=trigger,
     )
 
@@ -647,12 +746,13 @@ def research_workflow() -> Workflow:
         writes={".factory/strategy/failure_analysis.md"},
     )
 
-    # Update researcher to read failure analysis
+    # Update researcher to read failure analysis + GRAPH-SPEC
     wf.nodes["researcher"] = AgentNode(
         id="researcher",
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Failure-targeted research. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Read failure analysis at .factory/strategy/failure_analysis.md. "
             "Search the web for solutions to the dominant failure modes. "
             "Check .factory/archive/ for prior knowledge on these patterns. "
@@ -662,12 +762,15 @@ def research_workflow() -> Workflow:
         writes={".factory/strategy/research-local.md"},
     )
 
-    # Update strategist to read failure analysis instead of observations
+    # Update strategist to read failure analysis + GRAPH-SPEC
     wf.nodes["strategist"] = AgentNode(
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
             "Generate research hypotheses targeting dominant failure modes. "
+            "Read GRAPH-SPEC.md at the project root for existing behavioral spec. "
+            "If GRAPH-SPEC.md exists, include a GRAPH-SPEC Diff section describing "
+            "which spec sections are ADDED, MODIFIED, or REMOVED by each hypothesis. "
             "Each hypothesis must improve over the previous baseline score. "
             "Each hypothesis must name specific files from mutable_surfaces to modify. "
             "Hypotheses MUST NOT modify files in fixed_surfaces. "
@@ -714,6 +817,10 @@ def research_workflow() -> Workflow:
 
     # Rebuild edges for research flow
     wf.edges = [
+        # Spec gate → generate (halt) or baseline (proceed)
+        Edge(source="gate_spec_exists", target="baseline", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_exists", target="generate_spec", condition=VerdictType.HALT),
+        Edge(source="generate_spec", target="baseline"),
         # Baseline → failure analyst → researcher
         Edge(source="baseline", target="failure_analyst"),
         Edge(source="failure_analyst", target="researcher"),
@@ -721,10 +828,13 @@ def research_workflow() -> Workflow:
         Edge(source="researcher", target="gate_research"),
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-        # Strategist → strategy gate
+        # Strategist → strategy gate → spec update check
         Edge(source="strategist", target="gate_strategy"),
-        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="gate_spec_updated", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # Spec update gate → begin (proceed) or strategist (reloop)
+        Edge(source="gate_spec_updated", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_updated", target="strategist", condition=VerdictType.RELOOP),
         # begin → builder
         Edge(source="begin", target="builder"),
         # Builder → build gate
@@ -748,7 +858,7 @@ def research_workflow() -> Workflow:
     ]
 
     wf.name = "research"
-    wf.start_node = "baseline"
+    wf.start_node = "gate_spec_exists"
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return state == ProjectState.HAS_FACTORY and bool(ctx.get("research_target"))
@@ -1124,11 +1234,32 @@ def review_workflow() -> Workflow:
 def refine_workflow() -> Workflow:
     """W₈: Refine Mode — lightweight user-directed refinement pipeline.
 
-    Refiner → CEO gate → tier gate → begin → create issue →
-    Builder → QA gate(max 3) → precheck → finalize → Archivist(async)
+    gate_spec_exists → [generate_spec →] Refiner → CEO gate → tier gate →
+    begin → create issue → Builder → QA gate(max 3) → precheck →
+    finalize → Archivist(async)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
+
+    # Spec existence gate
+    nodes["gate_spec_exists"] = GateNode(
+        id="gate_spec_exists",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "p = Path('{project_path}/GRAPH-SPEC.md'); "
+            "print('PROCEED' if p.is_file() else 'HALT')"
+            '"'
+        ),
+    )
+
+    # Generate spec if absent
+    nodes["generate_spec"] = FnNode(
+        id="generate_spec",
+        command="factory spec generate {project_path}",
+        writes={"GRAPH-SPEC.md"},
+    )
 
     # R0: Classify
     nodes["refiner"] = AgentNode(
@@ -1136,6 +1267,7 @@ def refine_workflow() -> Workflow:
         role=AgentRole.REFINER,
         prompt_template=(
             "Classify and scope a refinement request. "
+            "Read GRAPH-SPEC.md at the project root for project context and architecture. "
             "Read CLAUDE.md and factory.md. Analyze the codebase to identify "
             "which files need to change, estimate scope, and classify the request "
             "as Tier 1, 2, or 3. Produce the structured classification output "
@@ -1262,6 +1394,10 @@ def refine_workflow() -> Workflow:
     )
 
     edges = [
+        # Spec gate → generate (halt) or refiner (proceed)
+        Edge(source="gate_spec_exists", target="refiner", condition=VerdictType.PROCEED),
+        Edge(source="gate_spec_exists", target="generate_spec", condition=VerdictType.HALT),
+        Edge(source="generate_spec", target="refiner"),
         # Refiner → CEO gate
         Edge(source="refiner", target="gate_refiner"),
         Edge(source="gate_refiner", target="gate_tier", condition=VerdictType.PROCEED),
@@ -1289,7 +1425,7 @@ def refine_workflow() -> Workflow:
         name="refine",
         nodes=nodes,
         edges=edges,
-        start_node="refiner",
+        start_node="gate_spec_exists",
         trigger=trigger,
     )
 

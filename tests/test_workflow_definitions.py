@@ -153,7 +153,7 @@ class TestResearchExtendsImprove:
 
     def test_research_start_node(self) -> None:
         wf = research_workflow()
-        assert wf.start_node == "baseline"
+        assert wf.start_node == "gate_spec_exists"
 
 
 # ── W₅ Meta structure ────────────────────────────────────────────
@@ -225,8 +225,19 @@ class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
         assert len(all_wf) >= 11, f"Expected at least 11 workflows, got {len(all_wf)}"
-        required = {"build", "design", "improve", "qa", "research", "meta",
-                     "discover", "review", "refine", "create", "skill-refine"}
+        required = {
+            "build",
+            "design",
+            "improve",
+            "qa",
+            "research",
+            "meta",
+            "discover",
+            "review",
+            "refine",
+            "create",
+            "skill-refine",
+        }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
     def test_all_validate(self) -> None:
@@ -322,8 +333,7 @@ def _workflows_with_builder() -> list[str]:
     names = []
     for name, wf in register_all().items():
         has_builder = any(
-            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
-            for n in wf.nodes.values()
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER for n in wf.nodes.values()
         )
         if has_builder:
             names.append(name)
@@ -357,28 +367,27 @@ class TestBuilderQaReachability:
     def test_builder_has_qa_node(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         qa_nodes = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role == AgentRole.QA
         ]
-        assert qa_nodes, (
-            f"workflow '{workflow_name}' has a Builder but no QA AgentNode"
-        )
+        assert qa_nodes, f"workflow '{workflow_name}' has a Builder but no QA AgentNode"
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
     def test_qa_reachable_from_builder(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         builder_ids = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
         ]
         qa_ids = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role == AgentRole.QA
         ]
         for bid in builder_ids:
-            reachable = any(
-                _is_reachable(workflow_name, bid, qid) for qid in qa_ids
-            )
+            reachable = any(_is_reachable(workflow_name, bid, qid) for qid in qa_ids)
             assert reachable, (
                 f"workflow '{workflow_name}': QA node is not reachable from "
                 f"Builder node '{bid}' via edges"
