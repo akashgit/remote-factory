@@ -24,7 +24,7 @@ PRESERVE_WORKSPACE="${PRESERVE_WORKSPACE:-}"
 usage() {
     echo "Usage: $(basename "$0") <benchmark> [options]"
     echo ""
-    echo "Benchmarks: swebench, featurebench, terminalbench, programbench"
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, all"
     echo ""
     echo "Options:"
     echo "  --solver factory|claude-code   Solver to use (default: factory)"
@@ -59,6 +59,32 @@ while [ $# -gt 0 ]; do
     esac
 done
 
+# ── Handle 'all' — re-invoke for each benchmark ──
+
+if [ "${BENCHMARK}" = "all" ]; then
+    log "Running full eval for ALL benchmarks"
+    echo ""
+    FAILED=0
+    for BENCH in swebench featurebench terminalbench programbench; do
+        log "Starting: ${BENCH}"
+        "${BASH_SOURCE[0]}" "${BENCH}" \
+            --solver "${BENCHMARK_SOLVER}" \
+            --concurrency "${CONCURRENCY}" \
+            --timeout "${SOLVER_TIMEOUT}" \
+            ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
+            ${SPLIT:+--split "${SPLIT}"} \
+            ${PRESERVE_WORKSPACE:+--preserve} \
+            || { log "FAILED: ${BENCH}"; FAILED=$((FAILED + 1)); }
+        echo ""
+    done
+    if [ "${FAILED}" -gt 0 ]; then
+        log "${FAILED} benchmark(s) failed"
+        exit 1
+    fi
+    log "All benchmarks complete"
+    exit 0
+fi
+
 # ── Map benchmark to Harbor dataset ──
 
 HARBOR_DATASET=""
@@ -86,9 +112,12 @@ case "${BENCHMARK}" in
             exit 1
         fi
         ;;
+    all)
+        # Handled below — runs each benchmark sequentially
+        ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, all"
         exit 1
         ;;
 esac
