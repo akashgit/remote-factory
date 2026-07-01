@@ -16,6 +16,7 @@ BENCHMARK_SOLVER="${BENCHMARK_SOLVER:-factory}"
 CONCURRENCY="${CONCURRENCY:-5}"
 SOLVER_TIMEOUT="${SOLVER_TIMEOUT:-3600}"
 SPLIT=""
+LIMIT_TASKS=""
 PRESERVE_WORKSPACE="${PRESERVE_WORKSPACE:-}"
 
 # ── Usage ──
@@ -30,6 +31,7 @@ usage() {
     echo "  --concurrency N                Number of concurrent tasks (default: 5)"
     echo "  --timeout N                    Per-task solver timeout in seconds (default: 3600)"
     echo "  --split S                      Dataset split (featurebench only: full, lite)"
+    echo "  --limit N                      Maximum number of tasks to run (optional)"
     echo "  --preserve                     Preserve Harbor jobs directory after completion"
     echo "  -h, --help                     Show this help message"
     exit "${1:-0}"
@@ -50,6 +52,7 @@ while [ $# -gt 0 ]; do
         --concurrency) CONCURRENCY="$2"; shift 2 ;;
         --timeout)     SOLVER_TIMEOUT="$2"; shift 2 ;;
         --split)       SPLIT="$2"; shift 2 ;;
+        --limit)       LIMIT_TASKS="$2"; shift 2 ;;
         --preserve)    PRESERVE_WORKSPACE="1"; shift ;;
         -h|--help)     usage ;;
         *)             echo "ERROR: Unknown option '$1'"; usage 1 ;;
@@ -301,6 +304,8 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}"
     )
 
+    [ -n "${LIMIT_TASKS}" ] && HARBOR_CMD+=(--n-tasks "${LIMIT_TASKS}")
+
     if [ "${BENCHMARK}" = "programbench" ]; then
         HARBOR_CMD+=(
             --allow-agent-host api.anthropic.com
@@ -350,6 +355,8 @@ else
         --jobs-dir "${JOBS_DIR}"
         --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}"
     )
+
+    [ -n "${LIMIT_TASKS}" ] && HARBOR_CMD+=(--n-tasks "${LIMIT_TASKS}")
 
     if [ "${BENCHMARK}" = "programbench" ]; then
         HARBOR_CMD+=(
