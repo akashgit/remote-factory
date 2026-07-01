@@ -5,6 +5,7 @@ from __future__ import annotations
 from factory.cli._helpers import CEO_MODES as CEO_MODES
 from factory.cli._helpers import RUN_MODES as RUN_MODES
 from factory.cli._helpers import _emit_cli_event as _emit_cli_event
+from factory.cli._helpers import _is_github_url as _is_github_url
 from factory.cli._helpers import _print_banner as _print_banner
 from factory.cli._helpers import _show_spinner as _show_spinner
 from factory.cli._main import _COMMAND_GROUPS as _COMMAND_GROUPS
@@ -44,36 +45,45 @@ from factory.cli.backlog import (
     cmd_backlog_list as cmd_backlog_list,
     cmd_backlog_remove as cmd_backlog_remove,
 )
-from factory.cli.ceo import (
+from factory.cli._ceo_dispatch import (
+    _start_ceo_tailer as _start_ceo_tailer,
+    _stop_ceo_tailer as _stop_ceo_tailer,
+)
+from factory.cli._mode_handlers import (
     _auto_detect_mode as _auto_detect_mode,
-    _build_ceo_task as _build_ceo_task,
-    _build_tmux_run_args as _build_tmux_run_args,
+    _resolve_background as _resolve_background,
+    _resolve_bg_agents as _resolve_bg_agents,
+    _resolve_model as _resolve_model,
+)
+from factory.cli._path_resolver import (
     _dedupe_project_path as _dedupe_project_path,
     _ensure_repo as _ensure_repo,
     _extract_project_name as _extract_project_name,
     _get_projects_dir as _get_projects_dir,
     _has_research_target as _has_research_target,
-    _is_github_url as _is_github_url,
     _is_scaffold_only as _is_scaffold_only,
     _materialize_project as _materialize_project,
     _persist_spec as _persist_spec,
-    _resolve_background as _resolve_background,
-    _resolve_bg_agents as _resolve_bg_agents,
     _resolve_focus_issue as _resolve_focus_issue,
     _resolve_input as _resolve_input,
-    _resolve_model as _resolve_model,
     _slugify as _slugify,
-    _start_ceo_tailer as _start_ceo_tailer,
-    _stop_ceo_tailer as _stop_ceo_tailer,
+)
+from factory.cli._task_builder import (
+    _build_ceo_task as _build_ceo_task,
+)
+from factory.cli.ceo import (
+    _build_tmux_run_args as _build_tmux_run_args,
     _tmux_session_alive as _tmux_session_alive,
     _tmux_session_name as _tmux_session_name,
     cmd_ceo as cmd_ceo,
     cmd_refactory as cmd_refactory,
-    cmd_run as cmd_run,
     cmd_tmux as cmd_tmux,
     cmd_tmux_capture as cmd_tmux_capture,
     cmd_tmux_ls as cmd_tmux_ls,
     cmd_tmux_stop as cmd_tmux_stop,
+)
+from factory.cli.run import (
+    cmd_run as cmd_run,
 )
 from factory.cli.eval_cmds import (
     cmd_baseline as cmd_baseline,

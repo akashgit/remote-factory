@@ -860,7 +860,7 @@ class TestExistingSubcommands:
         assert code == 0
 
     def test_subcommand_not_affected(self) -> None:
-        with patch("factory.cli.ceo._welcome_wizard") as mock_wizard:
+        with patch("factory.cli._wizard._welcome_wizard") as mock_wizard:
             main(["home"])
         mock_wizard.assert_not_called()
 

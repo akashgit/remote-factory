@@ -73,19 +73,9 @@ def classify_hypothesis(text: str) -> str:
 
 
 def discover_projects(projects_dir: Path) -> list[Path]:
-    """Find all factory-managed projects by scanning for .factory/results.tsv."""
-    if not projects_dir.exists():
-        log.debug("discover_projects_skip", reason="dir_not_found", path=str(projects_dir))
-        return []
-    projects: list[Path] = []
-    for child in sorted(projects_dir.iterdir()):
-        if not child.is_dir():
-            continue
-        tsv = child / ".factory" / "results.tsv"
-        if tsv.exists():
-            projects.append(child)
-    log.info("discover_projects_complete", count=len(projects), dir=str(projects_dir))
-    return projects
+    """Deprecated: use factory.registry.discover_projects instead."""
+    from factory.registry import discover_projects as _discover
+    return _discover(projects_dir)
 
 
 # ── history loading ──────────────────────────────────────────────

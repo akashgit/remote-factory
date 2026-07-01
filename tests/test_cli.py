@@ -39,8 +39,8 @@ def _mock_foreground():
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
          patch("factory.cli.ceo._read_target_branch", return_value="main"), \
-         patch("factory.cli.ceo._is_scaffold_only", return_value=False), \
-         patch("factory.cli.ceo._ensure_dashboard"):
+         patch("factory.cli._path_resolver._is_scaffold_only", return_value=False), \
+         patch("factory.cli._helpers._ensure_dashboard"):
         yield mock_run
 
 
@@ -809,10 +809,10 @@ class TestRunWithGitHubUrl:
     def test_run_clones_https_url(self, capsys):
         """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes CEO."""
         url = "https://github.com/user/repo"
-        with patch("factory.cli.ceo.subprocess.run") as mock_clone, \
+        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.ceo.tempfile.mkdtemp", return_value="/tmp/factory-abc"), \
-             patch("factory.cli.ceo._read_target_branch", return_value="main"):
+             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-abc"), \
+             patch("factory.cli.run._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
@@ -825,10 +825,10 @@ class TestRunWithGitHubUrl:
     def test_run_clones_ssh_url(self, capsys):
         """cmd_run clones a GitHub SSH URL into a temp dir."""
         url = "git@github.com:user/repo.git"
-        with patch("factory.cli.ceo.subprocess.run") as mock_clone, \
+        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.ceo.tempfile.mkdtemp", return_value="/tmp/factory-xyz"), \
-             patch("factory.cli.ceo._read_target_branch", return_value="main"):
+             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-xyz"), \
+             patch("factory.cli.run._read_target_branch", return_value="main"):
             result = main(["run", url])
 
         assert result == 0
@@ -841,7 +841,7 @@ class TestRunWithGitHubUrl:
     def test_run_local_path_no_clone(self, tmp_path):
         """cmd_run with a local path does not clone — just invokes CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
 
         assert result == 0
@@ -850,7 +850,7 @@ class TestRunWithGitHubUrl:
     def test_run_discover_mode(self, tmp_path):
         """cmd_run with --mode=discover passes discover task to CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--mode", "discover"])
 
         assert result == 0
@@ -861,7 +861,7 @@ class TestRunWithGitHubUrl:
     def test_run_meta_mode(self, tmp_path):
         """cmd_run with --mode=meta passes meta task to CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--mode", "meta"])
 
         assert result == 0
@@ -915,7 +915,7 @@ class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path)])
         assert result == 0
         mock_agent.assert_called_once()
@@ -923,7 +923,7 @@ class TestHeartbeatLoop:
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "0",
             ])
@@ -939,7 +939,7 @@ class TestHeartbeatLoop:
     def test_loop_single_cycle(self, tmp_path, capsys):
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "1",
             ])
@@ -965,7 +965,7 @@ class TestHeartbeatLoop:
 
         with patch("signal.signal", side_effect=_capture_signal), \
              patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_trigger_sigterm_after_cycle)), \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
@@ -989,7 +989,7 @@ class TestHeartbeatLoop:
 
         with patch("signal.signal", side_effect=_capture_signal), \
              patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_trigger_sigint_after_cycle)), \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
@@ -999,7 +999,7 @@ class TestHeartbeatLoop:
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli.run._chain_modes", return_value=0):
             result = main([
                 "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "0",
             ])
@@ -1158,7 +1158,7 @@ class TestCmdCeoReview:
         """Review mode without --headless launches interactively."""
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
         with patch("factory.runners.claude.subprocess.run", mock_run), \
-             patch("factory.cli.ceo._ensure_dashboard"):
+             patch("factory.cli._helpers._ensure_dashboard"):
             main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -1223,7 +1223,7 @@ class TestCmdCeoQa:
         """QA mode without --headless launches interactively."""
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
         with patch("factory.runners.claude.subprocess.run", mock_run), \
-             patch("factory.cli.ceo._ensure_dashboard"):
+             patch("factory.cli._helpers._ensure_dashboard"):
             main(["ceo", str(tmp_path), "--mode", "qa", "--pr", "42"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -1265,10 +1265,10 @@ class TestCmdCeo:
     def test_ceo_headless_clones_github_url(self, capsys):
         """cmd_ceo --headless clones a GitHub URL then invokes CEO."""
         url = "https://github.com/user/repo"
-        with patch("factory.cli.ceo.subprocess.run") as mock_clone, \
+        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.cli.ceo._chain_modes", return_value=0), \
-             patch("factory.cli.ceo.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
+             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
              patch("factory.cli.ceo._read_target_branch", return_value="main"):
             result = main(["ceo", url, "--headless"])
         assert result == 0
@@ -1408,7 +1408,7 @@ class TestDedupeProjectPath:
         assert result == tmp_path / "projects" / "rest-api-4"
 
     def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             p1, ctx1 = _resolve_input("Build a REST API")
             _materialize_project(p1, ctx1)
             p2, _ = _resolve_input("Create a new REST API")
@@ -1445,7 +1445,7 @@ class TestResolveInput:
         idea_file = tmp_path / "My Project \u2014 Something Cool.md"
         idea_file.write_text("# Build something cool")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
@@ -1454,7 +1454,7 @@ class TestResolveInput:
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
@@ -1466,7 +1466,7 @@ class TestResolveInput:
         py_file = tmp_path / "script.py"
         py_file.write_text("print('hello')")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(py_file))
 
         assert project_path.name == "script"
@@ -1477,7 +1477,7 @@ class TestResolveInput:
         bin_file = tmp_path / "data.bin"
         bin_file.write_bytes(b"\x00\x01\x02\xff")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"), \
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"), \
              pytest.raises(UnicodeDecodeError):
             _resolve_input(str(bin_file))
 
@@ -1496,7 +1496,7 @@ class TestResolveInput:
         assert "Project Specification" in task_arg
 
     def test_dir_overrides_slug_for_raw_prompt(self, tmp_path):
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
 
         assert project_path.name == "my-todo"
@@ -1506,7 +1506,7 @@ class TestResolveInput:
         idea_file = tmp_path / "Long Idea Name — Details.md"
         idea_file.write_text("# Build something")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
 
         assert project_path.name == "custom-name"
@@ -1519,7 +1519,7 @@ class TestResolveInput:
         assert context is None
 
     def test_dir_is_slugified(self, tmp_path):
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build something", dir_name="My Cool Project!")
 
         assert project_path.name == "my-cool-project"
@@ -2110,7 +2110,7 @@ class TestWizardLongInputRedirect:
         short_input = "Build a weather CLI"
         monkeypatch.setattr("builtins.input", self._make_input_fn(short_input))
 
-        with patch("factory.cli.ceo._classify_with_llm", return_value=([], [
+        with patch("factory.cli._wizard._classify_with_llm", return_value=([], [
             {"label": "Build", "explanation": "Build it.", "command": "factory ceo 'Build a weather CLI' --mode build"},
         ])):
             _welcome_wizard()
@@ -2284,7 +2284,7 @@ class TestDeferredCreationFlow:
         idea_file = tmp_path / "my-app.md"
         idea_file.write_text("Build something cool")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input(str(idea_file))
 
         assert not project_path.exists()
@@ -2293,7 +2293,7 @@ class TestDeferredCreationFlow:
         assert (project_path / ".factory" / "strategy" / "current.md").exists()
 
     def test_resolve_then_materialize_raw_prompt(self, tmp_path):
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
             project_path, context = _resolve_input("Build a weather CLI")
 
         assert not project_path.exists()
