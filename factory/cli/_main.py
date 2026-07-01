@@ -1,4 +1,5 @@
 """CLI parser construction and main dispatch."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,42 +8,125 @@ import sys
 from factory.cli._helpers import CEO_MODES, RUN_MODES, _load_env_local
 
 
-_REFACTORY_AGENT_COMMANDS: frozenset[str] = frozenset({
-    "ceo", "run", "tmux", "tmux-ls", "tmux-stop", "tmux-capture",
-    "discover", "init", "detect",
-    "eval", "history", "study", "status", "backlog-list", "backlog-add",
-    "checkpoint", "resume",
-    "ace", "ace-stats",
-})
+_REFACTORY_AGENT_COMMANDS: frozenset[str] = frozenset(
+    {
+        "ceo",
+        "run",
+        "tmux",
+        "tmux-ls",
+        "tmux-stop",
+        "tmux-capture",
+        "discover",
+        "init",
+        "detect",
+        "eval",
+        "history",
+        "study",
+        "status",
+        "backlog-list",
+        "backlog-add",
+        "checkpoint",
+        "resume",
+        "ace",
+        "ace-stats",
+    }
+)
 
 
 _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
-    ("Entry Points", [
-        "ceo", "run", "tmux", "tmux-ls", "tmux-capture", "tmux-stop", "refactory", "dashboard",
-        "agent",
-    ]),
+    (
+        "Entry Points",
+        [
+            "ceo",
+            "run",
+            "tmux",
+            "tmux-ls",
+            "tmux-capture",
+            "tmux-stop",
+            "refactory",
+            "dashboard",
+            "agent",
+        ],
+    ),
     ("Project Setup", ["home", "detect", "discover", "init"]),
-    ("Experiment Lifecycle", [
-        "begin", "finalize", "guard", "precheck", "log", "emit", "review",
-    ]),
-    ("Project Intelligence", [
-        "eval", "history", "study", "status", "summary", "diff", "explain", "export",
-        "research", "insights", "report-update", "baseline", "clean-pr",
-    ]),
-    ("Backlog & Refinement", [
-        "backlog-add", "backlog-list", "backlog-remove", "deferred-list", "deferred-remove",
-        "refine-status", "refine-begin", "refine-complete", "message",
-    ]),
-    ("Knowledge & Archive", [
-        "archive", "vault-init", "backfill-citations", "backfill-archive",
-    ]),
+    (
+        "Experiment Lifecycle",
+        [
+            "begin",
+            "finalize",
+            "guard",
+            "precheck",
+            "log",
+            "emit",
+            "review",
+        ],
+    ),
+    (
+        "Project Intelligence",
+        [
+            "eval",
+            "history",
+            "study",
+            "status",
+            "summary",
+            "diff",
+            "explain",
+            "export",
+            "research",
+            "insights",
+            "report-update",
+            "baseline",
+            "clean-pr",
+            "spec",
+        ],
+    ),
+    (
+        "Backlog & Refinement",
+        [
+            "backlog-add",
+            "backlog-list",
+            "backlog-remove",
+            "deferred-list",
+            "deferred-remove",
+            "refine-status",
+            "refine-begin",
+            "refine-complete",
+            "message",
+        ],
+    ),
+    (
+        "Knowledge & Archive",
+        [
+            "archive",
+            "vault-init",
+            "backfill-citations",
+            "backfill-archive",
+        ],
+    ),
     ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow"]),
-    ("Configuration", [
-        "config", "profile", "install", "self-update", "runners", "usage", "serve-mcp",
-    ]),
-    ("Validation & Recovery", [
-        "leakage-check", "validate-research", "checkpoint", "resume", "notify", "registry-list",
-    ]),
+    (
+        "Configuration",
+        [
+            "config",
+            "profile",
+            "install",
+            "self-update",
+            "runners",
+            "usage",
+            "serve-mcp",
+        ],
+    ),
+    (
+        "Validation & Recovery",
+        [
+            "leakage-check",
+            "validate-research",
+            "checkpoint",
+            "resume",
+            "notify",
+            "registry-list",
+        ],
+    ),
 ]
 
 
@@ -86,8 +170,7 @@ class _GroupedHelpParser(argparse.ArgumentParser):
 
         if not refactory_filter:
             ungrouped = [
-                c for c in help_map
-                if c not in grouped_cmds and c in sub_action._name_parser_map
+                c for c in help_map if c not in grouped_cmds and c in sub_action._name_parser_map
             ]
             if ungrouped:
                 lines = [f"  {cmd:25s}{help_map[cmd]}" for cmd in ungrouped]
@@ -103,7 +186,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Remote Factory — domain-agnostic multi-agent software evolution loop",
     )
     parser.add_argument(
-        "--refactory-agent", action="store_true",
+        "--refactory-agent",
+        action="store_true",
         help="Show only commands used by the re:factory agent",
     )
     sub = parser.add_subparsers(dest="command")
@@ -127,16 +211,23 @@ def build_parser() -> argparse.ArgumentParser:
     # eval
     p = sub.add_parser("eval", help="Run project evals, print JSON CompositeScore")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--skip-project-eval", action="store_true", default=False,
-                    help="Skip user-defined project eval dimensions (run only hygiene + growth)")
+    p.add_argument(
+        "--skip-project-eval",
+        action="store_true",
+        default=False,
+        help="Skip user-defined project eval dimensions (run only hygiene + growth)",
+    )
 
     # guard
     p = sub.add_parser("guard", help="Check guard rules, print violations or 'clean'")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--baseline", required=True, help="Baseline commit SHA")
     p.add_argument("--check-scope", action="store_true", help="Also check file scope")
-    p.add_argument("--check-surfaces", action="store_true",
-                    help="Also check fixed surface constraints (research mode)")
+    p.add_argument(
+        "--check-surfaces",
+        action="store_true",
+        help="Also check fixed surface constraints (research mode)",
+    )
 
     # begin
     p = sub.add_parser("begin", help="Start experiment, print ID")
@@ -147,8 +238,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("finalize", help="Finalize experiment with verdict")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--id", required=True, type=int, help="Experiment ID")
-    p.add_argument("--verdict", required=True, choices=["keep", "revert", "error"],
-                    help="Experiment verdict")
+    p.add_argument(
+        "--verdict", required=True, choices=["keep", "revert", "error"], help="Experiment verdict"
+    )
     p.add_argument("--hypothesis", default=None, help="Hypothesis text")
     p.add_argument("--summary", default=None, help="Change summary")
     p.add_argument("--cost", default=None, type=float, help="Cost in USD")
@@ -157,8 +249,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notes", default=None, help="Additional notes")
     p.add_argument("--score-before", type=float, default=None, help="Eval score before change")
     p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
-    p.add_argument("--force", action="store_true", default=False,
-                    help="Bypass precheck gate (for pre-existing failures)")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Bypass precheck gate (for pre-existing failures)",
+    )
 
     # history
     p = sub.add_parser("history", help="Print formatted experiment history table")
@@ -172,16 +268,20 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("study", help="Read interaction logs and write observations")
     p.add_argument("path", help="Path to the project")
     p.add_argument(
-        "--projects-dir", default=None,
+        "--projects-dir",
+        default=None,
         help="Directory containing factory-managed projects for cross-project insights",
     )
     p.add_argument(
-        "--focus", default=None,
+        "--focus",
+        default=None,
         help="Targeted mode: filter observations to a single backlog item",
     )
 
     # backlog-remove (alias: deferred-remove)
-    p = sub.add_parser("backlog-remove", aliases=["deferred-remove"], help="Remove a completed backlog item")
+    p = sub.add_parser(
+        "backlog-remove", aliases=["deferred-remove"], help="Remove a completed backlog item"
+    )
     p.add_argument("path", help="Path to the project")
     p.add_argument("item", help="Exact text of the backlog item to remove")
 
@@ -203,23 +303,41 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("path", help="Path to the project")
 
     # leakage-check
-    p = sub.add_parser("leakage-check", help="Scan text for ground truth leakage against fixed surfaces")
+    p = sub.add_parser(
+        "leakage-check", help="Scan text for ground truth leakage against fixed surfaces"
+    )
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--text", default=None, help="Text to scan for leakage (hypothesis, strategy, etc.)")
-    p.add_argument("--text-file", default=None, help="Path to file containing text to scan (safer for large diffs)")
-    p.add_argument("--sensitivity", choices=["low", "medium", "high"], default="medium",
-                    help="Sensitivity level (default: medium)")
+    p.add_argument(
+        "--text", default=None, help="Text to scan for leakage (hypothesis, strategy, etc.)"
+    )
+    p.add_argument(
+        "--text-file",
+        default=None,
+        help="Path to file containing text to scan (safer for large diffs)",
+    )
+    p.add_argument(
+        "--sensitivity",
+        choices=["low", "medium", "high"],
+        default="medium",
+        help="Sensitivity level (default: medium)",
+    )
 
     # validate-research
-    p = sub.add_parser("validate-research", help="Validate research mode configuration for ground truth isolation")
+    p = sub.add_parser(
+        "validate-research", help="Validate research mode configuration for ground truth isolation"
+    )
     p.add_argument("path", help="Path to the project")
 
     # backfill-citations
-    p = sub.add_parser("backfill-citations", help="Extract citations from experiment text into citations.json")
+    p = sub.add_parser(
+        "backfill-citations", help="Extract citations from experiment text into citations.json"
+    )
     p.add_argument("path", help="Path to the project")
 
     # backfill-archive
-    p = sub.add_parser("backfill-archive", help="Generate archive notes for experiments missing from archive")
+    p = sub.add_parser(
+        "backfill-archive", help="Generate archive notes for experiments missing from archive"
+    )
     p.add_argument("path", help="Path to the project")
 
     # research
@@ -245,7 +363,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("insights", help="Cross-project analysis of experiment histories")
     p.add_argument("path", help="Path to the project (insights.md written here)")
     p.add_argument(
-        "--projects-dir", default=None,
+        "--projects-dir",
+        default=None,
         help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
 
@@ -260,11 +379,14 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("ace", help="Run ACE self-improvement on agent playbooks")
     p.add_argument("path", help="Path to the project")
     p.add_argument(
-        "--projects-dir", default=None,
+        "--projects-dir",
+        default=None,
         help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
     p.add_argument(
-        "--dry-run", action="store_true", default=False,
+        "--dry-run",
+        action="store_true",
+        default=False,
         help="Print candidates without writing playbooks",
     )
 
@@ -287,19 +409,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--score-after", type=float, default=None, help="Eval score after change")
     p.add_argument("--hypothesis", default=None, help="Current experiment hypothesis")
     p.add_argument("--baseline", default=None, help="Baseline commit SHA for scope check")
-    p.add_argument("--similarity-threshold", type=float, default=0.6,
-                    help="Similarity threshold for anti-pattern detection (default: 0.6)")
+    p.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=0.6,
+        help="Similarity threshold for anti-pattern detection (default: 0.6)",
+    )
 
     # clean-pr
     p = sub.add_parser("clean-pr", help="Strip non-essential artifacts from a PR diff")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--exp", type=int, default=None, help="Experiment ID (archives full diff before stripping)")
+    p.add_argument(
+        "--exp", type=int, default=None, help="Experiment ID (archives full diff before stripping)"
+    )
 
     # baseline
     p = sub.add_parser("baseline", help="Fetch stored eval baseline from eval-data branch")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--commit", default=None,
-                    help="Commit SHA to look up (default: git merge-base HEAD <target-branch>)")
+    p.add_argument(
+        "--commit",
+        default=None,
+        help="Commit SHA to look up (default: git merge-base HEAD <target-branch>)",
+    )
 
     # refine-status
     p = sub.add_parser("refine-status", help="Print refinement state and regrounding output")
@@ -313,49 +444,66 @@ def build_parser() -> argparse.ArgumentParser:
     # refine-complete
     p = sub.add_parser("refine-complete", help="Complete the current refinement with a verdict")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--verdict", required=True, choices=["keep", "revert", "error", "tier3_exit"],
-                    help="Refinement verdict")
+    p.add_argument(
+        "--verdict",
+        required=True,
+        choices=["keep", "revert", "error", "tier3_exit"],
+        help="Refinement verdict",
+    )
 
     # review
     p = sub.add_parser("review", help="Format and post a structured review on a GitHub PR")
-    p.add_argument("--verdict", required=True, choices=["keep", "revert", "KEEP", "REVERT"],
-                    help="Review verdict")
+    p.add_argument(
+        "--verdict",
+        required=True,
+        choices=["keep", "revert", "KEEP", "REVERT"],
+        help="Review verdict",
+    )
     p.add_argument("--reason", default=None, help="One-sentence reason for the verdict")
     p.add_argument("--score-before", type=float, default=None, help="Score before change")
     p.add_argument("--score-after", type=float, default=None, help="Score after change")
     p.add_argument("--threshold", type=float, default=0.8, help="Eval threshold")
-    p.add_argument("--guards", default=None,
-                    help="Guard results as 'check:PASS,check:FAIL' pairs")
+    p.add_argument("--guards", default=None, help="Guard results as 'check:PASS,check:FAIL' pairs")
     p.add_argument("--precheck-summary", default=None, help="Precheck gate output summary")
-    p.add_argument("--code-notes", default=None,
-                    help="Code review notes separated by | (pipe)")
+    p.add_argument("--code-notes", default=None, help="Code review notes separated by | (pipe)")
     p.add_argument("--experiment-id", type=int, default=None, help="Experiment ID")
     p.add_argument("--hypothesis", default=None, help="Experiment hypothesis text")
     p.add_argument("--pr", type=int, default=None, help="PR number to post review on")
     p.add_argument("--repo", default=None, help="GitHub repo (owner/name) for the PR")
-    p.add_argument("--qa-body-file", default=None,
-                    help="Path to file containing QA analysis to include in review")
-    p.add_argument("--dry-run", action="store_true", default=False,
-                    help="Print review without posting")
+    p.add_argument(
+        "--qa-body-file",
+        default=None,
+        help="Path to file containing QA analysis to include in review",
+    )
+    p.add_argument(
+        "--dry-run", action="store_true", default=False, help="Print review without posting"
+    )
 
     # checkpoint
-    p = sub.add_parser("checkpoint", help="Show or save a CEO checkpoint for crash-resilient resume")
+    p = sub.add_parser(
+        "checkpoint", help="Show or save a CEO checkpoint for crash-resilient resume"
+    )
     p.add_argument("path", help="Path to the project")
     ckpt_action = p.add_mutually_exclusive_group()
     ckpt_action.add_argument("--save", action="store_true", default=False, help="Save a checkpoint")
-    ckpt_action.add_argument("--clear", action="store_true", default=False,
-                              help="Clear the checkpoint file")
+    ckpt_action.add_argument(
+        "--clear", action="store_true", default=False, help="Clear the checkpoint file"
+    )
     p.add_argument("--mode", default=None, help="CEO mode (e.g. improve, build)")
     p.add_argument("--experiment", type=int, default=None, help="Active experiment ID")
-    p.add_argument("--completed", default=None,
-                    help="Comma-separated list of completed agent roles")
-    p.add_argument("--pending", default=None,
-                    help="Comma-separated list of pending agent roles")
-    p.add_argument("--scores", default=None,
-                    help="JSON dict of eval scores (e.g. '{\"tests\": 0.9}')")
+    p.add_argument(
+        "--completed", default=None, help="Comma-separated list of completed agent roles"
+    )
+    p.add_argument("--pending", default=None, help="Comma-separated list of pending agent roles")
+    p.add_argument(
+        "--scores", default=None, help="JSON dict of eval scores (e.g. '{\"tests\": 0.9}')"
+    )
     p.add_argument("--hypothesis", default=None, help="Current hypothesis text")
-    p.add_argument("--completed-hypotheses", default=None,
-                    help="Comma-separated list of completed experiment IDs (e.g. '1,2,3')")
+    p.add_argument(
+        "--completed-hypotheses",
+        default=None,
+        help="Comma-separated list of completed experiment IDs (e.g. '1,2,3')",
+    )
 
     # resume
     p = sub.add_parser("resume", help="Load checkpoint and display resume context")
@@ -380,7 +528,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("self-update", help="Upgrade the factory CLI to the latest version")
 
     # install — install Factory agents as Claude Code or Codex CLI agents
-    p = sub.add_parser("install", help="Install Factory agents as CLI agents (~/.claude/agents/ or ~/.codex/agents/)")
+    p = sub.add_parser(
+        "install",
+        help="Install Factory agents as CLI agents (~/.claude/agents/ or ~/.codex/agents/)",
+    )
     p.add_argument(
         "--role",
         default=None,
@@ -396,15 +547,15 @@ def build_parser() -> argparse.ArgumentParser:
     # usage — token usage breakdown
     p = sub.add_parser("usage", help="Show per-agent token usage and cost breakdown")
     p.add_argument("path", help="Path to the project")
-    p.add_argument("--json", action="store_true", default=False,
-                    help="Output as JSON instead of table")
+    p.add_argument(
+        "--json", action="store_true", default=False, help="Output as JSON instead of table"
+    )
 
     # runners — runner management
     runners_parser = sub.add_parser("runners", help="Manage factory runners")
     runners_sub = runners_parser.add_subparsers(dest="runners_command")
     p_runners_list = runners_sub.add_parser("list", help="List all registered runners")
-    p_runners_list.add_argument("--json", action="store_true", default=False,
-                                help="Output as JSON")
+    p_runners_list.add_argument("--json", action="store_true", default=False, help="Output as JSON")
 
     # serve-mcp — MCP stdio server
     sub.add_parser("serve-mcp", help="Start the Factory MCP stdio server")
@@ -412,7 +563,8 @@ def build_parser() -> argparse.ArgumentParser:
     # dashboard — live web dashboard
     p = sub.add_parser("dashboard", help="Launch the live Factory dashboard")
     p.add_argument(
-        "--projects-dir", default="~/factory-projects",
+        "--projects-dir",
+        default="~/factory-projects",
         help="Directory containing factory-managed projects (default: ~/factory-projects)",
     )
     p.add_argument("--port", type=int, default=8420, help="Server port (default: 8420)")
@@ -422,21 +574,34 @@ def build_parser() -> argparse.ArgumentParser:
     config_parser = sub.add_parser("config", help="Manage ~/.factory/config.toml")
     config_sub = config_parser.add_subparsers(dest="config_command")
     p_show = config_sub.add_parser("show", help="Show resolved config (secrets masked)")
-    p_show.add_argument("--reveal", action="store_true", default=False,
-                        help="Show full secret values instead of masking")
+    p_show.add_argument(
+        "--reveal",
+        action="store_true",
+        default=False,
+        help="Show full secret values instead of masking",
+    )
     config_sub.add_parser("edit", help="Open config.toml in $EDITOR")
     config_sub.add_parser("migrate", help="Create starter config.toml from current env vars")
 
     # profile — user profile management
-    profile_parser = sub.add_parser("profile", help="Manage the user profile at ~/.factory/profile.md")
+    profile_parser = sub.add_parser(
+        "profile", help="Manage the user profile at ~/.factory/profile.md"
+    )
     profile_sub = profile_parser.add_subparsers(dest="profile_command")
     p_build = profile_sub.add_parser("build", help="Collect evidence and synthesize user profile")
-    p_build.add_argument("paths", nargs="*", default=None,
-                         help="Project paths to collect evidence from (default: all registered)")
-    p_build.add_argument("--dry-run", action="store_true", default=False,
-                         help="Print collected evidence without running LLM synthesis")
-    p_build.add_argument("--runner", default=None,
-                         help="CLI backend to use for synthesis")
+    p_build.add_argument(
+        "paths",
+        nargs="*",
+        default=None,
+        help="Project paths to collect evidence from (default: all registered)",
+    )
+    p_build.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Print collected evidence without running LLM synthesis",
+    )
+    p_build.add_argument("--runner", default=None, help="CLI backend to use for synthesis")
     profile_sub.add_parser("show", help="Print the current user profile")
 
     # emit — emit a structured event to .factory/events.jsonl
@@ -448,181 +613,331 @@ def build_parser() -> argparse.ArgumentParser:
 
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
-    p.add_argument("role", choices=["researcher", "strategist", "builder", "qa",
-                                     "archivist", "ceo",
-                                     "failure_analyst", "refiner"],
-                    help="Agent role to invoke")
+    p.add_argument(
+        "role",
+        choices=[
+            "researcher",
+            "strategist",
+            "builder",
+            "qa",
+            "archivist",
+            "ceo",
+            "failure_analyst",
+            "refiner",
+        ],
+        help="Agent role to invoke",
+    )
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
-    p.add_argument("--timeout", type=float, default=600.0,
-                    help="Timeout in seconds (default: 600)")
-    p.add_argument("--model", default=None,
-                    help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", default=None,
-                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
-    p.add_argument("--profile", default=None,
-                    help="Credential profile from ~/.factory/config.toml")
-    p.add_argument("--use-profile", action="store_true", default=False,
-                    help="Inject user profile (~/.factory/profile.md) into the agent prompt")
-    p.add_argument("--tmux-persist", action="store_true", default=False,
-                    help="Run agent interactively in a tmux window instead of headless (claude only)")
-    p.add_argument("--bg", action="store_true", default=False,
-                    help="Dispatch agent as a background session via claude agent view (claude only)")
-    p.add_argument("--review-tag", default=None,
-                    help="Tag for distinct review output files (writes <role>-<tag>-latest.md)")
-    p.add_argument("--parent-session", default=None,
-                    help="Parent session ID for linking specialist sessions to a CEO cycle session")
+    p.add_argument("--timeout", type=float, default=600.0, help="Timeout in seconds (default: 600)")
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Claude model for agent subprocess (default: FACTORY_MODEL env var, or claude CLI default)",
+    )
+    p.add_argument(
+        "--runner",
+        default=None,
+        help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')",
+    )
+    p.add_argument("--profile", default=None, help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--use-profile",
+        action="store_true",
+        default=False,
+        help="Inject user profile (~/.factory/profile.md) into the agent prompt",
+    )
+    p.add_argument(
+        "--tmux-persist",
+        action="store_true",
+        default=False,
+        help="Run agent interactively in a tmux window instead of headless (claude only)",
+    )
+    p.add_argument(
+        "--bg",
+        action="store_true",
+        default=False,
+        help="Dispatch agent as a background session via claude agent view (claude only)",
+    )
+    p.add_argument(
+        "--review-tag",
+        default=None,
+        help="Tag for distinct review output files (writes <role>-<tag>-latest.md)",
+    )
+    p.add_argument(
+        "--parent-session",
+        default=None,
+        help="Parent session ID for linking specialist sessions to a CEO cycle session",
+    )
 
     # ceo — launch the Factory CEO agent directly
     p = sub.add_parser("ceo", help="Launch the Factory CEO agent (interactive by default)")
-    p.add_argument("path", nargs="?", default=None,
-                    help="Project path, GitHub URL, idea file path, or prompt. "
-                         "In design mode, pass a raw idea string")
     p.add_argument(
-        "--prompt", default=None,
+        "path",
+        nargs="?",
+        default=None,
+        help="Project path, GitHub URL, idea file path, or prompt. "
+        "In design mode, pass a raw idea string",
+    )
+    p.add_argument(
+        "--prompt",
+        default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
-             "Loaded as the build spec into .factory/strategy/current.md",
+        "Loaded as the build spec into .factory/strategy/current.md",
     )
     p.add_argument(
         "--mode",
         choices=CEO_MODES,
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, meta, design (research + brainstorm → spec → build), "
-             "research (autonomous research optimization), review (on-demand PR review), "
-             "qa (QA verification pipeline for PRs), "
-             "or create (meta-mode for creating new factory modes)",
+        "build, discover, improve, meta, design (research + brainstorm → spec → build), "
+        "research (autonomous research optimization), review (on-demand PR review), "
+        "qa (QA verification pipeline for PRs), "
+        "or create (meta-mode for creating new factory modes)",
     )
     p.add_argument(
-        "--focus", default=None,
+        "--focus",
+        default=None,
         help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
-             "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
-             "Issue refs are auto-detected and fetched via gh/glab CLI",
+        "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
+        "Issue refs are auto-detected and fetched via gh/glab CLI",
     )
     p.add_argument(
-        "--dir", default=None,
+        "--dir",
+        default=None,
         help="Working directory name for the new project (overrides auto-derived name from prompt or idea file). "
-             "Ignored when pointing at an existing directory or GitHub URL.",
+        "Ignored when pointing at an existing directory or GitHub URL.",
     )
     p.add_argument(
-        "--headless", action="store_true", default=False,
+        "--headless",
+        action="store_true",
+        default=False,
         help="Run in pipe mode (non-interactive) instead of foreground",
     )
     p.add_argument(
-        "--discover-only", action="store_true", default=False,
+        "--discover-only",
+        action="store_true",
+        default=False,
         help="Only run discovery and review — do not chain into improve",
     )
     p.add_argument(
-        "--no-github", action="store_true", default=False,
+        "--no-github",
+        action="store_true",
+        default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
     )
-    p.add_argument("--min-growth", type=int, default=None,
-                    help="Minimum guaranteed growth hypotheses (default: 2)")
-    p.add_argument("--max-new", type=int, default=None,
-                    help="Max new items added to backlog per cycle (default: 2)")
-    p.add_argument("--branch", default=None,
-                    help="Target branch for PRs (default: from factory.md, fallback: main)")
-    p.add_argument("--model", default=None,
-                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", default=None,
-                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
-    p.add_argument("--profile", default=None,
-                    help="Credential profile from ~/.factory/config.toml")
     p.add_argument(
-        "--refine", default=None, metavar="REQUEST",
-        help="Refinement mode: classify and implement a user-directed change. "
-             "Mutually exclusive with --mode design, --mode research, --mode meta, --prompt, --focus",
+        "--min-growth",
+        type=int,
+        default=None,
+        help="Minimum guaranteed growth hypotheses (default: 2)",
     )
-    p.add_argument("--use-profile", action="store_true", default=False,
-                    help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    p.add_argument(
+        "--max-new",
+        type=int,
+        default=None,
+        help="Max new items added to backlog per cycle (default: 2)",
+    )
+    p.add_argument(
+        "--branch",
+        default=None,
+        help="Target branch for PRs (default: from factory.md, fallback: main)",
+    )
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)",
+    )
+    p.add_argument(
+        "--runner",
+        default=None,
+        help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')",
+    )
+    p.add_argument("--profile", default=None, help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--refine",
+        default=None,
+        metavar="REQUEST",
+        help="Refinement mode: classify and implement a user-directed change. "
+        "Mutually exclusive with --mode design, --mode research, --mode meta, --prompt, --focus",
+    )
+    p.add_argument(
+        "--use-profile",
+        action="store_true",
+        default=False,
+        help="Inject user profile (~/.factory/profile.md) into agent prompts",
+    )
     clean_pr_group = p.add_mutually_exclusive_group()
-    clean_pr_group.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
-                                help="Enable clean PR mode: strip non-essential artifacts before PR")
-    clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
-                                help="Disable clean PR mode")
-    p.add_argument("--tmux-persist", action="store_true", default=False,
-                    help="Run agent interactively in a tmux window instead of headless (claude only)")
-    p.add_argument("--bg", action="store_true", default=False,
-                    help="Dispatch agent as a background session via claude agent view (claude only)")
-    p.add_argument("--bg-agents", action="store_true", default=False,
-                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
-    p.add_argument("--pr", type=int, default=None,
-                    help="PR number for --mode review or --mode qa (required when mode=review or mode=qa)")
-    p.add_argument("--repo", default=None,
-                    help="Repository (owner/repo) for --mode review or --mode qa (optional, defaults to current repo)")
-    p.add_argument("--run-id", default=None, dest="run_id",
-                    help="Use a specific run ID (e.g., UUID from external orchestrator). "
-                         "First 8 chars are used for worktree naming")
+    clean_pr_group.add_argument(
+        "--clean-pr",
+        action="store_true",
+        default=None,
+        dest="clean_pr",
+        help="Enable clean PR mode: strip non-essential artifacts before PR",
+    )
+    clean_pr_group.add_argument(
+        "--no-clean-pr", action="store_false", dest="clean_pr", help="Disable clean PR mode"
+    )
+    p.add_argument(
+        "--tmux-persist",
+        action="store_true",
+        default=False,
+        help="Run agent interactively in a tmux window instead of headless (claude only)",
+    )
+    p.add_argument(
+        "--bg",
+        action="store_true",
+        default=False,
+        help="Dispatch agent as a background session via claude agent view (claude only)",
+    )
+    p.add_argument(
+        "--bg-agents",
+        action="store_true",
+        default=False,
+        help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground",
+    )
+    p.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="PR number for --mode review or --mode qa (required when mode=review or mode=qa)",
+    )
+    p.add_argument(
+        "--repo",
+        default=None,
+        help="Repository (owner/repo) for --mode review or --mode qa (optional, defaults to current repo)",
+    )
+    p.add_argument(
+        "--run-id",
+        default=None,
+        dest="run_id",
+        help="Use a specific run ID (e.g., UUID from external orchestrator). "
+        "First 8 chars are used for worktree naming",
+    )
 
     # run
     p = sub.add_parser("run", help="Run factory cycle (delegates to CEO agent)")
     p.add_argument("path", help="Project path, GitHub URL, idea file path, or prompt")
     p.add_argument(
-        "--prompt", default=None,
+        "--prompt",
+        default=None,
         help="Path to a prompt/spec file (absolute or relative to project). "
-             "Loaded as the build spec into .factory/strategy/current.md",
+        "Loaded as the build spec into .factory/strategy/current.md",
     )
     p.add_argument(
         "--mode",
         choices=RUN_MODES,
         default="auto",
         help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-             "build, discover, improve, meta, or research",
+        "build, discover, improve, meta, or research",
     )
     p.add_argument(
-        "--focus", default=None,
+        "--focus",
+        default=None,
         help="Target a specific item: backlog name ('dashboard UI'), issue number (42), "
-             "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
-             "Issue refs are auto-detected and fetched via gh/glab CLI",
+        "URL (https://github.com/o/r/issues/42), or shorthand (owner/repo#42). "
+        "Issue refs are auto-detected and fetched via gh/glab CLI",
     )
     p.add_argument(
-        "--discover-only", action="store_true", default=False,
+        "--discover-only",
+        action="store_true",
+        default=False,
         help="Only run discovery and review — do not chain into improve",
     )
     p.add_argument(
-        "--no-github", action="store_true", default=False,
+        "--no-github",
+        action="store_true",
+        default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
     )
     p.add_argument(
-        "--loop", action="store_true", default=False,
+        "--loop",
+        action="store_true",
+        default=False,
         help="Enable heartbeat mode: run continuously with sleep between cycles",
     )
     p.add_argument(
-        "--interval", type=int, default=1800,
+        "--interval",
+        type=int,
+        default=1800,
         help="Seconds to sleep between cycles (default: 1800)",
     )
     p.add_argument(
-        "--max-cycles", type=int, default=None,
+        "--max-cycles",
+        type=int,
+        default=None,
         help="Maximum number of cycles (default: unlimited)",
     )
-    p.add_argument("--min-growth", type=int, default=None,
-                    help="Minimum guaranteed growth hypotheses (default: 2)")
-    p.add_argument("--max-new", type=int, default=None,
-                    help="Max new items added to backlog per cycle (default: 2)")
-    p.add_argument("--branch", default=None,
-                    help="Target branch for PRs (default: from factory.md, fallback: main)")
-    p.add_argument("--model", default=None,
-                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", default=None,
-                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
-    p.add_argument("--profile", default=None,
-                    help="Credential profile from ~/.factory/config.toml")
-    p.add_argument("--use-profile", action="store_true", default=False,
-                    help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    p.add_argument(
+        "--min-growth",
+        type=int,
+        default=None,
+        help="Minimum guaranteed growth hypotheses (default: 2)",
+    )
+    p.add_argument(
+        "--max-new",
+        type=int,
+        default=None,
+        help="Max new items added to backlog per cycle (default: 2)",
+    )
+    p.add_argument(
+        "--branch",
+        default=None,
+        help="Target branch for PRs (default: from factory.md, fallback: main)",
+    )
+    p.add_argument(
+        "--model",
+        default=None,
+        help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)",
+    )
+    p.add_argument(
+        "--runner",
+        default=None,
+        help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')",
+    )
+    p.add_argument("--profile", default=None, help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--use-profile",
+        action="store_true",
+        default=False,
+        help="Inject user profile (~/.factory/profile.md) into agent prompts",
+    )
     run_clean_pr_group = p.add_mutually_exclusive_group()
-    run_clean_pr_group.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
-                                    help="Enable clean PR mode: strip non-essential artifacts before PR")
-    run_clean_pr_group.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
-                                    help="Disable clean PR mode")
-    p.add_argument("--tmux-persist", action="store_true", default=False,
-                    help="Run agent interactively in a tmux window instead of headless (claude only)")
-    p.add_argument("--bg", action="store_true", default=False,
-                    help="Dispatch agent as a background session via claude agent view (claude only)")
-    p.add_argument("--bg-agents", action="store_true", default=False,
-                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
-    p.add_argument("--run-id", default=None, dest="run_id",
-                    help="Use a specific run ID (e.g., UUID from external orchestrator). "
-                         "First 8 chars are used for worktree naming")
+    run_clean_pr_group.add_argument(
+        "--clean-pr",
+        action="store_true",
+        default=None,
+        dest="clean_pr",
+        help="Enable clean PR mode: strip non-essential artifacts before PR",
+    )
+    run_clean_pr_group.add_argument(
+        "--no-clean-pr", action="store_false", dest="clean_pr", help="Disable clean PR mode"
+    )
+    p.add_argument(
+        "--tmux-persist",
+        action="store_true",
+        default=False,
+        help="Run agent interactively in a tmux window instead of headless (claude only)",
+    )
+    p.add_argument(
+        "--bg",
+        action="store_true",
+        default=False,
+        help="Dispatch agent as a background session via claude agent view (claude only)",
+    )
+    p.add_argument(
+        "--bg-agents",
+        action="store_true",
+        default=False,
+        help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground",
+    )
+    p.add_argument(
+        "--run-id",
+        default=None,
+        dest="run_id",
+        help="Use a specific run ID (e.g., UUID from external orchestrator). "
+        "First 8 chars are used for worktree naming",
+    )
 
     # tmux — launch factory run in a detached tmux session
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
@@ -637,81 +952,156 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--loop", action="store_true", default=False, help="Enable loop mode")
     p.add_argument("--interval", type=int, default=1800, help="Loop interval in seconds")
     p.add_argument("--max-cycles", type=int, default=None, help="Max cycles for loop mode")
-    p.add_argument("--attach", action="store_true", default=False,
-                    help="Attach to session after creating")
     p.add_argument(
-        "--no-github", action="store_true", default=False,
+        "--attach", action="store_true", default=False, help="Attach to session after creating"
+    )
+    p.add_argument(
+        "--no-github",
+        action="store_true",
+        default=False,
         help="Disable GitHub operations (issue creation, PR posting, cloning)",
     )
-    p.add_argument("--model", default=None,
-                    help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)")
-    p.add_argument("--runner", default=None,
-                    help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')")
-    p.add_argument("--profile", default=None,
-                    help="Credential profile from ~/.factory/config.toml")
     p.add_argument(
-        "--focus", default=None,
+        "--model",
+        default=None,
+        help="Claude model for agent subprocesses (default: FACTORY_MODEL env var, or claude CLI default)",
+    )
+    p.add_argument(
+        "--runner",
+        default=None,
+        help="CLI backend to use (default: FACTORY_RUNNER env var, or 'claude')",
+    )
+    p.add_argument("--profile", default=None, help="Credential profile from ~/.factory/config.toml")
+    p.add_argument(
+        "--focus",
+        default=None,
         help="Target a specific item: backlog name, issue number, URL, or shorthand",
     )
     p.add_argument(
-        "--refine", default=None, metavar="REQUEST",
+        "--refine",
+        default=None,
+        metavar="REQUEST",
         help="Refinement mode: classify and implement a user-directed change",
     )
     tmux_clean_pr = p.add_mutually_exclusive_group()
-    tmux_clean_pr.add_argument("--clean-pr", action="store_true", default=None, dest="clean_pr",
-                                help="Enable clean PR mode")
-    tmux_clean_pr.add_argument("--no-clean-pr", action="store_false", dest="clean_pr",
-                                help="Disable clean PR mode")
+    tmux_clean_pr.add_argument(
+        "--clean-pr",
+        action="store_true",
+        default=None,
+        dest="clean_pr",
+        help="Enable clean PR mode",
+    )
+    tmux_clean_pr.add_argument(
+        "--no-clean-pr", action="store_false", dest="clean_pr", help="Disable clean PR mode"
+    )
     p.add_argument(
-        "--prompt", default=None,
+        "--prompt",
+        default=None,
         help="Path to a prompt/spec file",
     )
-    p.add_argument("--branch", default=None,
-                    help="Target branch for PRs")
-    p.add_argument("--min-growth", type=int, default=None,
-                    help="Minimum guaranteed growth hypotheses")
-    p.add_argument("--max-new", type=int, default=None,
-                    help="Max new items added to backlog per cycle")
-    p.add_argument("--discover-only", action="store_true", default=False,
-                    help="Only run discovery and review — do not chain into improve")
-    p.add_argument("--bg-agents", action="store_true", default=False,
-                    help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
-    p.add_argument("--tmux-persist", action="store_true", default=False,
-                    help="Run agent interactively in a tmux window instead of headless (claude only)")
-    p.add_argument("--use-profile", action="store_true", default=False,
-                    help="Inject user profile (~/.factory/profile.md) into agent prompts")
+    p.add_argument("--branch", default=None, help="Target branch for PRs")
+    p.add_argument(
+        "--min-growth", type=int, default=None, help="Minimum guaranteed growth hypotheses"
+    )
+    p.add_argument(
+        "--max-new", type=int, default=None, help="Max new items added to backlog per cycle"
+    )
+    p.add_argument(
+        "--discover-only",
+        action="store_true",
+        default=False,
+        help="Only run discovery and review — do not chain into improve",
+    )
+    p.add_argument(
+        "--bg-agents",
+        action="store_true",
+        default=False,
+        help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground",
+    )
+    p.add_argument(
+        "--tmux-persist",
+        action="store_true",
+        default=False,
+        help="Run agent interactively in a tmux window instead of headless (claude only)",
+    )
+    p.add_argument(
+        "--use-profile",
+        action="store_true",
+        default=False,
+        help="Inject user profile (~/.factory/profile.md) into agent prompts",
+    )
 
     # tmux-ls — list factory tmux sessions
     p = sub.add_parser("tmux-ls", help="List running factory tmux sessions")
-    p.add_argument("--json", action="store_true", default=False, dest="json_output",
-                    help="Output as JSON array for programmatic consumption")
+    p.add_argument(
+        "--json",
+        action="store_true",
+        default=False,
+        dest="json_output",
+        help="Output as JSON array for programmatic consumption",
+    )
 
     # tmux-capture — capture output from a factory tmux session
     p = sub.add_parser("tmux-capture", help="Capture recent output from a factory tmux session")
     p.add_argument("path", nargs="?", default=None, help="Project path (derives session name)")
     p.add_argument("--session", default=None, help="Session name to capture from")
-    p.add_argument("--lines", type=int, default=-100, help="Number of lines to capture (default: -100)")
+    p.add_argument(
+        "--lines", type=int, default=-100, help="Number of lines to capture (default: -100)"
+    )
 
     # tmux-stop — stop factory tmux sessions
     p = sub.add_parser("tmux-stop", help="Stop factory tmux session(s)")
     p.add_argument("--session", default=None, help="Session name to stop")
     p.add_argument("--path", default=None, help="Project path (derives session name)")
-    p.add_argument("--all", action="store_true", default=False, dest="stop_all",
-                    help="Stop ALL factory tmux sessions (required when no --session/--path given)")
-    p.add_argument("--force", action="store_true", default=False,
-                    help="Force-kill a session even if it's not in the factory registry")
+    p.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        dest="stop_all",
+        help="Stop ALL factory tmux sessions (required when no --session/--path given)",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        default=False,
+        help="Force-kill a session even if it's not in the factory registry",
+    )
+
+    # spec — repo spec generation and analysis
+    spec_parser = sub.add_parser("spec", help="Repo spec generation and analysis")
+    spec_sub = spec_parser.add_subparsers(dest="spec_command")
+    p_spec_gen = spec_sub.add_parser("generate", help="Generate a repo spec for a project")
+    p_spec_gen.add_argument("path", help="Path to the project")
+    p_spec_val = spec_sub.add_parser("validate", help="Validate a repo spec against the project")
+    p_spec_val.add_argument("path", help="Path to the project")
+    p_spec_scope = spec_sub.add_parser("scope", help="Scope a diff against the repo spec")
+    p_spec_scope.add_argument("path", help="Path to the project")
+    p_spec_scope.add_argument("--experiment", type=int, default=None, help="Experiment ID to scope")
+    p_spec_update = spec_sub.add_parser("update", help="Update the repo spec from recent changes")
+    p_spec_update.add_argument("path", help="Path to the project")
+    p_spec_impact = spec_sub.add_parser("impact", help="Show impact subgraph for a module")
+    p_spec_impact.add_argument("module", help="Module name to query")
+    p_spec_impact.add_argument("--project", required=True, help="Path to the project")
 
     # refactory — persistent supervisor agent
     p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
-    p.add_argument("path", nargs="?", default=None,
-                    help="Project directory (default: current working directory)")
-    p.add_argument("--reset", action="store_true", default=False,
-                    help="Reset session (new session ID, fresh start)")
-    p.add_argument("--model", default=None,
-                    help="Claude model override")
+    p.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Project directory (default: current working directory)",
+    )
+    p.add_argument(
+        "--reset",
+        action="store_true",
+        default=False,
+        help="Reset session (new session ID, fresh start)",
+    )
+    p.add_argument("--model", default=None, help="Claude model override")
 
     # workflow — graph engine commands
     from factory.workflow.cli import add_workflow_parser
+
     add_workflow_parser(sub)  # type: ignore[arg-type]
 
     return parser
@@ -793,7 +1183,19 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-capture": _cli.cmd_tmux_capture,
         "tmux-stop": _cli.cmd_tmux_stop,
         "refactory": _cli.cmd_refactory,
-        "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),
+        "spec": lambda a: {
+            "generate": _cli.cmd_spec_generate,
+            "validate": _cli.cmd_spec_validate,
+            "scope": _cli.cmd_spec_scope,
+            "update": _cli.cmd_spec_update,
+            "impact": _cli.cmd_spec_impact,
+        }.get(
+            str(getattr(a, "spec_command", "")),
+            lambda args: print("Usage: factory spec {generate,validate,scope,update,impact}") or 1,
+        )(a),
+        "workflow": lambda a: __import__(
+            "factory.workflow.cli", fromlist=["cmd_workflow"]
+        ).cmd_workflow(a),
     }
 
     try:
