@@ -109,6 +109,13 @@ from factory.cli.review import (
     cmd_refine_status as cmd_refine_status,
     cmd_review as cmd_review,
 )
+from factory.cli.spec import (
+    cmd_spec_generate as cmd_spec_generate,
+    cmd_spec_impact as cmd_spec_impact,
+    cmd_spec_scope as cmd_spec_scope,
+    cmd_spec_update as cmd_spec_update,
+    cmd_spec_validate as cmd_spec_validate,
+)
 from factory.cli.store import (
     cmd_begin as cmd_begin,
     cmd_diff as cmd_diff,
