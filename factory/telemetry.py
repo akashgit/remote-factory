@@ -11,12 +11,17 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from langfuse import Langfuse
-from langfuse.types import TraceContext
 
 log = structlog.get_logger()
 
-_HAS_LANGFUSE = True
+try:
+    from langfuse import Langfuse
+    from langfuse.types import TraceContext
+    _HAS_LANGFUSE = True
+except ImportError:
+    Langfuse = None  # type: ignore[assignment,misc]
+    TraceContext = None  # type: ignore[assignment,misc]
+    _HAS_LANGFUSE = False
 
 _client: object | None = None
 _observations: dict[str, Any] = {}
