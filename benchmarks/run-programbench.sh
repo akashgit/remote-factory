@@ -18,7 +18,7 @@ SOLVER_TIMEOUT="${2:-3600}"
 
 BENCHMARK="programbench"
 RUN_ID="ci-programbench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-programbench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-programbench-${BENCHMARK_SOLVER:-factory}.json"
 
 # Task-specific mapping
 case "${TASK_NAME}" in
