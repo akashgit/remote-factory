@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 AgentRole = Literal[
     "researcher", "strategist", "builder", "qa",
     "archivist", "ceo", "failure_analyst", "refiner", "profiler",
-    "refactory",
+    "reporter", "refactory",
 ]
 
 # Consecutive failure tracking

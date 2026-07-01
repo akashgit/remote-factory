@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 
 [[package]]
@@ -1531,6 +1531,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "filelock" },
+    { name = "jinja2" },
     { name = "langfuse" },
     { name = "mcp" },
     { name = "networkx" },
@@ -1567,6 +1568,7 @@ docs = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=3.0" },
+    { name = "jinja2", specifier = ">=3.1" },
     { name = "langfuse", specifier = ">=3.0" },
     { name = "langfuse", marker = "extra == 'telemetry'", specifier = ">=3.0" },
     { name = "mcp", specifier = ">=1.27.0" },
