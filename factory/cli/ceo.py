@@ -19,7 +19,7 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from factory.cli._helpers import _emit_cli_event, _ensure_dashboard, _print_banner, _read_target_branch, _run, _safe_is_dir, _safe_is_file
+from factory.cli._helpers import _emit_cli_event, _ensure_dashboard, _is_github_url, _print_banner, _read_target_branch, _resolve_runner, _run, _safe_is_dir, _safe_is_file
 from factory.cli._wizard import (
     _CLI_REF as _CLI_REF,
     _ask_follow_ups as _ask_follow_ups,
@@ -578,11 +578,6 @@ def _stop_ceo_tailer(tailer: object | None) -> None:
         pass
 
 
-def _is_github_url(path: str) -> bool:
-    """Return True if path looks like a GitHub URL."""
-    return path.startswith("https://github.com/") or path.startswith("git@github.com:")
-
-
 # ── universal input resolver ─────────────────────────────────
 
 
@@ -622,17 +617,6 @@ def _resolve_bg_agents(args: argparse.Namespace) -> bool:
     cli_value = "true" if cli_flag else None
     val = resolve("bg_agents", cli_value=cli_value, env_var="FACTORY_BG_AGENTS", default="false")
     return bool(val and val.lower() in ("1", "true", "yes"))
-
-
-def _resolve_runner(args: argparse.Namespace) -> str | None:
-    """Resolve runner: CLI flag > FACTORY_RUNNER env var > None (default to 'claude').
-
-    Returns None to let get_runner() handle the default.
-    """
-    flag = (getattr(args, "runner", None) or "").strip()
-    if flag:
-        return flag
-    return None
 
 
 def _get_projects_dir() -> Path:

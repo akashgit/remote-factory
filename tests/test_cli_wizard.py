@@ -279,8 +279,8 @@ class TestClassifyWithLLM:
     def test_wizard_shows_cli_ref_on_llm_failure(self) -> None:
         with patch("builtins.input", side_effect=["test idea"]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=None), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=None), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             mock_stderr.write = MagicMock()
@@ -567,8 +567,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["test idea", ""]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -587,8 +587,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["test idea", "2"]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -606,8 +606,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["test idea", "abc"]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             code = _welcome_wizard()
@@ -621,8 +621,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["test idea", "5"]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             code = _welcome_wizard()
@@ -651,8 +651,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["fix a bug", str(tmp_path), ""]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -678,8 +678,8 @@ class TestWizardDispatch:
         # User provides path but skips optional issue
         with patch("builtins.input", side_effect=["fix a bug", str(tmp_path), "", ""]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -698,8 +698,8 @@ class TestWizardDispatch:
         )
         with patch("builtins.input", side_effect=["fix a bug", EOFError]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             code = _welcome_wizard()
@@ -717,8 +717,8 @@ class TestWizardDispatch:
         # User skips optional path, but it's the only suggestion and it has {path}
         with patch("builtins.input", side_effect=["fix a bug", ""]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             mock_stderr.write = MagicMock()
@@ -749,8 +749,8 @@ class TestWizardEdgeCases:
         )
         with patch("builtins.input", side_effect=["", "test idea", ""]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0) as mock_ceo, \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
@@ -775,8 +775,8 @@ class TestWizardEdgeCases:
         )
         with patch("builtins.input", side_effect=["test", EOFError]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             code = _welcome_wizard()
@@ -799,8 +799,8 @@ class TestWizardEdgeCases:
         )
         with patch("builtins.input", side_effect=["test", KeyboardInterrupt]), \
              patch("sys.stderr") as mock_stderr, \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("os.environ", {}):
             mock_stderr.isatty.return_value = True
             code = _welcome_wizard()
@@ -838,8 +838,8 @@ class TestNOCOLOR:
             [{"label": "Build", "explanation": "Go.", "command": 'factory ceo "test"'}],
         )
         with patch("builtins.input", side_effect=["test", ""]), \
-             patch("factory.cli.ceo._quick_classify", return_value=None), \
-             patch("factory.cli.ceo._classify_with_llm", return_value=llm_result), \
+             patch("factory.cli._wizard._quick_classify", return_value=None), \
+             patch("factory.cli._wizard._classify_with_llm", return_value=llm_result), \
              patch("factory.cli.ceo.cmd_ceo", return_value=0), \
              patch.dict("os.environ", {"NO_COLOR": "1"}):
             code = _welcome_wizard()

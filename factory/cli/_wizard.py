@@ -11,15 +11,13 @@ from pathlib import Path
 
 import structlog
 
-from factory.cli._helpers import _WIZARD_INPUT_PATH, _print_banner, _run, _safe_is_dir, _safe_is_file, _show_spinner
+from factory.cli._helpers import _WIZARD_INPUT_PATH, _is_github_url, _print_banner, _run, _safe_is_dir, _safe_is_file, _show_spinner
 
 log = structlog.get_logger()
 
 
 def _quick_classify(user_input: str) -> list[dict[str, str]] | None:
     """Deterministic fast path for paths, files, and URLs. Returns None if LLM needed."""
-    from factory.cli.ceo import _is_github_url
-
     stripped = user_input.strip()
 
     expanded = Path(stripped).expanduser()
@@ -392,7 +390,7 @@ def _substitute_answers(
 
 def _welcome_wizard() -> int:
     """Interactive welcome: banner -> input -> classify -> present -> dispatch."""
-    import factory.cli.ceo as _ceo
+    from factory.cli.ceo import cmd_ceo
 
     no_color = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
 
@@ -435,7 +433,7 @@ def _welcome_wizard() -> int:
         len(user_input) > 200
         and not _safe_is_dir(_expanded_check)
         and not _safe_is_file(_expanded_check)
-        and not _ceo._is_github_url(user_input)
+        and not _is_github_url(user_input)
     ):
         wizard_file = _WIZARD_INPUT_PATH.expanduser()
         wizard_file.parent.mkdir(parents=True, exist_ok=True)
@@ -445,10 +443,10 @@ def _welcome_wizard() -> int:
 
     # -- classification ---------------------------------------------------
     follow_ups: list[dict[str, object]] = []
-    suggestions: list[dict[str, str]] | None = _ceo._quick_classify(user_input)
+    suggestions: list[dict[str, str]] | None = _quick_classify(user_input)
 
     if suggestions is None:
-        llm_result = _ceo._classify_with_llm(user_input)
+        llm_result = _classify_with_llm(user_input)
         if llm_result is not None:
             follow_ups, suggestions = llm_result
         else:
@@ -548,7 +546,7 @@ def _welcome_wizard() -> int:
     if ns.command in ("ceo", "study"):
         from factory.cli.admin import cmd_study
 
-        handler = _ceo.cmd_ceo if ns.command == "ceo" else cmd_study
+        handler = cmd_ceo if ns.command == "ceo" else cmd_study
         if handler is not None:
             return handler(ns)
 

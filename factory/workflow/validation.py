@@ -12,8 +12,6 @@ if TYPE_CHECKING:
 
 def validate_workflow(workflow: Workflow) -> list[str]:
     """Validate a workflow graph. Returns a list of issues (empty = valid)."""
-    from factory.workflow.primitives import ForkNode, GateNode, JoinNode
-
     issues: list[str] = []
     nodes = workflow.nodes
     edges = workflow.edges
@@ -51,7 +49,7 @@ def validate_workflow(workflow: Workflow) -> list[str]:
 
         has_gate_with_limit = False
         for src, tgt in cycle_edges:
-            if isinstance(nodes.get(src), GateNode):
+            if type(nodes.get(src)).__name__ == "GateNode":
                 for edge in edges:
                     if edge.source == src and edge.target == tgt and edge.condition is not None:
                         has_gate_with_limit = True
@@ -78,13 +76,13 @@ def validate_workflow(workflow: Workflow) -> list[str]:
                 )
 
     for nid, node in nodes.items():
-        if isinstance(node, ForkNode):
-            for t in node.targets:
+        if type(node).__name__ == "ForkNode":
+            for t in node.targets:  # type: ignore[union-attr]
                 if t not in nodes:
                     issues.append(f"fork '{nid}' target '{t}' not in nodes")
 
-        if isinstance(node, JoinNode):
-            for s in node.sources:
+        if type(node).__name__ == "JoinNode":
+            for s in node.sources:  # type: ignore[union-attr]
                 if s not in nodes:
                     issues.append(f"join '{nid}' source '{s}' not in nodes")
 

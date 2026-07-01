@@ -1,6 +1,7 @@
 """CLI _helpers commands."""
 from __future__ import annotations
 
+import argparse
 import asyncio
 import json
 import os
@@ -150,6 +151,22 @@ def _show_spinner(stop_event: threading.Event) -> None:
     else:
         sys.stderr.write("\r" + " " * 30 + "\r")
     sys.stderr.flush()
+
+
+def _is_github_url(path: str) -> bool:
+    """Return True if path looks like a GitHub URL."""
+    return path.startswith("https://github.com/") or path.startswith("git@github.com:")
+
+
+def _resolve_runner(args: "argparse.Namespace") -> str | None:
+    """Resolve runner: CLI flag > FACTORY_RUNNER env var > None (default to 'claude').
+
+    Returns None to let get_runner() handle the default.
+    """
+    flag = (getattr(args, "runner", None) or "").strip()
+    if flag:
+        return flag
+    return None
 
 
 def _safe_is_dir(p: Path) -> bool:

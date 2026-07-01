@@ -356,9 +356,11 @@ def cmd_profile(args: argparse.Namespace) -> int:
                 print(content or "(empty)")
             return 0
 
-        from factory.cli.ceo import _resolve_runner
+        from factory.agents.runner import resolve_prompt
+        from factory.cli._helpers import _resolve_runner
         runner_name = _resolve_runner(args)
-        profile_text = _run(synthesize_profile(evidence, runner_name))
+        profiler_prompt = resolve_prompt("profiler")
+        profile_text = _run(synthesize_profile(evidence, runner_name, prompt=profiler_prompt))
         if profile_text.startswith("Profile synthesis failed"):
             print(profile_text, file=sys.stderr)
             return 1
