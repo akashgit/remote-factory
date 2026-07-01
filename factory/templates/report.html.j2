@@ -166,6 +166,17 @@
 
   .badge.insufficient { background: rgba(125, 133, 144, 0.15); color: var(--text-dim); }
 
+  .goal-table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .goal-table th { text-align: left; padding: 10px 12px; background: var(--bg); color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); }
+  .goal-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 12px; vertical-align: top; }
+  .goal-table tr:last-child td { border-bottom: none; }
+  .ask-cell { width: 40%; color: var(--text); font-weight: 500; }
+  .evidence-cell { width: 60%; }
+  .evidence-cell ul { margin: 0; padding-left: 16px; color: var(--text-dim); }
+  .evidence-cell li { margin-bottom: 2px; }
+  .evidence-cell .badge { float: right; margin-left: 8px; }
+  .goal-overall { margin-top: 10px; text-align: right; color: var(--text-dim); font-size: 12px; }
+
   .empty {
     color: var(--text-dim);
     font-style: italic;
@@ -183,36 +194,49 @@
 {% if goal %}
 <section>
   <h2>Goal</h2>
+  {% if goal_assessment and goal_assessment.asks %}
+  <div class="goal-text" style="margin-bottom: 12px;">{{ goal }}</div>
+  <table class="goal-table">
+    <thead>
+      <tr>
+        <th>Ask</th>
+        <th>Evidence</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in goal_assessment.asks %}
+      <tr>
+        <td class="ask-cell">{{ item.ask }}</td>
+        <td class="evidence-cell">
+          <span class="badge {{ item.verdict_class }}">{{ item.verdict }}</span>
+          {% if item.evidence %}
+          <ul>
+            {% for e in item.evidence %}
+            <li>{{ e }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="goal-overall">Overall: <span class="badge {{ goal_assessment.overall_class }}">{{ goal_assessment.overall }}</span></div>
+  {% if goal_assessment.gaps %}
+  <div style="margin-top: 10px; color: var(--text-dim); font-size: 12px;">
+    <strong style="color: var(--yellow);">Gaps:</strong>
+    <ul style="margin-top: 4px; padding-left: 16px;">
+      {% for gap in goal_assessment.gaps %}
+      <li>{{ gap }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% else %}
   <div class="verdict-card">
     <div class="goal-text">{{ goal }}</div>
-    {% if goal_assessment %}
-    <div style="margin-top: 12px;">
-      <span class="badge {{ goal_assessment.status_class }}">{{ goal_assessment.status }}</span>
-      <span class="badge" style="margin-left: 4px; background: rgba(88, 166, 255, 0.15); color: var(--accent);">{{ goal_assessment.confidence }} confidence</span>
-    </div>
-    <div class="rationale">{{ goal_assessment.summary }}</div>
-    {% if goal_assessment.evidence %}
-    <div style="margin-top: 8px; color: var(--text-dim); font-size: 12px;">
-      <strong style="color: var(--text);">Evidence:</strong>
-      <ul style="margin-top: 4px; padding-left: 16px;">
-        {% for item in goal_assessment.evidence %}
-        <li>{{ item }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-    {% if goal_assessment.gaps %}
-    <div style="margin-top: 8px; color: var(--text-dim); font-size: 12px;">
-      <strong style="color: var(--yellow);">Gaps:</strong>
-      <ul style="margin-top: 4px; padding-left: 16px;">
-        {% for item in goal_assessment.gaps %}
-        <li>{{ item }}</li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
-    {% endif %}
   </div>
+  {% endif %}
 </section>
 {% endif %}
 

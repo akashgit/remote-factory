@@ -200,50 +200,60 @@ def _invoke_reporter(project_path: Path) -> str | None:
 
 def _parse_goal_assessment(text: str) -> dict | None:
     """Parse a reporter agent assessment into a dict for the template."""
-    status_match = re.search(
-        r"\*\*Status:\*\*\s*(ACHIEVED|PARTIALLY_ACHIEVED|NOT_ACHIEVED|INSUFFICIENT_DATA)",
+    overall_match = re.search(
+        r"\*\*Overall:\*\*\s*(ACHIEVED|PARTIALLY_ACHIEVED|NOT_ACHIEVED|INSUFFICIENT_DATA)",
         text,
     )
-    confidence_match = re.search(r"\*\*Confidence:\*\*\s*(HIGH|MEDIUM|LOW)", text)
-    summary_match = re.search(
-        r"### Summary\s*\n(.+?)(?=\n### |\Z)", text, re.DOTALL,
-    )
-    evidence_items: list[str] = []
-    evidence_match = re.search(
-        r"### Evidence\s*\n(.+?)(?=\n### |\Z)", text, re.DOTALL,
-    )
-    if evidence_match:
-        for line in evidence_match.group(1).strip().splitlines():
-            line = line.strip().lstrip("- ")
-            if line:
-                evidence_items.append(line)
-
-    gaps_items: list[str] = []
-    gaps_match = re.search(r"### Gaps\s*\n(.+?)(?=\n### |\n## |\Z)", text, re.DOTALL)
-    if gaps_match:
-        for line in gaps_match.group(1).strip().splitlines():
-            line = line.strip().lstrip("- ")
-            if line and line.lower() != "none":
-                gaps_items.append(line)
-
-    if not status_match:
+    if not overall_match:
         return None
 
-    status = status_match.group(1)
-    status_class_map = {
+    overall = overall_match.group(1)
+    overall_class_map = {
         "ACHIEVED": "keep",
         "PARTIALLY_ACHIEVED": "redirect",
         "NOT_ACHIEVED": "revert",
         "INSUFFICIENT_DATA": "insufficient",
     }
+    verdict_class_map = {
+        "MET": "keep",
+        "PARTIALLY_MET": "redirect",
+        "NOT_MET": "revert",
+        "NO_DATA": "insufficient",
+    }
+
+    asks: list[dict] = []
+    for ask_match in re.finditer(
+        r"#### Ask:\s*(.+?)\n\*\*Verdict:\*\*\s*(MET|PARTIALLY_MET|NOT_MET|NO_DATA)\s*\n"
+        r"\*\*Evidence:\*\*\s*\n(.*?)(?=\n#### Ask:|\n### Gaps|\n## |\Z)",
+        text, re.DOTALL,
+    ):
+        ask_text = ask_match.group(1).strip()
+        verdict = ask_match.group(2)
+        evidence_lines: list[str] = []
+        for line in ask_match.group(3).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line:
+                evidence_lines.append(line)
+        asks.append({
+            "ask": ask_text,
+            "verdict": verdict,
+            "verdict_class": verdict_class_map.get(verdict, ""),
+            "evidence": evidence_lines,
+        })
+
+    gaps: list[str] = []
+    gaps_match = re.search(r"### Gaps\s*\n(.+?)(?=\n### |\n## |\Z)", text, re.DOTALL)
+    if gaps_match:
+        for line in gaps_match.group(1).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line and line.lower() != "none":
+                gaps.append(line)
 
     return {
-        "status": status,
-        "status_class": status_class_map.get(status, ""),
-        "confidence": confidence_match.group(1) if confidence_match else "LOW",
-        "summary": summary_match.group(1).strip() if summary_match else "",
-        "evidence": evidence_items,
-        "gaps": gaps_items,
+        "overall": overall,
+        "overall_class": overall_class_map.get(overall, ""),
+        "asks": asks,
+        "gaps": gaps,
     }
 
 

@@ -27,19 +27,32 @@ You MUST output this exact structure — no preamble, no commentary outside it:
 ```
 ## Goal Assessment
 
-**Goal:** <goal from config>
-**Status:** ACHIEVED | PARTIALLY_ACHIEVED | NOT_ACHIEVED | INSUFFICIENT_DATA
-**Confidence:** HIGH | MEDIUM | LOW
+**Overall:** ACHIEVED | PARTIALLY_ACHIEVED | NOT_ACHIEVED | INSUFFICIENT_DATA
 
-### Summary
-<2-3 sentence assessment of whether the session goal was met, citing specific experiments and their outcomes>
+### Asks
 
-### Evidence
-- <bullet points citing specific experiments, verdicts, and score changes>
+#### Ask: <short description of ask 1>
+**Verdict:** MET | PARTIALLY_MET | NOT_MET | NO_DATA
+**Evidence:**
+- <specific evidence for this ask>
+
+#### Ask: <short description of ask 2>
+**Verdict:** MET | PARTIALLY_MET | NOT_MET | NO_DATA
+**Evidence:**
+- <specific evidence for this ask>
 
 ### Gaps
-- <what remains to be done, or "None" if fully achieved>
+- <remaining work, or "None">
 ```
+
+## Deriving Asks
+
+Break the goal into individual asks/requirements by examining:
+1. The goal text itself — decompose into constituent requirements
+2. The focus directive or issue spec if present in `.factory/strategy/current.md`
+3. Backlog items that were targeted this cycle
+
+Each ask is a single, testable requirement. Aim for 2-5 asks per goal.
 
 ## Assessment Rules
 
@@ -48,9 +61,11 @@ You MUST output this exact structure — no preamble, no commentary outside it:
 - **NOT_ACHIEVED**: No meaningful progress — experiments reverted, scores declined, or work did not address the goal
 - **INSUFFICIENT_DATA**: No experiments recorded, no verdicts available, or goal is not set
 
-- **HIGH confidence**: 3+ experiments with clear verdict pattern, score trajectory aligns with assessment
-- **MEDIUM confidence**: 1-2 experiments or mixed verdicts
-- **LOW confidence**: No experiments, contradictory data, or goal is vague
+Per-ask verdicts:
+- **MET**: Clear evidence this specific requirement was satisfied
+- **PARTIALLY_MET**: Some progress but not fully complete
+- **NOT_MET**: No meaningful progress on this requirement
+- **NO_DATA**: Insufficient evidence to assess this requirement
 
 ## Constraints
 

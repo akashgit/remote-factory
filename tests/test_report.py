@@ -278,40 +278,94 @@ def test_read_goal_no_goal_field(tmp_path: Path) -> None:
 def test_parse_goal_assessment_full() -> None:
     text = (
         "## Goal Assessment\n\n"
-        "**Goal:** Improve test coverage\n"
-        "**Status:** ACHIEVED\n"
-        "**Confidence:** HIGH\n\n"
-        "### Summary\n"
-        "Test coverage improved from 60% to 92% across 3 experiments.\n\n"
-        "### Evidence\n"
+        "**Overall:** ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Improve unit test coverage\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
         "- Experiment 1: Added unit tests, score +0.10 (keep)\n"
+        "- Coverage rose from 60% to 92%\n\n"
+        "#### Ask: Add integration tests\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
         "- Experiment 2: Added integration tests, score +0.08 (keep)\n\n"
         "### Gaps\n"
         "- None\n"
     )
     result = _parse_goal_assessment(text)
     assert result is not None
-    assert result["status"] == "ACHIEVED"
-    assert result["status_class"] == "keep"
-    assert result["confidence"] == "HIGH"
-    assert "92%" in result["summary"]
-    assert len(result["evidence"]) == 2
+    assert result["overall"] == "ACHIEVED"
+    assert result["overall_class"] == "keep"
+    assert len(result["asks"]) == 2
+    assert result["asks"][0]["ask"] == "Improve unit test coverage"
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][0]["verdict_class"] == "keep"
+    assert len(result["asks"][0]["evidence"]) == 2
+    assert result["asks"][1]["ask"] == "Add integration tests"
     assert result["gaps"] == []
 
 
 def test_parse_goal_assessment_partial() -> None:
     text = (
-        "**Status:** PARTIALLY_ACHIEVED\n"
-        "**Confidence:** MEDIUM\n\n"
-        "### Summary\nSome progress made.\n\n"
-        "### Evidence\n- Experiment 1 kept\n\n"
+        "**Overall:** PARTIALLY_ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Fix login bug\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Experiment 1 kept\n\n"
+        "#### Ask: Add logout flow\n"
+        "**Verdict:** NOT_MET\n"
+        "**Evidence:**\n"
+        "- No experiments addressed this\n\n"
         "### Gaps\n- Need more tests\n- Need docs\n"
     )
     result = _parse_goal_assessment(text)
     assert result is not None
-    assert result["status"] == "PARTIALLY_ACHIEVED"
-    assert result["status_class"] == "redirect"
+    assert result["overall"] == "PARTIALLY_ACHIEVED"
+    assert result["overall_class"] == "redirect"
+    assert len(result["asks"]) == 2
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][1]["verdict"] == "NOT_MET"
+    assert result["asks"][1]["verdict_class"] == "revert"
     assert len(result["gaps"]) == 2
+
+
+def test_parse_goal_assessment_multiple_asks() -> None:
+    text = (
+        "## Goal Assessment\n\n"
+        "**Overall:** PARTIALLY_ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Build HTML report command\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- PR #902 merged, factory report generates self-contained HTML\n\n"
+        "#### Ask: Standardize report format\n"
+        "**Verdict:** PARTIALLY_MET\n"
+        "**Evidence:**\n"
+        "- Uses PerformanceReport model\n"
+        "- Jinja2 template in place\n\n"
+        "#### Ask: Add reporter subagent\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Reporter agent added, runs on haiku\n\n"
+        "#### Ask: Support --assess flag\n"
+        "**Verdict:** NO_DATA\n"
+        "**Evidence:**\n"
+        "- Not yet tested in production\n\n"
+        "### Gaps\n"
+        "- Template needs side-by-side layout\n"
+    )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["overall"] == "PARTIALLY_ACHIEVED"
+    assert len(result["asks"]) == 4
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][1]["verdict"] == "PARTIALLY_MET"
+    assert result["asks"][1]["verdict_class"] == "redirect"
+    assert len(result["asks"][1]["evidence"]) == 2
+    assert result["asks"][3]["verdict"] == "NO_DATA"
+    assert result["asks"][3]["verdict_class"] == "insufficient"
+    assert len(result["gaps"]) == 1
 
 
 def test_parse_goal_assessment_no_status() -> None:
@@ -328,6 +382,8 @@ def test_generate_html_report_shows_goal(tmp_path: Path) -> None:
     html = result.read_text()
     assert "Ship the widget" in html
     assert "Goal" in html
+    assert "goal-text" in html
+    assert "verdict-card" in html
 
 
 def test_generate_html_report_no_goal(tmp_path: Path) -> None:
