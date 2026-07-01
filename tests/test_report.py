@@ -1,8 +1,11 @@
 """Tests for factory.report — performance reports."""
 
+import json
 from pathlib import Path
 
 from factory.report import (
+    _parse_goal_assessment,
+    _read_goal,
     build_performance_report,
     generate_html_report,
     load_performance_report,
@@ -248,3 +251,102 @@ def test_generate_html_report_custom_output(tmp_path: Path) -> None:
     result = generate_html_report(project, output_path=custom)
     assert result == custom
     assert custom.exists()
+
+
+def test_read_goal(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Improve test coverage to 90%"}))
+
+    assert _read_goal(project) == "Improve test coverage to 90%"
+
+
+def test_read_goal_missing(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    assert _read_goal(project) is None
+
+
+def test_read_goal_no_goal_field(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    (factory_dir / "config.json").write_text(json.dumps({"name": "test"}))
+
+    assert _read_goal(project) is None
+
+
+def test_parse_goal_assessment_full() -> None:
+    text = (
+        "## Goal Assessment\n\n"
+        "**Goal:** Improve test coverage\n"
+        "**Status:** ACHIEVED\n"
+        "**Confidence:** HIGH\n\n"
+        "### Summary\n"
+        "Test coverage improved from 60% to 92% across 3 experiments.\n\n"
+        "### Evidence\n"
+        "- Experiment 1: Added unit tests, score +0.10 (keep)\n"
+        "- Experiment 2: Added integration tests, score +0.08 (keep)\n\n"
+        "### Gaps\n"
+        "- None\n"
+    )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["status"] == "ACHIEVED"
+    assert result["status_class"] == "keep"
+    assert result["confidence"] == "HIGH"
+    assert "92%" in result["summary"]
+    assert len(result["evidence"]) == 2
+    assert result["gaps"] == []
+
+
+def test_parse_goal_assessment_partial() -> None:
+    text = (
+        "**Status:** PARTIALLY_ACHIEVED\n"
+        "**Confidence:** MEDIUM\n\n"
+        "### Summary\nSome progress made.\n\n"
+        "### Evidence\n- Experiment 1 kept\n\n"
+        "### Gaps\n- Need more tests\n- Need docs\n"
+    )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["status"] == "PARTIALLY_ACHIEVED"
+    assert result["status_class"] == "redirect"
+    assert len(result["gaps"]) == 2
+
+
+def test_parse_goal_assessment_no_status() -> None:
+    assert _parse_goal_assessment("No structured data here") is None
+
+
+def test_generate_html_report_shows_goal(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Ship the widget"}))
+
+    result = generate_html_report(project)
+    html = result.read_text()
+    assert "Ship the widget" in html
+    assert "Goal" in html
+
+
+def test_generate_html_report_no_goal(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+
+    result = generate_html_report(project)
+    html = result.read_text()
+    assert "<h2>Goal</h2>" not in html
+
+
+def test_generate_html_report_assess_false_no_assessment(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Build a CLI"}))
+
+    result = generate_html_report(project, assess=False)
+    html = result.read_text()
+    assert "Build a CLI" in html
+    assert "ACHIEVED" not in html

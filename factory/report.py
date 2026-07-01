@@ -151,8 +151,107 @@ def parse_observations(project_path: Path) -> list[Observation]:
     return observations
 
 
+def _read_goal(project_path: Path) -> str | None:
+    """Read the goal field from .factory/config.json."""
+    config_path = project_path / ".factory" / "config.json"
+    if not config_path.exists():
+        return None
+    try:
+        data = json.loads(config_path.read_text())
+        goal = data.get("goal")
+        return goal if isinstance(goal, str) and goal.strip() else None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def _invoke_reporter(project_path: Path) -> str | None:
+    """Invoke the reporter agent and return its output."""
+    import subprocess
+
+    goal = _read_goal(project_path)
+    task = (
+        f"Assess whether the project goal was achieved. "
+        f"Project path: {project_path}\n"
+        f"Goal: {goal or 'No goal set'}"
+    )
+    try:
+        result = subprocess.run(
+            [
+                "factory", "agent", "reporter",
+                "--task", task,
+                "--project", str(project_path),
+                "--model", "haiku",
+                "--timeout", "120",
+            ],
+            capture_output=True, text=True, timeout=150,
+        )
+        if result.returncode != 0:
+            log.warning("reporter_agent_failed", returncode=result.returncode)
+            return None
+    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
+        log.warning("reporter_agent_error", error=str(exc))
+        return None
+
+    review_path = project_path / ".factory" / "reviews" / "reporter-latest.md"
+    if review_path.exists():
+        return review_path.read_text()
+    return None
+
+
+def _parse_goal_assessment(text: str) -> dict | None:
+    """Parse a reporter agent assessment into a dict for the template."""
+    status_match = re.search(
+        r"\*\*Status:\*\*\s*(ACHIEVED|PARTIALLY_ACHIEVED|NOT_ACHIEVED|INSUFFICIENT_DATA)",
+        text,
+    )
+    confidence_match = re.search(r"\*\*Confidence:\*\*\s*(HIGH|MEDIUM|LOW)", text)
+    summary_match = re.search(
+        r"### Summary\s*\n(.+?)(?=\n### |\Z)", text, re.DOTALL,
+    )
+    evidence_items: list[str] = []
+    evidence_match = re.search(
+        r"### Evidence\s*\n(.+?)(?=\n### |\Z)", text, re.DOTALL,
+    )
+    if evidence_match:
+        for line in evidence_match.group(1).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line:
+                evidence_items.append(line)
+
+    gaps_items: list[str] = []
+    gaps_match = re.search(r"### Gaps\s*\n(.+?)(?=\n### |\n## |\Z)", text, re.DOTALL)
+    if gaps_match:
+        for line in gaps_match.group(1).strip().splitlines():
+            line = line.strip().lstrip("- ")
+            if line and line.lower() != "none":
+                gaps_items.append(line)
+
+    if not status_match:
+        return None
+
+    status = status_match.group(1)
+    status_class_map = {
+        "ACHIEVED": "keep",
+        "PARTIALLY_ACHIEVED": "redirect",
+        "NOT_ACHIEVED": "revert",
+        "INSUFFICIENT_DATA": "insufficient",
+    }
+
+    return {
+        "status": status,
+        "status_class": status_class_map.get(status, ""),
+        "confidence": confidence_match.group(1) if confidence_match else "LOW",
+        "summary": summary_match.group(1).strip() if summary_match else "",
+        "evidence": evidence_items,
+        "gaps": gaps_items,
+    }
+
+
 def generate_html_report(
-    project_path: Path, output_path: Path | None = None,
+    project_path: Path,
+    output_path: Path | None = None,
+    *,
+    assess: bool = False,
 ) -> Path:
     """Render a self-contained HTML report for a project."""
     from factory.store import ExperimentStore
@@ -165,6 +264,14 @@ def generate_html_report(
     except Exception:
         experiments = []
 
+    goal = _read_goal(project_path)
+
+    goal_assessment: dict | None = None
+    if assess:
+        reporter_output = _invoke_reporter(project_path)
+        if reporter_output:
+            goal_assessment = _parse_goal_assessment(reporter_output)
+
     template_dir = Path(__file__).parent / "templates"
     env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=True)
     template = env.get_template("report.html.j2")
@@ -173,6 +280,8 @@ def generate_html_report(
         report=report,
         experiments=experiments,
         generated_at=report.generated_at.strftime("%Y-%m-%d %H:%M:%S"),
+        goal=goal,
+        goal_assessment=goal_assessment,
     )
 
     if output_path is None:

@@ -158,6 +158,14 @@
     margin-top: 4px;
   }
 
+  .goal-text {
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .badge.insufficient { background: rgba(125, 133, 144, 0.15); color: var(--text-dim); }
+
   .empty {
     color: var(--text-dim);
     font-style: italic;
@@ -171,6 +179,42 @@
   <h1>{{ report.project_name }}</h1>
   <div class="timestamp">Generated {{ generated_at }}</div>
 </header>
+
+{% if goal %}
+<section>
+  <h2>Goal</h2>
+  <div class="verdict-card">
+    <div class="goal-text">{{ goal }}</div>
+    {% if goal_assessment %}
+    <div style="margin-top: 12px;">
+      <span class="badge {{ goal_assessment.status_class }}">{{ goal_assessment.status }}</span>
+      <span class="badge" style="margin-left: 4px; background: rgba(88, 166, 255, 0.15); color: var(--accent);">{{ goal_assessment.confidence }} confidence</span>
+    </div>
+    <div class="rationale">{{ goal_assessment.summary }}</div>
+    {% if goal_assessment.evidence %}
+    <div style="margin-top: 8px; color: var(--text-dim); font-size: 12px;">
+      <strong style="color: var(--text);">Evidence:</strong>
+      <ul style="margin-top: 4px; padding-left: 16px;">
+        {% for item in goal_assessment.evidence %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if goal_assessment.gaps %}
+    <div style="margin-top: 8px; color: var(--text-dim); font-size: 12px;">
+      <strong style="color: var(--yellow);">Gaps:</strong>
+      <ul style="margin-top: 4px; padding-left: 16px;">
+        {% for item in goal_assessment.gaps %}
+        <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endif %}
 
 <section>
   <h2>Summary</h2>

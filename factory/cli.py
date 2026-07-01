@@ -1246,7 +1246,7 @@ def cmd_report(args: argparse.Namespace) -> int:
 
     project_path = Path(args.path).resolve()
     output_path = Path(args.output).resolve() if args.output else None
-    result = generate_html_report(project_path, output_path)
+    result = generate_html_report(project_path, output_path, assess=args.assess)
     print(f"Report written to {result}")
     return 0
 
@@ -4488,6 +4488,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("report", help="Generate self-contained HTML report for a project")
     p.add_argument("path", help="Path to the project")
     p.add_argument("--output", default=None, help="Output HTML file path (default: <project>/.factory/report.html)")
+    p.add_argument("--assess", action="store_true", default=False, help="Invoke reporter agent to assess goal achievement")
 
     # report-update
     p = sub.add_parser("report-update", help="Generate performance report for a project")
