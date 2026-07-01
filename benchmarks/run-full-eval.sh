@@ -428,7 +428,7 @@ echo ""
 log "Step 4: Extracting per-task results"
 
 TASKS_JSON=$(python3 << 'PYEOF'
-import json, os, sys, glob
+import json, os, re, sys, glob
 
 jobs_dir = os.environ.get("JOBS_DIR", "")
 if not jobs_dir or not os.path.isdir(jobs_dir):
@@ -437,13 +437,21 @@ if not jobs_dir or not os.path.isdir(jobs_dir):
 
 tasks = {}
 
+def extract_instance_id(reward_path):
+    """Extract instance_id from a reward file path.
+
+    Harbor structure: $JOBS_DIR/<job>/<trial-name>/verifier/reward.{json,txt}
+    Trial name format: <instance_id>__<7-char-suffix> e.g. matplotlib__matplotlib-14623__ff4rTkg
+    """
+    reward_dir = os.path.dirname(reward_path)
+    if os.path.basename(reward_dir) == "verifier":
+        trial_dir = os.path.basename(os.path.dirname(reward_dir))
+    else:
+        trial_dir = os.path.basename(reward_dir)
+    return re.sub(r'__[A-Za-z0-9]{7}$', '', trial_dir)
+
 for reward_path in sorted(glob.glob(os.path.join(jobs_dir, "**", "reward.json"), recursive=True)):
-    parts = reward_path.split(os.sep)
-    instance_id = None
-    for i, p in enumerate(parts):
-        if p == "trials" and i + 1 < len(parts):
-            instance_id = parts[i + 1]
-            break
+    instance_id = extract_instance_id(reward_path)
     if not instance_id:
         continue
 
@@ -467,12 +475,7 @@ for reward_path in sorted(glob.glob(os.path.join(jobs_dir, "**", "reward.json"),
         tasks[instance_id]["resolved"] = resolved
 
 for reward_path in sorted(glob.glob(os.path.join(jobs_dir, "**", "reward.txt"), recursive=True)):
-    parts = reward_path.split(os.sep)
-    instance_id = None
-    for i, p in enumerate(parts):
-        if p == "trials" and i + 1 < len(parts):
-            instance_id = parts[i + 1]
-            break
+    instance_id = extract_instance_id(reward_path)
     if not instance_id or instance_id in tasks:
         continue
 
@@ -485,19 +488,25 @@ for reward_path in sorted(glob.glob(os.path.join(jobs_dir, "**", "reward.txt"), 
 
     tasks[instance_id] = {"instance_id": instance_id, "resolved": resolved, "cost_usd": 0, "duration_seconds": 0}
 
-result_files = sorted(glob.glob(os.path.join(jobs_dir, "**", "result.json"), recursive=True))
-for rpath in result_files:
+# Extract per-trial cost/duration from per-trial result.json files
+for rpath in sorted(glob.glob(os.path.join(jobs_dir, "**", "result.json"), recursive=True)):
     try:
-        with open(rpath) as f:
-            data = json.load(f)
-        for trial_name, trial_data in data.get("trials", {}).items():
-            if trial_name in tasks:
-                tasks[trial_name]["cost_usd"] = trial_data.get("cost_usd", 0) or 0
-                tasks[trial_name]["duration_seconds"] = trial_data.get("duration_seconds", 0) or 0
+        rdir = os.path.dirname(rpath)
+        trial_id = extract_instance_id(rpath + "/dummy")
+        if os.path.isdir(os.path.join(rdir, "verifier")) or os.path.isdir(os.path.join(rdir, "agent")):
+            with open(rpath) as f:
+                data = json.load(f)
+            if trial_id in tasks:
+                tasks[trial_id]["cost_usd"] = data.get("cost_usd", 0) or 0
+                tasks[trial_id]["duration_seconds"] = data.get("duration_seconds", 0) or 0
     except Exception:
         pass
 
+# Extract aggregate cost from job-level result.json and distribute evenly if no per-task costs
+for rpath in sorted(glob.glob(os.path.join(jobs_dir, "*/result.json"))):
     try:
+        with open(rpath) as f:
+            data = json.load(f)
         stats = data.get("stats", {})
         cost = stats.get("cost_usd", 0) or 0
         if cost > 0 and len(tasks) > 0:
