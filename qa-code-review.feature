@@ -1,6 +1,5 @@
 # Track A of issue #915: human-authored BDD spec for the QA agent.
 # Section 2: Code Review — reading the PR diff and evaluating against a checklist.
-# See SYNTAX.md for Gherkin reference.
 
 Feature: QA Code Review
   The second step of the QA agent. It reads every changed file
@@ -14,7 +13,6 @@ Feature: QA Code Review
 
   # --- Hard constraint: output structure ---
   # The code review MUST evaluate and report on ALL 7 categories.
-  # See qa-code-review-checklist.md for full definitions.
   #   1. Correctness
   #   2. Security
   #   3. Edge cases

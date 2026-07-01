@@ -1,6 +1,5 @@
 # Track A of issue #915: human-authored BDD spec for the QA agent.
 # Section 1: Health Check — the mechanical eval-and-compare phase.
-# See SYNTAX.md for Gherkin reference.
 
 Feature: QA Health Check
   The first step of QA agent and it always runs. It runs the

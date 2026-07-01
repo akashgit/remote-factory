@@ -1,6 +1,5 @@
 # Track A of issue #915: human-authored BDD spec for the QA agent.
 # Section 3: Adversarial QA — testing the feature as a skeptical user.
-# See SYNTAX.md for Gherkin reference.
 
 Feature: QA Adversarial Testing
   The final step of the QA agent. It switches identity to a
