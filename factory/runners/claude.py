@@ -114,7 +114,6 @@ class ClaudeRunner:
             cmd.extend(["--name", request.session_name])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        env["TELEMETRY_PLATFORM"] = ""
         if request.model:
             env["FACTORY_MODEL"] = request.model
 
@@ -223,7 +222,6 @@ class ClaudeRunner:
             cmd.extend(["--name", request.session_name])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-        env["TELEMETRY_PLATFORM"] = ""
         if request.model:
             env["FACTORY_MODEL"] = request.model
 

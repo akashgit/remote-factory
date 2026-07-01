@@ -134,30 +134,6 @@ class TestClaudeRunner:
             assert "--append-system-prompt" not in [c for c in cmd if c != "--append-system-prompt-file"]
 
 
-    def test_build_command_suppresses_telemetry_platform(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("TELEMETRY_PLATFORM", "langfuse")
-        runner = ClaudeRunner()
-        cmd, env, temp_files = runner.build_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
-        assert env["TELEMETRY_PLATFORM"] == ""
-        for f in temp_files:
-            f.unlink(missing_ok=True)
-
-    def test_build_interactive_command_suppresses_telemetry_platform(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        monkeypatch.setenv("TELEMETRY_PLATFORM", "langfuse")
-        runner = ClaudeRunner()
-        cmd, env, temp_files = runner.build_interactive_command(AgentRunRequest(
-            prompt="Test", task="Test", cwd=tmp_path,
-        ))
-        assert env["TELEMETRY_PLATFORM"] == ""
-        for f in temp_files:
-            f.unlink(missing_ok=True)
-
 
 class TestBobRunner:
     def test_is_dry_run_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
