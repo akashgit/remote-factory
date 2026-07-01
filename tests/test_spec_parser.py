@@ -639,3 +639,85 @@ class TestBackwardCompatibility:
         assert spec.dependency_edges == []
         assert spec.change_impact == []
         assert spec.coupling_metrics == []
+
+
+class TestPathExtractionFromBacktickHeadings:
+    def test_extracts_path_from_backtick_heading(self, tmp_path: Path) -> None:
+        p = tmp_path / "spec.md"
+        p.write_text(
+            "# SPEC\n\n## 8. Module Specifications\n\n"
+            "### 8.1 `factory/state.py` — Project State Detection\n"
+            "- **Role:** Detects project state\n"
+        )
+        spec = parse_spec(p)
+        assert len(spec.modules) == 1
+        assert spec.modules[0].path == "factory/state.py"
+        assert spec.modules[0].name == "`factory/state.py` — Project State Detection"
+
+    def test_no_backtick_path_when_field_exists(self, tmp_path: Path) -> None:
+        p = tmp_path / "spec.md"
+        p.write_text(
+            "# SPEC\n\n## 8. Module Specifications\n\n### 8.1 cli\n- **Path:** `factory/cli.py`\n"
+        )
+        spec = parse_spec(p)
+        assert spec.modules[0].path == "factory/cli.py"
+
+    def test_ignores_backtick_without_path_pattern(self, tmp_path: Path) -> None:
+        p = tmp_path / "spec.md"
+        p.write_text(
+            "# SPEC\n\n## 8. Module Specifications\n\n"
+            "### 8.1 `some-name` — Description\n"
+            "- **Role:** Something\n"
+        )
+        spec = parse_spec(p)
+        assert spec.modules[0].path == ""
+
+
+class TestGetModuleByPath:
+    def test_finds_module_by_path(self, tmp_path: Path) -> None:
+        p = tmp_path / "spec.md"
+        p.write_text(
+            "# SPEC\n\n## 8. Module Specifications\n\n"
+            "### 8.1 `factory/state.py` — Project State Detection\n"
+            "- **Role:** Detects project state\n"
+        )
+        spec = parse_spec(p)
+        mod = spec.get_module("factory/state.py")
+        assert mod is not None
+        assert mod.path == "factory/state.py"
+
+    def test_path_lookup_case_insensitive(self, tmp_path: Path) -> None:
+        p = tmp_path / "spec.md"
+        p.write_text(
+            "# SPEC\n\n## 8. Module Specifications\n\n"
+            "### 8.1 `Factory/State.py` — State Detection\n"
+            "- **Role:** Detects state\n"
+        )
+        spec = parse_spec(p)
+        assert spec.get_module("factory/state.py") is not None
+
+    def test_name_match_takes_priority_over_path(self, spec_file: Path) -> None:
+        spec = parse_spec(spec_file)
+        mod = spec.get_module("cli")
+        assert mod is not None
+        assert mod.name == "cli"
+
+
+class TestParseCommaListBackticks:
+    def test_strips_backticks_per_item(self) -> None:
+        from factory.spec.parser import _parse_comma_list
+
+        result = _parse_comma_list("`models`, `store`, `cli`")
+        assert result == ["models", "store", "cli"]
+
+    def test_handles_mixed_backtick_and_plain(self) -> None:
+        from factory.spec.parser import _parse_comma_list
+
+        result = _parse_comma_list("`models`, store, `cli`")
+        assert result == ["models", "store", "cli"]
+
+    def test_single_backtick_item(self) -> None:
+        from factory.spec.parser import _parse_comma_list
+
+        result = _parse_comma_list("`models`")
+        assert result == ["models"]
