@@ -459,6 +459,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     ceo_tailer = _start_ceo_tailer(
         wt_path, cycle_span_id, _ceo_start,
         on_line=_make_ceo_message_emitter(wt_path),
+        is_headless=headless,
     )
 
     if headless:
@@ -530,15 +531,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 def _start_ceo_tailer(
     wt_path: Path, cycle_span_id: str | None, start_time: float,
     on_line: Callable[[bytes], None] | None = None,
+    is_headless: bool = False,
 ) -> object | None:
-    """Create the CEO span eagerly and start a TranscriptTailer."""
+    """Create the CEO span eagerly and start a TranscriptTailer.
+
+    When *is_headless* is True, skip span creation — headless runs manage
+    their own telemetry via the completion guard.
+    """
     try:
         from factory.telemetry import TranscriptTailer, begin_span, flush, is_enabled
 
         trace_id = ""
         ceo_span_id = ""
 
-        if cycle_span_id and is_enabled():
+        if cycle_span_id and is_enabled() and not is_headless:
             trace_id = os.environ.get("FACTORY_TRACE_ID", "")
             if trace_id:
                 span = begin_span(trace_id, cycle_span_id, "ceo")
@@ -563,17 +569,30 @@ def _start_ceo_tailer(
 
 
 def _stop_ceo_tailer(tailer: object | None) -> None:
-    """Stop the tailer, do final drain, and end the CEO span."""
+    """Stop the tailer, drain remaining lines, and end the CEO span.
+
+    Uses the observation object directly when available so that output
+    metadata (line count) is attached before the span closes.
+    """
     if tailer is None:
         return
     try:
-        from factory.telemetry import end_span
+        from factory.telemetry import _observations, end_span, flush
 
-        tailer.stop_and_drain()  # type: ignore[attr-defined]
+        count = tailer.stop_and_drain()  # type: ignore[attr-defined]
         trace_id = os.environ.get("FACTORY_TRACE_ID", "")
         span_id = getattr(tailer, "span_id", None)
         if trace_id and span_id:
-            end_span(trace_id, span_id, status="completed")
+            obs = _observations.get(span_id)
+            if obs is not None:
+                obs.update(
+                    output={"status": "completed", "lines_captured": count},
+                )
+                obs.end()
+                _observations.pop(span_id, None)
+            else:
+                end_span(trace_id, span_id, status="completed")
+            flush()
     except Exception:
         pass
 

@@ -17,7 +17,7 @@ HARBOR_DATASET="${3:-swe-bench/swe-bench-verified}"
 
 BENCHMARK="swebench"
 RUN_ID="ci-swebench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-swebench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-swebench-${BENCHMARK_SOLVER:-factory}.json"
 
 JOBS_DIR=""
 

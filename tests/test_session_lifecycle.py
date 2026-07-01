@@ -191,21 +191,52 @@ def test_start_ceo_tailer_creates_span_and_starts_tailer(
     mock_start.assert_called_once()
 
 
+def test_start_ceo_tailer_skips_span_in_headless_mode(
+    tmp_path: Path, _mock_telemetry, monkeypatch,
+) -> None:
+    """In headless mode, _start_ceo_tailer must NOT create a Langfuse span
+    but still starts the tailer for the on_line callback."""
+    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    on_line = MagicMock()
+    with patch.object(TranscriptTailer, "start") as mock_start, \
+         patch("factory.telemetry.begin_span") as mock_begin:
+        tailer = _start_ceo_tailer(
+            tmp_path, "span-001", time.time(),
+            on_line=on_line, is_headless=True,
+        )
+
+    assert tailer is not None
+    assert tailer.span_id == ""
+    mock_begin.assert_not_called()
+    mock_start.assert_called_once()
+
+
 def test_stop_ceo_tailer_noop_when_none() -> None:
     _stop_ceo_tailer(None)
 
 
 def test_stop_ceo_tailer_drains_and_ends_span(monkeypatch) -> None:
-    monkeypatch.setenv("FACTORY_TRACE_ID", "trace-001")
+    """_stop_ceo_tailer mirrors _complete_span_safe: obs.update() → obs.end() → flush()."""
+    import factory.telemetry as tmod
+
+    mock_obs = MagicMock()
+    tmod._observations["span-ceo"] = mock_obs
+
     mock_tailer = MagicMock()
     mock_tailer.span_id = "span-ceo"
     mock_tailer.stop_and_drain.return_value = 5
 
-    with patch("factory.telemetry.end_span") as mock_end:
+    with patch("factory.telemetry.flush") as mock_flush:
         _stop_ceo_tailer(mock_tailer)
 
     mock_tailer.stop_and_drain.assert_called_once()
-    mock_end.assert_called_once_with("trace-001", "span-ceo", status="completed")
+    mock_obs.update.assert_called_once_with(
+        output="CEO session completed (5 observations ingested)",
+        metadata={"status": "completed", "observations_count": 5},
+    )
+    mock_obs.end.assert_called_once()
+    mock_flush.assert_called_once()
+    assert "span-ceo" not in tmod._observations
 
 
 # ---------------------------------------------------------------------------

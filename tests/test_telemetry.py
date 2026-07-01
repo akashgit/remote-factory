@@ -31,11 +31,22 @@ class TestIsEnabled:
 
     def test_returns_false_without_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
         with patch.object(telemetry_mod, "_HAS_LANGFUSE", True):
             assert telemetry_mod.is_enabled() is False
 
     def test_returns_true_when_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        mock_client = MagicMock()
+        mock_langfuse_cls = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
+        assert telemetry_mod.is_enabled() is True
+        assert telemetry_mod._client is mock_client
+
+    def test_returns_true_with_langfuse_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.example.com")
         mock_client = MagicMock()
         mock_langfuse_cls = MagicMock(return_value=mock_client)
         monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
@@ -189,6 +200,35 @@ class TestFlush:
     def test_noop_when_no_client(self) -> None:
         telemetry_mod._client = None
         telemetry_mod.flush()
+
+
+class TestClaudeProjectsDir:
+    def test_find_transcript_respects_claude_config_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        custom_dir = tmp_path / "custom-claude"
+        project_path = tmp_path / "my-project"
+        dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
+        transcript_dir = custom_dir / "projects" / dir_name
+        transcript_dir.mkdir(parents=True)
+        transcript_file = transcript_dir / "sess-abc.jsonl"
+        transcript_file.write_text('{"type":"user"}\n')
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(custom_dir))
+
+        result = telemetry_mod._find_transcript("sess-abc", project_path)
+        assert result is not None
+        assert result == transcript_file
+
+    def test_get_claude_projects_dir_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        result = telemetry_mod._get_claude_projects_dir()
+        assert result == Path.home() / ".claude" / "projects"
+
+    def test_get_claude_projects_dir_custom(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/tmp/custom-claude")
+        result = telemetry_mod._get_claude_projects_dir()
+        assert result == Path("/tmp/custom-claude/projects")
 
 
 class TestIngestTranscript:

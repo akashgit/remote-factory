@@ -9,6 +9,190 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 
+class ProgramBenchFactoryCeo(BaseInstalledAgent):
+    """Runs ``factory ceo`` for ProgramBench tasks.
+
+    Assumes Claude Code and Factory CLI are pre-installed in the Docker
+    image (via the task Dockerfile), so install() only verifies they exist.
+    """
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "programbench-factory-ceo"
+
+    @override
+    def get_version_command(self) -> str | None:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'which factory 2>/dev/null || echo "unknown"'
+        )
+
+    @override
+    def parse_version(self, stdout: str) -> str:
+        match = re.search(r"(\d+\.\d+\.\d+)", stdout.strip())
+        return match.group(1) if match else stdout.strip()
+
+    @override
+    async def install(self, environment: BaseEnvironment) -> None:
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+                "claude --version && factory --help >/dev/null"
+            ),
+        )
+
+    @override
+    async def run(
+        self,
+        instruction: str,
+        environment: BaseEnvironment,
+        context: AgentContext,
+    ) -> None:
+        """Run factory ceo to solve the task described in *instruction*."""
+        api_key = (
+            self._get_env("ANTHROPIC_API_KEY")
+            or self._get_env("ANTHROPIC_AUTH_TOKEN")
+            or ""
+        )
+
+        env: dict[str, str] = {
+            "ANTHROPIC_API_KEY": api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_CONFIG_DIR": "/logs/agent/sessions",
+        }
+
+        if self.model_name:
+            env["ANTHROPIC_MODEL"] = self.model_name.split("/")[-1]
+
+        for var in (
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_MODEL",
+            "CLAUDE_CODE_USE_VERTEX",
+            "ANTHROPIC_VERTEX_PROJECT_ID",
+            "CLOUD_ML_REGION",
+            "GOOGLE_APPLICATION_CREDENTIALS",
+            "CLAUDE_CODE_SUBAGENT_MODEL",
+            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
+            "MAX_THINKING_TOKENS",
+            "CLAUDE_CODE_EFFORT_LEVEL",
+        ):
+            val = self._get_env(var) or os.environ.get(var)
+            if val and var not in env:
+                env[var] = val
+
+        env = {k: v for k, v in env.items() if v}
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "mkdir -p $CLAUDE_CONFIG_DIR/debug "
+                "$CLAUDE_CONFIG_DIR/projects "
+                "$CLAUDE_CONFIG_DIR/shell-snapshots "
+                "$CLAUDE_CONFIG_DIR/statsig "
+                "$CLAUDE_CONFIG_DIR/todos "
+                "$CLAUDE_CONFIG_DIR/skills"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "cat > ./factory.md << 'FACTORYEOF'\n"
+                "---\n"
+                "goal: Reverse-engineer the compiled binary and produce equivalent source code\n"
+                "---\n"
+                "FACTORYEOF"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'set -e; '
+                'if [ ! -d .git ]; then git init -b main; fi && '
+                'git config user.name "Factory Agent" && '
+                'git config user.email "factory@agent.local" && '
+                'printf "/proc\\n/sys\\n/dev\\n/run\\n/tmp\\n/var\\n/root\\n'
+                '/home\\n/usr\\n/bin\\n/sbin\\n/lib\\n/lib64\\n/etc\\n'
+                '/boot\\n/mnt\\n/opt\\n/srv\\n/media\\n/logs\\n" > .gitignore && '
+                'git add -A && '
+                'git commit -m "initial state" --allow-empty'
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=f"cat > /tmp/task-instruction.md << 'INSTREOF'\n{instruction}\nINSTREOF",
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+                'export FACTORY_CEO_RESPAWN_DISABLED=1; '
+                "factory ceo . --headless --mode build --no-github "
+                "--prompt /tmp/task-instruction.md "
+                "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
+                "; exit 0"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "set +e; "
+                'FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *"); '
+                'if [ -n "$FACTORY_BRANCH" ]; then '
+                '  echo "Merging factory branch: $FACTORY_BRANCH"; '
+                '  git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                '    || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                "    || true; "
+                "fi; "
+                'if [ -z "$FACTORY_BRANCH" ]; then '
+                '  echo "No factory branch, finding orphaned commits..."; '
+                "  ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null "
+                "    | grep 'unreachable commit' | awk '{print \\$3}'); "
+                '  if [ -n "$ORPHAN_COMMITS" ]; then '
+                '    BEST_COMMIT=""; '
+                "    BEST_TIME=0; "
+                "    for SHA in $ORPHAN_COMMITS; do "
+                '      COMMIT_TIME=$(git show -s --format=\'%ct\' "$SHA" 2>/dev/null || echo 0); '
+                '      if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then '
+                "        BEST_TIME=$COMMIT_TIME; "
+                "        BEST_COMMIT=$SHA; "
+                "      fi; "
+                "    done; "
+                '    if [ -n "$BEST_COMMIT" ]; then '
+                '      echo "Recovering from orphan tip: $BEST_COMMIT"; '
+                '      echo "  Message: $(git log -1 --format=\'%%s\' $BEST_COMMIT 2>/dev/null)"; '
+                '      git checkout "$BEST_COMMIT" -- . 2>/dev/null || true; '
+                "      git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true; "
+                "      rm -rf .factory/ eval/ factory.md 2>/dev/null || true; "
+                "    fi; "
+                "  fi; "
+                "fi; "
+                'for wt in .factory-worktrees/*/; do '
+                '  if [ -d "$wt" ]; then '
+                '    echo "Recovering files from worktree: $wt"; '
+                "    rsync -a --exclude='.git' --exclude='.factory' "
+                '      "$wt" ./ 2>/dev/null || true; '
+                "  fi; "
+                "done; "
+                "exit 0"
+            ),
+            env=env,
+        )
+
+
 class FactoryCeo(BaseInstalledAgent):
     """Runs ``factory ceo`` to solve benchmark tasks.
 
@@ -121,6 +305,9 @@ class FactoryCeo(BaseInstalledAgent):
             "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
             "MAX_THINKING_TOKENS",
             "CLAUDE_CODE_EFFORT_LEVEL",
+            "LANGFUSE_HOST",
+            "LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_SECRET_KEY",
         ):
             val = self._get_env(var) or os.environ.get(var)
             if val and var not in env:
@@ -186,7 +373,8 @@ class FactoryCeo(BaseInstalledAgent):
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory ceo . --headless --mode build "
+                'export FACTORY_CEO_RESPAWN_DISABLED=1; '
+                "factory ceo . --headless --mode build --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"

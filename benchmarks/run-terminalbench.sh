@@ -17,7 +17,7 @@ SOLVER_TIMEOUT="${2:-1800}"
 BENCHMARK="terminalbench"
 INSTANCE_ID="${TASK_NAME}"
 RUN_ID="ci-terminalbench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-terminalbench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-terminalbench-${BENCHMARK_SOLVER:-factory}.json"
 
 JOBS_DIR=""
 
