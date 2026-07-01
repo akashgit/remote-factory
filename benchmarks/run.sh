@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]
 #
 # Arguments:
-#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench
+#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench, legacybench
 #   instance_id    Required. Benchmark-specific instance identifier
 #
 # Options:
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ $# -lt 2 ]; then
     echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]"
     echo ""
-    echo "Benchmarks: swebench, featurebench, terminalbench, programbench"
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
     exit 1
 fi
 
@@ -76,11 +76,11 @@ export BENCHMARK_SOLVER="${SOLVER}"
 # ── Validate benchmark ──
 
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench|programbench)
+    swebench|featurebench|terminalbench|programbench|legacybench)
         ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
         exit 1
         ;;
 esac
@@ -108,5 +108,9 @@ case "${BENCHMARK}" in
     programbench)
         [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
         exec "${SCRIPT_DIR}/run-programbench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
+        ;;
+    legacybench)
+        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
+        exec "${SCRIPT_DIR}/run-legacybench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
         ;;
 esac

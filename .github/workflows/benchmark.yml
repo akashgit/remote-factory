@@ -14,6 +14,7 @@ on:
           - featurebench
           - terminalbench
           - programbench
+          - legacybench
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -76,6 +77,10 @@ jobs:
             solver: factory
             default_instance: 'cmatrix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          - benchmark: legacybench
+            solver: factory
+            default_instance: '1907c2-c-debug-legacy-buddy-fix'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
@@ -93,6 +98,10 @@ jobs:
             solver: claude-code
             default_instance: 'cmatrix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: legacybench
+            solver: claude-code
+            default_instance: '1907c2-c-debug-legacy-buddy-fix'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
