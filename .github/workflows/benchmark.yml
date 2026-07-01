@@ -205,6 +205,31 @@ jobs:
             done
           fi
 
+      - name: Analyze failures
+        if: always() && steps.gate.outputs.run == 'true'
+        continue-on-error: true
+        env:
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
+        run: |
+          pip install python-dotenv requests --quiet
+          for result_file in benchmarks/results/*.json; do
+            [ -f "$result_file" ] || continue
+            resolved=$(python3 -c "import json; print(json.load(open('$result_file')).get('resolved', False))")
+            if [ "$resolved" = "False" ]; then
+              echo "Analyzing failure: $result_file"
+              python3 scripts/langfuse/analyze_failure.py "$result_file" \
+                --output "benchmarks/results/$(basename "$result_file" .json)-analysis.md" \
+                || echo "Analysis failed for $result_file (non-fatal)"
+              analysis_file="benchmarks/results/$(basename "$result_file" .json)-analysis.md"
+              if [ -f "$analysis_file" ]; then
+                cat "$analysis_file" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+
   report:
     needs: benchmark
     if: always()
@@ -354,6 +379,16 @@ jobs:
 
             if (!hasResults) {
               body += '_No benchmark results found._\n';
+            }
+
+            for (const file of files) {
+              if (file.endsWith('-analysis.md')) {
+                const analysis = fs.readFileSync('results/' + file, 'utf8');
+                const benchName = file.replace('-analysis.md', '').replace(/^\d{8}T\d{6}Z-/, '');
+                body += '<details><summary>Failure Analysis: ' + benchName + '</summary>\n\n';
+                body += analysis;
+                body += '\n</details>\n\n';
+              }
             }
 
             const historyPath = 'benchmark-data/results.jsonl';
