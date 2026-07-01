@@ -134,6 +134,55 @@ class TestClaudeRunner:
             assert "--append-system-prompt" not in [c for c in cmd if c != "--append-system-prompt-file"]
 
 
+class TestTelemetryPlatformSuppression:
+    def test_headless_sets_telemetry_platform_empty(self, tmp_path: Path) -> None:
+        """ClaudeRunner.headless() sets TELEMETRY_PLATFORM='' to suppress native tracing."""
+        runner = ClaudeRunner()
+        _, env, temp_files = runner.build_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+        env["TELEMETRY_PLATFORM"] = ""
+        assert env["TELEMETRY_PLATFORM"] == ""
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_interactive_sets_telemetry_platform_empty(self, tmp_path: Path) -> None:
+        """ClaudeRunner.interactive_run() sets TELEMETRY_PLATFORM='' to suppress native tracing."""
+        runner = ClaudeRunner()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = type("Result", (), {"returncode": 0})()
+            runner.interactive_run(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path,
+            ))
+
+            call_kwargs = mock_run.call_args[1]
+            assert call_kwargs["env"]["TELEMETRY_PLATFORM"] == ""
+
+    async def test_headless_subprocess_env_suppresses_telemetry(self, tmp_path: Path) -> None:
+        """The actual subprocess env in headless() contains TELEMETRY_PLATFORM=''."""
+        runner = ClaudeRunner()
+
+        with patch(
+            "factory.runners._subprocess.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b'{"result":"ok"}', b"")
+
+            with patch(
+                "factory.runners._subprocess.asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                await runner.headless(AgentRunRequest(
+                    prompt="Test", task="Test", cwd=tmp_path,
+                ))
+
+                call_kwargs = mock_exec.call_args.kwargs
+                assert call_kwargs["env"]["TELEMETRY_PLATFORM"] == ""
+
+
 class TestBobRunner:
     def test_is_dry_run_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("FACTORY_BOB_DRY_RUN", "1")

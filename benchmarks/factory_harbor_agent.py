@@ -121,6 +121,9 @@ class FactoryCeo(BaseInstalledAgent):
             "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
             "MAX_THINKING_TOKENS",
             "CLAUDE_CODE_EFFORT_LEVEL",
+            "LANGFUSE_HOST",
+            "LANGFUSE_PUBLIC_KEY",
+            "LANGFUSE_SECRET_KEY",
         ):
             val = self._get_env(var) or os.environ.get(var)
             if val and var not in env:
