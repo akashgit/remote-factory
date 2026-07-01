@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from datetime import datetime
 from pathlib import Path
 
 import structlog
+from jinja2 import Environment, FileSystemLoader
 
 from factory.models import AgentVerdict, Observation, PerformanceReport
 
@@ -149,6 +151,39 @@ def parse_observations(project_path: Path) -> list[Observation]:
     return observations
 
 
+def generate_html_report(
+    project_path: Path, output_path: Path | None = None,
+) -> Path:
+    """Render a self-contained HTML report for a project."""
+    from factory.store import ExperimentStore
+
+    report = build_performance_report(project_path)
+
+    store = ExperimentStore(project_path)
+    try:
+        experiments = asyncio.run(store.load_history())
+    except Exception:
+        experiments = []
+
+    template_dir = Path(__file__).parent / "templates"
+    env = Environment(loader=FileSystemLoader(str(template_dir)), autoescape=True)
+    template = env.get_template("report.html.j2")
+
+    html = template.render(
+        report=report,
+        experiments=experiments,
+        generated_at=report.generated_at.strftime("%Y-%m-%d %H:%M:%S"),
+    )
+
+    if output_path is None:
+        output_path = project_path / ".factory" / "report.html"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(html)
+
+    log.info("html_report_generated", path=str(output_path))
+    return output_path
+
+
 def build_performance_report(project_path: Path) -> PerformanceReport:
     """Build a complete performance report for a project."""
     from factory.store import ExperimentStore
@@ -157,7 +192,6 @@ def build_performance_report(project_path: Path) -> PerformanceReport:
     store = ExperimentStore(project_path)
 
     try:
-        import asyncio
         records = asyncio.run(store.load_history())
     except Exception:
         records = []

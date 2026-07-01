@@ -1240,6 +1240,17 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    """Generate a self-contained HTML report for a project."""
+    from factory.report import generate_html_report
+
+    project_path = Path(args.path).resolve()
+    output_path = Path(args.output).resolve() if args.output else None
+    result = generate_html_report(project_path, output_path)
+    print(f"Report written to {result}")
+    return 0
+
+
 def cmd_report_update(args: argparse.Namespace) -> int:
     """Generate a performance report for a project."""
     from factory.report import save_performance_report
@@ -4251,7 +4262,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Project Intelligence", [
         "eval", "history", "study", "status", "summary", "diff", "explain", "export",
-        "research", "insights", "report-update", "baseline", "clean-pr",
+        "research", "insights", "report", "report-update", "baseline", "clean-pr",
     ]),
     ("Backlog & Refinement", [
         "backlog-add", "backlog-list", "backlog-remove", "deferred-list", "deferred-remove",
@@ -4472,6 +4483,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--projects-dir", default=None,
         help="Directory containing factory-managed projects (default: from registry or ~/factory-projects)",
     )
+
+    # report
+    p = sub.add_parser("report", help="Generate self-contained HTML report for a project")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--output", default=None, help="Output HTML file path (default: <project>/.factory/report.html)")
 
     # report-update
     p = sub.add_parser("report-update", help="Generate performance report for a project")
@@ -4992,6 +5008,7 @@ def main(argv: list[str] | None = None) -> int:
         "explain": cmd_explain,
         "export": cmd_export,
         "insights": cmd_insights,
+        "report": cmd_report,
         "report-update": cmd_report_update,
         "registry-list": cmd_registry_list,
         "ace": cmd_ace,

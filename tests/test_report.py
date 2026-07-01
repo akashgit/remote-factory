@@ -4,6 +4,7 @@ from pathlib import Path
 
 from factory.report import (
     build_performance_report,
+    generate_html_report,
     load_performance_report,
     parse_ceo_verdicts,
     parse_observations,
@@ -176,3 +177,74 @@ def test_verdict_patterns_in_report(tmp_path: Path) -> None:
     report = build_performance_report(project)
     assert "researcher:PROCEED" in report.verdict_patterns
     assert "builder:REDIRECT" in report.verdict_patterns
+
+
+def test_generate_html_report_creates_file(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [
+        {
+            "id": "1", "timestamp": "2026-01-01T00:00:00",
+            "hypothesis": "Add tests", "change_summary": "Added unit tests",
+            "verdict": "keep", "score_before": "0.7", "score_after": "0.8",
+            "delta": "0.1",
+        },
+    ])
+
+    result = generate_html_report(project)
+    assert result.exists()
+    assert result == project / ".factory" / "report.html"
+
+
+def test_generate_html_report_contains_structure(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [
+        {
+            "id": "1", "timestamp": "2026-01-01T00:00:00",
+            "hypothesis": "Add tests", "change_summary": "Added unit tests",
+            "verdict": "keep", "score_before": "0.7", "score_after": "0.8",
+            "delta": "0.1",
+        },
+    ])
+    (factory_dir / "reviews" / "ceo-verdict-researcher.md").write_text(
+        "- **Verdict:** PROCEED\n- **Rationale:** Good coverage\n"
+    )
+
+    result = generate_html_report(project)
+    html = result.read_text()
+
+    assert "<table>" in html
+    assert "Add tests" in html
+    assert "keep" in html.lower()
+    assert "0.70" in html
+    assert "0.80" in html
+    assert "+0.10" in html
+    assert "PROCEED" in html
+    assert "researcher" in html
+    assert "Summary" in html
+    assert "Experiments" in html
+    assert "Agent Verdicts" in html
+
+
+def test_generate_html_report_empty_project(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    _make_factory_dir(project)
+    _write_results_tsv(project / ".factory", [])
+
+    result = generate_html_report(project)
+    assert result.exists()
+    html = result.read_text()
+    assert "No experiments recorded." in html
+    assert "No agent verdicts recorded." in html
+
+
+def test_generate_html_report_custom_output(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    _make_factory_dir(project)
+    _write_results_tsv(project / ".factory", [])
+
+    custom = tmp_path / "custom" / "report.html"
+    result = generate_html_report(project, output_path=custom)
+    assert result == custom
+    assert custom.exists()

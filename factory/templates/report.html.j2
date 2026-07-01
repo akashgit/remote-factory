@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ report.project_name }} — Factory Report</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-dim: #7d8590;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --cyan: #39d2e0;
+    --font: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 24px;
+  }
+
+  header {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+    margin-bottom: 24px;
+  }
+
+  h1 {
+    color: var(--cyan);
+    font-size: 22px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .timestamp {
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  h2 {
+    color: var(--accent);
+    font-size: 15px;
+    margin-bottom: 12px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  section { margin-bottom: 32px; }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+  }
+
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 14px 16px;
+  }
+
+  .stat .label {
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .stat .value {
+    font-size: 22px;
+    font-weight: 700;
+    margin-top: 4px;
+  }
+
+  .stat .value.green { color: var(--green); }
+  .stat .value.red { color: var(--red); }
+  .stat .value.yellow { color: var(--yellow); }
+  .stat .value.cyan { color: var(--cyan); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  th {
+    text-align: left;
+    padding: 10px 12px;
+    background: var(--bg);
+    color: var(--text-dim);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .badge.keep, .badge.proceed { background: rgba(63, 185, 80, 0.15); color: var(--green); }
+  .badge.revert, .badge.abort { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+  .badge.error, .badge.redirect { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+
+  .delta.positive { color: var(--green); }
+  .delta.negative { color: var(--red); }
+  .delta.zero { color: var(--text-dim); }
+
+  .hypothesis { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .verdict-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    margin-bottom: 8px;
+  }
+
+  .verdict-card .role {
+    color: var(--accent);
+    font-weight: 600;
+    margin-right: 8px;
+  }
+
+  .verdict-card .rationale {
+    color: var(--text-dim);
+    font-size: 12px;
+    margin-top: 4px;
+  }
+
+  .empty {
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 16px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>{{ report.project_name }}</h1>
+  <div class="timestamp">Generated {{ generated_at }}</div>
+</header>
+
+<section>
+  <h2>Summary</h2>
+  <div class="stats">
+    <div class="stat">
+      <div class="label">Total Experiments</div>
+      <div class="value cyan">{{ report.total_experiments }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Keep</div>
+      <div class="value green">{{ report.keep_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Revert</div>
+      <div class="value red">{{ report.revert_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Error</div>
+      <div class="value yellow">{{ report.error_count }}</div>
+    </div>
+    <div class="stat">
+      <div class="label">Keep Rate</div>
+      <div class="value green">{{ "%.0f"|format(report.keep_rate * 100) }}%</div>
+    </div>
+    <div class="stat">
+      <div class="label">Latest Score</div>
+      <div class="value cyan">{% if report.latest_score is not none %}{{ "%.2f"|format(report.latest_score) }}{% else %}&mdash;{% endif %}</div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Experiments</h2>
+  {% if experiments %}
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Timestamp</th>
+        <th>Hypothesis</th>
+        <th>Verdict</th>
+        <th>Before</th>
+        <th>After</th>
+        <th>Delta</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for exp in experiments %}
+      <tr>
+        <td>{{ exp.id }}</td>
+        <td>{{ exp.timestamp.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td class="hypothesis" title="{{ exp.hypothesis }}">{{ exp.hypothesis[:80] }}</td>
+        <td><span class="badge {{ exp.verdict }}">{{ exp.verdict }}</span></td>
+        <td>{% if exp.score_before is not none %}{{ "%.2f"|format(exp.score_before) }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if exp.score_after is not none %}{{ "%.2f"|format(exp.score_after) }}{% else %}&mdash;{% endif %}</td>
+        <td>
+          {% if exp.delta is not none %}
+            <span class="delta {% if exp.delta > 0 %}positive{% elif exp.delta < 0 %}negative{% else %}zero{% endif %}">
+              {{ "%+.2f"|format(exp.delta) }}
+            </span>
+          {% else %}&mdash;{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No experiments recorded.</div>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Agent Verdicts</h2>
+  {% if report.agent_verdicts %}
+    {% for v in report.agent_verdicts %}
+    <div class="verdict-card">
+      <span class="role">{{ v.role }}</span>
+      <span class="badge {{ v.verdict | lower }}">{{ v.verdict }}</span>
+      {% if v.rationale %}
+      <div class="rationale">{{ v.rationale }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="empty">No agent verdicts recorded.</div>
+  {% endif %}
+</section>
+</body>
+</html>
