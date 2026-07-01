@@ -28,11 +28,12 @@ def is_enabled() -> bool:
         return True
     if not _HAS_LANGFUSE:
         return False
-    if not os.environ.get("LANGFUSE_HOST"):
+    host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
+    if not host:
         return False
     try:
         _client = Langfuse()
-        log.debug("langfuse_initialized", host=os.environ["LANGFUSE_HOST"])
+        log.debug("langfuse_initialized", host=host)
         return True
     except Exception as exc:
         log.warning("langfuse_init_failed", error=str(exc))
@@ -192,9 +193,17 @@ def flush() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _get_claude_projects_dir() -> Path:
+    """Return the Claude Code projects directory, respecting CLAUDE_CONFIG_DIR."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir).expanduser() / "projects"
+    return Path.home() / ".claude" / "projects"
+
+
 def _find_transcript(claude_session_id: str, project_path: Path) -> Path | None:
     """Locate a Claude Code transcript JSONL, trying multiple path patterns."""
-    claude_dir = Path.home() / ".claude" / "projects"
+    claude_dir = _get_claude_projects_dir()
     dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
     direct = claude_dir / dir_name / f"{claude_session_id}.jsonl"
     if direct.exists():
@@ -387,7 +396,7 @@ def ingest_transcript_to_span(
 
 def _find_recent_transcript(project_path: Path, session_start: float) -> Path | None:
     """Find the most recently modified JSONL transcript after *session_start*."""
-    claude_dir = Path.home() / ".claude" / "projects"
+    claude_dir = _get_claude_projects_dir()
     dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
     proj_dir = claude_dir / dir_name
     if not proj_dir.exists():
