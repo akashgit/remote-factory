@@ -14,7 +14,13 @@ from unittest.mock import patch, AsyncMock, MagicMock
 
 import pytest
 
-from factory.cli import main, build_parser, _is_github_url, _slugify, _extract_project_name, _dedupe_project_path, _resolve_input, _persist_spec, _has_research_target, _build_ceo_task, _ensure_repo, _materialize_project, _is_scaffold_only, _quick_classify, _welcome_wizard
+from factory.cli import main, build_parser, _build_ceo_task, _materialize_project, _resolve_input
+from factory.cli._helpers import _is_github_url
+from factory.cli._path_resolver import (
+    _slugify, _extract_project_name, _dedupe_project_path,
+    _persist_spec, _has_research_target, _ensure_repo, _is_scaffold_only,
+)
+from factory.cli._wizard import _quick_classify, _welcome_wizard
 from factory.models import ExperimentRecord
 from factory.store import ExperimentStore
 
@@ -38,7 +44,7 @@ def _mock_foreground():
                side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")), \
          patch("factory.worktree.remove_worktree"), \
          patch("factory.worktree.prune_stale", return_value=[]), \
-         patch("factory.cli.ceo._read_target_branch", return_value="main"), \
+         patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"), \
          patch("factory.cli._path_resolver._is_scaffold_only", return_value=False), \
          patch("factory.cli._helpers._ensure_dashboard"):
         yield mock_run
@@ -1245,7 +1251,7 @@ class TestCmdCeo:
     def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
         """cmd_ceo --headless spawns CEO agent via invoke_agent."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--headless"])
         assert result == 0
         mock_agent.assert_called_once()
@@ -1256,7 +1262,7 @@ class TestCmdCeo:
     def test_ceo_headless_meta_mode_task(self, tmp_path):
         """cmd_ceo --headless with --mode=meta includes meta instructions."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
@@ -1267,9 +1273,9 @@ class TestCmdCeo:
         url = "https://github.com/user/repo"
         with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.ceo._chain_modes", return_value=0), \
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0), \
              patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
-             patch("factory.cli.ceo._read_target_branch", return_value="main"):
+             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"):
             result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(
@@ -1279,7 +1285,7 @@ class TestCmdCeo:
     def test_ceo_headless_timeout_is_2_hours(self, tmp_path):
         """CEO agent gets 7200s timeout in headless mode."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 7200.0
@@ -1486,8 +1492,8 @@ class TestResolveInput:
         idea_file = tmp_path / "Test Idea \u2014 Details.md"
         idea_file.write_text("# Test Idea\nBuild X that does Y")
 
-        with patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path / "projects"), \
-             patch("factory.cli.ceo._chain_modes", return_value=0), \
+        with patch("factory.cli._ceo_helpers._get_projects_dir", return_value=tmp_path / "projects"), \
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0), \
              patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
             main(["ceo", str(idea_file), "--headless"])
 
@@ -1556,7 +1562,7 @@ class TestResearchMode:
               "result_path": "results.json"}
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.ceo._chain_modes", return_value=0):
+             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
             result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
@@ -1770,9 +1776,9 @@ class TestCmdTmuxBareCLI:
         from factory.cli import cmd_tmux
         import argparse
 
-        with patch("factory.cli.ceo._tmux_available", return_value=True), \
-             patch("factory.cli.ceo._tmux_session_alive", return_value=True), \
-             patch("factory.cli.ceo.time.sleep"), \
+        with patch("factory.cli._tmux_commands._tmux_available", return_value=True), \
+             patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True), \
+             patch("factory.cli._tmux_commands.time.sleep"), \
              patch("subprocess.run") as mock_run:
             mock_run.return_value = type("R", (), {"returncode": 1})()  # has-session fails
             mock_run.side_effect = [
@@ -1972,7 +1978,7 @@ class TestDesignFileInput:
     def test_raw_idea_persists_spec(self, tmp_path):
         """When --mode design receives a raw string, the spec should be persisted."""
         with _mock_foreground(), \
-             patch("factory.cli.ceo._get_projects_dir", return_value=tmp_path):
+             patch("factory.cli._ceo_helpers._get_projects_dir", return_value=tmp_path):
             main(["ceo", "Build a CLI todo app", "--mode", "design"])
         matches = [p for p in tmp_path.iterdir() if p.is_dir()]
         assert len(matches) == 1

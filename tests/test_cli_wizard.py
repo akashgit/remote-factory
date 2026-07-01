@@ -8,16 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from factory.cli import (
+from factory.cli import main
+from factory.cli._wizard import (
     _CLI_REF,
     _ask_follow_ups,
     _classify_with_llm,
     _quick_classify,
-    _show_spinner,
     _substitute_answers,
     _welcome_wizard,
-    main,
 )
+from factory.cli._helpers import _show_spinner
 from factory.models import AgentRunResult
 
 
