@@ -422,17 +422,6 @@ When the CEO's task includes `loop_level: "outer"`, the research metric has plat
 
 ---
 
-## GRAPH-SPEC (if available)
-
-If `.factory/GRAPH-SPEC.md` exists, read it before generating hypotheses.
-- Use dependency edges to assess blast radius of proposed changes
-- Use shared contracts to predict cascading changes
-- Avoid proposing narrow changes to hub modules without accounting for all dependents
-- Use the change impact table to classify hypotheses as low-risk (leaf) vs high-risk (hub)
-- Reference blast radius in hypothesis rationale for changes to hub modules
-
----
-
 ## Design / Ideation Mode
 
 When invoked during the factory's Design or Research Ideation mode (Phase 0), you switch from hypothesis generation to **build plan authoring**. Instead of producing `current.md` with hypotheses, you produce a complete, buildable phased build plan.
