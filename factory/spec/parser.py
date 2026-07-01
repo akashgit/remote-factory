@@ -120,10 +120,13 @@ class RepoSpec:
     implementation_checklist: str = ""
 
     def get_module(self, name: str) -> ModuleSpec | None:
-        """Look up a module by name (case-insensitive)."""
+        """Look up a module by name or path (case-insensitive)."""
         lower = name.lower()
         for m in self.modules:
             if m.name.lower() == lower:
+                return m
+        for m in self.modules:
+            if m.path and m.path.lower() == lower:
                 return m
         return None
 
@@ -132,7 +135,7 @@ def _parse_comma_list(text: str) -> list[str]:
     """Split a comma-separated string into a trimmed list, filtering empties."""
     if not text or text.strip().lower() in ("none", "—", "-", "n/a", ""):
         return []
-    return [item.strip() for item in text.split(",") if item.strip()]
+    return [item.strip().strip("`") for item in text.split(",") if item.strip()]
 
 
 def _extract_field(block: str, field_name: str) -> str:
@@ -231,9 +234,17 @@ def _parse_modules(content: str) -> list[ModuleSpec]:
         end = matches[i + 1].start() if i + 1 < len(matches) else len(module_section)
         block = module_section[start:end]
 
+        path_from_field = _extract_field(block, "Path")
+        if not path_from_field:
+            backtick_match = re.search(r"`([^`]+)`", name)
+            if backtick_match:
+                candidate = backtick_match.group(1)
+                if "/" in candidate or re.search(r"\.\w+$", candidate):
+                    path_from_field = candidate
+
         mod = ModuleSpec(
             name=name,
-            path=_extract_field(block, "Path"),
+            path=path_from_field,
             role=_extract_field(block, "Role"),
             layer=_extract_field(block, "Layer"),
             classification=_extract_field(block, "Classification"),

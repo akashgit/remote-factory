@@ -168,7 +168,8 @@ def _detect_type_check_command(project_path: Path, language: str) -> str | None:
         pm = "uv run" if (project_path / "uv.lock").exists() else "python -m"
         # Find the main package directory
         src_dirs = [
-            d.name for d in project_path.iterdir()
+            d.name
+            for d in project_path.iterdir()
             if d.is_dir()
             and (d / "__init__.py").exists()
             and d.name not in ("tests", "test", ".venv", "venv")
@@ -204,19 +205,23 @@ def _detect_project_evals(project_path: Path) -> list[dict[str, str]]:
         for script in eval_dir.glob("*.py"):
             if script.name in ("score.py", "__init__.py"):
                 continue
-            evals.append({
-                "name": script.stem,
-                "command": f"python {dir_name}/{script.name}",
-                "source": "discovered",
-            })
+            evals.append(
+                {
+                    "name": script.stem,
+                    "command": f"python {dir_name}/{script.name}",
+                    "source": "discovered",
+                }
+            )
 
     for name in ("evaluate.py", "benchmark.py", "bench.py"):
         if (project_path / name).exists():
-            evals.append({
-                "name": Path(name).stem,
-                "command": f"python {name}",
-                "source": "discovered",
-            })
+            evals.append(
+                {
+                    "name": Path(name).stem,
+                    "command": f"python {name}",
+                    "source": "discovered",
+                }
+            )
 
     makefile = project_path / "Makefile"
     if makefile.exists():
@@ -224,11 +229,13 @@ def _detect_project_evals(project_path: Path) -> list[dict[str, str]]:
             text = makefile.read_text()
             for target in ("eval", "benchmark", "bench", "evaluate"):
                 if f"\n{target}:" in text or text.startswith(f"{target}:"):
-                    evals.append({
-                        "name": target,
-                        "command": f"make {target}",
-                        "source": "discovered",
-                    })
+                    evals.append(
+                        {
+                            "name": target,
+                            "command": f"make {target}",
+                            "source": "discovered",
+                        }
+                    )
         except OSError:
             pass
 
@@ -279,7 +286,7 @@ def introspect_project(project_path: Path) -> ProjectProfile:
         has_linter=lint_cmd is not None,
         has_type_checker=type_check_cmd is not None,
         has_ci=_has_ci(project_path),
-        has_spec=(project_path / "SPEC.md").exists(),
+        has_spec=(project_path / "GRAPH-SPEC.md").exists(),
         test_command=test_cmd,
         lint_command=lint_cmd,
         type_check_command=type_check_cmd,

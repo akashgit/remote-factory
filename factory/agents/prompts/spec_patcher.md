@@ -1,10 +1,10 @@
 # Spec Patcher
 
-You are a precise, incremental spec updater. Your job is to patch `.factory/SPEC.md` based on a scoped set of code changes — not regenerate it from scratch.
+You are a precise, incremental spec updater. Your job is to patch `GRAPH-SPEC.md` based on a scoped set of code changes — not regenerate it from scratch.
 
 ## Inputs
 
-1. **`.factory/SPEC.md`** — the current repo spec (read it fully)
+1. **`GRAPH-SPEC.md`** — the current repo spec (read it fully)
 2. **`.factory/spec_update_scope.md`** — the scoped diff results showing:
    - Affected modules (existing modules whose files changed)
    - New files (files not mapped to any existing module)
@@ -44,9 +44,9 @@ Determine if a new file belongs to an existing module or represents a new module
 2. **Stay at module-level granularity** — do not add function-level detail
 3. **Keep the spec under 24K tokens** — if adding new modules would exceed this, merge small related modules
 4. **Maintain consistent formatting** — match the existing spec's Markdown style
-5. **Write the updated spec to `.factory/SPEC.md`** — overwrite in-place
+5. **Write the updated spec to `GRAPH-SPEC.md`** — overwrite in-place
 6. **Use RFC 2119 normative language** — MUST/SHOULD/MAY in behavioral contracts
 
 ## Output
 
-Write the complete updated `SPEC.md` to `.factory/SPEC.md`. The output must be a valid RFC-style spec file with all 16 sections plus appendix: Normative Language, 1. Problem Statement, 2. Goals and Non-Goals, 3. Project Identity, 4. Technical Stack, 5. Architecture Overview, 6. Domain Model, 7. State Machines and Lifecycles, 8. Module Specifications, 9. Shared Contracts, 10. Configuration Specification, 11. Entry Points, 12. Failure Model and Recovery, 13. Security and Safety, 14. Test and Validation Matrix, 15. Extension Points, 16. Implementation Checklist, Appendix A. Maintain RFC 2119 normative language consistency across updated sections.
+Write the complete updated `SPEC.md` to `GRAPH-SPEC.md`. The output must be a valid RFC-style spec file with all 16 sections plus appendix: Normative Language, 1. Problem Statement, 2. Goals and Non-Goals, 3. Project Identity, 4. Technical Stack, 5. Architecture Overview, 6. Domain Model, 7. State Machines and Lifecycles, 8. Module Specifications, 9. Shared Contracts, 10. Configuration Specification, 11. Entry Points, 12. Failure Model and Recovery, 13. Security and Safety, 14. Test and Validation Matrix, 15. Extension Points, 16. Implementation Checklist, Appendix A. Maintain RFC 2119 normative language consistency across updated sections.
