@@ -62,23 +62,56 @@ done
 # ── Handle 'all' — re-invoke for each benchmark ──
 
 if [ "${BENCHMARK}" = "all" ]; then
-    log "Running full eval for ALL benchmarks"
+    log "Running full eval for ALL benchmarks (parallel)"
     echo ""
     FAILED=0
+    FAILED_NAMES=()
+    declare -A PIDS
+
+    "${BASH_SOURCE[0]}" swebench \
+        --solver "${BENCHMARK_SOLVER}" \
+        --concurrency "${CONCURRENCY}" \
+        --timeout "${SOLVER_TIMEOUT}" \
+        ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
+        ${PRESERVE_WORKSPACE:+--preserve} &
+    PIDS[swebench]=$!
+
+    "${BASH_SOURCE[0]}" featurebench \
+        --solver "${BENCHMARK_SOLVER}" \
+        --concurrency "${CONCURRENCY}" \
+        --timeout "${SOLVER_TIMEOUT}" \
+        ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
+        ${SPLIT:+--split "${SPLIT}"} \
+        ${PRESERVE_WORKSPACE:+--preserve} &
+    PIDS[featurebench]=$!
+
+    "${BASH_SOURCE[0]}" terminalbench \
+        --solver "${BENCHMARK_SOLVER}" \
+        --concurrency "${CONCURRENCY}" \
+        --timeout "${SOLVER_TIMEOUT}" \
+        ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
+        ${PRESERVE_WORKSPACE:+--preserve} &
+    PIDS[terminalbench]=$!
+
+    "${BASH_SOURCE[0]}" programbench \
+        --solver "${BENCHMARK_SOLVER}" \
+        --concurrency "${CONCURRENCY}" \
+        --timeout "${SOLVER_TIMEOUT}" \
+        ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
+        ${PRESERVE_WORKSPACE:+--preserve} &
+    PIDS[programbench]=$!
+
     for BENCH in swebench featurebench terminalbench programbench; do
-        log "Starting: ${BENCH}"
-        "${BASH_SOURCE[0]}" "${BENCH}" \
-            --solver "${BENCHMARK_SOLVER}" \
-            --concurrency "${CONCURRENCY}" \
-            --timeout "${SOLVER_TIMEOUT}" \
-            ${LIMIT_TASKS:+--limit "${LIMIT_TASKS}"} \
-            ${SPLIT:+--split "${SPLIT}"} \
-            ${PRESERVE_WORKSPACE:+--preserve} \
-            || { log "FAILED: ${BENCH}"; FAILED=$((FAILED + 1)); }
-        echo ""
+        if ! wait "${PIDS[${BENCH}]}"; then
+            log "FAILED: ${BENCH}"
+            FAILED=$((FAILED + 1))
+            FAILED_NAMES+=("${BENCH}")
+        fi
     done
+
+    echo ""
     if [ "${FAILED}" -gt 0 ]; then
-        log "${FAILED} benchmark(s) failed"
+        log "${FAILED} benchmark(s) failed: ${FAILED_NAMES[*]}"
         exit 1
     fi
     log "All benchmarks complete"

@@ -1,5 +1,29 @@
 # Full Eval Dashboard
 
+## How to Run
+
+Run a full evaluation of any benchmark through Harbor. Results appear on this dashboard after committing.
+
+**Run all benchmarks (parallel):**
+```bash
+benchmarks/run-full-eval.sh all --solver factory --concurrency 5 --timeout 36000
+```
+
+**Run individual benchmarks:**
+```bash
+benchmarks/run-full-eval.sh swebench --solver factory --concurrency 5 --timeout 36000
+benchmarks/run-full-eval.sh featurebench --solver factory --concurrency 5 --timeout 36000
+benchmarks/run-full-eval.sh terminalbench --solver factory --concurrency 5 --timeout 36000
+benchmarks/run-full-eval.sh programbench --solver factory --concurrency 5 --timeout 36000
+```
+
+**Commit results:**
+```bash
+benchmarks/commit-full-eval.sh
+```
+
+Use `--limit N` to run a subset of tasks (useful for testing).
+
 <div id="full-eval-dashboard">
   <p>Loading full eval results...</p>
 </div>
