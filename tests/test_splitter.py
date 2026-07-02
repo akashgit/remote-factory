@@ -172,6 +172,6 @@ class TestRoundTrip:
         assert not _re.search(r"\{\{[a-z_]\w*::", clean), "unresolved template slots in clean output"
         assert "<!--" not in clean
         assert "factory agent builder" in clean
-        assert "factory agent qa" in clean
+        assert "factory workflow run deep-qa" in clean
 
         assert "builder" in annotations or "health_checker" in annotations
