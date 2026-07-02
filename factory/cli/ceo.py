@@ -157,11 +157,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print(result)
         return code
 
-    # ── deep-qa mode early exit ─────────────────────────────────
-    if mode == "deep-qa":
+    # ── qa / deep-qa mode early exit ────────────────────────────
+    if mode in ("qa", "deep-qa"):
         pr_number = getattr(args, "pr", None)
         if pr_number is None:
-            print("Error: --mode deep-qa requires --pr <number>", file=sys.stderr)
+            print(f"Error: --mode {mode} requires --pr <number>", file=sys.stderr)
             return 1
 
         repo = getattr(args, "repo", None)
@@ -170,11 +170,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         project_path = Path(raw_path).expanduser().resolve()
         if not project_path.is_dir():
-            print(f"Error: project path must be an existing directory for deep-qa mode: {raw_path}",
+            print(f"Error: project path must be an existing directory for {mode} mode: {raw_path}",
                   file=sys.stderr)
             return 1
 
-        _print_banner("deep-qa")
+        _print_banner(mode)
 
         repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""
@@ -202,7 +202,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         )
 
         from factory.agents.runner import begin_cycle_session, complete_cycle_session
-        cycle_span_id = begin_cycle_session(project_path, cycle_id="deep-qa", model=model)
+        cycle_span_id = begin_cycle_session(project_path, cycle_id=mode, model=model)
 
         if not headless:
             from factory.models import AgentRunRequest
@@ -220,7 +220,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         result, code = _run(run_ceo_with_completion_guard(
             project_path,
             task,
-            mode="deep-qa",
+            mode=mode,
             runner_name=runner_name,
             model=model,
             timeout=7200.0,
