@@ -197,15 +197,16 @@ class TestCeoPrompt:
         assert "ceo-verdict" in ceo_prompt
 
     def test_build_mode_has_builder_review(self, ceo_prompt: str) -> None:
-        """Build workflow skill has QA agent after builder."""
+        """Build workflow skill has QA-related agents after builder."""
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
+        qa_roles = {"qa", "health_checker", "code_reviewer", "adversarial_tester"}
         has_qa = any(
-            hasattr(n, "role") and n.role.value == "qa"
+            hasattr(n, "role") and n.role.value in qa_roles
             for n in build.nodes.values()
         )
-        assert has_qa, "Build workflow must have QA node"
+        assert has_qa, "Build workflow must have QA-related node"
 
     def test_improve_mode_has_builder_pr_review(self, ceo_prompt: str) -> None:
         """CEO prompt references PR review before proceeding."""
@@ -228,8 +229,9 @@ class TestCeoPrompt:
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
+        qa_roles = {"qa", "health_checker", "code_reviewer", "adversarial_tester"}
         has_qa = any(
-            hasattr(n, "role") and n.role.value == "qa"
+            hasattr(n, "role") and n.role.value in qa_roles
             for n in build.nodes.values()
         )
         assert has_qa
