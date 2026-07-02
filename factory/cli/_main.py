@@ -549,9 +549,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--bg-agents", action="store_true", default=False,
                     help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
     p.add_argument("--pr", type=int, default=None,
-                    help="PR number for --mode review or --mode deep-qa (required when mode=review or mode=deep-qa)")
+                    help="PR number for --mode review (required when mode=review)")
+    p.add_argument("--pr-url", default=None, dest="pr_url",
+                    help="PR URL for --mode deep-qa (e.g. https://github.com/owner/repo/pull/123)")
     p.add_argument("--repo", default=None,
-                    help="Repository (owner/repo) for --mode review or --mode deep-qa (optional, defaults to current repo)")
+                    help="Repository (owner/repo) for --mode review (optional, defaults to current repo)")
     p.add_argument("--run-id", default=None, dest="run_id",
                     help="Use a specific run ID (e.g., UUID from external orchestrator). "
                          "First 8 chars are used for worktree naming")

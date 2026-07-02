@@ -159,12 +159,23 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     # ── deep-qa mode early exit ─────────────────────────────────
     if mode == "deep-qa":
-        pr_number = getattr(args, "pr", None)
-        if pr_number is None:
-            print("Error: --mode deep-qa requires --pr <number>", file=sys.stderr)
+        import re as _re
+
+        pr_url = getattr(args, "pr_url", None)
+        if pr_url is None:
+            print("Error: --mode deep-qa requires --pr-url <url>", file=sys.stderr)
+            print("  Example: --pr-url https://github.com/owner/repo/pull/123", file=sys.stderr)
             return 1
 
-        repo = getattr(args, "repo", None)
+        pr_match = _re.match(r"https?://github\.com/([^/]+/[^/]+)/pull/(\d+)", pr_url)
+        if not pr_match:
+            print(f"Error: invalid PR link: {pr_url}", file=sys.stderr)
+            print("  Expected: https://github.com/owner/repo/pull/123", file=sys.stderr)
+            return 1
+
+        repo = pr_match.group(1)
+        pr_number = int(pr_match.group(2))
+
         model = _resolve_model(args)
         runner_name = _resolve_runner(args)
 
@@ -176,25 +187,25 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         _print_banner("deep-qa")
 
-        repo_flag = f" --repo {repo}" if repo else ""
-        repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
             f"Project: {project_path}\nMode: deep-qa\n\n"
             f"## Deep-QA Verification Directive\n\n"
-            f"Run the deep-QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
+            f"Run the deep-QA verification pipeline for PR #{pr_number} in repo `{repo}`.\n"
+            f"PR link: {pr_url}\n\n"
             f"Execute the 3-specialist pipeline:\n"
             f"1. health_checker — run eval, compare scores, write health-check.md\n"
             f"2. code_reviewer — 7-category code review, write code-review.md\n"
             f"3. adversarial_tester — skeptical feature testing, write adversarial-qa.md\n\n"
             f"Key parameters:\n"
+            f"- PR_LINK={pr_url}\n"
             f"- PR_NUMBER={pr_number}\n"
+            f"- REPO={repo}\n"
             f"- PROJECT_PATH={project_path}\n"
-            f"{f'- REPO={repo}' + chr(10) if repo else ''}"
             f"\nPost the final verdict via:\n"
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
             f"--reason \"$REASON\" "
             f"--qa-body-file .factory/reviews/qa-latest.md"
-            f"{repo_flag}\n"
+            f" --repo {repo}\n"
             f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
             f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
             f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
