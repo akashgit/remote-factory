@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -92,24 +93,21 @@ def _is_excluded_dir(part: str) -> bool:
 def collect_source_files(project_path: Path) -> list[Path]:
     """Collect source files from a project, respecting .gitignore and exclusions.
 
+    Uses os.walk with pruning so excluded directories are never descended into.
     Returns paths relative to project_path, sorted for deterministic output.
     """
     has_git = (project_path / ".git").is_dir()
     candidates: list[Path] = []
 
-    for path in sorted(project_path.rglob("*")):
-        if not path.is_file():
-            continue
+    for dirpath, dirnames, filenames in os.walk(project_path):
+        dirnames[:] = sorted(d for d in dirnames if not _is_excluded_dir(d))
+        for fname in filenames:
+            full = Path(dirpath) / fname
+            if full.suffix not in SOURCE_EXTENSIONS:
+                continue
+            candidates.append(full.relative_to(project_path))
 
-        rel = path.relative_to(project_path)
-
-        if any(_is_excluded_dir(part) for part in rel.parts):
-            continue
-
-        if path.suffix not in SOURCE_EXTENSIONS:
-            continue
-
-        candidates.append(rel)
+    candidates.sort()
 
     if has_git and candidates:
         ignored = _get_gitignored([project_path / c for c in candidates], project_path)
@@ -139,6 +137,20 @@ def group_into_batches(
         try:
             file_chars = full_path.stat().st_size
         except OSError:
+            continue
+
+        if file_chars > char_limit:
+            if current_batch:
+                batches.append(current_batch)
+                current_batch = []
+                current_chars = 0
+            log.warning(
+                "spec.batch.oversized_file",
+                file=str(rel_path),
+                size=file_chars,
+                limit=char_limit,
+            )
+            batches.append([rel_path])
             continue
 
         if current_batch and current_chars + file_chars > char_limit:
