@@ -119,7 +119,7 @@ def _setup_fixture_project(tmp_path: Path) -> Path:
 
 
 class TestScopeDiff:
-    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
     async def test_scopes_experiment_diff(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
@@ -130,7 +130,7 @@ class TestScopeDiff:
         assert "Spec" in scope.affected_modules
         assert "factory/old_module.py" in scope.deleted_files
 
-    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
     async def test_writes_scope_file(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
@@ -151,7 +151,7 @@ class TestScopeDiff:
         with pytest.raises(FileNotFoundError):
             await scope_diff(project, experiment_id=1)
 
-    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
     async def test_missing_diff_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
@@ -163,7 +163,7 @@ class TestScopeDiff:
         with pytest.raises(FileNotFoundError, match="No diff found"):
             await scope_diff(project, experiment_id=99)
 
-    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent_failure)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent_failure)
     async def test_agent_failure_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
@@ -172,7 +172,7 @@ class TestScopeDiff:
         with pytest.raises(RuntimeError, match="Scope diff agent failed"):
             await scope_diff(project, experiment_id=1)
 
-    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
     async def test_haiku_model_used(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 

@@ -65,7 +65,7 @@ def _mock_agent_bad_json() -> AsyncMock:
 
 
 class TestValidateSpec:
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_clean)
     async def test_clean_validation(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         result = await validate_spec(tmp_path)
@@ -73,7 +73,7 @@ class TestValidateSpec:
         assert result.errors == []
         assert result.warnings == []
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_with_errors)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_with_errors)
     async def test_validation_with_errors(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         result = await validate_spec(tmp_path)
@@ -83,7 +83,7 @@ class TestValidateSpec:
         assert len(result.warnings) == 1
         assert "Orphan" in result.warnings[0]
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_failure)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_failure)
     async def test_agent_failure_produces_warning(
         self, mock_agent: AsyncMock, tmp_path: Path
     ) -> None:
@@ -92,21 +92,21 @@ class TestValidateSpec:
         assert result.passed
         assert any("failed" in w for w in result.warnings)
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_bad_json)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_bad_json)
     async def test_bad_json_produces_warning(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         result = await validate_spec(tmp_path)
         assert result.passed
         assert any("Could not parse" in w for w in result.warnings)
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_clean)
     async def test_haiku_model_used(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         await validate_spec(tmp_path)
         mock_agent.assert_awaited_once()
         assert mock_agent.call_args.kwargs.get("model") == "haiku"
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_clean)
     async def test_report_written(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         await validate_spec(tmp_path)
@@ -116,7 +116,7 @@ class TestValidateSpec:
         assert "## Summary" in report
         assert "PASS" in report
 
-    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_with_errors)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_agent_with_errors)
     async def test_fail_report(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         _write_spec(tmp_path, BASIC_SPEC)
         await validate_spec(tmp_path)

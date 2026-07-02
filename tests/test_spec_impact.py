@@ -72,13 +72,13 @@ def project_with_spec(tmp_path: Path) -> Path:
 
 
 class TestGetImpact:
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_returns_markdown(self, mock_agent: AsyncMock, project_with_spec: Path) -> None:
         result = await get_impact("models", project_with_spec)
         assert "## Impact: models" in result
         assert "**Classification:** hub" in result
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_includes_dependents(
         self, mock_agent: AsyncMock, project_with_spec: Path
     ) -> None:
@@ -86,13 +86,13 @@ class TestGetImpact:
         assert "store" in result
         assert "cli" in result
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_includes_contracts(self, mock_agent: AsyncMock, project_with_spec: Path) -> None:
         result = await get_impact("models", project_with_spec)
         assert "### Contracts Owned" in result
         assert "ProjectState" in result
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_includes_change_impact(
         self, mock_agent: AsyncMock, project_with_spec: Path
     ) -> None:
@@ -100,12 +100,12 @@ class TestGetImpact:
         assert "### Change Impact" in result
         assert "high" in result
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_haiku_model_used(self, mock_agent: AsyncMock, project_with_spec: Path) -> None:
         await get_impact("models", project_with_spec)
         assert mock_agent.call_args.kwargs.get("model") == "haiku"
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent_failure)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent_failure)
     async def test_agent_failure_raises(
         self, mock_agent: AsyncMock, project_with_spec: Path
     ) -> None:
@@ -116,7 +116,7 @@ class TestGetImpact:
         with pytest.raises(FileNotFoundError):
             await get_impact("models", tmp_path)
 
-    @patch("factory.spec.impact.invoke_agent", new_callable=_mock_impact_agent)
+    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_impact_agent)
     async def test_compact_output(self, mock_agent: AsyncMock, project_with_spec: Path) -> None:
         result = await get_impact("models", project_with_spec)
         lines = result.strip().splitlines()
