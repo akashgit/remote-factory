@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from factory.spec.generate import (
     APPROX_CHARS_PER_TOKEN,
     BATCH_TOKEN_LIMIT,
+    _get_gitignored,
+    _is_excluded_dir,
     collect_source_files,
+    generate_spec,
     group_into_batches,
 )
 from factory.workflow.definitions import register_all, spec_generate_workflow
@@ -222,3 +228,158 @@ class TestRegistryIncludesSpec:
         for name, wf in all_wf.items():
             issues = wf.validate_graph()
             assert issues == [], f"{name} has validation issues: {issues}"
+
+
+# ── _get_gitignored ─────────────────────────────────────────────
+
+
+class TestGetGitignored:
+    def test_empty_paths_returns_empty(self) -> None:
+        result = _get_gitignored([], Path("/tmp"))
+        assert result == set()
+
+    @patch("factory.spec.generate.subprocess.run")
+    def test_returns_ignored_paths(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        p1 = tmp_path / "a.py"
+        p2 = tmp_path / "b.py"
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=f"{p1}\n",
+        )
+        result = _get_gitignored([p1, p2], tmp_path)
+        assert result == {p1}
+
+    @patch("factory.spec.generate.subprocess.run")
+    def test_returncode_1_means_none_ignored(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        result = _get_gitignored([tmp_path / "a.py"], tmp_path)
+        assert result == set()
+
+    @patch("factory.spec.generate.subprocess.run")
+    def test_error_returncode_returns_empty(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        mock_run.return_value = MagicMock(returncode=128, stdout="")
+        result = _get_gitignored([tmp_path / "a.py"], tmp_path)
+        assert result == set()
+
+
+# ── _is_excluded_dir ─────────────────────────────────────────────
+
+
+class TestIsExcludedDir:
+    def test_exact_match(self) -> None:
+        assert _is_excluded_dir("node_modules") is True
+
+    def test_wildcard_match(self) -> None:
+        assert _is_excluded_dir("mypackage.egg-info") is True
+
+    def test_no_match(self) -> None:
+        assert _is_excluded_dir("src") is False
+
+    def test_partial_name_no_match(self) -> None:
+        assert _is_excluded_dir("node_modules_extra") is False
+
+
+# ── collect_source_files with git ────────────────────────────────
+
+
+class TestCollectSourceFilesWithGit:
+    def test_filters_gitignored_files(self, tmp_path: Path) -> None:
+        (tmp_path / ".git").mkdir()
+        (tmp_path / "keep.py").write_text("x = 1")
+        (tmp_path / "ignored.py").write_text("x = 1")
+
+        with patch("factory.spec.generate._get_gitignored") as mock_gi:
+            mock_gi.return_value = {tmp_path / "ignored.py"}
+            files = collect_source_files(tmp_path)
+
+        assert files == [Path("keep.py")]
+
+
+# ── generate_spec ────────────────────────────────────────────────
+
+
+class TestGenerateSpec:
+    async def test_success(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("print('hello')")
+
+        spec_raw = tmp_path / ".factory" / "spec_raw.md"
+        repo_spec = tmp_path / "GRAPH-SPEC.md"
+
+        call_count = 0
+
+        async def mock_invoke(role, task, project, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                spec_raw.parent.mkdir(parents=True, exist_ok=True)
+                spec_raw.write_text("# Raw spec")
+            else:
+                repo_spec.write_text("# Repo spec")
+            return ("ok", 0)
+
+        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+            result = await generate_spec(tmp_path)
+
+        assert result == repo_spec
+        assert repo_spec.read_text() == "# Repo spec"
+
+    async def test_no_source_files_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="No source files"):
+            await generate_spec(tmp_path)
+
+    async def test_extraction_failure_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with patch(
+            "factory.agents.runner.invoke_agent",
+            new_callable=lambda: AsyncMock(return_value=("error", 1)),
+        ):
+            with pytest.raises(RuntimeError, match="Spec extraction failed"):
+                await generate_spec(tmp_path)
+
+    async def test_missing_spec_raw_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+
+        with patch(
+            "factory.agents.runner.invoke_agent",
+            new_callable=lambda: AsyncMock(return_value=("ok", 0)),
+        ):
+            with pytest.raises(FileNotFoundError, match="spec_raw"):
+                await generate_spec(tmp_path)
+
+    async def test_annotation_failure_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+
+        call_count = 0
+
+        async def mock_invoke(role, task, project, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raw = project / ".factory" / "spec_raw.md"
+                raw.parent.mkdir(parents=True, exist_ok=True)
+                raw.write_text("# Raw")
+                return ("ok", 0)
+            return ("error", 1)
+
+        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+            with pytest.raises(RuntimeError, match="Spec annotation failed"):
+                await generate_spec(tmp_path)
+
+    async def test_missing_graph_spec_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+
+        call_count = 0
+
+        async def mock_invoke(role, task, project, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raw = project / ".factory" / "spec_raw.md"
+                raw.parent.mkdir(parents=True, exist_ok=True)
+                raw.write_text("# Raw")
+            return ("ok", 0)
+
+        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+            with pytest.raises(FileNotFoundError, match="GRAPH-SPEC"):
+                await generate_spec(tmp_path)
