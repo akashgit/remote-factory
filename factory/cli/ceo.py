@@ -31,12 +31,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     profile = getattr(args, "profile", None)
     load_config(profile=profile)
 
-    raw_path = getattr(args, "path", None)
+    raw_path: str | None = getattr(args, "path", None)
 
     validated = _validate_ceo_flags(args)
     if isinstance(validated, int):
         return validated
     mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request = validated
+
+    assert raw_path is not None
 
     if mode == "review":
         return handle_review_mode(args, raw_path, headless)

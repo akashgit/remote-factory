@@ -48,20 +48,20 @@ log = structlog.get_logger()
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, list[str] | None, str | None, str | None, str | None, str | None] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
-    mode = getattr(args, "mode", "auto")
+    mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
-    bg = getattr(args, "bg", False)
+    bg: bool = getattr(args, "bg", False)
     bg_agents = _resolve_bg_agents(args)
     if bg and bg_agents:
         print("Error: --bg and --bg-agents are mutually exclusive.", file=sys.stderr)
         return 1
-    headless = getattr(args, "headless", False) or bg
-    prompt_file = getattr(args, "prompt", None)
-    focus = getattr(args, "focus", None)
-    dir_name = getattr(args, "dir", None)
+    headless: bool = getattr(args, "headless", False) or bg
+    prompt_file: str | None = getattr(args, "prompt", None)
+    focus: str | None = getattr(args, "focus", None)
+    dir_name: str | None = getattr(args, "dir", None)
 
     raw_path = getattr(args, "path", None)
     if not raw_path:
@@ -72,7 +72,7 @@ def _validate_ceo_flags(
     no_github = getattr(args, "no_github", False)
     if no_github:
         os.environ["FACTORY_NO_GITHUB"] = "1"
-    refine_request = getattr(args, "refine", None)
+    refine_request: str | None = getattr(args, "refine", None)
 
     if refine_request:
         if mode and mode != "auto":
@@ -279,7 +279,7 @@ def _execute_ceo(
     banner_mode: str,
     headless: bool,
     bg: bool,
-    bg_agents: list[str] | None,
+    bg_agents: bool,
     focus: str | None,
     prompt_file: str | None,
     design_idea: str | None,
@@ -435,17 +435,17 @@ def _run_headless(
     project_path: Path,
     task: str,
     mode: str,
-    runner_name: str,
+    runner_name: str | None,
     model: str | None,
     session_name: str,
     use_profile: bool,
     tmux_persist: bool,
     background: bool,
     ceo_tailer: object,
-    cycle_span_id: str,
+    cycle_span_id: str | None,
     pending_ids: list[str],
     focus: str | None,
-    min_growth: float | None,
+    min_growth: int | None,
     max_new: int | None,
     branch: str | None,
     discover_only: bool,
