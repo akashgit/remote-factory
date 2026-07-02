@@ -1,14 +1,18 @@
-"""All 9 workflow definitions as Python functions returning Workflow objects.
+"""All workflow definitions as Python functions returning Workflow objects.
 
 W₁: Build Mode
 W₂: Design Mode (= W₁ with user gate at strategy approval)
 W₃: Improve Mode
-W₄: Research Mode (= W₃ with baseline+failure_analyst, QA with surface checks, plateau gate)
+W₄: Research Mode (= W₃ with baseline+failure_analyst, deep-QA with surface checks, plateau gate)
 W₅: Meta Mode
 W₆: Discover Mode
 W₇: Review Mode
 W₈: Refine Mode
 W₉: Create Mode (meta-mode for creating new factory modes)
+
+All 5 core workflows (build, improve, research, refine, create) use the deep-QA
+verification pipeline: 3 specialist agents (health_checker, code_reviewer,
+adversarial_tester) with sequential gates, replacing the monolithic QA agent.
 """
 
 from __future__ import annotations
@@ -46,6 +50,166 @@ __all__ = [
     "skill_refine_workflow",
     "register_all",
 ]
+
+
+# ── Deep-QA subgraph helper ─────────────────────────────────────
+
+
+def _deep_qa_subgraph(
+    *,
+    code_reviewer_extra: str = "",
+    adversarial_extra: str = "",
+    finalize_target: str = "finalize",
+) -> tuple[dict[str, Any], list[Edge]]:
+    """Return (nodes, internal_edges) for the 7-node deep-qa verification subgraph.
+
+    The subgraph replaces a single monolithic QA AgentNode with three specialist
+    agents (health_checker, code_reviewer, adversarial_tester) gated sequentially,
+    plus a join_verdict FnNode that concatenates reports into qa-latest.md.
+
+    HALT edges from each specialist gate route to *finalize_target* (the workflow's
+    error/archive sink).  The caller wires the entry edge (→ health_checker) and
+    the exit edge (join_verdict →) into the surrounding workflow.
+    """
+    nodes: dict[str, Any] = {}
+
+    # ── 3 specialist agents (all AgentRole.QA) ────────────────
+
+    nodes["health_checker"] = AgentNode(
+        id="health_checker",
+        role=AgentRole.QA,
+        prompt_template=(
+            "Run the health check using the health_checker prompt. "
+            "Execute 'factory eval {project_path}', parse the JSON output, extract the "
+            "composite score and per-dimension breakdown. Compare against the baseline "
+            "score. Write a structured report to .factory/reviews/health-check.md with "
+            "score table, composite score, delta, and threshold result."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/health-check.md"},
+    )
+
+    cr_prompt = (
+        "Perform code review using the code_reviewer prompt. "
+        "Get changed files via 'git diff --name-only', read each diff. "
+        "Evaluate against the 7-category checklist: correctness, security, edge cases, "
+        "missing tests, style, scope compliance, guardrail compliance. "
+        "Check spec fidelity and plan completion. "
+        "Write structured results to .factory/reviews/code-review.md."
+    )
+    if code_reviewer_extra:
+        cr_prompt += " " + code_reviewer_extra
+
+    nodes["code_reviewer"] = AgentNode(
+        id="code_reviewer",
+        role=AgentRole.QA,
+        prompt_template=cr_prompt,
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/code-review.md"},
+    )
+
+    at_prompt = (
+        "Perform adversarial QA using the adversarial_tester prompt. "
+        "Switch to skeptical user identity. Determine project type from factory.md "
+        "and README.md (CLI/TUI/API/Library/Research/UI). Run the smoke test from "
+        "factory.md. Execute type-aware feature testing. Verify all acceptance criteria. "
+        "Write structured results to .factory/reviews/adversarial-qa.md with "
+        "evidence for every test (command + output). "
+        "When in doubt, FAIL — burden of proof is on the Builder."
+    )
+    if adversarial_extra:
+        at_prompt += " " + adversarial_extra
+
+    nodes["adversarial_tester"] = AgentNode(
+        id="adversarial_tester",
+        role=AgentRole.QA,
+        timeout=1800,
+        prompt_template=at_prompt,
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/reviews/adversarial-qa.md"},
+    )
+
+    # ── 3 gates ───────────────────────────────────────────────
+
+    nodes["gate_health"] = GateNode(
+        id="gate_health",
+        evaluator_type="fn",
+        evaluator_command=(
+            "python3 -c \""
+            "import re, sys, pathlib; "
+            "text = pathlib.Path('{project_path}/.factory/reviews/health-check.md').read_text(); "
+            "m = re.search(r'\\\\*\\\\*Composite:\\\\*\\\\*\\\\s*([\\\\d.]+)', text); "
+            "score = float(m.group(1)) if m else -1; "
+            "has_table = '| Dimension |' in text; "
+            "print(f'score={{score}} table={{has_table}}'); "
+            "sys.exit(0 if score >= 0 and has_table else 1)"
+            "\""
+        ),
+        reads={".factory/reviews/health-check.md"},
+    )
+
+    nodes["gate_review"] = GateNode(
+        id="gate_review",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.QA,
+        gate_prompt=(
+            "Read .factory/reviews/code-review.md and verify: "
+            "1) STRUCTURE — all 7 checklist categories present with PASS/FAIL and evidence. "
+            "2) CRITICAL ISSUES — count issues marked [Critical]. "
+            "Emit PROCEED if structure valid AND critical_count == 0. "
+            "Emit HALT if any category missing or critical_count > 0."
+        ),
+        reads={".factory/reviews/code-review.md"},
+    )
+
+    nodes["gate_adversarial"] = GateNode(
+        id="gate_adversarial",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.QA,
+        gate_prompt=(
+            "Read .factory/reviews/adversarial-qa.md and verify: "
+            "1) REAL TESTING — report contains actual command executions with output "
+            "(bash commands, curl calls, tmux sessions, or python -c invocations). "
+            "If only code reading without running the software, emit HALT. "
+            "2) VERDICT — check the Adversarial Verdict line. "
+            "If FAIL, emit HALT. If PASS, emit PROCEED."
+        ),
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
+    # ── Join verdict (deterministic synthesis) ────────────────
+
+    nodes["join_verdict"] = FnNode(
+        id="join_verdict",
+        command=(
+            "cat {project_path}/.factory/reviews/health-check.md "
+            "{project_path}/.factory/reviews/code-review.md "
+            "{project_path}/.factory/reviews/adversarial-qa.md "
+            "> {project_path}/.factory/reviews/qa-latest.md"
+        ),
+        reads={
+            ".factory/reviews/health-check.md",
+            ".factory/reviews/code-review.md",
+            ".factory/reviews/adversarial-qa.md",
+        },
+        writes={".factory/reviews/qa-latest.md"},
+    )
+
+    # ── Internal edges (8 total: 3 unconditional + 3 PROCEED + 3 HALT → finalize_target)
+
+    internal_edges = [
+        Edge(source="health_checker", target="gate_health"),
+        Edge(source="gate_health", target="code_reviewer", condition=VerdictType.PROCEED),
+        Edge(source="gate_health", target=finalize_target, condition=VerdictType.HALT),
+        Edge(source="code_reviewer", target="gate_review"),
+        Edge(source="gate_review", target="adversarial_tester", condition=VerdictType.PROCEED),
+        Edge(source="gate_review", target=finalize_target, condition=VerdictType.HALT),
+        Edge(source="adversarial_tester", target="gate_adversarial"),
+        Edge(source="gate_adversarial", target="join_verdict", condition=VerdictType.PROCEED),
+        Edge(source="gate_adversarial", target=finalize_target, condition=VerdictType.HALT),
+    ]
+
+    return nodes, internal_edges
 
 
 # ── W₁: Build Mode ──────────────────────────────────────────────
@@ -205,17 +369,9 @@ def build_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes["qa"] = AgentNode(
-        id="qa",
-        role=AgentRole.QA,
-        prompt_template=(
-            "Run health check (factory eval + score delta), code review "
-            "(correctness, architecture, edge cases, security), and adversarial QA "
-            "(run/test the built feature). Write results to .factory/reviews/qa-latest.md"
-        ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/qa-latest.md"},
-    )
+    # Deep-QA subgraph replaces monolithic QA
+    dq_nodes, dq_edges = _deep_qa_subgraph(finalize_target="archivist_build")
+    nodes.update(dq_nodes)
 
     nodes["gate_qa"] = GateNode(
         id="gate_qa",
@@ -268,11 +424,13 @@ def build_workflow() -> Workflow:
         Edge(source="archivist_plan", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate → QA (proceed) or builder (reloop)
-        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # QA → gate_qa
-        Edge(source="qa", target="gate_qa"),
+        # Deep-QA internal edges
+        *dq_edges,
+        # join_verdict → gate_qa
+        Edge(source="join_verdict", target="gate_qa"),
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
@@ -433,17 +591,9 @@ def improve_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes["qa"] = AgentNode(
-        id="qa",
-        role=AgentRole.QA,
-        prompt_template=(
-            "Run health check (factory eval + score delta), code review "
-            "(correctness, architecture, edge cases, security), and adversarial QA "
-            "(run/test the built feature). Write results to .factory/reviews/qa-latest.md"
-        ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/qa-latest.md"},
-    )
+    # Deep-QA subgraph replaces monolithic QA
+    dq_nodes, dq_edges = _deep_qa_subgraph(finalize_target="archivist")
+    nodes.update(dq_nodes)
 
     nodes["gate_qa"] = GateNode(
         id="gate_qa",
@@ -501,11 +651,13 @@ def improve_workflow() -> Workflow:
         Edge(source="begin", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate → QA (proceed) or builder (reloop)
-        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # QA → gate_qa
-        Edge(source="qa", target="gate_qa"),
+        # Deep-QA internal edges
+        *dq_edges,
+        # join_verdict → gate_qa
+        Edge(source="join_verdict", target="gate_qa"),
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
@@ -532,27 +684,32 @@ def improve_workflow() -> Workflow:
 
 
 def qa_workflow() -> Workflow:
-    """W₃b: QA Mode — standalone PR verification via the improve workflow's QA pipeline.
+    """W₃b: QA Mode — standalone PR verification via the improve workflow's deep-qa pipeline.
 
-    Extracts {qa, gate_qa, gate_precheck} from W₃ via subgraph(), modifies
-    gate_qa to remove builder references, and adds a post_review FnNode.
+    Extracts the deep-qa subgraph + gate_qa + gate_precheck from W₃,
+    modifies gate_qa to remove builder references, and adds a post_review FnNode.
 
-    qa → gate_qa → gate_precheck → post_review
-                 ↘ (HALT) → post_review
-                              ↑ (HALT from gate_precheck)
+    health_checker → gate_health → code_reviewer → gate_review →
+    adversarial_tester → gate_adversarial → join_verdict →
+    gate_qa → gate_precheck → post_review
     """
+    deep_qa_node_ids = {
+        "health_checker", "gate_health", "code_reviewer", "gate_review",
+        "adversarial_tester", "gate_adversarial", "join_verdict",
+        "gate_qa", "gate_precheck",
+    }
     wf = improve_workflow()
     sub = wf.subgraph(
-        {"qa", "gate_qa", "gate_precheck"},
+        deep_qa_node_ids,
         name="qa",
-        start_node="qa",
+        start_node="health_checker",
     )
 
-    # The QA node inherited reads from improve where it follows the builder.
-    # In QA mode it's the start node — clear the predecessor dependency.
-    qa_node = sub.nodes["qa"]
-    assert isinstance(qa_node, AgentNode)
-    sub.nodes["qa"] = qa_node.model_copy(update={"reads": set()})
+    # In QA mode there is no builder predecessor — clear reads on all specialist nodes.
+    for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+        node = sub.nodes[nid]
+        assert isinstance(node, AgentNode)
+        sub.nodes[nid] = node.model_copy(update={"reads": set()})
 
     gate_qa = sub.nodes["gate_qa"]
     assert isinstance(gate_qa, GateNode)
@@ -574,7 +731,16 @@ def qa_workflow() -> Workflow:
     )
 
     sub.edges = [
-        Edge(source="qa", target="gate_qa"),
+        Edge(source="health_checker", target="gate_health"),
+        Edge(source="gate_health", target="code_reviewer", condition=VerdictType.PROCEED),
+        Edge(source="gate_health", target="post_review", condition=VerdictType.HALT),
+        Edge(source="code_reviewer", target="gate_review"),
+        Edge(source="gate_review", target="adversarial_tester", condition=VerdictType.PROCEED),
+        Edge(source="gate_review", target="post_review", condition=VerdictType.HALT),
+        Edge(source="adversarial_tester", target="gate_adversarial"),
+        Edge(source="gate_adversarial", target="join_verdict", condition=VerdictType.PROCEED),
+        Edge(source="gate_adversarial", target="post_review", condition=VerdictType.HALT),
+        Edge(source="join_verdict", target="gate_qa"),
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="post_review", condition=VerdictType.HALT),
         Edge(source="gate_precheck", target="post_review", condition=VerdictType.PROCEED),
@@ -657,20 +823,16 @@ def research_workflow() -> Workflow:
         writes={".factory/strategy/current.md"},
     )
 
-    # Override QA prompt to include surface constraint verification for research mode
-    wf.nodes["qa"] = AgentNode(
-        id="qa",
-        role=AgentRole.QA,
-        timeout=1800,
-        prompt_template=(
-            "Run health check (factory eval + score delta), code review "
-            "(correctness, architecture, edge cases, security), adversarial QA "
-            "(run/test the built feature), and verify mutable/fixed surface "
-            "constraint compliance. Write results to .factory/reviews/qa-latest.md"
+    # Override deep-qa subgraph with research-specific code reviewer extra
+    dq_nodes, dq_edges = _deep_qa_subgraph(
+        code_reviewer_extra=(
+            "Verify mutable/fixed surface constraint compliance. "
+            "Check that no files in fixed_surfaces were modified."
         ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/qa-latest.md"},
+        finalize_target="archivist",
     )
+    wf.nodes.update(dq_nodes)
+    # Rebuild edges below — dq_edges are included there
 
     # Add plateau gate after finalize — checks if score improved over prior runs
     wf.nodes["plateau_gate"] = GateNode(
@@ -708,11 +870,13 @@ def research_workflow() -> Workflow:
         Edge(source="begin", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate → QA (proceed) or builder (reloop)
-        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # QA → gate_qa
-        Edge(source="qa", target="gate_qa"),
+        # Deep-QA internal edges
+        *dq_edges,
+        # join_verdict → gate_qa
+        Edge(source="join_verdict", target="gate_qa"),
         # gate_qa → precheck (proceed) or builder (reloop, max 3)
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
@@ -1181,20 +1345,15 @@ def refine_workflow() -> Workflow:
         writes={".factory/reviews/builder-latest.md"},
     )
 
-    # R5: QA verification
-    nodes["qa"] = AgentNode(
-        id="qa",
-        role=AgentRole.QA,
-        prompt_template=(
-            "Verify the refinement. Run all 3 verification sections: "
-            "1. Health Check — run factory eval. Report composite score and delta. "
-            "2. Code Review — read PR diff, evaluate 7-category checklist. "
-            "Run factory guard with --check-scope. "
-            "3. Adversarial QA — run/test the project, verify the refinement works."
+    # R5: Deep-QA verification (replaces monolithic QA)
+    dq_nodes, dq_edges = _deep_qa_subgraph(
+        code_reviewer_extra=(
+            "Run `factory guard --check-scope` to verify the refinement "
+            "stays within declared scope."
         ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/qa-latest.md"},
+        finalize_target="archivist",
     )
+    nodes.update(dq_nodes)
 
     # R5-review: CEO gate on QA
     nodes["gate_qa"] = GateNode(
@@ -1250,9 +1409,12 @@ def refine_workflow() -> Workflow:
         # Begin → create issue → builder
         Edge(source="begin", target="create_issue"),
         Edge(source="create_issue", target="builder"),
-        # Builder → QA → CEO gate
-        Edge(source="builder", target="qa"),
-        Edge(source="qa", target="gate_qa"),
+        # Builder → deep-qa directly (no gate_build in refine)
+        Edge(source="builder", target="health_checker"),
+        # Deep-QA internal edges
+        *dq_edges,
+        # join_verdict → gate_qa
+        Edge(source="join_verdict", target="gate_qa"),
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt → archivist (error handling)
@@ -1450,28 +1612,17 @@ def create_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    # QA verification
-    nodes["qa"] = AgentNode(
-        id="qa",
-        role=AgentRole.QA,
-        timeout=1800,
-        prompt_template=(
-            "Verify the new factory mode end-to-end. "
-            "1. Health Check — run pytest, ruff check, mypy. Report results. "
-            "2. Code Review — read PR diff, evaluate correctness, architecture, "
-            "edge cases, security. Verify workflow graph validates. "
-            "3. Adversarial QA — actually test the new mode: "
-            "   - Run: factory workflow validate <name> "
-            "   - Run: factory workflow show <name> "
-            "   - Run: factory workflow export-skills --verify "
-            "   - Verify SKILL.md was generated under skills/workflow-<name>/ "
-            "   - Check CLI recognizes --mode <name> (factory ceo --help) "
-            "   - Check the workflow handles both interactive and headless paths "
-            "Write results to .factory/reviews/qa-latest.md"
+    # Deep-QA verification (replaces monolithic QA)
+    dq_nodes, dq_edges = _deep_qa_subgraph(
+        adversarial_extra=(
+            "Run: factory workflow validate <name>, factory workflow show <name>, "
+            "factory workflow export-skills --verify. Verify SKILL.md generated under "
+            "skills/workflow-<name>/. Check CLI recognizes --mode <name>. "
+            "Check workflow handles both interactive and headless paths."
         ),
-        reads={".factory/reviews/builder-latest.md"},
-        writes={".factory/reviews/qa-latest.md"},
+        finalize_target="archivist_build",
     )
+    nodes.update(dq_nodes)
 
     # CEO gate on QA (max 3 iterations)
     nodes["gate_qa"] = GateNode(
@@ -1528,11 +1679,13 @@ def create_workflow() -> Workflow:
         Edge(source="archivist_plan", target="builder"),
         # Builder → build gate
         Edge(source="builder", target="gate_build"),
-        # Build gate
-        Edge(source="gate_build", target="qa", condition=VerdictType.PROCEED),
+        # Build gate → deep-qa (proceed) or builder (reloop)
+        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
-        # QA → gate_qa
-        Edge(source="qa", target="gate_qa"),
+        # Deep-QA internal edges
+        *dq_edges,
+        # join_verdict → gate_qa
+        Edge(source="join_verdict", target="gate_qa"),
         # gate_qa
         Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
