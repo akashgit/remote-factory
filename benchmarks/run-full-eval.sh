@@ -263,6 +263,7 @@ echo ""
 log "Step 3: Running Harbor evaluation (full dataset)"
 
 JOBS_DIR="$(mktemp -d /tmp/full-eval-${BENCHMARK}-jobs-XXXXXX)"
+export JOBS_DIR
 echo "    Jobs directory: ${JOBS_DIR}"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
