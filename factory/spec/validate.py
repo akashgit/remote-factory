@@ -110,9 +110,21 @@ async def validate_spec(project_path: Path) -> ValidationResult:
     else:
         try:
             data = extract_json(result_text)
+            if isinstance(data, list) and len(data) == 1 and isinstance(data[0], dict):
+                data = data[0]
             if isinstance(data, dict):
-                result.errors.extend(data.get("errors", []))
-                result.warnings.extend(data.get("warnings", []))
+                for key in ("errors", "warnings"):
+                    val = data.get(key, [])
+                    if isinstance(val, list):
+                        getattr(result, key).extend(val)
+                    elif isinstance(val, str):
+                        getattr(result, key).append(val)
+                    else:
+                        log.warning(
+                            "spec.validate.unexpected_type", field=key, type=type(val).__name__
+                        )
+            else:
+                raise ValueError(f"Expected dict, got {type(data).__name__}")
         except ValueError:
             result.warnings.append("Could not parse validation agent output")
 

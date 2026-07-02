@@ -124,6 +124,43 @@ class TestValidateSpec:
         assert "FAIL" in report
         assert "## Errors" in report
 
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(
+            return_value=(json.dumps({"errors": "single error string", "warnings": "warn"}), 0)
+        ),
+    )
+    async def test_string_errors_wrapped_in_list(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.errors == ["single error string"]
+        assert result.warnings == ["warn"]
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(
+            return_value=(json.dumps([{"errors": ["wrapped"], "warnings": []}]), 0)
+        ),
+    )
+    async def test_list_wrapped_dict_unwrapped(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.errors == ["wrapped"]
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=(json.dumps([{"a": 1}, {"b": 2}]), 0)),
+    )
+    async def test_multi_element_list_produces_warning(
+        self, mock_agent: AsyncMock, tmp_path: Path
+    ) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.passed
+        assert any("Could not parse" in w for w in result.warnings)
+
 
 class TestValidationResult:
     def test_passed_with_no_errors(self) -> None:
