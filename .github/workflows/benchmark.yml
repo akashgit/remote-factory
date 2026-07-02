@@ -211,6 +211,9 @@ jobs:
         if: always() && steps.gate.outputs.run == 'true'
         continue-on-error: true
         env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+          CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
           LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
           LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
