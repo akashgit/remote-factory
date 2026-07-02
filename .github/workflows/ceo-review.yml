@@ -85,7 +85,7 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          uv run factory ceo ${{ github.workspace }}/pr-code --mode qa --pr ${{ steps.pr.outputs.number }} --headless
+          uv run factory ceo ${{ github.workspace }}/pr-code --mode deep-qa --pr ${{ steps.pr.outputs.number }} --headless
 
       - name: Approve PR if verdict is KEEP
         if: success()
