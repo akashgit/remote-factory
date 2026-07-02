@@ -495,8 +495,14 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
-def _workflows_with_builder() -> list[str]:
-    """Return names of workflows containing a Builder AgentNode."""
+_DEEP_QA_NODE_IDS = {
+    "health_checker", "gate_health", "code_reviewer", "gate_review",
+    "adversarial_tester", "gate_adversarial", "join_verdict",
+}
+
+
+def _workflows_with_builder_and_deep_qa() -> list[str]:
+    """Return names of workflows containing a Builder AgentNode and the deep-QA subgraph."""
     from factory.workflow.definitions import register_all
 
     names = []
@@ -505,7 +511,8 @@ def _workflows_with_builder() -> list[str]:
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
             for n in wf.nodes.values()
         )
-        if has_builder:
+        has_deep_qa = _DEEP_QA_NODE_IDS.issubset(set(wf.nodes))
+        if has_builder and has_deep_qa:
             names.append(name)
     return sorted(names)
 
@@ -513,12 +520,12 @@ def _workflows_with_builder() -> list[str]:
 class TestSkillQaEnforcement:
     """Every workflow with a Builder must include a QA phase in its exported SKILL.md."""
 
-    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder_and_deep_qa())
     def test_builder_workflow_has_qa_in_skill(self, workflow_name: str) -> None:
         from factory.workflow.definitions import register_all
 
         wf = register_all()[workflow_name]
         content = workflow_to_skill_md(wf)
-        assert "factory agent qa" in content, (
-            f"workflow-{workflow_name} SKILL.md is missing 'factory agent qa' invocation"
+        assert "factory workflow run deep-qa" in content, (
+            f"workflow-{workflow_name} SKILL.md is missing 'factory workflow run deep-qa' invocation"
         )
