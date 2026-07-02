@@ -182,12 +182,9 @@ class TestCliDeepQaMode:
         )
         assert "deep-qa" in result.stdout
 
-    def test_parser_accepts_pr_url(self) -> None:
+    def test_parser_accepts_mode_deep_qa_with_pr(self) -> None:
         result = subprocess.run(
-            [sys.executable, "-m", "factory.cli", "ceo", ".",
-             "--mode", "deep-qa",
-             "--pr-url", "https://github.com/owner/repo/pull/42",
-             "--help"],
+            [sys.executable, "-m", "factory.cli", "ceo", ".", "--mode", "deep-qa", "--pr", "42", "--help"],
             capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0
