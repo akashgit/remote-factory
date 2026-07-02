@@ -56,6 +56,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
+    if mode == "qa":
+        mode = "deep-qa"
     bg = getattr(args, "bg", False)
     bg_agents = _resolve_bg_agents(args)
     if bg and bg_agents:
