@@ -8,16 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from factory.cli import (
+from factory.cli import main
+from factory.cli._wizard import (
     _CLI_REF,
     _ask_follow_ups,
     _classify_with_llm,
     _quick_classify,
-    _show_spinner,
     _substitute_answers,
     _welcome_wizard,
-    main,
 )
+from factory.cli._helpers import _show_spinner
 from factory.models import AgentRunResult
 
 
@@ -860,7 +860,7 @@ class TestExistingSubcommands:
         assert code == 0
 
     def test_subcommand_not_affected(self) -> None:
-        with patch("factory.cli.ceo._welcome_wizard") as mock_wizard:
+        with patch("factory.cli._wizard._welcome_wizard") as mock_wizard:
             main(["home"])
         mock_wizard.assert_not_called()
 

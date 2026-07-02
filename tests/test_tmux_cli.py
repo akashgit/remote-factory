@@ -12,8 +12,6 @@ import pytest
 
 from factory.cli import (
     CEO_MODES,
-    _build_tmux_run_args,
-    _tmux_session_alive,
     _tmux_session_name,
     build_parser,
     cmd_tmux,
@@ -21,6 +19,7 @@ from factory.cli import (
     cmd_tmux_ls,
     cmd_tmux_stop,
 )
+from factory.cli._tmux_commands import _build_tmux_run_args, _tmux_session_alive
 
 
 class TestTmuxSessionName:
@@ -87,11 +86,11 @@ class TestEnvVarWhitelist:
         )
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._resolve_model", return_value=None),
-            patch("factory.cli.ceo._save_tmux_session_mapping"),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
-            patch("factory.cli.ceo.time.sleep"),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._resolve_model", return_value=None),
+            patch("factory.cli._tmux_commands._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", env, clear=True),
         ):
@@ -190,7 +189,7 @@ class TestCmdTmuxStop:
         args = argparse.Namespace(session=None, path=None, stop_all=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(
@@ -204,7 +203,7 @@ class TestCmdTmuxStop:
         args = argparse.Namespace(session=None, path=None, stop_all=True)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.side_effect = [
@@ -222,9 +221,9 @@ class TestCmdTmuxLs:
         mapping = {"factory-app-abc123": "/tmp/app"}
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("subprocess.run") as mock_run,
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value=mapping),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value=mapping),
             patch("builtins.print") as mock_print,
         ):
             mock_run.return_value = MagicMock(
@@ -246,9 +245,9 @@ class TestCmdTmuxLs:
         args = argparse.Namespace(json_output=True)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("subprocess.run") as mock_run,
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={}),
             patch("builtins.print") as mock_print,
         ):
             mock_run.return_value = MagicMock(
@@ -289,11 +288,11 @@ class TestTmuxSessionMapping:
         )
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._resolve_model", return_value=None),
-            patch("factory.cli.ceo._TMUX_SESSIONS_FILE", sessions_file),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
-            patch("factory.cli.ceo.time.sleep"),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._resolve_model", return_value=None),
+            patch("factory.cli._tmux_commands._TMUX_SESSIONS_FILE", sessions_file),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
         ):
@@ -316,8 +315,8 @@ class TestTmuxSessionMapping:
         args = argparse.Namespace(json_output=True)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._TMUX_SESSIONS_FILE", sessions_file),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._TMUX_SESSIONS_FILE", sessions_file),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -348,7 +347,7 @@ class TestTmuxModeChoices:
 
 class TestTmuxSessionAlive:
     def test_returns_true_when_session_exists(self) -> None:
-        with patch("factory.cli.ceo.subprocess.run") as mock_run:
+        with patch("factory.cli._tmux_commands.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             assert _tmux_session_alive("factory-app-abc123") is True
         mock_run.assert_called_once_with(
@@ -357,7 +356,7 @@ class TestTmuxSessionAlive:
         )
 
     def test_returns_false_when_session_missing(self) -> None:
-        with patch("factory.cli.ceo.subprocess.run") as mock_run:
+        with patch("factory.cli._tmux_commands.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1)
             assert _tmux_session_alive("factory-app-abc123") is False
 
@@ -367,8 +366,8 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -389,8 +388,8 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session="factory-gone-abc123", path=None, lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=False),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=False),
             patch("builtins.print") as mock_print,
         ):
             rc = cmd_tmux_capture(args)
@@ -403,7 +402,7 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=False),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=False),
             patch("builtins.print") as mock_print,
         ):
             rc = cmd_tmux_capture(args)
@@ -415,7 +414,7 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session=None, path=None, lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("builtins.print") as mock_print,
         ):
             rc = cmd_tmux_capture(args)
@@ -427,9 +426,9 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session=None, path="/tmp/myproject", lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={"factory-myproject-abc123": "/tmp/myproject"}),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={"factory-myproject-abc123": "/tmp/myproject"}),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
         ):
@@ -447,9 +446,9 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session=None, path="/tmp/unmapped", lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={}),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
         ):
@@ -462,8 +461,8 @@ class TestCmdTmuxCapture:
         args = argparse.Namespace(session="factory-app-abc123", path=None, lines=-100)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -502,11 +501,11 @@ class TestCmdTmuxPostDispatchVerification:
         )
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._resolve_model", return_value=None),
-            patch("factory.cli.ceo._save_tmux_session_mapping"),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=True),
-            patch("factory.cli.ceo.time.sleep"),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._resolve_model", return_value=None),
+            patch("factory.cli._tmux_commands._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
             patch("builtins.print") as mock_print,
@@ -549,11 +548,11 @@ class TestCmdTmuxPostDispatchVerification:
         )
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._resolve_model", return_value=None),
-            patch("factory.cli.ceo._save_tmux_session_mapping"),
-            patch("factory.cli.ceo._tmux_session_alive", return_value=False),
-            patch("factory.cli.ceo.time.sleep"),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._resolve_model", return_value=None),
+            patch("factory.cli._tmux_commands._save_tmux_session_mapping"),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=False),
+            patch("factory.cli._tmux_commands.time.sleep"),
             patch("subprocess.run") as mock_run,
             patch.dict("os.environ", {"PATH": "/usr/bin"}, clear=True),
             patch("builtins.print") as mock_print,
@@ -574,7 +573,7 @@ class TestCmdTmuxStopEdgeCases:
         args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=False),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=False),
             patch("builtins.print") as mock_print,
         ):
             rc = cmd_tmux_stop(args)
@@ -586,8 +585,8 @@ class TestCmdTmuxStopEdgeCases:
         args = argparse.Namespace(session=None, path="/tmp/myproject", stop_all=False, force=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={}),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -601,7 +600,7 @@ class TestCmdTmuxStopEdgeCases:
         args = argparse.Namespace(session="factory-gone-abc123", path=None, stop_all=False, force=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -617,8 +616,8 @@ class TestCmdTmuxStopOwnership:
         args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={}),
             patch("subprocess.run") as mock_run,
             patch("builtins.print") as mock_print,
         ):
@@ -635,8 +634,8 @@ class TestCmdTmuxStopOwnership:
         args = argparse.Namespace(session="factory-mystery-abc123", path=None, stop_all=False, force=True)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={}),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={}),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
         ):
@@ -649,8 +648,8 @@ class TestCmdTmuxStopOwnership:
         args = argparse.Namespace(session="factory-app-abc123", path=None, stop_all=False, force=False)
 
         with (
-            patch("factory.cli.ceo._tmux_available", return_value=True),
-            patch("factory.cli.ceo._load_tmux_session_mapping", return_value={"factory-app-abc123": "/tmp/app"}),
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._load_tmux_session_mapping", return_value={"factory-app-abc123": "/tmp/app"}),
             patch("subprocess.run") as mock_run,
             patch("builtins.print"),
         ):

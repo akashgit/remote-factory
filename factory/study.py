@@ -779,10 +779,10 @@ def _load_cross_project_insights(
     """Load and format cross-project insights. Writes insights.md as side effect."""
     from factory.insights import (
         analyze,
-        discover_projects,
         format_insights,
         load_all_histories,
     )
+    from factory.registry import discover_projects
 
     project_paths = discover_projects(projects_dir)
     if not project_paths:
