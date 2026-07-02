@@ -1,127 +1,20 @@
-"""Tests for factory.spec.update — diff scoping, W₁₀ workflow, improve integration."""
+"""Tests for factory.spec.update — agent-based diff scoping and spec update."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from factory.spec.update import DiffScope, _format_scope, _map_file_to_module, _parse_diff_files
+from factory.spec.update import DiffScope, _format_scope
 from factory.workflow.definitions import (
     improve_workflow,
     register_all,
     spec_update_workflow,
 )
 from factory.workflow.primitives import AgentNode, AgentRole, FnNode, GateNode
-
-
-# ── Diff parsing ────────────────────────────────────────────────
-
-
-class TestParseDiffFiles:
-    def test_modified_file(self) -> None:
-        diff = (
-            "diff --git a/src/main.py b/src/main.py\n"
-            "index abc..def 100644\n"
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1,3 +1,4 @@\n"
-            " import os\n"
-            "+import sys\n"
-        )
-        modified, added, deleted = _parse_diff_files(diff)
-        assert modified == ["src/main.py"]
-        assert added == []
-        assert deleted == []
-
-    def test_new_file(self) -> None:
-        diff = (
-            "diff --git a/src/new.py b/src/new.py\n"
-            "new file mode 100644\n"
-            "index 0000000..abc1234\n"
-            "--- /dev/null\n"
-            "+++ b/src/new.py\n"
-            "@@ -0,0 +1 @@\n"
-            "+x = 1\n"
-        )
-        modified, added, deleted = _parse_diff_files(diff)
-        assert modified == []
-        assert added == ["src/new.py"]
-        assert deleted == []
-
-    def test_deleted_file(self) -> None:
-        diff = (
-            "diff --git a/src/old.py b/src/old.py\n"
-            "deleted file mode 100644\n"
-            "index abc1234..0000000\n"
-            "--- a/src/old.py\n"
-            "+++ /dev/null\n"
-            "@@ -1 +0,0 @@\n"
-            "-x = 1\n"
-        )
-        modified, added, deleted = _parse_diff_files(diff)
-        assert modified == []
-        assert added == []
-        assert deleted == ["src/old.py"]
-
-    def test_mixed_changes(self) -> None:
-        diff = (
-            "diff --git a/src/main.py b/src/main.py\n"
-            "index abc..def 100644\n"
-            "--- a/src/main.py\n"
-            "+++ b/src/main.py\n"
-            "@@ -1 +1,2 @@\n"
-            " x\n"
-            "+y\n"
-            "diff --git a/src/new.py b/src/new.py\n"
-            "new file mode 100644\n"
-            "--- /dev/null\n"
-            "+++ b/src/new.py\n"
-            "@@ -0,0 +1 @@\n"
-            "+z\n"
-            "diff --git a/src/gone.py b/src/gone.py\n"
-            "deleted file mode 100644\n"
-            "--- a/src/gone.py\n"
-            "+++ /dev/null\n"
-        )
-        modified, added, deleted = _parse_diff_files(diff)
-        assert modified == ["src/main.py"]
-        assert added == ["src/new.py"]
-        assert deleted == ["src/gone.py"]
-
-    def test_empty_diff(self) -> None:
-        modified, added, deleted = _parse_diff_files("")
-        assert modified == []
-        assert added == []
-        assert deleted == []
-
-
-# ── File-to-module mapping ──────────────────────────────────────
-
-
-class TestMapFileToModule:
-    def test_exact_match(self) -> None:
-        modules = [{"name": "cli", "path": "factory/cli.py"}]
-        assert _map_file_to_module("factory/cli.py", modules) == "cli"
-
-    def test_directory_match(self) -> None:
-        modules = [{"name": "spec", "path": "factory/spec/"}]
-        assert _map_file_to_module("factory/spec/update.py", modules) == "spec"
-
-    def test_longest_match_wins(self) -> None:
-        modules = [
-            {"name": "factory", "path": "factory/"},
-            {"name": "spec", "path": "factory/spec/"},
-        ]
-        assert _map_file_to_module("factory/spec/validate.py", modules) == "spec"
-
-    def test_no_match(self) -> None:
-        modules = [{"name": "cli", "path": "factory/cli.py"}]
-        assert _map_file_to_module("tests/test_cli.py", modules) is None
-
-    def test_empty_path_skipped(self) -> None:
-        modules = [{"name": "unnamed", "path": ""}]
-        assert _map_file_to_module("anything.py", modules) is None
 
 
 # ── Scope formatting ───────────────────────────────────────────
@@ -147,7 +40,7 @@ class TestFormatScope:
         assert "None" in output
 
 
-# ── Diff scoping with fixture ──────────────────────────────────
+# ── Agent-based scope_diff ────────────────────────────────────
 
 
 FIXTURE_SPEC = """\
@@ -158,51 +51,14 @@ FIXTURE_SPEC = """\
 ### CLI
 **Path:** `factory/cli.py`
 **Role:** CLI entry point
-**Exports:** `main`
-**Depends on:** spec, models
-**Contracts owned:** None
 
 ### Spec
 **Path:** `factory/spec/`
 **Role:** Spec generation and validation
-**Exports:** `generate_spec, validate_spec`
-**Depends on:** models
-**Contracts owned:** `RepoSpec`
 
 ### Models
 **Path:** `factory/models.py`
 **Role:** Domain models
-**Exports:** `FactoryConfig, EvalProfile`
-**Depends on:** None
-**Contracts owned:** `FactoryConfig, EvalProfile`
-
-## Dependency Edges
-
-| Source | Target | Type | Coupling |
-|--------|--------|------|----------|
-| CLI | Spec | direct | strong |
-| CLI | Models | direct | strong |
-| Spec | Models | direct | strong |
-
-## Shared Contracts
-
-| Name | Defined In | Used By | Change Risk |
-|------|-----------|---------|-------------|
-| FactoryConfig | Models | CLI, Spec | high |
-
-## Entry Points
-
-| Name | Module | Type |
-|------|--------|------|
-| factory | CLI | cli |
-
-## Change Impact
-
-| Module | Classification | Dependents | Impact |
-|--------|---------------|------------|--------|
-| Models | hub | CLI, Spec | high |
-| Spec | leaf | CLI | medium |
-| CLI | leaf | — | low |
 """
 
 FIXTURE_DIFF = """\
@@ -230,6 +86,22 @@ deleted file mode 100644
 """
 
 
+def _mock_scope_agent() -> AsyncMock:
+    """Return a mock invoke_agent that returns a valid DiffScope JSON."""
+    data = json.dumps(
+        {
+            "affected_modules": ["CLI", "Spec"],
+            "new_files": ["factory/spec/update.py"],
+            "deleted_files": ["factory/old_module.py"],
+        }
+    )
+    return AsyncMock(return_value=(data, 0))
+
+
+def _mock_scope_agent_failure() -> AsyncMock:
+    return AsyncMock(return_value=("error", 1))
+
+
 def _setup_fixture_project(tmp_path: Path) -> Path:
     """Create a fixture project with a repo spec and experiment diff."""
     project = tmp_path / "myproject"
@@ -247,38 +119,40 @@ def _setup_fixture_project(tmp_path: Path) -> Path:
 
 
 class TestScopeDiff:
-    def test_scopes_experiment_diff(self, tmp_path: Path) -> None:
+    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    async def test_scopes_experiment_diff(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
         project = _setup_fixture_project(tmp_path)
-        scope = scope_diff(project, experiment_id=1)
+        scope = await scope_diff(project, experiment_id=1)
 
         assert "CLI" in scope.affected_modules
         assert "Spec" in scope.affected_modules
-        assert "factory/spec/update.py" in scope.new_files or "Spec" in scope.affected_modules
         assert "factory/old_module.py" in scope.deleted_files
 
-    def test_writes_scope_file(self, tmp_path: Path) -> None:
+    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    async def test_writes_scope_file(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
         project = _setup_fixture_project(tmp_path)
-        scope_diff(project, experiment_id=1)
+        await scope_diff(project, experiment_id=1)
 
         scope_path = project / ".factory" / "spec_update_scope.md"
         assert scope_path.is_file()
         content = scope_path.read_text()
         assert "# Spec Update Scope" in content
 
-    def test_missing_spec_raises(self, tmp_path: Path) -> None:
+    async def test_missing_spec_raises(self, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
         project = tmp_path / "empty_project"
         project.mkdir()
 
-        with pytest.raises(FileNotFoundError, match="No repo spec found"):
-            scope_diff(project, experiment_id=1)
+        with pytest.raises(FileNotFoundError):
+            await scope_diff(project, experiment_id=1)
 
-    def test_missing_diff_raises(self, tmp_path: Path) -> None:
+    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    async def test_missing_diff_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
         project = tmp_path / "no_diff_project"
@@ -287,7 +161,24 @@ class TestScopeDiff:
         (project / ".factory").mkdir()
 
         with pytest.raises(FileNotFoundError, match="No diff found"):
-            scope_diff(project, experiment_id=99)
+            await scope_diff(project, experiment_id=99)
+
+    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent_failure)
+    async def test_agent_failure_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.spec.update import scope_diff
+
+        project = _setup_fixture_project(tmp_path)
+
+        with pytest.raises(RuntimeError, match="Scope diff agent failed"):
+            await scope_diff(project, experiment_id=1)
+
+    @patch("factory.spec.update.invoke_agent", new_callable=_mock_scope_agent)
+    async def test_haiku_model_used(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.spec.update import scope_diff
+
+        project = _setup_fixture_project(tmp_path)
+        await scope_diff(project, experiment_id=1)
+        assert mock_agent.call_args.kwargs.get("model") == "haiku"
 
 
 # ── W₁₀ Spec Update workflow ──────────────────────────────────
