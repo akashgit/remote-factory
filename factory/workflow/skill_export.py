@@ -432,6 +432,40 @@ def _resolve_max_iterations(edge: Edge, workflow: Workflow) -> int:
     return 3
 
 
+def _deep_qa_to_instruction(workflow: Workflow) -> str:
+    """Emit a single `factory workflow run deep-qa` invocation for the deep-QA subgraph."""
+    deep_qa_nodes = ["health_checker", "gate_health", "code_reviewer", "gate_review",
+                     "adversarial_tester", "gate_adversarial", "join_verdict"]
+    reads_all: set[str] = set()
+    writes_all: set[str] = set()
+    for nid in deep_qa_nodes:
+        node = workflow.nodes.get(nid)
+        if node:
+            reads_all |= node.reads
+            writes_all |= node.writes
+
+    reads_ann = ", ".join(sorted(reads_all)) if reads_all else "none"
+    writes_ann = ", ".join(sorted(writes_all)) if writes_all else "none"
+
+    annotations = [
+        f"<!-- node: DeepQA subgraph nodes={','.join(deep_qa_nodes)} -->",
+        f"<!-- reads: {reads_ann} -->",
+        f"<!-- writes: {writes_ann} -->",
+    ]
+
+    cmd = 'factory workflow run deep-qa "$PROJECT_PATH"'
+    lines = [
+        *annotations,
+        "",
+        "Run the deep-QA verification pipeline (health check → code review → adversarial QA "
+        "with sequential gates):\n",
+        f"```bash\n{cmd}\n```\n",
+        "This runs 3 specialist agents sequentially with gates between each for early termination. "
+        "Combined report is written to `.factory/reviews/qa-latest.md`.",
+    ]
+    return "\n".join(lines)
+
+
 def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
     """Convert a ForkNode to parallel agent spawning instructions."""
     out_edges = _outgoing_edges(workflow, node.id)
@@ -539,11 +573,26 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
         if isinstance(node, ForkNode):
             fork_targets.update(node.targets)
 
+    deep_qa_node_ids = {
+        "health_checker", "gate_health", "code_reviewer", "gate_review",
+        "adversarial_tester", "gate_adversarial", "join_verdict",
+    }
+    has_deep_qa = deep_qa_node_ids.issubset(set(workflow.nodes))
+    deep_qa_emitted = False
+
     sections: list[str] = []
     phase_num = 1
 
     for nid in sorted_nodes:
         if nid in fork_targets:
+            continue
+
+        if has_deep_qa and nid in deep_qa_node_ids:
+            if not deep_qa_emitted:
+                sections.append(f"## Phase {phase_num}: Deep QA Verification\n")
+                sections.append(_deep_qa_to_instruction(workflow))
+                phase_num += 1
+                deep_qa_emitted = True
             continue
 
         node = workflow.nodes[nid]

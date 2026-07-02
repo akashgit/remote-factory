@@ -1,13 +1,17 @@
-"""Tests for QA mode: Workflow.subgraph(), qa_workflow() structure, CLI parser."""
+"""Tests for QA mode: Workflow.subgraph(), qa_workflow() structure, CLI parser, deep-qa contributed workflow."""
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
 from factory.workflow.definitions import improve_workflow, qa_workflow, register_all
+from factory.workflow.executor import WorkflowExecutor
+from factory.workflow.registry import WorkflowRegistry
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
@@ -185,3 +189,78 @@ class TestCliQaMode:
             capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0
+
+
+# ── Deep-QA contributed workflow ───────────────────────────────
+
+
+CONTRIB_WORKFLOW_SRC = Path(__file__).parent.parent / "workflows" / "deep_qa.py"
+
+
+@pytest.fixture(autouse=True)
+def _reset_wf_registry():
+    """Reset WorkflowRegistry between tests so discovery is clean."""
+    WorkflowRegistry.reset()
+    yield
+    WorkflowRegistry.reset()
+
+
+class TestDeepQaContributedWorkflow:
+    """Verify the deep-qa contributed workflow in workflows/deep_qa.py can be
+    discovered via WorkflowRegistry and executed in dry-run mode."""
+
+    @pytest.fixture
+    def project_with_deep_qa(self, tmp_path: Path) -> Path:
+        """Create a temp project with deep_qa.py in .factory/workflows/."""
+        wf_dir = tmp_path / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (tmp_path / ".factory" / "reviews").mkdir()
+        shutil.copy(CONTRIB_WORKFLOW_SRC, wf_dir / "deep_qa.py")
+        return tmp_path
+
+    def test_discovery_finds_deep_qa(self, project_with_deep_qa: Path) -> None:
+        entries = WorkflowRegistry.discover(project_path=project_with_deep_qa)
+        assert "deep-qa" in entries
+        assert entries["deep-qa"].source == "project"
+
+    def test_get_workflow_returns_valid_graph(self, project_with_deep_qa: Path) -> None:
+        wf = WorkflowRegistry.get_workflow("deep-qa", project_with_deep_qa)
+        assert wf is not None
+        assert wf.name == "deep-qa"
+        assert wf.start_node == "health_checker"
+        issues = wf.validate_graph()
+        assert issues == [], f"deep-qa graph issues: {issues}"
+
+    def test_has_expected_nodes(self, project_with_deep_qa: Path) -> None:
+        wf = WorkflowRegistry.get_workflow("deep-qa", project_with_deep_qa)
+        assert wf is not None
+        expected = {
+            "health_checker", "gate_health", "code_reviewer", "gate_review",
+            "adversarial_tester", "gate_adversarial", "join_verdict",
+            "gate_precheck", "post_review",
+        }
+        assert expected.issubset(set(wf.nodes.keys()))
+
+    async def test_dry_run_executes_all_nodes(self, project_with_deep_qa: Path) -> None:
+        wf = WorkflowRegistry.get_workflow("deep-qa", project_with_deep_qa)
+        assert wf is not None
+        executor = WorkflowExecutor(wf, project_with_deep_qa, dry_run=True)
+        result = await executor.execute()
+
+        assert result.success
+        assert not result.halted
+        assert result.nodes_executed >= 7
+
+    async def test_dry_run_node_sequence(self, project_with_deep_qa: Path) -> None:
+        wf = WorkflowRegistry.get_workflow("deep-qa", project_with_deep_qa)
+        assert wf is not None
+        executor = WorkflowExecutor(wf, project_with_deep_qa, dry_run=True)
+        result = await executor.execute()
+
+        executed_nodes = [
+            e["node_id"] for e in result.events
+            if e["type"] == "node.started"
+        ]
+        assert "health_checker" in executed_nodes
+        assert "code_reviewer" in executed_nodes
+        assert "adversarial_tester" in executed_nodes

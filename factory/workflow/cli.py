@@ -20,6 +20,7 @@ from factory.workflow.primitives import (
     JoinNode,
     Study,
 )
+from factory.workflow.registry import WorkflowRegistry
 
 log = structlog.get_logger()
 
@@ -53,11 +54,11 @@ def _cmd_run(args: argparse.Namespace) -> int:
     project_path = Path(args.project_path).resolve()
     dry_run = getattr(args, "dry_run", False)
 
-    workflows = register_all()
-    wf = workflows.get(name)
+    wf = WorkflowRegistry.get_workflow(name, project_path)
     if not wf:
+        available = WorkflowRegistry.list_workflows(project_path)
         print(f"Unknown workflow: {name}")
-        print(f"Available: {', '.join(workflows)}")
+        print(f"Available: {', '.join(e.name for e in available)}")
         return 1
 
     executor = WorkflowExecutor(
@@ -84,14 +85,16 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 def _cmd_list(args: argparse.Namespace) -> int:
     """List all registered workflows."""
-    workflows = register_all()
+    project_path = Path(args.project_path).resolve() if getattr(args, "project_path", None) else None
+    entries = WorkflowRegistry.list_workflows(project_path)
 
-    header = f"{'Name':<12} {'Nodes':>6} {'Edges':>6} {'Start Node':<20}"
+    header = f"{'Name':<16} {'Source':<10} {'Description':<50}"
     print(header)
     print("-" * len(header))
 
-    for name, wf in workflows.items():
-        print(f"{name:<12} {len(wf.nodes):>6} {len(wf.edges):>6} {wf.start_node:<20}")
+    for entry in entries:
+        desc = entry.description[:48] + ".." if len(entry.description) > 50 else entry.description
+        print(f"{entry.name:<16} {entry.source:<10} {desc:<50}")
 
     return 0
 
@@ -99,8 +102,8 @@ def _cmd_list(args: argparse.Namespace) -> int:
 def _cmd_show(args: argparse.Namespace) -> int:
     """Show a workflow's graph as a node/edge table."""
     name = args.name
-    workflows = register_all()
-    wf = workflows.get(name)
+    project_path = Path(args.project_path).resolve() if getattr(args, "project_path", None) else None
+    wf = WorkflowRegistry.get_workflow(name, project_path)
     if not wf:
         print(f"Unknown workflow: {name}")
         return 1
@@ -159,8 +162,8 @@ def _cmd_show(args: argparse.Namespace) -> int:
 def _cmd_validate(args: argparse.Namespace) -> int:
     """Validate a workflow using NetworkX."""
     name = args.name
-    workflows = register_all()
-    wf = workflows.get(name)
+    project_path = Path(args.project_path).resolve() if getattr(args, "project_path", None) else None
+    wf = WorkflowRegistry.get_workflow(name, project_path)
     if not wf:
         print(f"Unknown workflow: {name}")
         return 1
@@ -222,15 +225,18 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
     p.add_argument("--dry-run", action="store_true", help="Execute without real agent calls")
 
     # list
-    wf_sub.add_parser("list", help="List all registered workflows")
+    p = wf_sub.add_parser("list", help="List all registered workflows")
+    p.add_argument("project_path", nargs="?", default=None, help="Project path (discovers contributed workflows)")
 
     # show
     p = wf_sub.add_parser("show", help="Show workflow graph details")
     p.add_argument("name", help="Workflow name")
+    p.add_argument("--project", dest="project_path", default=None, help="Project path for contributed workflows")
 
     # validate
     p = wf_sub.add_parser("validate", help="Validate workflow graph structure")
     p.add_argument("name", help="Workflow name")
+    p.add_argument("--project", dest="project_path", default=None, help="Project path for contributed workflows")
 
     # export-skills
     p = wf_sub.add_parser("export-skills", help="Export workflows as SKILL.md files")
