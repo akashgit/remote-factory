@@ -4,6 +4,7 @@
 
 ### Features
 
+- **Adversarial eval loops** — First-class GAN-style alternating generator/discriminator optimization. Configure in `factory.md` with `## Adversarial` section using dot-notation for per-component eval commands, metrics, and thresholds. Hysteresis prevents oscillation (N consecutive above-threshold rounds before switching). Convergence detection when both sides sustain above-threshold performance. State persisted at `.factory/adversarial_state.json` for crash-resilient resume. New `factory adversarial-state` CLI command for inspection and reset. 80 new tests
 - **Post-cycle refinement loop** — After build/improve cycles complete in foreground mode, the CEO stays active and routes follow-up requests through the Refiner → Builder → full review pipeline. New `--refine` flag for direct refinement entry. Three CLI commands (`refine-status`, `refine-begin`, `refine-complete`) provide identity regrounding and state tracking. No hard cap on refinements; advisory warnings at 5 and 10
 - **Refiner agent** — New specialist that classifies refinement requests into tiers (T1: prompt/config, T2: code changes, T3: architectural — requires `--focus`) and scopes the implementation for the Builder
 - **Inner/outer loop controls** — Configure multi-run aggregation, plateau detection, and automatic scope expansion for research mode via `## Inner Loop` and `## Outer Loop Surfaces` in `factory.md`

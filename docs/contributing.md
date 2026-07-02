@@ -96,15 +96,16 @@ If you're interested in any of these, open an issue to discuss the approach befo
 
 ```
 factory/
-├── cli.py                  # CLI entry point (argparse subcommands)
+├── cli/                    # CLI package (argparse subcommands)
 ├── models.py               # Pydantic v2 domain models
 ├── state.py                # Project state detection
 ├── store.py                # .factory/ filesystem store
 ├── events.py               # Event system (JSONL log)
 ├── strategy.py             # FEEC priority heuristic
+├── adversarial.py          # GAN-style adversarial eval loop state machine
 ├── study.py                # Code analysis + observations
 ├── insights.py             # Cross-project patterns
-├── checkpoint.py            # CEO checkpoint save/load (legacy, debugging)
+├── checkpoint.py           # CEO checkpoint save/load (legacy, debugging)
 ├── analysis.py             # Experiment comparison
 ├── agents/
 │   ├── runner.py           # Agent subprocess spawner
@@ -118,15 +119,17 @@ factory/
 ├── eval/                   # Three-tier eval system
 └── notify/                 # Telegram notifications
 
-tests/                      # 1350+ tests mirroring factory/ structure
+tests/                      # 3000+ tests mirroring factory/ structure
 ```
 
 ## Adding a New CLI Command
 
-1. Add `cmd_<name>` function in `factory/cli.py`
-2. Register it in the `COMMANDS` handler dict
-3. Add argument parsing in the `build_parser` function
-4. Write tests in `tests/test_cli.py`
+1. Add `cmd_<name>` function in the appropriate `factory/cli/<module>.py` file
+2. Export it from `factory/cli/__init__.py`
+3. Register it in the `handlers` dict in `factory/cli/_main.py`
+4. Add argument parsing in the `build_parser` function in `factory/cli/_main.py`
+5. Add the command name to `_COMMAND_GROUPS` for grouped help display
+6. Write tests in `tests/test_cli.py`
 
 ## Adding a New Agent Role
 
