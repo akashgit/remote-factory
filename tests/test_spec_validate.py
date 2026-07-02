@@ -1,4 +1,4 @@
-"""Tests for factory.spec.validate — path checks, Haiku import verification, orphan/hub, coupling."""
+"""Tests for factory.spec.validate — agent-based spec validation."""
 
 from __future__ import annotations
 
@@ -8,10 +8,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from factory.spec.validate import (
-    ValidationResult,
-    validate_spec,
-)
+from factory.spec.validate import ValidationResult, validate_spec
 
 
 def _write_spec(project: Path, spec_content: str) -> Path:
@@ -19,28 +16,6 @@ def _write_spec(project: Path, spec_content: str) -> Path:
     spec_path = project / "GRAPH-SPEC.md"
     spec_path.write_text(spec_content)
     return spec_path
-
-
-def _make_python_project(tmp_path: Path) -> Path:
-    """Create a fixture Python project with known dependency structure."""
-    project = tmp_path / "myproject"
-    project.mkdir()
-
-    models = project / "myapp" / "models.py"
-    models.parent.mkdir(parents=True)
-    (project / "myapp" / "__init__.py").write_text("")
-    models.write_text("class User:\n    pass\n\nclass Config:\n    pass\n")
-
-    store = project / "myapp" / "store.py"
-    store.write_text("from myapp import models\n\nclass Store:\n    pass\n")
-
-    api = project / "myapp" / "api.py"
-    api.write_text("from myapp import models\nfrom myapp import store\n")
-
-    utils = project / "myapp" / "utils.py"
-    utils.write_text("def slugify(s: str) -> str:\n    return s.lower()\n")
-
-    return project
 
 
 BASIC_SPEC = """\
@@ -59,175 +34,95 @@ BASIC_SPEC = """\
 - **Role:** Data persistence
 - **Exports:** Store
 - **Depends on:** models
-
-### api
-- **Path:** myapp/api.py
-- **Role:** API layer
-- **Exports:** app
-- **Depends on:** models, store
-
-### utils
-- **Path:** myapp/utils.py
-- **Role:** Utility functions
-- **Exports:** slugify
-- **Depends on:** none
-
-## Dependency Edges
-
-| Source | Target | Import Type | Coupling |
-|--------|--------|-------------|----------|
-| store | models | direct | strong |
-| api | models | direct | strong |
-| api | store | direct | weak |
 """
 
 
-def _mock_haiku_no_findings() -> AsyncMock:
-    """Return a mock invoke_agent that reports no import issues."""
-    return AsyncMock(return_value=("[]", 0))
+def _mock_agent_clean() -> AsyncMock:
+    """Return a mock invoke_agent that reports no issues."""
+    data = json.dumps({"errors": [], "warnings": []})
+    return AsyncMock(return_value=(data, 0))
 
 
-def _mock_haiku_with_phantom() -> AsyncMock:
-    """Return a mock invoke_agent that reports a phantom edge."""
-    findings = json.dumps(
-        [
-            {
-                "type": "phantom",
-                "source": "utils",
-                "target": "models",
-                "detail": "utils declares dependency on models but no import found",
-            }
-        ]
+def _mock_agent_with_errors() -> AsyncMock:
+    """Return a mock invoke_agent that reports errors and warnings."""
+    data = json.dumps(
+        {
+            "errors": ["Module 'cli': path 'factory/cli.py' does not exist"],
+            "warnings": ["Orphan module: 'utils' has zero consumers"],
+        }
     )
-    return AsyncMock(return_value=(findings, 0))
+    return AsyncMock(return_value=(data, 0))
 
 
-def _mock_haiku_failure() -> AsyncMock:
+def _mock_agent_failure() -> AsyncMock:
     """Return a mock invoke_agent that fails."""
     return AsyncMock(return_value=("error occurred", 1))
 
 
-class TestPathChecks:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_valid_paths_no_errors(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        path_errors = [e for e in result.errors if "does not exist" in e]
-        assert path_errors == []
+def _mock_agent_bad_json() -> AsyncMock:
+    """Return a mock invoke_agent that returns unparseable output."""
+    return AsyncMock(return_value=("This is not JSON at all", 0))
 
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_missing_path_produces_error(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        spec_with_bad_path = BASIC_SPEC.replace("myapp/utils.py", "myapp/nonexistent.py")
-        _write_spec(project, spec_with_bad_path)
-        result = await validate_spec(project)
-        path_errors = [e for e in result.errors if "does not exist" in e]
-        assert len(path_errors) == 1
-        assert "utils" in path_errors[0]
 
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_missing_path_fails_validation(
-        self, mock_agent: AsyncMock, tmp_path: Path
-    ) -> None:
-        project = _make_python_project(tmp_path)
-        spec_with_bad_path = BASIC_SPEC.replace("myapp/utils.py", "myapp/nonexistent.py")
-        _write_spec(project, spec_with_bad_path)
-        result = await validate_spec(project)
+class TestValidateSpec:
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
+    async def test_clean_validation(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.passed
+        assert result.errors == []
+        assert result.warnings == []
+
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_with_errors)
+    async def test_validation_with_errors(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
         assert not result.passed
+        assert len(result.errors) == 1
+        assert "does not exist" in result.errors[0]
+        assert len(result.warnings) == 1
+        assert "Orphan" in result.warnings[0]
 
-
-class TestImportCrossReference:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_valid_imports_no_warnings(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        import_warns = [w for w in result.warnings if "Phantom" in w or "Missing" in w]
-        assert import_warns == []
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_with_phantom)
-    async def test_phantom_dependency_produces_warning(
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_failure)
+    async def test_agent_failure_produces_warning(
         self, mock_agent: AsyncMock, tmp_path: Path
     ) -> None:
-        project = _make_python_project(tmp_path)
-        spec_with_phantom = BASIC_SPEC.replace(
-            "### utils\n- **Path:** myapp/utils.py\n- **Role:** Utility functions\n"
-            "- **Exports:** slugify\n- **Depends on:** none",
-            "### utils\n- **Path:** myapp/utils.py\n- **Role:** Utility functions\n"
-            "- **Exports:** slugify\n- **Depends on:** models",
-        )
-        _write_spec(project, spec_with_phantom)
-        result = await validate_spec(project)
-        phantom_warns = [w for w in result.warnings if "Phantom" in w]
-        assert len(phantom_warns) >= 1
-        assert "utils" in phantom_warns[0]
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.passed
+        assert any("failed" in w for w in result.warnings)
 
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_haiku_called_with_model(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        await validate_spec(project)
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_bad_json)
+    async def test_bad_json_produces_warning(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.passed
+        assert any("Could not parse" in w for w in result.warnings)
+
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
+    async def test_haiku_model_used(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        await validate_spec(tmp_path)
         mock_agent.assert_awaited_once()
-        call_kwargs = mock_agent.call_args
-        assert call_kwargs.kwargs.get("model") == "haiku"
+        assert mock_agent.call_args.kwargs.get("model") == "haiku"
 
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_failure)
-    async def test_haiku_failure_produces_warning(
-        self, mock_agent: AsyncMock, tmp_path: Path
-    ) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        fail_warns = [w for w in result.warnings if "verification failed" in w]
-        assert len(fail_warns) == 1
-
-
-class TestOrphanDetection:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_orphan_module_flagged(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        orphan_warns = [w for w in result.warnings if "Orphan module" in w]
-        orphan_names = [w for w in orphan_warns if "utils" in w]
-        assert len(orphan_names) >= 1
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_consumed_module_not_orphan(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        result = await validate_spec(project)
-        orphan_warns = [w for w in result.warnings if "Orphan module" in w]
-        orphan_names = [w for w in orphan_warns if "models" in w]
-        assert orphan_names == []
-
-
-class TestValidationReport:
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_clean)
     async def test_report_written(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        await validate_spec(project)
-        report_path = project / ".factory" / "spec_validation.md"
+        _write_spec(tmp_path, BASIC_SPEC)
+        await validate_spec(tmp_path)
+        report_path = tmp_path / ".factory" / "spec_validation.md"
         assert report_path.is_file()
-
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_report_contains_summary(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        await validate_spec(project)
-        report = (project / ".factory" / "spec_validation.md").read_text()
+        report = report_path.read_text()
         assert "## Summary" in report
         assert "PASS" in report
 
-    @patch("factory.agents.runner.invoke_agent", new_callable=_mock_haiku_no_findings)
-    async def test_report_no_coupling_table(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        project = _make_python_project(tmp_path)
-        _write_spec(project, BASIC_SPEC)
-        await validate_spec(project)
-        report = (project / ".factory" / "spec_validation.md").read_text()
-        assert "## Coupling Metrics" not in report
+    @patch("factory.spec.validate.invoke_agent", new_callable=_mock_agent_with_errors)
+    async def test_fail_report(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        await validate_spec(tmp_path)
+        report = (tmp_path / ".factory" / "spec_validation.md").read_text()
+        assert "FAIL" in report
+        assert "## Errors" in report
 
 
 class TestValidationResult:
@@ -244,119 +139,3 @@ class TestMissingSpec:
     async def test_missing_spec_raises(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError):
             await validate_spec(tmp_path)
-
-
-class TestSectionCompleteness:
-    """Tests for _check_section_completeness — verifies detection of missing spec sections."""
-
-    def _make_complete_spec(self) -> "RepoSpec":  # noqa: F821
-        from factory.spec.parser import ProjectIdentity, RepoSpec
-
-        return RepoSpec(
-            identity=ProjectIdentity(name="test-project"),
-            problem_statement="A test project for validation.",
-            goals="Run tests automatically.",
-            non_goals="Not a production system.",
-            design_philosophy="Keep it simple.",
-            configuration_spec="CLI flag > env var > default.",
-            security="No trust boundaries.",
-            extension_points="Plugin registry at factory/runners/.",
-            implementation_checklist="Must pass all tests.",
-        )
-
-    def test_complete_spec_returns_no_warnings(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        warnings = _check_section_completeness(spec)
-        assert warnings == []
-
-    def test_missing_problem_statement(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.problem_statement = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§1 Problem Statement" in w for w in warnings)
-
-    def test_missing_goals(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.goals = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§2.1 Goals" in w for w in warnings)
-
-    def test_missing_non_goals(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.non_goals = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§2.2 Non-Goals" in w for w in warnings)
-
-    def test_missing_design_philosophy(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.design_philosophy = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§2.3 Design Philosophy" in w for w in warnings)
-
-    def test_missing_identity_name(self) -> None:
-        from factory.spec.parser import ProjectIdentity
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.identity = ProjectIdentity()
-        warnings = _check_section_completeness(spec)
-        assert any("§3 Project Identity" in w for w in warnings)
-
-    def test_missing_configuration_spec(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.configuration_spec = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§10 Configuration" in w for w in warnings)
-
-    def test_missing_security(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.security = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§13 Security" in w for w in warnings)
-
-    def test_missing_extension_points(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.extension_points = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§15 Extension Points" in w for w in warnings)
-
-    def test_missing_implementation_checklist(self) -> None:
-        from factory.spec.validate import _check_section_completeness
-
-        spec = self._make_complete_spec()
-        spec.implementation_checklist = ""
-        warnings = _check_section_completeness(spec)
-        assert any("§16 Implementation Checklist" in w for w in warnings)
-
-    def test_all_sections_missing_returns_all_warnings(self) -> None:
-        from factory.spec.parser import RepoSpec
-        from factory.spec.validate import _check_section_completeness
-
-        spec = RepoSpec()
-        warnings = _check_section_completeness(spec)
-        assert len(warnings) == 9
-        assert any("§1" in w for w in warnings)
-        assert any("§2.1" in w for w in warnings)
-        assert any("§2.2" in w for w in warnings)
-        assert any("§2.3" in w for w in warnings)
-        assert any("§3" in w for w in warnings)
-        assert any("§10" in w for w in warnings)
-        assert any("§13" in w for w in warnings)
-        assert any("§15" in w for w in warnings)
-        assert any("§16" in w for w in warnings)
