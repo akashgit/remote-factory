@@ -1,14 +1,12 @@
-"""Tests for factory.spec.update — agent-based diff scoping and spec update."""
+"""Tests for factory.spec.update — agent-based diff scoping and spec update (text-only)."""
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from factory.spec.update import DiffScope, _format_scope
 from factory.workflow.definitions import (
     improve_workflow,
     register_all,
@@ -17,31 +15,7 @@ from factory.workflow.definitions import (
 from factory.workflow.primitives import AgentNode, AgentRole, FnNode, GateNode
 
 
-# ── Scope formatting ───────────────────────────────────────────
-
-
-class TestFormatScope:
-    def test_formats_with_data(self) -> None:
-        scope = DiffScope(
-            affected_modules=["cli", "spec"],
-            new_files=["factory/new.py"],
-            deleted_files=["factory/old.py"],
-        )
-        output = _format_scope(scope)
-        assert "# Spec Update Scope" in output
-        assert "- cli" in output
-        assert "- spec" in output
-        assert "- factory/new.py" in output
-        assert "- factory/old.py" in output
-
-    def test_formats_empty(self) -> None:
-        scope = DiffScope()
-        output = _format_scope(scope)
-        assert "None" in output
-
-
 # ── Agent-based scope_diff ────────────────────────────────────
-
 
 FIXTURE_SPEC = """\
 # Repo Spec
@@ -85,17 +59,22 @@ deleted file mode 100644
 -x = 1
 """
 
+SCOPE_REPORT = """\
+## Affected Modules
+- CLI
+- Spec
+
+## New Files
+- factory/spec/update.py
+
+## Deleted Files
+- factory/old_module.py
+"""
+
 
 def _mock_scope_agent() -> AsyncMock:
-    """Return a mock invoke_agent that returns a valid DiffScope JSON."""
-    data = json.dumps(
-        {
-            "affected_modules": ["CLI", "Spec"],
-            "new_files": ["factory/spec/update.py"],
-            "deleted_files": ["factory/old_module.py"],
-        }
-    )
-    return AsyncMock(return_value=(data, 0))
+    """Return a mock invoke_agent that returns a text scope report."""
+    return AsyncMock(return_value=(SCOPE_REPORT, 0))
 
 
 def _mock_scope_agent_failure() -> AsyncMock:
@@ -120,15 +99,15 @@ def _setup_fixture_project(tmp_path: Path) -> Path:
 
 class TestScopeDiff:
     @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
-    async def test_scopes_experiment_diff(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+    async def test_returns_text_report(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
 
         project = _setup_fixture_project(tmp_path)
-        scope = await scope_diff(project, experiment_id=1)
+        result = await scope_diff(project, experiment_id=1)
 
-        assert "CLI" in scope.affected_modules
-        assert "Spec" in scope.affected_modules
-        assert "factory/old_module.py" in scope.deleted_files
+        assert isinstance(result, str)
+        assert "CLI" in result
+        assert "Spec" in result
 
     @patch("factory.agents.runner.invoke_agent", new_callable=_mock_scope_agent)
     async def test_writes_scope_file(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
@@ -140,7 +119,7 @@ class TestScopeDiff:
         scope_path = project / ".factory" / "spec_update_scope.md"
         assert scope_path.is_file()
         content = scope_path.read_text()
-        assert "# Spec Update Scope" in content
+        assert "Affected Modules" in content
 
     async def test_missing_spec_raises(self, tmp_path: Path) -> None:
         from factory.spec.update import scope_diff
@@ -179,6 +158,140 @@ class TestScopeDiff:
         project = _setup_fixture_project(tmp_path)
         await scope_diff(project, experiment_id=1)
         assert mock_agent.call_args.kwargs.get("model") == "haiku"
+
+
+# ── _get_diff_text ───────────────────────────────────────────────
+
+
+class TestGetDiffText:
+    def test_reads_experiment_diff_file(self, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        exp_dir = tmp_path / ".factory" / "experiments" / "1"
+        exp_dir.mkdir(parents=True)
+        (exp_dir / "changes.diff").write_text("diff content")
+
+        result = _get_diff_text(tmp_path, experiment_id=1, spec_rel="GRAPH-SPEC.md")
+        assert result == "diff content"
+
+    def test_missing_experiment_diff_raises(self, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        with pytest.raises(FileNotFoundError, match="No diff found"):
+            _get_diff_text(tmp_path, experiment_id=99, spec_rel="GRAPH-SPEC.md")
+
+    @patch("factory.spec.update.subprocess.run")
+    def test_git_diff_from_spec_commit(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="abc123\n"),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(returncode=0, stdout="diff --git a/x.py b/x.py\n"),
+        ]
+
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        assert "diff --git" in result
+
+    @patch("factory.spec.update.subprocess.run")
+    def test_git_diff_fallback_to_head_minus_1(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(returncode=0, stdout="fallback diff\n"),
+        ]
+
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        assert result == "fallback diff\n"
+
+    @patch("factory.spec.update.subprocess.run")
+    def test_initial_commit_uses_root_flag(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=128, stderr="fatal: bad revision"),
+            MagicMock(returncode=0, stdout="root diff\n"),
+        ]
+
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        assert result == "root diff\n"
+        root_call = mock_run.call_args_list[2]
+        assert "--root" in root_call[0][0]
+
+    @patch("factory.spec.update.subprocess.run")
+    def test_git_diff_failure_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        mock_run.side_effect = [
+            MagicMock(returncode=0, stdout="abc\n"),
+            MagicMock(returncode=0, stdout=""),
+            MagicMock(returncode=128, stderr="fatal: bad revision"),
+        ]
+
+        with pytest.raises(RuntimeError, match="git diff failed"):
+            _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+
+
+# ── update_spec ──────────────────────────────────────────────────
+
+
+class TestUpdateSpec:
+    async def test_no_spec_raises(self, tmp_path: Path) -> None:
+        from factory.spec.update import update_spec
+
+        with pytest.raises(FileNotFoundError, match="No repo spec"):
+            await update_spec(tmp_path)
+
+    @patch(
+        "factory.spec.update.scope_diff",
+        new_callable=lambda: AsyncMock(return_value=""),
+    )
+    async def test_noop_when_empty_scope(self, mock_scope: AsyncMock, tmp_path: Path) -> None:
+        from factory.spec.update import update_spec
+
+        project = _setup_fixture_project(tmp_path)
+        result = await update_spec(project)
+        assert result == project / "GRAPH-SPEC.md"
+
+    @patch(
+        "factory.spec.update.scope_diff",
+        new_callable=lambda: AsyncMock(return_value=SCOPE_REPORT),
+    )
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("patched", 0)),
+    )
+    async def test_success_patches_spec(
+        self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path
+    ) -> None:
+        from factory.spec.update import update_spec
+
+        project = _setup_fixture_project(tmp_path)
+        result = await update_spec(project)
+
+        assert result == project / "GRAPH-SPEC.md"
+        mock_agent.assert_awaited_once()
+        assert mock_agent.call_args.kwargs.get("model") == "opus"
+
+    @patch(
+        "factory.spec.update.scope_diff",
+        new_callable=lambda: AsyncMock(return_value=SCOPE_REPORT),
+    )
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("error", 1)),
+    )
+    async def test_patch_failure_raises(
+        self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path
+    ) -> None:
+        from factory.spec.update import update_spec
+
+        project = _setup_fixture_project(tmp_path)
+        with pytest.raises(RuntimeError, match="Spec patch failed"):
+            await update_spec(project)
 
 
 # ── W₁₀ Spec Update workflow ──────────────────────────────────
@@ -288,146 +401,3 @@ class TestImproveWorkflowSpecUpdate:
         wf = improve_workflow()
         issues = wf.validate_graph()
         assert issues == [], f"improve workflow has issues: {issues}"
-
-
-# ── _get_diff_text (git subprocess path) ─────────────────────────
-
-
-class TestGetDiffText:
-    def test_reads_experiment_diff_file(self, tmp_path: Path) -> None:
-        from factory.spec.update import _get_diff_text
-
-        exp_dir = tmp_path / ".factory" / "experiments" / "1"
-        exp_dir.mkdir(parents=True)
-        (exp_dir / "changes.diff").write_text("diff content")
-
-        result = _get_diff_text(tmp_path, experiment_id=1, spec_rel="GRAPH-SPEC.md")
-        assert result == "diff content"
-
-    def test_missing_experiment_diff_raises(self, tmp_path: Path) -> None:
-        from factory.spec.update import _get_diff_text
-
-        with pytest.raises(FileNotFoundError, match="No diff found"):
-            _get_diff_text(tmp_path, experiment_id=99, spec_rel="GRAPH-SPEC.md")
-
-    @patch("factory.spec.update.subprocess.run")
-    def test_git_diff_from_spec_commit(self, mock_run, tmp_path: Path) -> None:
-        from factory.spec.update import _get_diff_text
-
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="abc123\n"),
-            MagicMock(returncode=0, stdout="diff --git a/x.py b/x.py\n"),
-        ]
-
-        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
-        assert "diff --git" in result
-
-        log_call, diff_call = mock_run.call_args_list
-        assert "abc123" in diff_call[0][0]
-
-    @patch("factory.spec.update.subprocess.run")
-    def test_git_diff_fallback_to_head_minus_1(self, mock_run, tmp_path: Path) -> None:
-        from factory.spec.update import _get_diff_text
-
-        mock_run.side_effect = [
-            MagicMock(returncode=1, stdout=""),
-            MagicMock(returncode=0, stdout="fallback diff\n"),
-        ]
-
-        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
-        assert result == "fallback diff\n"
-
-        diff_call = mock_run.call_args_list[1]
-        assert "HEAD~1" in diff_call[0][0]
-
-    @patch("factory.spec.update.subprocess.run")
-    def test_git_diff_failure_raises(self, mock_run, tmp_path: Path) -> None:
-        from factory.spec.update import _get_diff_text
-
-        mock_run.side_effect = [
-            MagicMock(returncode=0, stdout="abc\n"),
-            MagicMock(returncode=128, stderr="fatal: bad revision"),
-        ]
-
-        with pytest.raises(RuntimeError, match="git diff failed"):
-            _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
-
-
-# ── scope_diff non-object JSON ───────────────────────────────────
-
-
-class TestScopeDiffNonObjectJson:
-    @patch(
-        "factory.agents.runner.invoke_agent",
-        new_callable=lambda: AsyncMock(return_value=("[1, 2, 3]", 0)),
-    )
-    async def test_non_object_json_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
-        from factory.spec.update import scope_diff
-
-        project = _setup_fixture_project(tmp_path)
-
-        with pytest.raises(RuntimeError, match="non-object JSON"):
-            await scope_diff(project, experiment_id=1)
-
-
-# ── update_spec ──────────────────────────────────────────────────
-
-
-class TestUpdateSpec:
-    async def test_no_spec_raises(self, tmp_path: Path) -> None:
-        from factory.spec.update import update_spec
-
-        with pytest.raises(FileNotFoundError, match="No repo spec"):
-            await update_spec(tmp_path)
-
-    @patch(
-        "factory.spec.update.scope_diff",
-        new_callable=lambda: AsyncMock(return_value=DiffScope()),
-    )
-    async def test_noop_when_no_changes(self, mock_scope: AsyncMock, tmp_path: Path) -> None:
-        from factory.spec.update import update_spec
-
-        project = _setup_fixture_project(tmp_path)
-        result = await update_spec(project)
-        assert result == project / "GRAPH-SPEC.md"
-
-    @patch(
-        "factory.spec.update.scope_diff",
-        new_callable=lambda: AsyncMock(
-            return_value=DiffScope(affected_modules=["CLI"]),
-        ),
-    )
-    @patch(
-        "factory.agents.runner.invoke_agent",
-        new_callable=lambda: AsyncMock(return_value=("patched", 0)),
-    )
-    async def test_success_patches_spec(
-        self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path
-    ) -> None:
-        from factory.spec.update import update_spec
-
-        project = _setup_fixture_project(tmp_path)
-        result = await update_spec(project)
-
-        assert result == project / "GRAPH-SPEC.md"
-        mock_agent.assert_awaited_once()
-        assert mock_agent.call_args.kwargs.get("model") == "opus"
-
-    @patch(
-        "factory.spec.update.scope_diff",
-        new_callable=lambda: AsyncMock(
-            return_value=DiffScope(affected_modules=["CLI"]),
-        ),
-    )
-    @patch(
-        "factory.agents.runner.invoke_agent",
-        new_callable=lambda: AsyncMock(return_value=("error", 1)),
-    )
-    async def test_patch_failure_raises(
-        self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path
-    ) -> None:
-        from factory.spec.update import update_spec
-
-        project = _setup_fixture_project(tmp_path)
-        with pytest.raises(RuntimeError, match="Spec patch failed"):
-            await update_spec(project)
