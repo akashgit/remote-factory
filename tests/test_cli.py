@@ -1129,9 +1129,9 @@ class TestCmdCeoReview:
         assert "review-only run" in task
         assert "no Builder iterations" in task
         assert "factory eval" in task
-        assert "step 2c-qa" in task
+        assert "deep-QA pipeline" in task
         assert "iteration 1/1" in task
-        assert "step 2d" in task
+        assert "Precheck Gate" in task
         assert "--reason" in task
         assert "--qa-body-file" in task
         assert "factory review --verdict" in task

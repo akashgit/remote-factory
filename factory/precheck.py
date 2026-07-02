@@ -242,7 +242,11 @@ def check_qa_execution(
     project_path: Path,
     exp_id: int,
 ) -> CheckResult:
-    """Verify the QA agent was invoked for this experiment — Sacred Rule 9."""
+    """Verify QA verification was invoked for this experiment — Sacred Rule 9.
+
+    Matches both the old monolithic QA agent events and the new deep-QA
+    specialist events (health_checker, code_reviewer, adversarial_tester).
+    """
     from factory.events import load_events
 
     events = load_events(project_path)
@@ -264,6 +268,8 @@ def check_qa_execution(
             detail=f"No experiment.begin event found for exp_id={exp_id} — skipping QA check",
         )
 
+    qa_roles = {"qa", "health_checker", "code_reviewer", "adversarial_tester"}
+
     for ev in events:
         ts_str = ev.get("timestamp")
         if not ts_str:
@@ -277,19 +283,19 @@ def check_qa_execution(
             return CheckResult(
                 name="qa_execution",
                 passed=True,
-                detail="QA agent completed for this experiment",
+                detail="QA verification completed for this experiment",
             )
-        if ev_type == "agent.completed" and ev.get("agent") == "qa":
+        if ev_type == "agent.completed" and ev.get("agent") in qa_roles:
             return CheckResult(
                 name="qa_execution",
                 passed=True,
-                detail="QA agent completed for this experiment",
+                detail=f"QA verification completed for this experiment ({ev.get('agent')})",
             )
 
     return CheckResult(
         name="qa_execution",
         passed=False,
-        detail="QA agent not invoked — Sacred Rule 9 violation",
+        detail="QA verification not invoked — Sacred Rule 9 violation",
     )
 
 
