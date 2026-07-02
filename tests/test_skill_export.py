@@ -277,7 +277,7 @@ class TestGateToCheckpoint:
         result = _gate_to_checkpoint(gate, [], wf)
         assert "{{gate_prompt_gate_review::" in result
 
-    def test_emits_failure_action_slot(self) -> None:
+    def test_fn_gate_includes_mandatory_wait(self) -> None:
         gate = GateNode(
             id="gate_precheck",
             evaluator_type="fn",
@@ -285,7 +285,8 @@ class TestGateToCheckpoint:
         )
         wf = _minimal_workflow(nodes={"gate_precheck": gate}, start="gate_precheck")
         result = _gate_to_checkpoint(gate, [], wf)
-        assert "{{failure_action_gate_precheck::" in result
+        assert "MANDATORY" in result
+        assert "Do NOT run agents in parallel" in result
 
     def test_emits_annotation_comments(self) -> None:
         gate = GateNode(
