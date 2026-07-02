@@ -139,6 +139,22 @@ class TestGroupIntoBatches:
         assert len(batches) == 1
         assert batches[0] == [Path("exists.py")]
 
+    def test_oversized_file_gets_own_batch(self, tmp_path: Path) -> None:
+        token_limit = 50
+        char_limit = token_limit * APPROX_CHARS_PER_TOKEN  # 200
+
+        (tmp_path / "small1.py").write_text("x" * 50)
+        (tmp_path / "huge.py").write_text("x" * (char_limit + 1))
+        (tmp_path / "small2.py").write_text("x" * 50)
+
+        files = [Path("small1.py"), Path("huge.py"), Path("small2.py")]
+        batches = group_into_batches(files, tmp_path, token_limit=token_limit)
+
+        assert len(batches) == 3
+        assert batches[0] == [Path("small1.py")]
+        assert batches[1] == [Path("huge.py")]
+        assert batches[2] == [Path("small2.py")]
+
 
 # ── W₉ Spec Generate workflow ───────────────────────────────────
 

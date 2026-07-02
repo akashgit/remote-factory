@@ -222,6 +222,19 @@ class TestGetDiffText:
         assert "--root" in root_call[0][0]
 
     @patch("factory.spec.update.subprocess.run")
+    def test_root_diff_failure_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
+        from factory.spec.update import _get_diff_text
+
+        mock_run.side_effect = [
+            MagicMock(returncode=1, stdout=""),
+            MagicMock(returncode=128, stderr="fatal: bad revision"),
+            MagicMock(returncode=1, stderr="fatal: unable to read tree"),
+        ]
+
+        with pytest.raises(RuntimeError, match="git diff failed"):
+            _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+
+    @patch("factory.spec.update.subprocess.run")
     def test_git_diff_failure_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
         from factory.spec.update import _get_diff_text
 
