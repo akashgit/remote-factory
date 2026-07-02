@@ -197,15 +197,16 @@ class TestCeoPrompt:
         assert "ceo-verdict" in ceo_prompt
 
     def test_build_mode_has_builder_review(self, ceo_prompt: str) -> None:
-        """Build workflow skill has QA agent after builder."""
+        """Build workflow skill has deep-qa specialist agents after builder."""
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
-        has_qa = any(
-            hasattr(n, "role") and n.role.value == "qa"
+        deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
+        has_deep_qa = any(
+            hasattr(n, "role") and n.role.value in deep_qa_roles
             for n in build.nodes.values()
         )
-        assert has_qa, "Build workflow must have QA node"
+        assert has_deep_qa, "Build workflow must have deep-qa specialist nodes"
 
     def test_improve_mode_has_builder_pr_review(self, ceo_prompt: str) -> None:
         """CEO prompt references PR review before proceeding."""
@@ -224,27 +225,28 @@ class TestCeoPrompt:
     # ── E2E Verification Gate tests ──────────────────────────────
 
     def test_build_mode_has_e2e_gate(self, ceo_prompt: str) -> None:
-        """Build workflow skill has QA agent for E2E verification."""
+        """Build workflow skill has deep-qa specialists for E2E verification."""
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
-        has_qa = any(
-            hasattr(n, "role") and n.role.value == "qa"
+        deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
+        has_deep_qa = any(
+            hasattr(n, "role") and n.role.value in deep_qa_roles
             for n in build.nodes.values()
         )
-        assert has_qa
+        assert has_deep_qa
 
     def test_e2e_gate_before_improve(self, ceo_prompt: str) -> None:
-        """Build workflow has QA after builder in topological order."""
+        """Build workflow has health_checker after builder in topological order."""
         from factory.workflow.skill_export import _topological_sort
         from factory.workflow.definitions import register_all
         wfs = register_all()
         build = wfs["build"]
         order = _topological_sort(build)
-        builder_ids = [nid for nid in order if "builder" in nid]
-        qa_ids = [nid for nid in order if "qa" in nid]
-        if builder_ids and qa_ids:
-            assert order.index(builder_ids[0]) < order.index(qa_ids[0])
+        builder_ids = [nid for nid in order if nid == "builder"]
+        hc_ids = [nid for nid in order if nid == "health_checker"]
+        if builder_ids and hc_ids:
+            assert order.index(builder_ids[0]) < order.index(hc_ids[0])
 
     def test_e2e_gate_asks_user_for_input(self, ceo_prompt: str) -> None:
         """CEO prompt communicates with user in foreground mode."""

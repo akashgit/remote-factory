@@ -25,7 +25,9 @@ class TestDeriveContext:
         prompts = ctx["agent_prompts"]
         assert "researcher" in prompts
         assert "builder" in prompts
-        assert "qa" in prompts
+        assert "health_checker" in prompts
+        assert "code_reviewer" in prompts
+        assert "adversarial_tester" in prompts
 
     def test_extracts_ceo_prompt_from_gates(self) -> None:
         from factory.workflow.definitions import improve_workflow

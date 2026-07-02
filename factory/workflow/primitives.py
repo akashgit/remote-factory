@@ -18,6 +18,9 @@ class AgentRole(str, Enum):
     STRATEGIST = "strategist"
     BUILDER = "builder"
     QA = "qa"
+    HEALTH_CHECKER = "health_checker"
+    CODE_REVIEWER = "code_reviewer"
+    ADVERSARIAL_TESTER = "adversarial_tester"
     FAILURE_ANALYST = "failure_analyst"
     CEO = "ceo"
     ARCHIVIST = "archivist"
@@ -40,6 +43,9 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "strategist": AgentConfig(role=AgentRole.STRATEGIST, model="opus", timeout=600),
     "builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=1200),
     "qa": AgentConfig(role=AgentRole.QA, model="opus", timeout=1800),
+    "health_checker": AgentConfig(role=AgentRole.HEALTH_CHECKER, model="opus", timeout=600),
+    "code_reviewer": AgentConfig(role=AgentRole.CODE_REVIEWER, model="opus", timeout=900),
+    "adversarial_tester": AgentConfig(role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),

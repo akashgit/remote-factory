@@ -277,7 +277,7 @@ class TestGateToCheckpoint:
         result = _gate_to_checkpoint(gate, [], wf)
         assert "{{gate_prompt_gate_review::" in result
 
-    def test_emits_failure_action_slot(self) -> None:
+    def test_fn_gate_includes_mandatory_wait(self) -> None:
         gate = GateNode(
             id="gate_precheck",
             evaluator_type="fn",
@@ -285,7 +285,8 @@ class TestGateToCheckpoint:
         )
         wf = _minimal_workflow(nodes={"gate_precheck": gate}, start="gate_precheck")
         result = _gate_to_checkpoint(gate, [], wf)
-        assert "{{failure_action_gate_precheck::" in result
+        assert "MANDATORY" in result
+        assert "Do NOT run agents in parallel" in result
 
     def test_emits_annotation_comments(self) -> None:
         gate = GateNode(
@@ -511,7 +512,7 @@ def _workflows_with_builder() -> list[str]:
 
 
 class TestSkillQaEnforcement:
-    """Every workflow with a Builder must include a QA phase in its exported SKILL.md."""
+    """Every workflow with a Builder must include QA verification in its exported SKILL.md."""
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
     def test_builder_workflow_has_qa_in_skill(self, workflow_name: str) -> None:
@@ -519,6 +520,9 @@ class TestSkillQaEnforcement:
 
         wf = register_all()[workflow_name]
         content = workflow_to_skill_md(wf)
-        assert "factory agent qa" in content, (
-            f"workflow-{workflow_name} SKILL.md is missing 'factory agent qa' invocation"
+        qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
+        has_qa = any(f"factory agent {role}" in content for role in qa_roles)
+        assert has_qa, (
+            f"workflow-{workflow_name} SKILL.md is missing any QA agent invocation "
+            f"(health_checker, code_reviewer, or adversarial_tester)"
         )

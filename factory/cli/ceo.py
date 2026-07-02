@@ -120,15 +120,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"## PR Review Directive\n\n"
             f"Review PR #{pr_number}{repo_clause}.\n\n"
             f"This is a review-only run — no experiment lifecycle, no Builder iterations.\n\n"
-            f"Execute these Improve pipeline steps:\n"
+            f"Execute these steps:\n"
             f"1. Run baseline eval (factory eval) to get $SCORE_BEFORE\n"
-            f"2. Run step 2c-qa (QA Agent Verification) — single pass, "
-            f"iteration 1/1, no Builder fix loop\n"
-            f"3. Run step 2d (Hard Precheck Gate)\n"
+            f"2. Run the deep-QA pipeline (health_checker, code_reviewer, adversarial_tester) — "
+            f"single pass, iteration 1/1, no Builder fix loop\n"
+            f"3. Run Hard Precheck Gate\n"
             f"4. Post verdict via "
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
             f"--reason \"$REASON\" "
-            f"--qa-body-file .factory/reviews/qa-latest.md"
+            f"--qa-body-file .factory/reviews/adversarial-qa.md"
             f"{repo_flag}\n"
             f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
             f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
@@ -157,11 +157,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print(result)
         return code
 
-    # ── qa mode early exit ─────────────────────────────────────
-    if mode == "qa":
+    # ── qa / deep-qa mode early exit ────────────────────────────
+    if mode in ("qa", "deep-qa"):
         pr_number = getattr(args, "pr", None)
         if pr_number is None:
-            print("Error: --mode qa requires --pr <number>", file=sys.stderr)
+            print(f"Error: --mode {mode} requires --pr <number>", file=sys.stderr)
             return 1
 
         repo = getattr(args, "repo", None)
@@ -170,20 +170,22 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         project_path = Path(raw_path).expanduser().resolve()
         if not project_path.is_dir():
-            print(f"Error: project path must be an existing directory for qa mode: {raw_path}",
+            print(f"Error: project path must be an existing directory for {mode} mode: {raw_path}",
                   file=sys.stderr)
             return 1
 
-        _print_banner("qa")
+        _print_banner(mode)
 
         repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
-            f"Project: {project_path}\nMode: qa\n\n"
-            f"## QA Verification Directive\n\n"
-            f"Run the QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
-            f"Read and follow the workflow-qa SKILL.md playbook at "
-            f"skills/workflow-qa/SKILL.md.\n\n"
+            f"Project: {project_path}\nMode: deep-qa\n\n"
+            f"## Deep-QA Verification Directive\n\n"
+            f"Run the deep-QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
+            f"Execute the 3-specialist pipeline:\n"
+            f"1. health_checker — run eval, compare scores, write health-check.md\n"
+            f"2. code_reviewer — 7-category code review, write code-review.md\n"
+            f"3. adversarial_tester — skeptical feature testing, write adversarial-qa.md\n\n"
             f"Key parameters:\n"
             f"- PR_NUMBER={pr_number}\n"
             f"- PROJECT_PATH={project_path}\n"
@@ -191,7 +193,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"\nPost the final verdict via:\n"
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
             f"--reason \"$REASON\" "
-            f"--qa-body-file .factory/reviews/qa-latest.md"
+            f"--qa-body-file .factory/reviews/adversarial-qa.md"
             f"{repo_flag}\n"
             f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
             f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
@@ -199,26 +201,32 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
 
+        from factory.agents.runner import begin_cycle_session, complete_cycle_session
+        cycle_span_id = begin_cycle_session(project_path, cycle_id=mode, model=model)
+
         if not headless:
             from factory.models import AgentRunRequest
 
             prompt = resolve_prompt("ceo", project_path)
             runner = get_runner(runner_name)
-            return runner.interactive_run(AgentRunRequest(
+            rc = runner.interactive_run(AgentRunRequest(
                 prompt=prompt, task=task, cwd=project_path,
                 model=model, role="ceo", skip_permissions=True,
             ))
+            complete_cycle_session(project_path, cycle_span_id)
+            return rc
 
         from factory.ceo_completion import run_ceo_with_completion_guard
         result, code = _run(run_ceo_with_completion_guard(
             project_path,
             task,
-            mode="qa",
+            mode=mode,
             runner_name=runner_name,
             model=model,
             timeout=7200.0,
             max_respawns=1,
         ))
+        complete_cycle_session(project_path, cycle_span_id)
         print(result)
         return code
 

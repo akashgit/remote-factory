@@ -64,11 +64,11 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path> [--focus <target>]",
     },
-    "qa": {
+    "deep-qa": {
         "description": (
-            "QA mode — run the QA verification pipeline against a PR. "
-            "Spawns QA Agent (health check + code review + adversarial QA), "
-            "CEO review gate, precheck, and posts verdict as GitHub PR review."
+            "Deep-QA mode — run the 3-specialist verification pipeline against a PR. "
+            "Spawns health_checker, code_reviewer, and adversarial_tester agents "
+            "with sequential gates, precheck, and posts verdict as GitHub PR review."
         ),
         "argument_hint": "<project_path> --pr <number>",
         "preamble": (
@@ -375,23 +375,29 @@ def _gate_to_checkpoint(
         lines.append("")
         lines.append(f"### Gate — {gate_name} (Automated)")
         lines.append("")
+        lines.append(
+            "**MANDATORY:** Wait for the preceding agent to finish, then run this "
+            "check BEFORE spawning the next agent. Do NOT run agents in parallel "
+            "across this gate."
+        )
+        lines.append("")
         if node.evaluator_command:
             cmd = node.evaluator_command.replace("{project_path}", "$PROJECT_PATH")
             lines.append(f"```bash\n{cmd}\n```")
 
         if proceed_edges:
             proceed_target = proceed_edges[0].target
-            lines.append(f"\n- **PROCEED** → continue to `{proceed_target}`")
-
-        failure_default = ""
-        if halt_edges:
-            halt_target = halt_edges[0].target
-            failure_default = (
-                f"If gate fails: the change violated a constraint or score regressed. "
-                f"Route to `{halt_target}` for error handling."
+            lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
+            lines.append(
+                f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
+                "Skip to the next CEO review gate or finalize as error."
             )
-        failure_slot = emit(f"failure_action_{node.id}", failure_default)
-        lines.append(f"\n{failure_slot}")
+        elif halt_edges:
+            halt_target = halt_edges[0].target
+            lines.append(
+                f"\n- **HALT** (exit non-zero / FAIL in output) → "
+                f"route to `{halt_target}` for error handling."
+            )
     else:
         gate_prompt_slot = emit(f"gate_prompt_{node.id}", node.gate_prompt)
         ann = [
