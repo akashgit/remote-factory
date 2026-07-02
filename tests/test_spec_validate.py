@@ -171,6 +171,19 @@ class TestValidationResult:
         result = ValidationResult(errors=["path missing"])
         assert not result.passed
 
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(
+            return_value=(json.dumps({"errors": 42, "warnings": True}), 0)
+        ),
+    )
+    async def test_unexpected_type_logged(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        _write_spec(tmp_path, BASIC_SPEC)
+        result = await validate_spec(tmp_path)
+        assert result.passed
+        assert result.errors == []
+        assert result.warnings == []
+
 
 class TestMissingSpec:
     async def test_missing_spec_raises(self, tmp_path: Path) -> None:

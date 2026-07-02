@@ -70,3 +70,13 @@ class TestExtractJsonEdgeCases:
         text = '{"obj": true} and also [1, 2]'
         result = extract_json(text)
         assert result == {"obj": True}
+
+    def test_array_preferred_when_appears_first(self) -> None:
+        text = 'Result: [1, 2, 3] and also {"a": 1}'
+        result = extract_json(text)
+        assert result == [1, 2, 3]
+
+    def test_array_only_delimiter(self) -> None:
+        text = "Here is the list: [10, 20, 30] done"
+        result = extract_json(text)
+        assert result == [10, 20, 30]
