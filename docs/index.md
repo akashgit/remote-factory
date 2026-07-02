@@ -1,8 +1,3 @@
----
-hide:
-  - navigation
----
-
 <p align="center">
   <img src="assets/refactory_logo.png" alt="re:factory" width="480">
 </p>
