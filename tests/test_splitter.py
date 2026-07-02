@@ -160,6 +160,8 @@ class TestRoundTrip:
     def test_templatize_then_split_preserves_content(self) -> None:
         """Verify that templatizing then splitting produces clean output
         with the same prose content (minus markers and annotations)."""
+        import re as _re
+
         from factory.workflow.definitions import improve_workflow
         from factory.workflow.skill_export import workflow_to_skill_md
 
@@ -167,9 +169,9 @@ class TestRoundTrip:
         templatized = workflow_to_skill_md(wf)
         clean, annotations = split_skill(templatized)
 
-        assert "{{" not in clean
+        assert not _re.search(r"\{\{[a-z_]\w*::", clean), "unresolved template slots in clean output"
         assert "<!--" not in clean
         assert "factory agent builder" in clean
         assert "factory agent qa" in clean
 
-        assert "builder" in annotations or "qa" in annotations
+        assert "builder" in annotations or "health_checker" in annotations

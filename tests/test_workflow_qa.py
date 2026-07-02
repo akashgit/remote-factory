@@ -23,26 +23,26 @@ from factory.workflow.primitives import (
 class TestSubgraph:
     def test_extracts_requested_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"qa", "gate_qa"}, name="test", start_node="qa")
-        assert set(sub.nodes.keys()) == {"qa", "gate_qa"}
+        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
+        assert set(sub.nodes.keys()) == {"health_checker", "gate_health"}
 
     def test_filters_edges(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"qa", "gate_qa"}, name="test", start_node="qa")
+        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
         for edge in sub.edges:
             assert edge.source in sub.nodes
             assert edge.target in sub.nodes
 
     def test_deep_copies_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"qa", "gate_qa"}, name="test", start_node="qa")
-        assert sub.nodes["qa"] is not wf.nodes["qa"]
+        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
+        assert sub.nodes["health_checker"] is not wf.nodes["health_checker"]
 
     def test_sets_name_and_start_node(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"qa", "gate_qa"}, name="myname", start_node="qa")
+        sub = wf.subgraph({"health_checker", "gate_health"}, name="myname", start_node="health_checker")
         assert sub.name == "myname"
-        assert sub.start_node == "qa"
+        assert sub.start_node == "health_checker"
 
     def test_missing_node_raises(self) -> None:
         wf = improve_workflow()
@@ -52,18 +52,18 @@ class TestSubgraph:
     def test_preserves_edge_between_included_nodes(self) -> None:
         wf = improve_workflow()
         sub = wf.subgraph(
-            {"qa", "gate_qa", "gate_precheck"}, name="test", start_node="qa",
+            {"health_checker", "gate_health", "code_reviewer"}, name="test", start_node="health_checker",
         )
         edge_pairs = {(e.source, e.target) for e in sub.edges}
-        assert ("qa", "gate_qa") in edge_pairs
-        assert ("gate_qa", "gate_precheck") in edge_pairs
+        assert ("health_checker", "gate_health") in edge_pairs
+        assert ("gate_health", "code_reviewer") in edge_pairs
 
     def test_excludes_edges_to_outside_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"qa", "gate_qa"}, name="test", start_node="qa")
+        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
         for edge in sub.edges:
+            assert edge.target != "code_reviewer"
             assert edge.target != "builder"
-            assert edge.target != "gate_precheck"
 
 
 # ── qa_workflow() structure ─────────────────────────────────────
@@ -81,17 +81,22 @@ class TestQaWorkflow:
 
     def test_start_node(self) -> None:
         wf = qa_workflow()
-        assert wf.start_node == "qa"
+        assert wf.start_node == "health_checker"
 
     def test_has_expected_nodes(self) -> None:
         wf = qa_workflow()
-        assert set(wf.nodes.keys()) == {"qa", "gate_qa", "gate_precheck", "post_review"}
+        assert set(wf.nodes.keys()) == {
+            "health_checker", "gate_health", "code_reviewer", "gate_review",
+            "adversarial_tester", "gate_adversarial", "join_verdict",
+            "gate_qa", "gate_precheck", "post_review",
+        }
 
-    def test_qa_node_from_improve(self) -> None:
+    def test_specialist_nodes_from_improve(self) -> None:
         wf = qa_workflow()
-        qa_node = wf.nodes["qa"]
-        assert isinstance(qa_node, AgentNode)
-        assert qa_node.role == AgentRole.QA
+        for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+            node = wf.nodes[nid]
+            assert isinstance(node, AgentNode)
+            assert node.role == AgentRole.QA
 
     def test_gate_qa_no_builder_reference(self) -> None:
         wf = qa_workflow()
