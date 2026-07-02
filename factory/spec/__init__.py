@@ -6,7 +6,7 @@ from pathlib import Path
 
 from factory.spec.generate import collect_source_files, generate_spec, group_into_batches
 from factory.spec.impact import get_impact
-from factory.spec.update import DiffScope, scope_diff, update_spec
+from factory.spec.update import scope_diff, update_spec
 from factory.spec.validate import ValidationResult, validate_spec
 
 
@@ -21,7 +21,6 @@ def read_spec(project_path: Path) -> str:
 
 
 __all__ = [
-    "DiffScope",
     "ValidationResult",
     "collect_source_files",
     "generate_spec",

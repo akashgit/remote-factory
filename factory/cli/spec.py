@@ -59,25 +59,14 @@ def cmd_spec_validate(args: argparse.Namespace) -> int:
         project_path,
         "spec.validate.completed",
         {
-            "errors": len(result.errors),
-            "warnings": len(result.warnings),
+            "is_valid": result.is_valid,
             "output": str(output_path),
         },
     )
 
-    if result.errors:
-        print(f"FAIL: {len(result.errors)} error(s), {len(result.warnings)} warning(s)")
-        for err in result.errors:
-            print(f"  ERROR: {err}")
-        for warn in result.warnings:
-            print(f"  WARN: {warn}")
-    else:
-        print(f"PASS: {len(result.warnings)} warning(s)")
-        for warn in result.warnings:
-            print(f"  WARN: {warn}")
-
-    print(f"Report: {output_path}")
-    return 0 if result.passed else 1
+    print(result.report)
+    print(f"\nReport: {output_path}")
+    return 0 if result.is_valid else 1
 
 
 def cmd_spec_scope(args: argparse.Namespace) -> int:
@@ -98,28 +87,21 @@ def cmd_spec_scope(args: argparse.Namespace) -> int:
     exp_id = getattr(args, "experiment", None)
     _emit_cli_event(project_path, "spec.scope.started", {"path": str(project_path)})
     try:
-        scope = _run(scope_diff(project_path, experiment_id=exp_id))
+        scope_text = _run(scope_diff(project_path, experiment_id=exp_id))
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         _emit_cli_event(project_path, "spec.scope.failed", {"error": str(exc)[:200]})
         return 1
 
+    output_path = project_path / ".factory" / "spec_update_scope.md"
     _emit_cli_event(
         project_path,
         "spec.scope.completed",
-        {
-            "affected_modules": len(scope.affected_modules),
-            "new_files": len(scope.new_files),
-            "deleted_files": len(scope.deleted_files),
-        },
+        {"output": str(output_path)},
     )
 
-    output_path = project_path / ".factory" / "spec_update_scope.md"
-    print(
-        f"Scope: {len(scope.affected_modules)} affected modules, "
-        f"{len(scope.new_files)} new files, {len(scope.deleted_files)} deleted"
-    )
-    print(f"Report: {output_path}")
+    print(scope_text)
+    print(f"\nReport: {output_path}")
     return 0
 
 
