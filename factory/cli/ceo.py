@@ -604,6 +604,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
             if not no_worktree:
+                assert wt_branch is not None
                 remove_worktree(project_path, wt_path, wt_branch)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
@@ -637,6 +638,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
         if not no_worktree:
+            assert wt_branch is not None
             remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil
@@ -1951,6 +1953,7 @@ def _run_single_cycle(
         return code
     finally:
         if not no_worktree:
+            assert wt_branch is not None
             remove_worktree(project_path, wt_path, wt_branch)
 
 
