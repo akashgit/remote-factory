@@ -228,6 +228,22 @@ def build_workflow() -> Workflow:
         reads={".factory/reviews/qa-latest.md"},
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check the PR diff for documentation freshness. "
+            "If public APIs, CLI commands, configuration options, "
+            "or architecture were changed or added, corresponding documentation "
+            "(README.md, CLAUDE.md, docstrings, --help text, or doc/ files) "
+            "MUST be updated. PROCEED if docs are current or no doc-worthy changes "
+            "exist. RELOOP to builder if documentation is stale — specify exactly "
+            "which changes need doc updates."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
@@ -273,9 +289,12 @@ def build_workflow() -> Workflow:
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
         # QA → gate_qa
         Edge(source="qa", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
@@ -456,6 +475,22 @@ def improve_workflow() -> Workflow:
         reads={".factory/reviews/qa-latest.md"},
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check the PR diff for documentation freshness. "
+            "If public APIs, CLI commands, configuration options, "
+            "or architecture were changed or added, corresponding documentation "
+            "(README.md, CLAUDE.md, docstrings, --help text, or doc/ files) "
+            "MUST be updated. PROCEED if docs are current or no doc-worthy changes "
+            "exist. RELOOP to builder if documentation is stale — specify exactly "
+            "which changes need doc updates."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
@@ -506,9 +541,12 @@ def improve_workflow() -> Workflow:
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
         # QA → gate_qa
         Edge(source="qa", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
@@ -713,9 +751,12 @@ def research_workflow() -> Workflow:
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
         # QA → gate_qa
         Edge(source="qa", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
         # Finalize → archivist → plateau gate
@@ -1209,6 +1250,22 @@ def refine_workflow() -> Workflow:
         reads={".factory/reviews/qa-latest.md"},
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check the PR diff for documentation freshness. "
+            "If public APIs, CLI commands, configuration options, "
+            "or architecture were changed or added, corresponding documentation "
+            "(README.md, CLAUDE.md, docstrings, --help text, or doc/ files) "
+            "MUST be updated. PROCEED if docs are current or no doc-worthy changes "
+            "exist. RELOOP to builder if documentation is stale — specify exactly "
+            "which changes need doc updates."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
     # R6: Precheck gate
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
@@ -1253,8 +1310,11 @@ def refine_workflow() -> Workflow:
         # Builder → QA → CEO gate
         Edge(source="builder", target="qa"),
         Edge(source="qa", target="gate_qa"),
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
@@ -1486,6 +1546,22 @@ def create_workflow() -> Workflow:
         reads={".factory/reviews/qa-latest.md"},
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check the PR diff for documentation freshness. "
+            "If public APIs, CLI commands, configuration options, "
+            "or architecture were changed or added, corresponding documentation "
+            "(README.md, CLAUDE.md, docstrings, --help text, or doc/ files) "
+            "MUST be updated. PROCEED if docs are current or no doc-worthy changes "
+            "exist. RELOOP to builder if documentation is stale — specify exactly "
+            "which changes need doc updates."
+        ),
+        reads={".factory/reviews/qa-latest.md"},
+    )
+
     # Precheck gate
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
@@ -1533,9 +1609,12 @@ def create_workflow() -> Workflow:
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
         # QA → gate_qa
         Edge(source="qa", target="gate_qa"),
-        # gate_qa
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),

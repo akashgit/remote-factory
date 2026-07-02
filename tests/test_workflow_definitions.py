@@ -13,6 +13,8 @@ from factory.workflow.definitions import (
     design_workflow,
     improve_workflow,
     meta_workflow,
+    qa_workflow,
+    refine_workflow,
     register_all,
     research_workflow,
 )
@@ -23,6 +25,7 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    VerdictType,
 )
 
 
@@ -312,6 +315,57 @@ class TestCreateStructure:
         assert issues == [], f"create skill has issues: {issues}"
         assert "workflow-create" in skill_md
         assert "User Approval" in skill_md
+
+
+# ── gate_doc_freshness ──────────────────────────────────────────
+
+
+class TestDocFreshnessGate:
+    @pytest.mark.parametrize(
+        "workflow_fn",
+        [build_workflow, improve_workflow, research_workflow, refine_workflow, create_workflow],
+        ids=["build", "improve", "research", "refine", "create"],
+    )
+    def test_gate_exists_as_gate_node(self, workflow_fn) -> None:
+        wf = workflow_fn()
+        assert "gate_doc_freshness" in wf.nodes
+        gate = wf.nodes["gate_doc_freshness"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "agent"
+        assert gate.evaluator_role == AgentRole.CEO
+
+    def test_design_inherits_gate(self) -> None:
+        wf = design_workflow()
+        assert "gate_doc_freshness" in wf.nodes
+        assert isinstance(wf.nodes["gate_doc_freshness"], GateNode)
+
+    @pytest.mark.parametrize(
+        "workflow_fn",
+        [build_workflow, improve_workflow, research_workflow, refine_workflow, create_workflow],
+        ids=["build", "improve", "research", "refine", "create"],
+    )
+    def test_edge_wiring(self, workflow_fn) -> None:
+        wf = workflow_fn()
+        edges = wf.edges
+        assert any(
+            e.source == "gate_qa" and e.target == "gate_doc_freshness"
+            and e.condition == VerdictType.PROCEED
+            for e in edges
+        ), "missing gate_qa -> gate_doc_freshness PROCEED edge"
+        assert any(
+            e.source == "gate_doc_freshness" and e.target == "gate_precheck"
+            and e.condition == VerdictType.PROCEED
+            for e in edges
+        ), "missing gate_doc_freshness -> gate_precheck PROCEED edge"
+        assert any(
+            e.source == "gate_doc_freshness" and e.target == "builder"
+            and e.condition == VerdictType.RELOOP
+            for e in edges
+        ), "missing gate_doc_freshness -> builder RELOOP edge"
+
+    def test_qa_workflow_excludes_gate(self) -> None:
+        wf = qa_workflow()
+        assert "gate_doc_freshness" not in wf.nodes
 
 
 # ── Builder → QA reachability audit ────────────────────────────
