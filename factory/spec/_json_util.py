@@ -16,27 +16,39 @@ def extract_json(text: str) -> dict | list:
     # Strip markdown code fences
     text = re.sub(r"^```(?:json)?\s*\n", "", text, flags=re.MULTILINE)
     text = re.sub(r"\n```\s*$", "", text, flags=re.MULTILINE)
+    text = text.strip()
 
-    # Try object first (most common for structured results)
-    start = text.find("{")
-    end = text.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    # Try array
-    start = text.find("[")
-    end = text.rfind("]")
-    if start >= 0 and end > start:
-        try:
-            return json.loads(text[start : end + 1])
-        except json.JSONDecodeError:
-            pass
-
-    # Last resort: parse entire text
+    # Try full text first (handles clean agent output)
     try:
-        return json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise ValueError(f"No valid JSON found in agent output: {exc}") from exc
+        result = json.loads(text)
+        if isinstance(result, (dict, list)):
+            return result
+    except json.JSONDecodeError:
+        pass
+
+    # Try whichever delimiter appears first — avoids extracting an inner
+    # object when the outermost structure is an array
+    obj_start = text.find("{")
+    arr_start = text.find("[")
+
+    attempts: list[tuple[str, str]] = []
+    if obj_start >= 0 and arr_start >= 0:
+        if arr_start < obj_start:
+            attempts = [("[", "]"), ("{", "}")]
+        else:
+            attempts = [("{", "}"), ("[", "]")]
+    elif obj_start >= 0:
+        attempts = [("{", "}")]
+    elif arr_start >= 0:
+        attempts = [("[", "]")]
+
+    for open_char, close_char in attempts:
+        start = text.find(open_char)
+        end = text.rfind(close_char)
+        if start >= 0 and end > start:
+            try:
+                return json.loads(text[start : end + 1])
+            except json.JSONDecodeError:
+                pass
+
+    raise ValueError("No valid JSON found in agent output")
