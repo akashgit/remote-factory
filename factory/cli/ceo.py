@@ -1,4 +1,5 @@
 """CLI ceo commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -19,7 +20,17 @@ from pathlib import Path
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from factory.cli._helpers import _emit_cli_event, _ensure_dashboard, _is_github_url, _print_banner, _read_target_branch, _resolve_runner, _run, _safe_is_dir, _safe_is_file
+from factory.cli._helpers import (
+    _emit_cli_event,
+    _ensure_dashboard,
+    _is_github_url,
+    _print_banner,
+    _read_target_branch,
+    _resolve_runner,
+    _run,
+    _safe_is_dir,
+    _safe_is_file,
+)
 from factory.cli._wizard import (
     _CLI_REF as _CLI_REF,
     _ask_follow_ups as _ask_follow_ups,
@@ -67,8 +78,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     dir_name = getattr(args, "dir", None)
 
     if not raw_path:
-        print("Error: provide a project path, GitHub URL, idea file, or prompt",
-              file=sys.stderr)
+        print("Error: provide a project path, GitHub URL, idea file, or prompt", file=sys.stderr)
         return 1
 
     no_github = getattr(args, "no_github", False)
@@ -78,20 +88,19 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     if refine_request:
         if mode and mode != "auto":
-            print(f"Error: --refine and --mode {mode} are mutually exclusive.",
-                  file=sys.stderr)
+            print(f"Error: --refine and --mode {mode} are mutually exclusive.", file=sys.stderr)
             return 1
         if prompt_file:
-            print("Error: --refine and --prompt are mutually exclusive.",
-                  file=sys.stderr)
+            print("Error: --refine and --prompt are mutually exclusive.", file=sys.stderr)
             return 1
         if focus:
-            print("Error: --refine and --focus are mutually exclusive.",
-                  file=sys.stderr)
+            print("Error: --refine and --focus are mutually exclusive.", file=sys.stderr)
             return 1
         if not Path(raw_path).expanduser().resolve().is_dir():
-            print("Error: --refine requires an existing project directory, not a URL or idea.",
-                  file=sys.stderr)
+            print(
+                "Error: --refine requires an existing project directory, not a URL or idea.",
+                file=sys.stderr,
+            )
             return 1
 
     # ── review mode early exit ────────────────────────────────
@@ -107,8 +116,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         project_path = Path(raw_path).expanduser().resolve()
         if not project_path.is_dir():
-            print(f"Error: project path must be an existing directory for review mode: {raw_path}",
-                  file=sys.stderr)
+            print(
+                f"Error: project path must be an existing directory for review mode: {raw_path}",
+                file=sys.stderr,
+            )
             return 1
 
         _print_banner("review")
@@ -127,7 +138,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"3. Run Hard Precheck Gate\n"
             f"4. Post verdict via "
             f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--reason \"$REASON\" "
+            f'--reason "$REASON" '
             f"--qa-body-file .factory/reviews/adversarial-qa.md"
             f"{repo_flag}\n"
             f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
@@ -139,21 +150,30 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
             prompt = resolve_prompt("ceo", project_path)
             runner = get_runner(runner_name)
-            return runner.interactive_run(AgentRunRequest(
-                prompt=prompt, task=task, cwd=project_path,
-                model=model, role="ceo", skip_permissions=True,
-            ))
+            return runner.interactive_run(
+                AgentRunRequest(
+                    prompt=prompt,
+                    task=task,
+                    cwd=project_path,
+                    model=model,
+                    role="ceo",
+                    skip_permissions=True,
+                )
+            )
 
         from factory.ceo_completion import run_ceo_with_completion_guard
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode="review",
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-            max_respawns=1,
-        ))
+
+        result, code = _run(
+            run_ceo_with_completion_guard(
+                project_path,
+                task,
+                mode="review",
+                runner_name=runner_name,
+                model=model,
+                timeout=7200.0,
+                max_respawns=1,
+            )
+        )
         print(result)
         return code
 
@@ -170,8 +190,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         project_path = Path(raw_path).expanduser().resolve()
         if not project_path.is_dir():
-            print(f"Error: project path must be an existing directory for qa mode: {raw_path}",
-                  file=sys.stderr)
+            print(
+                f"Error: project path must be an existing directory for qa mode: {raw_path}",
+                file=sys.stderr,
+            )
             return 1
 
         _print_banner("qa")
@@ -179,27 +201,28 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
-            f'Project: {project_path}\nMode: qa\n\n'
-            f'## QA Verification Directive\n\n'
-            f'Run the QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n'
-            f'Read and follow the workflow-qa SKILL.md playbook at '
-            f'skills/workflow-qa/SKILL.md.\n\n'
-            f'Key parameters:\n'
-            f'- PR_NUMBER={pr_number}\n'
-            f'- PROJECT_PATH={project_path}\n'
-            f'{f"- REPO={repo}" + chr(10) if repo else ""}'
-            f'\nPost the final verdict via:\n'
-            f'factory review --verdict <KEEP|REVERT> --pr {pr_number} '
+            f"Project: {project_path}\nMode: qa\n\n"
+            f"## QA Verification Directive\n\n"
+            f"Run the QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
+            f"Read and follow the workflow-qa SKILL.md playbook at "
+            f"skills/workflow-qa/SKILL.md.\n\n"
+            f"Key parameters:\n"
+            f"- PR_NUMBER={pr_number}\n"
+            f"- PROJECT_PATH={project_path}\n"
+            f"{f'- REPO={repo}' + chr(10) if repo else ''}"
+            f"\nPost the final verdict via:\n"
+            f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
             f'--reason "$REASON" '
-            f'--qa-body-file .factory/reviews/qa-latest.md'
-            f'{repo_flag}\n'
+            f"--qa-body-file .factory/reviews/qa-latest.md"
+            f"{repo_flag}\n"
             f'\nSet $REASON to the QA verdict summary (e.g. "QA: CLEAN — 2854 tests pass, 0 issues" '
             f'or "QA: ISSUES_FOUND — 3 critical issues"). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n'
-            f'\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). '
-            f'The factory review command above is the ONLY GitHub output artifact.\n'
+            f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
+            f"The factory review command above is the ONLY GitHub output artifact.\n"
         )
 
         from factory.agents.runner import begin_cycle_session, complete_cycle_session
+
         cycle_span_id = begin_cycle_session(project_path, cycle_id="qa", model=model)
 
         if not headless:
@@ -207,140 +230,86 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
             prompt = resolve_prompt("ceo", project_path)
             runner = get_runner(runner_name)
-            rc = runner.interactive_run(AgentRunRequest(
-                prompt=prompt, task=task, cwd=project_path,
-                model=model, role="ceo", skip_permissions=True,
-            ))
+            rc = runner.interactive_run(
+                AgentRunRequest(
+                    prompt=prompt,
+                    task=task,
+                    cwd=project_path,
+                    model=model,
+                    role="ceo",
+                    skip_permissions=True,
+                )
+            )
             complete_cycle_session(project_path, cycle_span_id)
             return rc
 
         from factory.ceo_completion import run_ceo_with_completion_guard
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode="qa",
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-            max_respawns=1,
-        ))
-        complete_cycle_session(project_path, cycle_span_id)
-        print(result)
-        return code
 
-    # ── deep-qa mode early exit ───────────────────────────────
-    if mode == "deep-qa":
-        pr_number = getattr(args, "pr", None)
-        if pr_number is None:
-            print("Error: --mode deep-qa requires --pr <number>", file=sys.stderr)
-            return 1
-
-        repo = getattr(args, "repo", None)
-        model = _resolve_model(args)
-        runner_name = _resolve_runner(args)
-
-        project_path = Path(raw_path).expanduser().resolve()
-        if not project_path.is_dir():
-            print(f"Error: project path must be an existing directory for deep-qa mode: {raw_path}",
-                  file=sys.stderr)
-            return 1
-
-        _print_banner("deep-qa")
-
-        repo_flag = f" --repo {repo}" if repo else ""
-        repo_clause = f" in repo `{repo}`" if repo else ""
-        task = (
-            f"Project: {project_path}\nMode: deep-qa\n\n"
-            f"## Deep-QA Verification Directive\n\n"
-            f"Run the deep-QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
-            f"Execute the 3-specialist pipeline:\n"
-            f"1. health_checker — run eval, compare scores, write health-check.md\n"
-            f"2. code_reviewer — 7-category code review, write code-review.md\n"
-            f"3. adversarial_tester — skeptical feature testing, write adversarial-qa.md\n\n"
-            f"Key parameters:\n"
-            f"- PR_NUMBER={pr_number}\n"
-            f"- PROJECT_PATH={project_path}\n"
-            f"{f'- REPO={repo}' + chr(10) if repo else ''}"
-            f"\nPost the final verdict via:\n"
-            f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f"--reason \"$REASON\" "
-            f"--qa-body-file .factory/reviews/adversarial-qa.md"
-            f"{repo_flag}\n"
-            f"\nSet $REASON to the QA verdict summary (e.g. 'QA: CLEAN — 2854 tests pass, 0 issues' "
-            f"or 'QA: ISSUES_FOUND — 3 critical issues'). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n"
-            f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
-            f"The factory review command above is the ONLY GitHub output artifact.\n"
+        result, code = _run(
+            run_ceo_with_completion_guard(
+                project_path,
+                task,
+                mode="qa",
+                runner_name=runner_name,
+                model=model,
+                timeout=7200.0,
+                max_respawns=1,
+            )
         )
-
-        from factory.agents.runner import begin_cycle_session, complete_cycle_session
-        cycle_span_id = begin_cycle_session(project_path, cycle_id="deep-qa", model=model)
-
-        if not headless:
-            from factory.models import AgentRunRequest
-
-            prompt = resolve_prompt("ceo", project_path)
-            runner = get_runner(runner_name)
-            rc = runner.interactive_run(AgentRunRequest(
-                prompt=prompt, task=task, cwd=project_path,
-                model=model, role="ceo", skip_permissions=True,
-            ))
-            complete_cycle_session(project_path, cycle_span_id)
-            return rc
-
-        from factory.ceo_completion import run_ceo_with_completion_guard
-        result, code = _run(run_ceo_with_completion_guard(
-            project_path,
-            task,
-            mode="deep-qa",
-            runner_name=runner_name,
-            model=model,
-            timeout=7200.0,
-            max_respawns=1,
-        ))
         complete_cycle_session(project_path, cycle_span_id)
         print(result)
         return code
 
     _design_is_existing = (
-        mode == "design"
-        and raw_path
-        and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode == "design" and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "design":
         if headless:
             flag = "--bg" if bg else "--headless"
-            print(f"Error: --mode design requires foreground mode "
-                  f"(incompatible with {flag})", file=sys.stderr)
+            print(
+                f"Error: --mode design requires foreground mode (incompatible with {flag})",
+                file=sys.stderr,
+            )
             return 1
         if prompt_file:
-            print("Error: --mode design and --prompt are mutually exclusive. "
-                  "Design mode generates the spec; --prompt provides one.",
-                  file=sys.stderr)
+            print(
+                "Error: --mode design and --prompt are mutually exclusive. "
+                "Design mode generates the spec; --prompt provides one.",
+                file=sys.stderr,
+            )
             return 1
         if focus and not _design_is_existing:
-            print("Error: --mode design and --focus are mutually exclusive "
-                  "for new ideas. To discuss a topic on an existing project, "
-                  "pass the project path: factory ceo /path --mode design --focus \"topic\"",
-                  file=sys.stderr)
+            print(
+                "Error: --mode design and --focus are mutually exclusive "
+                "for new ideas. To discuss a topic on an existing project, "
+                'pass the project path: factory ceo /path --mode design --focus "topic"',
+                file=sys.stderr,
+            )
             return 1
 
     if mode == "create":
         if headless:
             flag = "--bg" if bg else "--headless"
-            print(f"Error: --mode create requires foreground mode "
-                  f"(incompatible with {flag})", file=sys.stderr)
+            print(
+                f"Error: --mode create requires foreground mode (incompatible with {flag})",
+                file=sys.stderr,
+            )
             return 1
         if prompt_file:
-            print("Error: --mode create and --prompt are mutually exclusive. "
-                  "Create mode generates the workflow from a description.",
-                  file=sys.stderr)
+            print(
+                "Error: --mode create and --prompt are mutually exclusive. "
+                "Create mode generates the workflow from a description.",
+                file=sys.stderr,
+            )
             return 1
     if mode == "research":
         if prompt_file:
-            print("Error: --mode research and --prompt are mutually exclusive. "
-                  "Research ideation generates the spec; --prompt provides one.",
-                  file=sys.stderr)
+            print(
+                "Error: --mode research and --prompt are mutually exclusive. "
+                "Research ideation generates the spec; --prompt provides one.",
+                file=sys.stderr,
+            )
             return 1
 
     create_description: str | None = None
@@ -352,9 +321,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     if mode == "create":
         resolved_path = Path(raw_path).expanduser().resolve()
         if not _safe_is_dir(resolved_path):
-            print("Error: --mode create requires an existing project directory. "
-                  "Pass the factory project path: factory ceo /path/to/factory --mode create",
-                  file=sys.stderr)
+            print(
+                "Error: --mode create requires an existing project directory. "
+                "Pass the factory project path: factory ceo /path/to/factory --mode create",
+                file=sys.stderr,
+            )
             return 1
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         create_description = focus if focus else context
@@ -365,7 +336,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         resolved_file = Path(raw_path).expanduser()
         if resolved_file.is_file():
             design_idea = resolved_file.read_text()
-            slug = _slugify(dir_name) if dir_name else _slugify(resolved_file.stem.split("—")[0].strip())
+            slug = (
+                _slugify(dir_name)
+                if dir_name
+                else _slugify(resolved_file.stem.split("—")[0].strip())
+            )
             project_path = _dedupe_project_path(_get_projects_dir() / slug, design_idea)
             deferred_spec = design_idea
             needs_materialize = True
@@ -378,16 +353,26 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             deferred_spec = raw_path
             needs_materialize = True
         context = None
-    elif mode == "research" and not _safe_is_dir(resolved := Path(raw_path).expanduser()) and not _safe_is_file(resolved):
+    elif (
+        mode == "research"
+        and not _safe_is_dir(resolved := Path(raw_path).expanduser())
+        and not _safe_is_file(resolved)
+    ):
         # New research project from idea — enter research ideation
         if headless:
             flag = "--bg" if bg else "--headless"
-            print("Error: --mode research for new projects requires foreground mode "
-                  f"(incompatible with {flag})", file=sys.stderr)
+            print(
+                "Error: --mode research for new projects requires foreground mode "
+                f"(incompatible with {flag})",
+                file=sys.stderr,
+            )
             return 1
         if focus:
-            print("Error: --focus cannot be used with research ideation for new projects. "
-                  "--focus targets existing backlog items.", file=sys.stderr)
+            print(
+                "Error: --focus cannot be used with research ideation for new projects. "
+                "--focus targets existing backlog items.",
+                file=sys.stderr,
+            )
             return 1
         research_ideation = raw_path
         slug = _slugify(dir_name) if dir_name else _extract_project_name(raw_path)
@@ -405,9 +390,13 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     issue_url: str | None = None
     if focus:
         from factory.issue import is_issue_ref
+
         if is_issue_ref(focus) and no_github:
-            print("Error: --focus resolved to an issue reference, but --no-github is set. "
-                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            print(
+                "Error: --focus resolved to an issue reference, but --no-github is set. "
+                "Issue fetching requires GitHub/GitLab CLI access.",
+                file=sys.stderr,
+            )
             return 1
         issue_resolved = _resolve_focus_issue(focus, project_path)
         if issue_resolved:
@@ -416,7 +405,8 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
-            project_path, has_prompt=bool(prompt_file or context),
+            project_path,
+            has_prompt=bool(prompt_file or context),
             force_fresh=force_fresh,
         )
     discover_only = getattr(args, "discover_only", False)
@@ -435,21 +425,30 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print("Error: --bg and --tmux-persist are mutually exclusive.", file=sys.stderr)
         return 1
     clean_pr_flag = getattr(args, "clean_pr", None)
+    no_worktree = getattr(args, "no_worktree", False)
 
     if mode == "research" and not research_ideation and not _has_research_target(project_path):
-        print("Error: --mode research requires research_target in factory.md. "
-              "Either configure research_target manually, or pass an idea string "
-              "to start research ideation: factory ceo \"your idea\" --mode research",
-              file=sys.stderr)
+        print(
+            "Error: --mode research requires research_target in factory.md. "
+            "Either configure research_target manually, or pass an idea string "
+            'to start research ideation: factory ceo "your idea" --mode research',
+            file=sys.stderr,
+        )
         return 1
 
     if focus and prompt_file:
-        print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
-              "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
+        print(
+            "Error: --focus (targeted mode) and --prompt are mutually exclusive. "
+            "--focus builds one backlog item; --prompt executes a spec file.",
+            file=sys.stderr,
+        )
         return 1
     if focus and mode not in ("improve", "research", "create") and not design_existing:
-        print(f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
-              "The project must already be built before targeting specific items.", file=sys.stderr)
+        print(
+            f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
+            "The project must already be built before targeting specific items.",
+            file=sys.stderr,
+        )
         return 1
 
     if design_existing:
@@ -465,25 +464,34 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         _materialize_project(project_path, deferred_spec)
 
     from factory.worktree import create_worktree, prune_stale, remove_worktree
+
     pruned = prune_stale(project_path)
     if pruned:
         print(f"  Cleaned {len(pruned)} stale worktree(s)", file=sys.stderr)
 
     if focus:
         from factory.study import add_backlog_item
+
         add_backlog_item(project_path, focus)
 
     from factory.messages import mark_read, read_pending
 
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
-    base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+    if no_worktree:
+        wt_path = project_path
+        wt_branch = None
+    else:
+        base_branch = branch or _read_target_branch(project_path)
+        wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     from factory.skill_cache import ensure_skills
+
     ensure_skills(wt_path)
 
-    interactive = design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+    interactive = (
+        design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+    )
     ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
@@ -499,9 +507,16 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             clean_pr_resolved = False
 
     task = _build_ceo_task(
-        wt_path, ceo_mode, context, focus=focus, prompt_file=prompt_file,
-        min_growth=min_growth, max_new=max_new, branch=branch,
-        discover_only=discover_only, no_github=no_github,
+        wt_path,
+        ceo_mode,
+        context,
+        focus=focus,
+        prompt_file=prompt_file,
+        min_growth=min_growth,
+        max_new=max_new,
+        branch=branch,
+        discover_only=discover_only,
+        no_github=no_github,
         design_idea=design_idea,
         design_existing=design_existing,
         research_ideation=research_ideation,
@@ -527,6 +542,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         os.environ["FACTORY_BG"] = "1"
 
     from factory.agents.runner import begin_cycle_session, complete_cycle_session
+
     cycle_span_id = begin_cycle_session(project_path, cycle_id=mode, model=model)
 
     import time as _time
@@ -536,7 +552,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     from factory.runners.claude import _make_ceo_message_emitter
 
     ceo_tailer = _start_ceo_tailer(
-        wt_path, cycle_span_id, _ceo_start,
+        wt_path,
+        cycle_span_id,
+        _ceo_start,
         on_line=_make_ceo_message_emitter(wt_path),
         is_headless=headless,
     )
@@ -547,18 +565,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         from factory.ceo_completion import run_ceo_with_completion_guard
 
         try:
-            result, code = _run(run_ceo_with_completion_guard(
-                wt_path,
-                task,
-                mode=mode,
-                runner_name=runner_name,
-                model=model,
-                timeout=7200.0,
-                session_name=session_name,
-                use_profile=use_profile,
-                tmux_persist=tmux_persist,
-                background=background,
-            ))
+            result, code = _run(
+                run_ceo_with_completion_guard(
+                    wt_path,
+                    task,
+                    mode=mode,
+                    runner_name=runner_name,
+                    model=model,
+                    timeout=7200.0,
+                    session_name=session_name,
+                    use_profile=use_profile,
+                    tmux_persist=tmux_persist,
+                    background=background,
+                )
+            )
             print(result)
             if code == 0:
                 if pending_ids:
@@ -566,20 +586,28 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             if code != 0:
                 return code
             return _chain_modes(
-                project_path, focus=focus,
-                min_growth=min_growth, max_new=max_new, branch=branch,
+                project_path,
+                focus=focus,
+                min_growth=min_growth,
+                max_new=max_new,
+                branch=branch,
                 already_improved=mode in ("improve", "meta") or discover_only,
-                model=model, no_github=no_github, use_profile=use_profile,
+                model=model,
+                no_github=no_github,
+                use_profile=use_profile,
                 tmux_persist=tmux_persist,
                 background=background,
                 completed_mode=mode,
+                no_worktree=no_worktree,
             )
         finally:
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
-            remove_worktree(project_path, wt_path, wt_branch)
+            if not no_worktree:
+                remove_worktree(project_path, wt_path, wt_branch)
             if needs_materialize and _is_scaffold_only(project_path):
                 import shutil
+
                 shutil.rmtree(project_path, ignore_errors=True)
 
     # Interactive foreground mode: use subprocess.run so we can clean up the worktree.
@@ -594,22 +622,32 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile)
         runner = get_runner(runner_name)
-        return runner.interactive_run(_RunReq(
-            prompt=prompt, task=task, cwd=wt_path,
-            model=model, role="ceo", skip_permissions=True,
-            session_name=session_name,
-        ))
+        return runner.interactive_run(
+            _RunReq(
+                prompt=prompt,
+                task=task,
+                cwd=wt_path,
+                model=model,
+                role="ceo",
+                skip_permissions=True,
+                session_name=session_name,
+            )
+        )
     finally:
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
-        remove_worktree(project_path, wt_path, wt_branch)
+        if not no_worktree:
+            remove_worktree(project_path, wt_path, wt_branch)
         if needs_materialize and _is_scaffold_only(project_path):
             import shutil
+
             shutil.rmtree(project_path, ignore_errors=True)
 
 
 def _start_ceo_tailer(
-    wt_path: Path, cycle_span_id: str | None, start_time: float,
+    wt_path: Path,
+    cycle_span_id: str | None,
+    start_time: float,
     on_line: Callable[[bytes], None] | None = None,
     is_headless: bool = False,
 ) -> object | None:
@@ -695,7 +733,9 @@ def _resolve_tmux_persist(args: argparse.Namespace) -> bool:
 
     cli_flag = getattr(args, "tmux_persist", False)
     cli_value = "true" if cli_flag else None
-    val = resolve("tmux_persist", cli_value=cli_value, env_var="FACTORY_TMUX_PERSIST", default="false")
+    val = resolve(
+        "tmux_persist", cli_value=cli_value, env_var="FACTORY_TMUX_PERSIST", default="false"
+    )
     return bool(val and val.lower() in ("1", "true", "yes"))
 
 
@@ -722,7 +762,11 @@ def _resolve_bg_agents(args: argparse.Namespace) -> bool:
 def _get_projects_dir() -> Path:
     from factory.user_config import resolve
 
-    raw = resolve("projects_dir", env_var="FACTORY_PROJECTS_DIR", default=str(Path.home() / "factory-projects"))
+    raw = resolve(
+        "projects_dir",
+        env_var="FACTORY_PROJECTS_DIR",
+        default=str(Path.home() / "factory-projects"),
+    )
     return Path(raw).expanduser() if raw else Path.home() / "factory-projects"
 
 
@@ -732,6 +776,7 @@ _ORIGINAL_GET_PROJECTS_DIR = _get_projects_dir
 def _resolve_projects_dir() -> Path:
     """Resolve _get_projects_dir with support for test monkeypatching on factory.cli."""
     import factory.cli as _cli
+
     cli_fn = getattr(_cli, "_get_projects_dir", _ORIGINAL_GET_PROJECTS_DIR)
     if cli_fn is not _ORIGINAL_GET_PROJECTS_DIR:
         return cli_fn()
@@ -755,7 +800,9 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     # 2. Existing file (e.g. path to an idea/spec .md file)
     if _safe_is_file(expanded):
         idea_content = expanded.read_text()
-        slug = _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
+        slug = (
+            _slugify(dir_name) if dir_name else _slugify(expanded.stem.split("\u2014")[0].strip())
+        )
         project_path = _dedupe_project_path(_resolve_projects_dir() / slug, idea_content)
         print(f"Idea file: {expanded.name}")
         print(f"Project directory: {project_path}")
@@ -775,12 +822,38 @@ def _resolve_input(raw: str, dir_name: str | None = None) -> tuple[Path, str | N
     return project_path, raw
 
 
-_FILLER_WORDS = frozenset({
-    "a", "an", "the", "that", "which", "with", "for", "and", "or", "to", "using",
-    "comprehensive", "simple", "basic", "advanced", "new", "custom", "full",
-    "complete", "modern", "robust", "scalable", "lightweight", "minimal",
-    "fully", "featured", "production", "ready",
-})
+_FILLER_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "the",
+        "that",
+        "which",
+        "with",
+        "for",
+        "and",
+        "or",
+        "to",
+        "using",
+        "comprehensive",
+        "simple",
+        "basic",
+        "advanced",
+        "new",
+        "custom",
+        "full",
+        "complete",
+        "modern",
+        "robust",
+        "scalable",
+        "lightweight",
+        "minimal",
+        "fully",
+        "featured",
+        "production",
+        "ready",
+    }
+)
 
 
 _VERB_RE = re.compile(
@@ -834,7 +907,7 @@ def _derive_session_name(
     max_len = 60
 
     if focus:
-        label = focus.lower()[:max_len - len(prefix)]
+        label = focus.lower()[: max_len - len(prefix)]
         return f"{prefix}{label}"
 
     idea = design_idea or research_ideation
@@ -843,9 +916,12 @@ def _derive_session_name(
         if desc:
             return f"{prefix}{desc}"[:max_len]
 
-    if raw_path and not _safe_is_dir(Path(raw_path).expanduser()) \
-            and not _safe_is_file(Path(raw_path).expanduser()) \
-            and not _is_github_url(raw_path):
+    if (
+        raw_path
+        and not _safe_is_dir(Path(raw_path).expanduser())
+        and not _safe_is_file(Path(raw_path).expanduser())
+        and not _is_github_url(raw_path)
+    ):
         desc = _extract_short_description(raw_path)
         if desc:
             return f"{prefix}{desc}"[:max_len]
@@ -887,9 +963,20 @@ def _ensure_repo(project_path: Path) -> None:
     if not (project_path / ".git").is_dir():
         subprocess.run(["git", "init"], cwd=project_path, capture_output=True, check=True)
         subprocess.run(
-            ["git", "-c", "user.name=Factory", "-c", "user.email=factory@localhost",
-             "commit", "--allow-empty", "-m", "Initial commit"],
-            cwd=project_path, capture_output=True, check=True,
+            [
+                "git",
+                "-c",
+                "user.name=Factory",
+                "-c",
+                "user.email=factory@localhost",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "Initial commit",
+            ],
+            cwd=project_path,
+            capture_output=True,
+            check=True,
         )
 
 
@@ -914,7 +1001,8 @@ def _read_prompt_file(project_path: Path, prompt_file: str) -> str:
 
 
 def _resolve_focus_issue(
-    focus: str, project_path: Path,
+    focus: str,
+    project_path: Path,
 ) -> tuple[str, str, int, str] | None:
     """If *focus* looks like an issue ref, fetch it and return (title, context, number, url).
 
@@ -933,9 +1021,7 @@ def _resolve_focus_issue(
 
     strategy_dir = project_path / ".factory" / "strategy"
     strategy_dir.mkdir(parents=True, exist_ok=True)
-    (strategy_dir / "current.md").write_text(
-        f"## Project Specification\n\n{context}\n"
-    )
+    (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{context}\n")
     print(
         f"  Issue: #{issue_spec.number} → .factory/strategy/current.md",
         file=sys.stderr,
@@ -964,14 +1050,13 @@ def _is_scaffold_only(project_path: Path) -> bool:
         return False
     result = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],
-        cwd=project_path, capture_output=True, text=True,
+        cwd=project_path,
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0 or result.stdout.strip() != "1":
         return False
-    non_git = [
-        p for p in project_path.rglob("*")
-        if p.is_file() and ".git" not in p.parts
-    ]
+    non_git = [p for p in project_path.rglob("*") if p.is_file() and ".git" not in p.parts]
     allowed = {project_path / ".factory" / "strategy" / "current.md"}
     return all(p in allowed for p in non_git)
 
@@ -1033,10 +1118,13 @@ def _tmux_available() -> bool:
 
 def _tmux_session_alive(session: str) -> bool:
     """Check if a tmux session exists and is alive."""
-    return subprocess.run(
-        ["tmux", "has-session", "-t", session],
-        capture_output=True,
-    ).returncode == 0
+    return (
+        subprocess.run(
+            ["tmux", "has-session", "-t", session],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
@@ -1108,7 +1196,15 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         return 0
 
     # Build the factory run command — propagate env vars, use bare `factory`
-    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "BOBSHELL_", "OPENAI_", "CODEX_", "CLAUDE_CODE_", "CLOUD_ML_")
+    _ENV_PREFIXES = (
+        "FACTORY_",
+        "ANTHROPIC_",
+        "BOBSHELL_",
+        "OPENAI_",
+        "CODEX_",
+        "CLAUDE_CODE_",
+        "CLOUD_ML_",
+    )
     run_cmd_parts = []
     for key, val in sorted(os.environ.items()):
         if key.startswith(_ENV_PREFIXES):
@@ -1181,7 +1277,11 @@ def cmd_tmux_ls(args: argparse.Namespace) -> int:
         parts = line.split("\t")
         name = parts[0]
         if name.startswith(_TMUX_SESSION_PREFIX):
-            created = datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d %H:%M") if len(parts) > 1 else "?"
+            created = (
+                datetime.fromtimestamp(int(parts[1])).strftime("%Y-%m-%d %H:%M")
+                if len(parts) > 1
+                else "?"
+            )
             project = mapping.get(name, "?")
             factory_sessions.append({"session": name, "started": created, "project": project})
 
@@ -1308,7 +1408,10 @@ def cmd_tmux_stop(args: argparse.Namespace) -> int:
             f"Warning: session '{session}' is not in the factory session registry.",
             file=sys.stderr,
         )
-        print("It may not be a factory-managed session. Use --force to kill it anyway.", file=sys.stderr)
+        print(
+            "It may not be a factory-managed session. Use --force to kill it anyway.",
+            file=sys.stderr,
+        )
         return 1
 
     subprocess.run(["tmux", "kill-session", "-t", session])
@@ -1343,7 +1446,10 @@ def cmd_refactory(args: argparse.Namespace) -> int:
 
     prompt = resolve_prompt("refactory")
     prompt_file = tempfile.NamedTemporaryFile(
-        mode="w", suffix=".md", prefix="refactory-prompt-", delete=False,
+        mode="w",
+        suffix=".md",
+        prefix="refactory-prompt-",
+        delete=False,
     )
     prompt_file.write(prompt)
     prompt_file.close()
@@ -1351,15 +1457,19 @@ def cmd_refactory(args: argparse.Namespace) -> int:
     if is_new_session:
         cmd = [
             "claude",
-            "--session-id", session_id,
-            "--append-system-prompt-file", prompt_file.name,
+            "--session-id",
+            session_id,
+            "--append-system-prompt-file",
+            prompt_file.name,
             "--dangerously-skip-permissions",
         ]
     else:
         cmd = [
             "claude",
-            "--resume", session_id,
-            "--append-system-prompt-file", prompt_file.name,
+            "--resume",
+            session_id,
+            "--append-system-prompt-file",
+            prompt_file.name,
             "--dangerously-skip-permissions",
         ]
 
@@ -1375,13 +1485,16 @@ def _has_research_target(project_path: Path) -> bool:
     """Check if project already has research_target configured."""
     try:
         from factory.store import ExperimentStore
+
         config = _run(ExperimentStore(project_path).read_config())
         return config.research_target is not None
     except (FileNotFoundError, json.JSONDecodeError, ValueError, KeyError):
         return False
 
 
-def _auto_detect_mode(project_path: Path, has_prompt: bool = False, force_fresh: bool = False) -> str:
+def _auto_detect_mode(
+    project_path: Path, has_prompt: bool = False, force_fresh: bool = False
+) -> str:
     """Detect the right mode based on project state.
 
     Checks for an in-flight cycle first — if one exists, returns its mode
@@ -1574,10 +1687,14 @@ def _build_ceo_task(
         if min_growth is not None:
             budget_lines.append(f"- **min_growth:** {min_growth} (guaranteed growth hypotheses)")
         if max_new is not None:
-            budget_lines.append(f"- **max_new:** {max_new} (max new items added to backlog per cycle)")
+            budget_lines.append(
+                f"- **max_new:** {max_new} (max new items added to backlog per cycle)"
+            )
         budget_lines.append("")
-        budget_lines.append("Pass these overrides to the Strategist. They take precedence over "
-                           "factory.md defaults and study-computed values.")
+        budget_lines.append(
+            "Pass these overrides to the Strategist. They take precedence over "
+            "factory.md defaults and study-computed values."
+        )
         task += "\n".join(budget_lines)
 
     if context:
@@ -1690,6 +1807,7 @@ def _chain_modes(
     tmux_persist: bool = False,
     background: bool = False,
     completed_mode: str | None = None,
+    no_worktree: bool = False,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -1729,10 +1847,18 @@ def _chain_modes(
             file=sys.stderr,
         )
         code = _run_single_cycle(
-            project_path, next_mode, focus=focus,
-            min_growth=min_growth, max_new=max_new, branch=branch,
-            no_github=no_github, model=model, use_profile=use_profile,
-            tmux_persist=tmux_persist, background=background,
+            project_path,
+            next_mode,
+            focus=focus,
+            min_growth=min_growth,
+            max_new=max_new,
+            branch=branch,
+            no_github=no_github,
+            model=model,
+            use_profile=use_profile,
+            tmux_persist=tmux_persist,
+            background=background,
+            no_worktree=no_worktree,
         )
         if code != 0:
             return code
@@ -1758,6 +1884,7 @@ def _run_single_cycle(
     tmux_persist: bool = False,
     background: bool = False,
     run_id: str | None = None,
+    no_worktree: bool = False,
 ) -> int:
     """Execute a single factory run cycle via the CEO agent. Returns 0 on success, 1 on error."""
     from factory.agents.runner import invoke_agent
@@ -1765,6 +1892,7 @@ def _run_single_cycle(
 
     if focus:
         from factory.study import add_backlog_item
+
         add_backlog_item(project_path, focus)
 
     from factory.messages import mark_read, read_pending
@@ -1772,34 +1900,48 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
-    base_branch = branch or _read_target_branch(project_path)
-    wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+    if no_worktree:
+        wt_path = project_path
+        wt_branch = None
+    else:
+        base_branch = branch or _read_target_branch(project_path)
+        wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     from factory.skill_cache import ensure_skills
+
     ensure_skills(wt_path)
 
     try:
         task = _build_ceo_task(
-            wt_path, mode, context, focus=focus, prompt_file=prompt_file,
-            min_growth=min_growth, max_new=max_new, branch=branch,
-            discover_only=discover_only, no_github=no_github,
+            wt_path,
+            mode,
+            context,
+            focus=focus,
+            prompt_file=prompt_file,
+            min_growth=min_growth,
+            max_new=max_new,
+            branch=branch,
+            discover_only=discover_only,
+            no_github=no_github,
             messages=pending,
             issue_number=issue_number,
             issue_url=issue_url,
             clean_pr=clean_pr,
         )
 
-        result, code = _run(invoke_agent(
-            "ceo",
-            task,
-            wt_path,
-            timeout=7200.0,
-            dangerously_skip_permissions=True,
-            model=model,
-            use_profile=use_profile,
-            tmux_persist=tmux_persist,
-            background=background,
-        ))
+        result, code = _run(
+            invoke_agent(
+                "ceo",
+                task,
+                wt_path,
+                timeout=7200.0,
+                dangerously_skip_permissions=True,
+                model=model,
+                use_profile=use_profile,
+                tmux_persist=tmux_persist,
+                background=background,
+            )
+        )
 
         if code == 0:
             if pending_ids:
@@ -1808,7 +1950,8 @@ def _run_single_cycle(
         print(result)
         return code
     finally:
-        remove_worktree(project_path, wt_path, wt_branch)
+        if not no_worktree:
+            remove_worktree(project_path, wt_path, wt_branch)
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -1853,9 +1996,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     issue_url: str | None = None
     if focus:
         from factory.issue import is_issue_ref
+
         if is_issue_ref(focus) and no_github:
-            print("Error: --focus resolved to an issue reference, but --no-github is set. "
-                  "Issue fetching requires GitHub/GitLab CLI access.", file=sys.stderr)
+            print(
+                "Error: --focus resolved to an issue reference, but --no-github is set. "
+                "Issue fetching requires GitHub/GitLab CLI access.",
+                file=sys.stderr,
+            )
             return 1
         issue_resolved = _resolve_focus_issue(focus, project_path)
         if issue_resolved:
@@ -1865,24 +2012,35 @@ def cmd_run(args: argparse.Namespace) -> int:
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
-            project_path, has_prompt=bool(prompt_file or context),
+            project_path,
+            has_prompt=bool(prompt_file or context),
             force_fresh=force_fresh,
         )
 
     if focus and loop:
-        print("Error: --focus (targeted mode) and --loop are mutually exclusive. "
-              "Targeted mode builds exactly one item and exits.", file=sys.stderr)
+        print(
+            "Error: --focus (targeted mode) and --loop are mutually exclusive. "
+            "Targeted mode builds exactly one item and exits.",
+            file=sys.stderr,
+        )
         return 1
     if focus and prompt_file:
-        print("Error: --focus (targeted mode) and --prompt are mutually exclusive. "
-              "--focus builds one backlog item; --prompt executes a spec file.", file=sys.stderr)
+        print(
+            "Error: --focus (targeted mode) and --prompt are mutually exclusive. "
+            "--focus builds one backlog item; --prompt executes a spec file.",
+            file=sys.stderr,
+        )
         return 1
     if focus and mode not in ("improve", "research"):
-        print(f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
-              "The project must already be built before targeting specific items.", file=sys.stderr)
+        print(
+            f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
+            "The project must already be built before targeting specific items.",
+            file=sys.stderr,
+        )
         return 1
 
     clean_pr_flag = getattr(args, "clean_pr", None)
+    no_worktree = getattr(args, "no_worktree", False)
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -1903,6 +2061,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         _materialize_project(project_path, context)
 
     from factory.worktree import prune_stale
+
     if project_path.is_dir():
         pruned = prune_stale(project_path)
         if pruned:
@@ -1913,8 +2072,14 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     if not loop:
         code = _run_single_cycle(
-            project_path, mode, context, focus=focus, prompt_file=prompt_file,
-            discover_only=discover_only, no_github=no_github, model=model,
+            project_path,
+            mode,
+            context,
+            focus=focus,
+            prompt_file=prompt_file,
+            discover_only=discover_only,
+            no_github=no_github,
+            model=model,
             issue_number=issue_number,
             issue_url=issue_url,
             use_profile=use_profile_flag,
@@ -1922,17 +2087,25 @@ def cmd_run(args: argparse.Namespace) -> int:
             tmux_persist=tmux_persist,
             background=background,
             run_id=run_id,
+            no_worktree=no_worktree,
             **budget_kwargs,
         )
         if code != 0:
             return code
         return _chain_modes(
-            project_path, focus=focus, already_improved=skip_improve,
-            min_growth=min_growth, max_new=max_new, branch=branch,
-            model=model, no_github=no_github, use_profile=use_profile_flag,
+            project_path,
+            focus=focus,
+            already_improved=skip_improve,
+            min_growth=min_growth,
+            max_new=max_new,
+            branch=branch,
+            model=model,
+            no_github=no_github,
+            use_profile=use_profile_flag,
             tmux_persist=tmux_persist,
             background=background,
             completed_mode=mode,
+            no_worktree=no_worktree,
         )
 
     # Heartbeat loop mode
@@ -1957,8 +2130,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             _emit_cli_event(project_path, "cycle.started", {"cycle": cycle, "mode": mode})
 
             _run_single_cycle(
-                project_path, mode, context, focus=focus, prompt_file=prompt_file,
-                discover_only=discover_only, no_github=no_github, model=model,
+                project_path,
+                mode,
+                context,
+                focus=focus,
+                prompt_file=prompt_file,
+                discover_only=discover_only,
+                no_github=no_github,
+                model=model,
                 issue_number=issue_number,
                 issue_url=issue_url,
                 use_profile=use_profile_flag,
@@ -1966,15 +2145,23 @@ def cmd_run(args: argparse.Namespace) -> int:
                 tmux_persist=tmux_persist,
                 background=background,
                 run_id=run_id,
+                no_worktree=no_worktree,
                 **budget_kwargs,
             )
             _chain_modes(
-                project_path, focus=focus, already_improved=skip_improve,
-                min_growth=min_growth, max_new=max_new, branch=branch,
-                model=model, no_github=no_github, use_profile=use_profile_flag,
+                project_path,
+                focus=focus,
+                already_improved=skip_improve,
+                min_growth=min_growth,
+                max_new=max_new,
+                branch=branch,
+                model=model,
+                no_github=no_github,
+                use_profile=use_profile_flag,
                 tmux_persist=tmux_persist,
                 background=background,
                 completed_mode=mode,
+                no_worktree=no_worktree,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
@@ -1998,9 +2185,5 @@ def cmd_run(args: argparse.Namespace) -> int:
         signal.signal(signal.SIGINT, old_sigint)
 
     elapsed = time.monotonic() - start_time
-    print(
-        f"[factory] Shutting down gracefully after {cycle} cycles."
-        f" Total runtime: {elapsed:.0f}s"
-    )
+    print(f"[factory] Shutting down gracefully after {cycle} cycles. Total runtime: {elapsed:.0f}s")
     return 0
-
