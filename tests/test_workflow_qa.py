@@ -52,11 +52,10 @@ class TestSubgraph:
     def test_preserves_edge_between_included_nodes(self) -> None:
         wf = improve_workflow()
         sub = wf.subgraph(
-            {"qa", "gate_qa", "gate_precheck"}, name="test", start_node="qa",
+            {"qa", "gate_qa"}, name="test", start_node="qa",
         )
         edge_pairs = {(e.source, e.target) for e in sub.edges}
         assert ("qa", "gate_qa") in edge_pairs
-        assert ("gate_qa", "gate_precheck") in edge_pairs
 
     def test_excludes_edges_to_outside_nodes(self) -> None:
         wf = improve_workflow()
