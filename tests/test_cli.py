@@ -1177,25 +1177,34 @@ class TestCmdCeoReview:
 
 
 class TestCmdCeoDeepQa:
-    def test_deep_qa_mode_without_pr_errors(self, capsys):
+    PR_URL = "https://github.com/owner/repo/pull/42"
+
+    def test_deep_qa_mode_without_pr_url_errors(self, capsys):
         result = main(["ceo", "/some/path", "--mode", "deep-qa"])
         assert result == 1
-        assert "--pr" in capsys.readouterr().err
+        assert "--pr-url" in capsys.readouterr().err
+
+    def test_deep_qa_mode_invalid_pr_url_errors(self, capsys):
+        result = main(["ceo", "/some/path", "--mode", "deep-qa", "--pr-url", "not-a-url"])
+        assert result == 1
+        assert "invalid" in capsys.readouterr().err.lower()
 
     def test_deep_qa_mode_nonexistent_path_errors(self, capsys):
-        result = main(["ceo", "/nonexistent/path", "--mode", "deep-qa", "--pr", "42"])
+        result = main(["ceo", "/nonexistent/path", "--mode", "deep-qa", "--pr-url", self.PR_URL])
         assert result == 1
         assert "existing directory" in capsys.readouterr().err
 
     def test_deep_qa_mode_headless_builds_correct_task(self, tmp_path, capsys):
-        """--mode deep-qa --pr 42 --headless builds a deep-qa task and invokes CEO."""
+        """--mode deep-qa --pr-url <url> --headless builds a deep-qa task and invokes CEO."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            result = main(["ceo", str(tmp_path), "--mode", "deep-qa",
+                           "--pr-url", self.PR_URL, "--headless"])
         assert result == 0
         mock_agent.assert_called_once()
         task = mock_agent.call_args[0][1]
         assert "Mode: deep-qa" in task
         assert "PR #42" in task
+        assert "owner/repo" in task
         assert "factory review --verdict" in task
         assert "--reason" in task
         assert "--qa-body-file" in task
@@ -1204,21 +1213,23 @@ class TestCmdCeoDeepQa:
         assert "adversarial_tester" in task
         assert "Do NOT post any PR comments" in task
 
-    def test_deep_qa_mode_headless_with_repo(self, tmp_path, capsys):
-        """--mode deep-qa --pr 42 --repo owner/repo includes repo in task."""
+    def test_deep_qa_mode_extracts_repo_from_url(self, tmp_path, capsys):
+        """--pr-url extracts both repo and PR number."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
-                           "--repo", "owner/repo", "--headless"])
+            result = main(["ceo", str(tmp_path), "--mode", "deep-qa",
+                           "--pr-url", "https://github.com/acme/widgets/pull/99", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
-        assert "owner/repo" in task
-        assert "--repo owner/repo" in task
+        assert "acme/widgets" in task
+        assert "PR #99" in task
+        assert "--repo acme/widgets" in task
 
     def test_deep_qa_mode_skips_worktree(self, tmp_path):
         """Deep-QA mode does not create worktrees or touch experiment store."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
              patch("factory.worktree.create_worktree") as mock_wt:
-            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            main(["ceo", str(tmp_path), "--mode", "deep-qa",
+                  "--pr-url", self.PR_URL, "--headless"])
         mock_wt.assert_not_called()
 
     def test_deep_qa_mode_foreground(self, tmp_path):
@@ -1226,7 +1237,7 @@ class TestCmdCeoDeepQa:
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
         with patch("factory.runners.claude.subprocess.run", mock_run), \
              patch("factory.cli.ceo._ensure_dashboard"):
-            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42"])
+            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr-url", self.PR_URL])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
         assert cmd[0] == "claude"
@@ -1238,7 +1249,8 @@ class TestCmdCeoDeepQa:
     def test_deep_qa_mode_max_respawns_is_1(self, tmp_path):
         """Deep-QA mode uses max_respawns=1."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
+            main(["ceo", str(tmp_path), "--mode", "deep-qa",
+                  "--pr-url", self.PR_URL, "--headless"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs.get("timeout") == 7200.0
 
