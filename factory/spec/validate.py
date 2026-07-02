@@ -1,16 +1,41 @@
-"""Spec validation engine — path checks, import verification, behavioral section checks."""
+"""Spec validation — single Haiku agent call replaces all structural checks."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import structlog
 
-from factory.spec.parser import RepoSpec, parse_spec
+from factory.spec._json_util import extract_json
 
 log = structlog.get_logger()
+
+VALIDATE_PROMPT = """\
+Validate this GRAPH-SPEC.md against the project at {project_path}.
+
+## GRAPH-SPEC.md
+{spec_content}
+
+## Checks to perform
+1. For each module with a declared path, verify the path exists on disk
+2. For modules with declared dependencies, spot-check that actual imports match
+3. Flag orphan modules (no other module depends on them or lists them as consumed_by)
+4. Check that these sections are non-empty: Problem Statement, Goals, Non-Goals, \
+Design Philosophy, Configuration, Security, Extension Points, Implementation Checklist
+5. For entity names in the Domain Model section, verify matching classes exist in source
+6. Check that module behavioral specs use RFC 2119 normative language (MUST, SHOULD, etc.)
+
+## Output
+Return a JSON object:
+{{
+  "errors": ["<message>", ...],
+  "warnings": ["<message>", ...]
+}}
+Errors = blocking issues (path not found, critical structural problems).
+Warnings = advisory (missing sections, orphan modules, missing normative language).
+Return ONLY the JSON object.
+"""
 
 
 @dataclass
@@ -25,224 +50,7 @@ class ValidationResult:
         return len(self.errors) == 0
 
 
-def _check_paths(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[str]]:
-    """Verify each module's declared path exists on disk."""
-    errors: list[str] = []
-    warnings: list[str] = []
-
-    for mod in spec.modules:
-        if not mod.path:
-            warnings.append(f"Module '{mod.name}' has no path declared")
-            continue
-
-        full_path = project_path / mod.path
-        if not full_path.exists():
-            errors.append(f"Module '{mod.name}': path '{mod.path}' does not exist")
-
-    return errors, warnings
-
-
-async def _check_imports_haiku(spec: RepoSpec, project_path: Path) -> tuple[list[str], list[str]]:
-    """Cross-reference declared dependency edges against actual imports using Haiku."""
-    from factory.agents.runner import invoke_agent
-
-    errors: list[str] = []
-    warnings: list[str] = []
-
-    edges_to_check: list[dict[str, str]] = []
-    for mod in spec.modules:
-        if not mod.path or not mod.depends_on:
-            continue
-        mod_path = project_path / mod.path
-        if not mod_path.exists():
-            continue
-        for dep_name in mod.depends_on:
-            dep_mod = spec.get_module(dep_name)
-            dep_path = dep_mod.path if dep_mod else dep_name
-            edges_to_check.append(
-                {
-                    "source_module": mod.name,
-                    "source_path": mod.path,
-                    "target_module": dep_name,
-                    "target_path": dep_path,
-                }
-            )
-
-    if not edges_to_check:
-        return errors, warnings
-
-    task = (
-        f"Verify dependency edges in {project_path}.\n\n"
-        "For each declared dependency edge below, read the source module's files "
-        "and confirm that it actually imports from the target module.\n\n"
-        "## Edges to Verify\n\n"
-        f"```json\n{json.dumps(edges_to_check, indent=2)}\n```\n\n"
-        "## Output\n\n"
-        "Return a JSON array of findings. Each finding is an object with:\n"
-        '- "type": "phantom" (declared in spec but not found in source) or '
-        '"missing" (found in source but not declared in spec)\n'
-        '- "source": source module name\n'
-        '- "target": target module name\n'
-        '- "detail": brief explanation\n\n'
-        "If all edges are verified, return an empty array: []\n"
-        "Return ONLY the JSON array, no other text."
-    )
-
-    result, code = await invoke_agent(
-        "researcher",
-        task,
-        project_path,
-        timeout=120.0,
-        dangerously_skip_permissions=True,
-        model="haiku",
-    )
-
-    if code != 0:
-        warnings.append(f"Haiku import verification failed (exit {code})")
-        return errors, warnings
-
-    try:
-        result_text = result.strip()
-        start = result_text.find("[")
-        end = result_text.rfind("]") + 1
-        if start >= 0 and end > start:
-            findings = json.loads(result_text[start:end])
-        else:
-            findings = json.loads(result_text)
-
-        for finding in findings:
-            finding_type = finding.get("type", "")
-            source = finding.get("source", "")
-            target = finding.get("target", "")
-            detail = finding.get("detail", "")
-            msg = f"Module '{source}' → '{target}': {detail}"
-            if finding_type == "phantom":
-                warnings.append(f"Phantom edge: {msg}")
-            elif finding_type == "missing":
-                warnings.append(f"Missing edge: {msg}")
-    except (json.JSONDecodeError, TypeError, KeyError):
-        warnings.append("Could not parse Haiku import verification output")
-
-    return errors, warnings
-
-
-def _detect_orphans(spec: RepoSpec) -> list[str]:
-    """Flag modules with zero consumers (no incoming dependency edges or consumed_by)."""
-    warnings: list[str] = []
-    all_names = {m.name for m in spec.modules}
-    consumed: set[str] = set()
-
-    for mod in spec.modules:
-        for dep in mod.depends_on:
-            if dep in all_names:
-                consumed.add(dep)
-        if mod.consumed_by:
-            consumed.add(mod.name)
-
-    for edge in spec.dependency_edges:
-        if edge.target in all_names:
-            consumed.add(edge.target)
-
-    for mod in spec.modules:
-        if mod.name not in consumed and mod.name in all_names:
-            warnings.append(f"Orphan module: '{mod.name}' has zero consumers")
-
-    return warnings
-
-
-def _check_behavioral_sections(spec: RepoSpec) -> list[str]:
-    """Warn about missing behavioral sections in new-format specs."""
-    warnings: list[str] = []
-
-    has_behavioral = bool(spec.problem_statement or spec.domain_model_raw or spec.failure_model)
-    if not has_behavioral:
-        return warnings
-
-    if not spec.domain_model_raw:
-        warnings.append("Domain model section is empty — consider documenting Pydantic models")
-
-    if not spec.failure_model:
-        warnings.append(
-            "Failure model section is empty — consider documenting error types and recovery"
-        )
-
-    if not spec.state_machines_raw:
-        warnings.append(
-            "State machines section is empty — consider documenting state enums and transitions"
-        )
-
-    if not spec.configuration_spec:
-        warnings.append(
-            "Configuration specification is empty — consider documenting config sources"
-        )
-
-    for mod in spec.modules:
-        if mod.behavioral_spec and "MUST" not in mod.behavioral_spec:
-            warnings.append(
-                f"Module '{mod.name}' behavioral spec lacks RFC 2119 normative language"
-            )
-
-    return warnings
-
-
-def _check_section_completeness(spec: RepoSpec) -> list[str]:
-    """Check for presence of historically-missing sections in behavioral specs."""
-    warnings: list[str] = []
-
-    checks: list[tuple[str, str]] = [
-        ("problem_statement", "§1 Problem Statement is missing"),
-        ("goals", "§2.1 Goals section is missing"),
-        ("non_goals", "§2.2 Non-Goals section is missing"),
-        ("design_philosophy", "§2.3 Design Philosophy section is missing"),
-        ("configuration_spec", "§10 Configuration Specification is missing"),
-        ("security", "§13 Security and Safety section is missing"),
-        ("extension_points", "§15 Extension Points section is missing"),
-        ("implementation_checklist", "§16 Implementation Checklist is missing"),
-    ]
-
-    for field_name, warning_msg in checks:
-        if not getattr(spec, field_name, ""):
-            warnings.append(warning_msg)
-
-    if not spec.identity.name:
-        warnings.append("§3 Project Identity is missing (no project name)")
-
-    return warnings
-
-
-def _check_entity_names(spec: RepoSpec, project_path: Path) -> list[str]:
-    """Check that domain model entity names match actual class/enum names in source."""
-    import re
-
-    warnings: list[str] = []
-    if not spec.domain_model_raw:
-        return warnings
-
-    entity_pattern = re.compile(r"^#{3,5}\s+(?:\d+(?:\.\d+)*\s+)?(\w+)", re.MULTILINE)
-    entity_names = entity_pattern.findall(spec.domain_model_raw)
-
-    for name in entity_names:
-        found = False
-        for mod in spec.modules:
-            if not mod.path:
-                continue
-            full_path = project_path / mod.path
-            if not full_path.exists():
-                continue
-            try:
-                source = full_path.read_text()
-            except OSError:
-                continue
-            if re.search(rf"\bclass\s+{re.escape(name)}\b", source):
-                found = True
-                break
-        if not found:
-            warnings.append(f"Domain model entity '{name}' not found as a class in any module")
-
-    return warnings
-
-
-def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
+def _format_validation_report(result: ValidationResult) -> str:
     """Format validation results as human-readable Markdown."""
     lines: list[str] = ["# Spec Validation Report", ""]
 
@@ -252,7 +60,6 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
     lines.append(f"**Status:** {status}")
     lines.append(f"**Errors:** {len(result.errors)}")
     lines.append(f"**Warnings:** {len(result.warnings)}")
-    lines.append(f"**Modules:** {len(spec.modules)}")
     lines.append("")
 
     if result.errors:
@@ -273,39 +80,43 @@ def _format_validation_report(result: ValidationResult, spec: RepoSpec) -> str:
 
 
 async def validate_spec(project_path: Path) -> ValidationResult:
-    """Validate GRAPH-SPEC.md against the actual project.
-
-    Tier 1: Structural checks (pure Python) — path existence, orphan/hub detection,
-    coupling metrics (legacy specs).
-    Tier 2: Import cross-referencing (Haiku) — language-agnostic verification that
-    declared dependency edges match actual imports.
-    Tier 3: Behavioral checks — section completeness for new-format specs.
+    """Validate GRAPH-SPEC.md against the actual project using a single Haiku agent call.
 
     Writes results to .factory/spec_validation.md.
     """
-    from factory.discovery.spec import resolve_spec
+    from factory.agents.runner import invoke_agent
+    from factory.spec import read_spec
 
-    spec_path = resolve_spec(project_path)
-    if spec_path is None:
-        raise FileNotFoundError(f"No repo spec found in {project_path}")
-    spec = parse_spec(spec_path)
+    spec_content = read_spec(project_path)
+
+    prompt = VALIDATE_PROMPT.format(
+        project_path=project_path,
+        spec_content=spec_content,
+    )
+
+    result_text, code = await invoke_agent(
+        "researcher",
+        prompt,
+        project_path,
+        timeout=120.0,
+        dangerously_skip_permissions=True,
+        model="haiku",
+    )
 
     result = ValidationResult()
 
-    path_errors, path_warnings = _check_paths(spec, project_path)
-    result.errors.extend(path_errors)
-    result.warnings.extend(path_warnings)
+    if code != 0:
+        result.warnings.append(f"Validation agent failed (exit {code})")
+    else:
+        try:
+            data = extract_json(result_text)
+            if isinstance(data, dict):
+                result.errors.extend(data.get("errors", []))
+                result.warnings.extend(data.get("warnings", []))
+        except ValueError:
+            result.warnings.append("Could not parse validation agent output")
 
-    import_errors, import_warnings = await _check_imports_haiku(spec, project_path)
-    result.errors.extend(import_errors)
-    result.warnings.extend(import_warnings)
-
-    result.warnings.extend(_detect_orphans(spec))
-    result.warnings.extend(_check_behavioral_sections(spec))
-    result.warnings.extend(_check_section_completeness(spec))
-    result.warnings.extend(_check_entity_names(spec, project_path))
-
-    report = _format_validation_report(result, spec)
+    report = _format_validation_report(result)
     output_path = project_path / ".factory" / "spec_validation.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(report)
@@ -314,7 +125,6 @@ async def validate_spec(project_path: Path) -> ValidationResult:
         "spec.validate.complete",
         errors=len(result.errors),
         warnings=len(result.warnings),
-        modules=len(spec.modules),
         output=str(output_path),
     )
 

@@ -71,6 +71,7 @@ def _get_gitignored(paths: list[Path], project_path: Path) -> set[Path]:
         cwd=project_path,
         capture_output=True,
         text=True,
+        timeout=600,
     )
     if result.returncode not in (0, 1):
         return set()
