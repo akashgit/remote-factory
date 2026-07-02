@@ -73,11 +73,11 @@ def _deep_qa_subgraph(
     """
     nodes: dict[str, Any] = {}
 
-    # ── 3 specialist agents (all AgentRole.QA) ────────────────
+    # ── 3 specialist agents ─────────────────────────────────
 
     nodes["health_checker"] = AgentNode(
         id="health_checker",
-        role=AgentRole.QA,
+        role=AgentRole.HEALTH_CHECKER,
         prompt_template=(
             "Run the health check using the health_checker prompt. "
             "Execute 'factory eval {project_path}', parse the JSON output, extract the "
@@ -102,7 +102,7 @@ def _deep_qa_subgraph(
 
     nodes["code_reviewer"] = AgentNode(
         id="code_reviewer",
-        role=AgentRole.QA,
+        role=AgentRole.CODE_REVIEWER,
         prompt_template=cr_prompt,
         reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/code-review.md"},
@@ -122,7 +122,7 @@ def _deep_qa_subgraph(
 
     nodes["adversarial_tester"] = AgentNode(
         id="adversarial_tester",
-        role=AgentRole.QA,
+        role=AgentRole.ADVERSARIAL_TESTER,
         timeout=1800,
         prompt_template=at_prompt,
         reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},

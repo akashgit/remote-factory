@@ -97,10 +97,15 @@ class TestQaWorkflow:
 
     def test_specialist_nodes_from_improve(self) -> None:
         wf = qa_workflow()
-        for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+        expected_roles = {
+            "health_checker": AgentRole.HEALTH_CHECKER,
+            "code_reviewer": AgentRole.CODE_REVIEWER,
+            "adversarial_tester": AgentRole.ADVERSARIAL_TESTER,
+        }
+        for nid, expected_role in expected_roles.items():
             node = wf.nodes[nid]
             assert isinstance(node, AgentNode)
-            assert node.role == AgentRole.QA
+            assert node.role == expected_role
 
     def test_gate_qa_no_builder_reference(self) -> None:
         wf = qa_workflow()

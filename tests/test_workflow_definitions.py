@@ -208,6 +208,9 @@ class TestAgentPool:
             "strategist": "opus",
             "builder": "opus",
             "qa": "opus",
+            "health_checker": "opus",
+            "code_reviewer": "opus",
+            "adversarial_tester": "opus",
             "failure_analyst": "opus",
             "ceo": "opus",
             "archivist": "haiku",
@@ -352,18 +355,24 @@ def _is_reachable(workflow_name: str, source_id: str, target_id: str) -> bool:
     return False
 
 
+QA_ROLES = {
+    AgentRole.QA, AgentRole.HEALTH_CHECKER,
+    AgentRole.CODE_REVIEWER, AgentRole.ADVERSARIAL_TESTER,
+}
+
+
 class TestBuilderQaReachability:
-    """Every workflow with a Builder must also have a QA node reachable from it."""
+    """Every workflow with a Builder must also have a QA-related node reachable from it."""
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
     def test_builder_has_qa_node(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         qa_nodes = [
             nid for nid, n in wf.nodes.items()
-            if isinstance(n, AgentNode) and n.role == AgentRole.QA
+            if isinstance(n, AgentNode) and n.role in QA_ROLES
         ]
         assert qa_nodes, (
-            f"workflow '{workflow_name}' has a Builder but no QA AgentNode"
+            f"workflow '{workflow_name}' has a Builder but no QA-related AgentNode"
         )
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
@@ -375,14 +384,14 @@ class TestBuilderQaReachability:
         ]
         qa_ids = [
             nid for nid, n in wf.nodes.items()
-            if isinstance(n, AgentNode) and n.role == AgentRole.QA
+            if isinstance(n, AgentNode) and n.role in QA_ROLES
         ]
         for bid in builder_ids:
             reachable = any(
                 _is_reachable(workflow_name, bid, qid) for qid in qa_ids
             )
             assert reachable, (
-                f"workflow '{workflow_name}': QA node is not reachable from "
+                f"workflow '{workflow_name}': QA-related node is not reachable from "
                 f"Builder node '{bid}' via edges"
             )
 
