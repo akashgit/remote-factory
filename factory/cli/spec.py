@@ -98,7 +98,7 @@ def cmd_spec_scope(args: argparse.Namespace) -> int:
     exp_id = getattr(args, "experiment", None)
     _emit_cli_event(project_path, "spec.scope.started", {"path": str(project_path)})
     try:
-        scope = scope_diff(project_path, experiment_id=exp_id)
+        scope = _run(scope_diff(project_path, experiment_id=exp_id))
     except (FileNotFoundError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         _emit_cli_event(project_path, "spec.scope.failed", {"error": str(exc)[:200]})
@@ -167,8 +167,8 @@ def cmd_spec_impact(args: argparse.Namespace) -> int:
         return 1
 
     try:
-        snippet = get_impact(args.module, project_path)
-    except ValueError as exc:
+        snippet = _run(get_impact(args.module, project_path))
+    except (ValueError, RuntimeError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
