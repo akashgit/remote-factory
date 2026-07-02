@@ -67,12 +67,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     dir_name = getattr(args, "dir", None)
 
     if not raw_path:
-        if mode == "deep-qa":
-            raw_path = "."
-        else:
-            print("Error: provide a project path, GitHub URL, idea file, or prompt",
-                  file=sys.stderr)
-            return 1
+        print("Error: provide a project path, GitHub URL, idea file, or prompt",
+              file=sys.stderr)
+        return 1
 
     no_github = getattr(args, "no_github", False)
     if no_github:
