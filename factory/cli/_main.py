@@ -28,6 +28,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ("Project Intelligence", [
         "eval", "history", "study", "status", "summary", "diff", "explain", "export",
         "research", "insights", "report-update", "baseline", "clean-pr", "spec",
+        "adversarial-state",
     ]),
     ("Backlog & Refinement", [
         "backlog-add", "backlog-list", "backlog-remove", "deferred-list", "deferred-remove",
@@ -213,6 +214,12 @@ def build_parser() -> argparse.ArgumentParser:
     # validate-research
     p = sub.add_parser("validate-research", help="Validate research mode configuration for ground truth isolation")
     p.add_argument("path", help="Path to the project")
+
+    # adversarial-state
+    p = sub.add_parser("adversarial-state", help="Inspect or reset adversarial eval loop state")
+    p.add_argument("path", help="Path to the project")
+    p.add_argument("--reset", action="store_true", default=False,
+                    help="Reset adversarial state to defaults")
 
     # backfill-citations
     p = sub.add_parser("backfill-citations", help="Extract citations from experiment text into citations.json")
@@ -786,6 +793,7 @@ def main(argv: list[str] | None = None) -> int:
         "baseline": _cli.cmd_baseline,
         "leakage-check": _cli.cmd_leakage_check,
         "validate-research": _cli.cmd_validate_research,
+        "adversarial-state": _cli.cmd_adversarial_state,
         "refine-status": _cli.cmd_refine_status,
         "refine-begin": _cli.cmd_refine_begin,
         "refine-complete": _cli.cmd_refine_complete,
