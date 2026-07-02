@@ -23,24 +23,24 @@ from factory.workflow.primitives import (
 class TestSubgraph:
     def test_extracts_requested_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
-        assert set(sub.nodes.keys()) == {"health_checker", "gate_health"}
+        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
+        assert set(sub.nodes.keys()) == {"health_checker", "code_reviewer"}
 
     def test_filters_edges(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
+        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         for edge in sub.edges:
             assert edge.source in sub.nodes
             assert edge.target in sub.nodes
 
     def test_deep_copies_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
+        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         assert sub.nodes["health_checker"] is not wf.nodes["health_checker"]
 
     def test_sets_name_and_start_node(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "gate_health"}, name="myname", start_node="health_checker")
+        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="myname", start_node="health_checker")
         assert sub.name == "myname"
         assert sub.start_node == "health_checker"
 
@@ -52,17 +52,17 @@ class TestSubgraph:
     def test_preserves_edge_between_included_nodes(self) -> None:
         wf = improve_workflow()
         sub = wf.subgraph(
-            {"health_checker", "gate_health", "code_reviewer"}, name="test", start_node="health_checker",
+            {"health_checker", "code_reviewer", "gate_review"}, name="test", start_node="health_checker",
         )
         edge_pairs = {(e.source, e.target) for e in sub.edges}
-        assert ("health_checker", "gate_health") in edge_pairs
-        assert ("gate_health", "code_reviewer") in edge_pairs
+        assert ("health_checker", "code_reviewer") in edge_pairs
+        assert ("code_reviewer", "gate_review") in edge_pairs
 
     def test_excludes_edges_to_outside_nodes(self) -> None:
         wf = improve_workflow()
-        sub = wf.subgraph({"health_checker", "gate_health"}, name="test", start_node="health_checker")
+        sub = wf.subgraph({"health_checker", "code_reviewer"}, name="test", start_node="health_checker")
         for edge in sub.edges:
-            assert edge.target != "code_reviewer"
+            assert edge.target != "gate_review"
             assert edge.target != "builder"
 
 
@@ -90,8 +90,8 @@ class TestDeepQaWorkflow:
     def test_has_expected_nodes(self) -> None:
         wf = self._get_wf()
         assert set(wf.nodes.keys()) == {
-            "health_checker", "gate_health", "code_reviewer", "gate_review",
-            "adversarial_tester", "gate_adversarial", "join_verdict",
+            "health_checker", "code_reviewer", "gate_review",
+            "adversarial_tester",
             "gate_precheck", "post_review",
         }
 
@@ -131,15 +131,12 @@ class TestDeepQaWorkflow:
         reloop = [e for e in wf.edges if e.condition == VerdictType.RELOOP]
         assert reloop == []
 
-    def test_halt_routes_to_post_review(self) -> None:
+    def test_gate_review_is_fn(self) -> None:
         wf = self._get_wf()
-        for gate_id in ("gate_health", "gate_review", "gate_adversarial"):
-            halt_edges = [
-                e for e in wf.edges
-                if e.source == gate_id and e.condition == VerdictType.HALT
-            ]
-            assert len(halt_edges) == 1
-            assert halt_edges[0].target == "post_review"
+        gate = wf.nodes["gate_review"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+        assert "CRITICAL_FOUND" in gate.evaluator_command
 
     def test_precheck_routes_to_post_review(self) -> None:
         wf = self._get_wf()

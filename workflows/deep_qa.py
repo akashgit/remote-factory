@@ -1,7 +1,7 @@
 """Deep-QA standalone verification workflow.
 
 Runs the decomposed QA pipeline (health_checker → code_reviewer →
-adversarial_tester) with sequential gates as a standalone mode.
+adversarial_tester) with a gate after code review as a standalone mode.
 Triggered via `factory workflow run deep-qa` or `factory ceo /path --mode deep-qa`.
 """
 
@@ -15,16 +15,15 @@ meta = {
     "name": "deep-qa",
     "description": (
         "Standalone deep-QA verification pipeline — 3 sequential specialist "
-        "agents (health_checker, code_reviewer, adversarial_tester) with gates "
-        "between each for early termination. Writes combined report to "
-        ".factory/reviews/qa-latest.md."
+        "agents (health_checker, code_reviewer, adversarial_tester) with a gate "
+        "after code review to short-circuit on critical bugs."
     ),
 }
 
 
 def workflow() -> Workflow:
     """Build the standalone deep-qa workflow."""
-    dq_nodes, dq_edges = _deep_qa_subgraph(finalize_target="post_review")
+    dq_nodes, dq_edges = _deep_qa_subgraph()
 
     for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
         node = dq_nodes[nid]
@@ -37,7 +36,7 @@ def workflow() -> Workflow:
         id="gate_precheck",
         evaluator_type="fn",
         evaluator_command="factory precheck {project_path} --score-before 0 --score-after 0",
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     nodes["post_review"] = FnNode(
@@ -46,12 +45,12 @@ def workflow() -> Workflow:
             "factory review --verdict $VERDICT --pr $PR_NUMBER"
             " --score-before $SCORE_BEFORE --score-after $SCORE_AFTER"
         ),
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     edges = [
         *dq_edges,
-        Edge(source="join_verdict", target="gate_precheck"),
+        Edge(source="adversarial_tester", target="gate_precheck"),
         Edge(source="gate_precheck", target="post_review", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="post_review", condition=VerdictType.HALT),
     ]
