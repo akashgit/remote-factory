@@ -56,7 +56,7 @@ def test_cmd_self_update_success():
         stdout="Nothing to upgrade\n",
         stderr="",
     )
-    with patch("factory.cli.subprocess.run", return_value=mock_result):
+    with patch("factory.cli.admin.subprocess.run", return_value=mock_result):
         code = cmd_self_update(argparse.Namespace())
     assert code == 0
 
@@ -71,6 +71,6 @@ def test_cmd_self_update_failure():
         stdout="",
         stderr="error: remote-factory is not installed\n",
     )
-    with patch("factory.cli.subprocess.run", return_value=mock_result):
+    with patch("factory.cli.admin.subprocess.run", return_value=mock_result):
         code = cmd_self_update(argparse.Namespace())
     assert code == 1

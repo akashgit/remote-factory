@@ -10,8 +10,18 @@ import structlog
 log = structlog.get_logger()
 
 
-def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path, str]:
+def create_worktree(
+    project_path: Path,
+    base_branch: str = "main",
+    run_id: str | None = None,
+) -> tuple[Path, str]:
     """Create an isolated worktree for a factory run.
+
+    Args:
+        project_path: Path to the project root.
+        base_branch: Branch to create the worktree from.
+        run_id: Optional run identifier. If provided, uses the first 8 chars.
+                If None, generates a random 8-char hex ID.
 
     Returns (worktree_path, branch_name).
     """
@@ -29,7 +39,10 @@ def create_worktree(project_path: Path, base_branch: str = "main") -> tuple[Path
     )
     base_commit = result.stdout.strip()
 
-    run_id = secrets.token_hex(4)
+    if run_id is not None:
+        run_id = run_id[:8]
+    else:
+        run_id = secrets.token_hex(4)
     branch = f"factory/run-{run_id}"
     factory_dir = project_path / ".factory"
     wt_parent = project_path / ".factory-worktrees"

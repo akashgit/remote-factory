@@ -277,9 +277,8 @@ class TestSynthesizeProfile:
             stdout="Synthesized profile text", return_code=0,
         ))
 
-        with patch("factory.runners.get_runner", return_value=mock_runner), \
-             patch("factory.agents.runner.resolve_prompt", return_value="profiler prompt"):
-            result = await synthesize_profile({"section": "data"}, "claude")
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            result = await synthesize_profile({"section": "data"}, "claude", prompt="profiler prompt")
         assert result == "Synthesized profile text"
         mock_runner.headless.assert_called_once()
 
@@ -292,7 +291,6 @@ class TestSynthesizeProfile:
             stdout="Error output", return_code=1,
         ))
 
-        with patch("factory.runners.get_runner", return_value=mock_runner), \
-             patch("factory.agents.runner.resolve_prompt", return_value="prompt"):
-            result = await synthesize_profile({"section": "data"})
+        with patch("factory.runners.get_runner", return_value=mock_runner):
+            result = await synthesize_profile({"section": "data"}, prompt="prompt")
         assert "failed" in result.lower()

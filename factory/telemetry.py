@@ -15,16 +15,16 @@ import structlog
 log = structlog.get_logger()
 
 try:
-    from langfuse import Langfuse  # type: ignore[import-not-found]
-    from langfuse.types import TraceContext  # type: ignore[import-not-found]
-
+    from langfuse import Langfuse
+    from langfuse.types import TraceContext
     _HAS_LANGFUSE = True
 except ImportError:
+    Langfuse = None  # type: ignore[assignment,misc]
+    TraceContext = None  # type: ignore[assignment,misc]
     _HAS_LANGFUSE = False
 
 _client: object | None = None
 _observations: dict[str, Any] = {}
-_trace_names: dict[str, tuple[str, Any]] = {}  # trace_id -> (name, input)
 
 def is_enabled() -> bool:
     """Check if Langfuse is configured and lazily initialise the client."""
@@ -33,11 +33,12 @@ def is_enabled() -> bool:
         return True
     if not _HAS_LANGFUSE:
         return False
-    if not os.environ.get("LANGFUSE_HOST"):
+    host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get("LANGFUSE_HOST")
+    if not host:
         return False
     try:
         _client = Langfuse()
-        log.debug("langfuse_initialized", host=os.environ["LANGFUSE_HOST"])
+        log.debug("langfuse_initialized", host=host)
         return True
     except Exception as exc:
         log.warning("langfuse_init_failed", error=str(exc))
@@ -50,53 +51,23 @@ def _get_client() -> Any:
     return _client
 
 
-_trace_name_counter: int = 0
+def _set_trace_name_on_span(obs: Any, name: str, input_data: object | None = None) -> None:
+    """Set trace-level name and input via OTel span attributes.
 
-
-def _update_trace_via_api(
-    trace_id: str,
-    name: str,
-    input_data: object | None = None,
-) -> None:
-    """Set trace name and input via the Langfuse ingestion API.
-
-    The v4 Python SDK derives trace names from observations, so we use
-    the public ingestion batch endpoint to override it. Each call uses
-    a unique event ID to avoid deduplication.
+    The v4 SDK reads ``langfuse.trace.name`` / ``langfuse.trace.input``
+    from span attributes and applies them to the parent trace on export.
     """
-    global _trace_name_counter
-    import urllib.request
-    from datetime import datetime, timezone
-
-    host = os.environ.get("LANGFUSE_HOST", "")
-    pub_key = os.environ.get("LANGFUSE_PUBLIC_KEY", "")
-    sec_key = os.environ.get("LANGFUSE_SECRET_KEY", "")
-    if not host or not pub_key:
-        return
     try:
-        import base64
-        _trace_name_counter += 1
-        auth = base64.b64encode(f"{pub_key}:{sec_key}".encode()).decode()
-        inner: dict[str, Any] = {"id": trace_id, "name": name}
+        from langfuse._client.attributes import LangfuseOtelSpanAttributes
+        otel_span = getattr(obs, "_otel_span", None)
+        if otel_span is None or not otel_span.is_recording():
+            return
+        otel_span.set_attribute(LangfuseOtelSpanAttributes.TRACE_NAME, name)
         if input_data is not None:
-            inner["input"] = input_data
-        body = {
-            "batch": [{
-                "id": f"trace-name-{trace_id[:8]}-{_trace_name_counter}",
-                "type": "trace-create",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "body": inner,
-            }],
-        }
-        req = urllib.request.Request(
-            f"{host}/api/public/ingestion",
-            data=json.dumps(body).encode(),
-            headers={"Authorization": f"Basic {auth}", "Content-Type": "application/json"},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=5)
+            serialized = json.dumps(input_data) if not isinstance(input_data, str) else input_data
+            otel_span.set_attribute(LangfuseOtelSpanAttributes.TRACE_INPUT, serialized)
     except Exception:
-        log.debug("langfuse_trace_update_failed", trace_id=trace_id, exc_info=True)
+        log.debug("langfuse_set_trace_name_failed", exc_info=True)
 
 
 def begin_trace(
@@ -117,8 +88,7 @@ def begin_trace(
         metadata={"model": model, "project": project_name},
     )
     _observations[obs.id] = obs
-    _trace_names[obs.trace_id] = (trace_name, trace_input)
-    _update_trace_via_api(obs.trace_id, trace_name, trace_input)
+    _set_trace_name_on_span(obs, trace_name, trace_input)
     log.debug("langfuse_trace_started", trace_id=obs.trace_id, span_id=obs.id)
     return (obs.trace_id, obs.id)
 
@@ -204,7 +174,7 @@ def end_span(
 
 
 def end_trace(trace_id: str, span_id: str | None = None, output: str | None = None) -> None:
-    """Mark a root trace span as finished and re-assert trace name."""
+    """Mark a root trace span as finished."""
     if not is_enabled():
         return
     sid = span_id or trace_id
@@ -213,28 +183,14 @@ def end_trace(trace_id: str, span_id: str | None = None, output: str | None = No
         obs.update(output=output or {"status": "completed"})
         obs.end()
         _observations.pop(sid, None)
-    saved = _trace_names.pop(trace_id, None)
-    if saved:
-        name, input_data = saved
-        _update_trace_via_api(trace_id, name, input_data)
     log.debug("langfuse_trace_ended", trace_id=trace_id)
 
 
 def flush() -> None:
-    """Flush any buffered Langfuse events and re-assert trace names.
-
-    The SDK derives trace names from observations, so we flush twice:
-    first to drain the SDK's queue, then reassert names via the API,
-    then flush again to ensure our name update is the final write.
-    """
+    """Flush any buffered Langfuse events."""
     if _client is not None:
         client = _get_client()
         client.flush()
-        _time.sleep(1.0)
-        for trace_id, (name, input_data) in list(_trace_names.items()):
-            _update_trace_via_api(trace_id, name, input_data)
-        client.flush()
-        _time.sleep(0.3)
 
 
 # ---------------------------------------------------------------------------
@@ -242,9 +198,17 @@ def flush() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _get_claude_projects_dir() -> Path:
+    """Return the Claude Code projects directory, respecting CLAUDE_CONFIG_DIR."""
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir) / "projects"
+    return Path.home() / ".claude" / "projects"
+
+
 def _find_transcript(claude_session_id: str, project_path: Path) -> Path | None:
     """Locate a Claude Code transcript JSONL, trying multiple path patterns."""
-    claude_dir = Path.home() / ".claude" / "projects"
+    claude_dir = _get_claude_projects_dir()
     dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
     direct = claude_dir / dir_name / f"{claude_session_id}.jsonl"
     if direct.exists():
@@ -437,7 +401,7 @@ def ingest_transcript_to_span(
 
 def _find_recent_transcript(project_path: Path, session_start: float) -> Path | None:
     """Find the most recently modified JSONL transcript after *session_start*."""
-    claude_dir = Path.home() / ".claude" / "projects"
+    claude_dir = _get_claude_projects_dir()
     dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
     proj_dir = claude_dir / dir_name
     if not proj_dir.exists():
@@ -533,10 +497,6 @@ class TranscriptTailer:
             while not self._stop_event.is_set():
                 try:
                     self._ingest_new_lines()
-                    if self.trace_id:
-                        saved = _trace_names.get(self.trace_id)
-                        if saved:
-                            _update_trace_via_api(self.trace_id, saved[0], saved[1])
                 except Exception:
                     log.debug("tailer_ingest_error", exc_info=True)
                 self._stop_event.wait(self.POLL_INTERVAL)

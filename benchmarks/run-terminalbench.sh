@@ -17,7 +17,7 @@ SOLVER_TIMEOUT="${2:-1800}"
 BENCHMARK="terminalbench"
 INSTANCE_ID="${TASK_NAME}"
 RUN_ID="ci-terminalbench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-terminalbench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-terminalbench-${BENCHMARK_SOLVER:-factory}.json"
 
 JOBS_DIR=""
 
@@ -165,6 +165,11 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
         --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
         --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        --ae "LANGFUSE_HOST=${LANGFUSE_HOST:-}" \
+        --ae "LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}" \
+        --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
+        --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
+        --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
         --mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]' \
         2>&1 || HARBOR_EXIT=$?
 else
@@ -184,6 +189,11 @@ else
         --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
         --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
         --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        --ae "LANGFUSE_HOST=${LANGFUSE_HOST:-}" \
+        --ae "LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}" \
+        --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
+        --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
+        --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
         2>&1 || HARBOR_EXIT=$?
 fi
 

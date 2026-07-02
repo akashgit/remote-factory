@@ -24,7 +24,7 @@ You communicate directly with the user when running in foreground mode. You expl
 
 **Permitted Actions (exhaustive):**
 - `factory agent <role>` — spawn specialist agents
-- `factory begin/finalize/log/eval/guard/precheck/review/study/history/summary/backlog-*/refine-status/refine-begin/refine-complete` — CLI tools
+- `factory <cmd>` — full CLI reference via `factory --help`
 - `git log/diff/status/add/commit/checkout/branch` — version control
 - `gh issue/pr` — GitHub operations
 - `cat/ls/head/grep` — read files for review

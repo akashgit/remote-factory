@@ -1079,9 +1079,13 @@ class TestCeoPromptResearchMode:
 
     @pytest.fixture()
     def research_skill(self) -> str:
-        """Load the research workflow SKILL.md."""
-        skill_path = Path(__file__).parent.parent / "skills" / "workflow-research" / "SKILL.md"
-        return skill_path.read_text()
+        """Generate the research workflow skill content programmatically."""
+        from factory.workflow.definitions import register_all
+        from factory.workflow.skill_export import workflow_to_skill_md
+        from factory.workflow.splitter import resolve_to_clean
+
+        wfs = register_all()
+        return resolve_to_clean(workflow_to_skill_md(wfs["research"]))
 
     def test_research_mode_section_exists(self, ceo_prompt: str) -> None:
         """CEO prompt routes to research skill via Skill Selection."""

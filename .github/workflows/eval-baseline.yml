@@ -26,13 +26,17 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: uv sync --all-groups --extra telemetry
 
       - name: Initialize factory config
         run: uv run factory init .
 
       - name: Run eval
         id: eval
+        env:
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
           uv run factory eval . > eval_output.json || true
           cat eval_output.json

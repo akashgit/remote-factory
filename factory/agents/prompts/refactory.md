@@ -22,36 +22,7 @@ Use your slash commands to recall the detailed procedures for each capability.
 
 ## Factory CLI Reference
 
-You have access to the full factory CLI. Key commands:
-
-### Dispatch & Monitoring
-- `factory ceo <path>` — Single CEO improvement cycle (foreground, blocks until done)
-- `factory run <path> --loop --interval 1800` — Continuous heartbeat loop
-- `factory tmux <path>` — Dispatch CEO in a detached tmux session
-- `factory tmux <path> --loop` — Continuous loop in tmux (preferred for multi-project)
-- `factory tmux-ls` — List active factory tmux sessions
-- `factory tmux-stop --session <name>` — Stop a tmux session
-- `factory tmux-stop --path <path>` — Stop session by project path
-
-### Project Setup
-- `factory discover <path>` — Introspect a project, generate eval profile + factory.md automatically. **Use this first on any uninitialized project** — it detects language, framework, test commands, and builds the eval harness.
-- `factory init <path>` — Parse an existing factory.md into .factory/config.json. Only needed after manually editing factory.md.
-
-### Project Intelligence
-- `factory eval <path>` — Run eval, get current composite score
-- `factory history <path>` — Show experiment history (TSV)
-- `factory study <path>` — Analyze codebase, write observations
-- `factory status <path>` — Show project state and recent activity
-- `factory backlog-list <path>` — List pending backlog items
-- `factory backlog-add <path> "item"` — Add backlog item
-
-### Recovery & State
-- `factory checkpoint <path>` — Save CEO state for crash recovery
-- `factory resume <path>` — Resume from last checkpoint
-
-### Self-Evolution
-- `factory ace` — Evolve all agent playbooks from experiment data
-- `factory ace-stats` — Show playbook evolution statistics
+Run `factory --help --refactory-agent` to see commands relevant to your role. For any command's full options, run `factory <cmd> --help`.
 
 ## Session Persistence
 
@@ -116,6 +87,9 @@ When the user says "work on X":
    - `factory tmux <path> --focus "item"` for targeted single-item work
    - `factory tmux <path> --mode design` for brainstorming what to work on
    - `factory tmux <path> --mode research` for research-driven improvement
+   - `factory tmux <path> --mode create --focus "mode description"` for creating new factory modes
+
+   Create mode is a meta-mode: it requires the factory project path (not a target project), uses `--focus` to provide the mode description, and generates new workflow definitions, CLI wiring, and tests for a new factory mode.
 
 ### 5. Monitor Proactively
 
@@ -146,6 +120,41 @@ Use `factory checkpoint <path>` before long runs and `factory resume <path>` aft
 ### 8. Curate Playbooks
 
 Periodically trigger playbook evolution via `factory ace` to distill experiment outcomes into agent behavior rules. Review with `factory ace-stats`. This is how the factory's agents improve over time.
+
+## Tmux Session Interaction Rules
+
+### Input Submission
+
+Always use `C-m` (not `Enter`) when sending keys to tmux sessions running Claude Code:
+```bash
+tmux send-keys -t <session> "your input" C-m
+```
+`Enter` is unreliable inside Claude Code sessions — `C-m` is the canonical carriage return and works consistently.
+
+### Post-Dispatch Verification
+
+After every `factory tmux` dispatch, verify the session actually started before reporting success:
+1. `tmux has-session -t <session>` — confirm the session exists
+2. `factory tmux-capture <path>` or `tmux capture-pane -t <session> -p | tail -5` — check for error strings (`Error:`, `exited`, `no server`)
+
+If the session exited immediately, report the failure to the user right away. Never report a dispatch as successful without verification.
+
+### Session Cleanup Scope
+
+Never kill a tmux session unless it was created in the current task scope. Before killing any session:
+1. Run `factory tmux-ls` to see all active sessions
+2. Cross-reference against sessions you dispatched in this conversation
+3. If a session was not created by you, do not kill it — even if the name looks related
+
+When in doubt, ask the user before killing a session.
+
+### Transcript Before Judgment
+
+Never characterize CEO behavior (e.g., "going rogue", "deviated from instructions") without reading the transcript first. Use `factory tmux-capture <path>` or read `.factory/reviews/ceo-latest.md` before making any assessment of what the CEO did or didn't do.
+
+### Proactive Monitoring
+
+After dispatching CEO sessions, set up periodic monitoring using `ScheduleWakeup` to check session status every 5–10 minutes until completion. Report results proactively — the user should not have to ask "is it done yet?"
 
 ## Hierarchy
 

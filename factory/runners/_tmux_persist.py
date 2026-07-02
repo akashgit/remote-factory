@@ -230,7 +230,7 @@ async def run_in_tmux(
             return f"Agent timed out after {timeout}s", 1, None
 
         subprocess.run(
-            ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "Enter"],
+            ["tmux", "send-keys", "-t", f"{session}:{window}", "/exit", "C-m"],
             capture_output=True,
         )
         await _wait_for_window_exit(session, window)

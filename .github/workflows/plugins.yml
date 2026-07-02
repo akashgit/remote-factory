@@ -27,6 +27,9 @@ jobs:
       - name: Generate plugin agent files
         run: uv run python scripts/sync_agents.py
 
+      - name: Generate workflow skills
+        run: uv run factory workflow export-skills --output-dir skills
+
       - name: Copy skills to .agents/skills
         run: cp -r skills/ .agents/skills/
 

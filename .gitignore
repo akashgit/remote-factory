@@ -27,6 +27,10 @@ dist/
 /agents/
 /codex-agents/
 
+# Generated workflow skills (built on-the-fly by factory skill_cache)
+skills/workflow-*/SKILL.md
+skills/workflow-*/SKILL.annotations.yaml
+
 # Dev artifacts
 .playwright-mcp/
 screenshots/

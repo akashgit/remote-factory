@@ -16,16 +16,12 @@ def _reset_telemetry():
     """Reset telemetry module state between tests."""
     old_client = telemetry_mod._client
     old_obs = telemetry_mod._observations.copy()
-    old_names = telemetry_mod._trace_names.copy()
     telemetry_mod._client = None
     telemetry_mod._observations.clear()
-    telemetry_mod._trace_names.clear()
     yield
     telemetry_mod._client = old_client
     telemetry_mod._observations.clear()
     telemetry_mod._observations.update(old_obs)
-    telemetry_mod._trace_names.clear()
-    telemetry_mod._trace_names.update(old_names)
 
 
 class TestIsEnabled:
@@ -35,11 +31,22 @@ class TestIsEnabled:
 
     def test_returns_false_without_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
         with patch.object(telemetry_mod, "_HAS_LANGFUSE", True):
             assert telemetry_mod.is_enabled() is False
 
     def test_returns_true_when_configured(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("LANGFUSE_HOST", "http://localhost:3000")
+        mock_client = MagicMock()
+        mock_langfuse_cls = MagicMock(return_value=mock_client)
+        monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
+        monkeypatch.setattr(telemetry_mod, "Langfuse", mock_langfuse_cls, raising=False)
+        assert telemetry_mod.is_enabled() is True
+        assert telemetry_mod._client is mock_client
+
+    def test_returns_true_with_langfuse_base_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+        monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.example.com")
         mock_client = MagicMock()
         mock_langfuse_cls = MagicMock(return_value=mock_client)
         monkeypatch.setattr(telemetry_mod, "_HAS_LANGFUSE", True)
@@ -61,7 +68,7 @@ class TestBeginTrace:
         mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
             result = telemetry_mod.begin_trace("my-project", "cycle-1", model="opus")
 
         assert result == ("trace-abc", "span-abc")
@@ -80,7 +87,7 @@ class TestBeginTrace:
         mock_client.start_observation.return_value = mock_obs
         telemetry_mod._client = mock_client
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
             telemetry_mod.begin_trace("proj", "c1")
 
         mock_client.start_observation.assert_called_once_with(
@@ -175,10 +182,8 @@ class TestEndTrace:
         mock_obs = MagicMock()
         telemetry_mod._client = mock_client
         telemetry_mod._observations["span-1"] = mock_obs
-        telemetry_mod._trace_names["trace-1"] = ("factory:proj/c1", {"project": "proj"})
 
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
-            telemetry_mod.end_trace("trace-1", span_id="span-1")
+        telemetry_mod.end_trace("trace-1", span_id="span-1")
 
         mock_obs.update.assert_called_once_with(output={"status": "completed"})
         mock_obs.end.assert_called_once()
@@ -189,13 +194,41 @@ class TestFlush:
     def test_flushes_when_client_exists(self) -> None:
         mock_client = MagicMock()
         telemetry_mod._client = mock_client
-        with patch.object(telemetry_mod, "_update_trace_via_api"):
-            telemetry_mod.flush()
-        assert mock_client.flush.call_count == 2
+        telemetry_mod.flush()
+        mock_client.flush.assert_called_once()
 
     def test_noop_when_no_client(self) -> None:
         telemetry_mod._client = None
         telemetry_mod.flush()
+
+
+class TestClaudeProjectsDir:
+    def test_find_transcript_respects_claude_config_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        custom_dir = tmp_path / "custom-claude"
+        project_path = tmp_path / "my-project"
+        dir_name = str(project_path.resolve()).replace("/", "-").replace(".", "-")
+        transcript_dir = custom_dir / "projects" / dir_name
+        transcript_dir.mkdir(parents=True)
+        transcript_file = transcript_dir / "sess-abc.jsonl"
+        transcript_file.write_text('{"type":"user"}\n')
+
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(custom_dir))
+
+        result = telemetry_mod._find_transcript("sess-abc", project_path)
+        assert result is not None
+        assert result == transcript_file
+
+    def test_get_claude_projects_dir_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+        result = telemetry_mod._get_claude_projects_dir()
+        assert result == Path.home() / ".claude" / "projects"
+
+    def test_get_claude_projects_dir_custom(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/tmp/custom-claude")
+        result = telemetry_mod._get_claude_projects_dir()
+        assert result == Path("/tmp/custom-claude/projects")
 
 
 class TestIngestTranscript:
