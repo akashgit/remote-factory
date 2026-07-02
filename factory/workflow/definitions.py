@@ -85,7 +85,7 @@ def _deep_qa_subgraph(
             "score. Write a structured report to .factory/reviews/health-check.md with "
             "score table, composite score, delta, and threshold result."
         ),
-        reads={".factory/reviews/builder-latest.md"},
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/health-check.md"},
     )
 
@@ -104,7 +104,7 @@ def _deep_qa_subgraph(
         id="code_reviewer",
         role=AgentRole.QA,
         prompt_template=cr_prompt,
-        reads={".factory/reviews/builder-latest.md"},
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/code-review.md"},
     )
 
@@ -125,7 +125,7 @@ def _deep_qa_subgraph(
         role=AgentRole.QA,
         timeout=1800,
         prompt_template=at_prompt,
-        reads={".factory/reviews/builder-latest.md"},
+        reads={".factory/reviews/builder-latest.md", ".factory/strategy/current.md"},
         writes={".factory/reviews/adversarial-qa.md"},
     )
 
@@ -1282,9 +1282,10 @@ def refine_workflow() -> Workflow:
             "Read CLAUDE.md and factory.md. Analyze the codebase to identify "
             "which files need to change, estimate scope, and classify the request "
             "as Tier 1, 2, or 3. Produce the structured classification output "
-            "with a Builder task description."
+            "with a Builder task description. "
+            "Write the refinement plan to .factory/strategy/current.md."
         ),
-        writes={".factory/reviews/refiner-latest.md"},
+        writes={".factory/reviews/refiner-latest.md", ".factory/strategy/current.md"},
     )
 
     # R0-review: CEO Review
