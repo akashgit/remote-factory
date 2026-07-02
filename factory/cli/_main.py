@@ -449,6 +449,8 @@ def build_parser() -> argparse.ArgumentParser:
     # agent — invoke a specialist agent directly
     p = sub.add_parser("agent", help="Invoke a specialist agent with a task")
     p.add_argument("role", choices=["researcher", "strategist", "builder", "qa",
+                                     "health_checker", "code_reviewer",
+                                     "adversarial_tester",
                                      "archivist", "ceo",
                                      "failure_analyst", "refiner"],
                     help="Agent role to invoke")
@@ -547,9 +549,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--bg-agents", action="store_true", default=False,
                     help="Background sub-agents (via FACTORY_BG=1) while CEO runs in foreground")
     p.add_argument("--pr", type=int, default=None,
-                    help="PR number for --mode review or --mode qa (required when mode=review or mode=qa)")
+                    help="PR number for --mode review or --mode deep-qa (required when mode=review or mode=deep-qa)")
     p.add_argument("--repo", default=None,
-                    help="Repository (owner/repo) for --mode review or --mode qa (optional, defaults to current repo)")
+                    help="Repository (owner/repo) for --mode review or --mode deep-qa (optional, defaults to current repo)")
     p.add_argument("--run-id", default=None, dest="run_id",
                     help="Use a specific run ID (e.g., UUID from external orchestrator). "
                          "First 8 chars are used for worktree naming")

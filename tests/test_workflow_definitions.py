@@ -230,7 +230,7 @@ class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
         assert len(all_wf) >= 11, f"Expected at least 11 workflows, got {len(all_wf)}"
-        required = {"build", "design", "improve", "qa", "research", "meta",
+        required = {"build", "design", "improve", "deep-qa", "research", "meta",
                      "discover", "review", "refine", "create", "skill-refine"}
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -355,24 +355,21 @@ def _is_reachable(workflow_name: str, source_id: str, target_id: str) -> bool:
     return False
 
 
-QA_ROLES = {
-    AgentRole.QA, AgentRole.HEALTH_CHECKER,
-    AgentRole.CODE_REVIEWER, AgentRole.ADVERSARIAL_TESTER,
-}
+DEEP_QA_ROLES = {AgentRole.HEALTH_CHECKER, AgentRole.CODE_REVIEWER, AgentRole.ADVERSARIAL_TESTER}
 
 
 class TestBuilderQaReachability:
-    """Every workflow with a Builder must also have a QA-related node reachable from it."""
+    """Every workflow with a Builder must also have a deep-qa specialist reachable from it."""
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
     def test_builder_has_qa_node(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         qa_nodes = [
             nid for nid, n in wf.nodes.items()
-            if isinstance(n, AgentNode) and n.role in QA_ROLES
+            if isinstance(n, AgentNode) and n.role in DEEP_QA_ROLES
         ]
         assert qa_nodes, (
-            f"workflow '{workflow_name}' has a Builder but no QA-related AgentNode"
+            f"workflow '{workflow_name}' has a Builder but no deep-qa specialist AgentNode"
         )
 
     @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
@@ -384,14 +381,14 @@ class TestBuilderQaReachability:
         ]
         qa_ids = [
             nid for nid, n in wf.nodes.items()
-            if isinstance(n, AgentNode) and n.role in QA_ROLES
+            if isinstance(n, AgentNode) and n.role in DEEP_QA_ROLES
         ]
         for bid in builder_ids:
             reachable = any(
                 _is_reachable(workflow_name, bid, qid) for qid in qa_ids
             )
             assert reachable, (
-                f"workflow '{workflow_name}': QA-related node is not reachable from "
+                f"workflow '{workflow_name}': deep-qa specialist is not reachable from "
                 f"Builder node '{bid}' via edges"
             )
 

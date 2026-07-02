@@ -2,14 +2,14 @@
 
 Runs the decomposed QA pipeline (health_checker → code_reviewer →
 adversarial_tester) with sequential gates as a standalone mode.
-Triggered via `factory ceo /path --mode deep-qa`.
+Triggered via `factory workflow run deep-qa` or `factory ceo /path --mode deep-qa`.
 """
 
 from typing import Any
 
 from factory.models import ProjectState
 from factory.workflow.definitions import _deep_qa_subgraph
-from factory.workflow.primitives import Edge, FnNode, GateNode, VerdictType, Workflow
+from factory.workflow.primitives import AgentNode, Edge, FnNode, GateNode, VerdictType, Workflow
 
 meta = {
     "name": "deep-qa",
@@ -26,8 +26,6 @@ def workflow() -> Workflow:
     """Build the standalone deep-qa workflow."""
     dq_nodes, dq_edges = _deep_qa_subgraph(finalize_target="post_review")
 
-    # Clear reads on all specialist nodes — no builder predecessor in standalone mode.
-    from factory.workflow.primitives import AgentNode
     for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
         node = dq_nodes[nid]
         assert isinstance(node, AgentNode)
