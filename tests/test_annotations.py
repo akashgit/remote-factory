@@ -85,16 +85,8 @@ def test_all_nodes_have_annotations(workflow_name: str) -> None:
         if isinstance(node, ForkNode):
             fork_targets.update(node.targets)
 
-    deep_qa_node_ids = {
-        "health_checker", "gate_health", "code_reviewer", "gate_review",
-        "adversarial_tester", "gate_adversarial", "join_verdict",
-    }
-    has_deep_qa = deep_qa_node_ids.issubset(set(wf.nodes))
-
     for node_id in wf.nodes:
         if node_id in fork_targets:
-            continue
-        if has_deep_qa and node_id in deep_qa_node_ids:
             continue
         assert node_id in annotations, (
             f"Node '{node_id}' in workflow '{workflow_name}' has no annotations"

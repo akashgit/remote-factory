@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 AgentRole = Literal[
     "researcher", "strategist", "builder", "qa",
+    "health_checker", "code_reviewer", "adversarial_tester",
     "archivist", "ceo", "failure_analyst", "refiner", "profiler",
     "refactory",
 ]

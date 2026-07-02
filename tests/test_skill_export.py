@@ -495,14 +495,8 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
-_DEEP_QA_NODE_IDS = {
-    "health_checker", "gate_health", "code_reviewer", "gate_review",
-    "adversarial_tester", "gate_adversarial", "join_verdict",
-}
-
-
-def _workflows_with_builder_and_deep_qa() -> list[str]:
-    """Return names of workflows containing a Builder AgentNode and the deep-QA subgraph."""
+def _workflows_with_builder() -> list[str]:
+    """Return names of workflows containing a Builder AgentNode."""
     from factory.workflow.definitions import register_all
 
     names = []
@@ -511,21 +505,23 @@ def _workflows_with_builder_and_deep_qa() -> list[str]:
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
             for n in wf.nodes.values()
         )
-        has_deep_qa = _DEEP_QA_NODE_IDS.issubset(set(wf.nodes))
-        if has_builder and has_deep_qa:
+        if has_builder:
             names.append(name)
     return sorted(names)
 
 
 class TestSkillQaEnforcement:
-    """Every workflow with a Builder must include a QA phase in its exported SKILL.md."""
+    """Every workflow with a Builder must include QA verification in its exported SKILL.md."""
 
-    @pytest.mark.parametrize("workflow_name", _workflows_with_builder_and_deep_qa())
+    @pytest.mark.parametrize("workflow_name", _workflows_with_builder())
     def test_builder_workflow_has_qa_in_skill(self, workflow_name: str) -> None:
         from factory.workflow.definitions import register_all
 
         wf = register_all()[workflow_name]
         content = workflow_to_skill_md(wf)
-        assert "factory workflow run deep-qa" in content, (
-            f"workflow-{workflow_name} SKILL.md is missing 'factory workflow run deep-qa' invocation"
+        qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
+        has_qa = any(f"factory agent {role}" in content for role in qa_roles)
+        assert has_qa, (
+            f"workflow-{workflow_name} SKILL.md is missing any QA agent invocation "
+            f"(health_checker, code_reviewer, or adversarial_tester)"
         )
