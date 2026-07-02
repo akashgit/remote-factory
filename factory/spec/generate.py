@@ -173,16 +173,62 @@ def group_into_batches(
     return batches
 
 
+async def _extract_batch(
+    batch_index: int,
+    batch_files: list[Path],
+    project_path: Path,
+    total_batches: int,
+) -> str:
+    """Extract spec content from a single batch of source files."""
+    from factory.agents.runner import invoke_agent
+
+    file_listing = "\n".join(f"- {f}" for f in batch_files)
+    task = (
+        f"Extract a behavioral module map from batch {batch_index + 1}/{total_batches} "
+        f"of the project at {project_path}.\n\n"
+        f"## Files in This Batch ({len(batch_files)} files)\n\n"
+        f"{file_listing}\n\n"
+        f"Read ONLY the files listed above and extract their spec content.\n"
+        f"Extract domain entities, state machines, error types, and module relationships.\n"
+        f"Output the spec section as text — do NOT write any files."
+    )
+
+    log.info(
+        "spec.extract_batch.start",
+        batch=batch_index + 1,
+        total=total_batches,
+        files=len(batch_files),
+    )
+    result, code = await invoke_agent(
+        "researcher",
+        task,
+        project_path,
+        timeout=600.0,
+        dangerously_skip_permissions=True,
+        model="opus",
+    )
+    if code != 0:
+        raise RuntimeError(
+            f"Spec extraction failed for batch {batch_index + 1}/{total_batches} "
+            f"(exit {code}): {result[:500]}"
+        )
+
+    log.info("spec.extract_batch.done", batch=batch_index + 1, total=total_batches)
+    return result
+
+
 async def generate_spec(project_path: Path) -> Path:
     """Generate a repo spec for a project.
 
     Runs the extraction → annotation pipeline:
     1. Collect source files and batch them
-    2. Run Opus extraction agent to produce spec_raw.md
+    2. Run Opus extraction agents in parallel (one per batch) to produce spec_raw.md
     3. Run Researcher annotation agent to produce GRAPH-SPEC.md
 
     Returns the path to the generated GRAPH-SPEC.md.
     """
+    import asyncio
+
     from factory.agents.runner import invoke_agent
 
     factory_dir = project_path / ".factory"
@@ -195,38 +241,15 @@ async def generate_spec(project_path: Path) -> Path:
     batches = group_into_batches(source_files, project_path)
     log.info("spec.generate", files=len(source_files), batches=len(batches))
 
-    file_listing = "\n".join(f"- {f}" for f in source_files)
-    batch_info = "\n".join(
-        f"Batch {i + 1}: {len(b)} files ({', '.join(str(f) for f in b[:5])}{'...' if len(b) > 5 else ''})"
-        for i, b in enumerate(batches)
-    )
-
-    extract_task = (
-        f"Extract a behavioral module map from this project at {project_path}.\n\n"
-        f"## Source Files ({len(source_files)} total, {len(batches)} batch(es))\n\n"
-        f"{file_listing}\n\n"
-        f"## Batches\n\n{batch_info}\n\n"
-        f"Read these source files and produce the spec_raw.md output.\n"
-        f"Extract domain entities, state machines, error types, and module relationships.\n"
-        f"Write the output to {factory_dir / 'spec_raw.md'}."
-    )
-
-    result, code = await invoke_agent(
-        "researcher",
-        extract_task,
-        project_path,
-        timeout=600.0,
-        dangerously_skip_permissions=True,
-        model="opus",
-    )
-    if code != 0:
-        raise RuntimeError(f"Spec extraction failed (exit {code}): {result[:500]}")
+    tasks = [
+        _extract_batch(i, batch, project_path, len(batches)) for i, batch in enumerate(batches)
+    ]
+    results = await asyncio.gather(*tasks)
+    spec_raw_content = "\n\n".join(r for r in results if r)
 
     spec_raw = factory_dir / "spec_raw.md"
-    if not spec_raw.exists():
-        raise FileNotFoundError(
-            f"Extraction agent did not produce {spec_raw}. Agent output: {result[:500]}"
-        )
+    spec_raw.write_text(spec_raw_content)
+    log.info("spec.extract.complete", batches=len(batches), raw_size=len(spec_raw_content))
 
     annotate_task = (
         f"Annotate and enrich the raw spec at {spec_raw} for the project at {project_path}.\n\n"
