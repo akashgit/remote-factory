@@ -457,6 +457,7 @@ class CycleState(BaseModel):
     mode: Literal[
         "build", "create", "deep-qa", "design", "discover",
         "improve", "meta", "qa", "refine", "research", "review",
+        "swebench",
     ]
     initial_prompt: str = ""
     respawns: int = 0
