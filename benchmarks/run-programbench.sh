@@ -66,7 +66,14 @@ cleanup() {
             rm -rf "${RESULTS_DIR}"
         fi
     fi
-    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
+    LANGFUSE_TRACE_ID=""
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        TRACE_ID_FILE=$(find "${JOBS_DIR}" -path '*/.factory/trace_id.txt' -type f 2>/dev/null | head -1)
+        if [ -n "${TRACE_ID_FILE}" ] && [ -f "${TRACE_ID_FILE}" ]; then
+            LANGFUSE_TRACE_ID=$(cat "${TRACE_ID_FILE}" | tr -d '[:space:]')
+        fi
+    fi
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0

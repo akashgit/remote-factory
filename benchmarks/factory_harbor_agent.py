@@ -9,6 +9,26 @@ from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
 
+COMMON_ENV_VARS = (
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_MODEL",
+    "CLAUDE_CODE_USE_VERTEX",
+    "ANTHROPIC_VERTEX_PROJECT_ID",
+    "CLOUD_ML_REGION",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+    "CLAUDE_CODE_SUBAGENT_MODEL",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
+    "MAX_THINKING_TOKENS",
+    "CLAUDE_CODE_EFFORT_LEVEL",
+    "LANGFUSE_HOST",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_BASE_URL",
+)
+
+
 class ProgramBenchFactoryCeo(BaseInstalledAgent):
     """Runs ``factory ceo`` for ProgramBench tasks.
 
@@ -66,20 +86,7 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
         if self.model_name:
             env["ANTHROPIC_MODEL"] = self.model_name.split("/")[-1]
 
-        for var in (
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_MODEL",
-            "CLAUDE_CODE_USE_VERTEX",
-            "ANTHROPIC_VERTEX_PROJECT_ID",
-            "CLOUD_ML_REGION",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
-            "MAX_THINKING_TOKENS",
-            "CLAUDE_CODE_EFFORT_LEVEL",
-        ):
+        for var in COMMON_ENV_VARS:
             val = self._get_env(var) or os.environ.get(var)
             if val and var not in env:
                 env[var] = val
@@ -292,23 +299,7 @@ class FactoryCeo(BaseInstalledAgent):
         if self.model_name:
             env["ANTHROPIC_MODEL"] = self.model_name.split("/")[-1]
 
-        for var in (
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_MODEL",
-            "CLAUDE_CODE_USE_VERTEX",
-            "ANTHROPIC_VERTEX_PROJECT_ID",
-            "CLOUD_ML_REGION",
-            "GOOGLE_APPLICATION_CREDENTIALS",
-            "CLAUDE_CODE_SUBAGENT_MODEL",
-            "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING",
-            "MAX_THINKING_TOKENS",
-            "CLAUDE_CODE_EFFORT_LEVEL",
-            "LANGFUSE_HOST",
-            "LANGFUSE_PUBLIC_KEY",
-            "LANGFUSE_SECRET_KEY",
-        ):
+        for var in COMMON_ENV_VARS:
             val = self._get_env(var) or os.environ.get(var)
             if val and var not in env:
                 env[var] = val
