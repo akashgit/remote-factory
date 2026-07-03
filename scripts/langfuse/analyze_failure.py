@@ -29,11 +29,17 @@ def find_matching_trace(
     instance_id: str,
     timestamp: datetime,
     duration_seconds: int,
+    verbose: bool = False,
 ) -> dict | None:
     from_ts = timestamp - timedelta(minutes=5)
     to_ts = timestamp + timedelta(seconds=duration_seconds) + timedelta(minutes=5)
 
+    if verbose:
+        print(f"[verbose] Searching traces from {from_ts} to {to_ts}", file=sys.stderr)
+
     traces = list_traces(from_ts, to_ts)
+    if verbose:
+        print(f"[verbose] Found {len(traces)} traces in window", file=sys.stderr)
     if not traces:
         return None
 
@@ -45,10 +51,19 @@ def find_matching_trace(
         if benchmark.lower() in text or instance_id.lower() in text:
             candidates.append(t)
 
+    if verbose:
+        print(f"[verbose] Filtered to {len(candidates)} candidates", file=sys.stderr)
+
     if not candidates:
         candidates = traces
 
-    return max(candidates, key=lambda t: t.get("latency", 0) or 0)
+    selected = max(candidates, key=lambda t: t.get("latency", 0) or 0)
+    if verbose:
+        print(
+            f"[verbose] Selected trace: {selected['id']} (latency={selected.get('latency', 0)}s)",
+            file=sys.stderr,
+        )
+    return selected
 
 
 def format_trace_dump(trace: dict) -> str:
@@ -183,6 +198,24 @@ def main() -> int:
             print("[verbose] Benchmark resolved — nothing to diagnose.", file=sys.stderr)
         return 0
 
+    solver = result_data.get("solver", "")
+    if solver == "claude-code":
+        if args.summary:
+            report = "Trace analysis not available for claude-code solver."
+        else:
+            benchmark = result_data.get("benchmark", "unknown")
+            instance_id = result_data.get("instance_id", "unknown")
+            duration = result_data.get("duration_seconds", 0)
+            report = (
+                f"### Failure Analysis: {benchmark} / {instance_id}\n\n"
+                f"**Solver:** {solver}\n"
+                f"**Duration:** {duration}s\n\n"
+                "Trace analysis not available — claude-code solver does not create "
+                "factory-managed Langfuse traces.\n"
+            )
+        _write_output(report, args.output)
+        return 0
+
     try:
         host, _, _ = load_creds()
     except (KeyError, Exception) as e:
@@ -192,25 +225,37 @@ def main() -> int:
         return 0
 
     trace, trace_id = None, None
-    try:
-        ts_str = result_data.get("timestamp", "")
-        benchmark = result_data.get("benchmark", "")
-        instance_id = result_data.get("instance_id", "")
-        timestamp = parse_benchmark_timestamp(ts_str)
-        matched = find_matching_trace(
-            benchmark, instance_id, timestamp, result_data.get("duration_seconds", 0),
-        )
-        if matched:
-            trace_id = matched.get("id")
-            if args.verbose:
-                print(f"[verbose] Matched trace: {trace_id}", file=sys.stderr)
+
+    direct_trace_id = (result_data.get("details") or {}).get("trace_id", "")
+    if direct_trace_id:
+        print(f"Using direct trace ID: {direct_trace_id}", file=sys.stderr)
+        trace_id = direct_trace_id
+        try:
             trace = fetch_trace(trace_id, use_cache=False)
-        else:
-            print(f"WARNING: No matching trace for {benchmark}/{instance_id}", file=sys.stderr)
-    except (ValueError, KeyError) as e:
-        print(f"WARNING: Could not search for trace: {e}", file=sys.stderr)
-    except Exception as e:
-        print(f"WARNING: Trace fetch failed: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"WARNING: Failed to fetch direct trace {trace_id}: {e}", file=sys.stderr)
+    else:
+        try:
+            ts_str = result_data.get("timestamp", "")
+            benchmark = result_data.get("benchmark", "")
+            instance_id = result_data.get("instance_id", "")
+            timestamp = parse_benchmark_timestamp(ts_str)
+            matched = find_matching_trace(
+                benchmark, instance_id, timestamp,
+                result_data.get("duration_seconds", 0),
+                verbose=args.verbose,
+            )
+            if matched:
+                trace_id = matched.get("id")
+                if args.verbose:
+                    print(f"[verbose] Matched trace: {trace_id}", file=sys.stderr)
+                trace = fetch_trace(trace_id, use_cache=False)
+            else:
+                print(f"WARNING: No matching trace for {benchmark}/{instance_id}", file=sys.stderr)
+        except (ValueError, KeyError) as e:
+            print(f"WARNING: Could not search for trace: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"WARNING: Trace fetch failed: {e}", file=sys.stderr)
 
     report = generate_report(
         result_data, trace=trace, trace_id=trace_id, host=host,
