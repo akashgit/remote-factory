@@ -474,3 +474,18 @@ class TestDeepQaSubgraph:
         assert "qa" not in wf.nodes or not isinstance(wf.nodes.get("qa"), AgentNode), (
             f"workflow '{wf_name}' still has monolithic 'qa' AgentNode"
         )
+
+
+class TestContributedWorkflows:
+    def test_register_all_includes_contributed(self) -> None:
+        """register_all() returns deep-qa and legacybench from contributed/."""
+        workflows = register_all()
+        assert "deep-qa" in workflows
+        assert "legacybench" in workflows
+
+    def test_contributed_workflows_valid(self) -> None:
+        workflows = register_all()
+        for name in ("deep-qa", "legacybench"):
+            wf = workflows[name]
+            issues = wf.validate_graph()
+            assert issues == [], f"{name} workflow has issues: {issues}"

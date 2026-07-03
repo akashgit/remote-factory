@@ -1711,8 +1711,9 @@ def skill_refine_workflow() -> Workflow:
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all 11 workflow definitions."""
-    from workflows.deep_qa import workflow as deep_qa_workflow
+    """Build and return all workflow definitions."""
+    from factory.workflow.deep_qa import workflow as deep_qa_workflow
+    from factory.workflow.contributed.legacybench import workflow as legacybench_workflow
 
     return {
         "build": build_workflow(),
@@ -1722,6 +1723,7 @@ def register_all() -> dict[str, Workflow]:
         "improve": improve_workflow(),
         "qa": qa_workflow(),
         "deep-qa": deep_qa_workflow(),
+        "legacybench": legacybench_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
         "refine": refine_workflow(),
