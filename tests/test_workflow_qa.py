@@ -71,7 +71,7 @@ class TestSubgraph:
 
 class TestDeepQaWorkflow:
     def _get_wf(self):
-        from workflows.deep_qa import workflow
+        from factory.workflow.contributed.deep_qa import workflow
         return workflow()
 
     def test_valid_graph(self) -> None:
