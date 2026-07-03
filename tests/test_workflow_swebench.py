@@ -67,9 +67,9 @@ class TestSwebenchWorkflow:
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "PROCEED" in node.evaluator_command
-        assert "RELOOP" in node.evaluator_command
-        assert "HALT" in node.evaluator_command
+        assert "pass:" in node.evaluator_command
+        assert "reloop:" in node.evaluator_command
+        assert "fail:" in node.evaluator_command
 
     def test_auto_merge_node(self) -> None:
         wf = workflow()
