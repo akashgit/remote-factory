@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Analyze a failed benchmark run using its Langfuse trace and claude -p.
 
-Usage: python scripts/langfuse/analyze_failure.py <result.json> [--output FILE] [--no-llm] [--verbose]
+Usage: python scripts/langfuse/analyze_failure.py <result.json> [--output FILE] [--no-llm] [--summary] [--verbose]
 """
 from __future__ import annotations
 
@@ -59,6 +59,30 @@ def format_trace_dump(trace: dict) -> str:
     return buf.getvalue()
 
 
+def run_llm_summary(trace_dump: str, benchmark: str, instance_id: str) -> str | None:
+    if not shutil.which("claude"):
+        return None
+
+    prompt = (
+        f"Benchmark: {benchmark}, Instance: {instance_id}. "
+        "Summarize why this benchmark failed in at most 2 sentences. "
+        f"Keep it under 140 characters total. Here is the trace: {trace_dump}"
+    )
+
+    try:
+        result = subprocess.run(
+            ["claude", "-p", prompt, "--max-turns", "1"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if result.stdout.strip():
+            return result.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        pass
+    return None
+
+
 def run_llm_analysis(trace_dump: str, benchmark: str, instance_id: str) -> str | None:
     if not shutil.which("claude"):
         return None
@@ -91,11 +115,23 @@ def generate_report(
     host: str | None,
     use_llm: bool = True,
     verbose: bool = False,
+    summary: bool = False,
 ) -> str:
     benchmark = result_data["benchmark"]
     instance_id = result_data["instance_id"]
     solver = result_data.get("solver", "unknown")
     duration = result_data.get("duration_seconds", 0)
+
+    if summary:
+        if trace is None or not use_llm:
+            return "No trace available for summary."
+        trace_dump = format_trace_dump(trace)
+        if verbose:
+            print(f"[verbose] Summary trace dump: {len(trace_dump)} chars", file=sys.stderr)
+        text = run_llm_summary(trace_dump, benchmark, instance_id)
+        if text:
+            return text
+        return "No trace available for summary."
 
     header = (
         f"### Failure Analysis: {benchmark} / {instance_id}\n\n"
@@ -127,6 +163,7 @@ def main() -> int:
     parser.add_argument("result_json", help="Path to benchmark result JSON file")
     parser.add_argument("--output", "-o", help="Output file (default: stdout)")
     parser.add_argument("--no-llm", action="store_true", help="Skip LLM analysis, output raw trace")
+    parser.add_argument("--summary", action="store_true", help="Output a short 1-2 sentence summary instead of full analysis")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output to stderr")
     args = parser.parse_args()
 
@@ -178,6 +215,7 @@ def main() -> int:
     report = generate_report(
         result_data, trace=trace, trace_id=trace_id, host=host,
         use_llm=not args.no_llm, verbose=args.verbose,
+        summary=args.summary,
     )
     _write_output(report, args.output)
     return 0
