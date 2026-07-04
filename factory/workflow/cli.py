@@ -67,19 +67,25 @@ def _cmd_run(args: argparse.Namespace) -> int:
         dry_run=dry_run,
     )
 
-    result = asyncio.run(executor.execute())
+    from factory.agents.runner import begin_cycle_session, complete_cycle_session
+    cycle_span_id = begin_cycle_session(project_path, cycle_id=name)
 
-    print(json.dumps({
-        "workflow": name,
-        "success": result.success,
-        "halted": result.halted,
-        "halt_reason": result.halt_reason,
-        "nodes_executed": result.nodes_executed,
-        "duration_ms": round(result.duration_ms, 1),
-        "files_produced": sorted(result.completed_files),
-    }, indent=2))
+    try:
+        result = asyncio.run(executor.execute())
 
-    return 0 if result.success else 1
+        print(json.dumps({
+            "workflow": name,
+            "success": result.success,
+            "halted": result.halted,
+            "halt_reason": result.halt_reason,
+            "nodes_executed": result.nodes_executed,
+            "duration_ms": round(result.duration_ms, 1),
+            "files_produced": sorted(result.completed_files),
+        }, indent=2))
+
+        return 0 if result.success else 1
+    finally:
+        complete_cycle_session(project_path, cycle_span_id)
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
