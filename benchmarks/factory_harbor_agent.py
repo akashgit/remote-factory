@@ -365,7 +365,7 @@ class FactoryCeo(BaseInstalledAgent):
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
                 'export FACTORY_CEO_RESPAWN_DISABLED=1; '
-                "factory ceo . --headless --mode build --no-github "
+                "factory ceo . --headless --mode swebench --no-github "
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"

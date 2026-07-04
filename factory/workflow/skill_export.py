@@ -130,6 +130,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or /path/to/spec.md',
     },
+    "swebench": {
+        "description": (
+            "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
+            "GitHub issues in containerized evaluation. Reads the task instruction, "
+            "fixes the bug, runs tests, and merges to main. No eval infrastructure, "
+            "no deep-QA, no research phases. Use when invoked with --mode swebench "
+            "inside a Harbor benchmark container."
+        ),
+        "argument_hint": "<project_path> --prompt /tmp/task-instruction.md",
+    },
     "skill-refine": {
         "description": (
             "Verified skill generation pipeline — templatize, review, guard, split. "

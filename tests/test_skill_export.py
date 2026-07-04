@@ -496,12 +496,17 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
+QA_EXEMPT_WORKFLOWS = {"swebench"}
+
+
 def _workflows_with_builder() -> list[str]:
     """Return names of workflows containing a Builder AgentNode."""
     from factory.workflow.definitions import register_all
 
     names = []
     for name, wf in register_all().items():
+        if name in QA_EXEMPT_WORKFLOWS:
+            continue
         has_builder = any(
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
             for n in wf.nodes.values()
