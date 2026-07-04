@@ -8,6 +8,7 @@ Workflow objects and call validate_graph() before returning.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 from collections import defaultdict, deque
 from pathlib import Path
@@ -539,7 +540,16 @@ def _describe_nodes_llm(
         role="describe_nodes",
     )
 
-    result = asyncio.run(runner.headless(request))
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            result = pool.submit(asyncio.run, runner.headless(request)).result()
+    else:
+        result = asyncio.run(runner.headless(request))
 
     # Parse the LLM response
     try:
