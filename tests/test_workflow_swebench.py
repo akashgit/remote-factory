@@ -75,7 +75,7 @@ class TestSwebenchWorkflow:
         wf = workflow()
         node = wf.nodes["auto_merge"]
         assert isinstance(node, FnNode)
-        assert "git branch -f" in node.command
+        assert "git merge" in node.command
         assert "main" in node.command
 
     def test_reloop_edge_exists(self) -> None:
