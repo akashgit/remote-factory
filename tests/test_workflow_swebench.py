@@ -22,10 +22,10 @@ class TestSwebenchWorkflow:
         assert wf.name == "swebench"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 4 nodes: study, builder, gate_verify, auto_merge."""
+        """Workflow has exactly 3 nodes: study, builder, gate_verify."""
         wf = workflow()
-        assert len(wf.nodes) == 4
-        assert set(wf.nodes.keys()) == {"study", "builder", "gate_verify", "auto_merge"}
+        assert len(wf.nodes) == 3
+        assert set(wf.nodes.keys()) == {"study", "builder", "gate_verify"}
 
     def test_start_node(self) -> None:
         wf = workflow()
@@ -38,9 +38,9 @@ class TestSwebenchWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """4 edges: study->builder, builder->gate, gate->merge, gate->builder."""
+        """3 edges: study->builder, builder->gate, gate->builder RELOOP."""
         wf = workflow()
-        assert len(wf.edges) == 4
+        assert len(wf.edges) == 3
 
     def test_study_node_is_fn(self) -> None:
         wf = workflow()
@@ -71,13 +71,6 @@ class TestSwebenchWorkflow:
         assert "reloop:" in node.evaluator_command
         assert "fail:" in node.evaluator_command
 
-    def test_auto_merge_node(self) -> None:
-        wf = workflow()
-        node = wf.nodes["auto_merge"]
-        assert isinstance(node, FnNode)
-        assert "git merge" in node.command
-        assert "main" in node.command
-
     def test_reloop_edge_exists(self) -> None:
         """gate_verify has a RELOOP edge back to builder."""
         wf = workflow()
@@ -88,17 +81,6 @@ class TestSwebenchWorkflow:
             and e.condition == VerdictType.RELOOP
         ]
         assert len(reloop_edges) == 1
-
-    def test_proceed_edge_to_merge(self) -> None:
-        """gate_verify has a PROCEED edge to auto_merge."""
-        wf = workflow()
-        proceed_edges = [
-            e for e in wf.edges
-            if e.source == "gate_verify"
-            and e.target == "auto_merge"
-            and e.condition == VerdictType.PROCEED
-        ]
-        assert len(proceed_edges) == 1
 
     def test_no_eval_infrastructure(self) -> None:
         """No factory eval nodes (begin, finalize, precheck, study)."""
