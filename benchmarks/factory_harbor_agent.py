@@ -156,6 +156,16 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=(
+                "mkdir -p /logs/.factory && "
+                "cp .factory/trace_id.txt /logs/.factory/trace_id.txt 2>/dev/null; "
+                "exit 0"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
                 "set +e; "
                 'FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *"); '
                 'if [ -n "$FACTORY_BRANCH" ]; then '
@@ -369,6 +379,16 @@ class FactoryCeo(BaseInstalledAgent):
                 "--prompt /tmp/task-instruction.md "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "mkdir -p /logs/.factory && "
+                "cp .factory/trace_id.txt /logs/.factory/trace_id.txt 2>/dev/null; "
+                "exit 0"
             ),
             env=env,
         )
