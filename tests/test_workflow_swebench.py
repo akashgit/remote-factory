@@ -115,6 +115,18 @@ class TestSwebenchWorkflow:
         assert "gate_strategy" not in node_ids
 
 
+class TestSwebenchTerminal:
+    """Tests for the terminal flag on swebench workflow."""
+
+    def test_workflow_is_terminal(self) -> None:
+        wf = workflow()
+        assert wf.terminal is True
+
+    def test_registered_workflow_is_terminal(self) -> None:
+        workflows = register_all()
+        assert workflows["swebench"].terminal is True
+
+
 class TestSwebenchTrigger:
     """Tests for the trigger function."""
 
