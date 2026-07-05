@@ -1624,6 +1624,12 @@ def _build_ceo_task(
             "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above."
         )
+    else:
+        task += (
+            f"\n\nRun {mode} mode: read `skills/workflow-{mode}/SKILL.md` for the full "
+            f"step-by-step playbook. Follow the instructions exactly as written — "
+            f"do not add additional steps, research, or ceremony beyond what the SKILL.md describes."
+        )
 
     if no_github:
         task += (
