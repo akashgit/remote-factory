@@ -129,8 +129,8 @@ def workflow() -> Workflow:
             "exit 0; fi && "
             "BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null "
             "| sed 's|refs/remotes/origin/||' || echo main) && "
-            "git checkout \"$BASE\" && "
-            "git merge --no-edit \"$CURRENT\""
+            "git branch -f \"$BASE\" HEAD && "
+            "echo \"Fast-forwarded $BASE to $(git rev-parse --short HEAD)\""
         ),
         reads={".factory/reviews/builder-latest.md"},
     )
