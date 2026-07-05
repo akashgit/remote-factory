@@ -1,6 +1,6 @@
 """SWE-bench benchmark workflow — minimal bug-fix pipeline for containerized evaluation.
 
-4-node pipeline: study → builder → gate_verify → auto_merge
+3-node pipeline: study → builder → gate_verify
 RELOOP from gate_verify back to builder (max 3 iterations) on test failure.
 
 Designed for Harbor containers where:
@@ -26,9 +26,9 @@ from factory.workflow.primitives import (
 meta = {
     "name": "swebench",
     "description": (
-        "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
+        "SWE-bench benchmark mode — minimal 3-node pipeline for solving "
         "GitHub issues in containerized evaluation. study → builder → "
-        "gate_verify → auto_merge with RELOOP on test failure."
+        "gate_verify with RELOOP on test failure."
     ),
 }
 
@@ -118,29 +118,11 @@ def workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Node 4: Auto Merge ─────────────────────────────────────────
-    nodes["auto_merge"] = FnNode(
-        id="auto_merge",
-        command=(
-            "cd {project_path} && "
-            "CURRENT=$(git rev-parse --abbrev-ref HEAD) && "
-            "if [ \"$CURRENT\" = 'main' ] || [ \"$CURRENT\" = 'master' ]; then "
-            "echo 'Already on main/master branch — no merge needed'; "
-            "exit 0; fi && "
-            "BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null "
-            "| sed 's|refs/remotes/origin/||' || echo main) && "
-            "git checkout \"$BASE\" && "
-            "git merge --no-edit \"$CURRENT\""
-        ),
-        reads={".factory/reviews/builder-latest.md"},
-    )
-
     # ── Edges ──────────────────────────────────────────────────────
 
     edges = [
         Edge(source="study", target="builder"),
         Edge(source="builder", target="gate_verify"),
-        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
         Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
     ]
 
@@ -154,5 +136,6 @@ def workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
+        terminal=True,
         trigger=trigger,
     )

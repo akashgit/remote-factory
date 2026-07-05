@@ -572,6 +572,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 model=model, no_github=no_github, use_profile=use_profile,
                 tmux_persist=tmux_persist,
                 background=background,
+                completed_mode=mode,
             )
         finally:
             _stop_ceo_tailer(ceo_tailer)
@@ -1624,6 +1625,12 @@ def _build_ceo_task(
             "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above."
         )
+    else:
+        task += (
+            f"\n\nRun {mode} mode: read `skills/workflow-{mode}/SKILL.md` for the full "
+            f"step-by-step playbook. Follow the instructions exactly as written — "
+            f"do not add additional steps, research, or ceremony beyond what the SKILL.md describes."
+        )
 
     if no_github:
         task += (
@@ -1682,6 +1689,7 @@ def _chain_modes(
     use_profile: bool = False,
     tmux_persist: bool = False,
     background: bool = False,
+    completed_mode: str | None = None,
 ) -> int:
     """After a cycle completes, re-detect state and chain into the next mode.
 
@@ -1689,9 +1697,24 @@ def _chain_modes(
     automatically — Build → Discover → Review → Improve — without manual
     re-invocation. Returns 0 when one Improve cycle completes (or all
     chains are exhausted).
+
+    If *completed_mode* names a terminal workflow, returns 0 immediately
+    without chaining.
     """
     from factory.models import ProjectState
     from factory.state import detect_state
+
+    if completed_mode:
+        from factory.workflow.definitions import register_all
+
+        workflows = register_all()
+        if completed_mode in workflows and workflows[completed_mode].terminal:
+            print(
+                f"[factory] Terminal mode completed: {completed_mode} "
+                "— skipping post-completion chaining",
+                file=sys.stderr,
+            )
+            return 0
 
     for i in range(max_chains):
         state = detect_state(project_path)
@@ -1909,6 +1932,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             model=model, no_github=no_github, use_profile=use_profile_flag,
             tmux_persist=tmux_persist,
             background=background,
+            completed_mode=mode,
         )
 
     # Heartbeat loop mode
@@ -1950,6 +1974,7 @@ def cmd_run(args: argparse.Namespace) -> int:
                 model=model, no_github=no_github, use_profile=use_profile_flag,
                 tmux_persist=tmux_persist,
                 background=background,
+                completed_mode=mode,
             )
             _emit_cli_event(project_path, "cycle.completed", {"cycle": cycle, "mode": mode})
 
