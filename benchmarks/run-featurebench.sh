@@ -37,20 +37,20 @@ TOTAL=1
 
 cleanup() {
     local exit_code=$?
-    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
-        if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
-            log "Preserving harbor jobs at ${JOBS_DIR} (PRESERVE_WORKSPACE=1)"
-        else
-            log "Cleaning up harbor jobs directory"
-            rm -rf "${JOBS_DIR}"
-        fi
-    fi
     PASSED="${RESOLVED}"
     LANGFUSE_TRACE_ID=""
     if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
         TRACE_ID_FILE=$(find "${JOBS_DIR}" -path '*/.factory/trace_id.txt' -type f 2>/dev/null | head -1)
         if [ -n "${TRACE_ID_FILE}" ] && [ -f "${TRACE_ID_FILE}" ]; then
             LANGFUSE_TRACE_ID=$(cat "${TRACE_ID_FILE}" | tr -d '[:space:]')
+        fi
+    fi
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
+            log "Preserving harbor jobs at ${JOBS_DIR} (PRESERVE_WORKSPACE=1)"
+        else
+            log "Cleaning up harbor jobs directory"
+            rm -rf "${JOBS_DIR}"
         fi
     fi
     DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
