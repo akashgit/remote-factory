@@ -494,3 +494,25 @@ class TestContributedWorkflows:
             wf = workflows[name]
             issues = wf.validate_graph()
             assert issues == [], f"{name} workflow has issues: {issues}"
+
+
+# ── Terminal flag defaults ──────────────────────────────────────
+
+
+class TestTerminalFlagDefaults:
+    """Standard workflows default to terminal=False."""
+
+    def test_build_not_terminal(self) -> None:
+        assert build_workflow().terminal is False
+
+    def test_improve_not_terminal(self) -> None:
+        assert improve_workflow().terminal is False
+
+    def test_research_not_terminal(self) -> None:
+        assert research_workflow().terminal is False
+
+    def test_meta_not_terminal(self) -> None:
+        assert meta_workflow().terminal is False
+
+    def test_design_not_terminal(self) -> None:
+        assert design_workflow().terminal is False

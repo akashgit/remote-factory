@@ -204,6 +204,7 @@ class Workflow(BaseModel):
     nodes: dict[str, NodeType]
     edges: list[Edge]
     start_node: str
+    terminal: bool = False
     trigger: TriggerFn | None = Field(default=None, exclude=True)
 
     def validate_graph(self) -> list[str]:

@@ -136,5 +136,6 @@ def workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
+        terminal=True,
         trigger=trigger,
     )
