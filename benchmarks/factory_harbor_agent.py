@@ -156,8 +156,8 @@ class ProgramBenchFactoryCeo(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=(
-                "mkdir -p /logs/.factory && "
-                "cp .factory/trace_id.txt /logs/.factory/trace_id.txt 2>/dev/null; "
+                "cp /testbed/.factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null || "
+                "cp .factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null; "
                 "exit 0"
             ),
             env=env,
@@ -369,14 +369,12 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Run factory ceo in headless mode
+        # Run swebench workflow via deterministic executor
         await self.exec_as_agent(
             environment,
             command=(
                 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                'export FACTORY_CEO_RESPAWN_DISABLED=1; '
-                "factory ceo . --headless --mode swebench --no-github "
-                "--prompt /tmp/task-instruction.md "
+                "factory workflow run swebench . "
                 "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
                 "; exit 0"
             ),
@@ -386,8 +384,8 @@ class FactoryCeo(BaseInstalledAgent):
         await self.exec_as_agent(
             environment,
             command=(
-                "mkdir -p /logs/.factory && "
-                "cp .factory/trace_id.txt /logs/.factory/trace_id.txt 2>/dev/null; "
+                "cp /testbed/.factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null || "
+                "cp .factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null; "
                 "exit 0"
             ),
             env=env,

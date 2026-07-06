@@ -124,13 +124,20 @@ def workflow() -> Workflow:
         command=(
             "cd {project_path} && "
             "CURRENT=$(git rev-parse --abbrev-ref HEAD) && "
-            "if [ \"$CURRENT\" = 'main' ] || [ \"$CURRENT\" = 'master' ]; then "
-            "echo 'Already on main/master branch — no merge needed'; "
+            "COMMON=$(git rev-parse --git-common-dir) && "
+            "BASE=$(git --git-dir=\"$COMMON\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && "
+            "if [ \"$CURRENT\" = \"$BASE\" ]; then "
+            "echo \"Already on $BASE — no merge needed\"; "
             "exit 0; fi && "
-            "BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null "
-            "| sed 's|refs/remotes/origin/||' || echo main) && "
-            "git branch -f \"$BASE\" HEAD && "
-            "echo \"Fast-forwarded $BASE to $(git rev-parse --short HEAD)\""
+            "git update-ref refs/heads/\"$BASE\" HEAD && "
+            "PARENT_WT=$(cd \"$COMMON/..\" && pwd) && "
+            "git diff-tree --no-commit-id --name-only -r HEAD HEAD~1 | "
+            "while read file; do "
+            "if [ -f \"$file\" ]; then "
+            "mkdir -p \"$PARENT_WT/$(dirname $file)\" && "
+            "cp \"$file\" \"$PARENT_WT/$file\"; "
+            "fi; done && "
+            "echo \"Updated $BASE to $(git rev-parse --short HEAD)\""
         ),
         reads={".factory/reviews/builder-latest.md"},
     )

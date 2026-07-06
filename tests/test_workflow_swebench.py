@@ -75,7 +75,7 @@ class TestSwebenchWorkflow:
         wf = workflow()
         node = wf.nodes["auto_merge"]
         assert isinstance(node, FnNode)
-        assert "git branch -f" in node.command
+        assert "git update-ref" in node.command
 
     def test_proceed_edge_to_merge(self) -> None:
         """gate_verify has a PROCEED edge to auto_merge."""
