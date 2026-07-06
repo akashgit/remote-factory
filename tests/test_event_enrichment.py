@@ -185,7 +185,7 @@ def test_cmd_finalize_emits_enriched_event(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with patch("factory.store.ExperimentStore", return_value=mock_store), \
-         patch("factory.cli._run", return_value=None):
+         patch("factory.cli.store._run", return_value=None):
         from factory.cli import cmd_finalize
         cmd_finalize(ns)
 
@@ -227,7 +227,7 @@ def test_finalize_autodetects_pr_number(tmp_path: Path) -> None:
     fake_gh_result = MagicMock(returncode=0, stdout=b"123\n")
 
     with patch("factory.store.ExperimentStore", return_value=mock_store), \
-         patch("factory.cli._run", return_value=None), \
+         patch("factory.cli.store._run", return_value=None), \
          patch("subprocess.run", return_value=fake_gh_result):
         from factory.cli import cmd_finalize
         cmd_finalize(ns)
@@ -261,7 +261,7 @@ def test_finalize_event_with_null_scores(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with patch("factory.store.ExperimentStore", return_value=mock_store), \
-         patch("factory.cli._run", return_value=None), \
+         patch("factory.cli.store._run", return_value=None), \
          patch("factory.events.load_events", return_value=[]), \
          patch("factory.events.sum_agent_costs", return_value=0.0):
         from factory.cli import cmd_finalize
@@ -449,7 +449,7 @@ def test_finalize_auto_cost_from_events(tmp_path: Path) -> None:
     mock_store = MagicMock()
 
     with patch("factory.store.ExperimentStore", return_value=mock_store), \
-         patch("factory.cli._run", return_value=None):
+         patch("factory.cli.store._run", return_value=None):
         from factory.cli import cmd_finalize
         cmd_finalize(ns)
 
@@ -527,7 +527,7 @@ def test_finalize_precheck_overrides_verdict_emits_event(tmp_path: Path) -> None
     mock_store.load_history = MagicMock(return_value=[])
 
     with patch("factory.store.ExperimentStore", return_value=mock_store), \
-         patch("factory.cli._run", side_effect=[[], None]), \
+         patch("factory.cli.store._run", side_effect=[[], None]), \
          patch("factory.precheck.run_precheck", return_value=failed_result):
         from factory.cli import cmd_finalize
         cmd_finalize(ns)

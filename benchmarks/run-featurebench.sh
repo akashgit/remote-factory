@@ -17,7 +17,7 @@ SPLIT="${3:-full}"
 
 BENCHMARK="featurebench"
 RUN_ID="ci-featurebench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-featurebench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-featurebench-${BENCHMARK_SOLVER:-factory}.json"
 
 # Map split name to Harbor dataset
 case "${SPLIT}" in
@@ -37,6 +37,14 @@ TOTAL=1
 
 cleanup() {
     local exit_code=$?
+    PASSED="${RESOLVED}"
+    LANGFUSE_TRACE_ID=""
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        TRACE_ID_FILE=$(find "${JOBS_DIR}" -path '*/.factory/trace_id.txt' -type f 2>/dev/null | head -1)
+        if [ -n "${TRACE_ID_FILE}" ] && [ -f "${TRACE_ID_FILE}" ]; then
+            LANGFUSE_TRACE_ID=$(cat "${TRACE_ID_FILE}" | tr -d '[:space:]')
+        fi
+    fi
     if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
         if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
             log "Preserving harbor jobs at ${JOBS_DIR} (PRESERVE_WORKSPACE=1)"
@@ -45,8 +53,7 @@ cleanup() {
             rm -rf "${JOBS_DIR}"
         fi
     fi
-    PASSED="${RESOLVED}"
-    DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
+    DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0

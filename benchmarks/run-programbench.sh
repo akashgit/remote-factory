@@ -2,8 +2,10 @@
 set -euo pipefail
 
 # benchmarks/run-programbench.sh — Standalone CI pipeline for ProgramBench.
-# Runs the complete solve+eval cycle: pull cleanroom image, start container,
-# install Claude Code, run solver, package submission, evaluate with ProgramBench.
+# Thin wrapper around Harbor for the agent solve phase, then runs
+# `uvx programbench eval` on the host for the full test-suite evaluation
+# (programbench eval spawns its own Docker containers, so it cannot run
+# inside the Harbor container).
 
 # ── Shared library ──
 
@@ -16,13 +18,12 @@ SOLVER_TIMEOUT="${2:-3600}"
 
 BENCHMARK="programbench"
 RUN_ID="ci-programbench-${TIMESTAMP}"
-RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-programbench.json"
+RESULT_FILE="${CI_RESULTS_DIR}/${TIMESTAMP}-programbench-${BENCHMARK_SOLVER:-factory}.json"
 
-# Task-specific mapping (hardcoded for cmatrix; extend as needed)
+# Task-specific mapping
 case "${TASK_NAME}" in
     cmatrix)
         INSTANCE_ID="abishekvashok__cmatrix.5c082c6"
-        IMAGE="programbench/abishekvashok_1776_cmatrix.5c082c6:task_cleanroom"
         ;;
     *)
         echo "ERROR: Unknown ProgramBench task '${TASK_NAME}'"
@@ -31,7 +32,14 @@ case "${TASK_NAME}" in
         ;;
 esac
 
-CONTAINER_NAME="programbench-${TASK_NAME}-${TIMESTAMP}"
+TASK_DIR="${HARNESS_DIR}/benchmarks/programbench-harbor/${TASK_NAME}"
+
+if [ ! -d "${TASK_DIR}" ]; then
+    echo "ERROR: Harbor task directory not found: ${TASK_DIR}"
+    exit 1
+fi
+
+JOBS_DIR=""
 RESULTS_DIR=""
 
 PASSED=0
@@ -42,12 +50,20 @@ TOTAL=1
 
 cleanup() {
     local exit_code=$?
-    if docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$" 2>/dev/null; then
-        log "Copying factory events log for debugging"
-        docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
-        log "Stopping and removing container ${CONTAINER_NAME}"
-        docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-        docker rm -f "${CONTAINER_NAME}" 2>/dev/null || true
+    LANGFUSE_TRACE_ID=""
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        TRACE_ID_FILE=$(find "${JOBS_DIR}" -path '*/.factory/trace_id.txt' -type f 2>/dev/null | head -1)
+        if [ -n "${TRACE_ID_FILE}" ] && [ -f "${TRACE_ID_FILE}" ]; then
+            LANGFUSE_TRACE_ID=$(cat "${TRACE_ID_FILE}" | tr -d '[:space:]')
+        fi
+    fi
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
+            log "Preserving harbor jobs at ${JOBS_DIR} (PRESERVE_WORKSPACE=1)"
+        else
+            log "Cleaning up harbor jobs directory"
+            rm -rf "${JOBS_DIR}"
+        fi
     fi
     if [ -n "${RESULTS_DIR}" ] && [ -d "${RESULTS_DIR}" ]; then
         if [ "${PRESERVE_WORKSPACE:-}" = "1" ]; then
@@ -57,8 +73,7 @@ cleanup() {
             rm -rf "${RESULTS_DIR}"
         fi
     fi
-    PASSED="${RESOLVED}"
-    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"'}'
+    DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER:-factory}"'", "cost_usd": '"${COST_USD:-0}"', "input_tokens": '"${INPUT_TOKENS:-0}"', "output_tokens": '"${OUTPUT_TOKENS:-0}"', "cache_read_tokens": '"${CACHE_READ_TOKENS:-0}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS:-0}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
     write_result
     if [ "${STATUS}" = "success" ]; then
         exit 0
@@ -75,7 +90,7 @@ show_banner "ProgramBench"
 log "Step 1: Configuration"
 echo "    Task name:       ${TASK_NAME}"
 echo "    Instance ID:     ${INSTANCE_ID}"
-echo "    Docker image:    ${IMAGE}"
+echo "    Task directory:  ${TASK_DIR}"
 echo "    Solver timeout:  ${SOLVER_TIMEOUT}s ($(( SOLVER_TIMEOUT / 3600 ))h $(( (SOLVER_TIMEOUT % 3600) / 60 ))m)"
 echo "    Run ID:          ${RUN_ID}"
 echo "    Timestamp:       ${TIMESTAMP}"
@@ -103,386 +118,262 @@ echo "    docker: found"
 
 ensure_uvx
 
+echo "    harbor: checking availability via uvx..."
+if ! uvx harbor --version &>/dev/null 2>&1; then
+    echo "    harbor: installing via uvx..."
+    uvx harbor --version || {
+        echo "    ERROR: Failed to install/run harbor via uvx"
+        exit 1
+    }
+fi
+echo "    harbor: available"
+
 echo "    programbench: checking availability via uvx..."
 if ! uvx programbench --help &>/dev/null 2>&1; then
     echo "    programbench: will be installed on first use via uvx"
 fi
 echo "    programbench: ready"
 
-check_gcloud_creds warning
-setup_vertex_env
+# API key configuration
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "    ANTHROPIC_API_KEY: set"
+else
+    setup_vertex_env
+    if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+        echo "    Vertex AI: configured (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
+    else
+        echo "    WARNING: No ANTHROPIC_API_KEY or Vertex AI configuration found."
+        echo "    Harbor's agent requires API access."
+    fi
+fi
 
 echo "    All prerequisites satisfied."
 echo ""
 
-# ── Step 3: Pull Docker image ──
+# ── Step 3: Run Harbor evaluation (agent solve phase) ──
 
-log "Step 3: Pulling cleanroom image"
-echo "    Image: ${IMAGE}"
-docker pull "${IMAGE}"
-echo "    Image pulled successfully."
-echo ""
+log "Step 3: Running Harbor agent solve phase"
 
-# ── Step 4: Start container ──
-
-log "Step 4: Starting cleanroom container"
-RESULTS_DIR="$(mktemp -d /tmp/programbench-results-XXXXXX)"
-echo "    Results directory: ${RESULTS_DIR}"
-
-GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
-
-docker run -d --name "${CONTAINER_NAME}" \
-    -v "${RESULTS_DIR}:/results" \
-    "${IMAGE}" \
-    sleep infinity
-
-echo "    Container ${CONTAINER_NAME} started."
-echo ""
-
-# ── Step 5: Install Claude Code inside container ──
-
-if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
-    log "Step 5: Installing Claude Code inside container"
-    echo "    Installing Node.js 22 and Claude Code..."
-else
-    log "Step 5: Installing Claude Code and Factory inside container"
-    echo "    Installing Node.js 22, Claude Code, and Factory..."
-fi
-
-docker exec "${CONTAINER_NAME}" bash -c '
-    apt-get update && apt-get install -y git rsync &&
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - &&
-    apt-get install -y --no-install-recommends nodejs &&
-    npm install -g @anthropic-ai/claude-code
-'
-
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
-    docker exec "${CONTAINER_NAME}" bash -c '
-        curl -LsSf https://astral.sh/uv/install.sh | sh &&
-        export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH" &&
-        uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git" &&
-        which factory
-    '
-    echo "    Claude Code and Factory installed."
-else
-    echo "    Claude Code installed."
-fi
-
-# Create non-root agent user (Claude Code refuses --dangerously-skip-permissions as root)
-log "Step 5: Creating agent user"
-docker exec "${CONTAINER_NAME}" bash -c '
-    useradd -m -s /bin/bash agent 2>/dev/null || true
-    chown -R agent:agent /workspace
-    mkdir -p /home/agent/.claude /home/agent/.local /home/agent/.cargo
-    cp -r /root/.claude/* /home/agent/.claude/ 2>/dev/null || true
-    cp -r /root/.local/* /home/agent/.local/ 2>/dev/null || true
-    cp -r /root/.cargo/* /home/agent/.cargo/ 2>/dev/null || true
-    chown -R agent:agent /home/agent
-'
-if [ -f "${GCLOUD_ADC}" ]; then
-    docker cp "${GCLOUD_ADC}" "${CONTAINER_NAME}:/tmp/gcloud-adc.json"
-    docker exec "${CONTAINER_NAME}" chmod 644 /tmp/gcloud-adc.json
-    echo "    Copied gcloud credentials into container"
-fi
-
-echo "    Agent user created."
-echo ""
-
-# ── Step 5.1: Configure Claude Code ──
-
-log "Step 5.1: Configuring Claude Code for headless use"
-
-docker exec --user agent \
-    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
-    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
-    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
-    -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
-    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
-    "${CONTAINER_NAME}" bash -c '
-    mkdir -p ~/.claude
-    cat > ~/.claude/settings.json << SETTINGSEOF
-{
-  "permissions": {
-    "allow": ["Bash(*)", "Read(*)", "Write(*)", "Edit(*)"],
-    "deny": []
-  },
-  "env": {}
-}
-SETTINGSEOF
-
-    # Smoke test — verify claude can authenticate
-    export PATH="$HOME/.local/bin:$PATH"
-    claude -p "say hello" --output-format json --max-turns 1 --permission-mode bypassPermissions 2>&1 | head -5
-    echo "Claude Code smoke test exit: $?"
-'
-
-echo "    Claude Code configured."
-echo ""
-
-# ── Step 5.5: Prepare workspace for Factory ──
-
-log "Step 5.5: Preparing workspace"
-
-docker exec --user agent "${CONTAINER_NAME}" bash -c '
-    cd /workspace &&
-    git init &&
-    git config user.email "solver@factory" &&
-    git config user.name "Factory Solver" &&
-    echo "executable" >> .gitignore &&
-    git add -A &&
-    git commit -m "initial cleanroom state" --allow-empty
-'
-
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
-    docker exec --user agent "${CONTAINER_NAME}" bash -c 'cat > /workspace/factory.md << '\''FACTORYEOF'\''
----
-goal: Reverse-engineer the compiled binary and produce equivalent source code
----
-FACTORYEOF'
-fi
-
-docker exec --user agent "${CONTAINER_NAME}" bash -c '
-    mkdir -p ~/.claude/debug ~/.claude/projects ~/.claude/shell-snapshots ~/.claude/statsig ~/.claude/todos ~/.claude/skills
-'
-
-echo "    Workspace prepared."
-echo ""
-
-# ── Step 6: Run solver ──
-
-log "Step 6: Running solver [${BENCHMARK_SOLVER:-factory}] (timeout: ${SOLVER_TIMEOUT}s)"
+JOBS_DIR="$(mktemp -d /tmp/programbench-jobs-XXXXXX)"
+echo "    Jobs directory: ${JOBS_DIR}"
 echo "    Started at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-SOLVER_PROMPT='You are reverse-engineering a compiled binary at /workspace/executable.
+TIMEOUT_MULTIPLIER=$(( SOLVER_TIMEOUT / 120 ))
+[ "${TIMEOUT_MULTIPLIER}" -lt 1 ] && TIMEOUT_MULTIPLIER=1
 
-The binary has EXECUTE-ONLY permissions (mode 111). You CANNOT read its contents. You can only run it.
+MODEL="anthropic/claude-opus-4-6"
 
-Your goal: write source code and a compile.sh script that produces a behaviorally-equivalent executable at /workspace/executable.
+echo "    Model:           ${MODEL}"
+echo "    Timeout mult:    ${TIMEOUT_MULTIPLIER}x"
+echo "    Task:            ${TASK_NAME}"
+echo ""
 
-Strategy:
-1. Run the executable with various arguments to discover its behavior (--help, -h, no args, etc.)
-2. Create test inputs and capture exact outputs
-3. Read any documentation in /workspace/
-4. Write source code matching the observed behavior
-5. Create compile.sh that builds the executable
-6. Test your implementation against the original using differential testing
+cd "${HARNESS_DIR}"
 
-Back up the original first: cp /workspace/executable /workspace/executable.bak
-Your compile.sh must produce the executable at /workspace/executable.
-The evaluation compares your output against the original on hidden test cases.'
-
-SOLVER_PROMPT_FILE="$(mktemp /tmp/programbench-prompt-XXXXXX.txt)"
-echo "${SOLVER_PROMPT}" > "${SOLVER_PROMPT_FILE}"
-docker cp "${SOLVER_PROMPT_FILE}" "${CONTAINER_NAME}:/tmp/solver_prompt.txt"
-docker exec "${CONTAINER_NAME}" chmod 644 /tmp/solver_prompt.txt
-rm -f "${SOLVER_PROMPT_FILE}"
-
-if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
-    echo "    Using Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
-fi
-
-export_claude_env
-
-set +e
-
-SOLVER_EXIT=0
+HARBOR_EXIT=0
 
 if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
-    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && claude -p "$(cat /tmp/solver_prompt.txt)" --model "${ANTHROPIC_MODEL}" --verbose --max-turns 200 --permission-mode bypassPermissions --output-format stream-json'
+    AGENT_ARGS=(--agent claude-code)
+    echo "    Agent:           claude-code (Harbor built-in)"
 else
-    SOLVER_CMD='export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH" && cd /workspace && factory ceo . --headless --no-github --prompt /tmp/solver_prompt.txt'
+    AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
+    export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
+    AGENT_ARGS=(--agent factory_harbor_agent:ProgramBenchFactoryCeo)
+    echo "    Agent:           factory (ProgramBenchFactoryCeo)"
 fi
 
-timeout "${SOLVER_TIMEOUT}" docker exec --user agent \
-    -e CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}" \
-    -e ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}" \
-    -e CLOUD_ML_REGION="${CLOUD_ML_REGION:-}" \
-    -e ANTHROPIC_MODEL="${ANTHROPIC_MODEL}" \
-    -e CLAUDE_CODE_SUBAGENT_MODEL="${CLAUDE_CODE_SUBAGENT_MODEL}" \
-    -e CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS="${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS}" \
-    -e ANTHROPIC_DEFAULT_OPUS_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL}" \
-    -e CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING="${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING}" \
-    -e MAX_THINKING_TOKENS="${MAX_THINKING_TOKENS}" \
-    -e CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL}" \
-    -e DISABLE_AUTOUPDATER=1 \
-    -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-    -e CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 \
-    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json \
-    -e NODE_EXTRA_CA_CERTS= \
-    -e SSL_CERT_FILE= \
-    "${CONTAINER_NAME}" \
-    bash -c "${SOLVER_CMD}" \
-    2>&1 | tee "${RESULTS_DIR}/solver_output.log" | tail -50 || true
-SOLVER_EXIT=${PIPESTATUS[0]}
+# Build --allow-agent-host flags for agent-specific network access.
+# These are runtime flags (not task.toml) per Harbor maintainer guidance:
+# task.toml [agent] should only list hosts the TASK needs, not the agent.
+AGENT_ALLOW_HOSTS=()
 
-# Extract cost and token data from solver output
+if [ -n "${LANGFUSE_HOST:-}" ]; then
+    LANGFUSE_HOSTNAME=$(echo "${LANGFUSE_HOST}" | sed 's|https\?://||' | sed 's|/.*||')
+    AGENT_ALLOW_HOSTS+=(--allow-agent-host "${LANGFUSE_HOSTNAME}")
+elif [ -n "${LANGFUSE_BASE_URL:-}" ]; then
+    LANGFUSE_HOSTNAME=$(echo "${LANGFUSE_BASE_URL}" | sed 's|https\?://||' | sed 's|/.*||')
+    AGENT_ALLOW_HOSTS+=(--allow-agent-host "${LANGFUSE_HOSTNAME}")
+fi
+
+if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+    GCLOUD_ADC="${GOOGLE_APPLICATION_CREDENTIALS:-${HOME}/.config/gcloud/application_default_credentials.json}"
+    echo "    Auth mode:       Vertex AI (project: ${ANTHROPIC_VERTEX_PROJECT_ID})"
+    uvx harbor run \
+        -p "${TASK_DIR}" \
+        "${AGENT_ARGS[@]}" \
+        --model "${MODEL}" \
+        --n-concurrent 1 \
+        --jobs-dir "${JOBS_DIR}" \
+        --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --allow-agent-host api.anthropic.com \
+        --allow-agent-host us-east5-aiplatform.googleapis.com \
+        --allow-agent-host us-central1-aiplatform.googleapis.com \
+        --allow-agent-host europe-west1-aiplatform.googleapis.com \
+        --allow-agent-host oauth2.googleapis.com \
+        --allow-agent-host www.googleapis.com \
+        --allow-agent-host storage.googleapis.com \
+        --allow-agent-host metadata.google.internal \
+        --allow-agent-host sentry.io \
+        --allow-agent-host statsig.anthropic.com \
+        "${AGENT_ALLOW_HOSTS[@]}" \
+        --ae "CLAUDE_CODE_USE_VERTEX=1" \
+        --ae "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
+        --ae "CLOUD_ML_REGION=${CLOUD_ML_REGION:-us-east5}" \
+        --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcloud-adc.json" \
+        --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
+        --ae "ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
+        --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
+        --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        --ae "LANGFUSE_HOST=${LANGFUSE_HOST:-}" \
+        --ae "LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}" \
+        --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
+        --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
+        --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
+        --mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]' \
+        2>&1 || HARBOR_EXIT=$?
+else
+    echo "    Auth mode:       Direct API (ANTHROPIC_API_KEY)"
+    uvx harbor run \
+        -p "${TASK_DIR}" \
+        "${AGENT_ARGS[@]}" \
+        --model "${MODEL}" \
+        --n-concurrent 1 \
+        --jobs-dir "${JOBS_DIR}" \
+        --agent-timeout-multiplier "${TIMEOUT_MULTIPLIER}" \
+        --allow-agent-host api.anthropic.com \
+        --allow-agent-host sentry.io \
+        --allow-agent-host statsig.anthropic.com \
+        "${AGENT_ALLOW_HOSTS[@]}" \
+        --ae "ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_SUBAGENT_MODEL=${CLAUDE_CODE_SUBAGENT_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=${CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS:-1}" \
+        --ae "ANTHROPIC_DEFAULT_OPUS_MODEL=${ANTHROPIC_DEFAULT_OPUS_MODEL:-claude-opus-4-6[1m]}" \
+        --ae "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING=${CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING:-1}" \
+        --ae "MAX_THINKING_TOKENS=${MAX_THINKING_TOKENS:-128000}" \
+        --ae "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-XHIGH}" \
+        --ae "LANGFUSE_HOST=${LANGFUSE_HOST:-}" \
+        --ae "LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}" \
+        --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
+        --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
+        --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
+        2>&1 || HARBOR_EXIT=$?
+fi
+
+if [ "${HARBOR_EXIT}" -ne 0 ]; then
+    echo "    Harbor exited with code ${HARBOR_EXIT}"
+fi
+
+# Temporarily allow failures — cost/reward extraction uses grep/find which return
+# non-zero on no match; pipefail would kill the script before reaching STATUS=success.
+set +e
+
+# Extract cost from Harbor result
 COST_USD=0
 INPUT_TOKENS=0
 OUTPUT_TOKENS=0
 CACHE_READ_TOKENS=0
 CACHE_CREATION_TOKENS=0
 
-if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
-    if [ -f "${RESULTS_DIR}/solver_output.log" ]; then
-        COST_DATA=$(grep '"type":"result"' "${RESULTS_DIR}/solver_output.log" 2>/dev/null | tail -1 | python3 -c "
+HARBOR_RESULT=$(find "${JOBS_DIR}" -name 'result.json' -maxdepth 2 2>/dev/null | head -1)
+if [ -n "${HARBOR_RESULT}" ]; then
+    COST_DATA=$(python3 -c "
+import json
+with open('${HARBOR_RESULT}') as f:
+    data = json.load(f)
+cost = 0
+for trial in data.get('trials', {}).values():
+    cost += trial.get('cost_usd', 0) or 0
+print(f'COST_USD={cost}')
+" 2>/dev/null)
+    eval "${COST_DATA}" 2>/dev/null || true
+fi
+
+if [ "${COST_USD}" = "0" ] || [ -z "${COST_USD}" ]; then
+    AGENT_LOG=$(find "${JOBS_DIR}" -name 'claude-code.txt' -o -name 'claude_code_stream_output.jsonl' -o -name 'factory-ceo.txt' 2>/dev/null | head -1)
+    if [ -n "${AGENT_LOG}" ]; then
+        COST_DATA=$(grep 'total_cost_usd' "${AGENT_LOG}" 2>/dev/null | tail -1 | python3 -c "
 import sys, json
-try:
-    data = json.loads(sys.stdin.readline())
-    print(f'COST_USD={data.get(\"total_cost_usd\", 0) or 0}')
-    u = data.get('usage', {})
-    print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
-    print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
-    print(f'CACHE_READ_TOKENS={u.get(\"cache_read_input_tokens\", 0)}')
-    print(f'CACHE_CREATION_TOKENS={u.get(\"cache_creation_input_tokens\", 0)}')
-except: pass
+for line in sys.stdin:
+    try:
+        data = json.loads(line.strip())
+        if 'total_cost_usd' in data:
+            print(f'COST_USD={data[\"total_cost_usd\"]}')
+            u = data.get('usage', {})
+            print(f'INPUT_TOKENS={u.get(\"input_tokens\", 0)}')
+            print(f'OUTPUT_TOKENS={u.get(\"output_tokens\", 0)}')
+    except: pass
 " 2>/dev/null || true)
         eval "${COST_DATA}" 2>/dev/null || true
     fi
-else
-    docker cp "${CONTAINER_NAME}:/workspace/.factory/events.jsonl" "${RESULTS_DIR}/events.jsonl" 2>/dev/null || true
-    EVENTS_FILE="${RESULTS_DIR}/events.jsonl"
-    if [ -f "${EVENTS_FILE}" ]; then
-        COST_DATA=$(python3 -c "
-import json
-total_cost = 0
-total_input = 0
-total_output = 0
-total_cache_read = 0
-total_cache_create = 0
-for line in open('${EVENTS_FILE}'):
-    try:
-        e = json.loads(line)
-        if e.get('type') == 'agent.completed':
-            d = e.get('data', {})
-            total_cost += d.get('total_cost_usd', 0) or 0
-            total_input += d.get('input_tokens', 0)
-            total_output += d.get('output_tokens', 0)
-            total_cache_read += d.get('cache_read_tokens', 0)
-    except: pass
-print(f'COST_USD={total_cost}')
-print(f'INPUT_TOKENS={total_input}')
-print(f'OUTPUT_TOKENS={total_output}')
-print(f'CACHE_READ_TOKENS={total_cache_read}')
-print(f'CACHE_CREATION_TOKENS={total_cache_create}')
-" 2>/dev/null)
-        eval "${COST_DATA}" 2>/dev/null || true
-    fi
-fi
-
-set -e
-
-if [ "${SOLVER_EXIT}" -eq 124 ]; then
-    echo "    Solver timed out after ${SOLVER_TIMEOUT}s"
-elif [ "${SOLVER_EXIT}" -ne 0 ]; then
-    echo "    Solver exited with code ${SOLVER_EXIT}"
 fi
 
 echo "    Finished at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
 
-# ── Step 6.5: Recover factory worktree changes ──
+# ── Step 4: Extract submission from Harbor jobs directory ──
 
-if [ "${BENCHMARK_SOLVER:-factory}" = "factory" ]; then
-    log "Step 6.5: Recovering factory worktree changes"
+log "Step 4: Extracting submission from Harbor workspace"
 
-    docker exec --user agent "${CONTAINER_NAME}" bash -c '
-        set +e
-        cd /workspace
+RESULTS_DIR="$(mktemp -d /tmp/programbench-results-XXXXXX)"
+echo "    Results directory: ${RESULTS_DIR}"
 
-        # Strategy 1: Merge surviving factory branch
-        FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *")
-        if [ -n "$FACTORY_BRANCH" ]; then
-            echo "Merging factory branch: $FACTORY_BRANCH"
-            git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null || true
-        fi
+SUBMISSION_FILE=""
+for candidate in $(find "${JOBS_DIR}" -name 'submission.tar.gz' 2>/dev/null); do
+    if [ -f "${candidate}" ]; then
+        SUBMISSION_FILE="${candidate}"
+        break
+    fi
+done
 
-        # Strategy 2: Recover orphaned commits via git fsck
-        if [ -z "$FACTORY_BRANCH" ]; then
-            echo "No factory branch, finding orphaned commits..."
-            ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null | grep "unreachable commit" | awk "{print \$3}")
-            if [ -n "$ORPHAN_COMMITS" ]; then
-                BEST_COMMIT=""
-                BEST_TIME=0
-                for SHA in $ORPHAN_COMMITS; do
-                    COMMIT_TIME=$(git show -s --format="%ct" "$SHA" 2>/dev/null || echo 0)
-                    if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then
-                        BEST_TIME=$COMMIT_TIME
-                        BEST_COMMIT=$SHA
-                    fi
-                done
-                if [ -n "$BEST_COMMIT" ]; then
-                    echo "Recovering from orphan tip: $BEST_COMMIT"
-                    echo "  Message: $(git log -1 --format="%s" $BEST_COMMIT 2>/dev/null)"
-                    git checkout "$BEST_COMMIT" -- . 2>/dev/null || true
-                    git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true
-                    rm -rf .factory/ eval/ factory.md 2>/dev/null || true
-                fi
-            fi
-        fi
-
-        # Strategy 3: Recover from surviving worktree directories
-        for wt in .factory-worktrees/*/; do
-            if [ -d "$wt" ]; then
-                echo "Recovering files from worktree: $wt"
-                rsync -a --exclude=.git --exclude=.factory "$wt" ./ 2>/dev/null || true
-            fi
-        done
-
-        exit 0
-    '
-
-    echo "    Worktree recovery complete."
-fi
-echo ""
-
-# ── Step 7: Package submission ──
-
-log "Step 7: Packaging submission"
-
-docker exec "${CONTAINER_NAME}" bash -c '
-    cd /workspace
-    if [ -f compile.sh ]; then bash compile.sh; fi
-    mkdir -p /results
-    tar -czf /results/submission.tar.gz \
-        --exclude=.git --exclude=target \
-        --exclude=executable.bak --exclude=./executable \
-        --exclude=.factory --exclude=eval --exclude=factory.md .
-'
-
-docker cp "${CONTAINER_NAME}:/results/submission.tar.gz" "${RESULTS_DIR}/submission.tar.gz"
-
-if [ -f "${RESULTS_DIR}/submission.tar.gz" ]; then
-    SUBMISSION_SIZE="$(du -h "${RESULTS_DIR}/submission.tar.gz" | cut -f1)"
-    echo "    Submission: ${RESULTS_DIR}/submission.tar.gz (${SUBMISSION_SIZE})"
+if [ -n "${SUBMISSION_FILE}" ] && [ -f "${SUBMISSION_FILE}" ]; then
+    SUBMISSION_SIZE="$(du -h "${SUBMISSION_FILE}" | cut -f1)"
+    echo "    Found submission: ${SUBMISSION_FILE} (${SUBMISSION_SIZE})"
+    EVAL_DIR="${RESULTS_DIR}/run/${INSTANCE_ID}"
+    mkdir -p "${EVAL_DIR}"
+    cp "${SUBMISSION_FILE}" "${EVAL_DIR}/submission.tar.gz"
 else
-    echo "    WARNING: No submission.tar.gz produced"
-fi
-echo ""
-
-# ── Step 8: Run ProgramBench evaluation ──
-
-log "Step 8: Running ProgramBench evaluation"
-
-EVAL_DIR="${RESULTS_DIR}/run/${INSTANCE_ID}"
-mkdir -p "${EVAL_DIR}"
-cp "${RESULTS_DIR}/submission.tar.gz" "${EVAL_DIR}/submission.tar.gz"
-
-EVAL_EXIT=0
-uvx programbench eval "${RESULTS_DIR}/run" -w 1 -b 4 --docker-cpus 4 --force \
-    2>&1 || EVAL_EXIT=$?
-
-if [ "${EVAL_EXIT}" -ne 0 ]; then
-    echo "    WARNING: ProgramBench evaluation exited with code ${EVAL_EXIT}"
+    echo "    WARNING: No submission.tar.gz found in Harbor jobs directory"
+    echo "    Contents of jobs directory:"
+    find "${JOBS_DIR}" -type f 2>/dev/null | head -20 || echo "      (empty)"
 fi
 
-echo "    Evaluation complete."
 echo ""
 
-# ── Step 9: Extract and report results ──
+# Extract factory events log for debugging
+EVENTS_FILE=$(find "${JOBS_DIR}" -path '*/.factory/events.jsonl' -type f 2>/dev/null | head -1)
+if [ -n "${EVENTS_FILE}" ]; then
+    mkdir -p "${RESULTS_DIR}"
+    cp "${EVENTS_FILE}" "${RESULTS_DIR}/events.jsonl"
+    echo "    Extracted events.jsonl for debugging"
+fi
 
-log "Step 9: Extracting results"
+# ── Step 5: Run ProgramBench evaluation on the host ──
 
-EVAL_JSON="${EVAL_DIR}/${INSTANCE_ID}.eval.json"
+log "Step 5: Running ProgramBench evaluation"
+
+if [ -n "${SUBMISSION_FILE}" ] && [ -f "${RESULTS_DIR}/run/${INSTANCE_ID}/submission.tar.gz" ]; then
+    EVAL_EXIT=0
+    uvx programbench eval "${RESULTS_DIR}/run" -w 1 -b 4 --docker-cpus 4 --force \
+        2>&1 || EVAL_EXIT=$?
+
+    if [ "${EVAL_EXIT}" -ne 0 ]; then
+        echo "    WARNING: ProgramBench evaluation exited with code ${EVAL_EXIT}"
+    fi
+    echo "    Evaluation complete."
+else
+    echo "    Skipping evaluation — no submission available."
+fi
+
+echo ""
+
+# ── Step 6: Extract and report results ──
+
+log "Step 6: Extracting results"
+
+EVAL_JSON="${RESULTS_DIR}/run/${INSTANCE_ID}/${INSTANCE_ID}.eval.json"
 
 if [ -f "${EVAL_JSON}" ]; then
     echo "    Eval file: ${EVAL_JSON}"
@@ -503,18 +394,20 @@ print(f'TOTAL={total}')
 else
     echo "    No eval results found at ${EVAL_JSON}"
     echo "    Searching for alternative result files..."
+
+    ALT_EVAL=""
     for candidate in $(find "${RESULTS_DIR}" -name '*.eval.json' -o -name 'results*.json' 2>/dev/null | head -5); do
         if [ -f "${candidate}" ]; then
             echo "    Found: ${candidate}"
-            EVAL_JSON="${candidate}"
+            ALT_EVAL="${candidate}"
             break
         fi
     done
 
-    if [ -n "${EVAL_JSON}" ] && [ -f "${EVAL_JSON}" ]; then
+    if [ -n "${ALT_EVAL}" ] && [ -f "${ALT_EVAL}" ]; then
         eval "$(python3 -c "
 import json
-with open('${EVAL_JSON}') as f:
+with open('${ALT_EVAL}') as f:
     data = json.load(f)
 resolved = 1 if data.get('score', 0) >= 1.0 else 0
 total = 1
@@ -540,6 +433,8 @@ else
 fi
 echo "============================================"
 echo ""
+
+set -e
 
 STATUS="success"
 

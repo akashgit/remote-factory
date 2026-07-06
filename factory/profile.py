@@ -179,12 +179,12 @@ def save_profile(content: str, source_projects: list[str], runner_name: str) -> 
 async def synthesize_profile(
     evidence: dict[str, str],
     runner_name: str | None = None,
+    *,
+    prompt: str,
 ) -> str:
     """Invoke the profiler agent via headless runner to synthesize a profile."""
-    from factory.agents.runner import resolve_prompt
     from factory.runners import get_runner
 
-    prompt = resolve_prompt("profiler")
     task = _build_synthesis_task(evidence)
 
     from factory.models import AgentRunRequest

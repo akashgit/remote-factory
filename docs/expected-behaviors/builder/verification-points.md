@@ -1,7 +1,4 @@
-# Expected Behavior: Builder
-
-## Identity
-The Builder implements a single GitHub issue as one PR. It receives an issue number, a target branch, and a project path, then codes exactly what the issue describes within a pre-configured git worktree. It does not choose what to build, verify quality, or decide keep/revert.
+# Builder — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in. Check these against the agent's trace.
@@ -24,6 +21,16 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - [ ] Pre-commit: no `fixed_surfaces` files appear in `git diff --name-only` (when declared)
 - [ ] File-size gate: no written file exceeds 500 lines (unless generated/fixture with commit-message justification)
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| `git diff --name-only` shows files not in issue/factory.md scope | Scope creep |
+| `Read` tool calls targeting `fixed_surfaces` paths | Ground truth leakage |
+| PR description lists deferred items without valid reasons | Incomplete implementation / invalid deferral |
+| `Write` tool content exceeds 500 lines, no justification in commit | File-size gate violation |
+| `git checkout -b` or `git branch` commands in trace | Worktree branch confusion |
+| No `gh issue comment` when exiting on a blocker | Blocked but no comment |
+
 ## Inputs & Outputs
 - **Reads:** GitHub issue, `CLAUDE.md`, `factory.md`, `.factory/strategy/current.md`, source files in scope
 - **Writes:** source code changes, git commits, one GitHub PR, `.factory/reviews/builder-latest.md` (captured stdout)
@@ -37,16 +44,6 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 - Create a new git branch (worktree branch is pre-configured)
 - Execute `rm -rf`, `git push --force`, `git reset --hard`, `DROP TABLE/DATABASE`, `chmod 777`
 - Defer work items without valid reason (valid: needs credentials, needs human decision, needs external provisioning)
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| `git diff --name-only` shows files not in issue/factory.md scope | Scope creep |
-| `Read` tool calls targeting `fixed_surfaces` paths | Ground truth leakage |
-| PR description lists deferred items without valid reasons | Incomplete implementation / invalid deferral |
-| `Write` tool content exceeds 500 lines, no justification in commit | File-size gate violation |
-| `git checkout -b` or `git branch` commands in trace | Worktree branch confusion |
-| No `gh issue comment` when exiting on a blocker | Blocked but no comment |
 
 ## Playbook Rules
 - **DO [bldr-00001]:** When writing browser automation, add a comment flagging selectors as UNVERIFIED

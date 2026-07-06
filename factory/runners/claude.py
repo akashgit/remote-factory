@@ -150,6 +150,7 @@ class ClaudeRunner:
             log.warning("tmux_not_available")
 
         cmd, env, temp_files = self.build_command(request)
+        env["TELEMETRY_PLATFORM"] = ""
         try:
             log.info("claude_headless", cwd=str(request.cwd), model=request.model)
 
@@ -230,6 +231,8 @@ class ClaudeRunner:
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Claude Code session as a subprocess."""
         cmd, env, temp_files = self.build_interactive_command(request)
+        if not env.get("FACTORY_TRACE_ID"):
+            env["TELEMETRY_PLATFORM"] = ""
         try:
             log.info("claude_interactive", cwd=str(request.cwd))
             result = subprocess.run(cmd, cwd=request.cwd, env=env)

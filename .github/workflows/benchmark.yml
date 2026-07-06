@@ -14,6 +14,7 @@ on:
           - featurebench
           - terminalbench
           - programbench
+          - legacybench
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -76,6 +77,10 @@ jobs:
             solver: factory
             default_instance: 'cmatrix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          - benchmark: legacybench
+            solver: factory
+            default_instance: '1907c2-c-debug-legacy-buddy-fix'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
@@ -93,6 +98,10 @@ jobs:
             solver: claude-code
             default_instance: 'cmatrix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'programbench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: legacybench
+            solver: claude-code
+            default_instance: '1907c2-c-debug-legacy-buddy-fix'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled
@@ -176,19 +185,13 @@ jobs:
           CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
           MAX_THINKING_TOKENS: "128000"
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
-          LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
           benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}
-
-      - name: Upload results
-        uses: actions/upload-artifact@v4
-        if: always() && steps.gate.outputs.run == 'true'
-        with:
-          name: benchmark-results-${{ matrix.benchmark }}-${{ matrix.solver }}
-          path: benchmarks/results/
 
       - name: Print summary
         if: always() && steps.gate.outputs.run == 'true'
@@ -203,6 +206,47 @@ jobs:
               fi
             done
           fi
+
+      - name: Analyze failures
+        if: always() && steps.gate.outputs.run == 'true'
+        continue-on-error: true
+        env:
+          CLAUDE_CODE_USE_VERTEX: "1"
+          ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
+          CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
+          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
+        run: |
+          pip install python-dotenv requests --quiet
+          for result_file in benchmarks/results/*.json; do
+            [ -f "$result_file" ] || continue
+            resolved=$(python3 -c "import json; print(json.load(open('$result_file')).get('resolved', False))")
+            if [ "$resolved" = "False" ]; then
+              echo "Analyzing failure: $result_file"
+              base="$(basename "$result_file" .json)"
+              python3 scripts/langfuse/analyze_failure.py "$result_file" \
+                --summary --output "benchmarks/results/${base}-summary.md" \
+                || echo "Summary failed for $result_file (non-fatal)"
+              python3 scripts/langfuse/analyze_failure.py "$result_file" \
+                --output "benchmarks/results/${base}-analysis.md" \
+                || echo "Analysis failed for $result_file (non-fatal)"
+              for suffix in summary analysis; do
+                f="benchmarks/results/${base}-${suffix}.md"
+                if [ -f "$f" ]; then
+                  cat "$f" >> $GITHUB_STEP_SUMMARY
+                fi
+              done
+            fi
+          done
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always() && steps.gate.outputs.run == 'true'
+        with:
+          name: benchmark-results-${{ matrix.benchmark }}-${{ matrix.solver }}
+          path: benchmarks/results/
 
   report:
     needs: benchmark
@@ -353,6 +397,30 @@ jobs:
 
             if (!hasResults) {
               body += '_No benchmark results found._\n';
+            }
+
+            const summaryFiles = new Set();
+            for (const file of files) {
+              if (file.endsWith('-summary.md')) {
+                summaryFiles.add(file);
+                const benchName = file.replace('-summary.md', '').replace(/^\d{8}T\d{6}Z-/, '');
+                const summaryText = fs.readFileSync('results/' + file, 'utf8').trim();
+                const analysisFile = file.replace('-summary.md', '-analysis.md');
+                body += '**' + benchName + ':** ' + summaryText + '\n';
+                if (fs.existsSync('results/' + analysisFile)) {
+                  const analysis = fs.readFileSync('results/' + analysisFile, 'utf8');
+                  body += '<details><summary>Detailed analysis</summary>\n\n' + analysis + '\n</details>\n\n';
+                }
+              }
+            }
+            for (const file of files) {
+              if (file.endsWith('-analysis.md') && !summaryFiles.has(file.replace('-analysis.md', '-summary.md'))) {
+                const analysis = fs.readFileSync('results/' + file, 'utf8');
+                const benchName = file.replace('-analysis.md', '').replace(/^\d{8}T\d{6}Z-/, '');
+                body += '<details><summary>Failure Analysis: ' + benchName + '</summary>\n\n';
+                body += analysis;
+                body += '\n</details>\n\n';
+              }
             }
 
             const historyPath = 'benchmark-data/results.jsonl';

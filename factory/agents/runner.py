@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 AgentRole = Literal[
     "researcher", "strategist", "builder", "qa",
+    "health_checker", "code_reviewer", "adversarial_tester",
     "archivist", "ceo", "failure_analyst", "refiner", "profiler",
     "refactory",
 ]
@@ -426,6 +427,12 @@ def begin_cycle_session(
         trace_id, span_id = result
         os.environ["FACTORY_TRACE_ID"] = trace_id
         os.environ["FACTORY_PARENT_SPAN_ID"] = span_id
+        try:
+            factory_dir = project_path / ".factory"
+            factory_dir.mkdir(parents=True, exist_ok=True)
+            (factory_dir / "trace_id.txt").write_text(trace_id)
+        except OSError:
+            logger.debug("Failed to write trace_id.txt", exc_info=True)
         return span_id
     except Exception:
         logger.debug("Failed to begin cycle trace", exc_info=True)

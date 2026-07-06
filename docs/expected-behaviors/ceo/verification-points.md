@@ -1,7 +1,4 @@
-# Expected Behavior: CEO Agent
-
-## Identity
-The CEO is the autonomous executive orchestrator. It delegates ALL technical work to specialist agents, reviews their outputs at every gate, owns the experiment lifecycle (`factory begin` / `factory finalize`), and makes keep/revert verdicts. It never writes code, runs evals, or does research directly.
+# CEO Agent — Verification Points
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in.
@@ -25,6 +22,18 @@ These MUST hold regardless of which workflow the agent is in.
 - [ ] Reads PR diff (`gh pr diff`) after Builder completes, before spawning QA
 - [ ] QA Agent runs for every experiment that produces a PR
 
+## Failure Modes
+| Signal in trace | Indicates |
+|---|---|
+| `Edit`/`Write` on `*.py`/`*.ts`/`*.go` outside `.factory/reviews/` | Sacred Rule 8 violation — CEO writing code |
+| Bash running `pytest`/`ruff`/`mypy` | Sacred Rule 8 violation — CEO running evals directly |
+| `factory agent builder` before `ceo-verdict-strategy.md` exists | Strategy hard gate bypassed |
+| No `agent.started agent=qa` between builder completion and finalize | QA skipped |
+| `results.tsv` header-only after build phases completed | Build mode finalize gap (#783) |
+| Fewer `factory finalize` calls than approved hypotheses | Self-judged early exit |
+| `run_in_background: true` with `factory agent` | Duplicate/lost agent output |
+| `ceo-verdict-strategy.md` has "PLAN APPROVED" but `current.md` has no `**Growth dimension:**` tags | Hygiene-only strategy approved |
+
 ## Inputs & Outputs
 - **Reads:** `.factory/config.json`, `.factory/strategy/current.md`, `.factory/reviews/<role>-latest.md`, PR diffs, `results.tsv`
 - **Writes:** `.factory/reviews/ceo-verdict-<role>.md`, `.factory/strategy/research-combined.md` (Build/Design only)
@@ -41,18 +50,6 @@ These MUST hold regardless of which workflow the agent is in.
 - Lowering the eval threshold (Sacred Rule 4)
 - Skipping the eval step (Sacred Rule 5)
 - Taking over an agent's job after failure (must re-invoke or abort)
-
-## Failure Modes
-| Signal in trace | Indicates |
-|---|---|
-| `Edit`/`Write` on `*.py`/`*.ts`/`*.go` outside `.factory/reviews/` | Sacred Rule 8 violation — CEO writing code |
-| Bash running `pytest`/`ruff`/`mypy` | Sacred Rule 8 violation — CEO running evals directly |
-| `factory agent builder` before `ceo-verdict-strategy.md` exists | Strategy hard gate bypassed |
-| No `agent.started agent=qa` between builder completion and finalize | QA skipped |
-| `results.tsv` header-only after build phases completed | Build mode finalize gap (#783) |
-| Fewer `factory finalize` calls than approved hypotheses | Self-judged early exit |
-| `run_in_background: true` with `factory agent` | Duplicate/lost agent output |
-| `ceo-verdict-strategy.md` has "PLAN APPROVED" but `current.md` has no `**Growth dimension:**` tags | Hygiene-only strategy approved |
 
 ## Playbook Rules
 - DO: Cite specific evidence from agent output in every verdict rationale
