@@ -111,6 +111,12 @@
 #benchmark-dashboard .trend-down { color: #cb2431; }
 #benchmark-dashboard .trend-neutral { color: #888; }
 
+/* Trace analysis */
+#benchmark-dashboard .trace-analysis-row td { padding: 0 0.8rem 0.8rem 2rem; }
+#benchmark-dashboard .trace-content { font-family: var(--md-code-font-family, monospace); font-size: 0.8rem; background: rgba(128,128,128,0.1); padding: 0.8rem; border-radius: 4px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; line-height: 1.5; }
+#benchmark-dashboard .trace-link { font-size: 0.8rem; margin-left: 0.5rem; opacity: 0.7; }
+#benchmark-dashboard .trace-link:hover { opacity: 1; }
+
 /* Pagination controls */
 #benchmark-dashboard .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
 #benchmark-dashboard .pagination button { background: #2a2a3e; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.85rem; }
@@ -621,7 +627,7 @@ function renderPerBenchmarkTable(mainResults) {
   html += '<p class="section-explanation">Most recent main branch result for each benchmark and solver combination.</p>';
   html += '<table><thead><tr>';
   html += '<th>Benchmark</th><th>Solver</th><th>Result</th><th>Duration</th>';
-  html += '<th>Cost</th><th>Commit</th><th>Run</th>';
+  html += '<th>Cost</th><th>Trace</th><th>Commit</th><th>Run</th>';
   html += '</tr></thead><tbody>';
 
   for (const [, r] of combos) {
@@ -640,6 +646,12 @@ function renderPerBenchmarkTable(mainResults) {
     html += `<td>${statusIcon(r.resolved)} ${(r.score * 100).toFixed(0)}%</td>`;
     html += `<td>${formatDurationShort(r.duration_seconds)}</td>`;
     html += `<td>${formatCost(r.details?.cost_usd)}</td>`;
+    const traceSummary = r.trace_summary || '';
+    const truncated = traceSummary.length > 80 ? traceSummary.substring(0, 77) + '...' : traceSummary;
+    const traceHtml = r.trace_url
+      ? '<a href="' + r.trace_url + '" title="' + traceSummary.replace(/"/g, '&quot;') + '">' + (truncated || 'trace') + '</a>'
+      : (truncated || '—');
+    html += '<td>' + traceHtml + '</td>';
     html += `<td>${commitLink}</td>`;
     html += `<td>${runLink}</td>`;
     html += '</tr>';
@@ -756,6 +768,7 @@ function updateRunHistoryTable() {
       const matchS = !sv || solver === sv;
       if (!matchB || !matchS) continue;
       const runLink = j.run_url ? `<a href="${j.run_url}">link</a>` : '';
+      const traceLink = j.trace_url ? `<a href="${j.trace_url}" class="trace-link">trace</a>` : '';
       rowsHtml += `<tr class="run-detail hidden" data-parent="${rid}" data-benchmark="${j.benchmark}" data-solver="${solver}">`;
       rowsHtml += `<td>${j.benchmark}</td>`;
       rowsHtml += `<td>${solver}</td>`;
@@ -763,8 +776,15 @@ function updateRunHistoryTable() {
       rowsHtml += `<td>${formatCost(j.details?.cost_usd)}</td>`;
       rowsHtml += `<td>${formatDurationShort(j.duration_seconds)}</td>`;
       rowsHtml += `<td></td>`;
-      rowsHtml += `<td>${runLink}</td>`;
+      rowsHtml += `<td>${runLink}${traceLink ? ' ' + traceLink : ''}</td>`;
       rowsHtml += '</tr>';
+      if (j.trace_analysis) {
+        const analysisTraceLink = j.trace_url ? ' <a href="' + j.trace_url + '" class="trace-link">View in Langfuse →</a>' : '';
+        rowsHtml += `<tr class="run-detail trace-analysis-row hidden" data-parent="${rid}">`;
+        rowsHtml += '<td colspan="7"><details><summary>Trace Analysis' + analysisTraceLink + '</summary>';
+        rowsHtml += '<div class="trace-content">' + j.trace_analysis.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>') + '</div>';
+        rowsHtml += '</details></td></tr>';
+      }
     }
   }
 

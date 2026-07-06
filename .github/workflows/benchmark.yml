@@ -298,6 +298,21 @@ jobs:
               print(f'Processing: {f}', file=sys.stderr)
               with open(f) as fh:
                   data = json.load(fh)
+
+              base = os.path.splitext(os.path.basename(f))[0]
+              summary_path = os.path.join(results_dir, base + '-summary.md')
+              analysis_path = os.path.join(results_dir, base + '-analysis.md')
+
+              if os.path.isfile(summary_path):
+                  data['trace_summary'] = open(summary_path).read().strip()
+              if os.path.isfile(analysis_path):
+                  data['trace_analysis'] = open(analysis_path).read().strip()
+
+              trace_id = (data.get('details') or {}).get('trace_id', '')
+              langfuse_host = os.environ.get('LANGFUSE_HOST', '')
+              if trace_id and langfuse_host:
+                  data['trace_url'] = f'{langfuse_host}/trace/{trace_id}'
+
               data['run_id'] = os.environ.get('RUN_ID', '')
               data['commit'] = os.environ.get('COMMIT', '')
               data['ref'] = os.environ.get('REF', '')
@@ -314,6 +329,7 @@ jobs:
           REF="${{ github.ref }}" \
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
           TRIGGER="${{ github.event_name }}" \
+          LANGFUSE_HOST="${{ secrets.LANGFUSE_BENCH_HOST }}" \
           python3 /tmp/append_results.py
 
           echo 'DEBUG: results dir contents:'
