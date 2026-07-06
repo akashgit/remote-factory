@@ -53,4 +53,13 @@ Write output to: .factory/reviews/builder-latest.md" --project "$PROJECT_PATH" -
 cd $PROJECT_PATH && CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && if [ "$CHANGES" = 'NO_COMMITS' ] || [ -z "$CHANGES" ]; then echo 'fail: builder did not commit any changes'; exit 0; fi && BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && if echo "$BUILDER_OUTPUT" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then echo 'pass: builder reports tests passing'; elif echo "$BUILDER_OUTPUT" | grep -qiE 'tests?.*(fail|error|FAILED)'; then echo 'reloop: builder needs to retry — tests did not pass'; else echo 'pass: changes committed, no issues detected'; fi
 ```
 
+- **PROCEED** (exit 0 / no FAIL in output) → continue to `auto_merge`
+- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `auto_merge`. Skip to the next CEO review gate or finalize as error.
+
 *On RELOOP: return to `builder` (max 3 iterations)*
+
+## Step: Auto Merge
+
+```bash
+cd $PROJECT_PATH && CURRENT=$(git rev-parse --abbrev-ref HEAD) && if [ "$CURRENT" = "main" ] || [ "$CURRENT" = "master" ]; then echo "Already on main/master branch — no merge needed"; exit 0; fi && BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed "s|refs/remotes/origin/||" || echo main) && git branch -f "$BASE" HEAD && echo "Fast-forwarded $BASE to $(git rev-parse --short HEAD)"
+```
