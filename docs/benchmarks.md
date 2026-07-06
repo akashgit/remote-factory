@@ -647,9 +647,10 @@ function renderPerBenchmarkTable(mainResults) {
     html += `<td>${formatDurationShort(r.duration_seconds)}</td>`;
     html += `<td>${formatCost(r.details?.cost_usd)}</td>`;
     const traceSummary = r.trace_summary || '';
-    const truncated = traceSummary.length > 80 ? traceSummary.substring(0, 77) + '...' : traceSummary;
+    const escaped = traceSummary.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const truncated = escaped.length > 80 ? escaped.substring(0, 77) + '...' : escaped;
     const traceHtml = r.trace_url
-      ? '<a href="' + r.trace_url + '" title="' + traceSummary.replace(/"/g, '&quot;') + '">' + (truncated || 'trace') + '</a>'
+      ? '<a href="' + r.trace_url + '" title="' + traceSummary.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + '">' + (truncated || 'trace') + '</a>'
       : (truncated || '—');
     html += '<td>' + traceHtml + '</td>';
     html += `<td>${commitLink}</td>`;

@@ -304,9 +304,11 @@ jobs:
               analysis_path = os.path.join(results_dir, base + '-analysis.md')
 
               if os.path.isfile(summary_path):
-                  data['trace_summary'] = open(summary_path).read().strip()
+                  with open(summary_path) as sf:
+                      data['trace_summary'] = sf.read().strip()
               if os.path.isfile(analysis_path):
-                  data['trace_analysis'] = open(analysis_path).read().strip()
+                  with open(analysis_path) as af:
+                      data['trace_analysis'] = af.read().strip()
 
               trace_id = (data.get('details') or {}).get('trace_id', '')
               langfuse_host = os.environ.get('LANGFUSE_HOST', '')
