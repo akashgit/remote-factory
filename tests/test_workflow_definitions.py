@@ -8,9 +8,12 @@ import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import (
+    DOC_FRESHNESS_GATE_PROMPT,
     build_workflow,
     create_workflow,
     design_workflow,
+    doc_generate_workflow,
+    doc_update_workflow,
     improve_workflow,
     meta_workflow,
     qa_workflow,
@@ -337,6 +340,17 @@ class TestDocFreshnessGate:
         assert gate.evaluator_type == "agent"
         assert gate.evaluator_role == AgentRole.CEO
 
+    @pytest.mark.parametrize(
+        "workflow_fn",
+        [build_workflow, improve_workflow, refine_workflow, create_workflow],
+        ids=["build", "improve", "refine", "create"],
+    )
+    def test_gate_uses_shared_prompt(self, workflow_fn) -> None:
+        wf = workflow_fn()
+        gate = wf.nodes["gate_doc_freshness"]
+        assert isinstance(gate, GateNode)
+        assert gate.gate_prompt is DOC_FRESHNESS_GATE_PROMPT
+
     def test_design_inherits_gate(self) -> None:
         wf = design_workflow()
         assert "gate_doc_freshness" in wf.nodes
@@ -568,3 +582,161 @@ class TestTerminalFlagDefaults:
 
     def test_design_not_terminal(self) -> None:
         assert design_workflow().terminal is False
+
+
+# ── W₁₁: Doc Generate structure ──────────────────────────────────
+
+
+class TestDocGenerateWorkflow:
+    def test_registered(self) -> None:
+        all_wf = register_all()
+        assert "doc-generate" in all_wf
+
+    def test_valid(self) -> None:
+        wf = doc_generate_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"doc-generate workflow has issues: {issues}"
+
+    def test_name(self) -> None:
+        assert doc_generate_workflow().name == "doc-generate"
+
+    def test_start_node(self) -> None:
+        assert doc_generate_workflow().start_node == "scan_project"
+
+    def test_no_trigger(self) -> None:
+        assert doc_generate_workflow().trigger is None
+
+    @pytest.mark.parametrize(
+        "node_id,expected_type",
+        [
+            ("scan_project", AgentNode),
+            ("gate_scan", GateNode),
+            ("generate_docs", AgentNode),
+            ("gate_docs", GateNode),
+            ("validate_docs", FnNode),
+            ("gate_validate", GateNode),
+        ],
+    )
+    def test_node_exists_and_type(self, node_id: str, expected_type: type) -> None:
+        wf = doc_generate_workflow()
+        assert node_id in wf.nodes
+        assert isinstance(wf.nodes[node_id], expected_type)
+
+    def test_agent_nodes_use_researcher(self) -> None:
+        wf = doc_generate_workflow()
+        for nid in ("scan_project", "generate_docs"):
+            node = wf.nodes[nid]
+            assert isinstance(node, AgentNode)
+            assert node.role == AgentRole.RESEARCHER
+
+    @pytest.mark.parametrize(
+        "gate_id",
+        ["gate_scan", "gate_docs", "gate_validate"],
+    )
+    def test_gates_are_ceo_agent(self, gate_id: str) -> None:
+        wf = doc_generate_workflow()
+        gate = wf.nodes[gate_id]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "agent"
+        assert gate.evaluator_role == AgentRole.CEO
+
+    def test_linear_pipeline_edges(self) -> None:
+        wf = doc_generate_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected = [
+            ("scan_project", "gate_scan", None),
+            ("gate_scan", "generate_docs", VerdictType.PROCEED),
+            ("generate_docs", "gate_docs", None),
+            ("gate_docs", "validate_docs", VerdictType.PROCEED),
+            ("validate_docs", "gate_validate", None),
+        ]
+        for src, tgt, cond in expected:
+            assert (src, tgt, cond) in edge_set, f"missing edge {src} -> {tgt} ({cond})"
+
+    def test_reloop_edges(self) -> None:
+        wf = doc_generate_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected_reloops = [
+            ("gate_scan", "scan_project", VerdictType.RELOOP),
+            ("gate_docs", "generate_docs", VerdictType.RELOOP),
+            ("gate_validate", "validate_docs", VerdictType.RELOOP),
+        ]
+        for src, tgt, cond in expected_reloops:
+            assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
+
+
+# ── W₁₂: Doc Update structure ────────────────────────────────────
+
+
+class TestDocUpdateWorkflow:
+    def test_registered(self) -> None:
+        all_wf = register_all()
+        assert "doc-update" in all_wf
+
+    def test_valid(self) -> None:
+        wf = doc_update_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"doc-update workflow has issues: {issues}"
+
+    def test_name(self) -> None:
+        assert doc_update_workflow().name == "doc-update"
+
+    def test_start_node(self) -> None:
+        assert doc_update_workflow().start_node == "diff_scope"
+
+    def test_no_trigger(self) -> None:
+        assert doc_update_workflow().trigger is None
+
+    @pytest.mark.parametrize(
+        "node_id,expected_type",
+        [
+            ("diff_scope", FnNode),
+            ("patch_docs", AgentNode),
+            ("gate_patch", GateNode),
+            ("revalidate", FnNode),
+            ("gate_revalidate", GateNode),
+        ],
+    )
+    def test_node_exists_and_type(self, node_id: str, expected_type: type) -> None:
+        wf = doc_update_workflow()
+        assert node_id in wf.nodes
+        assert isinstance(wf.nodes[node_id], expected_type)
+
+    def test_patch_docs_uses_researcher(self) -> None:
+        wf = doc_update_workflow()
+        node = wf.nodes["patch_docs"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+
+    @pytest.mark.parametrize(
+        "gate_id",
+        ["gate_patch", "gate_revalidate"],
+    )
+    def test_gates_are_ceo_agent(self, gate_id: str) -> None:
+        wf = doc_update_workflow()
+        gate = wf.nodes[gate_id]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "agent"
+        assert gate.evaluator_role == AgentRole.CEO
+
+    def test_linear_pipeline_edges(self) -> None:
+        wf = doc_update_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected = [
+            ("diff_scope", "patch_docs", None),
+            ("patch_docs", "gate_patch", None),
+            ("gate_patch", "revalidate", VerdictType.PROCEED),
+            ("revalidate", "gate_revalidate", None),
+        ]
+        for src, tgt, cond in expected:
+            assert (src, tgt, cond) in edge_set, f"missing edge {src} -> {tgt} ({cond})"
+
+    def test_reloop_edges(self) -> None:
+        wf = doc_update_workflow()
+        edge_set = {(e.source, e.target, e.condition) for e in wf.edges}
+        expected_reloops = [
+            ("gate_patch", "patch_docs", VerdictType.RELOOP),
+            ("gate_revalidate", "revalidate", VerdictType.RELOOP),
+        ]
+        for src, tgt, cond in expected_reloops:
+            assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
