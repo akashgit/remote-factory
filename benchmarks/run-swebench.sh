@@ -143,8 +143,8 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
 else
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
     export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
-    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FactoryCeo)
-    echo "    Agent:           factory (FactoryCeo)"
+    AGENT_ARGS=(--agent-import-path factory_harbor_agent:SwebenchFactoryCeo)
+    echo "    Agent:           factory (SwebenchFactoryCeo)"
 fi
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
