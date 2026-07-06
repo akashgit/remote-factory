@@ -418,7 +418,7 @@ function renderAccuracyTrend(mainResults) {
             data: factoryPoints,
             borderColor: '#4285f4',
             backgroundColor: '#4285f4',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
           {
@@ -426,7 +426,7 @@ function renderAccuracyTrend(mainResults) {
             data: claudePoints,
             borderColor: '#ff7043',
             backgroundColor: '#ff7043',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
         ]
@@ -488,7 +488,7 @@ function renderDurationTrend(mainResults) {
             data: runAvgs.factoryDurationPoints,
             borderColor: '#4285f4',
             backgroundColor: '#4285f4',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
           {
@@ -496,7 +496,7 @@ function renderDurationTrend(mainResults) {
             data: runAvgs.claudeDurationPoints,
             borderColor: '#ff7043',
             backgroundColor: '#ff7043',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
         ]
@@ -562,7 +562,7 @@ function renderCostTrend(mainResults) {
             data: runAvgs.factoryCostPoints,
             borderColor: '#4285f4',
             backgroundColor: '#4285f4',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
           {
@@ -570,7 +570,7 @@ function renderCostTrend(mainResults) {
             data: runAvgs.claudeCostPoints,
             borderColor: '#ff7043',
             backgroundColor: '#ff7043',
-            tension: 0.2,
+            tension: 0,
             pointRadius: 4,
           },
         ]
