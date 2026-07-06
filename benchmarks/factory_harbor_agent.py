@@ -286,6 +286,16 @@ class FactoryCeo(BaseInstalledAgent):
 
     # ── run ───────────────────────────────────────────────────────────
 
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'export FACTORY_CEO_RESPAWN_DISABLED=1; '
+            'factory ceo . --headless --mode build --no-github '
+            '--prompt /tmp/task-instruction.md '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
     @override
     async def run(
         self,
@@ -369,15 +379,9 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Run swebench workflow via deterministic executor
         await self.exec_as_agent(
             environment,
-            command=(
-                'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
-                "factory workflow run swebench . "
-                "2>&1 </dev/null | tee /logs/agent/factory-ceo.txt"
-                "; exit 0"
-            ),
+            command=self._get_factory_command(),
             env=env,
         )
 
@@ -442,4 +446,40 @@ class FactoryCeo(BaseInstalledAgent):
                 "exit 0"
             ),
             env=env,
+        )
+
+
+class SwebenchFactoryCeo(FactoryCeo):
+    """Runs the deterministic swebench workflow instead of generic factory ceo."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "swebench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run swebench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
+class LegacybenchFactoryCeo(FactoryCeo):
+    """Runs the deterministic legacybench workflow instead of generic factory ceo."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "legacybench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run legacybench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
         )
