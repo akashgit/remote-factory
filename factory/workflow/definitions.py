@@ -307,7 +307,7 @@ def build_workflow() -> Workflow:
             "exist. RELOOP to builder if documentation is stale — specify exactly "
             "which changes need doc updates."
         ),
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
@@ -552,7 +552,7 @@ def improve_workflow() -> Workflow:
             "exist. RELOOP to builder if documentation is stale — specify exactly "
             "which changes need doc updates."
         ),
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     nodes["gate_precheck"] = GateNode(
@@ -1331,7 +1331,7 @@ def refine_workflow() -> Workflow:
             "exist. RELOOP to builder if documentation is stale — specify exactly "
             "which changes need doc updates."
         ),
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     # R6: Precheck gate
@@ -1622,7 +1622,7 @@ def create_workflow() -> Workflow:
             "exist. RELOOP to builder if documentation is stale — specify exactly "
             "which changes need doc updates."
         ),
-        reads={".factory/reviews/qa-latest.md"},
+        reads={".factory/reviews/adversarial-qa.md"},
     )
 
     # Precheck gate
