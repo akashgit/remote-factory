@@ -36,6 +36,7 @@ from factory.workflow.primitives import (
 
 # Re-export for test convenience
 __all__ = [
+    "DOC_FRESHNESS_GATE_PROMPT",
     "build_workflow",
     "design_workflow",
     "improve_workflow",
@@ -47,8 +48,20 @@ __all__ = [
     "refine_workflow",
     "create_workflow",
     "skill_refine_workflow",
+    "doc_generate_workflow",
+    "doc_update_workflow",
     "register_all",
 ]
+
+DOC_FRESHNESS_GATE_PROMPT = (
+    "Check the PR diff for documentation freshness. "
+    "If public APIs, CLI commands, configuration options, "
+    "or architecture were changed or added, corresponding documentation "
+    "(README.md, CLAUDE.md, docstrings, --help text, or doc/ files) "
+    "MUST be updated. PROCEED if docs are current or no doc-worthy changes "
+    "exist. RELOOP to builder if documentation is stale — specify exactly "
+    "which changes need doc updates."
+)
 
 
 # ── Deep-QA subgraph helper ─────────────────────────────────────
@@ -294,6 +307,14 @@ def build_workflow() -> Workflow:
         },
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
@@ -341,9 +362,12 @@ def build_workflow() -> Workflow:
         *dq_edges,
         # adversarial_tester → gate_qa
         Edge(source="adversarial_tester", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
@@ -520,6 +544,14 @@ def improve_workflow() -> Workflow:
         },
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
         evaluator_type="fn",
@@ -572,9 +604,12 @@ def improve_workflow() -> Workflow:
         *dq_edges,
         # adversarial_tester → gate_qa
         Edge(source="adversarial_tester", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
@@ -782,9 +817,12 @@ def research_workflow() -> Workflow:
         *dq_edges,
         # adversarial_tester → gate_qa
         Edge(source="adversarial_tester", target="gate_qa"),
-        # gate_qa → precheck (proceed) or builder (reloop, max 3)
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop, max 3)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
         # Finalize → archivist → plateau gate
@@ -1277,6 +1315,14 @@ def refine_workflow() -> Workflow:
         },
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
     # R6: Precheck gate
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
@@ -1324,8 +1370,11 @@ def refine_workflow() -> Workflow:
         *dq_edges,
         # adversarial_tester → gate_qa
         Edge(source="adversarial_tester", target="gate_qa"),
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → finalize (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist", condition=VerdictType.HALT),
@@ -1549,6 +1598,14 @@ def create_workflow() -> Workflow:
         },
     )
 
+    nodes["gate_doc_freshness"] = GateNode(
+        id="gate_doc_freshness",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=DOC_FRESHNESS_GATE_PROMPT,
+        reads={".factory/reviews/adversarial-qa.md"},
+    )
+
     # Precheck gate
     nodes["gate_precheck"] = GateNode(
         id="gate_precheck",
@@ -1598,9 +1655,12 @@ def create_workflow() -> Workflow:
         *dq_edges,
         # adversarial_tester → gate_qa
         Edge(source="adversarial_tester", target="gate_qa"),
-        # gate_qa
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
+        # gate_qa → doc freshness (proceed) or builder (reloop)
+        Edge(source="gate_qa", target="gate_doc_freshness", condition=VerdictType.PROCEED),
         Edge(source="gate_qa", target="builder", condition=VerdictType.RELOOP),
+        # Doc freshness → precheck (proceed) or builder (reloop)
+        Edge(source="gate_doc_freshness", target="gate_precheck", condition=VerdictType.PROCEED),
+        Edge(source="gate_doc_freshness", target="builder", condition=VerdictType.RELOOP),
         # Precheck → archivist (proceed) or halt → archivist (error handling)
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.PROCEED),
         Edge(source="gate_precheck", target="archivist_build", condition=VerdictType.HALT),
@@ -1707,6 +1767,221 @@ def skill_refine_workflow() -> Workflow:
     )
 
 
+# ── W₁₁: Doc Generate ───────────────────────────────────────────
+
+
+def doc_generate_workflow() -> Workflow:
+    """W₁₁: Doc Generate — scan codebase and generate documentation from scratch.
+
+    scan_project → gate_scan → generate_docs → gate_docs →
+    validate_docs → gate_validate
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["scan_project"] = AgentNode(
+        id="scan_project",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Scan the codebase for documentable surfaces. "
+            "Identify public APIs, CLI commands, configuration options, "
+            "architecture patterns, and entry points. "
+            "Write a complete inventory to .factory/doc_scan.md."
+        ),
+        writes={".factory/doc_scan.md"},
+    )
+
+    nodes["gate_scan"] = GateNode(
+        id="gate_scan",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check scan completeness. Are all major documentable surfaces "
+            "identified? Public APIs, CLI commands, config options, architecture, "
+            "and entry points should all be covered. "
+            "RELOOP if significant surfaces are missing."
+        ),
+        reads={".factory/doc_scan.md"},
+    )
+
+    nodes["generate_docs"] = AgentNode(
+        id="generate_docs",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Generate or update documentation files based on the scan inventory "
+            "at .factory/doc_scan.md. Update README.md, CLAUDE.md, and docs/ files "
+            "as needed. Ensure accuracy, completeness, and clear structure."
+        ),
+        reads={".factory/doc_scan.md"},
+        writes={"README.md", "CLAUDE.md", "docs/"},
+    )
+
+    nodes["gate_docs"] = GateNode(
+        id="gate_docs",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Review generated documentation. Is it accurate, complete, and "
+            "well-structured? Do the docs match the scan inventory? "
+            "RELOOP if documentation has gaps or inaccuracies."
+        ),
+        reads={"README.md", "CLAUDE.md"},
+    )
+
+    nodes["validate_docs"] = FnNode(
+        id="validate_docs",
+        command=(
+            "python3 -c \""
+            "import re, sys; from pathlib import Path; "
+            "errors = []; "
+            "scan = Path('{project_path}/.factory/doc_scan.md'); "
+            "[errors.append(f'missing: {{p}}') "
+            "for p in re.findall(r'`([^`]+\\.(?:py|md|yaml|toml|json))`', scan.read_text()) "
+            "if not Path('{project_path}/' + p).exists()]; "
+            "print('PROCEED' if not errors else 'FAIL: ' + '; '.join(errors[:10]))"
+            "\""
+        ),
+        reads={".factory/doc_scan.md"},
+    )
+
+    nodes["gate_validate"] = GateNode(
+        id="gate_validate",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Final quality gate. Review validation results and overall "
+            "documentation quality. PROCEED if all references are valid "
+            "and docs are ready. RELOOP if issues remain."
+        ),
+        reads={".factory/doc_scan.md"},
+    )
+
+    edges = [
+        Edge(source="scan_project", target="gate_scan"),
+        Edge(source="gate_scan", target="generate_docs", condition=VerdictType.PROCEED),
+        Edge(source="gate_scan", target="scan_project", condition=VerdictType.RELOOP),
+        Edge(source="generate_docs", target="gate_docs"),
+        Edge(source="gate_docs", target="validate_docs", condition=VerdictType.PROCEED),
+        Edge(source="gate_docs", target="generate_docs", condition=VerdictType.RELOOP),
+        Edge(source="validate_docs", target="gate_validate"),
+        Edge(source="gate_validate", target="validate_docs", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="doc-generate",
+        nodes=nodes,
+        edges=edges,
+        start_node="scan_project",
+        trigger=None,
+    )
+
+
+# ── W₁₂: Doc Update ────────────────────────────────────────────
+
+
+def doc_update_workflow() -> Workflow:
+    """W₁₂: Doc Update — update documentation based on git diff scope.
+
+    diff_scope → patch_docs → gate_patch → revalidate → gate_revalidate
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["diff_scope"] = FnNode(
+        id="diff_scope",
+        command=(
+            "python3 -c \""
+            "import subprocess, re, sys; from pathlib import Path; "
+            "changed = subprocess.check_output("
+            "['git', 'diff', '--name-only', 'HEAD~1'], text=True"
+            ").strip().splitlines(); "
+            "doc_files = [f for f in Path('{project_path}').rglob('*.md')]; "
+            "affected = []; "
+            "[affected.append(str(d)) for d in doc_files "
+            "for c in changed if c in d.read_text()]; "
+            "scope = '# Doc Update Scope\\n\\n## Changed source files\\n' "
+            "+ '\\n'.join(f'- {{f}}' for f in changed) "
+            "+ '\\n\\n## Affected doc files\\n' "
+            "+ '\\n'.join(f'- {{f}}' for f in set(affected)); "
+            "Path('{project_path}/.factory/doc_update_scope.md').write_text(scope); "
+            "print('PROCEED')"
+            "\""
+        ),
+        writes={".factory/doc_update_scope.md"},
+    )
+
+    nodes["patch_docs"] = AgentNode(
+        id="patch_docs",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Read the scoped changes at .factory/doc_update_scope.md. "
+            "Update only the affected documentation sections. "
+            "Targeted updates only — do not rewrite entire files."
+        ),
+        reads={".factory/doc_update_scope.md"},
+        writes={"README.md", "CLAUDE.md", "docs/"},
+    )
+
+    nodes["gate_patch"] = GateNode(
+        id="gate_patch",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Check that documentation patches match the diff scope. "
+            "Were all affected doc files touched? Do the updates accurately "
+            "reflect the source changes? "
+            "RELOOP if patches are incomplete or inaccurate."
+        ),
+        reads={".factory/doc_update_scope.md"},
+    )
+
+    nodes["revalidate"] = FnNode(
+        id="revalidate",
+        command=(
+            "python3 -c \""
+            "import re, sys; from pathlib import Path; "
+            "errors = []; "
+            "scope = Path('{project_path}/.factory/doc_update_scope.md'); "
+            "[errors.append(f'missing: {{p}}') "
+            "for p in re.findall(r'`([^`]+\\.(?:py|md|yaml|toml|json))`', scope.read_text()) "
+            "if not Path('{project_path}/' + p).exists()]; "
+            "print('PROCEED' if not errors else 'FAIL: ' + '; '.join(errors[:10]))"
+            "\""
+        ),
+        reads={".factory/doc_update_scope.md"},
+    )
+
+    nodes["gate_revalidate"] = GateNode(
+        id="gate_revalidate",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Final quality gate for documentation updates. "
+            "Review validation results and confirm patches are correct. "
+            "PROCEED if all references are valid. "
+            "RELOOP if issues remain."
+        ),
+        reads={".factory/doc_update_scope.md"},
+    )
+
+    edges = [
+        Edge(source="diff_scope", target="patch_docs"),
+        Edge(source="patch_docs", target="gate_patch"),
+        Edge(source="gate_patch", target="revalidate", condition=VerdictType.PROCEED),
+        Edge(source="gate_patch", target="patch_docs", condition=VerdictType.RELOOP),
+        Edge(source="revalidate", target="gate_revalidate"),
+        Edge(source="gate_revalidate", target="revalidate", condition=VerdictType.RELOOP),
+    ]
+
+    return Workflow(
+        name="doc-update",
+        nodes=nodes,
+        edges=edges,
+        start_node="diff_scope",
+        trigger=None,
+    )
+
+
 # ── Registry ─────────────────────────────────────────────────────
 
 
@@ -1731,4 +2006,6 @@ def register_all() -> dict[str, Workflow]:
         "refine": refine_workflow(),
         "create": create_workflow(),
         "skill-refine": skill_refine_workflow(),
+        "doc-generate": doc_generate_workflow(),
+        "doc-update": doc_update_workflow(),
     }
