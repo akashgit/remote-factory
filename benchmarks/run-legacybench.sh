@@ -31,7 +31,7 @@ cleanup() {
     PASSED="${RESOLVED}"
     LANGFUSE_TRACE_ID=""
     if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
-        TRACE_ID_FILE=$(find "${JOBS_DIR}" -path '*/.factory/trace_id.txt' -type f 2>/dev/null | head -1)
+        TRACE_ID_FILE=$(find "${JOBS_DIR}" -name 'trace_id.txt' -type f 2>/dev/null | head -1)
         if [ -n "${TRACE_ID_FILE}" ] && [ -f "${TRACE_ID_FILE}" ]; then
             LANGFUSE_TRACE_ID=$(cat "${TRACE_ID_FILE}" | tr -d '[:space:]')
         fi
