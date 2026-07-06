@@ -379,7 +379,7 @@ class FactoryCeo(BaseInstalledAgent):
             command=(
                 'mkdir -p .factory && '
                 'printf \'{}\\n\' > .factory/config.json && '
-                'printf \'{"reviewed": true, "dimensions": []}\\n\' > .factory/eval_profile.json'
+                'printf \'{"human_reviewed": true, "dimensions": []}\\n\' > .factory/eval_profile.json'
             ),
             env=env,
         )
