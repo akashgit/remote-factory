@@ -1,6 +1,6 @@
 """SWE-bench benchmark workflow — minimal bug-fix pipeline for containerized evaluation.
 
-3-node pipeline: study → builder → gate_verify
+4-node pipeline: study → builder → gate_verify → auto_merge
 RELOOP from gate_verify back to builder (max 3 iterations) on test failure.
 
 Designed for Harbor containers where:
@@ -26,9 +26,9 @@ from factory.workflow.primitives import (
 meta = {
     "name": "swebench",
     "description": (
-        "SWE-bench benchmark mode — minimal 3-node pipeline for solving "
+        "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
         "GitHub issues in containerized evaluation. study → builder → "
-        "gate_verify with RELOOP on test failure."
+        "gate_verify → auto_merge with RELOOP on test failure."
     ),
 }
 
@@ -118,11 +118,36 @@ def workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
+    # ── Node 4: Auto Merge ─────────────────────────────────────────
+    nodes["auto_merge"] = FnNode(
+        id="auto_merge",
+        command=(
+            "cd {project_path} && "
+            "CURRENT=$(git rev-parse --abbrev-ref HEAD) && "
+            "COMMON=$(git rev-parse --git-common-dir) && "
+            "BASE=$(git --git-dir=\"$COMMON\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && "
+            "if [ \"$CURRENT\" = \"$BASE\" ]; then "
+            "echo \"Already on $BASE — no merge needed\"; "
+            "exit 0; fi && "
+            "git update-ref refs/heads/\"$BASE\" HEAD && "
+            "PARENT_WT=$(cd \"$COMMON/..\" && pwd) && "
+            "git diff-tree --no-commit-id --name-only -r HEAD HEAD~1 | "
+            "while read file; do "
+            "if [ -f \"$file\" ]; then "
+            "mkdir -p \"$PARENT_WT/$(dirname $file)\" && "
+            "cp \"$file\" \"$PARENT_WT/$file\"; "
+            "fi; done && "
+            "echo \"Updated $BASE to $(git rev-parse --short HEAD)\""
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
     # ── Edges ──────────────────────────────────────────────────────
 
     edges = [
         Edge(source="study", target="builder"),
         Edge(source="builder", target="gate_verify"),
+        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
         Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
     ]
 
