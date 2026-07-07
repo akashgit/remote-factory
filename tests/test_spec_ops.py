@@ -276,7 +276,42 @@ class TestGetDiffText:
             _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
 
 
-# ── scope_diff / update_spec error paths ────────────────────────
+# ── scope_diff / update_spec ─────────────────────────────────────
+
+
+class TestScopeDiff:
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=(SCOPE_REPORT, 0)),
+    )
+    async def test_writes_scope_file(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.spec.ops import scope_diff
+
+        project = _setup_fixture_project(tmp_path)
+        result = await scope_diff(project, experiment_id=1)
+
+        assert "Affected Modules" in result
+        scope_path = project / ".factory" / "spec_update_scope.md"
+        assert scope_path.is_file()
+
+
+class TestUpdateSpec:
+    @patch(
+        "factory.spec.ops.scope_diff",
+        new_callable=lambda: AsyncMock(return_value=SCOPE_REPORT),
+    )
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("patched", 0)),
+    )
+    async def test_patches_spec(
+        self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path
+    ) -> None:
+        from factory.spec.ops import update_spec
+
+        project = _setup_fixture_project(tmp_path)
+        result = await update_spec(project)
+        assert result == project / "GRAPH-SPEC.md"
 
 
 class TestScopeDiffErrors:
@@ -310,7 +345,20 @@ class TestUpdateSpecErrors:
             await update_spec(tmp_path)
 
 
-# ── get_impact error paths ──────────────────────────────────────
+# ── get_impact ───────────────────────────────────────────────────
+
+
+class TestGetImpact:
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("## Impact: models\nhub module", 0)),
+    )
+    async def test_returns_impact_snippet(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.spec.ops import get_impact
+
+        (tmp_path / "GRAPH-SPEC.md").write_text(BASIC_SPEC)
+        result = await get_impact("models", tmp_path)
+        assert "Impact: models" in result
 
 
 class TestGetImpactErrors:
