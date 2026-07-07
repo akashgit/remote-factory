@@ -105,6 +105,7 @@ class ClaudeRunner:
             "-p", request.task,
             "--output-format", "stream-json",
             "--verbose",
+            "--max-turns", "1000",
         ]
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
