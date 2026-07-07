@@ -282,8 +282,7 @@ class FactoryCeo(BaseInstalledAgent):
                 'export PATH="$HOME/.cargo/bin:$PATH"; '
                 'REF="${FACTORY_GIT_REF:-}"; '
                 'if [ -n "$REF" ]; then '
-                "  uv tool install "
-                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git@${REF}'; "
+                '  uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git@${REF}"; '
                 "else "
                 "  uv tool install "
                 "'remote-factory @ git+https://github.com/akashgit/remote-factory.git'; "
