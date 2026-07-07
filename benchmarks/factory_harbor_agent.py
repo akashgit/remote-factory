@@ -290,8 +290,8 @@ class FactoryCeo(BaseInstalledAgent):
         return (
             'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
             'export FACTORY_CEO_RESPAWN_DISABLED=1; '
-            'factory ceo . --headless --mode build --no-github '
-            '--prompt /tmp/task-instruction.md '
+            'factory ceo . --headless --no-github '
+            '--focus "$(cat /tmp/task-instruction.md)" '
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )
@@ -372,7 +372,19 @@ class FactoryCeo(BaseInstalledAgent):
             env=env,
         )
 
-        # Write task instruction to a file for --prompt
+        # Seed .factory/ so state detection yields has_factory → improve mode,
+        # which is required for --focus to work.
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'mkdir -p .factory && '
+                'printf \'{}\\n\' > .factory/config.json && '
+                'printf \'{"human_reviewed": true, "dimensions": []}\\n\' > .factory/eval_profile.json'
+            ),
+            env=env,
+        )
+
+        # Write task instruction to a file; read via $(cat ...) in --focus
         await self.exec_as_agent(
             environment,
             command=f"cat > /tmp/task-instruction.md << 'INSTREOF'\n{instruction}\nINSTREOF",
