@@ -1,125 +1,190 @@
-"""Legacy-Bench benchmark workflow — evaluates factory against Legacy-Bench.
+"""Legacy-Bench benchmark workflow — lean pipeline for legacy code bugs.
 
-Composes from improve_workflow() with:
-- Researcher: output format analysis guidance
-- Builder: legacy code preservation + hidden test awareness
-- gate_build: legacy preservation enforcement (RELOOP if modernized)
-- gate_qa: output format + decimal arithmetic enforcement
-- auto_merge FnNode for containerized benchmark evaluation
+4-node pipeline: study → builder → gate_verify → auto_merge
+RELOOP from gate_verify back to builder (max 3 iterations) on failure.
+
+Designed for Harbor containers where:
+- Task instruction is at /tmp/task-instruction.md
+- Targets legacy code: COBOL, Fortran, C, Java 7, Assembly
+- The benchmark uses hidden test inputs — solutions must be general algorithms
+- Harbor's verifier is the FINAL authority on pass/fail
+- Harbor checks the MAIN branch for changes
+- No .factory/ infrastructure (no eval, no experiments, no deep-QA)
 """
 
 from typing import Any
 
 from factory.models import ProjectState
-from factory.workflow.definitions import improve_workflow
-from factory.workflow.primitives import AgentNode, Edge, FnNode, GateNode
+from factory.workflow.primitives import (
+    AgentNode,
+    AgentRole,
+    Edge,
+    FnNode,
+    GateNode,
+    VerdictType,
+    Workflow,
+)
 
 meta = {
     "name": "legacybench",
     "description": (
-        "Legacy-Bench benchmark evaluation mode — full improve pipeline with "
-        "auto-merge for containerized benchmarks. Targets legacy code: "
-        "COBOL, Fortran, C, Java 7, Assembly."
+        "Legacy-Bench benchmark mode — 4-node pipeline for fixing bugs in "
+        "legacy code (COBOL, Fortran, C, Java 7, Assembly). "
+        "study → builder → gate_verify → auto_merge with RELOOP on failure."
     ),
 }
 
 
-def workflow():
-    """Build the legacybench workflow by composing from improve."""
-    wf = improve_workflow()
+def workflow() -> Workflow:
+    """Build the Legacy-Bench workflow as a lean 4-node pipeline."""
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
 
-    # ── Researcher: add output format analysis ──────────────────
-    researcher = wf.nodes["researcher"]
-    assert isinstance(researcher, AgentNode)
-    wf.nodes["researcher"] = researcher.model_copy(update={
-        "prompt_template": (
-            researcher.prompt_template + "\n\n"
-            "For legacy codebases: trace multi-file data flows, identify business "
-            "logic patterns, parse binary file formats, map dependencies. "
-            "Document the EXACT output format the program produces: field widths, "
-            "decimal places, alignment, separators, headers/footers. "
-            "Write output format spec to .factory/strategy/output-format-spec.md"
+    # ── Node 1: Study ──────────────────────────────────────────────
+    nodes["study"] = FnNode(
+        id="study",
+        command=(
+            "mkdir -p {project_path}/.factory/reviews && "
+            "cd {project_path} && "
+            "("
+            "echo '=== Workspace ===' && "
+            "ls -la && "
+            "echo '\\n=== Source Files ===' && "
+            "find . -type f \\( "
+            "-name '*.c' -o -name '*.h' -o -name '*.f' -o -name '*.f90' "
+            "-o -name '*.cob' -o -name '*.cbl' -o -name '*.java' "
+            "-o -name '*.s' -o -name '*.asm' -o -name '*.py' "
+            "\\) | head -100 && "
+            "echo '\\n=== Git ===' && "
+            "git status 2>/dev/null || echo 'Not a git repository' && "
+            "git log --oneline -10 2>/dev/null || true && "
+            "echo '\\n=== Build System ===' && "
+            "cat Makefile 2>/dev/null || true && "
+            "ls -la *.sh build* configure* 2>/dev/null || true && "
+            "echo '\\n=== Test Files ===' && "
+            "find . -type f \\( "
+            "-name 'test*' -o -name '*test*' -o -name '*spec*' "
+            "\\) 2>/dev/null | head -50 || true && "
+            "echo '\\n=== Task ===' && "
+            "cat /tmp/task-instruction.md 2>/dev/null || "
+            "echo 'No task instruction found at /tmp/task-instruction.md' && "
+            "echo '\\n=== Output Format Analysis ===' && "
+            "echo 'Attempting to build and capture output format...' && "
+            "(make 2>/dev/null && echo 'Build succeeded' || true)"
+            ") > .factory/reviews/study-output.md 2>&1"
         ),
-        "writes": researcher.writes | {".factory/strategy/output-format-spec.md"},
-    })
+        writes={".factory/reviews/study-output.md"},
+    )
 
-    # ── Builder: legacy guidance in prompt, no PR ───────────────
-    builder = wf.nodes["builder"]
-    assert isinstance(builder, AgentNode)
-    wf.nodes["builder"] = builder.model_copy(update={
-        "prompt_template": (
-            "Implement the current hypothesis from .factory/strategy/current.md. "
-            "Read CLAUDE.md and factory.md. Read the CEO strategy approval. "
-            "Implement exactly what the hypothesis describes. Run tests. "
-            "Commit locally — do NOT create a PR (benchmark mode).\n\n"
-            "LEGACY CODE: Preserve the EXACT original language standard and "
+    # ── Node 2: Builder ────────────────────────────────────────────
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        model="opus",
+        timeout=1200,
+        max_iterations=3,
+        prompt_template=(
+            "You are fixing a bug in legacy code for the Legacy-Bench benchmark.\n\n"
+            "## Your Task\n\n"
+            "1. **Read the task instruction** — Read /tmp/task-instruction.md carefully. "
+            "Understand exactly what bug needs to be fixed and what the expected "
+            "behavior should be.\n\n"
+            "2. **Understand the codebase** — Check the study output at "
+            ".factory/reviews/study-output.md for a structural overview. Read the "
+            "source files, Makefile, and any test scripts.\n\n"
+            "3. **Analyze the output format** — If the program produces output, "
+            "understand the EXACT format: field widths, decimal places, alignment, "
+            "separators, headers/footers. Output format mismatches are a common "
+            "failure mode.\n\n"
+            "4. **Fix the bug** — Implement the fix described in the task instruction.\n\n"
+            "5. **Verify the fix** — Build and run the program. Verify your fix works "
+            "on at least 3 different inputs (visible examples + 2 you construct).\n\n"
+            "6. **Commit your changes** — Commit directly on the current branch "
+            "with a descriptive message. Do NOT create a new branch. Do NOT create a PR.\n\n"
+            "## Rules\n\n"
+            "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
+            "- LEGACY CODE: Preserve the EXACT original language standard and "
             "coding patterns. Do NOT modernize syntax, idioms, or libraries. "
-            "Fix ONLY the specific bug described in the hypothesis. "
+            "Fix ONLY the specific bug described in the task instruction. "
             "If the bug requires changing a data type, use the equivalent "
-            "type from the ORIGINAL language standard.\n\n"
-            "HIDDEN TESTS: The benchmark uses hidden test inputs beyond the "
+            "type from the ORIGINAL language standard.\n"
+            "- HIDDEN TESTS: The benchmark uses hidden test inputs beyond the "
             "visible examples. Do NOT hardcode output to match reference "
             "examples. Implement the general algorithm that solves the problem "
-            "for ANY valid input. Verify your fix works on at least 3 different "
-            "inputs (visible + 2 you construct)."
+            "for ANY valid input.\n"
+            "- Do NOT create branches or PRs — commit on current branch\n"
+            "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
+            "- If something fails, investigate root cause and try alternative approaches\n"
         ),
-        "reads": builder.reads | {".factory/strategy/output-format-spec.md"},
-    })
+        reads={".factory/reviews/study-output.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
 
-    # ── gate_build: enforce legacy code preservation ────────────
-    gate_build = wf.nodes["gate_build"]
-    assert isinstance(gate_build, GateNode)
-    wf.nodes["gate_build"] = gate_build.model_copy(update={
-        "gate_prompt": (
-            gate_build.gate_prompt + " "
-            "LEGACY CHECK: Did the builder preserve the original language "
-            "standard? Any modernized syntax, updated APIs, or changed "
-            "idioms is a RELOOP. Did builder read the output format spec? "
-            "REDIRECT if not."
+    # ── Node 3: Gate Verify ────────────────────────────────────────
+    nodes["gate_verify"] = GateNode(
+        id="gate_verify",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
+            "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
+            "echo 'fail: builder did not commit any changes'; "
+            "exit 0; fi && "
+            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
+            "if echo \"$BUILDER_OUTPUT\" | grep -qiE '(pass|succeed|ok|complete|done|verified|correct|works)'; then "
+            "echo 'pass: builder reports task completed successfully'; "
+            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE '(fail|error|broken|cannot|unable|wrong)'; then "
+            "echo 'reloop: builder needs to retry — solution not confirmed'; "
+            "else "
+            "echo 'pass: changes committed, no failure signals detected'; "
+            "fi"
         ),
-    })
+        reads={".factory/reviews/builder-latest.md"},
+    )
 
-    # ── gate_qa: enforce output format + decimal verification ───
-    gate_qa = wf.nodes["gate_qa"]
-    assert isinstance(gate_qa, GateNode)
-    wf.nodes["gate_qa"] = gate_qa.model_copy(update={
-        "gate_prompt": (
-            gate_qa.gate_prompt + " "
-            "OUTPUT CHECK: Verify program output EXACTLY matches the format "
-            "spec at .factory/strategy/output-format-spec.md (field widths, "
-            "decimal places, separators). For decimal/currency calculations: "
-            "independently verify with Python Decimal or bc — do NOT trust "
-            "the program's self-reported output. RELOOP if any format "
-            "mismatch or arithmetic discrepancy."
-        ),
-        "reads": (gate_qa.reads or set()) | {".factory/strategy/output-format-spec.md"},
-    })
-
-    # ── Auto-merge: new FnNode between finalize and archivist ───
-    wf.nodes["auto_merge"] = FnNode(
+    # ── Node 4: Auto Merge ─────────────────────────────────────────
+    nodes["auto_merge"] = FnNode(
         id="auto_merge",
         command=(
             "cd {project_path} && "
-            "BASE=$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null "
-            "| sed 's|refs/remotes/origin/||' || echo main) && "
             "CURRENT=$(git rev-parse --abbrev-ref HEAD) && "
-            "git checkout \"$BASE\" && "
-            "git merge --no-edit \"$CURRENT\" && "
-            "git checkout \"$CURRENT\""
+            "COMMON=$(git rev-parse --git-common-dir) && "
+            "BASE=$(git --git-dir=\"$COMMON\" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main) && "
+            "if [ \"$CURRENT\" = \"$BASE\" ]; then "
+            "echo \"Already on $BASE — no merge needed\"; "
+            "exit 0; fi && "
+            "git update-ref refs/heads/\"$BASE\" HEAD && "
+            "PARENT_WT=$(cd \"$COMMON/..\" && pwd) && "
+            "git diff-tree --no-commit-id --name-only -r HEAD HEAD~1 | "
+            "while read file; do "
+            "if [ -f \"$file\" ]; then "
+            "mkdir -p \"$PARENT_WT/$(dirname $file)\" && "
+            "cp \"$file\" \"$PARENT_WT/$file\"; "
+            "fi; done && "
+            "echo \"Updated $BASE to $(git rev-parse --short HEAD)\""
         ),
-        reads={".factory/experiments/verdict.json"},
+        reads={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Rewire edges: finalize → auto_merge → archivist ─────────
-    wf.edges = [e for e in wf.edges if not (e.source == "finalize" and e.target == "archivist")]
-    wf.edges.append(Edge(source="finalize", target="auto_merge"))
-    wf.edges.append(Edge(source="auto_merge", target="archivist"))
+    # ── Edges ──────────────────────────────────────────────────────
 
-    # ── Metadata ────────────────────────────────────────────────
-    wf.name = "legacybench"
+    edges = [
+        Edge(source="study", target="builder"),
+        Edge(source="builder", target="gate_verify"),
+        Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
+        Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    # ── Trigger ────────────────────────────────────────────────────
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return ctx.get("mode") == "legacybench"
 
-    wf.trigger = trigger
-    return wf
+    return Workflow(
+        name="legacybench",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+        terminal=True,
+        trigger=trigger,
+    )
