@@ -26,6 +26,7 @@ COMMON_ENV_VARS = (
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_BASE_URL",
+    "FACTORY_GIT_REF",
 )
 
 
@@ -270,7 +271,8 @@ class FactoryCeo(BaseInstalledAgent):
             ),
         )
 
-        # Factory CLI via uv
+        # Factory CLI via uv — install from the current commit when
+        # FACTORY_GIT_REF is set (CI passes the PR sha), otherwise main.
         await self.exec_as_agent(
             environment,
             command=(
@@ -278,8 +280,14 @@ class FactoryCeo(BaseInstalledAgent):
                 'export PATH="$HOME/.local/bin:$PATH"; '
                 "curl -LsSf https://astral.sh/uv/install.sh | sh && "
                 'export PATH="$HOME/.cargo/bin:$PATH"; '
-                "uv tool install "
-                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git' && "
+                'REF="${FACTORY_GIT_REF:-}"; '
+                'if [ -n "$REF" ]; then '
+                "  uv tool install "
+                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git@${REF}'; "
+                "else "
+                "  uv tool install "
+                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git'; "
+                "fi && "
                 "which factory"
             ),
         )
