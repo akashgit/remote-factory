@@ -1,4 +1,5 @@
 """CLI admin commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -12,6 +13,7 @@ from pathlib import Path
 from factory.cli._helpers import _emit_cli_event, _run
 
 log = structlog.get_logger()
+
 
 def cmd_home(args: argparse.Namespace) -> int:
     """Print the factory package root (where templates/ lives)."""
@@ -52,32 +54,35 @@ def cmd_discover(args: argparse.Namespace) -> int:
     write_eval_script(eval_profile, project_path)
 
     if eval_spec:
-        (store.factory_dir / "eval_spec.json").write_text(
-            json.dumps(eval_spec, indent=2) + "\n"
-        )
+        (store.factory_dir / "eval_spec.json").write_text(json.dumps(eval_spec, indent=2) + "\n")
 
     from factory.discovery.spec import generate_spec, resolve_spec
 
-    spec_path, spec_source = resolve_spec(project_path)
-    if spec_source == "absent":
-        spec_content = generate_spec(project_path, profile)
-        spec_path = store.factory_dir / "SPEC.md"
-        spec_path.write_text(spec_content)
-        spec_source = "generated"
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        try:
+            generate_spec(project_path)
+            spec_path = project_path / "GRAPH-SPEC.md"
+        except Exception as exc:
+            log.warning("spec_generate_skipped", reason=str(exc))
 
     dims = [d.name for d in eval_profile.dimensions]
-    _emit_cli_event(project_path, "discover.completed", {
-        "language": profile.language,
-        "framework": profile.framework,
-        "dimensions": dims,
-        "eval_spec_count": len(eval_spec),
-    })
+    _emit_cli_event(
+        project_path,
+        "discover.completed",
+        {
+            "language": profile.language,
+            "framework": profile.framework,
+            "dimensions": dims,
+            "eval_spec_count": len(eval_spec),
+        },
+    )
 
     output = {
         "project": profile.model_dump(),
         "eval_profile": eval_profile.model_dump(),
         "eval_spec": eval_spec,
-        "spec": {"path": str(spec_path), "source": spec_source},
+        "spec": {"path": str(spec_path)},
     }
     print(json.dumps(output, indent=2))
 
@@ -272,7 +277,11 @@ def cmd_self_update(args: argparse.Namespace) -> int:
 
 def cmd_install(args: argparse.Namespace) -> int:
     """Install Factory agents as Claude Code or Codex CLI agents."""
-    from factory.agents.plugin import generate_agent_content, generate_codex_agent_toml, load_agent_config
+    from factory.agents.plugin import (
+        generate_agent_content,
+        generate_codex_agent_toml,
+        load_agent_config,
+    )
 
     runner = getattr(args, "runner", "claude") or "claude"
 
@@ -311,7 +320,7 @@ def cmd_install(args: argparse.Namespace) -> int:
         print("  claude --agent factory-<role>              # from any project directory")
         print('  claude --agent factory-ceo "improve X"     # with initial prompt')
         print()
-        print("Or from within Claude Code, ask: \"use the factory-<role> agent\"")
+        print('Or from within Claude Code, ask: "use the factory-<role> agent"')
 
     return 0
 
@@ -325,6 +334,7 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
     if sub == "show":
         from factory.profile import load_profile
+
         profile = load_profile()
         if profile is None:
             print("No profile found. Run 'factory profile build' first.")
@@ -342,7 +352,9 @@ def cmd_profile(args: argparse.Namespace) -> int:
         else:
             project_paths = get_project_paths()
             if not project_paths:
-                print("No registered projects found. Pass project paths explicitly.", file=sys.stderr)
+                print(
+                    "No registered projects found. Pass project paths explicitly.", file=sys.stderr
+                )
                 return 1
 
         evidence = collect_evidence(project_paths)
@@ -358,6 +370,7 @@ def cmd_profile(args: argparse.Namespace) -> int:
 
         from factory.agents.runner import resolve_prompt
         from factory.cli._helpers import _resolve_runner
+
         runner_name = _resolve_runner(args)
         profiler_prompt = resolve_prompt("profiler")
         profile_text = _run(synthesize_profile(evidence, runner_name, prompt=profiler_prompt))
@@ -390,9 +403,12 @@ def cmd_usage(args: argparse.Namespace) -> int:
         agent = ev.get("agent", "unknown") or "unknown"
         if agent not in agent_stats:
             agent_stats[agent] = {
-                "input_tokens": 0, "output_tokens": 0,
-                "cache_read_tokens": 0, "total_cost_usd": 0.0,
-                "calls": 0, "avg_cost": 0.0,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "total_cost_usd": 0.0,
+                "calls": 0,
+                "avg_cost": 0.0,
             }
         s = agent_stats[agent]
         s["input_tokens"] += data.get("input_tokens", 0)
@@ -432,7 +448,9 @@ def cmd_usage(args: argparse.Namespace) -> int:
         cost = s["total_cost_usd"]
         calls = int(s["calls"])
         avg = s["avg_cost"]
-        print(f"{agent:<16} {inp:>10,} {out:>10,} {cache:>12,} ${cost:>9.4f} {calls:>6} ${avg:>9.4f}")
+        print(
+            f"{agent:<16} {inp:>10,} {out:>10,} {cache:>12,} ${cost:>9.4f} {calls:>6} ${avg:>9.4f}"
+        )
         total_input += inp
         total_output += out
         total_cache += cache
@@ -441,7 +459,8 @@ def cmd_usage(args: argparse.Namespace) -> int:
 
     print("-" * len(header))
     total_avg = total_cost / total_calls if total_calls > 0 else 0.0
-    print(f"{'TOTAL':<16} {total_input:>10,} {total_output:>10,} {total_cache:>12,} ${total_cost:>9.4f} {total_calls:>6} ${total_avg:>9.4f}")
+    print(
+        f"{'TOTAL':<16} {total_input:>10,} {total_output:>10,} {total_cache:>12,} ${total_cost:>9.4f} {total_calls:>6} ${total_avg:>9.4f}"
+    )
 
     return 0
-
