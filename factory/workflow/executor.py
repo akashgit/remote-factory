@@ -624,10 +624,12 @@ class WorkflowExecutor:
         except (json.JSONDecodeError, TypeError):
             pass
 
-        text_lower = text.lower()
-        if "fail" in text_lower or "revert" in text_lower:
+        first_line = text.split("\n")[0].strip().lower()
+        if first_line.startswith("pass"):
+            return Verdict.proceed()
+        if first_line.startswith("fail") or first_line.startswith("revert"):
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
-        if "reloop" in text_lower:
+        if first_line.startswith("reloop"):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
             if target:
                 return Verdict.reloop(target=target, feedback="fn gate requested reloop")
