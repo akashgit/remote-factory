@@ -1490,8 +1490,19 @@ class TestCmdCeoDeepQa:
     def test_deep_qa_mode_headless_with_repo(self, tmp_path, capsys):
         """--mode deep-qa --pr 42 --repo owner/repo includes repo in task."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
-                           "--repo", "owner/repo", "--headless"])
+            result = main(
+                [
+                    "ceo",
+                    str(tmp_path),
+                    "--mode",
+                    "deep-qa",
+                    "--pr",
+                    "42",
+                    "--repo",
+                    "owner/repo",
+                    "--headless",
+                ]
+            )
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "owner/repo" in task
@@ -1499,16 +1510,20 @@ class TestCmdCeoDeepQa:
 
     def test_deep_qa_mode_skips_worktree(self, tmp_path):
         """Deep-QA mode does not create worktrees or touch experiment store."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.worktree.create_worktree") as mock_wt:
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.worktree.create_worktree") as mock_wt,
+        ):
             main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
         mock_wt.assert_not_called()
 
     def test_deep_qa_mode_foreground(self, tmp_path):
         """Deep-QA mode without --headless launches interactively."""
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
-        with patch("factory.runners.claude.subprocess.run", mock_run), \
-             patch("factory.cli.ceo._ensure_dashboard"):
+        with (
+            patch("factory.runners.claude.subprocess.run", mock_run),
+            patch("factory.cli.ceo._ensure_dashboard"),
+        ):
             main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -2727,7 +2742,7 @@ class TestNoWorktreeFlag:
     def test_run_no_worktree_skips_create_worktree(self, tmp_path):
         """--no-worktree on run command prevents create_worktree from being called."""
         with (
-            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
             patch("factory.worktree.create_worktree") as mock_create,
             patch("factory.worktree.remove_worktree") as mock_remove,
             patch("factory.cli.ceo._chain_modes", return_value=0),
