@@ -185,8 +185,8 @@ jobs:
           CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1"
           MAX_THINKING_TOKENS: "128000"
           CLAUDE_CODE_EFFORT_LEVEL: "XHIGH"
-          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
-          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_HOST: ${{ vars.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BENCH_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
           FACTORY_GIT_REF: ${{ github.sha }}
@@ -215,8 +215,8 @@ jobs:
           CLAUDE_CODE_USE_VERTEX: "1"
           ANTHROPIC_VERTEX_PROJECT_ID: ${{ secrets.GCP_PROJECT }}
           CLOUD_ML_REGION: ${{ secrets.GCP_REGION }}
-          LANGFUSE_HOST: ${{ secrets.LANGFUSE_BENCH_HOST }}
-          LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_HOST: ${{ vars.LANGFUSE_BENCH_HOST }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BENCH_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
         run: |
@@ -332,7 +332,7 @@ jobs:
           REF="${{ github.ref }}" \
           RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
           TRIGGER="${{ github.event_name }}" \
-          LANGFUSE_HOST="${{ secrets.LANGFUSE_BENCH_HOST }}" \
+          LANGFUSE_HOST="${{ vars.LANGFUSE_BENCH_HOST }}" \
           python3 /tmp/append_results.py
 
           echo 'DEBUG: results dir contents:'
