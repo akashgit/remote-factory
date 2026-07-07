@@ -27,7 +27,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
     ]),
     ("Project Intelligence", [
         "eval", "history", "study", "status", "summary", "diff", "explain", "export",
-        "research", "insights", "report-update", "baseline", "clean-pr",
+        "research", "insights", "report-update", "baseline", "clean-pr", "spec",
     ]),
     ("Backlog & Refinement", [
         "backlog-add", "backlog-list", "backlog-remove", "deferred-list", "deferred-remove",
@@ -703,6 +703,23 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", default=False,
                     help="Force-kill a session even if it's not in the factory registry")
 
+
+    # spec — repo spec generation and analysis
+    spec_parser = sub.add_parser("spec", help="Repo spec generation and analysis")
+    spec_sub = spec_parser.add_subparsers(dest="spec_command")
+    p_spec_gen = spec_sub.add_parser("generate", help="Generate a repo spec for a project")
+    p_spec_gen.add_argument("path", help="Path to the project")
+    p_spec_val = spec_sub.add_parser("validate", help="Validate a repo spec against the project")
+    p_spec_val.add_argument("path", help="Path to the project")
+    p_spec_scope = spec_sub.add_parser("scope", help="Scope a diff against the repo spec")
+    p_spec_scope.add_argument("path", help="Path to the project")
+    p_spec_scope.add_argument("--experiment", type=int, default=None, help="Experiment ID to scope")
+    p_spec_update = spec_sub.add_parser("update", help="Update the repo spec from recent changes")
+    p_spec_update.add_argument("path", help="Path to the project")
+    p_spec_impact = spec_sub.add_parser("impact", help="Show impact subgraph for a module")
+    p_spec_impact.add_argument("module", help="Module name to query")
+    p_spec_impact.add_argument("--project", required=True, help="Path to the project")
+
     # refactory — persistent supervisor agent
     p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
     p.add_argument("path", nargs="?", default=None,
@@ -795,6 +812,16 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-capture": _cli.cmd_tmux_capture,
         "tmux-stop": _cli.cmd_tmux_stop,
         "refactory": _cli.cmd_refactory,
+        "spec": lambda a: {
+            "generate": _cli.cmd_spec_generate,
+            "validate": _cli.cmd_spec_validate,
+            "scope": _cli.cmd_spec_scope,
+            "update": _cli.cmd_spec_update,
+            "impact": _cli.cmd_spec_impact,
+        }.get(
+            str(getattr(a, "spec_command", "")),
+            lambda args: print("Usage: factory spec {generate,validate,scope,update,impact}") or 1,
+        )(a),
         "workflow": lambda a: __import__("factory.workflow.cli", fromlist=["cmd_workflow"]).cmd_workflow(a),
     }
 

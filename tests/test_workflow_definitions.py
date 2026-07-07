@@ -233,9 +233,22 @@ class TestAgentPool:
 class TestRegisterAll:
     def test_all_workflows_registered(self) -> None:
         all_wf = register_all()
-        assert len(all_wf) >= 11, f"Expected at least 11 workflows, got {len(all_wf)}"
-        required = {"build", "design", "improve", "deep-qa", "research", "meta",
-                     "discover", "review", "refine", "create", "skill-refine"}
+        assert len(all_wf) >= 13, f"Expected at least 13 workflows, got {len(all_wf)}"
+        required = {
+            "build",
+            "design",
+            "improve",
+            "deep-qa",
+            "research",
+            "meta",
+            "discover",
+            "review",
+            "refine",
+            "create",
+            "skill-refine",
+            "spec-generate",
+            "spec-update",
+        }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
     def test_all_validate(self) -> None:
@@ -398,8 +411,7 @@ def _workflows_with_builder() -> list[str]:
         if name in QA_EXEMPT_WORKFLOWS:
             continue
         has_builder = any(
-            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
-            for n in wf.nodes.values()
+            isinstance(n, AgentNode) and n.role == AgentRole.BUILDER for n in wf.nodes.values()
         )
         if has_builder:
             names.append(name)
@@ -436,7 +448,8 @@ class TestBuilderQaReachability:
     def test_builder_has_qa_node(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         qa_nodes = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role in DEEP_QA_ROLES
         ]
         assert qa_nodes, (
@@ -447,17 +460,17 @@ class TestBuilderQaReachability:
     def test_qa_reachable_from_builder(self, workflow_name: str) -> None:
         wf = register_all()[workflow_name]
         builder_ids = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
         ]
         qa_ids = [
-            nid for nid, n in wf.nodes.items()
+            nid
+            for nid, n in wf.nodes.items()
             if isinstance(n, AgentNode) and n.role in DEEP_QA_ROLES
         ]
         for bid in builder_ids:
-            reachable = any(
-                _is_reachable(workflow_name, bid, qid) for qid in qa_ids
-            )
+            reachable = any(_is_reachable(workflow_name, bid, qid) for qid in qa_ids)
             assert reachable, (
                 f"workflow '{workflow_name}': deep-qa specialist is not reachable from "
                 f"Builder node '{bid}' via edges"
@@ -468,7 +481,10 @@ class TestBuilderQaReachability:
 
 
 DEEP_QA_NODE_IDS = {
-    "health_checker", "code_reviewer", "gate_review", "adversarial_tester",
+    "health_checker",
+    "code_reviewer",
+    "gate_review",
+    "adversarial_tester",
 }
 
 DEEP_QA_WORKFLOWS = ["build", "improve", "research", "refine", "create"]
@@ -491,9 +507,7 @@ class TestDeepQaSubgraph:
     def test_deep_qa_present_in_all_workflows(self, wf_name: str) -> None:
         wf = _get_workflow(wf_name)
         for node_id in DEEP_QA_NODE_IDS:
-            assert node_id in wf.nodes, (
-                f"workflow '{wf_name}' missing deep-qa node '{node_id}'"
-            )
+            assert node_id in wf.nodes, f"workflow '{wf_name}' missing deep-qa node '{node_id}'"
 
     @pytest.mark.parametrize("wf_name", DEEP_QA_WORKFLOWS)
     def test_deep_qa_internal_edges(self, wf_name: str) -> None:
@@ -529,14 +543,11 @@ class TestDeepQaSubgraph:
     def test_gate_qa_reloop_preserved(self, wf_name: str) -> None:
         wf = _get_workflow(wf_name)
         reloop_edges = [
-            e for e in wf.edges
-            if e.source == "gate_qa"
-            and e.target == "builder"
-            and e.condition == VerdictType.RELOOP
+            e
+            for e in wf.edges
+            if e.source == "gate_qa" and e.target == "builder" and e.condition == VerdictType.RELOOP
         ]
-        assert len(reloop_edges) == 1, (
-            f"workflow '{wf_name}' missing gate_qa → builder RELOOP edge"
-        )
+        assert len(reloop_edges) == 1, f"workflow '{wf_name}' missing gate_qa → builder RELOOP edge"
 
     @pytest.mark.parametrize("wf_name", DEEP_QA_WORKFLOWS)
     def test_no_monolithic_qa_node(self, wf_name: str) -> None:
