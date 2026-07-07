@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -452,3 +453,124 @@ class TestImproveWorkflowSpecUpdate:
     def test_improve_still_validates(self) -> None:
         issues = improve_workflow().validate_graph()
         assert issues == [], f"improve workflow has issues: {issues}"
+
+
+# ── CLI spec subcommands ────────────────────────────────────────
+
+
+class TestCmdSpecGenerate:
+    def test_not_a_directory(self) -> None:
+        from factory.cli.spec import cmd_spec_generate
+
+        args = argparse.Namespace(path="/nonexistent/path")
+        assert cmd_spec_generate(args) == 1
+
+    @patch("factory.spec.generate.generate_spec", new_callable=AsyncMock)
+    def test_success(self, mock_gen: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_generate
+
+        spec_path = tmp_path / "GRAPH-SPEC.md"
+        mock_gen.return_value = spec_path
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_generate(args) == 0
+
+    @patch(
+        "factory.spec.generate.generate_spec",
+        new_callable=lambda: AsyncMock(side_effect=ValueError("No source files")),
+    )
+    def test_error(self, mock_gen: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_generate
+
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_generate(args) == 1
+
+
+class TestCmdSpecValidate:
+    def test_no_spec(self, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_validate
+
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_validate(args) == 1
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=(PASS_REPORT, 0)),
+    )
+    def test_pass(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_validate
+
+        _write_spec(tmp_path, BASIC_SPEC)
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_validate(args) == 0
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=(FAIL_REPORT, 0)),
+    )
+    def test_fail(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_validate
+
+        _write_spec(tmp_path, BASIC_SPEC)
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_validate(args) == 1
+
+
+class TestCmdSpecScope:
+    def test_no_spec(self, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_scope
+
+        args = argparse.Namespace(path=str(tmp_path), experiment=None)
+        assert cmd_spec_scope(args) == 1
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=(SCOPE_REPORT, 0)),
+    )
+    def test_success(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_scope
+
+        project = _setup_fixture_project(tmp_path)
+        args = argparse.Namespace(path=str(project), experiment=1)
+        assert cmd_spec_scope(args) == 0
+
+
+class TestCmdSpecUpdate:
+    def test_no_spec(self, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_update
+
+        args = argparse.Namespace(path=str(tmp_path))
+        assert cmd_spec_update(args) == 1
+
+    @patch(
+        "factory.spec.ops.scope_diff",
+        new_callable=lambda: AsyncMock(return_value=SCOPE_REPORT),
+    )
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("patched", 0)),
+    )
+    def test_success(self, mock_agent: AsyncMock, mock_scope: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_update
+
+        project = _setup_fixture_project(tmp_path)
+        args = argparse.Namespace(path=str(project))
+        assert cmd_spec_update(args) == 0
+
+
+class TestCmdSpecImpact:
+    def test_no_spec(self, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_impact
+
+        args = argparse.Namespace(project=str(tmp_path), module="models")
+        assert cmd_spec_impact(args) == 1
+
+    @patch(
+        "factory.agents.runner.invoke_agent",
+        new_callable=lambda: AsyncMock(return_value=("## Impact: models\nhub", 0)),
+    )
+    def test_success(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
+        from factory.cli.spec import cmd_spec_impact
+
+        (tmp_path / "GRAPH-SPEC.md").write_text(BASIC_SPEC)
+        args = argparse.Namespace(project=str(tmp_path), module="models")
+        assert cmd_spec_impact(args) == 0
