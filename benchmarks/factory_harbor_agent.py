@@ -495,3 +495,21 @@ class LegacybenchFactoryCeo(FactoryCeo):
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )
+
+
+class TerminalbenchFactoryCeo(FactoryCeo):
+    """Runs the deterministic terminalbench workflow instead of generic factory ceo."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "terminalbench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run terminalbench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )

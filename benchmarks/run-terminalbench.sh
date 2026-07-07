@@ -146,7 +146,7 @@ else
     # Use Factory Harbor agent
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
     export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
-    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FactoryCeo)
+    AGENT_ARGS=(--agent-import-path factory_harbor_agent:TerminalbenchFactoryCeo)
     echo "    Agent:           factory (FactoryCeo)"
 fi
 
