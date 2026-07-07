@@ -154,8 +154,8 @@ if [ "${BENCHMARK_SOLVER:-factory}" = "claude-code" ]; then
 else
     AGENT_MODULE="${HARNESS_DIR}/benchmarks/factory_harbor_agent.py"
     export PYTHONPATH="$(dirname "${AGENT_MODULE}"):${PYTHONPATH:-}"
-    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FactoryCeo)
-    echo "    Agent:           factory (FactoryCeo)"
+    AGENT_ARGS=(--agent-import-path factory_harbor_agent:FeaturebenchFactoryCeo)
+    echo "    Agent:           factory (FeaturebenchFactoryCeo)"
 fi
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
@@ -185,6 +185,7 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
         --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
         --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
         --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
+        --ae "FACTORY_GIT_REF=${FACTORY_GIT_REF:-}" \
         --mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]' \
         2>&1 || HARBOR_EXIT=$?
 else
@@ -209,6 +210,7 @@ else
         --ae "LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}" \
         --ae "LANGFUSE_BASE_URL=${LANGFUSE_BASE_URL:-}" \
         --ae "TELEMETRY_PLATFORM=${TELEMETRY_PLATFORM:-}" \
+        --ae "FACTORY_GIT_REF=${FACTORY_GIT_REF:-}" \
         2>&1 || HARBOR_EXIT=$?
 fi
 

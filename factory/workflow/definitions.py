@@ -1990,6 +1990,8 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.deep_qa import workflow as deep_qa_workflow
     from factory.workflow.contributed.legacybench import workflow as legacybench_workflow
     from factory.workflow.contributed.swebench import workflow as swebench_workflow
+    from factory.workflow.contributed.featurebench import workflow as featurebench_workflow
+    from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
 
     return {
         "build": build_workflow(),
@@ -2000,7 +2002,9 @@ def register_all() -> dict[str, Workflow]:
         "qa": qa_workflow(),
         "deep-qa": deep_qa_workflow(),
         "legacybench": legacybench_workflow(),
+        "featurebench": featurebench_workflow(),
         "swebench": swebench_workflow(),
+        "terminalbench": terminalbench_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
         "refine": refine_workflow(),

@@ -26,6 +26,7 @@ COMMON_ENV_VARS = (
     "LANGFUSE_PUBLIC_KEY",
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_BASE_URL",
+    "FACTORY_GIT_REF",
 )
 
 
@@ -270,7 +271,8 @@ class FactoryCeo(BaseInstalledAgent):
             ),
         )
 
-        # Factory CLI via uv
+        # Factory CLI via uv — install from the current commit when
+        # FACTORY_GIT_REF is set (CI passes the PR sha), otherwise main.
         await self.exec_as_agent(
             environment,
             command=(
@@ -278,8 +280,13 @@ class FactoryCeo(BaseInstalledAgent):
                 'export PATH="$HOME/.local/bin:$PATH"; '
                 "curl -LsSf https://astral.sh/uv/install.sh | sh && "
                 'export PATH="$HOME/.cargo/bin:$PATH"; '
-                "uv tool install "
-                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git' && "
+                'REF="${FACTORY_GIT_REF:-}"; '
+                'if [ -n "$REF" ]; then '
+                '  uv tool install "remote-factory @ git+https://github.com/akashgit/remote-factory.git@${REF}"; '
+                "else "
+                "  uv tool install "
+                "'remote-factory @ git+https://github.com/akashgit/remote-factory.git'; "
+                "fi && "
                 "which factory"
             ),
         )
@@ -492,6 +499,42 @@ class LegacybenchFactoryCeo(FactoryCeo):
         return (
             'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
             'factory workflow run legacybench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
+class TerminalbenchFactoryCeo(FactoryCeo):
+    """Runs the deterministic terminalbench workflow instead of generic factory ceo."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "terminalbench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run terminalbench . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )
+
+
+class FeaturebenchFactoryCeo(FactoryCeo):
+    """Runs the deterministic featurebench workflow instead of generic factory ceo."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "featurebench-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run featurebench . '
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )

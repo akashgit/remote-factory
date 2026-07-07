@@ -189,6 +189,7 @@ jobs:
           LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BENCH_HOST }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_BENCH_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_BENCH_SECRET_KEY }}
+          FACTORY_GIT_REF: ${{ github.sha }}
         run: |
           chmod +x benchmarks/run.sh benchmarks/lib.sh benchmarks/run-*.sh
           benchmarks/run.sh ${{ matrix.benchmark }} ${{ steps.config.outputs.instance }} --timeout ${{ steps.timeout.outputs.value }} --solver ${{ matrix.solver }}

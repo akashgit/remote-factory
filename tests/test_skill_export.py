@@ -496,7 +496,7 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
-QA_EXEMPT_WORKFLOWS = {"swebench"}
+QA_EXEMPT_WORKFLOWS = {"featurebench", "swebench", "terminalbench"}
 
 
 def _workflows_with_builder() -> list[str]:
