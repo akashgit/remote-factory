@@ -1,11 +1,14 @@
-"""TerminalBench benchmark workflow — minimal pipeline for terminal debugging tasks.
+"""TerminalBench benchmark workflow — pipeline for real-world engineering tasks.
 
 4-node pipeline: study → builder → gate_verify → auto_merge
 RELOOP from gate_verify back to builder (max 3 iterations) on failure.
 
 Designed for Harbor containers where:
 - Task instruction is at /tmp/task-instruction.md
-- Tasks are terminal/command-line debugging problems (e.g., recovering from broken git state)
+- Tasks span software engineering, scientific computing, system administration,
+  security, ML, data processing, debugging, file operations, and more
+- The common thread: agent operates in a terminal and must independently
+  navigate complex real-world tasks
 - Harbor's verifier is the FINAL authority on pass/fail
 - Harbor checks the MAIN branch for changes
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
@@ -27,8 +30,9 @@ from factory.workflow.primitives import (
 meta = {
     "name": "terminalbench",
     "description": (
-        "TerminalBench benchmark mode — minimal 4-node pipeline for solving "
-        "terminal/command-line debugging problems in containerized evaluation. "
+        "TerminalBench benchmark mode — 4-node pipeline for solving "
+        "real-world engineering tasks in terminal environments, from compiling "
+        "legacy software to scientific computing to system configuration. "
         "study → builder → gate_verify → auto_merge with RELOOP on failure."
     ),
 }
@@ -46,23 +50,29 @@ def workflow() -> Workflow:
             "mkdir -p {project_path}/.factory/reviews && "
             "cd {project_path} && "
             "("
-            "echo '=== Terminal Environment ===' && "
-            "echo '--- Shell & OS ---' && "
-            "echo \"SHELL=$SHELL\" && "
-            "uname -a 2>/dev/null || true && "
-            "echo '\\n--- Git Status ---' && "
-            "git status 2>/dev/null || echo 'Not a git repository' && "
-            "echo '\\n--- Git Log ---' && "
-            "git log --oneline -10 2>/dev/null || true && "
-            "echo '\\n--- File Listing ---' && "
+            "echo '=== Workspace ===' && "
             "ls -la && "
-            "echo '\\n=== Shell Scripts ===' && "
-            "find . -type f \\( -name '*.sh' -o -name '*.bash' -o -name '*.zsh' \\) 2>/dev/null | head -50 && "
-            "echo '\\n=== Configuration Files ===' && "
-            "ls -la .gitconfig .bashrc .zshrc .profile Makefile Dockerfile 2>/dev/null || true && "
-            "echo '\\n=== Task Instruction ===' && "
+            "echo '\\n=== Git ===' && "
+            "git status 2>/dev/null || echo 'Not a git repository' && "
+            "git log --oneline -10 2>/dev/null || true && "
+            "echo '\\n=== Languages ===' && "
+            "(python3 --version 2>/dev/null || true) && "
+            "(gcc --version 2>/dev/null | head -1 || true) && "
+            "(g++ --version 2>/dev/null | head -1 || true) && "
+            "(rustc --version 2>/dev/null || true) && "
+            "(go version 2>/dev/null || true) && "
+            "(node --version 2>/dev/null || true) && "
+            "(java -version 2>&1 | head -1 || true) && "
+            "(R --version 2>/dev/null | head -1 || true) && "
+            "echo '\\n=== Package Managers ===' && "
+            "(which pip pip3 apt npm cargo gem luarocks 2>/dev/null || true) && "
+            "echo '\\n=== Tools ===' && "
+            "(which make cmake git curl wget docker "
+            "gdb strace ltrace valgrind sqlite3 ffmpeg "
+            "openssl nmap 2>/dev/null || true) && "
+            "echo '\\n=== Task ===' && "
             "cat /tmp/task-instruction.md 2>/dev/null || "
-            "echo 'No task instruction file found at /tmp/task-instruction.md'"
+            "echo 'No task instruction found at /tmp/task-instruction.md'"
             ") > .factory/reviews/study-output.md 2>&1"
         ),
         writes={".factory/reviews/study-output.md"},
@@ -76,30 +86,42 @@ def workflow() -> Workflow:
         timeout=1200,
         max_iterations=3,
         prompt_template=(
-            "You are solving a terminal/command-line debugging problem for the "
-            "TerminalBench benchmark.\n\n"
+            "You are solving a real-world engineering task in a terminal environment.\n\n"
             "## Your Task\n\n"
-            "1. **Read the task instruction** — Read /tmp/task-instruction.md for the full "
-            "problem description and expected outcome.\n\n"
-            "2. **Explore the terminal environment** — check git status, shell state, "
-            "file system layout, environment variables, running processes, and any other "
-            "relevant system state. Understand what is broken or misconfigured.\n\n"
-            "3. **Diagnose the issue** — identify the root cause of the terminal/CLI "
-            "problem described in the task.\n\n"
-            "4. **Implement the fix** — execute the fix directly by running commands, "
-            "editing files, or reconfiguring the environment. Do whatever is needed to "
-            "resolve the issue.\n\n"
-            "5. **Verify the fix** — test that the expected behavior now works. "
-            "Run the relevant commands to confirm the issue is resolved.\n\n"
-            "6. **Commit your changes** — commit directly on the current branch "
+            "1. **Read the task instruction** — Read /tmp/task-instruction.md carefully. "
+            "Understand exactly what the task is asking you to produce or accomplish, "
+            "including any expected output format or success criteria.\n\n"
+            "2. **Understand the task type** — Tasks can range widely: building or "
+            "debugging software, scientific computing, system administration, security "
+            "analysis, data processing, ML model work, file format manipulation, "
+            "mathematical computation, and more. Identify what kind of problem this is "
+            "before diving in.\n\n"
+            "3. **Explore the environment** — Check what languages, compilers, tools, and "
+            "package managers are available. Review the study output for an environment "
+            "summary. Examine the workspace files and directory structure to understand "
+            "what you are working with.\n\n"
+            "4. **Install dependencies** — If the task requires tools, libraries, or "
+            "packages that are not already installed, install them using the available "
+            "package manager (apt, pip, npm, cargo, etc.). Do this proactively before "
+            "attempting the solution.\n\n"
+            "5. **Implement the solution** — Write code, compile programs, configure "
+            "services, run analyses, execute commands — whatever the task requires. "
+            "Work methodically: break complex tasks into steps and verify each step "
+            "before moving on.\n\n"
+            "6. **Verify the result** — Test that your solution produces the expected "
+            "output or achieves the expected outcome. Re-read the task instruction to "
+            "confirm you have not missed any requirements.\n\n"
+            "7. **Commit your changes** — Commit directly on the current branch "
             "with a descriptive message. Do NOT create a new branch. Do NOT create a PR.\n\n"
             "## Rules\n\n"
             "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
-            "- Execute commands directly — this is a terminal debugging task\n"
-            "- MUST verify the fix works before committing\n"
+            "- Read the FULL task instruction before starting — details matter\n"
+            "- Install any missing dependencies proactively — do not assume they exist\n"
+            "- MUST verify the result matches expected output before committing\n"
             "- Do NOT create branches or PRs — commit on current branch\n"
             "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
-            "- If something fails, investigate and try alternative approaches\n"
+            "- If something fails, investigate root cause and try alternative approaches\n"
+            "- If a tool or library is unavailable, find or build an alternative\n"
         ),
         reads={".factory/reviews/study-output.md"},
         writes={".factory/reviews/builder-latest.md"},
@@ -116,16 +138,12 @@ def workflow() -> Workflow:
             "echo 'fail: builder did not commit any changes'; "
             "exit 0; fi && "
             "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(pass|succeed|ok|PASSED)'; then "
-            "echo 'pass: builder reports tests passing'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE '(fix|resolv|verif).*(work|success|confirm|done)'; then "
-            "echo 'pass: builder reports fix verified'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE 'tests?.*(fail|error|FAILED)'; then "
-            "echo 'reloop: builder needs to retry — tests did not pass'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE '(fail|error|broken|cannot)'; then "
-            "echo 'reloop: builder needs to retry — fix not confirmed'; "
+            "if echo \"$BUILDER_OUTPUT\" | grep -qiE '(pass|succeed|ok|complete|done|verified|correct|works)'; then "
+            "echo 'pass: builder reports task completed successfully'; "
+            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE '(fail|error|broken|cannot|unable|wrong)'; then "
+            "echo 'reloop: builder needs to retry — solution not confirmed'; "
             "else "
-            "echo 'pass: changes committed, no issues detected'; "
+            "echo 'pass: changes committed, no failure signals detected'; "
             "fi"
         ),
         reads={".factory/reviews/builder-latest.md"},
