@@ -56,27 +56,30 @@ class TestProgrambenchWorkflow:
     def test_builder_maintains_discoveries(self) -> None:
         """Builder prompt instructs maintaining a structured discoveries file."""
         wf = workflow()
-        prompt = wf.nodes["builder"].prompt_template
-        assert "discoveries.md" in prompt
-        assert "## Discovery:" in prompt
-        assert "verified" in prompt
-        assert "uncertain" in prompt
-        assert "unexplored" in prompt
-        assert "Evidence" in prompt
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert "discoveries.md" in node.prompt_template
+        assert "## Discovery:" in node.prompt_template
+        assert "verified" in node.prompt_template
+        assert "uncertain" in node.prompt_template
+        assert "unexplored" in node.prompt_template
+        assert "Evidence" in node.prompt_template
 
     def test_builder_reads_todos(self) -> None:
         """Builder prompt instructs reading todos.md on RELOOP iterations."""
         wf = workflow()
-        prompt = wf.nodes["builder"].prompt_template
-        assert "todos.md" in prompt
-        assert "address EACH item" in prompt
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert "todos.md" in node.prompt_template
+        assert "address EACH item" in node.prompt_template
 
     def test_builder_backs_up_binary(self) -> None:
         """Builder prompt instructs backing up executable to executable.bak."""
         wf = workflow()
-        prompt = wf.nodes["builder"].prompt_template
-        assert "executable.bak" in prompt
-        assert "cp /workspace/executable /workspace/executable.bak" in prompt
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert "executable.bak" in node.prompt_template
+        assert "cp /workspace/executable /workspace/executable.bak" in node.prompt_template
 
     def test_reviewer_node(self) -> None:
         wf = workflow()
@@ -90,29 +93,32 @@ class TestProgrambenchWorkflow:
     def test_reviewer_validates_discoveries(self) -> None:
         """Reviewer compares builder output against ground truth binary."""
         wf = workflow()
-        prompt = wf.nodes["reviewer"].prompt_template
-        assert "executable.bak" in prompt
-        assert "executable" in prompt
-        assert "verified" in prompt
-        assert "incorrect" in prompt
-        assert "unexplored" in prompt
+        node = wf.nodes["reviewer"]
+        assert isinstance(node, AgentNode)
+        assert "executable.bak" in node.prompt_template
+        assert "executable" in node.prompt_template
+        assert "verified" in node.prompt_template
+        assert "incorrect" in node.prompt_template
+        assert "unexplored" in node.prompt_template
 
     def test_reviewer_writes_todos(self) -> None:
         """Reviewer writes todos.md with specific tasks for the builder."""
         wf = workflow()
-        prompt = wf.nodes["reviewer"].prompt_template
-        assert "todos.md" in prompt
-        assert "## TODO:" in prompt
-        assert "Expected" in prompt
-        assert "Actual" in prompt
-        assert "Action" in prompt
+        node = wf.nodes["reviewer"]
+        assert isinstance(node, AgentNode)
+        assert "todos.md" in node.prompt_template
+        assert "## TODO:" in node.prompt_template
+        assert "Expected" in node.prompt_template
+        assert "Actual" in node.prompt_template
+        assert "Action" in node.prompt_template
 
     def test_reviewer_probes_unknown_unknowns(self) -> None:
         """Reviewer probes for behaviors the builder didn't think of."""
         wf = workflow()
-        prompt = wf.nodes["reviewer"].prompt_template
-        assert "unknown" in prompt.lower()
-        assert "ADDITIONAL" in prompt
+        node = wf.nodes["reviewer"]
+        assert isinstance(node, AgentNode)
+        assert "unknown" in node.prompt_template.lower()
+        assert "ADDITIONAL" in node.prompt_template
 
     def test_gate_verify_is_fn_evaluator(self) -> None:
         """Gate uses fn evaluator (not agent) for speed and determinism."""
@@ -127,10 +133,11 @@ class TestProgrambenchWorkflow:
     def test_gate_verify_checks_todos(self) -> None:
         """Gate checks todos.md for remaining items."""
         wf = workflow()
-        cmd = wf.nodes["gate_verify"].evaluator_command
-        assert cmd is not None
-        assert "todos.md" in cmd
-        assert "## TODO" in cmd
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "todos.md" in node.evaluator_command
+        assert "## TODO" in node.evaluator_command
 
     def test_auto_merge_node(self) -> None:
         wf = workflow()
