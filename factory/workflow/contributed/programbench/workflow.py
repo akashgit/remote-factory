@@ -46,7 +46,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=3600,
         max_iterations=3,
         prompt_template=(
             "You are reverse-engineering a compiled binary and producing "
@@ -131,7 +131,7 @@ def workflow() -> Workflow:
         id="reviewer",
         role=AgentRole.RESEARCHER,
         model="opus",
-        timeout=900,
+        timeout=1800,
         max_iterations=1,
         prompt_template=(
             "You are an adversarial reviewer for the ProgramBench benchmark. "

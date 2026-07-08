@@ -500,6 +500,7 @@ class WorkflowExecutor:
             task,
             self.project_path,
             model=model or None,
+            timeout=float(node.timeout),
         )
 
         if code != 0:
