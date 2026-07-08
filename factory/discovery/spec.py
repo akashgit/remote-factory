@@ -11,12 +11,12 @@ log = structlog.get_logger()
 
 
 def resolve_spec(project_path: Path) -> Path | None:
-    """Locate GRAPH-SPEC.md at the project root or .factory/. Returns None if absent."""
-    spec = project_path / "GRAPH-SPEC.md"
+    """Locate SPEC.md at the project root or .factory/. Returns None if absent."""
+    spec = project_path / "SPEC.md"
     if spec.exists():
         log.debug("resolve_spec", path=str(spec))
         return spec
-    factory_spec = project_path / ".factory" / "GRAPH-SPEC.md"
+    factory_spec = project_path / ".factory" / "SPEC.md"
     if factory_spec.exists():
         log.debug("resolve_spec", path=str(factory_spec))
         return factory_spec

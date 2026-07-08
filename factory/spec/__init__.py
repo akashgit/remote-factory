@@ -1,4 +1,4 @@
-"""GRAPH-SPEC — model-readable structural map of a repository."""
+"""SPEC — model-readable structural map of a repository."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from factory.spec.ops import (
 
 
 def read_spec(project_path: Path) -> str:
-    """Read GRAPH-SPEC.md and return raw markdown content."""
+    """Read SPEC.md and return raw markdown content."""
     from factory.discovery.spec import resolve_spec
 
     spec_path = resolve_spec(project_path)

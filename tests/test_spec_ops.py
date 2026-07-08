@@ -116,7 +116,7 @@ SCOPE_REPORT = """\
 
 
 def _write_spec(project: Path, spec_content: str) -> Path:
-    spec_path = project / "GRAPH-SPEC.md"
+    spec_path = project / "SPEC.md"
     spec_path.write_text(spec_content)
     return spec_path
 
@@ -124,7 +124,7 @@ def _write_spec(project: Path, spec_content: str) -> Path:
 def _setup_fixture_project(tmp_path: Path) -> Path:
     project = tmp_path / "myproject"
     project.mkdir()
-    (project / "GRAPH-SPEC.md").write_text(FIXTURE_SPEC)
+    (project / "SPEC.md").write_text(FIXTURE_SPEC)
     factory_dir = project / ".factory"
     factory_dir.mkdir()
     exp_dir = factory_dir / "experiments" / "1"
@@ -200,14 +200,14 @@ class TestGetDiffText:
         exp_dir.mkdir(parents=True)
         (exp_dir / "changes.diff").write_text("diff content")
 
-        result = _get_diff_text(tmp_path, experiment_id=1, spec_rel="GRAPH-SPEC.md")
+        result = _get_diff_text(tmp_path, experiment_id=1, spec_rel="SPEC.md")
         assert result == "diff content"
 
     def test_missing_experiment_diff_raises(self, tmp_path: Path) -> None:
         from factory.spec.ops import _get_diff_text
 
         with pytest.raises(FileNotFoundError, match="No diff found"):
-            _get_diff_text(tmp_path, experiment_id=99, spec_rel="GRAPH-SPEC.md")
+            _get_diff_text(tmp_path, experiment_id=99, spec_rel="SPEC.md")
 
     @patch("factory.spec.ops.subprocess.run")
     def test_git_diff_from_spec_commit(self, mock_run: MagicMock, tmp_path: Path) -> None:
@@ -219,7 +219,7 @@ class TestGetDiffText:
             MagicMock(returncode=0, stdout="diff --git a/x.py b/x.py\n"),
         ]
 
-        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="SPEC.md")
         assert "diff --git" in result
 
     @patch("factory.spec.ops.subprocess.run")
@@ -232,7 +232,7 @@ class TestGetDiffText:
             MagicMock(returncode=0, stdout="fallback diff\n"),
         ]
 
-        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="SPEC.md")
         assert result == "fallback diff\n"
 
     @patch("factory.spec.ops.subprocess.run")
@@ -245,7 +245,7 @@ class TestGetDiffText:
             MagicMock(returncode=0, stdout="root diff\n"),
         ]
 
-        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+        result = _get_diff_text(tmp_path, experiment_id=None, spec_rel="SPEC.md")
         assert result == "root diff\n"
         root_call = mock_run.call_args_list[2]
         assert "--root" in root_call[0][0]
@@ -261,7 +261,7 @@ class TestGetDiffText:
         ]
 
         with pytest.raises(RuntimeError, match="git diff failed"):
-            _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+            _get_diff_text(tmp_path, experiment_id=None, spec_rel="SPEC.md")
 
     @patch("factory.spec.ops.subprocess.run")
     def test_git_diff_failure_raises(self, mock_run: MagicMock, tmp_path: Path) -> None:
@@ -274,7 +274,7 @@ class TestGetDiffText:
         ]
 
         with pytest.raises(RuntimeError, match="git diff failed"):
-            _get_diff_text(tmp_path, experiment_id=None, spec_rel="GRAPH-SPEC.md")
+            _get_diff_text(tmp_path, experiment_id=None, spec_rel="SPEC.md")
 
 
 # ── scope_diff / update_spec ─────────────────────────────────────
@@ -312,7 +312,7 @@ class TestUpdateSpec:
 
         project = _setup_fixture_project(tmp_path)
         result = await update_spec(project)
-        assert result == project / "GRAPH-SPEC.md"
+        assert result == project / "SPEC.md"
 
 
 class TestScopeDiffErrors:
@@ -357,7 +357,7 @@ class TestGetImpact:
     async def test_returns_impact_snippet(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.ops import get_impact
 
-        (tmp_path / "GRAPH-SPEC.md").write_text(BASIC_SPEC)
+        (tmp_path / "SPEC.md").write_text(BASIC_SPEC)
         result = await get_impact("models", tmp_path)
         assert "Impact: models" in result
 
@@ -376,7 +376,7 @@ class TestGetImpactErrors:
     async def test_agent_failure_raises(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.spec.ops import get_impact
 
-        (tmp_path / "GRAPH-SPEC.md").write_text(BASIC_SPEC)
+        (tmp_path / "SPEC.md").write_text(BASIC_SPEC)
 
         with pytest.raises(RuntimeError, match="Impact analysis agent failed"):
             await get_impact("models", tmp_path)
@@ -469,7 +469,7 @@ class TestCmdSpecGenerate:
     def test_success(self, mock_gen: AsyncMock, tmp_path: Path) -> None:
         from factory.cli.spec import cmd_spec_generate
 
-        spec_path = tmp_path / "GRAPH-SPEC.md"
+        spec_path = tmp_path / "SPEC.md"
         mock_gen.return_value = spec_path
         args = argparse.Namespace(path=str(tmp_path))
         assert cmd_spec_generate(args) == 0
@@ -571,6 +571,6 @@ class TestCmdSpecImpact:
     def test_success(self, mock_agent: AsyncMock, tmp_path: Path) -> None:
         from factory.cli.spec import cmd_spec_impact
 
-        (tmp_path / "GRAPH-SPEC.md").write_text(BASIC_SPEC)
+        (tmp_path / "SPEC.md").write_text(BASIC_SPEC)
         args = argparse.Namespace(project=str(tmp_path), module="models")
         assert cmd_spec_impact(args) == 0

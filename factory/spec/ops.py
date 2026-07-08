@@ -13,9 +13,9 @@ log = structlog.get_logger()
 # ── Validate ────────────────────────────────────────────────────
 
 VALIDATE_PROMPT = """\
-Validate this GRAPH-SPEC.md against the project at {project_path}.
+Validate this SPEC.md against the project at {project_path}.
 
-## GRAPH-SPEC.md
+## SPEC.md
 {spec_content}
 
 ## Checks to perform
@@ -49,7 +49,7 @@ def _parse_verdict(text: str) -> bool:
 
 
 async def validate_spec(project_path: Path) -> tuple[str, bool]:
-    """Validate GRAPH-SPEC.md against the actual project using a single Haiku agent call.
+    """Validate SPEC.md against the actual project using a single Haiku agent call.
 
     Writes the agent's markdown report to .factory/spec_validation.md.
     Returns (report_text, is_valid).
@@ -100,7 +100,7 @@ async def validate_spec(project_path: Path) -> tuple[str, bool]:
 SCOPE_PROMPT = """\
 Analyze this git diff against the repo spec and identify which spec modules are affected.
 
-## GRAPH-SPEC.md
+## SPEC.md
 {spec_content}
 
 ## Git Diff
@@ -170,7 +170,7 @@ async def scope_diff(project_path: Path, experiment_id: int | None = None) -> st
     """Scope a diff against the existing repo spec using a Haiku agent call.
 
     If experiment_id is provided, reads .factory/experiments/{id}/changes.diff.
-    Otherwise, diffs between HEAD and the commit that last touched GRAPH-SPEC.md.
+    Otherwise, diffs between HEAD and the commit that last touched SPEC.md.
 
     Returns the agent's markdown summary of affected scope.
     """
@@ -216,9 +216,9 @@ async def update_spec(project_path: Path) -> Path:
     """Update the repo spec based on changes since last spec commit.
 
     1. Scope the diff
-    2. Run patcher agent to update GRAPH-SPEC.md
+    2. Run patcher agent to update SPEC.md
 
-    Returns the path to the updated GRAPH-SPEC.md.
+    Returns the path to the updated SPEC.md.
     """
     from factory.agents.runner import invoke_agent
     from factory.discovery.spec import resolve_spec
@@ -262,7 +262,7 @@ async def update_spec(project_path: Path) -> Path:
 IMPACT_PROMPT = """\
 Extract an impact analysis for the module "{module_name}" from this repo spec.
 
-## GRAPH-SPEC.md
+## SPEC.md
 {spec_content}
 
 ## Output

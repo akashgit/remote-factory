@@ -224,7 +224,7 @@ class TestSpecGenerateWorkflow:
     def test_annotate_writes_repo_spec(self) -> None:
         wf = spec_generate_workflow()
         annotate = wf.nodes["annotate"]
-        assert "GRAPH-SPEC.md" in annotate.writes
+        assert "SPEC.md" in annotate.writes
 
 
 # ── Registry includes W₉ ────────────────────────────────────────
@@ -318,7 +318,7 @@ class TestGenerateSpec:
     async def test_success(self, tmp_path: Path) -> None:
         (tmp_path / "main.py").write_text("print('hello')")
 
-        repo_spec = tmp_path / "GRAPH-SPEC.md"
+        repo_spec = tmp_path / "SPEC.md"
         call_count = 0
 
         async def mock_invoke(role, task, project, **kwargs):
@@ -343,7 +343,7 @@ class TestGenerateSpec:
         (tmp_path / "a.py").write_text("x" * (char_limit // 2 + 1))
         (tmp_path / "b.py").write_text("y" * (char_limit // 2 + 1))
 
-        repo_spec = tmp_path / "GRAPH-SPEC.md"
+        repo_spec = tmp_path / "SPEC.md"
         extraction_calls = []
 
         async def mock_invoke(role, task, project, **kwargs):
@@ -390,12 +390,12 @@ class TestGenerateSpec:
             with pytest.raises(RuntimeError, match="Spec annotation failed"):
                 await generate_spec(tmp_path)
 
-    async def test_missing_graph_spec_raises(self, tmp_path: Path) -> None:
+    async def test_missing_spec_raises(self, tmp_path: Path) -> None:
         (tmp_path / "main.py").write_text("x = 1")
 
         async def mock_invoke(role, task, project, **kwargs):
             return ("ok", 0)
 
         with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
-            with pytest.raises(FileNotFoundError, match="GRAPH-SPEC"):
+            with pytest.raises(FileNotFoundError, match="SPEC"):
                 await generate_spec(tmp_path)
