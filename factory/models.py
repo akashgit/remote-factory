@@ -179,6 +179,15 @@ class TierWeights(BaseModel):
     spec_compliance: float | None = None
 
 
+class ParallelConfig(BaseModel):
+    """Parallel experiment execution configuration from factory.md."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    parallel_hypotheses: int = Field(default=1, ge=1, le=8)
+    selection_strategy: Literal["best_score"] = "best_score"
+
+
 class AdversarialComponent(BaseModel):
     """One side of an adversarial eval loop (generator or discriminator)."""
 
@@ -259,6 +268,7 @@ class FactoryConfig(BaseModel):
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
     adversarial: AdversarialConfig | None = None
+    parallel: ParallelConfig | None = None
     clean_pr: bool = False
     clean_pr_include: list[str] = []
     clean_pr_exclude: list[str] = []
@@ -379,7 +389,7 @@ class ExperimentRecord(BaseModel):
     score_before: float | None
     score_after: float | None
     delta: float | None
-    verdict: Literal["keep", "revert", "error"]
+    verdict: Literal["keep", "revert", "error", "superseded"]
     cost_usd: float | None
     notes: str
     research_citations: list[str] = []
@@ -394,7 +404,7 @@ class HypothesisOutcome(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     hypothesis: str
-    verdict: Literal["keep", "revert", "error"]
+    verdict: Literal["keep", "revert", "error", "superseded"]
     category: str
     project: str
     delta: float | None = None
@@ -509,8 +519,8 @@ class CycleState(BaseModel):
     started_at: datetime
     mode: Literal[
         "build", "create", "deep-qa", "design", "discover",
-        "improve", "meta", "qa", "refine", "research", "review",
-        "swebench",
+        "improve", "meta", "parallel-improve", "qa", "refine",
+        "research", "review", "swebench",
     ]
     initial_prompt: str = ""
     respawns: int = 0

@@ -6,7 +6,7 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import structlog
 from filelock import FileLock
@@ -26,6 +26,7 @@ from factory.models import (
     HypothesisBudget,
     InnerLoopConfig,
     OuterLoopConfig,
+    ParallelConfig,
     ProjectEvalDimension,
     ResearchTarget,
     TierWeights,
@@ -312,6 +313,35 @@ def _parse_adversarial(items: str | list[str] | float) -> AdversarialConfig | No
         return None
 
 
+def _parse_parallel(items: str | list[str] | float) -> ParallelConfig | None:
+    """Parse parallel experiments config from factory.md."""
+    if not items:
+        return None
+    lines = items if isinstance(items, list) else [str(items)]
+    kwargs: dict[str, Any] = {}
+    for line in lines:
+        line = str(line).strip()
+        if ":" in line:
+            key, _, val = line.partition(":")
+            key = key.strip().lower().replace(" ", "_")
+            val = val.strip()
+            if key == "parallel_hypotheses":
+                try:
+                    kwargs["parallel_hypotheses"] = int(val)
+                except ValueError:
+                    pass
+            elif key == "selection_strategy":
+                if val in ("best_score",):
+                    kwargs["selection_strategy"] = val
+    if not kwargs:
+        return None
+    try:
+        return ParallelConfig(**kwargs)
+    except (ValueError, TypeError) as exc:
+        log.warning("parallel_parse_failed", error=str(exc))
+        return None
+
+
 class ExperimentStore:
     """Manages the .factory/ directory for a project."""
 
@@ -361,6 +391,8 @@ class ExperimentStore:
             "multi-run": "inner_loop",
             "multi_run": "inner_loop",
             "surface_scoping": "outer_loop_surfaces",
+            "parallel experiments": "parallel_experiments",
+            "parallel": "parallel",
         }
 
         def _flush_list() -> None:
@@ -431,6 +463,7 @@ class ExperimentStore:
         hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
         growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
         adversarial = _parse_adversarial(parsed.get("adversarial", []))
+        parallel = _parse_parallel(parsed.get("parallel_experiments", parsed.get("parallel", [])))
 
         clean_pr_raw = parsed.get("clean_pr", "")
         clean_pr = str(clean_pr_raw).strip().lower() in ("true", "yes", "1") if clean_pr_raw else False
@@ -472,6 +505,7 @@ class ExperimentStore:
             hygiene_weights=hygiene_tier_weights,
             growth_weights=growth_tier_weights,
             adversarial=adversarial,
+            parallel=parallel,
             clean_pr=clean_pr,
             clean_pr_include=clean_pr_include,
             clean_pr_exclude=clean_pr_exclude,
@@ -616,7 +650,7 @@ class ExperimentStore:
             return []
 
         records: list[ExperimentRecord] = []
-        valid_verdicts = {"keep", "revert", "error"}
+        valid_verdicts = {"keep", "revert", "error", "superseded"}
         with open(tsv_path, newline="") as f:
             reader = csv.DictReader(f, dialect="excel-tab")
             for row in reader:

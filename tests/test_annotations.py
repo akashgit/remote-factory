@@ -79,14 +79,18 @@ def test_all_nodes_have_annotations(workflow_name: str) -> None:
     templatized = workflow_to_skill_md(wf)
     _, annotations = split_skill(templatized)
 
-    from factory.workflow.primitives import ForkNode
+    from factory.workflow.primitives import ForkNode, SubgraphForkNode
     fork_targets: set[str] = set()
+    subgraph_nodes: set[str] = set()
     for node in wf.nodes.values():
         if isinstance(node, ForkNode):
             fork_targets.update(node.targets)
+        elif isinstance(node, SubgraphForkNode):
+            from factory.workflow.executor import _collect_subgraph_nodes
+            subgraph_nodes |= _collect_subgraph_nodes(wf, node.subgraph_entry, node.subgraph_exit)
 
     for node_id in wf.nodes:
-        if node_id in fork_targets:
+        if node_id in fork_targets or node_id in subgraph_nodes:
             continue
         assert node_id in annotations, (
             f"Node '{node_id}' in workflow '{workflow_name}' has no annotations"

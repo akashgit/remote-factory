@@ -34,6 +34,14 @@ def validate_workflow(workflow: Workflow) -> list[str]:
     for edge in edges:
         g.add_edge(edge.source, edge.target, condition=edge.condition)
 
+    # Add implicit edges for SubgraphForkNode: fork → subgraph_entry
+    # so subgraph nodes are reachable in the graph
+    for nid, node in nodes.items():
+        if type(node).__name__ == "SubgraphForkNode":
+            entry = node.subgraph_entry  # type: ignore[union-attr]
+            if entry in nodes:
+                g.add_edge(nid, entry, condition=None)
+
     reachable = nx.descendants(g, workflow.start_node) | {workflow.start_node}
     unreachable = set(nodes.keys()) - reachable
     for nid in sorted(unreachable):
@@ -85,5 +93,18 @@ def validate_workflow(workflow: Workflow) -> list[str]:
             for s in node.sources:  # type: ignore[union-attr]
                 if s not in nodes:
                     issues.append(f"join '{nid}' source '{s}' not in nodes")
+
+        if type(node).__name__ == "SubgraphForkNode":
+            entry = node.subgraph_entry  # type: ignore[union-attr]
+            exit_node = node.subgraph_exit  # type: ignore[union-attr]
+            if entry not in nodes:
+                issues.append(f"subgraph_fork '{nid}' entry '{entry}' not in nodes")
+            if exit_node not in nodes:
+                issues.append(f"subgraph_fork '{nid}' exit '{exit_node}' not in nodes")
+            if entry in nodes and exit_node in nodes:
+                if not nx.has_path(g, entry, exit_node):
+                    issues.append(
+                        f"subgraph_fork '{nid}': no path from entry '{entry}' to exit '{exit_node}'"
+                    )
 
     return issues

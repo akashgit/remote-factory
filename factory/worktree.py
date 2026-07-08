@@ -84,6 +84,58 @@ def create_worktree(
     return wt_dir, branch
 
 
+def create_experiment_worktree(
+    project_path: Path,
+    exp_id: int,
+    base_commit: str,
+) -> tuple[Path, str]:
+    """Create an isolated worktree for a parallel experiment branch.
+
+    All experiment worktrees branch from the same base commit so their
+    eval scores are comparable.
+
+    Returns (worktree_path, branch_name).
+    """
+    project_path = project_path.resolve()
+    branch = f"factory/exp-{exp_id}"
+    factory_dir = project_path / ".factory"
+    wt_parent = project_path / ".factory-worktrees"
+    wt_dir = wt_parent / f"exp-{exp_id}"
+
+    log.info("experiment_worktree_create", branch=branch, base=base_commit[:12], exp_id=exp_id)
+
+    wt_parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "worktree", "add", str(wt_dir), "-b", branch, base_commit],
+        cwd=project_path,
+        check=True,
+        capture_output=True,
+    )
+
+    wt_factory = wt_dir / ".factory"
+    if wt_factory.exists() or wt_factory.is_symlink():
+        if wt_factory.is_dir() and not wt_factory.is_symlink():
+            shutil.rmtree(wt_factory)
+        else:
+            wt_factory.unlink()
+    wt_factory.symlink_to(factory_dir)
+
+    log.info("experiment_worktree_created", branch=branch, path=str(wt_dir))
+
+    try:
+        from factory.events import emit_event
+        emit_event(project_path, "experiment_worktree.created", data={
+            "exp_id": exp_id,
+            "worktree_path": str(wt_dir),
+            "branch": branch,
+            "base_commit": base_commit,
+        })
+    except Exception:
+        pass
+
+    return wt_dir, branch
+
+
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
@@ -141,11 +193,14 @@ def prune_stale(project_path: Path) -> list[str]:
             active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
-                run_id = d.name.removeprefix("run-")
+                name = d.name
+                if name.startswith("exp-"):
+                    branch = f"factory/{name}"
+                else:
+                    branch = f"factory/run-{name.removeprefix('run-')}"
                 shutil.rmtree(d)
-                pruned.append(f"Removed orphaned directory: {d.name}")
-                log.info("worktree_pruned_orphan", name=d.name)
-                branch = f"factory/run-{run_id}"
+                pruned.append(f"Removed orphaned directory: {name}")
+                log.info("worktree_pruned_orphan", name=name)
                 subprocess.run(
                     ["git", "branch", "-D", branch],
                     cwd=project_path,

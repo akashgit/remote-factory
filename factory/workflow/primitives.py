@@ -165,6 +165,29 @@ class JoinNode(Node):
     sources: list[str]
 
 
+class SubgraphForkNode(Node):
+    """Fan-out to N copies of a subgraph, each in an isolated worktree.
+
+    The executor creates independent WorkflowExecutor instances per branch,
+    each with its own worktree branching from the same base commit.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    subgraph_entry: str
+    subgraph_exit: str
+    parallelism: int = 3
+    worktree_isolated: bool = True
+
+
+class SelectionNode(Node):
+    """Compare N completed experiment branches and select the best."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    strategy: Literal["best_score"] = "best_score"
+
+
 class Study(FnNode):
     """Distinguished FnNode wrapping `factory study`."""
 
@@ -189,7 +212,7 @@ class Edge(BaseModel):
 # ── workflow ─────────────────────────────────────────────────────
 
 
-NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | Study
+NodeType = AgentNode | FnNode | GateNode | ForkNode | JoinNode | SubgraphForkNode | SelectionNode | Study
 
 
 TriggerFn = Callable[[ProjectState, dict[str, Any]], bool]

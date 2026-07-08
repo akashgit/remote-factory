@@ -496,7 +496,10 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
-QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "swebench", "terminalbench"}
+QA_EXEMPT_WORKFLOWS = {
+    "featurebench", "legacybench", "programbench", "swebench", "terminalbench",
+    "parallel-improve",  # QA runs inside the SubgraphForkNode, not in the skill prose
+}
 
 
 def _workflows_with_builder() -> list[str]:
