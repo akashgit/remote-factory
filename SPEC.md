@@ -624,7 +624,7 @@ check_ceilings(project_path, cycle_start):
 |---|---|
 | `collect_source_files`: multi-language, excludes node_modules/.factory/__pycache__/.venv, respects `.gitignore` | MUST |
 | `group_into_batches`: token-limited (80k), oversized files get own batch | MUST |
-| `generate_spec`: parallel batch extraction (opus) → annotation → GRAPH-SPEC.md | MUST |
+| `generate_spec`: parallel batch extraction (opus) → annotation → SPEC.md | MUST |
 | No source files → `ValueError` | MUST |
 | Agent nonzero exit → `RuntimeError` | MUST |
 | `validate_spec` → (report, is_valid) via `_parse_verdict` | MUST |
