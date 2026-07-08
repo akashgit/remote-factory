@@ -22,14 +22,14 @@ class TestProgrambenchWorkflow:
         assert wf.name == "programbench"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 4 nodes: discover, builder, gate_verify, auto_merge."""
+        """Workflow has exactly 4 nodes: builder, reviewer, gate_verify, auto_merge."""
         wf = workflow()
         assert len(wf.nodes) == 4
-        assert set(wf.nodes.keys()) == {"discover", "builder", "gate_verify", "auto_merge"}
+        assert set(wf.nodes.keys()) == {"builder", "reviewer", "gate_verify", "auto_merge"}
 
     def test_start_node(self) -> None:
         wf = workflow()
-        assert wf.start_node == "discover"
+        assert wf.start_node == "builder"
 
     def test_graph_validates(self) -> None:
         """Graph passes structural validation (DAG check, edge consistency)."""
@@ -38,29 +38,9 @@ class TestProgrambenchWorkflow:
         assert issues == [], f"Workflow has validation issues: {issues}"
 
     def test_edge_count(self) -> None:
-        """4 edges: discover->builder, builder->gate, gate->merge, gate->builder RELOOP."""
+        """4 edges: builder->reviewer, reviewer->gate, gate->merge, gate->builder RELOOP."""
         wf = workflow()
         assert len(wf.edges) == 4
-
-    def test_discover_node(self) -> None:
-        wf = workflow()
-        node = wf.nodes["discover"]
-        assert isinstance(node, AgentNode)
-        assert node.role == AgentRole.RESEARCHER
-        assert "reverse-engineering" in node.prompt_template.lower()
-        assert "autonomous" in node.prompt_template.lower()
-        assert "discovery.md" in node.prompt_template
-        assert "test_behavior.sh" in node.prompt_template
-        assert "executable.bak" in node.prompt_template
-
-    def test_discover_builds_test_scaffold(self) -> None:
-        """Discovery agent prompt instructs building a test harness, not just notes."""
-        wf = workflow()
-        prompt = wf.nodes["discover"].prompt_template
-        assert "run_test" in prompt
-        assert "/workspace/tests/" in prompt
-        assert "expected" in prompt
-        assert "chmod" in prompt
 
     def test_builder_node(self) -> None:
         wf = workflow()
@@ -69,18 +49,70 @@ class TestProgrambenchWorkflow:
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
         assert node.timeout == 1200
-        assert "discovery.md" in node.prompt_template
-        assert "test_behavior.sh" in node.prompt_template
+        assert "discoveries.md" in node.prompt_template
         assert "autonomous" in node.prompt_template.lower()
         assert "__DATE__" in node.prompt_template
 
-    def test_builder_uses_test_scaffold(self) -> None:
-        """Builder prompt instructs running the test scaffold for iteration."""
+    def test_builder_maintains_discoveries(self) -> None:
+        """Builder prompt instructs maintaining a structured discoveries file."""
         wf = workflow()
         prompt = wf.nodes["builder"].prompt_template
-        assert "test scaffold" in prompt.lower()
-        assert "ITERATE" in prompt
-        assert "FREQUENTLY" in prompt
+        assert "discoveries.md" in prompt
+        assert "## Discovery:" in prompt
+        assert "verified" in prompt
+        assert "uncertain" in prompt
+        assert "unexplored" in prompt
+        assert "Evidence" in prompt
+
+    def test_builder_reads_todos(self) -> None:
+        """Builder prompt instructs reading todos.md on RELOOP iterations."""
+        wf = workflow()
+        prompt = wf.nodes["builder"].prompt_template
+        assert "todos.md" in prompt
+        assert "address EACH item" in prompt
+
+    def test_builder_backs_up_binary(self) -> None:
+        """Builder prompt instructs backing up executable to executable.bak."""
+        wf = workflow()
+        prompt = wf.nodes["builder"].prompt_template
+        assert "executable.bak" in prompt
+        assert "cp /workspace/executable /workspace/executable.bak" in prompt
+
+    def test_reviewer_node(self) -> None:
+        wf = workflow()
+        node = wf.nodes["reviewer"]
+        assert isinstance(node, AgentNode)
+        assert node.role == AgentRole.RESEARCHER
+        assert "adversarial" in node.prompt_template.lower()
+        assert "autonomous" in node.prompt_template.lower()
+        assert "discoveries.md" in node.prompt_template
+
+    def test_reviewer_validates_discoveries(self) -> None:
+        """Reviewer compares builder output against ground truth binary."""
+        wf = workflow()
+        prompt = wf.nodes["reviewer"].prompt_template
+        assert "executable.bak" in prompt
+        assert "executable" in prompt
+        assert "verified" in prompt
+        assert "incorrect" in prompt
+        assert "unexplored" in prompt
+
+    def test_reviewer_writes_todos(self) -> None:
+        """Reviewer writes todos.md with specific tasks for the builder."""
+        wf = workflow()
+        prompt = wf.nodes["reviewer"].prompt_template
+        assert "todos.md" in prompt
+        assert "## TODO:" in prompt
+        assert "Expected" in prompt
+        assert "Actual" in prompt
+        assert "Action" in prompt
+
+    def test_reviewer_probes_unknown_unknowns(self) -> None:
+        """Reviewer probes for behaviors the builder didn't think of."""
+        wf = workflow()
+        prompt = wf.nodes["reviewer"].prompt_template
+        assert "unknown" in prompt.lower()
+        assert "ADDITIONAL" in prompt
 
     def test_gate_verify_is_fn_evaluator(self) -> None:
         """Gate uses fn evaluator (not agent) for speed and determinism."""
@@ -91,15 +123,14 @@ class TestProgrambenchWorkflow:
         assert node.evaluator_command is not None
         assert "pass:" in node.evaluator_command
         assert "reloop:" in node.evaluator_command
-        assert "compile.sh" in node.evaluator_command
 
-    def test_gate_verify_runs_test_scaffold(self) -> None:
-        """Gate actually runs the test scaffold and checks for '0 failed'."""
+    def test_gate_verify_checks_todos(self) -> None:
+        """Gate checks todos.md for remaining items."""
         wf = workflow()
         cmd = wf.nodes["gate_verify"].evaluator_command
         assert cmd is not None
-        assert "test_behavior.sh" in cmd
-        assert "0 failed" in cmd
+        assert "todos.md" in cmd
+        assert "## TODO" in cmd
 
     def test_auto_merge_node(self) -> None:
         wf = workflow()
@@ -129,6 +160,24 @@ class TestProgrambenchWorkflow:
         ]
         assert len(reloop_edges) == 1
 
+    def test_builder_to_reviewer_edge(self) -> None:
+        """builder feeds into reviewer."""
+        wf = workflow()
+        edges = [
+            e for e in wf.edges
+            if e.source == "builder" and e.target == "reviewer"
+        ]
+        assert len(edges) == 1
+
+    def test_reviewer_to_gate_edge(self) -> None:
+        """reviewer feeds into gate_verify."""
+        wf = workflow()
+        edges = [
+            e for e in wf.edges
+            if e.source == "reviewer" and e.target == "gate_verify"
+        ]
+        assert len(edges) == 1
+
     def test_no_eval_infrastructure(self) -> None:
         """No factory eval nodes (begin, finalize, precheck, study)."""
         wf = workflow()
@@ -143,15 +192,10 @@ class TestProgrambenchWorkflow:
                 assert "factory precheck" not in node.command
                 assert "factory begin" not in node.command
 
-    def test_no_plan_node(self) -> None:
-        """Plan node was removed — discover feeds directly into builder."""
+    def test_no_discover_node(self) -> None:
+        """Discover node was removed — builder does its own discovery."""
         wf = workflow()
-        assert "plan" not in wf.nodes
-        discover_to_builder = [
-            e for e in wf.edges
-            if e.source == "discover" and e.target == "builder"
-        ]
-        assert len(discover_to_builder) == 1
+        assert "discover" not in wf.nodes
 
 
 class TestProgrambenchTerminal:

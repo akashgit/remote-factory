@@ -1,13 +1,14 @@
-"""ProgramBench benchmark workflow — scaffold-first reverse engineering pipeline.
+"""ProgramBench benchmark workflow — adversarial discovery verification loop.
 
-4-node pipeline: discover → builder → gate_verify → auto_merge
-RELOOP from gate_verify back to builder (max 3 iterations) on failure.
+4-node loop: builder → reviewer → gate_verify → auto_merge
+RELOOP from gate_verify back to builder (max 3 iterations) when the
+reviewer finds incorrect or unexplored discoveries.
 
 Designed for Harbor containers where:
 - A compiled binary exists at /workspace/executable
-- The discovery agent probes the binary AND builds a test harness
-- The builder uses the test scaffold as a tight feedback loop
-- Harbor's verifier is the FINAL authority on pass/fail
+- The builder probes, implements, AND maintains a structured discoveries file
+- The reviewer adversarially validates each discovery against the ground truth
+- Todos drive targeted fixes on RELOOP iterations
 - Harbor checks the MAIN branch for changes
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
 """
@@ -28,41 +29,41 @@ from factory.workflow.primitives import (
 meta = {
     "name": "programbench",
     "description": (
-        "ProgramBench benchmark mode — scaffold-first reverse engineering "
-        "pipeline. discover → builder → gate_verify → auto_merge "
-        "with RELOOP on failure."
+        "ProgramBench benchmark mode — adversarial discovery verification "
+        "loop. builder → reviewer → gate_verify → auto_merge "
+        "with RELOOP on unverified discoveries."
     ),
 }
 
 
 def workflow() -> Workflow:
-    """Build the ProgramBench workflow — scaffold-first reverse engineering."""
+    """Build the ProgramBench workflow — adversarial discovery verification."""
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Node 1: Discover ──────────────────────────────────────────
-    nodes["discover"] = AgentNode(
-        id="discover",
-        role=AgentRole.RESEARCHER,
+    # ── Node 1: Builder ──────────────────────────────────────────
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
         model="opus",
-        timeout=900,
-        max_iterations=1,
+        timeout=1200,
+        max_iterations=3,
         prompt_template=(
-            "You are a reverse-engineering researcher. Your job is to probe a "
-            "compiled binary at /workspace/executable, document its behavior, "
-            "AND build a test harness that the builder agent will compile "
-            "against.\n\n"
+            "You are reverse-engineering a compiled binary and producing "
+            "equivalent source code for the ProgramBench benchmark.\n\n"
             "## Your Task\n\n"
             "1. **Read the task instruction** — Read /tmp/task-instruction.md "
             "for context on what the binary does.\n\n"
-            "2. **Check the workspace** — List all files in /workspace/. Look "
-            "for README files, man pages, documentation, data files, or any "
-            "other clues about the binary's purpose.\n\n"
-            "3. **Read any documentation found** — If there is a README.md or "
-            "other docs, read them thoroughly.\n\n"
-            "4. **Back up the original binary** — Run: "
-            "cp /workspace/executable /workspace/executable.bak\n\n"
-            "5. **Probe the binary systematically** — Run the binary with:\n"
+            "2. **Back up the original binary** — Run: "
+            "cp /workspace/executable /workspace/executable.bak\n"
+            "   (Skip if executable.bak already exists from a previous "
+            "iteration.)\n\n"
+            "3. **Check for TODOs from a previous review** — If "
+            "/workspace/todos.md exists, read it and address EACH item "
+            "before doing anything else. These are specific issues found by "
+            "the reviewer that MUST be fixed. Update /workspace/discoveries.md "
+            "with corrected evidence as you fix each TODO.\n\n"
+            "4. **Probe the binary systematically** — Run the binary with:\n"
             "   - No arguments\n"
             "   - --help, -h\n"
             "   - --version, -V, -v\n"
@@ -74,144 +75,24 @@ def workflow() -> Workflow:
             "   - Pipe input via stdin\n"
             "   - Provide sample files as arguments\n"
             "   - Combinations of flags\n\n"
-            "6. **Build the test scaffold** — For EACH behavior discovered, "
-            "create a test case. Create these files:\n\n"
-            "   **`/workspace/tests/test_behavior.sh`** — a shell script that "
-            "tests the agent's build against the original binary. Structure:\n"
-            "   ```bash\n"
-            "   #!/bin/bash\n"
-            "   PASS=0; FAIL=0; TOTAL=0\n"
-            "   run_test() {\n"
-            '       name=$1; shift\n'
-            "       TOTAL=$((TOTAL+1))\n"
-            '       expected=$(/workspace/executable.bak "$@" 2>&1)\n'
-            "       expected_exit=$?\n"
-            '       actual=$(/workspace/executable "$@" 2>&1)\n'
-            "       actual_exit=$?\n"
-            '       if [ "$expected" = "$actual" ] && '
-            '[ "$expected_exit" = "$actual_exit" ]; then\n'
-            "           PASS=$((PASS+1))\n"
-            "       else\n"
-            "           FAIL=$((FAIL+1))\n"
-            '           echo "FAIL: $name"\n'
-            '           if [ "$expected" != "$actual" ]; then\n'
-            '               diff <(echo "$expected") <(echo "$actual") '
-            "| head -10\n"
-            "           fi\n"
-            '           if [ "$expected_exit" != "$actual_exit" ]; then\n'
-            '               echo "  exit code: expected=$expected_exit '
-            'actual=$actual_exit"\n'
-            "           fi\n"
-            "       fi\n"
-            "   }\n"
-            "   # Tests for stdin input:\n"
-            "   run_test_stdin() {\n"
-            '       name=$1; input=$2; shift 2\n'
-            "       TOTAL=$((TOTAL+1))\n"
-            '       expected=$(echo "$input" | '
-            '/workspace/executable.bak "$@" 2>&1)\n'
-            "       expected_exit=$?\n"
-            '       actual=$(echo "$input" | '
-            '/workspace/executable "$@" 2>&1)\n'
-            "       actual_exit=$?\n"
-            '       if [ "$expected" = "$actual" ] && '
-            '[ "$expected_exit" = "$actual_exit" ]; then\n'
-            "           PASS=$((PASS+1))\n"
-            "       else\n"
-            "           FAIL=$((FAIL+1))\n"
-            '           echo "FAIL: $name"\n'
-            '           if [ "$expected" != "$actual" ]; then\n'
-            '               diff <(echo "$expected") <(echo "$actual") '
-            "| head -10\n"
-            "           fi\n"
-            "       fi\n"
-            "   }\n"
-            "   # Tests for file input:\n"
-            "   run_test_file() {\n"
-            '       name=$1; file=$2; shift 2\n'
-            "       TOTAL=$((TOTAL+1))\n"
-            '       expected=$(/workspace/executable.bak "$@" "$file" 2>&1)\n'
-            "       expected_exit=$?\n"
-            '       actual=$(/workspace/executable "$@" "$file" 2>&1)\n'
-            "       actual_exit=$?\n"
-            '       if [ "$expected" = "$actual" ] && '
-            '[ "$expected_exit" = "$actual_exit" ]; then\n'
-            "           PASS=$((PASS+1))\n"
-            "       else\n"
-            "           FAIL=$((FAIL+1))\n"
-            '           echo "FAIL: $name"\n'
-            '           if [ "$expected" != "$actual" ]; then\n'
-            '               diff <(echo "$expected") <(echo "$actual") '
-            "| head -10\n"
-            "           fi\n"
-            "       fi\n"
-            "   }\n"
-            '   run_test "help_flag" --help\n'
-            '   run_test "version_flag" --version\n'
-            "   # ... add more test cases for every behavior discovered ...\n"
-            '   echo "$PASS/$TOTAL passed, $FAIL failed"\n'
+            "5. **Maintain the discoveries file** — For EVERY behavioral "
+            "discovery (flag behavior, output format, edge case, error "
+            "message, exit code, etc.), add an entry to "
+            "/workspace/discoveries.md with this format:\n\n"
+            "   ```markdown\n"
+            "   ## Discovery: <short title>\n"
+            "   - **What:** <what was discovered>\n"
+            "   - **Evidence:** <command run and output observed>\n"
+            "   - **Status:** verified | uncertain | unexplored\n"
+            "   - **Notes:** <any additional context>\n"
             "   ```\n\n"
-            "   **`/workspace/tests/expected/`** — directory of expected output "
-            "files (one per test case) for reference.\n\n"
-            "   Create test data files as needed (CSV, TSV, edge-case inputs) "
-            "in /workspace/tests/.\n\n"
-            "7. **Make the test script executable** — chmod +x "
-            "/workspace/tests/test_behavior.sh\n\n"
-            "8. **Write a summary** — Save your complete findings to "
-            ".factory/reviews/discovery.md. Include:\n"
-            "   - Binary purpose and capabilities\n"
-            "   - All flags and options discovered\n"
-            "   - Exact version strings\n"
-            "   - Key behavioral notes (error handling, edge cases, output "
-            "formatting)\n"
-            "   - List of all test cases created\n\n"
-            "9. **Commit the test scaffold** — git add and commit the test "
-            "files and discovery notes.\n\n"
-            "## Rules\n\n"
-            "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
-            "- Be THOROUGH — try every flag combination you can think of\n"
-            "- Record EXACT outputs, not summaries\n"
-            "- Note exit codes for each invocation\n"
-            "- The binary is execute-only — you cannot read its contents\n"
-            "- Do NOT attempt to implement the binary — only discover and "
-            "build tests\n"
-            "- Do NOT run factory commands\n"
-            "- Do NOT create branches or PRs\n"
-            "- The test scaffold is your PRIMARY deliverable — the builder "
-            "will iterate against it\n"
-        ),
-        reads=set(),
-        writes={
-            ".factory/reviews/discovery.md",
-            "/workspace/tests/test_behavior.sh",
-        },
-    )
-
-    # ── Node 2: Builder ───────────────────────────────────────────
-    nodes["builder"] = AgentNode(
-        id="builder",
-        role=AgentRole.BUILDER,
-        model="opus",
-        timeout=1200,
-        max_iterations=3,
-        prompt_template=(
-            "You are reverse-engineering a compiled binary and producing "
-            "equivalent source code for the ProgramBench benchmark. A "
-            "discovery agent has already probed the binary and built a test "
-            "harness for you.\n\n"
-            "## Your Task\n\n"
-            "1. **Read the discovery findings** — Read "
-            ".factory/reviews/discovery.md for the behavioral summary.\n\n"
-            "2. **Read the test scaffold** — Read "
-            "/workspace/tests/test_behavior.sh to understand what tests "
-            "exist and what behaviors are expected.\n\n"
-            "3. **Read any documentation** — Check /workspace/ for README.md, "
-            "man pages, or other docs. Read /tmp/task-instruction.md for the "
-            "task description.\n\n"
-            "4. **Examine the original binary** — Run /workspace/executable.bak "
-            "directly if you need to clarify any behavior not covered by the "
-            "test scaffold.\n\n"
-            "5. **Write the source code** — Implement C source code that "
+            "   Record EVERY discovery, not just the ones you're confident "
+            "about. Mark discoveries as 'uncertain' if you're not 100%% sure. "
+            "Mark discoveries as 'unexplored' if you found something but "
+            "didn't dig into it yet.\n\n"
+            "6. **Read any documentation** — Check /workspace/ for README.md, "
+            "man pages, or other docs.\n\n"
+            "7. **Write the source code** — Implement C source code that "
             "reproduces ALL discovered behaviors:\n"
             "   - Match every flag and option exactly\n"
             "   - Match output format exactly (spacing, newlines, field widths)\n"
@@ -220,69 +101,123 @@ def workflow() -> Workflow:
             "   - CRITICAL: Hardcode the exact version string from -V output. "
             "Do NOT use __DATE__ or __TIME__ macros — these produce different "
             "values on every build and will fail verification.\n\n"
-            "6. **Create compile.sh** — Write a build script that:\n"
+            "8. **Create compile.sh** — Write a build script that:\n"
             "   - Compiles the source to /workspace/executable\n"
             "   - Is executable (chmod +x)\n\n"
-            "7. **Run the test scaffold** — After compiling, run:\n"
-            "   cd /workspace && bash tests/test_behavior.sh\n"
-            "   This tests your build against the original binary.\n\n"
-            "8. **ITERATE** — Fix failures, recompile, re-test. Run the "
-            "test scaffold FREQUENTLY during development, not just at the "
-            "end. The test scaffold is your spec — make all tests pass.\n\n"
-            "9. **Commit your changes** — Commit directly on the current "
-            "branch with a descriptive message. Do NOT create a new branch. "
-            "Do NOT create a PR.\n\n"
+            "9. **Test by diffing** — After compiling, test your build "
+            "against executable.bak by running the same commands on both and "
+            "comparing outputs. Fix any mismatches.\n\n"
+            "10. **Commit your changes** — Commit directly on the current "
+            "branch with a descriptive message.\n\n"
             "## Rules\n\n"
             "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
-            "- The test scaffold is your primary spec — make all tests pass\n"
-            "- The discovery findings are your reference — trust them\n"
-            "- Match behavior EXACTLY — even minor output differences cause "
-            "verification failure\n"
-            "- Do NOT use __DATE__, __TIME__, or other non-deterministic macros\n"
+            "- Record EVERY discovery, not just the ones you're confident "
+            "about\n"
+            "- Mark discoveries as 'uncertain' if you're not 100%% sure\n"
+            "- Mark discoveries as 'unexplored' if you found something but "
+            "didn't dig into it\n"
+            "- Do NOT skip the discoveries file — it is required\n"
+            "- Do NOT use __DATE__, __TIME__, or other non-deterministic "
+            "macros\n"
             "- Do NOT create branches or PRs — commit on current branch\n"
             "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
-            "- Run the test scaffold FREQUENTLY during development\n"
-            "- If tests reveal mismatches, fix them before committing\n"
         ),
-        reads={
-            ".factory/reviews/discovery.md",
-            "/workspace/tests/test_behavior.sh",
-        },
-        writes={".factory/reviews/builder-latest.md"},
+        reads=set(),
+        writes={"/workspace/discoveries.md"},
     )
 
-    # ── Node 3: Gate Verify ───────────────────────────────────────
+    # ── Node 2: Reviewer ─────────────────────────────────────────
+    nodes["reviewer"] = AgentNode(
+        id="reviewer",
+        role=AgentRole.RESEARCHER,
+        model="opus",
+        timeout=900,
+        max_iterations=1,
+        prompt_template=(
+            "You are an adversarial reviewer for the ProgramBench benchmark. "
+            "A builder agent has probed a compiled binary, implemented source "
+            "code, and recorded its discoveries. Your job is to validate each "
+            "discovery against the ground truth binary and catch "
+            "overconfidence and missed exploration.\n\n"
+            "## Your Task\n\n"
+            "1. **Read the discoveries** — Read /workspace/discoveries.md "
+            "to see what the builder found and claims to have implemented.\n\n"
+            "2. **Validate each discovery** — For EACH discovery entry:\n"
+            "   a. Independently run the relevant command against "
+            "/workspace/executable.bak (the ground truth binary)\n"
+            "   b. Run the same command against /workspace/executable "
+            "(the builder's version)\n"
+            "   c. Compare the outputs character-by-character, including "
+            "whitespace, newlines, and exit codes\n"
+            "   d. Classify the discovery:\n"
+            "      - **verified**: the builder's implementation matches the "
+            "original binary for this behavior\n"
+            "      - **incorrect**: the builder thinks it works but the "
+            "outputs differ\n"
+            "      - **unexplored**: the builder noted this but didn't fully "
+            "implement or test it\n\n"
+            "3. **Write the review** — Save your review to "
+            "/workspace/review.md with classifications for each discovery. "
+            "Include the exact commands you ran and the outputs you "
+            "observed.\n\n"
+            "4. **Write TODOs if needed** — If ANY discoveries are "
+            "'incorrect' or 'unexplored', write /workspace/todos.md with "
+            "specific tasks:\n\n"
+            "   ```markdown\n"
+            "   ## TODO: <title>\n"
+            "   - **Discovery:** <reference to the discovery>\n"
+            "   - **Problem:** <what's wrong or what needs exploration>\n"
+            "   - **Expected:** <what executable.bak actually outputs>\n"
+            "   - **Actual:** <what the builder's version outputs>\n"
+            "   - **Action:** <specific thing the builder needs to fix>\n"
+            "   ```\n\n"
+            "   If ALL discoveries are 'verified', write an empty "
+            "/workspace/todos.md (or don't create it).\n\n"
+            "5. **Probe for unknown unknowns** — Run a few ADDITIONAL test "
+            "cases against executable.bak that the builder didn't think of. "
+            "Try:\n"
+            "   - Edge cases: empty input, very long input, binary input, "
+            "special characters\n"
+            "   - Flag combinations the builder didn't try\n"
+            "   - Uncommon but valid invocations\n"
+            "   - Boundary values for numeric arguments\n"
+            "   If any reveal NEW behaviors not in discoveries.md, add them "
+            "as 'unexplored' TODOs in /workspace/todos.md.\n\n"
+            "## Rules\n\n"
+            "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
+            "- Be ADVERSARIAL — assume the builder is overconfident\n"
+            "- Compare outputs EXACTLY — even minor whitespace differences "
+            "matter\n"
+            "- Always compare exit codes, not just stdout\n"
+            "- Do NOT fix the code yourself — only document issues for the "
+            "builder\n"
+            "- Do NOT create branches or PRs\n"
+            "- Do NOT run factory commands\n"
+        ),
+        reads={"/workspace/discoveries.md"},
+        writes={"/workspace/review.md", "/workspace/todos.md"},
+    )
+
+    # ── Node 3: Gate Verify ──────────────────────────────────────
     nodes["gate_verify"] = GateNode(
         id="gate_verify",
         evaluator_type="fn",
         evaluator_command=(
             "cd {project_path} && "
-            "if ! test -f compile.sh; then "
-            "echo 'reloop: compile.sh missing'; "
-            "exit 0; fi && "
-            "if ! bash compile.sh 2>&1; then "
-            "echo 'reloop: compile.sh failed'; "
-            "exit 0; fi && "
-            "if ! test -f /workspace/executable; then "
-            "echo 'reloop: /workspace/executable not found after compilation'; "
-            "exit 0; fi && "
-            "if [ -f /workspace/tests/test_behavior.sh ]; then "
-            "cd /workspace && "
-            "RESULT=$(bash tests/test_behavior.sh 2>&1 | tail -1) && "
-            "echo \"$RESULT\" && "
-            "if echo \"$RESULT\" | grep -q '0 failed'; then "
-            "echo 'pass: all behavioral tests pass'; "
+            "if [ ! -f /workspace/todos.md ]; then "
+            "echo 'pass: no todos file, all discoveries verified'; "
+            "elif [ ! -s /workspace/todos.md ]; then "
+            "echo 'pass: todos file is empty, all discoveries verified'; "
+            "elif grep -q '## TODO' /workspace/todos.md; then "
+            "echo 'reloop: todos remain to be addressed'; "
             "else "
-            "echo \"reloop: $RESULT\"; "
-            "fi; "
-            "else "
-            "echo 'pass: compile.sh succeeded, no test scaffold found'; "
+            "echo 'pass: no todo items found'; "
             "fi"
         ),
-        reads={".factory/reviews/builder-latest.md"},
+        reads={"/workspace/todos.md"},
     )
 
-    # ── Node 4: Auto Merge ────────────────────────────────────────
+    # ── Node 4: Auto Merge ───────────────────────────────────────
     nodes["auto_merge"] = FnNode(
         id="auto_merge",
         command=(
@@ -303,19 +238,19 @@ def workflow() -> Workflow:
             "fi; done && "
             "echo \"Updated $BASE to $(git rev-parse --short HEAD)\""
         ),
-        reads={".factory/reviews/builder-latest.md"},
+        reads={"/workspace/review.md"},
     )
 
-    # ── Edges ─────────────────────────────────────────────────────
+    # ── Edges ────────────────────────────────────────────────────
 
     edges = [
-        Edge(source="discover", target="builder"),
-        Edge(source="builder", target="gate_verify"),
+        Edge(source="builder", target="reviewer"),
+        Edge(source="reviewer", target="gate_verify"),
         Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
         Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
     ]
 
-    # ── Trigger ───────────────────────────────────────────────────
+    # ── Trigger ──────────────────────────────────────────────────
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return ctx.get("mode") == "programbench"
@@ -324,7 +259,7 @@ def workflow() -> Workflow:
         name="programbench",
         nodes=nodes,
         edges=edges,
-        start_node="discover",
+        start_node="builder",
         terminal=True,
         trigger=trigger,
     )
