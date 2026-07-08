@@ -19,7 +19,7 @@ def eval_tests() -> dict:
     """Run test suite: uv run pytest -v"""
     try:
         result = subprocess.run(
-            ['uv', 'run', 'pytest', 'tests/test_models.py', 'tests/test_guards.py', 'tests/test_runners.py', 'tests/test_store.py', 'tests/test_cli.py', 'tests/test_state.py', 'tests/test_strategy.py', 'tests/test_eval.py', '-x', '-q', '--tb=short', '-k', 'not (BobAuth or preflight_error_unchanged)'],
+            ['uv', 'run', 'pytest', 'tests/test_models.py', 'tests/test_guards.py', 'tests/test_runners.py', 'tests/test_store.py', 'tests/test_cli.py', 'tests/test_state.py', 'tests/test_strategy.py', 'tests/test_eval_growth.py', '-x', '-q', '--tb=short', '-k', 'not (BobAuth or preflight_error_unchanged)'],
             capture_output=True,
             text=True,
             timeout=600,
