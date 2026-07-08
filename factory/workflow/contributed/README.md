@@ -69,6 +69,34 @@ Tests should be organized into test classes by concern:
 - `Test<Name>Registration` — workflow appears in `register_all()` and validates
 - `Test<Name>Meta` — meta dict has required keys
 
+## Linting
+
+A built-in linter validates that every contributed workflow directory has the required artifacts and passes basic structural checks.
+
+**Run locally:**
+
+```bash
+factory workflow lint-contributed
+```
+
+To lint a custom directory:
+
+```bash
+factory workflow lint-contributed --path /path/to/workflows/
+```
+
+**What it checks (per directory):**
+
+- `__init__.py` exists
+- `workflow.py` exists
+- `README.md` exists
+- `test_workflow.py` exists
+- `workflow.py` has a module-level `meta` dict with `name` and `description`
+- `workflow.py` has a callable `workflow()` function
+- `workflow()` returns a graph that passes `validate_graph()`
+
+CI runs this automatically on every pull request.
+
 ## Workflow DSL Primitives
 
 Workflows are built from typed node primitives defined in `factory/workflow/primitives.py`:

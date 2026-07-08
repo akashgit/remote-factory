@@ -28,7 +28,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
     """Dispatch workflow subcommands."""
     sub = getattr(args, "workflow_command", None)
     if not sub:
-        print("Usage: factory workflow {run,list,show,validate,export-skills}")
+        print("Usage: factory workflow {run,list,show,validate,export-skills,lint-contributed}")
         return 1
 
     handlers = {
@@ -37,6 +37,7 @@ def cmd_workflow(args: argparse.Namespace) -> int:
         "show": _cmd_show,
         "validate": _cmd_validate,
         "export-skills": _cmd_export_skills,
+        "lint-contributed": _cmd_lint_contributed,
     }
 
     handler = handlers.get(sub)
@@ -216,6 +217,25 @@ def _cmd_export_skills(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_lint_contributed(args: argparse.Namespace) -> int:
+    """Lint contributed workflow directories for required artifacts and structure."""
+    from factory.workflow.lint import lint_contributed
+
+    base_dir = Path(getattr(args, "path", None) or
+                    Path(__file__).resolve().parent / "contributed")
+
+    issues = lint_contributed(base_dir)
+
+    if not issues:
+        print(f"All contributed workflows in {base_dir} are clean.")
+        return 0
+
+    for issue in issues:
+        print(f"{issue.directory}: [{issue.check}] {issue.message}")
+    print(f"\n{len(issues)} issue(s) found.")
+    return 1
+
+
 def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     """Register the 'workflow' subcommand with its subcommands."""
     wf_parser = sub.add_parser("workflow", help="Workflow graph engine commands")
@@ -244,3 +264,9 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "--output-dir", default=".", help="Output directory (default: current directory)"
     )
     p.add_argument("--verify", action="store_true", help="Validate generated skills")
+
+    # lint-contributed
+    p = wf_sub.add_parser("lint-contributed", help="Lint contributed workflow directories")
+    p.add_argument(
+        "--path", default=None, help="Base directory to scan (default: factory/workflow/contributed/)"
+    )
