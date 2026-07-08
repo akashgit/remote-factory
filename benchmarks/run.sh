@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# benchmarks/run.sh — Unified entry point for all benchmark runners.
+# benchmarks/run.sh — Unified entry point for single-task benchmark runs.
+# Thin wrapper that dispatches to run-harbor.sh --task.
 #
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]
 #
@@ -37,33 +38,17 @@ SOLVER="factory"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --timeout)
-            TIMEOUT="$2"
-            shift 2
-            ;;
-        --split)
-            SPLIT="$2"
-            shift 2
-            ;;
-        --preserve)
-            PRESERVE=1
-            shift
-            ;;
-        --solver)
-            SOLVER="$2"
-            shift 2
-            ;;
-        *)
-            echo "Unknown option: $1"
-            exit 1
-            ;;
+        --timeout)  TIMEOUT="$2"; shift 2 ;;
+        --split)    SPLIT="$2"; shift 2 ;;
+        --preserve) PRESERVE=1; shift ;;
+        --solver)   SOLVER="$2"; shift 2 ;;
+        *)          echo "Unknown option: $1"; exit 1 ;;
     esac
 done
 
 # Validate solver
 case "${SOLVER}" in
-    factory|claude-code)
-        ;;
+    factory|claude-code) ;;
     *)
         echo "ERROR: Unknown solver '${SOLVER}'"
         echo "Valid solvers: factory, claude-code"
@@ -71,13 +56,9 @@ case "${SOLVER}" in
         ;;
 esac
 
-export BENCHMARK_SOLVER="${SOLVER}"
-
-# ── Validate benchmark ──
-
+# Validate benchmark
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench|programbench|legacybench)
-        ;;
+    swebench|featurebench|terminalbench|programbench|legacybench) ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
         echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
@@ -85,32 +66,12 @@ case "${BENCHMARK}" in
         ;;
 esac
 
-# ── Dispatch ──
+# ── Dispatch to unified runner ──
 
-case "${BENCHMARK}" in
-    swebench)
-        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
-        exec "${SCRIPT_DIR}/run-swebench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
-        ;;
-    featurebench)
-        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
-        # Split is $3, so if it's set we must also pass timeout as $2
-        if [ -n "${SPLIT}" ]; then
-            exec "${SCRIPT_DIR}/run-featurebench.sh" "${INSTANCE_ID}" "${TIMEOUT:-1800}" "${SPLIT}"
-        else
-            exec "${SCRIPT_DIR}/run-featurebench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
-        fi
-        ;;
-    terminalbench)
-        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
-        exec "${SCRIPT_DIR}/run-terminalbench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
-        ;;
-    programbench)
-        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
-        exec "${SCRIPT_DIR}/run-programbench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
-        ;;
-    legacybench)
-        [ -n "${PRESERVE}" ] && export PRESERVE_WORKSPACE=1
-        exec "${SCRIPT_DIR}/run-legacybench.sh" "${INSTANCE_ID}" ${TIMEOUT:+"${TIMEOUT}"}
-        ;;
-esac
+export BENCHMARK_SOLVER="${SOLVER}"
+
+exec "${SCRIPT_DIR}/run-harbor.sh" "${BENCHMARK}" --task "${INSTANCE_ID}" \
+    ${TIMEOUT:+--timeout "${TIMEOUT}"} \
+    ${SPLIT:+--split "${SPLIT}"} \
+    ${PRESERVE:+--preserve} \
+    --solver "${SOLVER}"
