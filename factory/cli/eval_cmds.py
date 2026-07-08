@@ -149,3 +149,23 @@ def cmd_baseline(args: argparse.Namespace) -> int:
     print(json.dumps(baseline, indent=2, default=str))
     return 0
 
+
+def cmd_adversarial_state(args: argparse.Namespace) -> int:
+    """Inspect or reset adversarial eval loop state."""
+    from factory.adversarial import (
+        format_adversarial_state,
+        load_adversarial_state,
+        reset_adversarial_state,
+    )
+
+    project_path = Path(args.path).resolve()
+
+    if args.reset:
+        reset_adversarial_state(project_path)
+        print("Adversarial state reset.")
+        return 0
+
+    state = load_adversarial_state(project_path)
+    print(format_adversarial_state(state))
+    return 0
+

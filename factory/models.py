@@ -179,6 +179,58 @@ class TierWeights(BaseModel):
     spec_compliance: float | None = None
 
 
+class AdversarialComponent(BaseModel):
+    """One side of an adversarial eval loop (generator or discriminator)."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    role: Literal["generator", "discriminator"]
+    eval_command: str
+    metric_name: str
+    threshold: float
+    scope: list[str] = []
+    timeout: float = 300.0
+
+
+class AdversarialConfig(BaseModel):
+    """GAN-style adversarial eval loop configuration from factory.md."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    generator: AdversarialComponent
+    discriminator: AdversarialComponent
+    hysteresis: int = 3
+    max_rounds: int | None = None
+    convergence_window: int = 5
+
+
+class AdversarialPhaseRecord(BaseModel):
+    """One entry in the adversarial phase history."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    round: int
+    active_role: Literal["generator", "discriminator"]
+    score: float
+    metric_name: str
+    timestamp: str
+    switched: bool
+
+
+class AdversarialState(BaseModel):
+    """Persisted adversarial loop state at .factory/adversarial_state.json."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    active_role: Literal["generator", "discriminator"] = "generator"
+    current_round: int = 0
+    consecutive_above: int = 0
+    generator_consecutive_above: int = 0
+    discriminator_consecutive_above: int = 0
+    converged: bool = False
+    history: list[AdversarialPhaseRecord] = []
+
+
 class FactoryConfig(BaseModel):
     """Machine-readable config stored at .factory/config.json."""
 
@@ -206,6 +258,7 @@ class FactoryConfig(BaseModel):
     eval_spec: list[str] = []
     hygiene_weights: TierWeights | None = None
     growth_weights: TierWeights | None = None
+    adversarial: AdversarialConfig | None = None
     clean_pr: bool = False
     clean_pr_include: list[str] = []
     clean_pr_exclude: list[str] = []

@@ -125,6 +125,26 @@ Key differences from Improve mode:
 6. Archivist records    → .factory/archive/ notes, performance report
 ```
 
+### Adversarial Pipeline
+
+For projects with an `## Adversarial` section in `factory.md`, re:factory alternates between optimizing two competing components (generator and discriminator):
+
+```
+1. Check active phase  → load .factory/adversarial_state.json
+2. Run active eval     → generator or discriminator eval_command
+3. Record result       → update streak counters, check hysteresis
+4. Phase switch?       → if consecutive_above >= hysteresis, flip active role
+5. Convergence?        → if both per-role streaks >= convergence_window, mark converged
+6. Save state          → persist to .factory/adversarial_state.json
+```
+
+Key properties:
+- **Hysteresis** prevents oscillation — N consecutive above-threshold rounds required before switching (default 3)
+- **Per-role streak counters freeze** when that role is inactive — only the active role's counter changes
+- **Convergence** requires both sides to independently sustain above-threshold performance
+
+State management: `factory/adversarial.py`. Configuration: [Adversarial](configuration.md#adversarial).
+
 ### Eval Pipeline
 
 ```
@@ -188,6 +208,7 @@ Stuck detection activates after 3+ consecutive same-category reverts, forcing ca
 | `factory/analysis.py` | Experiment comparison (diff, explain) |
 | `factory/registry.py` | Global project registry (`~/.factory/registry.json`) |
 | `factory/report.py` | Performance report generation and loading |
+| `factory/adversarial.py` | GAN-style adversarial eval loop state machine |
 | `factory/agents/runner.py` | Agent subprocess spawner + event emission |
 
 ## `.factory/` Directory
@@ -216,6 +237,7 @@ Generated at runtime — not checked into version control:
 ├── reviews/
 │   ├── <role>-latest.md
 │   └── ceo-verdict-<role>.md
+├── adversarial_state.json   # Adversarial loop state (phase, streaks, history)
 ├── archive/                 # Archivist notes (institutional memory)
 │   ├── experiments/         # Per-experiment notes
 │   ├── strategies/          # Strategy snapshots

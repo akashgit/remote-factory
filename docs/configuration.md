@@ -272,6 +272,58 @@ Per-cycle or total budget constraints for research experiments.
 $5/cycle, $50 total
 ```
 
+### `## Adversarial`
+
+GAN-style adversarial eval loop configuration. Alternates between optimizing a generator and discriminator, switching phases when a component exceeds its threshold for N consecutive rounds (hysteresis). Convergence is detected when both sides sustain above-threshold performance.
+
+```markdown
+## Adversarial
+- generator.eval_command: python eval/score_gen.py
+- generator.metric_name: evasion_rate
+- generator.threshold: 0.4
+- generator.scope: src/generator/, eval/gen_data/
+- generator.timeout: 600
+- discriminator.eval_command: python eval/score_disc.py
+- discriminator.metric_name: recall_specificity
+- discriminator.threshold: 0.8
+- discriminator.scope: src/discriminator/, eval/disc_data/
+- discriminator.timeout: 600
+- hysteresis: 3
+- max_rounds: 50
+- convergence_window: 5
+```
+
+Uses dot-notation to separate generator and discriminator settings. Each eval command should print JSON to stdout with a numeric score (e.g., `{"score": 0.72}`).
+
+| Field | Description | Default |
+|-------|-------------|---------|
+| `generator.eval_command` | Shell command to score the generator | *(required)* |
+| `generator.metric_name` | Label for the generator metric | `generator_score` |
+| `generator.threshold` | Score at which the generator is "good enough" to switch phases | `0.5` |
+| `generator.scope` | Comma-separated file paths the generator may modify | `[]` |
+| `generator.timeout` | Eval timeout in seconds | `300` |
+| `discriminator.*` | Same fields as generator, for the discriminator side | *(required)* |
+| `hysteresis` | Consecutive above-threshold rounds required before switching phases | `3` |
+| `max_rounds` | Hard cap on total rounds (`null` = unlimited) | `null` |
+| `convergence_window` | Both sides must sustain this many consecutive above-threshold rounds to converge | `5` |
+
+**Phase transition algorithm:**
+1. Active component's eval command runs and produces a score
+2. Score >= threshold: increment `consecutive_above` and the active role's per-role streak counter
+3. Score < threshold: reset both `consecutive_above` and the active role's streak to 0
+4. If `consecutive_above >= hysteresis`: switch active role, reset `consecutive_above` to 0
+5. Per-role streak counters freeze when that role is inactive (neither increment nor reset)
+6. Convergence: both per-role streaks independently reach `convergence_window`
+
+State is persisted at `.factory/adversarial_state.json` and survives CEO crashes and restarts.
+
+Inspect or reset state via CLI:
+
+```bash
+factory adversarial-state /path/to/project           # View current state
+factory adversarial-state /path/to/project --reset    # Reset to defaults
+```
+
 ## `.factory/` Directory
 
 Generated at runtime by re:factory. Add to `.gitignore` — do not edit manually:
@@ -298,6 +350,7 @@ Generated at runtime by re:factory. Add to `.gitignore` — do not edit manually
 ├── reviews/
 │   ├── <role>-latest.md
 │   └── ceo-verdict-<role>.md
+├── adversarial_state.json   # Adversarial loop state (phase, streaks, history)
 ├── archive/                 # Archivist notes
 │   ├── experiments/
 │   ├── strategies/

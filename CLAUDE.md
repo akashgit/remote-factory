@@ -78,6 +78,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 7. **Report** (`factory/report.py`): Performance report generation — consolidates experiment records, CEO verdicts, and observations into `.factory/performance_report.json` for ACE consumption
 8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
 9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
+10. **Adversarial** (`factory/adversarial.py`): GAN-style adversarial eval loop state machine — phase transitions with hysteresis, per-role streak counters, convergence detection. State persisted at `.factory/adversarial_state.json`
 
 ### Target project's `.factory/` layout
 
@@ -93,6 +94,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 ├── reviews/                  # Agent output capture + CEO review verdicts
 │   ├── <role>-latest.md      # Auto-saved stdout from each agent invocation
 │   └── ceo-verdict-<role>.md # CEO's review verdict (PROCEED/REDIRECT/ABORT)
+├── adversarial_state.json    # Adversarial loop state (phase, streaks, history)
 ├── archive/                  # Long-term knowledge store (Archivist notes)
 │   ├── experiments/          # Per-experiment learnings and decision rationale
 │   ├── patterns/             # Recurring patterns and anti-patterns
@@ -102,7 +104,7 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 
 ### Models
 
-All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos.
+All domain models live in `factory/models.py` as strict Pydantic v2 models. Key types: `ProjectState` (enum), `FactoryConfig`, `EvalProfile` / `EvalDimension`, `CompositeScore` / `EvalResult`, `ExperimentRecord`, `CrossProjectInsights`, `AgentVerdict`, `Observation`, `PerformanceReport`, `ProjectEntry` / `ProjectRegistry`, `AdversarialConfig` / `AdversarialComponent` / `AdversarialState` / `AdversarialPhaseRecord`. The `Notifier` protocol defines the async notification interface. `FactoryConfig` includes `clean_pr` (bool), `clean_pr_include` (list[str]), and `clean_pr_exclude` (list[str]) for Clean PR Mode — stripping non-essential artifacts from PRs before pushing to external repos. `FactoryConfig.adversarial` (`AdversarialConfig | None`) holds the GAN-style adversarial eval loop configuration parsed from `factory.md`.
 
 ## Environment
 
@@ -214,6 +216,10 @@ factory explain /path --exp N                   # Explain experiment with FEEC a
 factory backlog-list /path                      # List pending backlog items
 factory backlog-add /path "item text"           # Add a new item to the backlog
 factory backlog-remove /path "item text"        # Remove a completed backlog item
+
+# Adversarial eval loops
+factory adversarial-state /path/to/project           # Inspect adversarial loop state
+factory adversarial-state /path/to/project --reset   # Reset to defaults
 
 # Operations
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420

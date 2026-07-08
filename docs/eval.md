@@ -147,6 +147,37 @@ The research target metric must satisfy `metric_after >= previous_best` for ever
 
 If a change improves the metric on some instances but regresses on others, the aggregate must still be at or above the previous best. The CEO cannot override a monotonic improvement violation.
 
+## Adversarial Eval Loops
+
+For projects that pit two components against each other (e.g., a generator creating test cases vs. a discriminator catching them), re:factory supports GAN-style adversarial eval loops as a first-class pattern.
+
+Unlike the standard three-tier eval, adversarial loops use **two separate eval commands** — one per component — and alternate between them. Each side has its own threshold, and the loop switches focus when one side consistently exceeds its target.
+
+### How it works
+
+1. The **generator** starts as the active phase
+2. Each round runs the active component's eval command and records the score
+3. When a component scores at or above its threshold for N consecutive rounds (hysteresis), the loop switches to the other component
+4. Per-role streak counters freeze when inactive — the generator's counter doesn't change during discriminator rounds
+5. **Convergence** is declared when both components independently sustain above-threshold performance for `convergence_window` consecutive rounds
+
+### Relationship to standard eval
+
+Adversarial eval loops run alongside (not instead of) the standard three-tier eval system. The standard hygiene/growth/project eval still gates keep/revert decisions. The adversarial loop provides an additional signal about which component to focus improvement efforts on.
+
+### Configuration
+
+Configure in `factory.md` with dot-notation. See [Configuration — Adversarial](configuration.md#adversarial) for the full reference.
+
+### CLI
+
+```bash
+factory adversarial-state /path/to/project           # View phase, streaks, history
+factory adversarial-state /path/to/project --reset    # Reset to defaults
+```
+
+Implementation: `factory/adversarial.py`. State persisted at `.factory/adversarial_state.json`.
+
 ## Running Evals
 
 ```bash

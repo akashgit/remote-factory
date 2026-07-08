@@ -13,6 +13,8 @@ from filelock import FileLock
 from pydantic import ValidationError
 
 from factory.models import (
+    AdversarialComponent,
+    AdversarialConfig,
     AggregateMethod,
     CompositeScore,
     CostBudgetConfig,
@@ -237,6 +239,79 @@ def _parse_tier_weights(items: str | list[str] | float) -> TierWeights | None:
     return TierWeights(**filtered)
 
 
+def _parse_adversarial(items: str | list[str] | float) -> AdversarialConfig | None:
+    """Parse adversarial config from factory.md.
+
+    Expects dot-notation key-value pairs like:
+      - generator.eval_command: python eval/score_gen.py
+      - generator.metric_name: evasion_rate
+      - generator.threshold: 0.4
+      - discriminator.eval_command: python eval/score_disc.py
+      - discriminator.metric_name: recall_specificity
+      - discriminator.threshold: 0.8
+      - hysteresis: 3
+      - convergence_window: 5
+    """
+    if not isinstance(items, list):
+        return None
+
+    gen_kv: dict[str, str] = {}
+    disc_kv: dict[str, str] = {}
+    top_kv: dict[str, str] = {}
+
+    for item in items:
+        s = str(item).strip()
+        if ":" not in s:
+            continue
+        key, val = s.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+        if key.startswith("generator."):
+            gen_kv[key.removeprefix("generator.")] = val
+        elif key.startswith("discriminator."):
+            disc_kv[key.removeprefix("discriminator.")] = val
+        else:
+            top_kv[key] = val
+
+    if not gen_kv.get("eval_command") or not disc_kv.get("eval_command"):
+        return None
+
+    try:
+        generator = AdversarialComponent(
+            role="generator",
+            eval_command=gen_kv["eval_command"],
+            metric_name=gen_kv.get("metric_name", "generator_score"),
+            threshold=float(gen_kv.get("threshold", "0.5")),
+            scope=[s.strip() for s in gen_kv.get("scope", "").split(",") if s.strip()],
+            timeout=float(gen_kv.get("timeout", "300")),
+        )
+        discriminator = AdversarialComponent(
+            role="discriminator",
+            eval_command=disc_kv["eval_command"],
+            metric_name=disc_kv.get("metric_name", "discriminator_score"),
+            threshold=float(disc_kv.get("threshold", "0.5")),
+            scope=[s.strip() for s in disc_kv.get("scope", "").split(",") if s.strip()],
+            timeout=float(disc_kv.get("timeout", "300")),
+        )
+        config = AdversarialConfig(
+            generator=generator,
+            discriminator=discriminator,
+            hysteresis=int(top_kv.get("hysteresis", "3")),
+            max_rounds=int(top_kv["max_rounds"]) if "max_rounds" in top_kv else None,
+            convergence_window=int(top_kv.get("convergence_window", "5")),
+        )
+        log.debug(
+            "adversarial_parsed",
+            gen_cmd=generator.eval_command,
+            disc_cmd=discriminator.eval_command,
+            hysteresis=config.hysteresis,
+        )
+        return config
+    except (ValueError, KeyError, TypeError) as exc:
+        log.warning("adversarial_parse_failed", error=str(exc))
+        return None
+
+
 class ExperimentStore:
     """Manages the .factory/ directory for a project."""
 
@@ -355,6 +430,7 @@ class ExperimentStore:
         eval_spec = list(es_raw) if isinstance(es_raw, list) else []
         hygiene_tier_weights = _parse_tier_weights(parsed.get("hygiene_weights", []))
         growth_tier_weights = _parse_tier_weights(parsed.get("growth_weights", []))
+        adversarial = _parse_adversarial(parsed.get("adversarial", []))
 
         clean_pr_raw = parsed.get("clean_pr", "")
         clean_pr = str(clean_pr_raw).strip().lower() in ("true", "yes", "1") if clean_pr_raw else False
@@ -395,6 +471,7 @@ class ExperimentStore:
             eval_spec=eval_spec,
             hygiene_weights=hygiene_tier_weights,
             growth_weights=growth_tier_weights,
+            adversarial=adversarial,
             clean_pr=clean_pr,
             clean_pr_include=clean_pr_include,
             clean_pr_exclude=clean_pr_exclude,
