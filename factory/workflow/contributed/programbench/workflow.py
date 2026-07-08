@@ -1,12 +1,12 @@
-"""ProgramBench benchmark workflow — discovery-first reverse engineering pipeline.
+"""ProgramBench benchmark workflow — scaffold-first reverse engineering pipeline.
 
-5-node pipeline: discover → plan → builder → gate_verify → auto_merge
+4-node pipeline: discover → builder → gate_verify → auto_merge
 RELOOP from gate_verify back to builder (max 3 iterations) on failure.
 
 Designed for Harbor containers where:
 - A compiled binary exists at /workspace/executable
-- The agent must reverse-engineer its behavior and produce equivalent source
-- Discovery phase probes the binary exhaustively before any code is written
+- The discovery agent probes the binary AND builds a test harness
+- The builder uses the test scaffold as a tight feedback loop
 - Harbor's verifier is the FINAL authority on pass/fail
 - Harbor checks the MAIN branch for changes
 - No .factory/ infrastructure (no eval, no experiments, no deep-QA)
@@ -28,15 +28,15 @@ from factory.workflow.primitives import (
 meta = {
     "name": "programbench",
     "description": (
-        "ProgramBench benchmark mode — discovery-first reverse engineering "
-        "pipeline. discover → plan → builder → gate_verify → auto_merge "
+        "ProgramBench benchmark mode — scaffold-first reverse engineering "
+        "pipeline. discover → builder → gate_verify → auto_merge "
         "with RELOOP on failure."
     ),
 }
 
 
 def workflow() -> Workflow:
-    """Build the ProgramBench workflow — discovery-first reverse engineering."""
+    """Build the ProgramBench workflow — scaffold-first reverse engineering."""
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
@@ -49,8 +49,9 @@ def workflow() -> Workflow:
         max_iterations=1,
         prompt_template=(
             "You are a reverse-engineering researcher. Your job is to probe a "
-            "compiled binary at /workspace/executable and document EVERYTHING "
-            "you discover about its behavior.\n\n"
+            "compiled binary at /workspace/executable, document its behavior, "
+            "AND build a test harness that the builder agent will compile "
+            "against.\n\n"
             "## Your Task\n\n"
             "1. **Read the task instruction** — Read /tmp/task-instruction.md "
             "for context on what the binary does.\n\n"
@@ -59,7 +60,9 @@ def workflow() -> Workflow:
             "other clues about the binary's purpose.\n\n"
             "3. **Read any documentation found** — If there is a README.md or "
             "other docs, read them thoroughly.\n\n"
-            "4. **Probe the binary systematically** — Run the binary with:\n"
+            "4. **Back up the original binary** — Run: "
+            "cp /workspace/executable /workspace/executable.bak\n\n"
+            "5. **Probe the binary systematically** — Run the binary with:\n"
             "   - No arguments\n"
             "   - --help, -h\n"
             "   - --version, -V, -v\n"
@@ -69,48 +72,122 @@ def workflow() -> Workflow:
             "--format, --config, --list, --all, --recursive, --quiet\n"
             "   - Flags that take arguments — try them with various values\n"
             "   - Pipe input via stdin\n"
-            "   - Provide sample files as arguments\n\n"
-            "5. **Record exact outputs** — For EVERY invocation, capture:\n"
-            "   - The exact command run\n"
-            "   - stdout (exact text)\n"
-            "   - stderr (exact text)\n"
-            "   - Exit code ($?)\n\n"
-            "6. **Note special behaviors** — Document:\n"
-            "   - The exact version string from -V or --version output\n"
-            "   - How the binary behaves with no terminal (e.g. 'Error opening "
-            "terminal' messages)\n"
-            "   - Any environment variables it reads\n"
-            "   - Any files it creates, reads, or modifies\n"
-            "   - Interactive vs non-interactive behavior differences\n\n"
-            "7. **Write ALL findings** — Save your complete findings to "
-            ".factory/reviews/discovery.md. Be EXHAUSTIVE — the builder agent "
-            "will use this as its sole reference for implementation.\n\n"
+            "   - Provide sample files as arguments\n"
+            "   - Combinations of flags\n\n"
+            "6. **Build the test scaffold** — For EACH behavior discovered, "
+            "create a test case. Create these files:\n\n"
+            "   **`/workspace/tests/test_behavior.sh`** — a shell script that "
+            "tests the agent's build against the original binary. Structure:\n"
+            "   ```bash\n"
+            "   #!/bin/bash\n"
+            "   PASS=0; FAIL=0; TOTAL=0\n"
+            "   run_test() {\n"
+            '       name=$1; shift\n'
+            "       TOTAL=$((TOTAL+1))\n"
+            '       expected=$(/workspace/executable.bak "$@" 2>&1)\n'
+            "       expected_exit=$?\n"
+            '       actual=$(/workspace/executable "$@" 2>&1)\n'
+            "       actual_exit=$?\n"
+            '       if [ "$expected" = "$actual" ] && '
+            '[ "$expected_exit" = "$actual_exit" ]; then\n'
+            "           PASS=$((PASS+1))\n"
+            "       else\n"
+            "           FAIL=$((FAIL+1))\n"
+            '           echo "FAIL: $name"\n'
+            '           if [ "$expected" != "$actual" ]; then\n'
+            '               diff <(echo "$expected") <(echo "$actual") '
+            "| head -10\n"
+            "           fi\n"
+            '           if [ "$expected_exit" != "$actual_exit" ]; then\n'
+            '               echo "  exit code: expected=$expected_exit '
+            'actual=$actual_exit"\n'
+            "           fi\n"
+            "       fi\n"
+            "   }\n"
+            "   # Tests for stdin input:\n"
+            "   run_test_stdin() {\n"
+            '       name=$1; input=$2; shift 2\n'
+            "       TOTAL=$((TOTAL+1))\n"
+            '       expected=$(echo "$input" | '
+            '/workspace/executable.bak "$@" 2>&1)\n'
+            "       expected_exit=$?\n"
+            '       actual=$(echo "$input" | '
+            '/workspace/executable "$@" 2>&1)\n'
+            "       actual_exit=$?\n"
+            '       if [ "$expected" = "$actual" ] && '
+            '[ "$expected_exit" = "$actual_exit" ]; then\n'
+            "           PASS=$((PASS+1))\n"
+            "       else\n"
+            "           FAIL=$((FAIL+1))\n"
+            '           echo "FAIL: $name"\n'
+            '           if [ "$expected" != "$actual" ]; then\n'
+            '               diff <(echo "$expected") <(echo "$actual") '
+            "| head -10\n"
+            "           fi\n"
+            "       fi\n"
+            "   }\n"
+            "   # Tests for file input:\n"
+            "   run_test_file() {\n"
+            '       name=$1; file=$2; shift 2\n'
+            "       TOTAL=$((TOTAL+1))\n"
+            '       expected=$(/workspace/executable.bak "$@" "$file" 2>&1)\n'
+            "       expected_exit=$?\n"
+            '       actual=$(/workspace/executable "$@" "$file" 2>&1)\n'
+            "       actual_exit=$?\n"
+            '       if [ "$expected" = "$actual" ] && '
+            '[ "$expected_exit" = "$actual_exit" ]; then\n'
+            "           PASS=$((PASS+1))\n"
+            "       else\n"
+            "           FAIL=$((FAIL+1))\n"
+            '           echo "FAIL: $name"\n'
+            '           if [ "$expected" != "$actual" ]; then\n'
+            '               diff <(echo "$expected") <(echo "$actual") '
+            "| head -10\n"
+            "           fi\n"
+            "       fi\n"
+            "   }\n"
+            '   run_test "help_flag" --help\n'
+            '   run_test "version_flag" --version\n'
+            "   # ... add more test cases for every behavior discovered ...\n"
+            '   echo "$PASS/$TOTAL passed, $FAIL failed"\n'
+            "   ```\n\n"
+            "   **`/workspace/tests/expected/`** — directory of expected output "
+            "files (one per test case) for reference.\n\n"
+            "   Create test data files as needed (CSV, TSV, edge-case inputs) "
+            "in /workspace/tests/.\n\n"
+            "7. **Make the test script executable** — chmod +x "
+            "/workspace/tests/test_behavior.sh\n\n"
+            "8. **Write a summary** — Save your complete findings to "
+            ".factory/reviews/discovery.md. Include:\n"
+            "   - Binary purpose and capabilities\n"
+            "   - All flags and options discovered\n"
+            "   - Exact version strings\n"
+            "   - Key behavioral notes (error handling, edge cases, output "
+            "formatting)\n"
+            "   - List of all test cases created\n\n"
+            "9. **Commit the test scaffold** — git add and commit the test "
+            "files and discovery notes.\n\n"
             "## Rules\n\n"
             "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
             "- Be THOROUGH — try every flag combination you can think of\n"
             "- Record EXACT outputs, not summaries\n"
             "- Note exit codes for each invocation\n"
             "- The binary is execute-only — you cannot read its contents\n"
-            "- Do NOT attempt to implement anything — only discover and document\n"
+            "- Do NOT attempt to implement the binary — only discover and "
+            "build tests\n"
             "- Do NOT run factory commands\n"
             "- Do NOT create branches or PRs\n"
+            "- The test scaffold is your PRIMARY deliverable — the builder "
+            "will iterate against it\n"
         ),
         reads=set(),
-        writes={".factory/reviews/discovery.md"},
+        writes={
+            ".factory/reviews/discovery.md",
+            "/workspace/tests/test_behavior.sh",
+        },
     )
 
-    # ── Node 2: Plan ──────────────────────────────────────────────
-    nodes["plan"] = FnNode(
-        id="plan",
-        command=(
-            "cd {project_path} && "
-            "echo 'pass: discovery complete'"
-        ),
-        reads={".factory/reviews/discovery.md"},
-        writes=set(),
-    )
-
-    # ── Node 3: Builder ───────────────────────────────────────────
+    # ── Node 2: Builder ───────────────────────────────────────────
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
@@ -119,17 +196,22 @@ def workflow() -> Workflow:
         max_iterations=3,
         prompt_template=(
             "You are reverse-engineering a compiled binary and producing "
-            "equivalent source code for the ProgramBench benchmark.\n\n"
+            "equivalent source code for the ProgramBench benchmark. A "
+            "discovery agent has already probed the binary and built a test "
+            "harness for you.\n\n"
             "## Your Task\n\n"
             "1. **Read the discovery findings** — Read "
-            ".factory/reviews/discovery.md thoroughly. This contains the "
-            "complete behavioral profile of the target binary gathered by "
-            "a discovery agent. It has exact outputs, exit codes, and flag "
-            "behaviors for every invocation tested.\n\n"
-            "2. **Read any documentation** — Check /workspace/ for README.md, "
+            ".factory/reviews/discovery.md for the behavioral summary.\n\n"
+            "2. **Read the test scaffold** — Read "
+            "/workspace/tests/test_behavior.sh to understand what tests "
+            "exist and what behaviors are expected.\n\n"
+            "3. **Read any documentation** — Check /workspace/ for README.md, "
             "man pages, or other docs. Read /tmp/task-instruction.md for the "
             "task description.\n\n"
-            "3. **Write the source code** — Implement C source code that "
+            "4. **Examine the original binary** — Run /workspace/executable.bak "
+            "directly if you need to clarify any behavior not covered by the "
+            "test scaffold.\n\n"
+            "5. **Write the source code** — Implement C source code that "
             "reproduces ALL discovered behaviors:\n"
             "   - Match every flag and option exactly\n"
             "   - Match output format exactly (spacing, newlines, field widths)\n"
@@ -138,37 +220,38 @@ def workflow() -> Workflow:
             "   - CRITICAL: Hardcode the exact version string from -V output. "
             "Do NOT use __DATE__ or __TIME__ macros — these produce different "
             "values on every build and will fail verification.\n\n"
-            "4. **Create compile.sh** — Write a build script that:\n"
-            "   - Backs up the original: cp /workspace/executable "
-            "/workspace/executable.bak\n"
+            "6. **Create compile.sh** — Write a build script that:\n"
             "   - Compiles the source to /workspace/executable\n"
             "   - Is executable (chmod +x)\n\n"
-            "5. **Differential testing** — After compiling, compare your "
-            "implementation against the original:\n"
-            "   - Run both /workspace/executable.bak and /workspace/executable "
-            "with the same flags\n"
-            "   - Compare stdout, stderr, and exit codes\n"
-            "   - Fix ANY differences found\n"
-            "   - Test with at least 10 different flag combinations\n\n"
-            "6. **Commit your changes** — Commit directly on the current "
+            "7. **Run the test scaffold** — After compiling, run:\n"
+            "   cd /workspace && bash tests/test_behavior.sh\n"
+            "   This tests your build against the original binary.\n\n"
+            "8. **ITERATE** — Fix failures, recompile, re-test. Run the "
+            "test scaffold FREQUENTLY during development, not just at the "
+            "end. The test scaffold is your spec — make all tests pass.\n\n"
+            "9. **Commit your changes** — Commit directly on the current "
             "branch with a descriptive message. Do NOT create a new branch. "
             "Do NOT create a PR.\n\n"
             "## Rules\n\n"
             "- Act AUTONOMOUSLY — do NOT ask for confirmation or input\n"
-            "- The discovery findings are your primary reference — trust them\n"
+            "- The test scaffold is your primary spec — make all tests pass\n"
+            "- The discovery findings are your reference — trust them\n"
             "- Match behavior EXACTLY — even minor output differences cause "
             "verification failure\n"
             "- Do NOT use __DATE__, __TIME__, or other non-deterministic macros\n"
             "- Do NOT create branches or PRs — commit on current branch\n"
             "- Do NOT run factory commands (factory eval, factory study, etc.)\n"
-            "- If differential testing reveals mismatches, fix them before "
-            "committing\n"
+            "- Run the test scaffold FREQUENTLY during development\n"
+            "- If tests reveal mismatches, fix them before committing\n"
         ),
-        reads={".factory/reviews/discovery.md"},
+        reads={
+            ".factory/reviews/discovery.md",
+            "/workspace/tests/test_behavior.sh",
+        },
         writes={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Node 4: Gate Verify ───────────────────────────────────────
+    # ── Node 3: Gate Verify ───────────────────────────────────────
     nodes["gate_verify"] = GateNode(
         id="gate_verify",
         evaluator_type="fn",
@@ -183,12 +266,23 @@ def workflow() -> Workflow:
             "if ! test -f /workspace/executable; then "
             "echo 'reloop: /workspace/executable not found after compilation'; "
             "exit 0; fi && "
-            "echo 'pass: compile.sh succeeded and executable exists'"
+            "if [ -f /workspace/tests/test_behavior.sh ]; then "
+            "cd /workspace && "
+            "RESULT=$(bash tests/test_behavior.sh 2>&1 | tail -1) && "
+            "echo \"$RESULT\" && "
+            "if echo \"$RESULT\" | grep -q '0 failed'; then "
+            "echo 'pass: all behavioral tests pass'; "
+            "else "
+            "echo \"reloop: $RESULT\"; "
+            "fi; "
+            "else "
+            "echo 'pass: compile.sh succeeded, no test scaffold found'; "
+            "fi"
         ),
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    # ── Node 5: Auto Merge ────────────────────────────────────────
+    # ── Node 4: Auto Merge ────────────────────────────────────────
     nodes["auto_merge"] = FnNode(
         id="auto_merge",
         command=(
@@ -215,8 +309,7 @@ def workflow() -> Workflow:
     # ── Edges ─────────────────────────────────────────────────────
 
     edges = [
-        Edge(source="discover", target="plan"),
-        Edge(source="plan", target="builder"),
+        Edge(source="discover", target="builder"),
         Edge(source="builder", target="gate_verify"),
         Edge(source="gate_verify", target="auto_merge", condition=VerdictType.PROCEED),
         Edge(source="gate_verify", target="builder", condition=VerdictType.RELOOP),
