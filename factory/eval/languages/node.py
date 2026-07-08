@@ -2,10 +2,28 @@
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 from factory.eval.languages.base import EvalFragment, _run_cmd
+
+
+def _detect_test_runner(project_path: Path) -> str:
+    """Detect the test runner from package.json devDependencies and scripts."""
+    pkg_path = project_path / "package.json"
+    if not pkg_path.exists():
+        return "jest"
+    try:
+        pkg = json.loads(pkg_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return "jest"
+    deps = {**pkg.get("devDependencies", {}), **pkg.get("dependencies", {})}
+    scripts = pkg.get("scripts", {})
+    test_script = scripts.get("test", "")
+    if "vitest" in deps or "vitest" in test_script:
+        return "vitest"
+    return "jest"
 
 
 class NodeEvaluator:
@@ -16,7 +34,7 @@ class NodeEvaluator:
     def detect(self, project_path: Path) -> bool:
         return (project_path / "package.json").exists()
 
-    def run_tests_with_coverage(
+    def _run_jest_with_coverage(
         self, project_path: Path, timeout: int = 300,
     ) -> tuple[EvalFragment | None, EvalFragment | None]:
         rc, stdout, stderr = _run_cmd(
@@ -26,8 +44,20 @@ class NodeEvaluator:
             ],
             project_path, timeout=timeout,
         )
-        output = stdout + stderr
+        return self._parse_test_output(project_path, stdout + stderr)
 
+    def _run_vitest_with_coverage(
+        self, project_path: Path, timeout: int = 300,
+    ) -> tuple[EvalFragment | None, EvalFragment | None]:
+        rc, stdout, stderr = _run_cmd(
+            ["npx", "vitest", "run", "--coverage"],
+            project_path, timeout=timeout,
+        )
+        return self._parse_test_output(project_path, stdout + stderr)
+
+    def _parse_test_output(
+        self, project_path: Path, output: str,
+    ) -> tuple[EvalFragment | None, EvalFragment | None]:
         test_frag: EvalFragment | None = None
         p_match = re.search(r"(\d+)\s+passed", output)
         f_match = re.search(r"(\d+)\s+failed", output)
@@ -44,6 +74,8 @@ class NodeEvaluator:
 
         cov_frag: EvalFragment | None = None
         cov_match = re.search(r"Statements\s*:\s*([\d.]+)%", output)
+        if not cov_match:
+            cov_match = re.search(r"All files\s*\|\s*([\d.]+)", output)
         if cov_match:
             pct = float(cov_match.group(1))
             cov_frag = EvalFragment(
@@ -55,6 +87,14 @@ class NodeEvaluator:
             )
 
         return test_frag, cov_frag
+
+    def run_tests_with_coverage(
+        self, project_path: Path, timeout: int = 300,
+    ) -> tuple[EvalFragment | None, EvalFragment | None]:
+        runner = _detect_test_runner(project_path)
+        if runner == "vitest":
+            return self._run_vitest_with_coverage(project_path, timeout=timeout)
+        return self._run_jest_with_coverage(project_path, timeout=timeout)
 
     def run_tests(self, project_path: Path, timeout: int = 300) -> EvalFragment | None:
         test_frag, _ = self.run_tests_with_coverage(project_path, timeout=timeout)
