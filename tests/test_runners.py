@@ -1845,6 +1845,60 @@ class TestClaudeBuildInteractiveCommand:
             f.unlink(missing_ok=True)
 
 
+class TestDisallowedAgentTool:
+    """Tests for --disallowedTools Agent across all Claude Code execution paths."""
+
+    def test_build_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "--disallowedTools" in cmd
+        dt_idx = cmd.index("--disallowedTools")
+        assert cmd[dt_idx + 1] == "Agent"
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_build_interactive_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "--disallowedTools" in cmd
+        dt_idx = cmd.index("--disallowedTools")
+        assert cmd[dt_idx + 1] == "Agent"
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    async def test_headless_subprocess_receives_disallowed_tools(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+
+        with patch(
+            "factory.runners._subprocess.stream_subprocess", new_callable=AsyncMock
+        ) as mock_stream:
+            mock_stream.return_value = (b'{"result":"ok"}', b"")
+
+            with patch(
+                "factory.runners._subprocess.asyncio.create_subprocess_exec", new_callable=AsyncMock
+            ) as mock_exec:
+                mock_proc = AsyncMock()
+                mock_proc.returncode = 0
+                mock_exec.return_value = mock_proc
+
+                await runner.headless(AgentRunRequest(
+                    prompt="Test", task="Test", cwd=tmp_path,
+                ))
+
+                all_args = list(mock_exec.call_args[0])
+                assert "--disallowedTools" in all_args
+                dt_idx = all_args.index("--disallowedTools")
+                assert all_args[dt_idx + 1] == "Agent"
+
+
 class TestBobBuildInteractiveCommand:
     """Tests for BobRunner.build_interactive_command()."""
 

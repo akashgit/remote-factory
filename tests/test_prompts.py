@@ -353,6 +353,18 @@ class TestCeoPrompt:
         )
         assert has_archivist
 
+    def test_forbids_native_agent_tool(self, ceo_prompt: str) -> None:
+        """CEO prompt explicitly forbids using Claude Code's native Agent tool."""
+        assert "native" in ceo_prompt.lower() or "Agent" in ceo_prompt
+        assert "disallowedTools" in ceo_prompt or "--disallowedTools" in ceo_prompt
+
+    def test_forbidden_actions_list_agent_tool(self, ceo_prompt: str) -> None:
+        """The Forbidden Actions list includes native Agent tool prohibition."""
+        forbidden_section_start = ceo_prompt.index("**Forbidden Actions")
+        forbidden_section = ceo_prompt[forbidden_section_start:forbidden_section_start + 800]
+        assert "Agent" in forbidden_section
+        assert "factory agent" in forbidden_section
+
 
 # ── Strategist Ideation Mode ─────────────────────────────────────
 
