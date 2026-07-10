@@ -169,7 +169,8 @@ async def run_in_tmux(
 
     settings_file = _generate_settings(sentinel_file, tmpdir, project_path)
 
-    cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file)]
+    cmd = ["claude", "--settings", str(settings_file), "--append-system-prompt-file", str(prompt_file),
+           "--disallowedTools", "Agent"]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
     if model:

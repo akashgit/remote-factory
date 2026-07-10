@@ -257,6 +257,36 @@ class TestCmdRefactory:
         model_idx = cmd.index("--model")
         assert cmd[model_idx + 1] == "sonnet"
 
+    def test_new_session_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_refactory, build_parser
+
+        parser = build_parser()
+        args = parser.parse_args(["refactory", str(tmp_path)])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--disallowedTools" in cmd
+        dt_idx = cmd.index("--disallowedTools")
+        assert cmd[dt_idx + 1] == "Agent"
+
+    def test_resume_session_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        from factory.cli import cmd_refactory, build_parser
+
+        save_session_id(tmp_path, "existing-uuid")
+        parser = build_parser()
+        args = parser.parse_args(["refactory", str(tmp_path)])
+        with patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("os.execvp") as mock_exec:
+            cmd_refactory(args)
+
+        cmd = mock_exec.call_args[0][1]
+        assert "--resume" in cmd
+        assert "--disallowedTools" in cmd
+        dt_idx = cmd.index("--disallowedTools")
+        assert cmd[dt_idx + 1] == "Agent"
+
     def test_default_path_uses_cwd(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         from factory.cli import cmd_refactory, build_parser
 

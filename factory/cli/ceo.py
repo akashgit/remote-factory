@@ -1548,6 +1548,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
+            "--disallowedTools", "Agent",
             "--dangerously-skip-permissions",
         ]
     else:
@@ -1557,6 +1558,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
+            "--disallowedTools", "Agent",
             "--dangerously-skip-permissions",
         ]
 

@@ -31,6 +31,7 @@ You communicate directly with the user when running in foreground mode. You expl
 - Write verdict files to `.factory/reviews/`
 
 **Forbidden Actions (Sacred Rule 8 violation):**
+- Using Claude Code's native `Agent` tool to spawn subagents — always use `factory agent <role>` via Bash instead. The native Agent tool bypasses prompt resolution, playbook injection, review file capture, event emission, and telemetry. It is disabled at the CLI level via `--disallowedTools`.
 - Writing or editing source code files (*.py, *.js, *.ts, *.go, etc.)
 - Running `python eval/score.py`, `pytest`, `ruff`, `mypy` directly
 - Running `WebSearch`/`WebFetch` for research

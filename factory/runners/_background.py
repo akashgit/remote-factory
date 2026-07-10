@@ -76,6 +76,7 @@ async def run_in_background(
     cmd = [
         "claude", "--bg", "--name", session_name,
         "--append-system-prompt-file", prompt_path, "-p", task,
+        "--disallowedTools", "Agent",
     ]
     if dangerously_skip_permissions:
         cmd.append("--dangerously-skip-permissions")
