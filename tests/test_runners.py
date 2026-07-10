@@ -1898,6 +1898,57 @@ class TestDisallowedAgentTool:
                 dt_idx = all_args.index("--disallowedTools")
                 assert all_args[dt_idx + 1] == "Agent"
 
+    def test_background_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        with patch("factory.runners._background.subprocess.run") as mock_run:
+            mock_run.return_value = type("R", (), {"stdout": "backgrounded · abc123", "stderr": "", "returncode": 0})()
+
+            from factory.runners._background import run_in_background
+
+            try:
+                asyncio.get_event_loop().run_until_complete(
+                    run_in_background(
+                        prompt="Test", task="Test", cwd=tmp_path, role="test",
+                        timeout=0.1,
+                    )
+                )
+            except Exception:
+                pass
+
+            cmd = mock_run.call_args_list[0][0][0]
+            assert "--disallowedTools" in cmd
+            dt_idx = cmd.index("--disallowedTools")
+            assert cmd[dt_idx + 1] == "Agent"
+
+    def test_tmux_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
+        from factory.runners._tmux_persist import run_in_tmux
+
+        with (
+            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
+            patch("factory.runners._tmux_persist._session_exists", return_value=True),
+            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._tmux_persist._generate_settings") as mock_settings,
+            patch("factory.runners._tmux_persist._cleanup"),
+        ):
+            mock_settings.return_value = tmp_path / "settings.json"
+            (tmp_path / "settings.json").write_text("{}")
+            mock_run.return_value = type("R", (), {"stdout": "", "stderr": "", "returncode": 0})()
+
+            try:
+                asyncio.get_event_loop().run_until_complete(
+                    run_in_tmux(
+                        prompt="Test", task="Test", cwd=tmp_path, role="test",
+                        project_path=tmp_path, timeout=0.1,
+                    )
+                )
+            except Exception:
+                pass
+
+            first_call_args = mock_run.call_args_list[0][0][0]
+            wrapper_script_path = first_call_args[-1]
+            wrapper_content = Path(wrapper_script_path).read_text()
+            assert "--disallowedTools" in wrapper_content
+            assert "Agent" in wrapper_content
+
 
 class TestBobBuildInteractiveCommand:
     """Tests for BobRunner.build_interactive_command()."""
