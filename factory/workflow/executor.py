@@ -495,11 +495,18 @@ class WorkflowExecutor:
             if pool_entry:
                 model = pool_entry.model
 
+        timeout = node.timeout
+        if timeout is None:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                timeout = pool_entry.timeout
+
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
             model=model or None,
+            timeout=float(timeout) if timeout is not None else 600.0,
         )
 
         if code != 0:

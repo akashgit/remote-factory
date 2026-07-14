@@ -48,7 +48,7 @@ class TestProgrambenchWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
-        assert node.timeout == 1200
+        assert node.timeout == 7200
         assert "discoveries.md" in node.prompt_template
         assert "autonomous" in node.prompt_template.lower()
         assert "__DATE__" in node.prompt_template

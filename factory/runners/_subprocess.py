@@ -38,7 +38,7 @@ async def run_subprocess(
     runner_name: str,
     role: str,
     sanitize: bool = False,
-    max_timeout: float = 3600.0,
+    max_timeout: float = 14400.0,
     on_line: Callable[[bytes], None] | None = None,
 ) -> AgentRunResult:
     """Run a subprocess with streaming, timeout, and error handling.
