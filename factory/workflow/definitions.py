@@ -1546,6 +1546,10 @@ def create_workflow() -> Workflow:
             "7) Interactive vs headless behavior "
             "Follow conventions from existing workflows — use the same patterns for "
             "builder→gate→QA→gate loops, archivist placement, and research forks. "
+            "When the new mode reuses parts of existing workflows, reference composition "
+            "functions (compose_serial, trim_nodes, subgraph, prefix_nodes, describe_nodes) "
+            "from factory/workflow/composition.py in the specification. Use "
+            "describe_nodes(workflow()) programmatically to discover node IDs. "
             "Write the specification to .factory/strategy/current.md."
         ),
         reads={".factory/strategy/research-combined.md"},
@@ -1587,7 +1591,17 @@ def create_workflow() -> Workflow:
             "6) Run factory workflow export-skills to generate the SKILL.md "
             "7) Write tests in tests/ "
             "8) Run pytest and ruff check to verify "
-            "Commit changes and open a draft PR."
+            "Commit changes and open a draft PR. "
+            "When the new mode is a variant of an existing workflow (e.g., a specialized "
+            "improve loop, a subset of the build pipeline, or a chain of existing stages), "
+            "use composition functions from factory.workflow.composition instead of copying: "
+            "- compose_serial(w1, w2, end_node_w1=..., name=...) to chain workflows "
+            "- trim_nodes(wf, node_ids) to remove nodes and auto-reconnect (linear-only) "
+            "- Workflow.subgraph(node_ids, name=..., start_node=...) to extract a subset "
+            "- prefix_nodes(wf, prefix) to namespace node IDs before composing "
+            "- describe_nodes(wf) to inspect node IDs, types, and descriptions programmatically "
+            "See factory/workflow/composition.py for the full API and "
+            "factory/workflow/README.md 'Composition' section for examples."
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
