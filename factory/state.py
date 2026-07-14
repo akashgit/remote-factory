@@ -80,9 +80,17 @@ def detect_state(project_path: Path) -> ProjectState:
         log.info("detect_state_result", state=ProjectState.EVALS_PENDING_REVIEW.value)
         return ProjectState.EVALS_PENDING_REVIEW
 
-    if (project_path / ".factory" / "config.json").exists():
+    factory_dir = project_path / ".factory"
+    if (factory_dir / "config.json").exists():
         log.info("detect_state_result", state=ProjectState.HAS_FACTORY.value)
         return ProjectState.HAS_FACTORY
+
+    if factory_dir.exists():
+        log.warning(
+            "factory_dir_without_config",
+            factory_dir=str(factory_dir),
+            hint="Run 'factory init' to generate config.json from factory.md",
+        )
 
     if _has_open_plan_issues(project_path):
         log.info("detect_state_result", state=ProjectState.REPO_INCOMPLETE.value)

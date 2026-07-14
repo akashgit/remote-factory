@@ -577,7 +577,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     )
-    ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
+    if mode == "create":
+        ceo_mode = "create"
+    elif design_existing:
+        ceo_mode = "design"
+    elif interactive:
+        ceo_mode = "build"
+    else:
+        ceo_mode = mode
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
