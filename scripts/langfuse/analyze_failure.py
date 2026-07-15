@@ -86,7 +86,7 @@ def run_llm_summary(trace_dump: str, benchmark: str, instance_id: str) -> str | 
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--max-turns", "1"],
+            ["claude", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=120,
@@ -111,7 +111,7 @@ def run_llm_analysis(trace_dump: str, benchmark: str, instance_id: str) -> str |
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--max-turns", "3"],
+            ["claude", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=180,
