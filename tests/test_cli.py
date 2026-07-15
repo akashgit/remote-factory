@@ -1923,42 +1923,108 @@ class TestBuildCeoTaskDesign:
     """Unit tests for _build_ceo_task design_existing parameter."""
 
     def test_existing_project_emits_plan_loop_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", design_existing=True)
+        task = _build_ceo_task(tmp_path, "design", design_existing=True)
         assert "## Plan Loop (Interactive)" in task
         assert "existing_project: true" in task
         assert "existing project" in task
 
     def test_existing_project_with_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", design_existing=True, focus="auth layer")
+        task = _build_ceo_task(tmp_path, "design", design_existing=True, focus="auth layer")
         assert "## Plan Loop (Interactive)" in task
         assert "auth layer" in task
         assert "Focus topic" in task
 
     def test_existing_project_without_focus(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", design_existing=True)
+        task = _build_ceo_task(tmp_path, "design", design_existing=True)
         assert "No specific topic was provided" in task
 
     def test_new_idea_emits_plan_loop_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        task = _build_ceo_task(tmp_path, "design", design_idea="weather CLI")
         assert "## Plan Loop (Interactive)" in task
         assert "weather CLI" in task
 
     def test_existing_uses_same_header_as_new_idea(self, tmp_path):
         """Both new ideas and existing projects use the same Plan Loop header."""
-        existing_task = _build_ceo_task(tmp_path, "build", design_existing=True)
-        new_task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        existing_task = _build_ceo_task(tmp_path, "design", design_existing=True)
+        new_task = _build_ceo_task(tmp_path, "design", design_idea="weather CLI")
         assert "## Plan Loop (Interactive)" in existing_task
         assert "## Plan Loop (Interactive)" in new_task
 
     def test_existing_project_has_existing_flag(self, tmp_path):
         """Existing project task includes the existing_project flag for CEO conditionals."""
-        task = _build_ceo_task(tmp_path, "build", design_existing=True)
+        task = _build_ceo_task(tmp_path, "design", design_existing=True)
         assert "existing_project: true" in task
 
     def test_existing_mode_shows_display_mode(self, tmp_path):
         """When display_mode is provided, task shows it instead of internal mode."""
-        task = _build_ceo_task(tmp_path, "build", design_existing=True, display_mode="design")
+        task = _build_ceo_task(tmp_path, "design", design_existing=True, display_mode="design")
         assert "Mode: design" in task
+
+
+class TestCeoModeRouting:
+    """Tests for ceo_mode routing logic at ceo.py:580 (issue #999)."""
+
+    def test_design_existing_routes_to_design(self, tmp_path):
+        """design_existing=True preserves ceo_mode='design'."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "design"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
+        assert "Run Build mode" not in task
+
+    def test_design_idea_routes_to_design(self):
+        """New idea in design mode routes to ceo_mode='design'."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", "weather CLI", "--mode", "design"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Plan Loop (Interactive)" in task
+        assert "Run design mode" in task
+        assert "Run Build mode" not in task
+
+    def test_create_mode_routes_to_create(self, tmp_path):
+        """mode='create' always sets ceo_mode='create'."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "a new mode"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Run Create mode" in task
+
+    def test_improve_mode_routes_to_improve(self, tmp_path):
+        """mode='improve' (no interactive flags) preserves ceo_mode='improve'."""
+        (tmp_path / ".git").mkdir()
+        (tmp_path / ".factory").mkdir()
+        (tmp_path / ".factory" / "config.json").write_text(
+            '{"goal":"x","scope":[],"guards":[],"eval_command":"x","eval_threshold":0.8,"constraints":[]}'
+        )
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path)])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "Run improve mode: read `skills/workflow-improve/SKILL.md`" in task
+
+    def test_design_existing_task_string(self, tmp_path):
+        """design_existing=True task contains design SKILL.md reference, not Build."""
+        task = _build_ceo_task(tmp_path, "design", design_existing=True)
+        assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
+        assert "Run Build mode" not in task
+
+    def test_research_ideation_routes_to_build(self):
+        """research_ideation (--mode research) routes to ceo_mode='build', not 'design'."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", "SWE-bench solver", "--mode", "research"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Plan Loop (Interactive)" in task
+        assert "Run Build mode" in task
+        assert "Run design mode" not in task
 
 
 class TestCreateModeFocus:

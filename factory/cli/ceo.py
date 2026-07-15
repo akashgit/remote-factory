@@ -577,7 +577,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     )
-    ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
+    if mode == "create":
+        ceo_mode = "create"
+    elif mode == "design":
+        ceo_mode = "design"
+    elif interactive:
+        ceo_mode = "build"
+    else:
+        ceo_mode = mode
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -1690,8 +1697,9 @@ def _build_ceo_task(
             f"Run the Plan Loop (P0-P3) with interactive approval. "
             f"Research the space, synthesize a build plan, and refine it "
             f"through user feedback before building.\n\n"
-            f"After the user approves the final plan, persist it to "
-            f".factory/strategy/current.md and proceed to Build mode.\n"
+            f"After you approve the plan at the strategy gate, persist it to "
+            f".factory/strategy/current.md — the workflow continues to "
+            f"implementation automatically.\n"
         )
 
     if research_ideation:
