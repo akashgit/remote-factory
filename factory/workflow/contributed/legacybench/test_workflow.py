@@ -54,7 +54,7 @@ class TestLegacybenchWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
-        assert node.timeout == 1200
+        assert node.timeout == 7200
 
     def test_gate_verify_is_fn_evaluator(self) -> None:
         """Gate uses fn evaluator (not agent) for speed and determinism."""

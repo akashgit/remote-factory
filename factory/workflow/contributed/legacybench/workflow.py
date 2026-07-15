@@ -81,7 +81,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=7200,
         max_iterations=3,
         prompt_template=(
             "You are fixing a bug in legacy code for the Legacy-Bench benchmark.\n\n"

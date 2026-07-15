@@ -71,7 +71,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=7200,
         max_iterations=3,
         prompt_template=(
             "You are implementing a new feature in a Python codebase for "

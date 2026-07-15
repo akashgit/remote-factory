@@ -64,7 +64,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=7200,
         max_iterations=3,
         prompt_template=(
             "You are fixing a bug in an open-source project for the SWE-bench benchmark.\n\n"

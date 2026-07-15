@@ -55,7 +55,7 @@ class TestSwebenchWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
-        assert node.timeout == 1200
+        assert node.timeout == 7200
         assert "MINIMAL" in node.prompt_template
         assert "run" in node.prompt_template.lower()
         assert "test" in node.prompt_template.lower()
