@@ -6,8 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from unittest.mock import AsyncMock, patch
+
 from factory.workflow.executor import WorkflowExecutor
 from factory.workflow.primitives import (
+    AgentConfig,
+    AgentNode,
+    AgentRole,
     Edge,
     FnNode,
     ForkNode,
@@ -352,3 +357,76 @@ class TestErrorHandling:
 
         assert result.halted
         assert "failed" in result.halt_reason.lower()
+
+
+# ── Agent timeout forwarding ────────────────────────────────────
+
+
+class TestAgentTimeoutForwarding:
+    """Verify _run_agent forwards the correct timeout to invoke_agent."""
+
+    def _make_agent_workflow(self, node: AgentNode) -> Workflow:
+        return Workflow(
+            name="agent_timeout_test",
+            nodes={"agent": node},
+            edges=[],
+            start_node="agent",
+        )
+
+    @patch("factory.agents.runner.invoke_agent", new_callable=AsyncMock)
+    async def test_explicit_node_timeout(
+        self, mock_invoke: AsyncMock, tmp_project: Path
+    ) -> None:
+        """When node.timeout is set, that value is forwarded to invoke_agent."""
+        mock_invoke.return_value = ("ok", 0)
+        node = AgentNode(
+            id="agent",
+            role=AgentRole.BUILDER,
+            prompt_template="do stuff",
+            timeout=3600,
+        )
+        wf = self._make_agent_workflow(node)
+        executor = WorkflowExecutor(wf, tmp_project)
+        await executor.execute()
+
+        mock_invoke.assert_called_once()
+        assert mock_invoke.call_args.kwargs["timeout"] == 3600.0
+
+    @patch("factory.agents.runner.invoke_agent", new_callable=AsyncMock)
+    async def test_pool_timeout_used_when_node_timeout_is_none(
+        self, mock_invoke: AsyncMock, tmp_project: Path
+    ) -> None:
+        """When node.timeout is None, pool_entry timeout is used."""
+        mock_invoke.return_value = ("ok", 0)
+        node = AgentNode(
+            id="agent",
+            role=AgentRole.BUILDER,
+            prompt_template="do stuff",
+            timeout=None,
+        )
+        pool = {"builder": AgentConfig(role=AgentRole.BUILDER, model="opus", timeout=7200)}
+        wf = self._make_agent_workflow(node)
+        executor = WorkflowExecutor(wf, tmp_project, agent_pool=pool)
+        await executor.execute()
+
+        mock_invoke.assert_called_once()
+        assert mock_invoke.call_args.kwargs["timeout"] == 7200.0
+
+    @patch("factory.agents.runner.invoke_agent", new_callable=AsyncMock)
+    async def test_default_timeout_when_no_node_or_pool(
+        self, mock_invoke: AsyncMock, tmp_project: Path
+    ) -> None:
+        """When node.timeout is None and no pool_entry exists, default 600.0 is used."""
+        mock_invoke.return_value = ("ok", 0)
+        node = AgentNode(
+            id="agent",
+            role=AgentRole.BUILDER,
+            prompt_template="do stuff",
+            timeout=None,
+        )
+        wf = self._make_agent_workflow(node)
+        executor = WorkflowExecutor(wf, tmp_project, agent_pool={})
+        await executor.execute()
+
+        mock_invoke.assert_called_once()
+        assert mock_invoke.call_args.kwargs["timeout"] == 600.0
