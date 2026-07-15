@@ -35,6 +35,7 @@ def list_traces(
     to_ts: datetime,
     name: str | None = None,
     limit: int = 100,
+    tags: list[str] | None = None,
 ) -> list[dict]:
     """List traces from Langfuse filtered by time window.
 
@@ -48,6 +49,9 @@ def list_traces(
     }
     if name:
         params["name"] = name
+    if tags:
+        for tag in tags:
+            params["tags"] = tag
     r = requests.get(
         f"{host}/api/public/traces",
         params=params,

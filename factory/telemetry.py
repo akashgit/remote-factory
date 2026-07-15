@@ -81,11 +81,18 @@ def begin_trace(
     client = _get_client()
     trace_name = f"factory:{project_name}/{cycle_id or 'cycle'}"
     trace_input = {"project": project_name, "cycle_id": cycle_id}
+    metadata = {"model": model, "project": project_name}
+    benchmark = os.environ.get("FACTORY_BENCHMARK")
+    instance_id = os.environ.get("FACTORY_INSTANCE_ID")
+    if benchmark:
+        metadata["benchmark"] = benchmark
+    if instance_id:
+        metadata["instance_id"] = instance_id
     obs = client.start_observation(
         name=trace_name,
         as_type="span",
         input=trace_input,
-        metadata={"model": model, "project": project_name},
+        metadata=metadata,
     )
     _observations[obs.id] = obs
     _set_trace_name_on_span(obs, trace_name, trace_input)

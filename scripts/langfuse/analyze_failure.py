@@ -43,6 +43,20 @@ def find_matching_trace(
     if not traces:
         return None
 
+    metadata_matches = []
+    for t in traces:
+        meta = t.get("metadata") or {}
+        if meta.get("benchmark") == benchmark and meta.get("instance_id") == instance_id:
+            metadata_matches.append(t)
+
+    if metadata_matches:
+        if verbose:
+            print(f"[verbose] Matched {len(metadata_matches)} traces by metadata", file=sys.stderr)
+        selected = min(metadata_matches, key=lambda t: t.get("startTime", "") or "")
+        if verbose:
+            print(f"[verbose] Selected trace: {selected['id']} (earliest)", file=sys.stderr)
+        return selected
+
     candidates = []
     for t in traces:
         name = (t.get("name") or "").lower()
@@ -52,17 +66,14 @@ def find_matching_trace(
             candidates.append(t)
 
     if verbose:
-        print(f"[verbose] Filtered to {len(candidates)} candidates", file=sys.stderr)
+        print(f"[verbose] Filtered to {len(candidates)} text candidates", file=sys.stderr)
 
     if not candidates:
-        candidates = traces
+        return None
 
-    selected = max(candidates, key=lambda t: t.get("latency", 0) or 0)
+    selected = min(candidates, key=lambda t: t.get("startTime", "") or "")
     if verbose:
-        print(
-            f"[verbose] Selected trace: {selected['id']} (latency={selected.get('latency', 0)}s)",
-            file=sys.stderr,
-        )
+        print(f"[verbose] Selected trace: {selected['id']} (earliest)", file=sys.stderr)
     return selected
 
 
