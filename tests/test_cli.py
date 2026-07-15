@@ -1939,14 +1939,14 @@ class TestBuildCeoTaskDesign:
         assert "No specific topic was provided" in task
 
     def test_new_idea_emits_plan_loop_section(self, tmp_path):
-        task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        task = _build_ceo_task(tmp_path, "design", design_idea="weather CLI")
         assert "## Plan Loop (Interactive)" in task
         assert "weather CLI" in task
 
     def test_existing_uses_same_header_as_new_idea(self, tmp_path):
         """Both new ideas and existing projects use the same Plan Loop header."""
         existing_task = _build_ceo_task(tmp_path, "design", design_existing=True)
-        new_task = _build_ceo_task(tmp_path, "build", design_idea="weather CLI")
+        new_task = _build_ceo_task(tmp_path, "design", design_idea="weather CLI")
         assert "## Plan Loop (Interactive)" in existing_task
         assert "## Plan Loop (Interactive)" in new_task
 
@@ -1974,14 +1974,16 @@ class TestCeoModeRouting:
         assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
         assert "Run Build mode" not in task
 
-    def test_design_idea_routes_to_build(self):
-        """New idea in design mode routes to ceo_mode='build' for Plan Loop."""
+    def test_design_idea_routes_to_design(self):
+        """New idea in design mode routes to ceo_mode='design'."""
         with _mock_foreground() as mock_run:
             main(["ceo", "weather CLI", "--mode", "design"])
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
         assert "## Plan Loop (Interactive)" in task
+        assert "Run design mode" in task
+        assert "Run Build mode" not in task
 
     def test_create_mode_routes_to_create(self, tmp_path):
         """mode='create' always sets ceo_mode='create'."""
@@ -2012,6 +2014,17 @@ class TestCeoModeRouting:
         task = _build_ceo_task(tmp_path, "design", design_existing=True)
         assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
         assert "Run Build mode" not in task
+
+    def test_research_ideation_routes_to_build(self):
+        """research_ideation (--mode research) routes to ceo_mode='build', not 'design'."""
+        with _mock_foreground() as mock_run:
+            main(["ceo", "SWE-bench solver", "--mode", "research"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Plan Loop (Interactive)" in task
+        assert "Run Build mode" in task
+        assert "Run design mode" not in task
 
 
 class TestCreateModeFocus:
