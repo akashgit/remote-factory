@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import factory.telemetry as telemetry_mod
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "langfuse"))
+from analyze_failure import find_matching_trace
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +101,67 @@ class TestBeginTrace:
             input={"project": "proj", "cycle_id": "c1"},
             metadata={"model": None, "project": "proj"},
         )
+
+
+class TestBeginTraceMetadata:
+    def test_includes_benchmark_and_instance_id_from_env(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("FACTORY_BENCHMARK", "swebench")
+        monkeypatch.setenv("FACTORY_INSTANCE_ID", "django__django-12345")
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-meta"
+        mock_obs.trace_id = "trace-meta"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1", model="opus")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert call_kwargs["metadata"]["benchmark"] == "swebench"
+        assert call_kwargs["metadata"]["instance_id"] == "django__django-12345"
+        assert call_kwargs["metadata"]["model"] == "opus"
+        assert call_kwargs["metadata"]["project"] == "proj"
+
+    def test_omits_benchmark_keys_when_env_vars_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("FACTORY_BENCHMARK", raising=False)
+        monkeypatch.delenv("FACTORY_INSTANCE_ID", raising=False)
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-no-meta"
+        mock_obs.trace_id = "trace-no-meta"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert "benchmark" not in call_kwargs["metadata"]
+        assert "instance_id" not in call_kwargs["metadata"]
+
+    def test_includes_only_benchmark_when_instance_id_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("FACTORY_BENCHMARK", "featurebench")
+        monkeypatch.delenv("FACTORY_INSTANCE_ID", raising=False)
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-partial"
+        mock_obs.trace_id = "trace-partial"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert call_kwargs["metadata"]["benchmark"] == "featurebench"
+        assert "instance_id" not in call_kwargs["metadata"]
 
 
 class TestBeginSpan:
@@ -282,3 +348,103 @@ class TestIngestTranscript:
                 transcript_dir.rmdir()
             except OSError:
                 pass
+
+
+class TestFindMatchingTrace:
+    @staticmethod
+    def _make_trace(
+        trace_id: str,
+        name: str = "",
+        metadata: dict | None = None,
+        start_time: str = "",
+        latency: int = 0,
+    ) -> dict:
+        return {
+            "id": trace_id,
+            "name": name,
+            "metadata": metadata or {},
+            "startTime": start_time,
+            "latency": latency,
+        }
+
+    def test_metadata_match_preferred_over_text_match(self) -> None:
+        traces = [
+            self._make_trace(
+                "text-match", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:00:00Z", latency=100,
+            ),
+            self._make_trace(
+                "meta-match", metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "meta-match"
+
+    def test_no_fallback_to_all_traces_when_no_match(self) -> None:
+        traces = [
+            self._make_trace(
+                "unrelated", name="factory:other/cycle",
+                metadata={"benchmark": "other", "instance_id": "other-1"},
+                start_time="2026-01-01T00:00:00Z", latency=500,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is None
+
+    def test_earliest_timestamp_wins_not_max_latency(self) -> None:
+        traces = [
+            self._make_trace(
+                "late-high-latency",
+                metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:10:00Z", latency=9999,
+            ),
+            self._make_trace(
+                "early-low-latency",
+                metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "early-low-latency"
+
+    def test_text_fallback_uses_earliest_timestamp(self) -> None:
+        traces = [
+            self._make_trace(
+                "late", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:10:00Z", latency=500,
+            ),
+            self._make_trace(
+                "early", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "other-id",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "early"
+
+    def test_returns_none_on_empty_traces(self) -> None:
+        with patch("analyze_failure.list_traces", return_value=[]):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is None
