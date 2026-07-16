@@ -1,49 +1,33 @@
-"""Per-trace reflection — analyze each benchmark trace and suggest prompt edits."""
+"""Minibatch reflection — analyze batches of traces and produce structured patches."""
 from __future__ import annotations
 
-import io
 import json
 import re
 import shutil
 import subprocess
-import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import structlog
 
-from factory.skillopt.models import TraceReflection
+from factory.skillopt.types import (
+    Edit,
+    FailureSummaryEntry,
+    Patch,
+    RawPatch,
+    RolloutResult,
+)
 
 log = structlog.get_logger()
 
-SCRIPTS_DIR = Path(__file__).resolve().parents[2] / "scripts" / "langfuse"
+_PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
-def _import_langfuse_helpers():
-    """Import langfuse helper modules by adding scripts/langfuse to sys.path."""
-    scripts_path = str(SCRIPTS_DIR)
-    if scripts_path not in sys.path:
-        sys.path.insert(0, scripts_path)
-    from langfuse_client import fetch_trace  # type: ignore[import-not-found]
-    from pull_langfuse_trace import (  # type: ignore[import-not-found]
-        extract_factory_commands,
-        extract_orchestration,
-        print_report,
-    )
-    return fetch_trace, extract_orchestration, extract_factory_commands, print_report
+def _load_prompt(name: str) -> str:
+    return (_PROMPTS_DIR / name).read_text()
 
 
-def _format_trace_dump(trace: dict) -> str:
-    """Format a Langfuse trace into a human-readable dump."""
-    _, extract_orchestration, extract_factory_commands, print_report = _import_langfuse_helpers()
-    timeline, ceo_reasoning = extract_orchestration(trace, full=True)
-    factory_commands = extract_factory_commands(trace)
-    buf = io.StringIO()
-    print_report(timeline, ceo_reasoning, factory_commands, file=buf)
-    return buf.getvalue()
-
-
-def _call_llm(prompt: str, timeout: int = 180) -> str | None:
-    """Call claude -p with the given prompt and return stdout."""
+def _call_llm(prompt: str, timeout: int = 300) -> str | None:
     if not shutil.which("claude"):
         log.warning("claude CLI not found, skipping LLM call")
         return None
@@ -62,8 +46,7 @@ def _call_llm(prompt: str, timeout: int = 180) -> str | None:
 
 
 def _extract_json(text: str) -> dict | None:
-    """Extract the first JSON object from LLM output."""
-    match = re.search(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}", text, re.DOTALL)
+    match = re.search(r"\{.*\}", text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
@@ -72,193 +55,150 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
-def _read_prompt_template(workflow_file: str, node_id: str) -> str | None:
-    """Extract the prompt_template string for a given node from a workflow file."""
-    path = Path(workflow_file)
-    if not path.exists():
-        log.error("workflow file not found", path=workflow_file)
-        return None
-    source = path.read_text()
-    pattern = re.compile(
-        rf'nodes\["{re.escape(node_id)}"\]\s*=\s*AgentNode\([^)]*prompt_template\s*=\s*\(',
-        re.DOTALL,
-    )
-    match = pattern.search(source)
-    if not match:
-        pattern2 = re.compile(
-            rf'nodes\["{re.escape(node_id)}"\]\s*=\s*AgentNode\([^)]*prompt_template\s*=',
-            re.DOTALL,
+def fmt_trajectory(trace_data: dict) -> str:
+    parts = [f"ID: {trace_data.get('id', 'unknown')}"]
+    if trace_data.get("fail_reason"):
+        parts.append(f"Failure: {trace_data['fail_reason']}")
+    if trace_data.get("trace_dump"):
+        parts.append(f"Trace:\n{trace_data['trace_dump'][:8000]}")
+    return "\n".join(parts)
+
+
+def fmt_minibatch_trajectories(items: list[RolloutResult]) -> str:
+    sections: list[str] = []
+    for i, item in enumerate(items):
+        header = f"--- Trace {i + 1}/{len(items)} (id={item.id}, hard={item.hard}) ---"
+        trace_dump = item.extras.get("trace_dump", "")
+        fail_info = f"Failure: {item.fail_reason}" if item.fail_reason else ""
+        body = trace_dump[:8000] if trace_dump else "(no trace data)"
+        sections.append(f"{header}\n{fail_info}\n{body}")
+    return "\n\n".join(sections)
+
+
+def _parse_raw_patch(data: dict, source_type: str, batch_size: int) -> RawPatch | None:
+    try:
+        patch_data = data.get("patch", data)
+        edits_raw = patch_data.get("edits", [])
+        edits = [
+            Edit(
+                op=e.get("op", "append"),
+                content=e.get("content", ""),
+                target=e.get("target", ""),
+                support_count=e.get("support_count"),
+                source_type=e.get("source_type", source_type),
+            )
+            for e in edits_raw
+        ]
+        patch = Patch(
+            edits=edits,
+            reasoning=patch_data.get("reasoning", ""),
         )
-        match = pattern2.search(source)
-    if not match:
-        log.error("prompt_template not found for node", node_id=node_id)
-        return None
-
-    start = match.end()
-    depth = 0
-    in_string = False
-    escape_next = False
-    i = start
-    while i < len(source):
-        ch = source[i]
-        if escape_next:
-            escape_next = False
-            i += 1
-            continue
-        if ch == "\\":
-            escape_next = True
-            i += 1
-            continue
-        if ch == '"' and not in_string:
-            in_string = True
-        elif ch == '"' and in_string:
-            in_string = False
-        if not in_string:
-            if ch == "(":
-                depth += 1
-            elif ch == ")":
-                if depth == 0:
-                    break
-                depth -= 1
-        i += 1
-
-    raw = source[match.start():i + 1]
-    try:
-        local_ns: dict = {}
-        exec(f"_val = {raw.split('prompt_template=')[1].strip().rstrip(',')}", {}, local_ns)
-        return local_ns.get("_val", "")
-    except Exception:
-        lines = source[start:i].strip().strip("()")
-        return lines
-
-
-def reflect_trace(
-    result_json: dict,
-    current_prompt_template: str,
-    trace: dict,
-) -> TraceReflection | None:
-    """Analyze a single benchmark trace and produce a reflection.
-
-    Args:
-        result_json: The benchmark result dict (instance_id, resolved, benchmark, details).
-        current_prompt_template: The current prompt_template text driving the agent.
-        trace: The full Langfuse trace dict.
-
-    Returns:
-        A TraceReflection or None if LLM call fails.
-    """
-    instance_id = result_json.get("instance_id", "unknown")
-    benchmark = result_json.get("benchmark", "unknown")
-    resolved = result_json.get("resolved", False)
-    trace_id = (result_json.get("details") or {}).get("trace_id", "unknown")
-
-    trace_dump = _format_trace_dump(trace)
-
-    outcome = "SUCCEEDED" if resolved else "FAILED"
-    action = "reinforced what worked here" if resolved else "helped avoid this failure"
-
-    prompt = (
-        f"Here is the trace of a benchmark task that {outcome}.\n\n"
-        f"Benchmark: {benchmark}\nInstance: {instance_id}\n\n"
-        f"Here is the current prompt_template that drove the agent:\n"
-        f"<prompt_template>\n{current_prompt_template}\n</prompt_template>\n\n"
-        f"Here is the execution trace:\n<trace>\n{trace_dump[:15000]}\n</trace>\n\n"
-        f"Analyze this trace. What specific edit to the prompt_template would have "
-        f"{action}?\n\n"
-        f"Output ONLY a JSON object with these fields:\n"
-        f'{{\n'
-        f'  "instance_id": "{instance_id}",\n'
-        f'  "resolved": {str(resolved).lower()},\n'
-        f'  "diagnosis": "what happened and why",\n'
-        f'  "suggested_edit": "specific text change to prompt_template",\n'
-        f'  "edit_type": "add_rule|modify_rule|remove_rule|reword_section",\n'
-        f'  "confidence": 0.0-1.0\n'
-        f"}}\n"
-    )
-
-    raw = _call_llm(prompt, timeout=180)
-    if not raw:
-        log.warning("LLM returned no output for reflection", instance_id=instance_id)
-        return None
-
-    parsed = _extract_json(raw)
-    if not parsed:
-        log.warning("failed to parse LLM JSON", instance_id=instance_id, raw=raw[:200])
-        return None
-
-    try:
-        return TraceReflection(
-            instance_id=parsed.get("instance_id", instance_id),
-            benchmark=benchmark,
-            resolved=resolved,
-            trace_id=trace_id,
-            diagnosis=parsed.get("diagnosis", ""),
-            suggested_edit=parsed.get("suggested_edit", ""),
-            edit_type=parsed.get("edit_type", "modify_rule"),
-            confidence=float(parsed.get("confidence", 0.5)),
+        failure_summary = [
+            FailureSummaryEntry(**fs)
+            for fs in data.get("failure_summary", [])
+        ]
+        return RawPatch(
+            patch=patch,
+            source_type=source_type,
+            batch_size=batch_size,
+            failure_summary=failure_summary,
         )
     except Exception as exc:
-        log.warning("failed to construct TraceReflection", error=str(exc))
+        log.warning("failed to parse raw patch", error=str(exc))
         return None
 
 
-def reflect_all(
-    results_dir: str,
-    workflow_file: str,
-    node_id: str,
-) -> list[TraceReflection]:
-    """Reflect on all benchmark result files in a directory.
+def run_error_analyst_minibatch(
+    skill_content: str,
+    items: list[RolloutResult],
+    edit_budget: int = 5,
+) -> RawPatch | None:
+    template = _load_prompt("analyst_error.md")
+    traces_text = fmt_minibatch_trajectories(items)
+    prompt = (
+        template
+        .replace("{{SKILL_CONTENT}}", skill_content)
+        .replace("{{TRACES}}", traces_text)
+        .replace("{{BATCH_SIZE}}", str(len(items)))
+        .replace("{{EDIT_BUDGET}}", str(edit_budget))
+    )
+    raw = _call_llm(prompt)
+    if not raw:
+        return None
+    parsed = _extract_json(raw)
+    if not parsed:
+        log.warning("failed to parse error analyst JSON")
+        return None
+    return _parse_raw_patch(parsed, "failure", len(items))
 
-    Args:
-        results_dir: Path to directory containing benchmark result JSON files.
-        workflow_file: Path to the workflow .py file.
-        node_id: The AgentNode id whose prompt_template to analyze.
 
-    Returns:
-        List of TraceReflection objects (one per successfully analyzed trace).
-    """
-    fetch_trace_fn = _import_langfuse_helpers()[0]
+def run_success_analyst_minibatch(
+    skill_content: str,
+    items: list[RolloutResult],
+    edit_budget: int = 5,
+) -> RawPatch | None:
+    template = _load_prompt("analyst_success.md")
+    traces_text = fmt_minibatch_trajectories(items)
+    prompt = (
+        template
+        .replace("{{SKILL_CONTENT}}", skill_content)
+        .replace("{{TRACES}}", traces_text)
+        .replace("{{BATCH_SIZE}}", str(len(items)))
+        .replace("{{EDIT_BUDGET}}", str(edit_budget))
+    )
+    raw = _call_llm(prompt)
+    if not raw:
+        return None
+    parsed = _extract_json(raw)
+    if not parsed:
+        log.warning("failed to parse success analyst JSON")
+        return None
+    return _parse_raw_patch(parsed, "success", len(items))
 
-    prompt_template = _read_prompt_template(workflow_file, node_id)
-    if not prompt_template:
-        log.error("could not extract prompt_template", workflow_file=workflow_file, node_id=node_id)
-        return []
 
-    results_path = Path(results_dir)
-    if not results_path.is_dir():
-        log.error("results directory not found", path=results_dir)
-        return []
+def run_minibatch_reflect(
+    results: list[RolloutResult],
+    skill_content: str,
+    minibatch_size: int = 4,
+    edit_budget: int = 5,
+    workers: int = 4,
+) -> list[RawPatch]:
+    failures = [r for r in results if r.hard < 1.0]
+    successes = [r for r in results if r.hard >= 1.0]
 
-    result_files = sorted(results_path.glob("*.json"))
-    log.info("found result files", count=len(result_files))
+    log.info(
+        "reflect: splitting results",
+        failures=len(failures),
+        successes=len(successes),
+        minibatch_size=minibatch_size,
+    )
 
-    reflections: list[TraceReflection] = []
-    for rf in result_files:
-        try:
-            result_data = json.loads(rf.read_text())
-        except (json.JSONDecodeError, OSError) as exc:
-            log.warning("skipping invalid result file", path=str(rf), error=str(exc))
-            continue
+    def _chunk(lst: list, size: int) -> list[list]:
+        return [lst[i:i + size] for i in range(0, len(lst), size)]
 
-        trace_id = (result_data.get("details") or {}).get("trace_id")
-        if not trace_id:
-            log.warning("no trace_id in result", path=str(rf))
-            continue
+    failure_batches = _chunk(failures, minibatch_size)
+    success_batches = _chunk(successes, minibatch_size)
 
-        try:
-            trace = fetch_trace_fn(trace_id, use_cache=True)
-        except Exception as exc:
-            log.warning("failed to fetch trace", trace_id=trace_id, error=str(exc))
-            continue
+    patches: list[RawPatch] = []
 
-        reflection = reflect_trace(result_data, prompt_template, trace)
-        if reflection:
-            reflections.append(reflection)
-            log.info(
-                "reflected on trace",
-                instance_id=result_data.get("instance_id"),
-                resolved=result_data.get("resolved"),
-            )
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {}
+        for batch in failure_batches:
+            f = pool.submit(run_error_analyst_minibatch, skill_content, batch, edit_budget)
+            futures[f] = "failure"
+        for batch in success_batches:
+            f = pool.submit(run_success_analyst_minibatch, skill_content, batch, edit_budget)
+            futures[f] = "success"
 
-    log.info("reflection complete", total=len(reflections))
-    return reflections
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                result = future.result()
+                if result:
+                    patches.append(result)
+                    log.info("minibatch reflect done", source=source, edits=len(result.patch.edits))
+            except Exception as exc:
+                log.warning("minibatch reflect failed", source=source, error=str(exc))
+
+    log.info("reflect complete", total_patches=len(patches))
+    return patches

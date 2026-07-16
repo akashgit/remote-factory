@@ -1,1 +1,1 @@
-"""SkillOpt — benchmark-driven prompt optimization loop (proof of concept)."""
+"""SkillOpt — benchmark-driven SKILL.md optimization loop."""
