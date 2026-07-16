@@ -638,8 +638,11 @@ class WorkflowExecutor:
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
         if first_line.startswith("reloop"):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
+            raw_line = text.split("\n")[0].strip()
+            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+            feedback = after_prefix if after_prefix else "fn gate requested reloop"
             if target:
-                return Verdict.reloop(target=target, feedback="fn gate requested reloop")
+                return Verdict.reloop(target=target, feedback=feedback)
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
