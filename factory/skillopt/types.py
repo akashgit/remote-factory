@@ -13,7 +13,7 @@ class Edit(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
 
     op: EditOp
-    content: str
+    content: str = ""
     target: str = ""
     support_count: int | None = None
     source_type: Literal["failure", "success"] | None = None
