@@ -105,6 +105,27 @@ TASKS_JSON="[]"
 cleanup() {
     local exit_code=$?
 
+    HARBOR_EXCEPTION=""
+    if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
+        local exc_file
+        exc_file=$(find "${JOBS_DIR}" -maxdepth 4 -name 'exception.txt' -type f 2>/dev/null | head -1)
+        if [ -n "${exc_file}" ] && [ -f "${exc_file}" ]; then
+            mkdir -p "${CI_RESULTS_DIR}"
+            cp "${exc_file}" "${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-exception.txt"
+            HARBOR_EXCEPTION=$(cat "${exc_file}")
+            echo "--- Harbor exception ---" >&2
+            echo "${HARBOR_EXCEPTION}" >&2
+            echo "--- end exception ---" >&2
+        fi
+
+        local log_file
+        log_file=$(find "${JOBS_DIR}" -maxdepth 4 -name 'trial.log' -type f 2>/dev/null | head -1)
+        if [ -n "${log_file}" ] && [ -f "${log_file}" ]; then
+            mkdir -p "${CI_RESULTS_DIR}"
+            cp "${log_file}" "${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-trial.log"
+        fi
+    fi
+
     LANGFUSE_TRACE_ID=""
     if [ "${MODE}" = "task" ] && [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
         LANGFUSE_TRACE_ID=$(extract_trace_id "${JOBS_DIR}")
@@ -130,10 +151,22 @@ cleanup() {
 
     if [ "${MODE}" = "task" ]; then
         PASSED="${RESOLVED}"
+        ESCAPED_EXCEPTION=""
+        if [ -n "${HARBOR_EXCEPTION}" ]; then
+            ESCAPED_EXCEPTION=$(python3 -c "import json,sys; print(json.dumps(sys.stdin.read().strip()))" <<< "${HARBOR_EXCEPTION}")
+        fi
         if [ "${BENCHMARK}" = "featurebench" ]; then
-            DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
+            if [ -n "${ESCAPED_EXCEPTION}" ]; then
+                DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'", "exception": '"${ESCAPED_EXCEPTION}"'}'
+            else
+                DETAILS_JSON='{"pass_rate": '"${PASS_RATE}"', "solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
+            fi
         else
-            DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
+            if [ -n "${ESCAPED_EXCEPTION}" ]; then
+                DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'", "exception": '"${ESCAPED_EXCEPTION}"'}'
+            else
+                DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
+            fi
         fi
         write_result
     else

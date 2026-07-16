@@ -157,6 +157,9 @@ def generate_report(
         header += f"**Trace:** [{trace_id}]({host}/trace/{trace_id})\n"
 
     if trace is None:
+        exception_text = (result_data.get("details") or {}).get("exception", "")
+        if exception_text:
+            return header + "\n#### Exception from Harbor\n\n" + exception_text + "\n"
         return header + "\nNo matching Langfuse trace found.\n"
 
     trace_dump = format_trace_dump(trace)
