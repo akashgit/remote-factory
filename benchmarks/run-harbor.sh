@@ -168,6 +168,7 @@ cleanup() {
                 DETAILS_JSON='{"solver": "'"${BENCHMARK_SOLVER}"'", "cost_usd": '"${COST_USD}"', "input_tokens": '"${INPUT_TOKENS}"', "output_tokens": '"${OUTPUT_TOKENS}"', "cache_read_tokens": '"${CACHE_READ_TOKENS}"', "cache_creation_tokens": '"${CACHE_CREATION_TOKENS}"', "trace_id": "'"${LANGFUSE_TRACE_ID}"'"}'
             fi
         fi
+        export DETAILS_JSON
         write_result
     else
         local end_time duration

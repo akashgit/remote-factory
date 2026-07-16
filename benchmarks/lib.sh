@@ -35,8 +35,8 @@ write_result() {
     duration=$(( end_time - START_TIME ))
     mkdir -p "${CI_RESULTS_DIR}"
     python3 -c "
-import json, sys
-_dj = '${DETAILS_JSON:-}'
+import json, os, sys
+_dj = os.environ.get('DETAILS_JSON', '')
 details = json.loads(_dj) if _dj else {}
 result = {
     'benchmark': '${BENCHMARK}',
