@@ -296,14 +296,16 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
         f"<!-- edges: {edges_str} -->",
     ]
 
+    prose = f"{node.notes}\n\n" if node.notes else ""
+
     if _has_template_placeholders(cmd):
         finalize_slot = emit(f"finalize_command_{node.id}", cmd)
         annotations.append(
             "<!-- NOTE: command contains template values requiring CEO substitution -->"
         )
-        lines = [*annotations, "", f"```bash\n{finalize_slot}\n```"]
+        lines = [*annotations, "", f"{prose}```bash\n{finalize_slot}\n```"]
     else:
-        lines = [*annotations, "", f"```bash\n{cmd}\n```"]
+        lines = [*annotations, "", f"{prose}```bash\n{cmd}\n```"]
 
     return "\n".join(lines)
 
