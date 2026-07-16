@@ -62,7 +62,10 @@ def workflow() -> Workflow:
             "/workspace/todos.md exists, read it and address EACH item "
             "before doing anything else. These are specific issues found by "
             "the reviewer that MUST be fixed. Update /workspace/discoveries.md "
-            "with corrected evidence as you fix each TODO.\n\n"
+            "with corrected evidence as you fix each TODO. "
+            "Also check /workspace/test-results.txt — if it exists, read it "
+            "for test failure diagnostics and fix any compilation or test "
+            "failures reported there.\n\n"
             "4. **Probe the binary systematically** — Run the binary with:\n"
             "   - No arguments\n"
             "   - --help, -h\n"
@@ -193,6 +196,8 @@ def workflow() -> Workflow:
             "builder\n"
             "- Do NOT create branches or PRs\n"
             "- Do NOT run factory commands\n"
+            "- Test results may be available at /workspace/test-results.txt "
+            "— review them for additional context on build or test failures\n"
         ),
         reads={"/workspace/discoveries.md"},
         writes={"/workspace/review.md", "/workspace/todos.md"},
@@ -204,17 +209,41 @@ def workflow() -> Workflow:
         evaluator_type="fn",
         evaluator_command=(
             "cd {project_path} && "
-            "if [ ! -f /workspace/todos.md ]; then "
-            "echo 'pass: no todos file, all discoveries verified'; "
-            "elif [ ! -s /workspace/todos.md ]; then "
-            "echo 'pass: todos file is empty, all discoveries verified'; "
-            "elif grep -q '## TODO' /workspace/todos.md; then "
-            "echo 'reloop: todos remain to be addressed'; "
-            "else "
-            "echo 'pass: no todo items found'; "
-            "fi"
+            "if [ -f /workspace/todos.md ] && [ -s /workspace/todos.md ] && "
+            "grep -q '## TODO' /workspace/todos.md; then "
+            "echo 'reloop: todos remain — see /workspace/todos.md'; exit 0; fi && "
+            "if [ ! -f compile.sh ]; then "
+            "echo 'reloop: compile.sh not found — builder must create a build script'; "
+            "exit 0; fi && "
+            "BUILD_OUT=$(timeout 7200 bash compile.sh 2>&1); BUILD_EC=$?; "
+            "if [ $BUILD_EC -ne 0 ]; then "
+            "printf 'Command: compile.sh\\nExit code: %d\\n\\n%s\\n' "
+            "\"$BUILD_EC\" \"$BUILD_OUT\" > /workspace/test-results.txt; "
+            "echo 'reloop: compilation failed — see /workspace/test-results.txt'; "
+            "exit 0; fi && "
+            "TEST_CMD=''; "
+            "if [ -f Makefile ] && make -n test >/dev/null 2>&1; then "
+            "TEST_CMD='make test'; "
+            "elif command -v pytest >/dev/null 2>&1 && "
+            "{ [ -d tests ] || ls test_*.py >/dev/null 2>&1; }; then "
+            "TEST_CMD='pytest'; "
+            "elif [ -x /workspace/test.sh ]; then "
+            "TEST_CMD='/workspace/test.sh'; fi; "
+            "if [ -z \"$TEST_CMD\" ]; then "
+            "echo 'pass: compilation succeeded, no test infrastructure found'; "
+            "exit 0; fi; "
+            "TEST_OUT=$(timeout 7200 $TEST_CMD 2>&1); TEST_EC=$?; "
+            "printf 'Command: %s\\nExit code: %d\\n\\n%s\\n' "
+            "\"$TEST_CMD\" \"$TEST_EC\" \"$TEST_OUT\" "
+            "> /workspace/test-results.txt; "
+            "if [ $TEST_EC -ne 0 ]; then "
+            "echo 'reloop: tests failed — see /workspace/test-results.txt'; "
+            "exit 0; fi; "
+            "SUMMARY=$(echo \"$TEST_OUT\" | tail -3 | tr '\\n' ' '); "
+            "echo \"pass: tests passed — $SUMMARY\""
         ),
         reads={"/workspace/todos.md"},
+        writes={"/workspace/test-results.txt"},
     )
 
     # ── Node 4: Auto Merge ───────────────────────────────────────

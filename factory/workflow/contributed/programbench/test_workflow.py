@@ -139,6 +139,68 @@ class TestProgrambenchWorkflow:
         assert "todos.md" in node.evaluator_command
         assert "## TODO" in node.evaluator_command
 
+    def test_gate_verify_checks_compilation(self) -> None:
+        """Gate verifies compilation via compile.sh."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "compile.sh" in node.evaluator_command
+
+    def test_gate_verify_multi_tier_test_detection(self) -> None:
+        """Gate probes for tests in priority order: make test, pytest, test.sh."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "make -n test" in node.evaluator_command
+        assert "pytest" in node.evaluator_command
+        assert "test.sh" in node.evaluator_command
+
+    def test_gate_verify_timeout(self) -> None:
+        """Gate uses timeout 7200 for compilation and test execution."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "timeout 7200" in node.evaluator_command
+
+    def test_gate_verify_command_references_test_results(self) -> None:
+        """Gate command writes structured results to /workspace/test-results.txt."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert node.evaluator_command is not None
+        assert "test-results.txt" in node.evaluator_command
+
+    def test_gate_verify_writes_test_results(self) -> None:
+        """Gate writes test-results.txt (created during execution)."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert "/workspace/test-results.txt" in node.writes
+
+    def test_gate_verify_reads_todos(self) -> None:
+        """Gate reads set includes todos.md (backward compatibility)."""
+        wf = workflow()
+        node = wf.nodes["gate_verify"]
+        assert isinstance(node, GateNode)
+        assert "/workspace/todos.md" in node.reads
+
+    def test_builder_references_test_results(self) -> None:
+        """Builder prompt instructs reading test-results.txt on RELOOP."""
+        wf = workflow()
+        node = wf.nodes["builder"]
+        assert isinstance(node, AgentNode)
+        assert "test-results.txt" in node.prompt_template
+
+    def test_reviewer_references_test_results(self) -> None:
+        """Reviewer prompt mentions test-results.txt for additional context."""
+        wf = workflow()
+        node = wf.nodes["reviewer"]
+        assert isinstance(node, AgentNode)
+        assert "test-results.txt" in node.prompt_template
+
     def test_auto_merge_node(self) -> None:
         wf = workflow()
         node = wf.nodes["auto_merge"]
