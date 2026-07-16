@@ -7,6 +7,7 @@ import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Literal
 
 import structlog
 
@@ -75,7 +76,9 @@ def fmt_minibatch_trajectories(items: list[RolloutResult]) -> str:
     return "\n\n".join(sections)
 
 
-def _parse_raw_patch(data: dict, source_type: str, batch_size: int) -> RawPatch | None:
+def _parse_raw_patch(
+    data: dict, source_type: Literal["failure", "success"], batch_size: int,
+) -> RawPatch | None:
     try:
         patch_data = data.get("patch", data)
         edits_raw = patch_data.get("edits", [])
