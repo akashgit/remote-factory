@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import difflib
 from pathlib import Path
 
 import yaml
@@ -106,6 +107,14 @@ def render_skill_from_slots(
 
     Path(skill_path).write_text(clean_md)
     return clean_md
+
+
+def compute_prompt_change_magnitude(old: str, new: str) -> int:
+    """Count changed lines between two prompt texts (line-level unified diff)."""
+    old_lines = old.splitlines(keepends=True)
+    new_lines = new.splitlines(keepends=True)
+    diff = difflib.unified_diff(old_lines, new_lines, n=0)
+    return sum(1 for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
 
 
 def format_prompt_slots_for_llm(surface: dict) -> str:

@@ -413,6 +413,49 @@ class TestEnvAdapter:
 
 
 # ---------------------------------------------------------------------------
+# yaml_surface.py — compute_prompt_change_magnitude
+# ---------------------------------------------------------------------------
+
+
+class TestComputePromptChangeMagnitude:
+    def test_identical_strings(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        assert compute_prompt_change_magnitude("hello\nworld\n", "hello\nworld\n") == 0
+
+    def test_one_line_added(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        result = compute_prompt_change_magnitude("line1\n", "line1\nnew line\n")
+        assert result == 1
+
+    def test_one_line_replaced(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        result = compute_prompt_change_magnitude("old line\n", "new line\n")
+        assert result == 2  # 1 removed + 1 added
+
+    def test_multiple_changes(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        old = "line1\nline2\nline3\n"
+        new = "line1\nchanged2\nline3\nadded4\n"
+        result = compute_prompt_change_magnitude(old, new)
+        assert result == 3  # -line2, +changed2, +added4
+
+    def test_empty_strings(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        assert compute_prompt_change_magnitude("", "") == 0
+
+    def test_empty_to_content(self) -> None:
+        from factory.skillopt.yaml_surface import compute_prompt_change_magnitude
+
+        result = compute_prompt_change_magnitude("", "new\n")
+        assert result == 1
+
+
+# ---------------------------------------------------------------------------
 # trainer.py — Basic trainer construction and _compute_score
 # ---------------------------------------------------------------------------
 
