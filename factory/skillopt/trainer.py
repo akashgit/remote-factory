@@ -13,6 +13,7 @@ from factory.skillopt.gate import evaluate_gate, select_gate_score
 from factory.skillopt.skill import apply_patch
 from factory.skillopt.types import GateResult, Patch, RolloutResult
 from factory.skillopt.yaml_surface import (
+    compute_prompt_change_magnitude,
     extract_prompt_slots,
     format_prompt_slots_for_llm,
     load_yaml,
@@ -325,6 +326,35 @@ class SkillOptTrainer:
                         if slot_value == edit.target:
                             candidate_slots[slot_name] = edit.content
                             break
+
+            for slot_name, new_value in candidate_slots.items():
+                old_value = self.prompt_slots.get(slot_name, "")
+                if new_value == old_value:
+                    continue
+                magnitude = compute_prompt_change_magnitude(old_value, new_value)
+                if magnitude > self.learning_rate:
+                    log.warning(
+                        "edit exceeds learning rate",
+                        slot=slot_name,
+                        magnitude=magnitude,
+                        limit=self.learning_rate,
+                    )
+                    self.rejected_edits.append(clipped)
+                    return GateResult(
+                        action="reject",
+                        current_skill=self.current_skill,
+                        current_score=self.current_score,
+                        best_skill=self.best_skill,
+                        best_score=self.best_score,
+                        best_step=self.best_step,
+                    )
+                log.info(
+                    "edit magnitude ok",
+                    slot=slot_name,
+                    magnitude=magnitude,
+                    limit=self.learning_rate,
+                )
+
             candidate_skill = render_skill_from_slots(
                 workflow_name=self._workflow_name,
                 prompt_slots=candidate_slots,
