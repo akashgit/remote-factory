@@ -111,21 +111,77 @@ def _parse_raw_patch(
         return None
 
 
+def _parse_slot_edits_to_raw_patch(
+    data: dict,
+    source_type: Literal["failure", "success"],
+    batch_size: int,
+    prompt_slots: dict[str, str],
+) -> RawPatch | None:
+    """Parse SlotEdit-style LLM output into a RawPatch with replace Edit objects."""
+    try:
+        patch_data = data.get("patch", data)
+        edits_raw = patch_data.get("edits", [])
+        edits: list[Edit] = []
+        for e in edits_raw:
+            slot_name = e.get("slot_name", "")
+            new_value = e.get("new_value", "")
+            old_value = prompt_slots.get(slot_name, "")
+            if not old_value or not new_value or old_value == new_value:
+                continue
+            edits.append(Edit(
+                op="replace",
+                target=old_value,
+                content=new_value,
+                support_count=e.get("support_count"),
+                source_type=source_type,
+            ))
+        patch = Patch(
+            edits=edits,
+            reasoning=patch_data.get("reasoning", ""),
+        )
+        failure_summary = [
+            FailureSummaryEntry(**fs)
+            for fs in data.get("failure_summary", [])
+        ]
+        return RawPatch(
+            patch=patch,
+            source_type=source_type,
+            batch_size=batch_size,
+            failure_summary=failure_summary,
+        )
+    except Exception as exc:
+        log.warning("failed to parse slot edits", error=str(exc))
+        return None
+
+
 def run_error_analyst_minibatch(
     skill_content: str,
     items: list[RolloutResult],
     edit_budget: int = 5,
     step_buffer_context: str = "",
+    prompt_slots: dict[str, str] | None = None,
+    prompt_slots_text: str | None = None,
 ) -> RawPatch | None:
     template = _load_prompt("analyst_error.md")
     traces_text = fmt_minibatch_trajectories(items)
-    prompt = (
-        template
-        .replace("{{SKILL_CONTENT}}", skill_content)
-        .replace("{{TRACES}}", traces_text)
-        .replace("{{BATCH_SIZE}}", str(len(items)))
-        .replace("{{EDIT_BUDGET}}", str(edit_budget))
-    )
+
+    if prompt_slots is not None and prompt_slots_text is not None:
+        prompt = (
+            template
+            .replace("{{PROMPT_SLOTS}}", prompt_slots_text)
+            .replace("{{TRACES}}", traces_text)
+            .replace("{{BATCH_SIZE}}", str(len(items)))
+            .replace("{{EDIT_BUDGET}}", str(edit_budget))
+        )
+    else:
+        prompt = (
+            template
+            .replace("{{SKILL_CONTENT}}", skill_content)
+            .replace("{{TRACES}}", traces_text)
+            .replace("{{BATCH_SIZE}}", str(len(items)))
+            .replace("{{EDIT_BUDGET}}", str(edit_budget))
+        )
+
     if step_buffer_context:
         prompt += "\n\n" + step_buffer_context
     raw = _call_llm(prompt)
@@ -135,6 +191,9 @@ def run_error_analyst_minibatch(
     if not parsed:
         log.warning("failed to parse error analyst JSON")
         return None
+
+    if prompt_slots is not None:
+        return _parse_slot_edits_to_raw_patch(parsed, "failure", len(items), prompt_slots)
     return _parse_raw_patch(parsed, "failure", len(items))
 
 
@@ -143,16 +202,29 @@ def run_success_analyst_minibatch(
     items: list[RolloutResult],
     edit_budget: int = 5,
     step_buffer_context: str = "",
+    prompt_slots: dict[str, str] | None = None,
+    prompt_slots_text: str | None = None,
 ) -> RawPatch | None:
     template = _load_prompt("analyst_success.md")
     traces_text = fmt_minibatch_trajectories(items)
-    prompt = (
-        template
-        .replace("{{SKILL_CONTENT}}", skill_content)
-        .replace("{{TRACES}}", traces_text)
-        .replace("{{BATCH_SIZE}}", str(len(items)))
-        .replace("{{EDIT_BUDGET}}", str(edit_budget))
-    )
+
+    if prompt_slots is not None and prompt_slots_text is not None:
+        prompt = (
+            template
+            .replace("{{PROMPT_SLOTS}}", prompt_slots_text)
+            .replace("{{TRACES}}", traces_text)
+            .replace("{{BATCH_SIZE}}", str(len(items)))
+            .replace("{{EDIT_BUDGET}}", str(edit_budget))
+        )
+    else:
+        prompt = (
+            template
+            .replace("{{SKILL_CONTENT}}", skill_content)
+            .replace("{{TRACES}}", traces_text)
+            .replace("{{BATCH_SIZE}}", str(len(items)))
+            .replace("{{EDIT_BUDGET}}", str(edit_budget))
+        )
+
     if step_buffer_context:
         prompt += "\n\n" + step_buffer_context
     raw = _call_llm(prompt)
@@ -162,6 +234,9 @@ def run_success_analyst_minibatch(
     if not parsed:
         log.warning("failed to parse success analyst JSON")
         return None
+
+    if prompt_slots is not None:
+        return _parse_slot_edits_to_raw_patch(parsed, "success", len(items), prompt_slots)
     return _parse_raw_patch(parsed, "success", len(items))
 
 
@@ -172,6 +247,8 @@ def run_minibatch_reflect(
     edit_budget: int = 5,
     workers: int = 4,
     step_buffer_context: str = "",
+    prompt_slots: dict[str, str] | None = None,
+    prompt_slots_text: str | None = None,
 ) -> list[RawPatch]:
     failures = [r for r in results if r.hard < 1.0]
     successes = [r for r in results if r.hard >= 1.0]
@@ -195,12 +272,14 @@ def run_minibatch_reflect(
         futures = {}
         for batch in failure_batches:
             f = pool.submit(
-                run_error_analyst_minibatch, skill_content, batch, edit_budget, step_buffer_context,
+                run_error_analyst_minibatch, skill_content, batch, edit_budget,
+                step_buffer_context, prompt_slots, prompt_slots_text,
             )
             futures[f] = "failure"
         for batch in success_batches:
             f = pool.submit(
-                run_success_analyst_minibatch, skill_content, batch, edit_budget, step_buffer_context,
+                run_success_analyst_minibatch, skill_content, batch, edit_budget,
+                step_buffer_context, prompt_slots, prompt_slots_text,
             )
             futures[f] = "success"
 
