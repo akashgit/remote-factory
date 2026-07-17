@@ -1,6 +1,8 @@
 """Unit tests for factory/skillopt/ — pure-logic modules only."""
 from __future__ import annotations
 
+import json
+import subprocess
 from typing import Any
 from unittest.mock import patch
 
@@ -477,3 +479,1020 @@ class TestSkillOptTrainer:
         hard, soft = trainer._compute_score(results)
         assert hard == 1.0
         assert soft == 0.0
+
+
+# ---------------------------------------------------------------------------
+# reflect.py — Minibatch reflection with mocked LLM
+# ---------------------------------------------------------------------------
+
+
+class TestFmtTrajectory:
+    def test_basic(self) -> None:
+        from factory.skillopt.reflect import fmt_trajectory
+
+        data = {"id": "task-1", "fail_reason": "timeout", "trace_dump": "line1\nline2"}
+        result = fmt_trajectory(data)
+        assert "ID: task-1" in result
+        assert "Failure: timeout" in result
+        assert "Trace:\nline1\nline2" in result
+
+    def test_no_failure(self) -> None:
+        from factory.skillopt.reflect import fmt_trajectory
+
+        data = {"id": "task-2"}
+        result = fmt_trajectory(data)
+        assert "ID: task-2" in result
+        assert "Failure" not in result
+
+    def test_unknown_id(self) -> None:
+        from factory.skillopt.reflect import fmt_trajectory
+
+        result = fmt_trajectory({})
+        assert "ID: unknown" in result
+
+    def test_trace_truncation(self) -> None:
+        from factory.skillopt.reflect import fmt_trajectory
+
+        data = {"id": "t", "trace_dump": "x" * 10000}
+        result = fmt_trajectory(data)
+        assert len(result) < 9000
+
+
+class TestFmtMinibatchTrajectories:
+    def test_formats_items(self) -> None:
+        from factory.skillopt.reflect import fmt_minibatch_trajectories
+
+        items = [
+            RolloutResult(id="a", hard=0.0, soft=0.0, fail_reason="crash"),
+            RolloutResult(
+                id="b", hard=1.0, soft=1.0, extras={"trace_dump": "some trace"},
+            ),
+        ]
+        result = fmt_minibatch_trajectories(items)
+        assert "Trace 1/2" in result
+        assert "Trace 2/2" in result
+        assert "id=a" in result
+        assert "Failure: crash" in result
+        assert "some trace" in result
+
+    def test_empty_list(self) -> None:
+        from factory.skillopt.reflect import fmt_minibatch_trajectories
+
+        assert fmt_minibatch_trajectories([]) == ""
+
+    def test_no_trace_data(self) -> None:
+        from factory.skillopt.reflect import fmt_minibatch_trajectories
+
+        items = [RolloutResult(id="x", hard=0.5, soft=0.5)]
+        result = fmt_minibatch_trajectories(items)
+        assert "(no trace data)" in result
+
+
+class TestExtractJson:
+    def test_valid_json(self) -> None:
+        from factory.skillopt.reflect import _extract_json
+
+        result = _extract_json('Some text {"key": "value"} trailing')
+        assert result == {"key": "value"}
+
+    def test_no_json(self) -> None:
+        from factory.skillopt.reflect import _extract_json
+
+        assert _extract_json("no json here") is None
+
+    def test_invalid_json(self) -> None:
+        from factory.skillopt.reflect import _extract_json
+
+        assert _extract_json("{not valid json}") is None
+
+
+class TestParseRawPatch:
+    def test_valid_patch(self) -> None:
+        from factory.skillopt.reflect import _parse_raw_patch
+
+        data = {
+            "patch": {
+                "edits": [{"op": "append", "content": "new rule"}],
+                "reasoning": "test",
+            },
+            "failure_summary": [
+                {"failure_type": "timeout", "count": 3, "description": "timed out"},
+            ],
+        }
+        result = _parse_raw_patch(data, "failure", 4)
+        assert result is not None
+        assert len(result.patch.edits) == 1
+        assert result.source_type == "failure"
+        assert result.batch_size == 4
+        assert len(result.failure_summary) == 1
+
+    def test_flat_data(self) -> None:
+        from factory.skillopt.reflect import _parse_raw_patch
+
+        data = {"edits": [{"op": "delete", "target": "bad rule"}], "reasoning": "r"}
+        result = _parse_raw_patch(data, "success", 2)
+        assert result is not None
+        assert result.patch.edits[0].op == "delete"
+
+    def test_invalid_data(self) -> None:
+        from factory.skillopt.reflect import _parse_raw_patch
+
+        result = _parse_raw_patch({"edits": [{"op": "invalid_op"}]}, "failure", 1)
+        assert result is None
+
+
+class TestRunErrorAnalystMinibatch:
+    def test_success(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        llm_response = json.dumps({
+            "patch": {
+                "edits": [{"op": "append", "content": "- handle timeout"}],
+                "reasoning": "add timeout handling",
+            },
+        })
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: llm_response)
+        items = [RolloutResult(id="t1", hard=0.0, soft=0.0, fail_reason="timeout")]
+        result = reflect.run_error_analyst_minibatch("# Skill", items)
+        assert result is not None
+        assert result.source_type == "failure"
+        assert len(result.patch.edits) == 1
+
+    def test_llm_returns_none(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: None)
+        items = [RolloutResult(id="t1", hard=0.0, soft=0.0)]
+        assert reflect.run_error_analyst_minibatch("# Skill", items) is None
+
+    def test_llm_returns_bad_json(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: "not json")
+        items = [RolloutResult(id="t1", hard=0.0, soft=0.0)]
+        assert reflect.run_error_analyst_minibatch("# Skill", items) is None
+
+
+class TestRunSuccessAnalystMinibatch:
+    def test_success(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        llm_response = json.dumps({
+            "patch": {
+                "edits": [{"op": "append", "content": "- reinforce pattern"}],
+                "reasoning": "reinforce success",
+            },
+        })
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: llm_response)
+        items = [RolloutResult(id="s1", hard=1.0, soft=1.0)]
+        result = reflect.run_success_analyst_minibatch("# Skill", items)
+        assert result is not None
+        assert result.source_type == "success"
+
+    def test_llm_returns_none(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: None)
+        items = [RolloutResult(id="s1", hard=1.0, soft=1.0)]
+        assert reflect.run_success_analyst_minibatch("# Skill", items) is None
+
+
+class TestRunMinibatchReflect:
+    def test_splits_and_collects(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        call_count = 0
+
+        def mock_llm(prompt: str, timeout: int = 300) -> str:
+            nonlocal call_count
+            call_count += 1
+            return json.dumps({
+                "patch": {
+                    "edits": [{"op": "append", "content": f"edit-{call_count}"}],
+                    "reasoning": "reason",
+                },
+            })
+
+        monkeypatch.setattr(reflect, "_call_llm", mock_llm)
+        results = [
+            RolloutResult(id="f1", hard=0.0, soft=0.0),
+            RolloutResult(id="s1", hard=1.0, soft=1.0),
+        ]
+        patches = reflect.run_minibatch_reflect(
+            results, "# Skill", minibatch_size=4, workers=1,
+        )
+        assert len(patches) == 2
+
+    def test_all_failures(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        response = json.dumps({
+            "patch": {"edits": [{"op": "append", "content": "fix"}], "reasoning": "r"},
+        })
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: response)
+        results = [RolloutResult(id=f"f{i}", hard=0.0, soft=0.0) for i in range(3)]
+        patches = reflect.run_minibatch_reflect(
+            results, "# Skill", minibatch_size=4, workers=1,
+        )
+        assert len(patches) == 1
+        assert patches[0].source_type == "failure"
+
+    def test_empty_results(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr(reflect, "_call_llm", lambda prompt, timeout=300: None)
+        patches = reflect.run_minibatch_reflect([], "# Skill", workers=1)
+        assert patches == []
+
+
+class TestCallLlm:
+    def test_no_claude_binary(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr("shutil.which", lambda cmd: None)
+        assert reflect._call_llm("test prompt") is None
+
+    def test_subprocess_timeout(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/claude")
+
+        def raise_timeout(*args: Any, **kwargs: Any) -> None:
+            raise subprocess.TimeoutExpired(cmd="claude", timeout=300)
+
+        monkeypatch.setattr("subprocess.run", raise_timeout)
+        assert reflect._call_llm("test") is None
+
+    def test_successful_call(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/claude")
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: subprocess.CompletedProcess(
+                args=["claude", "-p", "test"], returncode=0, stdout="response text\n",
+            ),
+        )
+        assert reflect._call_llm("test") == "response text"
+
+    def test_empty_stdout(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/claude")
+        monkeypatch.setattr(
+            "subprocess.run",
+            lambda *a, **kw: subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="  \n",
+            ),
+        )
+        assert reflect._call_llm("test") is None
+
+
+# ---------------------------------------------------------------------------
+# aggregate.py — Patch merging with mocked LLM
+# ---------------------------------------------------------------------------
+
+
+class TestMergePatches:
+    def test_empty_both(self) -> None:
+        from factory.skillopt.aggregate import merge_patches
+
+        result = merge_patches("# Skill", [], [])
+        assert result.edits == []
+
+    def test_failure_only(self, monkeypatch: Any) -> None:
+        from factory.skillopt.aggregate import merge_patches
+
+        merged_response = json.dumps({
+            "edits": [{"op": "append", "content": "- fix bug"}],
+            "reasoning": "merged failure",
+        })
+        monkeypatch.setattr(
+            "factory.skillopt.reflect._call_llm",
+            lambda prompt, timeout=300: merged_response,
+        )
+        fp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="fix1")]),
+            source_type="failure",
+        )
+        result = merge_patches("# Skill", [fp], [])
+        assert len(result.edits) >= 1
+
+    def test_success_only(self, monkeypatch: Any) -> None:
+        from factory.skillopt.aggregate import merge_patches
+
+        merged_response = json.dumps({
+            "edits": [{"op": "append", "content": "- reinforce"}],
+            "reasoning": "merged success",
+        })
+        monkeypatch.setattr(
+            "factory.skillopt.reflect._call_llm",
+            lambda prompt, timeout=300: merged_response,
+        )
+        sp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="good")]),
+            source_type="success",
+        )
+        result = merge_patches("# Skill", [], [sp])
+        assert len(result.edits) >= 1
+
+    def test_both_patches(self, monkeypatch: Any) -> None:
+        from factory.skillopt.aggregate import merge_patches
+
+        monkeypatch.setattr(
+            "factory.skillopt.reflect._call_llm",
+            lambda prompt, timeout=300: json.dumps({
+                "edits": [{"op": "append", "content": "combined"}],
+                "reasoning": "final merge",
+            }),
+        )
+        fp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="fix")]),
+            source_type="failure",
+        )
+        sp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="reinforce")]),
+            source_type="success",
+        )
+        result = merge_patches("# Skill", [fp], [sp])
+        assert len(result.edits) >= 1
+
+    def test_llm_fails_returns_failure_patch(self, monkeypatch: Any) -> None:
+        from factory.skillopt.aggregate import merge_patches
+
+        monkeypatch.setattr(
+            "factory.skillopt.reflect._call_llm",
+            lambda prompt, timeout=300: None,
+        )
+        fp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="fix")]),
+            source_type="failure",
+        )
+        sp = RawPatch(
+            patch=Patch(edits=[Edit(op="append", content="good")]),
+            source_type="success",
+        )
+        result = merge_patches("# Skill", [fp], [sp])
+        assert result.edits[0].content == "fix"
+
+
+class TestHierarchicalMerge:
+    def test_empty_patches(self) -> None:
+        from factory.skillopt.aggregate import _hierarchical_merge
+
+        result = _hierarchical_merge("# Skill", [], "prompt")
+        assert result.edits == []
+
+    def test_single_patch(self) -> None:
+        from factory.skillopt.aggregate import _hierarchical_merge
+
+        p = Patch(edits=[Edit(op="append", content="x")])
+        result = _hierarchical_merge("# Skill", [p], "prompt")
+        assert result is p
+
+    def test_multiple_patches_merged(self, monkeypatch: Any) -> None:
+        from factory.skillopt.aggregate import _hierarchical_merge
+
+        monkeypatch.setattr(
+            "factory.skillopt.reflect._call_llm",
+            lambda prompt, timeout=300: json.dumps({
+                "edits": [{"op": "append", "content": "merged"}],
+                "reasoning": "combined",
+            }),
+        )
+        patches = [
+            Patch(edits=[Edit(op="append", content=f"p{i}")])
+            for i in range(3)
+        ]
+        result = _hierarchical_merge("# Skill", patches, "{{SKILL_CONTENT}}{{PATCHES}}")
+        assert len(result.edits) >= 1
+
+
+class TestParsePatchAggregate:
+    def test_parse_patch(self) -> None:
+        from factory.skillopt.aggregate import _parse_patch
+
+        data = {
+            "edits": [
+                {"op": "append", "content": "new rule", "support_count": 3},
+                {"op": "delete", "target": "old rule"},
+            ],
+            "reasoning": "test reason",
+        }
+        result = _parse_patch(data)
+        assert len(result.edits) == 2
+        assert result.reasoning == "test reason"
+        assert result.edits[0].support_count == 3
+
+    def test_parse_empty(self) -> None:
+        from factory.skillopt.aggregate import _parse_patch
+
+        result = _parse_patch({})
+        assert result.edits == []
+        assert result.reasoning == ""
+
+
+class TestExtractJsonAggregate:
+    def test_valid(self) -> None:
+        from factory.skillopt.aggregate import _extract_json
+
+        result = _extract_json('prefix {"a": 1} suffix')
+        assert result == {"a": 1}
+
+    def test_invalid(self) -> None:
+        from factory.skillopt.aggregate import _extract_json
+
+        assert _extract_json("no json") is None
+
+
+# ---------------------------------------------------------------------------
+# clip.py — LLM-driven ranking with mocked LLM
+# ---------------------------------------------------------------------------
+
+
+class TestRankAndSelectLLM:
+    def test_llm_returns_ranked_edits(self) -> None:
+        edits = [Edit(op="append", content=str(i)) for i in range(5)]
+        p = Patch(edits=edits, reasoning="original")
+        llm_response = json.dumps({
+            "edits": [
+                {"op": "append", "content": "2"},
+                {"op": "append", "content": "0"},
+            ],
+            "reasoning": "top 2 selected",
+            "ranking_details": {"method": "llm"},
+        })
+        with patch("factory.skillopt.clip._call_llm", return_value=llm_response):
+            result = rank_and_select("skill content", p, max_edits=2)
+        assert len(result.edits) == 2
+        assert result.edits[0].content == "2"
+        assert result.edits[1].content == "0"
+        assert result.reasoning == "top 2 selected"
+        assert result.ranking_details == {"method": "llm"}
+
+    def test_llm_returns_no_json_match(self) -> None:
+        edits = [Edit(op="append", content=str(i)) for i in range(5)]
+        p = Patch(edits=edits, reasoning="original")
+        with patch("factory.skillopt.clip._call_llm", return_value="no json here"):
+            result = rank_and_select("skill content", p, max_edits=2)
+        assert len(result.edits) == 2
+        assert result.reasoning == "original"
+
+    def test_llm_returns_bad_json(self) -> None:
+        edits = [Edit(op="append", content=str(i)) for i in range(5)]
+        p = Patch(edits=edits, reasoning="original")
+        with patch("factory.skillopt.clip._call_llm", return_value="{invalid json}"):
+            result = rank_and_select("skill content", p, max_edits=2)
+        assert len(result.edits) == 2
+
+    def test_llm_respects_max_edits_cap(self) -> None:
+        edits = [Edit(op="append", content=str(i)) for i in range(5)]
+        p = Patch(edits=edits, reasoning="original")
+        llm_response = json.dumps({
+            "edits": [
+                {"op": "append", "content": str(i)} for i in range(10)
+            ],
+            "reasoning": "too many",
+        })
+        with patch("factory.skillopt.clip._call_llm", return_value=llm_response):
+            result = rank_and_select("skill content", p, max_edits=3)
+        assert len(result.edits) == 3
+
+
+# ---------------------------------------------------------------------------
+# trainer.py — Full training loop with mock adapter
+# ---------------------------------------------------------------------------
+
+
+class _MockAdapter(EnvAdapter):
+    """Mock adapter that returns controlled scores for training loop tests."""
+
+    def __init__(
+        self,
+        train_results: list[RolloutResult] | None = None,
+        eval_results: list[RolloutResult] | None = None,
+        reflect_patches: list[RawPatch] | None = None,
+    ) -> None:
+        self._train_results = train_results or [
+            RolloutResult(id="t1", hard=0.5, soft=0.3),
+        ]
+        self._eval_results = eval_results or [
+            RolloutResult(id="e1", hard=0.8, soft=0.6),
+        ]
+        self._reflect_patches = reflect_patches or [
+            RawPatch(
+                patch=Patch(
+                    edits=[Edit(op="append", content="- new rule")],
+                    reasoning="improve",
+                ),
+                source_type="failure",
+            ),
+        ]
+
+    def build_train_env(self, batch_size: int, seed: int) -> Any:
+        return {"batch_size": batch_size, "seed": seed}
+
+    def build_eval_env(self, env_num: int, split: str, seed: int) -> Any:
+        return {"env_num": env_num, "split": split, "seed": seed}
+
+    def rollout(
+        self, env_manager: Any, skill_content: str, out_dir: str,
+    ) -> list[RolloutResult]:
+        if isinstance(env_manager, dict) and env_manager.get("split") == "eval":
+            return list(self._eval_results)
+        return list(self._train_results)
+
+    def reflect(
+        self,
+        results: list[RolloutResult],
+        skill_content: str,
+        out_dir: str,
+        **kwargs: Any,
+    ) -> list[RawPatch]:
+        return list(self._reflect_patches)
+
+    def get_task_types(self) -> list[str]:
+        return ["test_type"]
+
+
+class TestTrainLoop:
+    def test_one_step_accepted(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill\noriginal content")
+        adapter = _MockAdapter(
+            eval_results=[RolloutResult(id="e1", hard=0.9, soft=0.7)],
+        )
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            batch_size=2,
+            learning_rate=3,
+            out_dir=str(tmp_path / ".skillopt"),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge, \
+             patch("factory.skillopt.clip.rank_and_select") as mock_clip:
+            merged = Patch(
+                edits=[Edit(op="append", content="- new rule")],
+                reasoning="merged",
+            )
+            mock_merge.return_value = merged
+            mock_clip.return_value = merged
+            trainer.train()
+
+        assert trainer.best_score > 0
+        assert trainer.global_step == 1
+        final_skill = skill_file.read_text()
+        assert "- new rule" in final_skill
+
+    def test_one_step_rejected(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill\noriginal")
+        adapter = _MockAdapter(
+            train_results=[RolloutResult(id="t1", hard=0.8, soft=0.6)],
+            eval_results=[RolloutResult(id="e1", hard=0.3, soft=0.2)],
+        )
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            batch_size=2,
+            learning_rate=3,
+            out_dir=str(tmp_path / ".skillopt"),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge, \
+             patch("factory.skillopt.clip.rank_and_select") as mock_clip:
+            merged = Patch(
+                edits=[Edit(op="append", content="- bad rule")],
+                reasoning="bad",
+            )
+            mock_merge.return_value = merged
+            mock_clip.return_value = merged
+            trainer.train()
+
+        assert len(trainer.rejected_edits) == 1
+        final_skill = skill_file.read_text()
+        assert "- bad rule" not in final_skill
+
+    def test_checkpoint_created(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill")
+        out_dir = tmp_path / ".skillopt"
+        adapter = _MockAdapter()
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            out_dir=str(out_dir),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge, \
+             patch("factory.skillopt.clip.rank_and_select") as mock_clip:
+            merged = Patch(edits=[Edit(op="append", content="x")])
+            mock_merge.return_value = merged
+            mock_clip.return_value = merged
+            trainer.train()
+
+        ckpt_dir = out_dir / "checkpoints"
+        assert ckpt_dir.is_dir()
+        assert (ckpt_dir / "epoch1_step1_skill.md").exists()
+        assert (ckpt_dir / "epoch1_step1_state.json").exists()
+        assert (ckpt_dir / "final_skill.md").exists()
+        assert (ckpt_dir / "final_state.json").exists()
+
+    def test_no_patches_rejects(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill")
+        adapter = _MockAdapter(reflect_patches=[])
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            out_dir=str(tmp_path / ".skillopt"),
+        )
+        trainer.train()
+        assert trainer.global_step == 1
+
+    def test_empty_merged_edits_rejects(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill")
+        adapter = _MockAdapter()
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            out_dir=str(tmp_path / ".skillopt"),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge:
+            mock_merge.return_value = Patch(edits=[])
+            trainer.train()
+        assert trainer.global_step == 1
+
+    def test_multi_epoch_multi_step(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill")
+        adapter = _MockAdapter(
+            eval_results=[RolloutResult(id="e1", hard=0.9, soft=0.8)],
+        )
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=2,
+            steps_per_epoch=2,
+            out_dir=str(tmp_path / ".skillopt"),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge, \
+             patch("factory.skillopt.clip.rank_and_select") as mock_clip:
+            merged = Patch(edits=[Edit(op="append", content="r")])
+            mock_merge.return_value = merged
+            mock_clip.return_value = merged
+            trainer.train()
+
+        assert trainer.global_step == 4
+
+    def test_step_artifacts_written(self, tmp_path: Any) -> None:
+        skill_file = tmp_path / "SKILL.md"
+        skill_file.write_text("# Skill")
+        out_dir = tmp_path / ".skillopt"
+        adapter = _MockAdapter(
+            eval_results=[RolloutResult(id="e1", hard=0.9, soft=0.8)],
+        )
+        trainer = SkillOptTrainer(
+            adapter=adapter,
+            skill_path=str(skill_file),
+            epochs=1,
+            steps_per_epoch=1,
+            out_dir=str(out_dir),
+        )
+        with patch("factory.skillopt.aggregate.merge_patches") as mock_merge, \
+             patch("factory.skillopt.clip.rank_and_select") as mock_clip:
+            merged = Patch(edits=[Edit(op="append", content="x")])
+            mock_merge.return_value = merged
+            mock_clip.return_value = merged
+            trainer.train()
+
+        step_dir = out_dir / "epoch1" / "step1"
+        assert (step_dir / "patch.json").exists()
+        assert (step_dir / "gate.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# swebench.py — SWE-bench adapter with mocked subprocess
+# ---------------------------------------------------------------------------
+
+
+class TestSwebenchAdapter:
+    def test_build_train_env(self) -> None:
+        from factory.skillopt.adapters.swebench import SwebenchAdapter
+
+        adapter = SwebenchAdapter()
+        result = adapter.build_train_env(batch_size=4, seed=42)
+        assert result == 4
+
+    def test_build_eval_env(self) -> None:
+        from factory.skillopt.adapters.swebench import SwebenchAdapter
+
+        adapter = SwebenchAdapter()
+        result = adapter.build_eval_env(env_num=8, split="eval", seed=0)
+        assert result == 8
+
+    def test_get_task_types(self) -> None:
+        from factory.skillopt.adapters.swebench import SwebenchAdapter
+
+        adapter = SwebenchAdapter()
+        assert adapter.get_task_types() == ["bug_fix"]
+
+    def test_setup(self, tmp_path: Any) -> None:
+        from factory.skillopt.adapters.swebench import SwebenchAdapter
+
+        adapter = SwebenchAdapter()
+        custom_path = str(tmp_path / "custom" / "SKILL.md")
+        adapter.setup({"skill_path": custom_path})
+        assert str(adapter.skill_path) == custom_path
+
+
+class TestParseJobsDir:
+    def test_extracts_path(self) -> None:
+        from factory.skillopt.adapters.swebench import _parse_jobs_dir
+
+        stdout = "Some output\nJobs directory: /tmp/harbor/jobs/123\nMore output"
+        assert _parse_jobs_dir(stdout) == "/tmp/harbor/jobs/123"
+
+    def test_no_match(self) -> None:
+        from factory.skillopt.adapters.swebench import _parse_jobs_dir
+
+        assert _parse_jobs_dir("no jobs dir here") == ""
+
+    def test_whitespace_handling(self) -> None:
+        from factory.skillopt.adapters.swebench import _parse_jobs_dir
+
+        stdout = "Jobs directory:   /tmp/dir  \n"
+        assert _parse_jobs_dir(stdout) == "/tmp/dir"
+
+
+class TestCollectResults:
+    def test_no_results_dir(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", tmp_path / "nonexistent")
+        result = swebench._collect_results(str(tmp_path / "out"), "")
+        assert result == []
+
+    def test_empty_results_dir(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+        result = swebench._collect_results(str(tmp_path / "out"), "")
+        assert result == []
+
+    def test_parses_result_file(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        result_file = results_dir / "20260101T000000Z-swebench-full.json"
+        result_file.write_text(json.dumps({
+            "tasks": [
+                {"instance_id": "test__1", "resolved": True},
+                {"instance_id": "test__2", "resolved": False, "fail_reason": "crash"},
+            ],
+        }))
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+        monkeypatch.setattr(swebench, "_fetch_trace_dump", lambda trace_id: "")
+        out_dir = tmp_path / "out"
+        results = swebench._collect_results(str(out_dir), "")
+        assert len(results) == 2
+        assert results[0].hard == 1.0
+        assert results[1].hard == 0.0
+        assert results[1].fail_reason == "crash"
+        assert (out_dir / "rollout_results.json").exists()
+
+    def test_bad_json_in_result_file(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        (results_dir / "20260101T000000Z-swebench-full.json").write_text("not json")
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+        result = swebench._collect_results(str(tmp_path / "out"), "")
+        assert result == []
+
+    def test_no_tasks_key(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        (results_dir / "20260101T000000Z-swebench-full.json").write_text("{}")
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+        result = swebench._collect_results(str(tmp_path / "out"), "")
+        assert result == []
+
+
+class TestExtractTraceIds:
+    def test_extracts_from_jobs_dir(self, tmp_path: Any) -> None:
+        from factory.skillopt.adapters.swebench import _extract_trace_ids_from_jobs
+
+        trial_dir = tmp_path / "test__instance__abc1234"
+        trial_dir.mkdir(parents=True)
+        (trial_dir / "trace_id.txt").write_text("trace-abc-123")
+        result = _extract_trace_ids_from_jobs(str(tmp_path))
+        assert result.get("test__instance") == "trace-abc-123"
+
+    def test_empty_jobs_dir(self) -> None:
+        from factory.skillopt.adapters.swebench import _extract_trace_ids_from_jobs
+
+        assert _extract_trace_ids_from_jobs("") == {}
+
+    def test_nonexistent_dir(self) -> None:
+        from factory.skillopt.adapters.swebench import _extract_trace_ids_from_jobs
+
+        assert _extract_trace_ids_from_jobs("/nonexistent/path") == {}
+
+    def test_agent_subdirectory(self, tmp_path: Any) -> None:
+        from factory.skillopt.adapters.swebench import _extract_trace_ids_from_jobs
+
+        trial_dir = tmp_path / "test__inst__xyz9876" / "agent"
+        trial_dir.mkdir(parents=True)
+        (trial_dir / "trace_id.txt").write_text("trace-xyz")
+        result = _extract_trace_ids_from_jobs(str(tmp_path))
+        assert result.get("test__inst") == "trace-xyz"
+
+
+class TestSwebenchRollout:
+    def test_script_not_found(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        monkeypatch.setattr(swebench, "_BENCHMARKS_DIR", tmp_path / "nonexistent")
+        adapter = swebench.SwebenchAdapter()
+        skill_dir = tmp_path / "skills" / "workflow-swebench"
+        skill_dir.mkdir(parents=True)
+        adapter.skill_path = skill_dir / "SKILL.md"
+        result = adapter.rollout(4, "# Skill", str(tmp_path / "out"))
+        assert result == []
+
+    def test_subprocess_timeout(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        bench_dir = tmp_path / "bench"
+        bench_dir.mkdir()
+        script = bench_dir / "run-harbor.sh"
+        script.write_text("#!/bin/bash\nexit 0")
+        monkeypatch.setattr(swebench, "_BENCHMARKS_DIR", bench_dir)
+        adapter = swebench.SwebenchAdapter()
+        skill_dir = tmp_path / "skills" / "workflow-swebench"
+        skill_dir.mkdir(parents=True)
+        adapter.skill_path = skill_dir / "SKILL.md"
+
+        def raise_timeout(*a: Any, **kw: Any) -> None:
+            raise subprocess.TimeoutExpired(cmd="run-harbor.sh", timeout=9000)
+
+        monkeypatch.setattr("subprocess.run", raise_timeout)
+        result = adapter.rollout(4, "# Skill", str(tmp_path / "out"))
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# __main__.py — CLI argument parsing
+# ---------------------------------------------------------------------------
+
+
+class TestCliParsing:
+    def test_parse_args(self) -> None:
+        import argparse
+
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--benchmark", required=True, choices=[
+            "swebench", "featurebench", "programbench", "terminalbench", "legacybench",
+        ])
+        parser.add_argument("--skill-path", required=True)
+        parser.add_argument("--epochs", type=int, default=3)
+        parser.add_argument("--steps-per-epoch", type=int, default=5)
+        parser.add_argument("--batch-size", type=int, default=8)
+        parser.add_argument("--learning-rate", type=int, default=3)
+        parser.add_argument("--metric", choices=["hard", "soft", "mixed"], default="hard")
+        args = parser.parse_args([
+            "--benchmark", "swebench",
+            "--skill-path", "/tmp/SKILL.md",
+            "--epochs", "2",
+        ])
+        assert args.benchmark == "swebench"
+        assert args.skill_path == "/tmp/SKILL.md"
+        assert args.epochs == 2
+        assert args.batch_size == 8
+
+    def test_load_adapter_unknown(self) -> None:
+        from factory.skillopt.__main__ import _load_adapter
+
+        with pytest.raises(SystemExit):
+            _load_adapter("nonexistent_bench")
+
+    def test_load_adapter_swebench(self) -> None:
+        from factory.skillopt.__main__ import _load_adapter
+        from factory.skillopt.adapters.swebench import SwebenchAdapter
+
+        adapter = _load_adapter("swebench")
+        assert isinstance(adapter, SwebenchAdapter)
+
+    def test_main_missing_args(self, monkeypatch: Any) -> None:
+        monkeypatch.setattr("sys.argv", ["skillopt"])
+        from factory.skillopt.__main__ import main
+
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 2
+
+
+# ---------------------------------------------------------------------------
+# Adapter stubs — verify NotImplementedError
+# ---------------------------------------------------------------------------
+
+
+class TestAdapterStubs:
+    def test_featurebench_raises(self) -> None:
+        from factory.skillopt.adapters.featurebench import FeaturebenchAdapter
+
+        adapter = FeaturebenchAdapter()
+        with pytest.raises(NotImplementedError):
+            adapter.build_train_env(4, seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.build_eval_env(4, "eval", seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.rollout(None, "skill", "/tmp/out")
+        with pytest.raises(NotImplementedError):
+            adapter.get_task_types()
+
+    def test_programbench_raises(self) -> None:
+        from factory.skillopt.adapters.programbench import ProgrambenchAdapter
+
+        adapter = ProgrambenchAdapter()
+        with pytest.raises(NotImplementedError):
+            adapter.build_train_env(4, seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.build_eval_env(4, "eval", seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.rollout(None, "skill", "/tmp/out")
+        with pytest.raises(NotImplementedError):
+            adapter.get_task_types()
+
+    def test_terminalbench_raises(self) -> None:
+        from factory.skillopt.adapters.terminalbench import TerminalbenchAdapter
+
+        adapter = TerminalbenchAdapter()
+        with pytest.raises(NotImplementedError):
+            adapter.build_train_env(4, seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.build_eval_env(4, "eval", seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.rollout(None, "skill", "/tmp/out")
+        with pytest.raises(NotImplementedError):
+            adapter.get_task_types()
+
+    def test_legacybench_raises(self) -> None:
+        from factory.skillopt.adapters.legacybench import LegacybenchAdapter
+
+        adapter = LegacybenchAdapter()
+        with pytest.raises(NotImplementedError):
+            adapter.build_train_env(4, seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.build_eval_env(4, "eval", seed=0)
+        with pytest.raises(NotImplementedError):
+            adapter.rollout(None, "skill", "/tmp/out")
+        with pytest.raises(NotImplementedError):
+            adapter.get_task_types()
+
+
+# ---------------------------------------------------------------------------
+# adapter.py — Base EnvAdapter.reflect default implementation
+# ---------------------------------------------------------------------------
+
+
+class TestEnvAdapterReflect:
+    def test_reflect_delegates_to_run_minibatch(self, monkeypatch: Any) -> None:
+        from factory.skillopt import reflect
+
+        captured_kwargs: dict[str, Any] = {}
+
+        def mock_run_minibatch(
+            results: list, skill_content: str,
+            minibatch_size: int = 4, edit_budget: int = 5, workers: int = 4,
+        ) -> list:
+            captured_kwargs["minibatch_size"] = minibatch_size
+            captured_kwargs["edit_budget"] = edit_budget
+            return [RawPatch(patch=Patch(edits=[]), source_type="failure")]
+
+        monkeypatch.setattr(reflect, "run_minibatch_reflect", mock_run_minibatch)
+        adapter = _DummyAdapter()
+        result = adapter.reflect([], "skill", "/tmp", minibatch_size=2, edit_budget=7)
+        assert len(result) == 1
+        assert captured_kwargs["minibatch_size"] == 2
+        assert captured_kwargs["edit_budget"] == 7
+
+    def test_setup_is_noop(self) -> None:
+        adapter = _DummyAdapter()
+        adapter.setup({"key": "val"})

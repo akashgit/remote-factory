@@ -1,4 +1,5 @@
 """Git worktree lifecycle management for experiment isolation."""
+from __future__ import annotations
 
 import secrets
 import shutil
