@@ -84,13 +84,16 @@ class SkillOptTrainer:
     def _build_step_buffer_context(self) -> str:
         if not self.rejected_edits:
             return ""
-        parts = ["Previously rejected edits (DO NOT re-propose these):"]
+        lines = ["Previously rejected edits (DO NOT re-propose these):"]
         for i, patch in enumerate(self.rejected_edits):
-            summary_lines = [f"  Rejected patch {i + 1}: {patch.reasoning}"]
             for edit in patch.edits:
-                summary_lines.append(f"    - {edit.op}: {edit.content[:120]}")
-            parts.append("\n".join(summary_lines))
-        return "\n\n".join(parts)
+                target = edit.target[:60] if edit.target else edit.content[:60]
+                reasoning = patch.reasoning[:100] if patch.reasoning else ""
+                lines.append(f"  Rejected: {edit.op} at {target} — {reasoning}")
+        result = "\n".join(lines)
+        if len(result) > 2000:
+            result = result[:1997] + "..."
+        return result
 
     def _load_results(self, path: Path) -> list[RolloutResult]:
         raw = json.loads(path.read_text())
@@ -249,6 +252,7 @@ class SkillOptTrainer:
             best_step=self.best_step,
             global_step=self.global_step,
             metric=self.metric,
+            accept_ties=self.overfit,
         )
 
         if gate.action == "reject":

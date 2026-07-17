@@ -27,15 +27,23 @@ class SwebenchAdapter(EnvAdapter):
 
     def __init__(self) -> None:
         self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
+        self.instances: list[str] = []
 
     def setup(self, cfg: dict) -> None:
         self.skill_path = Path(cfg.get("skill_path", str(self.skill_path)))
+        self.instances = cfg.get("instances", [])
 
     def build_train_env(self, batch_size: int, seed: int) -> Any:
+        if self.instances:
+            log.info("train env built (pinned instances)", count=len(self.instances), seed=seed)
+            return self.instances
         log.info("train env built", limit=batch_size, seed=seed)
         return batch_size
 
     def build_eval_env(self, env_num: int, split: str, seed: int) -> Any:
+        if self.instances:
+            log.info("eval env built (pinned instances)", count=len(self.instances), split=split, seed=seed)
+            return self.instances
         log.info("eval env built", limit=env_num, split=split, seed=seed)
         return env_num
 
@@ -51,17 +59,21 @@ class SwebenchAdapter(EnvAdapter):
             log.error("run-harbor.sh not found", path=str(script))
             return []
 
-        limit = int(env_manager) if env_manager else 0
         cmd = [
             str(script), "swebench",
             "--all",
             "--timeout", "7200",
             "--preserve",
         ]
-        if limit > 0:
-            cmd += ["--limit", str(limit)]
+        if self.instances:
+            for instance_id in self.instances:
+                cmd += ["--include-task-name", f"*{instance_id}"]
+        else:
+            limit = int(env_manager) if env_manager else 0
+            if limit > 0:
+                cmd += ["--limit", str(limit)]
 
-        log.info("running harbor", cmd=" ".join(cmd), limit=limit)
+        log.info("running harbor", cmd=" ".join(cmd))
 
         try:
             result = subprocess.run(

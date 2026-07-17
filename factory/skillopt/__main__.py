@@ -96,6 +96,11 @@ def main() -> int:
         help="Path to JSON file with benchmark instance IDs",
     )
     parser.add_argument(
+        "--instances",
+        default="",
+        help="Comma-separated list of instance IDs to pin (runs the same tasks every rollout)",
+    )
+    parser.add_argument(
         "--overfit",
         action="store_true",
         help="Overfit mode: eval on same tasks as training (no separate eval split)",
@@ -109,10 +114,12 @@ def main() -> int:
 
     adapter_name = args.adapter or args.benchmark
     adapter = _load_adapter(adapter_name)
+    instances = [s.strip() for s in args.instances.split(",") if s.strip()] if args.instances else []
     adapter.setup({
         "results_dir": args.results_dir,
         "instances_file": args.instances_file,
         "skill_path": args.skill_path,
+        "instances": instances,
     })
 
     from factory.skillopt.trainer import SkillOptTrainer

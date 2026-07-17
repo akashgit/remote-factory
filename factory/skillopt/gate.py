@@ -27,6 +27,7 @@ def evaluate_gate(
     best_step: int,
     global_step: int,
     metric: str = "hard",
+    accept_ties: bool = False,
 ) -> GateResult:
     cand_score = select_gate_score(cand_hard, cand_soft, metric)
 
@@ -45,7 +46,8 @@ def evaluate_gate(
             best_step=global_step,
         )
 
-    if cand_score > current_score:
+    current_pass = cand_score >= current_score if accept_ties else cand_score > current_score
+    if current_pass:
         log.info(
             "gate: accept",
             cand=round(cand_score, 4),
