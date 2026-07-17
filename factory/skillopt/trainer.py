@@ -12,6 +12,11 @@ from factory.skillopt.clip import rank_and_select
 from factory.skillopt.gate import evaluate_gate, select_gate_score
 from factory.skillopt.skill import apply_patch
 from factory.skillopt.types import GateResult, Patch, RolloutResult
+from factory.skillopt.yaml_surface import (
+    extract_prompt_slots,
+    format_prompt_slots_for_llm,
+    load_yaml,
+)
 
 log = structlog.get_logger()
 
@@ -31,6 +36,7 @@ class SkillOptTrainer:
         out_dir: str = ".skillopt",
         overfit: bool = False,
         results_from: str = "",
+        annotations_path: str = "",
     ) -> None:
         self.adapter = adapter
         self.skill_path = Path(skill_path)
@@ -51,6 +57,28 @@ class SkillOptTrainer:
         self.current_skill: str = ""
         self.current_score: float = -1.0
         self.global_step: int = 0
+
+        self.yaml_surface: dict | None = None
+        self.prompt_slots: dict[str, str] = {}
+        self.prompt_slots_text: str = ""
+        self._resolve_annotations(annotations_path)
+
+    def _resolve_annotations(self, annotations_path: str) -> None:
+        if annotations_path:
+            path = Path(annotations_path)
+        else:
+            path = self.skill_path.parent / (self.skill_path.stem + ".annotations.yaml")
+        if path.exists():
+            self.yaml_surface = load_yaml(path)
+            self.prompt_slots = extract_prompt_slots(self.yaml_surface)
+            self.prompt_slots_text = format_prompt_slots_for_llm(self.yaml_surface)
+            log.info(
+                "loaded YAML annotations",
+                path=str(path),
+                prompt_slots=len(self.prompt_slots),
+            )
+        else:
+            log.info("no YAML annotations found, using legacy SKILL.md surface", path=str(path))
 
     def _load_skill(self) -> str:
         return self.skill_path.read_text()
@@ -100,6 +128,45 @@ class SkillOptTrainer:
         items = raw if isinstance(raw, list) else raw.get("results", raw.get("items", []))
         return [RolloutResult(**r) for r in items]
 
+    def _validate_edits_target_prompts_only(self, patch: Patch) -> list[str]:
+        """Validate that all edits in the patch target known prompt slot values."""
+        if not self.prompt_slots:
+            return []
+        known_values = set(self.prompt_slots.values())
+        violations: list[str] = []
+        for edit in patch.edits:
+            if edit.op == "replace" and edit.target and edit.target not in known_values:
+                violations.append(f"Edit targets non-prompt content: {edit.target[:80]}...")
+        return violations
+
+    def _update_prompt_slots_after_accept(self, accepted_patch: Patch) -> None:
+        """After accepting edits, update prompt_slots to reflect the new prompt values."""
+        if not self.prompt_slots:
+            return
+        for edit in accepted_patch.edits:
+            if edit.op != "replace" or not edit.target:
+                continue
+            for slot_name, slot_value in list(self.prompt_slots.items()):
+                if slot_value == edit.target:
+                    self.prompt_slots[slot_name] = edit.content
+                    break
+        self.prompt_slots_text = format_prompt_slots_for_llm(self._build_updated_yaml_surface())
+
+    def _build_updated_yaml_surface(self) -> dict:
+        """Build a YAML surface dict with current prompt slot values for formatting."""
+        if not self.yaml_surface:
+            return {}
+        import copy
+        surface = copy.deepcopy(self.yaml_surface)
+        for node_id, node in surface.items():
+            if not isinstance(node, dict):
+                continue
+            slots = node.get("slots", {})
+            for k in slots:
+                if k.startswith("task_prompt_") and k in self.prompt_slots:
+                    slots[k] = self.prompt_slots[k]
+        return surface
+
     def train(self) -> None:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.current_skill = self._load_skill()
@@ -114,6 +181,7 @@ class SkillOptTrainer:
             skill_path=str(self.skill_path),
             overfit=self.overfit,
             results_from=str(self.results_from) if self.results_from else "",
+            yaml_surface="yes" if self.yaml_surface else "no",
         )
 
         for epoch in range(self.epochs):
@@ -181,11 +249,18 @@ class SkillOptTrainer:
 
         step_buffer_context = self._build_step_buffer_context() if self.overfit else ""
 
+        reflect_kwargs: dict = {
+            "minibatch_size": max(1, self.batch_size // 2),
+            "edit_budget": self.learning_rate + 2,
+            "step_buffer_context": step_buffer_context,
+        }
+        if self.yaml_surface and self.prompt_slots:
+            reflect_kwargs["prompt_slots"] = self.prompt_slots
+            reflect_kwargs["prompt_slots_text"] = self.prompt_slots_text
+
         raw_patches = self.adapter.reflect(
             results, self.current_skill, step_dir,
-            minibatch_size=max(1, self.batch_size // 2),
-            edit_budget=self.learning_rate + 2,
-            step_buffer_context=step_buffer_context,
+            **reflect_kwargs,
         )
 
         if not raw_patches:
@@ -216,6 +291,20 @@ class SkillOptTrainer:
             )
 
         clipped = rank_and_select(self.current_skill, merged, max_edits=self.learning_rate)
+
+        if self.yaml_surface:
+            violations = self._validate_edits_target_prompts_only(clipped)
+            if violations:
+                log.warning("edits target non-prompt content, rejecting", violations=violations)
+                self.rejected_edits.append(clipped)
+                return GateResult(
+                    action="reject",
+                    current_skill=self.current_skill,
+                    current_score=self.current_score,
+                    best_skill=self.best_skill,
+                    best_score=self.best_score,
+                    best_step=self.best_step,
+                )
 
         candidate_skill = apply_patch(self.current_skill, clipped)
 
@@ -268,6 +357,8 @@ class SkillOptTrainer:
         else:
             self.current_skill = gate.current_skill
             self.current_score = gate.current_score
+            if self.yaml_surface:
+                self._update_prompt_slots_after_accept(clipped)
             if gate.action == "accept_new_best":
                 self.best_skill = gate.best_skill
                 self.best_score = gate.best_score

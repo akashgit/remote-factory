@@ -110,6 +110,11 @@ def main() -> int:
         default="",
         help="Path to existing rollout results JSON to use as first-step baseline",
     )
+    parser.add_argument(
+        "--annotations",
+        default="",
+        help="Path to YAML annotations file (default: SKILL.annotations.yaml next to --skill-path)",
+    )
     args = parser.parse_args()
 
     adapter_name = args.adapter or args.benchmark
@@ -136,6 +141,7 @@ def main() -> int:
         out_dir=args.out_dir,
         overfit=args.overfit,
         results_from=args.results_from,
+        annotations_path=args.annotations,
     )
     trainer.train()
     return 0
