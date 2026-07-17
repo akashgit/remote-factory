@@ -59,6 +59,8 @@ class SwebenchAdapter(EnvAdapter):
             log.error("run-harbor.sh not found", path=str(script))
             return []
 
+        _clean_result_files()
+
         cmd = [
             str(script), "swebench",
             "--all",
@@ -91,10 +93,30 @@ class SwebenchAdapter(EnvAdapter):
         if jobs_dir:
             log.info("jobs dir found", path=jobs_dir)
 
-        return _collect_results(out_dir, jobs_dir)
+        results = _collect_results(out_dir, jobs_dir)
+        if not results:
+            log.error(
+                "rollout produced no results — possible Harbor dedup or task mismatch",
+                instances=self.instances,
+                returncode=result.returncode,
+                stderr_tail=result.stderr[-500:] if result.stderr else "",
+            )
+        return results
 
     def get_task_types(self) -> list[str]:
         return ["bug_fix"]
+
+
+def _clean_result_files() -> None:
+    """Remove stale *-swebench-full.json files so the next run reads only fresh results."""
+    if not _RESULTS_DIR.is_dir():
+        return
+    for f in _RESULTS_DIR.glob("*-swebench-full.json"):
+        try:
+            f.unlink()
+            log.info("removed stale result file", path=str(f))
+        except OSError:
+            pass
 
 
 def _parse_jobs_dir(stdout: str) -> str:
