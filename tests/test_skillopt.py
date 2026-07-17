@@ -1324,6 +1324,39 @@ class TestExtractTraceIds:
         assert result.get("test__inst") == "trace-xyz"
 
 
+class TestCleanResultFiles:
+    def test_removes_swebench_files(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        (results_dir / "20260101T000000Z-swebench-full.json").write_text("{}")
+        (results_dir / "20260102T000000Z-swebench-full.json").write_text("{}")
+        (results_dir / "20260101T000000Z-featurebench-full.json").write_text("{}")
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+
+        swebench._clean_result_files()
+
+        remaining = list(results_dir.iterdir())
+        assert len(remaining) == 1
+        assert remaining[0].name == "20260101T000000Z-featurebench-full.json"
+
+    def test_noop_when_dir_missing(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", tmp_path / "nonexistent")
+        swebench._clean_result_files()
+
+    def test_noop_when_dir_empty(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+        swebench._clean_result_files()
+        assert list(results_dir.iterdir()) == []
+
+
 class TestSwebenchRollout:
     def test_script_not_found(self, tmp_path: Any, monkeypatch: Any) -> None:
         from factory.skillopt.adapters import swebench
@@ -1355,6 +1388,43 @@ class TestSwebenchRollout:
         monkeypatch.setattr("subprocess.run", raise_timeout)
         result = adapter.rollout(4, "# Skill", str(tmp_path / "out"))
         assert result == []
+
+    def test_cleans_stale_results_before_run(self, tmp_path: Any, monkeypatch: Any) -> None:
+        from factory.skillopt.adapters import swebench
+
+        bench_dir = tmp_path / "bench"
+        bench_dir.mkdir()
+        script = bench_dir / "run-harbor.sh"
+        script.write_text("#!/bin/bash\nexit 0")
+        script.chmod(0o755)
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        stale = results_dir / "20260101T000000Z-swebench-full.json"
+        stale.write_text(json.dumps({"tasks": [{"instance_id": "old", "resolved": True}]}))
+
+        monkeypatch.setattr(swebench, "_BENCHMARKS_DIR", bench_dir)
+        monkeypatch.setattr(swebench, "_RESULTS_DIR", results_dir)
+
+        adapter = swebench.SwebenchAdapter()
+        skill_dir = tmp_path / "skills" / "workflow-swebench"
+        skill_dir.mkdir(parents=True)
+        adapter.skill_path = skill_dir / "SKILL.md"
+
+        cleaned: list[str] = []
+        original_clean = swebench._clean_result_files
+
+        def track_clean() -> None:
+            original_clean()
+            cleaned.append("called")
+
+        monkeypatch.setattr(swebench, "_clean_result_files", track_clean)
+
+        def fake_run(*a: Any, **kw: Any) -> subprocess.CompletedProcess:
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        adapter.rollout(4, "# Skill", str(tmp_path / "out"))
+        assert len(cleaned) == 1
 
 
 # ---------------------------------------------------------------------------
