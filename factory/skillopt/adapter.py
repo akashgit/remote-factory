@@ -41,6 +41,7 @@ class EnvAdapter(ABC):
             minibatch_size=kwargs.get("minibatch_size", 4),
             edit_budget=kwargs.get("edit_budget", 5),
             workers=kwargs.get("workers", 4),
+            step_buffer_context=kwargs.get("step_buffer_context", ""),
         )
 
     @abstractmethod

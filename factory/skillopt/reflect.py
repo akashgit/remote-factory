@@ -115,6 +115,7 @@ def run_error_analyst_minibatch(
     skill_content: str,
     items: list[RolloutResult],
     edit_budget: int = 5,
+    step_buffer_context: str = "",
 ) -> RawPatch | None:
     template = _load_prompt("analyst_error.md")
     traces_text = fmt_minibatch_trajectories(items)
@@ -125,6 +126,8 @@ def run_error_analyst_minibatch(
         .replace("{{BATCH_SIZE}}", str(len(items)))
         .replace("{{EDIT_BUDGET}}", str(edit_budget))
     )
+    if step_buffer_context:
+        prompt += "\n\n" + step_buffer_context
     raw = _call_llm(prompt)
     if not raw:
         return None
@@ -139,6 +142,7 @@ def run_success_analyst_minibatch(
     skill_content: str,
     items: list[RolloutResult],
     edit_budget: int = 5,
+    step_buffer_context: str = "",
 ) -> RawPatch | None:
     template = _load_prompt("analyst_success.md")
     traces_text = fmt_minibatch_trajectories(items)
@@ -149,6 +153,8 @@ def run_success_analyst_minibatch(
         .replace("{{BATCH_SIZE}}", str(len(items)))
         .replace("{{EDIT_BUDGET}}", str(edit_budget))
     )
+    if step_buffer_context:
+        prompt += "\n\n" + step_buffer_context
     raw = _call_llm(prompt)
     if not raw:
         return None
@@ -165,6 +171,7 @@ def run_minibatch_reflect(
     minibatch_size: int = 4,
     edit_budget: int = 5,
     workers: int = 4,
+    step_buffer_context: str = "",
 ) -> list[RawPatch]:
     failures = [r for r in results if r.hard < 1.0]
     successes = [r for r in results if r.hard >= 1.0]
@@ -187,10 +194,14 @@ def run_minibatch_reflect(
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {}
         for batch in failure_batches:
-            f = pool.submit(run_error_analyst_minibatch, skill_content, batch, edit_budget)
+            f = pool.submit(
+                run_error_analyst_minibatch, skill_content, batch, edit_budget, step_buffer_context,
+            )
             futures[f] = "failure"
         for batch in success_batches:
-            f = pool.submit(run_success_analyst_minibatch, skill_content, batch, edit_budget)
+            f = pool.submit(
+                run_success_analyst_minibatch, skill_content, batch, edit_budget, step_buffer_context,
+            )
             futures[f] = "success"
 
         for future in as_completed(futures):
