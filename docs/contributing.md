@@ -52,6 +52,8 @@ uv run mypy factory/              # Type check
 
 We welcome contributions at all levels. Here are some ideas to get started.
 
+**Interested in contributing a benchmark?** See the dedicated [Contributing Benchmarks](contributing-benchmarks.md) guide for the full walkthrough: workflow definition, Harbor agent setup, CI integration, and the linter validation checklist.
+
 **Use re:factory to build your contribution.** Write your idea as a `factory.md` goal, point re:factory at the repo, and let it do the implementation work. Every idea below can be expressed as a one-line goal — re:factory will hypothesize, build, test, and iterate:
 
 ```bash
