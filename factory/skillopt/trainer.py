@@ -16,6 +16,7 @@ from factory.skillopt.yaml_surface import (
     extract_prompt_slots,
     format_prompt_slots_for_llm,
     load_yaml,
+    render_skill_from_slots,
 )
 
 log = structlog.get_logger()
@@ -37,6 +38,7 @@ class SkillOptTrainer:
         overfit: bool = False,
         results_from: str = "",
         annotations_path: str = "",
+        workflow_name: str = "",
     ) -> None:
         self.adapter = adapter
         self.skill_path = Path(skill_path)
@@ -58,6 +60,7 @@ class SkillOptTrainer:
         self.current_score: float = -1.0
         self.global_step: int = 0
 
+        self._workflow_name = workflow_name
         self.yaml_surface: dict | None = None
         self.prompt_slots: dict[str, str] = {}
         self.prompt_slots_text: str = ""
@@ -139,17 +142,24 @@ class SkillOptTrainer:
                 violations.append(f"Edit targets non-prompt content: {edit.target[:80]}...")
         return violations
 
-    def _update_prompt_slots_after_accept(self, accepted_patch: Patch) -> None:
+    def _update_prompt_slots_after_accept(
+        self,
+        accepted_patch: Patch,
+        candidate_slots: dict[str, str] | None = None,
+    ) -> None:
         """After accepting edits, update prompt_slots to reflect the new prompt values."""
         if not self.prompt_slots:
             return
-        for edit in accepted_patch.edits:
-            if edit.op != "replace" or not edit.target:
-                continue
-            for slot_name, slot_value in list(self.prompt_slots.items()):
-                if slot_value == edit.target:
-                    self.prompt_slots[slot_name] = edit.content
-                    break
+        if candidate_slots is not None:
+            self.prompt_slots = candidate_slots
+        else:
+            for edit in accepted_patch.edits:
+                if edit.op != "replace" or not edit.target:
+                    continue
+                for slot_name, slot_value in list(self.prompt_slots.items()):
+                    if slot_value == edit.target:
+                        self.prompt_slots[slot_name] = edit.content
+                        break
         self.prompt_slots_text = format_prompt_slots_for_llm(self._build_updated_yaml_surface())
 
     def _build_updated_yaml_surface(self) -> dict:
@@ -306,7 +316,22 @@ class SkillOptTrainer:
                     best_step=self.best_step,
                 )
 
-        candidate_skill = apply_patch(self.current_skill, clipped)
+        candidate_slots: dict[str, str] | None = None
+        if self.yaml_surface and self._workflow_name:
+            candidate_slots = dict(self.prompt_slots)
+            for edit in clipped.edits:
+                if edit.op == "replace":
+                    for slot_name, slot_value in self.prompt_slots.items():
+                        if slot_value == edit.target:
+                            candidate_slots[slot_name] = edit.content
+                            break
+            candidate_skill = render_skill_from_slots(
+                workflow_name=self._workflow_name,
+                prompt_slots=candidate_slots,
+                skill_path=self.skill_path,
+            )
+        else:
+            candidate_skill = apply_patch(self.current_skill, clipped)
 
         if self.overfit:
             self._save_skill(candidate_skill)
@@ -358,7 +383,7 @@ class SkillOptTrainer:
             self.current_skill = gate.current_skill
             self.current_score = gate.current_score
             if self.yaml_surface:
-                self._update_prompt_slots_after_accept(clipped)
+                self._update_prompt_slots_after_accept(clipped, candidate_slots)
             if gate.action == "accept_new_best":
                 self.best_skill = gate.best_skill
                 self.best_score = gate.best_score

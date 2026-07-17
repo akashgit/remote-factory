@@ -142,6 +142,7 @@ def main() -> int:
         overfit=args.overfit,
         results_from=args.results_from,
         annotations_path=args.annotations,
+        workflow_name=args.benchmark,
     )
     trainer.train()
     return 0

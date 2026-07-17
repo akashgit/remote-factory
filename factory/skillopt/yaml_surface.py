@@ -78,6 +78,36 @@ def apply_slot_edits(surface: dict, edits: list[SlotEdit]) -> dict:
     return updated
 
 
+def render_skill_from_slots(
+    workflow_name: str,
+    prompt_slots: dict[str, str],
+    skill_path: str | Path,
+) -> str:
+    """Re-render SKILL.md by loading the workflow, overriding prompt_template slots, and running the renderer."""
+    from factory.workflow.definitions import register_all
+    from factory.workflow.skill_export import workflow_to_skill_md
+    from factory.workflow.splitter import split_skill
+
+    workflows = register_all()
+    wf = workflows.get(workflow_name)
+    if not wf:
+        raise ValueError(f"Unknown workflow: {workflow_name}")
+
+    from factory.workflow.primitives import AgentNode
+
+    for slot_name, slot_value in prompt_slots.items():
+        node_id = slot_name.replace("task_prompt_", "")
+        node = wf.nodes.get(node_id)
+        if isinstance(node, AgentNode):
+            wf.nodes[node_id] = node.model_copy(update={"prompt_template": slot_value})
+
+    templatized = workflow_to_skill_md(wf)
+    clean_md, _ = split_skill(templatized)
+
+    Path(skill_path).write_text(clean_md)
+    return clean_md
+
+
 def format_prompt_slots_for_llm(surface: dict) -> str:
     """Format prompt slots as readable text for the LLM analyst."""
     sections: list[str] = []
