@@ -95,6 +95,16 @@ def main() -> int:
         default="",
         help="Path to JSON file with benchmark instance IDs",
     )
+    parser.add_argument(
+        "--overfit",
+        action="store_true",
+        help="Overfit mode: eval on same tasks as training (no separate eval split)",
+    )
+    parser.add_argument(
+        "--results-from",
+        default="",
+        help="Path to existing rollout results JSON to use as first-step baseline",
+    )
     args = parser.parse_args()
 
     adapter_name = args.adapter or args.benchmark
@@ -117,6 +127,8 @@ def main() -> int:
         eval_split_seed=args.eval_split_seed,
         metric=args.metric,
         out_dir=args.out_dir,
+        overfit=args.overfit,
+        results_from=args.results_from,
     )
     trainer.train()
     return 0

@@ -29,6 +29,8 @@ class SkillOptTrainer:
         eval_split_seed: int = 42,
         metric: str = "hard",
         out_dir: str = ".skillopt",
+        overfit: bool = False,
+        results_from: str = "",
     ) -> None:
         self.adapter = adapter
         self.skill_path = Path(skill_path)
@@ -39,6 +41,8 @@ class SkillOptTrainer:
         self.eval_split_seed = eval_split_seed
         self.metric = metric
         self.out_dir = Path(out_dir)
+        self.overfit = overfit
+        self.results_from = Path(results_from) if results_from else None
 
         self.rejected_edits: list[Patch] = []
         self.best_skill: str = ""
@@ -77,6 +81,22 @@ class SkillOptTrainer:
         soft = sum(r.soft for r in results) / len(results)
         return hard, soft
 
+    def _build_step_buffer_context(self) -> str:
+        if not self.rejected_edits:
+            return ""
+        parts = ["Previously rejected edits (DO NOT re-propose these):"]
+        for i, patch in enumerate(self.rejected_edits):
+            summary_lines = [f"  Rejected patch {i + 1}: {patch.reasoning}"]
+            for edit in patch.edits:
+                summary_lines.append(f"    - {edit.op}: {edit.content[:120]}")
+            parts.append("\n".join(summary_lines))
+        return "\n\n".join(parts)
+
+    def _load_results(self, path: Path) -> list[RolloutResult]:
+        raw = json.loads(path.read_text())
+        items = raw if isinstance(raw, list) else raw.get("results", raw.get("items", []))
+        return [RolloutResult(**r) for r in items]
+
     def train(self) -> None:
         self.out_dir.mkdir(parents=True, exist_ok=True)
         self.current_skill = self._load_skill()
@@ -89,6 +109,8 @@ class SkillOptTrainer:
             batch_size=self.batch_size,
             learning_rate=self.learning_rate,
             skill_path=str(self.skill_path),
+            overfit=self.overfit,
+            results_from=str(self.results_from) if self.results_from else "",
         )
 
         for epoch in range(self.epochs):
@@ -133,21 +155,34 @@ class SkillOptTrainer:
         step_dir = str(self.out_dir / f"epoch{epoch + 1}" / f"step{step + 1}")
         Path(step_dir).mkdir(parents=True, exist_ok=True)
 
-        env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
+        use_preloaded = (
+            self.results_from
+            and self.global_step == 1
+            and self.results_from.exists()
+        )
 
-        self._save_skill(self.current_skill)
-        results = self.adapter.rollout(env, self.current_skill, step_dir)
-        log.info("rollout complete", results=len(results))
+        if use_preloaded and self.results_from:
+            results = self._load_results(self.results_from)
+            env = None
+            log.info("loaded results from file", path=str(self.results_from), count=len(results))
+        else:
+            env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
+            self._save_skill(self.current_skill)
+            results = self.adapter.rollout(env, self.current_skill, step_dir)
+            log.info("rollout complete", results=len(results))
 
         hard_before, soft_before = self._compute_score(results)
         if self.current_score < 0:
             self.current_score = select_gate_score(hard_before, soft_before, self.metric)
             self.best_score = self.current_score
 
+        step_buffer_context = self._build_step_buffer_context() if self.overfit else ""
+
         raw_patches = self.adapter.reflect(
             results, self.current_skill, step_dir,
             minibatch_size=max(1, self.batch_size // 2),
             edit_budget=self.learning_rate + 2,
+            step_buffer_context=step_buffer_context,
         )
 
         if not raw_patches:
@@ -181,12 +216,27 @@ class SkillOptTrainer:
 
         candidate_skill = apply_patch(self.current_skill, clipped)
 
-        self._save_skill(candidate_skill)
-        eval_env = self.adapter.build_eval_env(
-            env_num=self.batch_size, split="eval", seed=self.eval_split_seed,
-        )
-        eval_results = self.adapter.rollout(eval_env, candidate_skill, step_dir + "/eval")
-        cand_hard, cand_soft = self._compute_score(eval_results)
+        if self.overfit:
+            self._save_skill(candidate_skill)
+            if use_preloaded:
+                env = self.adapter.build_train_env(self.batch_size, seed=self.global_step)
+            eval_results = self.adapter.rollout(env, candidate_skill, step_dir + "/eval")
+            cand_hard, cand_soft = self._compute_score(eval_results)
+            log.info(
+                "overfit eval",
+                step=self.global_step,
+                baseline=round(self.current_score, 4),
+                candidate=round(
+                    select_gate_score(cand_hard, cand_soft, self.metric), 4,
+                ),
+            )
+        else:
+            self._save_skill(candidate_skill)
+            eval_env = self.adapter.build_eval_env(
+                env_num=self.batch_size, split="eval", seed=self.eval_split_seed,
+            )
+            eval_results = self.adapter.rollout(eval_env, candidate_skill, step_dir + "/eval")
+            cand_hard, cand_soft = self._compute_score(eval_results)
 
         gate = evaluate_gate(
             candidate_skill=candidate_skill,
@@ -204,6 +254,13 @@ class SkillOptTrainer:
         if gate.action == "reject":
             self.rejected_edits.append(clipped)
             self._save_skill(self.current_skill)
+            log.info(
+                "step result",
+                step=self.global_step,
+                action="reject",
+                accepted_total=self.global_step - len(self.rejected_edits),
+                rejected_total=len(self.rejected_edits),
+            )
         else:
             self.current_skill = gate.current_skill
             self.current_score = gate.current_score
@@ -211,6 +268,14 @@ class SkillOptTrainer:
                 self.best_skill = gate.best_skill
                 self.best_score = gate.best_score
                 self.best_step = gate.best_step
+            log.info(
+                "step result",
+                step=self.global_step,
+                action=gate.action,
+                score=round(gate.current_score, 4),
+                accepted_total=self.global_step - len(self.rejected_edits),
+                rejected_total=len(self.rejected_edits),
+            )
 
         (Path(step_dir) / "patch.json").write_text(
             json.dumps(clipped.model_dump(), indent=2)

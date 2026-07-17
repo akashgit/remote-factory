@@ -1481,6 +1481,7 @@ class TestEnvAdapterReflect:
         def mock_run_minibatch(
             results: list, skill_content: str,
             minibatch_size: int = 4, edit_budget: int = 5, workers: int = 4,
+            step_buffer_context: str = "",
         ) -> list:
             captured_kwargs["minibatch_size"] = minibatch_size
             captured_kwargs["edit_budget"] = edit_budget
