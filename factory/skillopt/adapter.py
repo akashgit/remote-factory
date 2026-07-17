@@ -42,6 +42,8 @@ class EnvAdapter(ABC):
             edit_budget=kwargs.get("edit_budget", 5),
             workers=kwargs.get("workers", 4),
             step_buffer_context=kwargs.get("step_buffer_context", ""),
+            prompt_slots=kwargs.get("prompt_slots"),
+            prompt_slots_text=kwargs.get("prompt_slots_text"),
         )
 
     @abstractmethod
