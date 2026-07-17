@@ -318,13 +318,13 @@ Each benchmark run produces a JSON result file in `benchmarks/results/`. The sch
 The `resolved` field is the authoritative pass/fail signal. Harbor's verifier sets it. The `score` field is a float between 0 and 1, where 1.0 means the benchmark instance was fully solved.
 
 
-## Pre-Submission Checklist
+## Submission Checklist
 
 Before opening your PR, verify all of the following:
 
 **Workflow directory** (`factory/workflow/contributed/<name>/`)
 
-- [ ] `__init__.py` exists and re-exports `meta` and `workflow`
+- [ ] `__init__.py` exists and exports `meta` and `workflow`
 - [ ] `workflow.py` defines a `meta` dict with `name` and `description`
 - [ ] `workflow.py` defines a callable `workflow()` that returns a `Workflow`
 - [ ] `workflow()` executes without raising
