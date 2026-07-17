@@ -327,6 +327,7 @@ This path only ships the agent prompts (no skills, no slash commands) and is ind
 | [Configuration](docs/configuration.md) | `factory.md` reference — all sections and options |
 | [ACE Self-Improvement](docs/ace.md) | How re:factory evolves its own agent playbooks |
 | [Contributing](docs/contributing.md) | Dev setup, code style, testing, PR workflow |
+| [Contributing Benchmarks](docs/contributing-benchmarks.md) | How to add new benchmarks: workflow structure, Harbor setup, CI integration |
 
 ## Development
 
