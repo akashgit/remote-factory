@@ -327,33 +327,38 @@ class SkillOptTrainer:
                             candidate_slots[slot_name] = edit.content
                             break
 
+            total_magnitude = 0
             for slot_name, new_value in candidate_slots.items():
                 old_value = self.prompt_slots.get(slot_name, "")
                 if new_value == old_value:
                     continue
                 magnitude = compute_prompt_change_magnitude(old_value, new_value)
-                if magnitude > self.learning_rate:
-                    log.warning(
-                        "edit exceeds learning rate",
-                        slot=slot_name,
-                        magnitude=magnitude,
-                        limit=self.learning_rate,
-                    )
-                    self.rejected_edits.append(clipped)
-                    return GateResult(
-                        action="reject",
-                        current_skill=self.current_skill,
-                        current_score=self.current_score,
-                        best_skill=self.best_skill,
-                        best_score=self.best_score,
-                        best_step=self.best_step,
-                    )
+                total_magnitude += magnitude
                 log.info(
-                    "edit magnitude ok",
+                    "slot edit magnitude",
                     slot=slot_name,
                     magnitude=magnitude,
+                )
+            if total_magnitude > self.learning_rate:
+                log.warning(
+                    "total edit magnitude exceeds learning rate",
+                    total_magnitude=total_magnitude,
                     limit=self.learning_rate,
                 )
+                self.rejected_edits.append(clipped)
+                return GateResult(
+                    action="reject",
+                    current_skill=self.current_skill,
+                    current_score=self.current_score,
+                    best_skill=self.best_skill,
+                    best_score=self.best_score,
+                    best_step=self.best_step,
+                )
+            log.info(
+                "edit magnitude ok",
+                total_magnitude=total_magnitude,
+                limit=self.learning_rate,
+            )
 
             candidate_skill = render_skill_from_slots(
                 workflow_name=self._workflow_name,
