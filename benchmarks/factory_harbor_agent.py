@@ -386,3 +386,21 @@ class HarborIndexFactoryCeo(FactoryCeo):
     @override
     def name() -> str:
         return "harbor-index-factory-ceo"
+
+
+class TomsweFactoryCeo(FactoryCeo):
+    """Runs the deterministic tomswe workflow."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "tomswe-factory-ceo"
+
+    @override
+    def _get_factory_command(self) -> str:
+        return (
+            'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"; '
+            'factory workflow run tomswe . '
+            '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
+            '; exit 0'
+        )

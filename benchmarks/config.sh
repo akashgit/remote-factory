@@ -4,7 +4,7 @@
 # benchmark_all_names, and benchmark_instance_id.
 
 benchmark_all_names() {
-    echo "swebench featurebench terminalbench programbench harborindex"
+    echo "swebench featurebench terminalbench programbench harborindex tomswe"
 }
 
 benchmark_config() {
@@ -60,9 +60,15 @@ benchmark_config() {
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
             BENCH_FILTER_STYLE="exact"
             ;;
+        tomswe)
+            BENCH_DATASET="tomswe"
+            BENCH_AGENT_CLASS="factory_harbor_agent:TomsweFactoryCeo"
+            BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
+            BENCH_FILTER_STYLE="glob"
+            ;;
         *)
             echo "ERROR: Unknown benchmark '${name}'"
-            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex"
+            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe"
             return 1
             ;;
     esac
