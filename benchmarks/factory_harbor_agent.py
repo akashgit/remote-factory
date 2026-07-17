@@ -377,3 +377,12 @@ class FeaturebenchFactoryCeo(FactoryCeo):
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )
+
+
+class HarborIndexFactoryCeo(FactoryCeo):
+    """Runs the generic factory ceo approach for the Harbor-Index meta-benchmark."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "harbor-index-factory-ceo"

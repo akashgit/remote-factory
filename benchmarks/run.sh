@@ -7,7 +7,7 @@ set -euo pipefail
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]
 #
 # Arguments:
-#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench, legacybench
+#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench, legacybench, harborindex
 #   instance_id    Required. Benchmark-specific instance identifier
 #
 # Options:
@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ $# -lt 2 ]; then
     echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]"
     echo ""
-    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex"
     exit 1
 fi
 
@@ -58,10 +58,10 @@ esac
 
 # Validate benchmark
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench|programbench|legacybench) ;;
+    swebench|featurebench|terminalbench|programbench|legacybench|harborindex) ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex"
         exit 1
         ;;
 esac
