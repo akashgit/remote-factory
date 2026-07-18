@@ -14,10 +14,20 @@ from factory.runners import get_runner
 logger = logging.getLogger(__name__)
 
 AgentRole = Literal[
-    "researcher", "strategist", "builder", "qa",
-    "health_checker", "code_reviewer", "adversarial_tester",
-    "archivist", "ceo", "failure_analyst", "refiner", "profiler",
+    "researcher",
+    "strategist",
+    "builder",
+    "qa",
+    "health_checker",
+    "code_reviewer",
+    "adversarial_tester",
+    "archivist",
+    "ceo",
+    "failure_analyst",
+    "refiner",
+    "profiler",
     "refactory",
+    "knowledge_analyst",
 ]
 
 # Consecutive failure tracking
@@ -47,6 +57,7 @@ def reset_failure_counter() -> None:
     """Reset the consecutive failure counter. Call at start of a cycle."""
     global _consecutive_failures
     _consecutive_failures = 0
+
 
 IDENTITY_REANCHOR = """\
 
@@ -97,10 +108,11 @@ def resolve_prompt(
     # Fall back to factory default
     default_path = _PROMPTS_DIR / f"{role}.md"
     if not default_path.exists():
-        override_hint = f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
+        override_hint = (
+            f" or {project_path / '.factory' / 'agents' / f'{role}.md'}" if project_path else ""
+        )
         raise FileNotFoundError(
-            f"No prompt found for agent role '{role}'. "
-            f"Expected at {default_path}{override_hint}"
+            f"No prompt found for agent role '{role}'. Expected at {default_path}{override_hint}"
         )
 
     prompt = default_path.read_text()
@@ -215,12 +227,18 @@ async def invoke_agent(
         if return_code != 0:
             logger.warning("%s agent exited with code %d", role, return_code)
             _emit_safe(
-                project_path, "agent.failed", agent=role,
+                project_path,
+                "agent.failed",
+                agent=role,
                 data={"return_code": return_code, "stderr": stdout[:200] if stdout else ""},
             )
             _complete_span_safe(
-                project_path, sid, status="failed",
-                usage=usage, metadata=result.metadata, output=stdout,
+                project_path,
+                sid,
+                status="failed",
+                usage=usage,
+                metadata=result.metadata,
+                output=stdout,
             )
             if _track_failures:
                 _consecutive_failures += 1
@@ -230,25 +248,33 @@ async def invoke_agent(
             if review_tag:
                 completed_data["review_tag"] = review_tag
             if usage is not None:
-                completed_data.update({
-                    "input_tokens": usage.input_tokens,
-                    "output_tokens": usage.output_tokens,
-                    "cache_read_tokens": usage.cache_read_tokens,
-                    "total_cost_usd": usage.total_cost_usd,
-                    "duration_ms": usage.duration_ms,
-                    "num_turns": usage.num_turns,
-                    "model": usage.model,
-                })
+                completed_data.update(
+                    {
+                        "input_tokens": usage.input_tokens,
+                        "output_tokens": usage.output_tokens,
+                        "cache_read_tokens": usage.cache_read_tokens,
+                        "total_cost_usd": usage.total_cost_usd,
+                        "duration_ms": usage.duration_ms,
+                        "num_turns": usage.num_turns,
+                        "model": usage.model,
+                    }
+                )
             for meta_key in ("session_id", "stop_reason", "terminal_reason"):
                 if result.metadata.get(meta_key) is not None:
                     completed_data[meta_key] = result.metadata[meta_key]
             _emit_safe(
-                project_path, "agent.completed", agent=role,
+                project_path,
+                "agent.completed",
+                agent=role,
                 data=completed_data,
             )
             _complete_span_safe(
-                project_path, sid, status="completed",
-                usage=usage, metadata=result.metadata, output=stdout,
+                project_path,
+                sid,
+                status="completed",
+                usage=usage,
+                metadata=result.metadata,
+                output=stdout,
             )
             if _track_failures:
                 _consecutive_failures = 0
@@ -308,7 +334,8 @@ def _begin_span_safe(
         parent_span_id = os.environ.get("FACTORY_PARENT_SPAN_ID")
         logger.debug(
             "Langfuse env: FACTORY_TRACE_ID=%s FACTORY_PARENT_SPAN_ID=%s",
-            trace_id, parent_span_id,
+            trace_id,
+            parent_span_id,
         )
         if not trace_id:
             result = begin_trace(project_path.name, cycle_id=f"standalone-{role}")
@@ -348,8 +375,15 @@ def _complete_span_safe(
         usage_dict: dict | None = None
         if usage is not None:
             usage_dict = {}
-            for key in ("input_tokens", "output_tokens", "cache_read_tokens",
-                        "total_cost_usd", "duration_ms", "num_turns", "model"):
+            for key in (
+                "input_tokens",
+                "output_tokens",
+                "cache_read_tokens",
+                "total_cost_usd",
+                "duration_ms",
+                "num_turns",
+                "model",
+            ):
                 val = getattr(usage, key, None)
                 if val is not None:
                     usage_dict[key] = val
@@ -360,18 +394,25 @@ def _complete_span_safe(
             ingest_transcript_to_span(trace_id, span_id, claude_session_id, project_path)
 
         end_span(
-            trace_id, span_id,
-            status=status, usage=usage_dict, metadata=meta or None,
+            trace_id,
+            span_id,
+            status=status,
+            usage=usage_dict,
+            metadata=meta or None,
             output=output[:4000] if output else None,
         )
         from factory.telemetry import flush as _flush
+
         _flush()
     except Exception:
         logger.debug("Failed to complete span %s", span_id, exc_info=True)
 
 
 def _save_review(
-    project_path: Path, role: str, output: str, return_code: int,
+    project_path: Path,
+    role: str,
+    output: str,
+    return_code: int,
     review_tag: str | None = None,
 ) -> None:
     """Save agent output to .factory/reviews/<role>-latest.md for CEO review.

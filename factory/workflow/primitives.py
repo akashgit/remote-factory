@@ -26,6 +26,7 @@ class AgentRole(str, Enum):
     ARCHIVIST = "archivist"
     REFINER = "refiner"
     SKILL_REVIEWER = "skill_reviewer"
+    KNOWLEDGE_ANALYST = "knowledge_analyst"
 
 
 class AgentConfig(BaseModel):
@@ -45,12 +46,15 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "qa": AgentConfig(role=AgentRole.QA, model="opus", timeout=1800),
     "health_checker": AgentConfig(role=AgentRole.HEALTH_CHECKER, model="opus", timeout=600),
     "code_reviewer": AgentConfig(role=AgentRole.CODE_REVIEWER, model="opus", timeout=900),
-    "adversarial_tester": AgentConfig(role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800),
+    "adversarial_tester": AgentConfig(
+        role=AgentRole.ADVERSARIAL_TESTER, model="opus", timeout=1800
+    ),
     "failure_analyst": AgentConfig(role=AgentRole.FAILURE_ANALYST, model="opus", timeout=600),
     "ceo": AgentConfig(role=AgentRole.CEO, model="opus", timeout=3600),
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
     "refiner": AgentConfig(role=AgentRole.REFINER, model="opus", timeout=600),
     "skill_reviewer": AgentConfig(role=AgentRole.SKILL_REVIEWER, model="opus", timeout=600),
+    "knowledge_analyst": AgentConfig(role=AgentRole.KNOWLEDGE_ANALYST, model="opus", timeout=900),
 }
 
 
@@ -211,6 +215,7 @@ class Workflow(BaseModel):
     def validate_graph(self) -> list[str]:
         """Validate workflow graph structure using NetworkX. Returns list of issues."""
         from factory.workflow.validation import validate_workflow
+
         return validate_workflow(self)
 
     def subgraph(
@@ -251,7 +256,9 @@ class Factory(BaseModel):
     config: FactoryConfig | None = None
 
     def select_workflow(
-        self, state: ProjectState, context: dict[str, Any] | None = None,
+        self,
+        state: ProjectState,
+        context: dict[str, Any] | None = None,
     ) -> Workflow | None:
         ctx = context or {}
         for wf in self.workflows.values():

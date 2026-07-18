@@ -15,6 +15,7 @@ from factory.knowledge.models import (
     Entity as Entity,
     EntityType as EntityType,
     KnowledgeGraph as KnowledgeGraph,
+    KnowledgeTaskConfig as KnowledgeTaskConfig,
     PredicateType as PredicateType,
     Triplet as Triplet,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "InsightType",
     "KnowledgeGraph",
     "KnowledgeStore",
+    "KnowledgeTaskConfig",
     "PredicateType",
     "Triplet",
     "extract_from_diff",

@@ -372,3 +372,19 @@ class KnowledgeGraph(BaseModel):
             "predicate_distribution": dict(predicate_counts),
             "failure_hotspots": top_failures,
         }
+
+
+# ── task configuration ───────────────────────────────────────────
+
+
+class KnowledgeTaskConfig(BaseModel):
+    """Configuration for a knowledge graph observation task."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    task_id: str
+    agent_command: str
+    task_context: str
+    max_observations: int = 3
+    insight_threshold: int = 2
+    confidence_threshold: float = Field(ge=0.0, le=1.0, default=0.5)
