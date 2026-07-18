@@ -17,9 +17,15 @@ from factory.knowledge.models import (
     KnowledgeGraph as KnowledgeGraph,
     KnowledgeTaskConfig as KnowledgeTaskConfig,
     PredicateType as PredicateType,
+    TauBenchTaskConfig as TauBenchTaskConfig,
     Triplet as Triplet,
 )
 from factory.knowledge.store import KnowledgeStore as KnowledgeStore
+from factory.knowledge.tau_adapter import (
+    compute_aggregate_score as compute_aggregate_score,
+    extract_scores as extract_scores,
+    parse_simulation as parse_simulation,
+)
 
 __all__ = [
     "Entity",
@@ -31,10 +37,14 @@ __all__ = [
     "KnowledgeStore",
     "KnowledgeTaskConfig",
     "PredicateType",
+    "TauBenchTaskConfig",
     "Triplet",
+    "compute_aggregate_score",
     "extract_from_diff",
     "extract_from_tool_calls",
+    "extract_scores",
     "extract_triplets_from_log",
     "format_insights",
     "parse_extraction_response",
+    "parse_simulation",
 ]

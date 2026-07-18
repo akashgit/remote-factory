@@ -388,3 +388,16 @@ class KnowledgeTaskConfig(BaseModel):
     max_observations: int = 3
     insight_threshold: int = 2
     confidence_threshold: float = Field(ge=0.0, le=1.0, default=0.5)
+
+
+class TauBenchTaskConfig(KnowledgeTaskConfig):
+    """Extended configuration for tau-bench evaluation tasks."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    simulation_path: str = ""
+    tau_command: str = ""
+    score_threshold: float = Field(ge=0.0, le=1.0, default=0.8)
+    improvement_target: str = ""
+    baseline_score: float | None = None
+    current_score: float | None = None
