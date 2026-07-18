@@ -7,7 +7,11 @@ set -euo pipefail
 # Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]
 #
 # Arguments:
+<<<<<<< HEAD
 #   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench, legacybench, harborindex
+=======
+#   benchmark      Required. One of: swebench, featurebench, terminalbench, programbench, legacybench, tomswe
+>>>>>>> b91b1e4 (feat: add ToM-SWE local Harbor task and update runner config)
 #   instance_id    Required. Benchmark-specific instance identifier
 #
 # Options:
@@ -23,7 +27,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ $# -lt 2 ]; then
     echo "Usage: benchmarks/run.sh <benchmark> <instance_id> [--timeout N] [--split S] [--preserve] [--solver S]"
     echo ""
+<<<<<<< HEAD
     echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex"
+=======
+    echo "Benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, tomswe"
+>>>>>>> b91b1e4 (feat: add ToM-SWE local Harbor task and update runner config)
     exit 1
 fi
 
@@ -58,10 +66,10 @@ esac
 
 # Validate benchmark
 case "${BENCHMARK}" in
-    swebench|featurebench|terminalbench|programbench|legacybench|harborindex) ;;
+    swebench|featurebench|terminalbench|programbench|legacybench|harborindex|tomswe) ;;
     *)
         echo "ERROR: Unknown benchmark '${BENCHMARK}'"
-        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex"
+        echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, harborindex, tomswe"
         exit 1
         ;;
 esac
