@@ -161,6 +161,7 @@ def run_error_analyst_minibatch(
     step_buffer_context: str = "",
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
+    learning_rate: int = 10,
 ) -> RawPatch | None:
     template = _load_prompt("analyst_error.md")
     traces_text = fmt_minibatch_trajectories(items)
@@ -172,6 +173,7 @@ def run_error_analyst_minibatch(
             .replace("{{TRACES}}", traces_text)
             .replace("{{BATCH_SIZE}}", str(len(items)))
             .replace("{{EDIT_BUDGET}}", str(edit_budget))
+            .replace("{{LEARNING_RATE}}", str(learning_rate))
         )
     else:
         prompt = (
@@ -180,6 +182,7 @@ def run_error_analyst_minibatch(
             .replace("{{TRACES}}", traces_text)
             .replace("{{BATCH_SIZE}}", str(len(items)))
             .replace("{{EDIT_BUDGET}}", str(edit_budget))
+            .replace("{{LEARNING_RATE}}", str(learning_rate))
         )
 
     if step_buffer_context:
@@ -204,6 +207,7 @@ def run_success_analyst_minibatch(
     step_buffer_context: str = "",
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
+    learning_rate: int = 10,
 ) -> RawPatch | None:
     template = _load_prompt("analyst_success.md")
     traces_text = fmt_minibatch_trajectories(items)
@@ -215,6 +219,7 @@ def run_success_analyst_minibatch(
             .replace("{{TRACES}}", traces_text)
             .replace("{{BATCH_SIZE}}", str(len(items)))
             .replace("{{EDIT_BUDGET}}", str(edit_budget))
+            .replace("{{LEARNING_RATE}}", str(learning_rate))
         )
     else:
         prompt = (
@@ -223,6 +228,7 @@ def run_success_analyst_minibatch(
             .replace("{{TRACES}}", traces_text)
             .replace("{{BATCH_SIZE}}", str(len(items)))
             .replace("{{EDIT_BUDGET}}", str(edit_budget))
+            .replace("{{LEARNING_RATE}}", str(learning_rate))
         )
 
     if step_buffer_context:
@@ -249,6 +255,7 @@ def run_minibatch_reflect(
     step_buffer_context: str = "",
     prompt_slots: dict[str, str] | None = None,
     prompt_slots_text: str | None = None,
+    learning_rate: int = 10,
 ) -> list[RawPatch]:
     failures = [r for r in results if r.hard < 1.0]
     successes = [r for r in results if r.hard >= 1.0]
@@ -273,13 +280,13 @@ def run_minibatch_reflect(
         for batch in failure_batches:
             f = pool.submit(
                 run_error_analyst_minibatch, skill_content, batch, edit_budget,
-                step_buffer_context, prompt_slots, prompt_slots_text,
+                step_buffer_context, prompt_slots, prompt_slots_text, learning_rate,
             )
             futures[f] = "failure"
         for batch in success_batches:
             f = pool.submit(
                 run_success_analyst_minibatch, skill_content, batch, edit_budget,
-                step_buffer_context, prompt_slots, prompt_slots_text,
+                step_buffer_context, prompt_slots, prompt_slots_text, learning_rate,
             )
             futures[f] = "success"
 
