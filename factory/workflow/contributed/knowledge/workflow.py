@@ -95,10 +95,13 @@ def tau_workflow() -> Workflow:
         make_run_eval_node,
     )
 
+    extract_llm = make_extract_llm_node()
+    extract_llm.reads = {".factory/knowledge/simulation.json"}
+
     nodes: dict[str, Any] = {
         "run_eval": make_run_eval_node(),
         "extract_tau": make_extract_tau_node(),
-        "extract_llm": make_extract_llm_node(),
+        "extract_llm": extract_llm,
         "update_graph": make_update_graph_node(),
         "analyst": make_analyst_node(),
         "gate_insights": make_gate_insights_node(),
