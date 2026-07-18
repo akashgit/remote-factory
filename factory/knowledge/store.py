@@ -54,7 +54,7 @@ class KnowledgeStore:
             return None
         try:
             data = json.loads(path.read_text())
-            return KnowledgeGraph.model_validate(data)
+            return KnowledgeGraph.model_validate(data, strict=False)
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("knowledge_graph_load_failed", task_id=task_id, error=str(exc))
             return None
@@ -119,7 +119,7 @@ class KnowledgeStore:
             return []
         try:
             data = json.loads(path.read_text())
-            return [Insight.model_validate(item) for item in data]
+            return [Insight.model_validate(item, strict=False) for item in data]
         except (json.JSONDecodeError, ValueError) as exc:
             log.warning("knowledge_insights_load_failed", task_id=task_id, error=str(exc))
             return []

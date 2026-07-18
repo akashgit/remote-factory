@@ -66,7 +66,12 @@ class PredicateType(str, Enum):
 
 
 CAUSAL_PREDICATES: frozenset[PredicateType] = frozenset(
-    {PredicateType.CAUSES, PredicateType.FAILS_WITH, PredicateType.REQUIRES}
+    {
+        PredicateType.CAUSES,
+        PredicateType.FAILS_AT,
+        PredicateType.FAILS_WITH,
+        PredicateType.REQUIRES,
+    }
 )
 
 
