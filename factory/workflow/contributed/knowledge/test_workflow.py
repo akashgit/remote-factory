@@ -82,14 +82,13 @@ class TestKnowledgeWorkflow:
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
         assert node.evaluator_command is not None
-        assert "pass:" in node.evaluator_command
-        assert "reloop:" in node.evaluator_command
+        assert "evaluate_insights_gate" in node.evaluator_command
 
     def test_report_is_fn(self) -> None:
         wf = workflow()
         node = wf.nodes["report"]
         assert isinstance(node, FnNode)
-        assert "format_insights" in node.command
+        assert "generate_report" in node.command
 
     def test_reloop_edge_exists(self) -> None:
         wf = workflow()
@@ -207,7 +206,7 @@ class TestTauBenchWorkflow:
         node = self._wf().nodes["gate_score"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
-        assert "score_threshold" in (node.evaluator_command or "")
+        assert "evaluate_score_gate" in (node.evaluator_command or "")
 
     def test_improve_is_builder(self) -> None:
         node = self._wf().nodes["improve"]
@@ -223,7 +222,7 @@ class TestTauBenchWorkflow:
         node = self._wf().nodes["gate_compare"]
         assert isinstance(node, GateNode)
         assert node.evaluator_type == "fn"
-        assert "baseline_score" in (node.evaluator_command or "")
+        assert "evaluate_compare_gate" in (node.evaluator_command or "")
 
     def test_gate_insights_proceed_to_gate_score(self) -> None:
         wf = self._wf()

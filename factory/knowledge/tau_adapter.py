@@ -416,6 +416,100 @@ def run_tau_eval(config_path: Path, *, is_reeval: bool = False) -> None:
         print(f"Score: {score:.4f}")
 
 
+def evaluate_insights_gate(config_path: Path) -> None:
+    """Check insight quality — print pass/reloop verdict.
+
+    Called by the gate_insights FnNode.
+    """
+    cfg = json.loads(config_path.read_text())
+    task_id = cfg["task_id"]
+    threshold = cfg.get("insight_threshold", 2)
+    conf_threshold = cfg.get("confidence_threshold", 0.5)
+
+    p = config_path.parent / f"{task_id}_insights.json"
+    if not p.exists():
+        print("reloop: no insights file found")
+        return
+
+    insights = json.loads(p.read_text())
+    if len(insights) < threshold:
+        print(f"reloop: only {len(insights)} insights, need at least {threshold}")
+        return
+
+    avg_conf = sum(i.get("confidence", 0) for i in insights) / len(insights) if insights else 0
+    if avg_conf < conf_threshold:
+        print(f"reloop: average confidence {avg_conf:.2f} below {conf_threshold}")
+        return
+
+    print(f"pass: {len(insights)} insights with avg confidence {avg_conf:.2f}")
+
+
+def evaluate_score_gate(config_path: Path) -> None:
+    """Check tau-bench score vs threshold — print pass/reloop verdict.
+
+    Called by the gate_score FnNode.
+    """
+    cfg = json.loads(config_path.read_text())
+    score = cfg.get("current_score", 0.0)
+    threshold = cfg.get("score_threshold", 0.8)
+
+    if score is not None and score >= threshold:
+        print(f"pass: score {score:.4f} meets threshold {threshold}")
+    else:
+        print(f"reloop: score {score} below threshold {threshold}")
+
+
+def evaluate_compare_gate(config_path: Path) -> None:
+    """Compare before/after scores — print pass/reloop verdict.
+
+    Called by the gate_compare FnNode.
+    """
+    cfg = json.loads(config_path.read_text())
+    baseline = cfg.get("baseline_score", 0.0)
+    current = cfg.get("current_score", 0.0)
+    threshold = cfg.get("score_threshold", 0.8)
+
+    if current is not None and current >= threshold:
+        print(
+            f"pass: score {current:.4f} meets threshold {threshold} (baseline was {baseline:.4f})"
+        )
+    elif current is not None and current > baseline:
+        print(
+            f"reloop: improved {baseline:.4f} -> {current:.4f} "
+            f"but still below threshold {threshold}"
+        )
+    else:
+        print(f"reloop: no improvement ({baseline} -> {current}), try a different approach")
+
+
+def generate_report(config_path: Path) -> None:
+    """Generate the final insights report.
+
+    Called by the report FnNode.
+    """
+    from factory.knowledge.insight import Insight, format_insights
+    from factory.knowledge.models import KnowledgeGraph
+
+    cfg = json.loads(config_path.read_text())
+    task_id = cfg["task_id"]
+    knowledge_dir = config_path.parent
+
+    graph_path = knowledge_dir / f"{task_id}.json"
+    insights_path = knowledge_dir / f"{task_id}_insights.json"
+
+    if not graph_path.exists() or not insights_path.exists():
+        print("No graph or insights to report")
+        return
+
+    graph = KnowledgeGraph.model_validate(json.loads(graph_path.read_text()), strict=False)
+    insights = [
+        Insight.model_validate(i, strict=False) for i in json.loads(insights_path.read_text())
+    ]
+    report = format_insights(insights, graph)
+    (knowledge_dir / f"{task_id}_report.md").write_text(report)
+    print(report)
+
+
 def compute_aggregate_score(path: Path) -> float:
     """Compute average reward across all simulations in a results file."""
     data = json.loads(path.read_text())

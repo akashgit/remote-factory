@@ -66,14 +66,9 @@ def make_gate_score_node(node_id: str = "gate_score") -> GateNode:
         evaluator_command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "score = cfg.get('current_score', 0.0); "
-            "threshold = cfg.get('score_threshold', 0.8); "
-            "if score is not None and score >= threshold: "
-            "    print(f'pass: score {score:.4f} meets threshold {threshold}'); "
-            "else: "
-            "    print(f'reloop: score {score} below threshold {threshold}')"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import evaluate_score_gate; "
+            "evaluate_score_gate(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
         reads={".factory/knowledge/insights.json"},
@@ -136,20 +131,9 @@ def make_gate_compare_node(node_id: str = "gate_compare") -> GateNode:
         evaluator_command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "baseline = cfg.get('baseline_score', 0.0); "
-            "current = cfg.get('current_score', 0.0); "
-            "threshold = cfg.get('score_threshold', 0.8); "
-            "if current is not None and current >= threshold: "
-            "    print(f'pass: score {current:.4f} meets threshold {threshold} "
-            "(baseline was {baseline:.4f})'); "
-            "elif current is not None and current > baseline: "
-            "    print(f'reloop: improved {baseline:.4f} -> {current:.4f} "
-            "but still below threshold {threshold}'); "
-            "else: "
-            "    print(f'reloop: no improvement ({baseline} -> {current}), "
-            "try a different approach')"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import evaluate_compare_gate; "
+            "evaluate_compare_gate(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
         reads={".factory/knowledge/simulation.json"},
@@ -303,20 +287,9 @@ def make_gate_insights_node(node_id: str = "gate_insights") -> GateNode:
         evaluator_command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "task_id = cfg['task_id']; "
-            "threshold = cfg.get('insight_threshold', 2); "
-            "conf_threshold = cfg.get('confidence_threshold', 0.5); "
-            "p = pathlib.Path(f'.factory/knowledge/{task_id}_insights.json'); "
-            "if not p.exists(): print('reloop: no insights file found'); exit(); "
-            "insights = json.loads(p.read_text()); "
-            "if len(insights) < threshold: "
-            "    print(f'reloop: only {len(insights)} insights, need at least {threshold}'); exit(); "
-            "avg_conf = sum(i.get('confidence', 0) for i in insights) / len(insights) if insights else 0; "
-            "if avg_conf < conf_threshold: "
-            "    print(f'reloop: average confidence {avg_conf:.2f} below {conf_threshold}'); exit(); "
-            "print(f'pass: {len(insights)} insights with avg confidence {avg_conf:.2f}')"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import evaluate_insights_gate; "
+            "evaluate_insights_gate(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
         reads={".factory/knowledge/insights.json"},
@@ -330,20 +303,9 @@ def make_report_node(node_id: str = "report") -> FnNode:
         command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib; "
-            "from factory.knowledge.models import KnowledgeGraph; "
-            "from factory.knowledge.insight import Insight, format_insights; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "task_id = cfg['task_id']; "
-            "graph_path = pathlib.Path(f'.factory/knowledge/{task_id}.json'); "
-            "insights_path = pathlib.Path(f'.factory/knowledge/{task_id}_insights.json'); "
-            "if not graph_path.exists() or not insights_path.exists(): "
-            "    print('No graph or insights to report'); exit(); "
-            "graph = KnowledgeGraph.model_validate(json.loads(graph_path.read_text()), strict=False); "
-            "insights = [Insight.model_validate(i, strict=False) for i in json.loads(insights_path.read_text())]; "
-            "report = format_insights(insights, graph); "
-            "pathlib.Path(f'.factory/knowledge/{task_id}_report.md').write_text(report); "
-            "print(report)"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import generate_report; "
+            "generate_report(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
         notes="Render insights as a markdown report.",
