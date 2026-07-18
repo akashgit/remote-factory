@@ -136,11 +136,17 @@ class SkillOptTrainer:
         """Validate that all edits in the patch target known prompt slot values."""
         if not self.prompt_slots:
             return []
-        known_values = set(self.prompt_slots.values())
+        known_values = list(self.prompt_slots.values())
         violations: list[str] = []
         for edit in patch.edits:
-            if edit.op == "replace" and edit.target and edit.target not in known_values:
-                violations.append(f"Edit targets non-prompt content: {edit.target[:80]}...")
+            if edit.op == "replace" and edit.target:
+                is_prompt = any(
+                    edit.target.strip() == kv.strip()
+                    or kv.strip().startswith(edit.target.strip()[:200])
+                    for kv in known_values
+                )
+                if not is_prompt:
+                    violations.append(f"Edit targets non-prompt content: {edit.target[:80]}...")
         return violations
 
     def _update_prompt_slots_after_accept(
