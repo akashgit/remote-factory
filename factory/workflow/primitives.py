@@ -26,6 +26,7 @@ class AgentRole(str, Enum):
     ARCHIVIST = "archivist"
     REFINER = "refiner"
     SKILL_REVIEWER = "skill_reviewer"
+    SKILL_SYNTHESIZER = "skill_synthesizer"
 
 
 class AgentConfig(BaseModel):

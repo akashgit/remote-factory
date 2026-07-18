@@ -296,7 +296,11 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
         f"<!-- edges: {edges_str} -->",
     ]
 
-    prose = f"{node.notes}\n\n" if node.notes else ""
+    if node.notes:
+        notes_slot = emit(f"notes_{node.id}", node.notes)
+        prose = f"{notes_slot}\n\n"
+    else:
+        prose = ""
 
     if _has_template_placeholders(cmd):
         finalize_slot = emit(f"finalize_command_{node.id}", cmd)
@@ -623,15 +627,117 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
 # ── bulk export ─────────────────────────────────────────────────
 
 
-def export_all_skills(
+def _count_changed_slots(skeleton: str, candidate: str) -> int:
+    """Count how many slot values in candidate differ from skeleton defaults."""
+    from factory.workflow.templates import extract
+
+    skeleton_slots = dict(extract(skeleton))
+    candidate_slots = dict(extract(candidate))
+    return sum(
+        1 for name, val in candidate_slots.items()
+        if skeleton_slots.get(name) != val
+    )
+
+
+async def _refine_skill(templatized: str, project_path: Path) -> str:
+    """Run the parallel refine pipeline on a templatized SKILL.md.
+
+    Pipeline: 3x parallel reviewer → guard each → synthesizer(survivors) → final guard.
+    Falls back to unrefined templatized output if all candidates/synthesis fail.
+    """
+    from factory.agents.runner import AgentRole, invoke_agent, invoke_agents_parallel
+    from factory.workflow.guard import check as guard_check
+
+    reviewer: AgentRole = "skill_reviewer"
+    tasks: list[tuple[AgentRole, str]] = [
+        (reviewer, templatized),
+        (reviewer, templatized),
+        (reviewer, templatized),
+    ]
+
+    log.info("skill_refine.reviewing", candidates=len(tasks))
+    results = await invoke_agents_parallel(
+        tasks, project_path, timeout=600.0,
+    )
+
+    survivors: list[str] = []
+    for i, (stdout, rc) in enumerate(results):
+        if rc != 0:
+            log.warning("skill_refine.reviewer_failed", index=i, return_code=rc)
+            continue
+        result = guard_check(templatized, stdout)
+        if result.passed:
+            survivors.append(stdout)
+        else:
+            log.warning(
+                "skill_refine.guard_rejected",
+                index=i,
+                violations=result.violations,
+            )
+
+    if not survivors:
+        log.info("skill_refine.all_rejected_mechanical_fallback")
+        return templatized
+
+    log.info("skill_refine.survivors", count=len(survivors))
+
+    candidates_block = "\n\n---\n\n".join(
+        f"## Candidate {i + 1}\n\n{c}" for i, c in enumerate(survivors)
+    )
+    synth_task = (
+        f"## Original\n\n{templatized}\n\n"
+        f"---\n\n{candidates_block}"
+    )
+
+    synth_stdout, synth_rc = await invoke_agent(
+        "skill_synthesizer", synth_task, project_path, timeout=600.0,
+    )
+
+    if synth_rc != 0:
+        log.warning("skill_refine.synthesizer_failed", return_code=synth_rc)
+    else:
+        synth_guard = guard_check(templatized, synth_stdout)
+        if synth_guard.passed:
+            log.info("skill_refine.synthesized")
+            return synth_stdout
+        log.warning(
+            "skill_refine.synthesizer_guard_failed",
+            violations=synth_guard.violations,
+        )
+
+    best = max(survivors, key=lambda c: _count_changed_slots(templatized, c))
+    best_guard = guard_check(templatized, best)
+    if best_guard.passed:
+        log.info(
+            "skill_refine.best_individual_fallback",
+            changed_slots=_count_changed_slots(templatized, best),
+        )
+        return best
+
+    log.info("skill_refine.best_individual_also_failed_mechanical_fallback")
+    return templatized
+
+
+async def export_all_skills(
     output_dir: Path,
     workflows: dict[str, Workflow] | None = None,
+    *,
+    refine: bool = True,
+    project_path: Path | None = None,
 ) -> list[Path]:
     """Export all registered workflows as SKILL.md files.
 
-    Generates templatized content, then resolves it to clean prose for
-    SKILL.md and writes structured annotations to SKILL.annotations.yaml.
-    Returns paths to generated SKILL.md files.
+    Generates templatized content, optionally refines via parallel LLM
+    review pipeline, then resolves to clean prose for SKILL.md and writes
+    structured annotations to SKILL.annotations.yaml.
+
+    When refine=True (default), each workflow's templatized output is
+    refined by 3 parallel skill_reviewer agents, guard-checked, then
+    synthesized by a skill_synthesizer agent. Falls back to mechanical
+    output on any failure.
+
+    When refine=False, skips the LLM pipeline entirely (current mechanical
+    behavior).
     """
     from factory.workflow.splitter import annotations_to_yaml, split_skill
 
@@ -639,10 +745,19 @@ def export_all_skills(
         from factory.workflow.definitions import register_all
         workflows = register_all()
 
+    effective_project = project_path or output_dir
+
     generated: list[Path] = []
 
     for name, wf in workflows.items():
         templatized = workflow_to_skill_md(wf)
+
+        if refine:
+            try:
+                templatized = await _refine_skill(templatized, effective_project)
+            except Exception:
+                log.exception("skill_refine.error", workflow=name)
+
         clean_md, annotations = split_skill(templatized)
 
         skill_dir = output_dir / f"workflow-{name}"

@@ -397,27 +397,29 @@ class TestWorkflowToSkillMd:
 
 
 class TestExportAllSkills:
-    def test_creates_skill_files(self, tmp_path: Path) -> None:
+    async def test_creates_skill_files(self, tmp_path: Path) -> None:
         builder = _make_agent("builder", AgentRole.BUILDER)
         wf = _minimal_workflow(name="test_wf", nodes={"builder": builder})
-        paths = export_all_skills(tmp_path, workflows={"test_wf": wf})
+        paths = await export_all_skills(tmp_path, workflows={"test_wf": wf}, refine=False)
         assert len(paths) == 1
         assert paths[0].exists()
         assert paths[0].name == "SKILL.md"
         assert "workflow-test_wf" in str(paths[0].parent)
 
-    def test_creates_directory_structure(self, tmp_path: Path) -> None:
+    async def test_creates_directory_structure(self, tmp_path: Path) -> None:
         wf1 = _minimal_workflow(name="build")
         wf2 = _minimal_workflow(name="improve")
-        paths = export_all_skills(tmp_path, workflows={"build": wf1, "improve": wf2})
+        paths = await export_all_skills(
+            tmp_path, workflows={"build": wf1, "improve": wf2}, refine=False,
+        )
         assert len(paths) == 2
         dirs = {p.parent.name for p in paths}
         assert "workflow-build" in dirs
         assert "workflow-improve" in dirs
 
-    def test_written_content_passes_validation(self, tmp_path: Path) -> None:
+    async def test_written_content_passes_validation(self, tmp_path: Path) -> None:
         wf = _minimal_workflow(name="build")
-        paths = export_all_skills(tmp_path, workflows={"build": wf})
+        paths = await export_all_skills(tmp_path, workflows={"build": wf}, refine=False)
         content = paths[0].read_text()
         issues = validate_skill(content)
         assert issues == [], f"Validation issues: {issues}"
@@ -502,11 +504,11 @@ class TestRealWorkflowSkills:
         assert "workflow-refine" in content
         assert "refiner" in content.lower()
 
-    def test_all_registered_skills_exported(self, tmp_path: Path) -> None:
+    async def test_all_registered_skills_exported(self, tmp_path: Path) -> None:
         from factory.workflow.definitions import register_all
 
         workflows = register_all()
-        paths = export_all_skills(tmp_path, workflows=workflows)
+        paths = await export_all_skills(tmp_path, workflows=workflows, refine=False)
         assert len(paths) == len(workflows), f"Expected {len(workflows)} skills, got {len(paths)}"
         dirs = {p.parent.name for p in paths}
         expected = {f"workflow-{name}" for name in workflows}

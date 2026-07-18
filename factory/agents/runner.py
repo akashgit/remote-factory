@@ -17,7 +17,7 @@ AgentRole = Literal[
     "researcher", "strategist", "builder", "qa",
     "health_checker", "code_reviewer", "adversarial_tester",
     "archivist", "ceo", "failure_analyst", "refiner", "profiler",
-    "refactory",
+    "refactory", "skill_reviewer", "skill_synthesizer",
 ]
 
 # Consecutive failure tracking
