@@ -1405,7 +1405,7 @@ class TestCmdCeoQa:
         assert "Mode: qa" in task
         assert "PR #42" in task
         assert "factory review --verdict" in task
-        assert "workflow-qa SKILL.md" in task
+        assert "workflow-qa playbook" in task
         assert "qa-latest.md" in task
         assert "Do NOT post any PR comments" in task
         assert "health_checker" not in task
@@ -1971,7 +1971,8 @@ class TestCeoModeRouting:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
+        assert "Run design mode" in task
+        assert "playbook" in task.lower()
         assert "Run Build mode" not in task
 
     def test_design_idea_routes_to_design(self):
@@ -2007,12 +2008,14 @@ class TestCeoModeRouting:
         cmd = mock_run.call_args[0][0]
         dsp_idx = cmd.index("--dangerously-skip-permissions")
         task = cmd[dsp_idx + 1]
-        assert "Run improve mode: read `skills/workflow-improve/SKILL.md`" in task
+        assert "Run improve mode" in task
+        assert "playbook" in task.lower()
 
     def test_design_existing_task_string(self, tmp_path):
-        """design_existing=True task contains design SKILL.md reference, not Build."""
+        """design_existing=True task contains design mode reference, not Build."""
         task = _build_ceo_task(tmp_path, "design", design_existing=True)
-        assert "Run design mode: read `skills/workflow-design/SKILL.md`" in task
+        assert "Run design mode" in task
+        assert "playbook" in task.lower()
         assert "Run Build mode" not in task
 
     def test_research_ideation_routes_to_build(self):
