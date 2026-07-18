@@ -25,6 +25,7 @@ from factory.knowledge.tau_adapter import (
     compute_aggregate_score as compute_aggregate_score,
     extract_scores as extract_scores,
     parse_simulation as parse_simulation,
+    run_tau_eval as run_tau_eval,
 )
 
 __all__ = [

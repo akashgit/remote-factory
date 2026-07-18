@@ -377,6 +377,45 @@ def _extract_reward_breakdown(
     return triplets
 
 
+def run_tau_eval(config_path: Path, *, is_reeval: bool = False) -> None:
+    """Run tau-bench and record score in task_config.json.
+
+    Called by the run_eval and re_eval FnNodes.
+    """
+    import subprocess
+
+    cfg = json.loads(config_path.read_text())
+    tau_cmd = cfg["tau_command"]
+    sim_path = Path(cfg["simulation_path"])
+
+    if sim_path.exists():
+        sim_path.unlink()
+
+    label = "Re-running" if is_reeval else "Running"
+    print(f"{label} tau-bench: {tau_cmd}")
+
+    result = subprocess.run(tau_cmd, shell=True, capture_output=True, text=True)  # noqa: S602
+    print(result.stdout[-2000:])
+    if result.returncode != 0:
+        print(result.stderr[-1000:])
+
+    if not sim_path.exists():
+        print("Error: simulation output not found")
+        raise SystemExit(1)
+
+    score = compute_aggregate_score(sim_path)
+    if not is_reeval and cfg.get("baseline_score") is None:
+        cfg["baseline_score"] = score
+    cfg["current_score"] = score
+    config_path.write_text(json.dumps(cfg, indent=2))
+
+    baseline = cfg.get("baseline_score", "N/A")
+    if is_reeval:
+        print(f"Re-eval score: {score:.4f} (baseline: {baseline})")
+    else:
+        print(f"Score: {score:.4f}")
+
+
 def compute_aggregate_score(path: Path) -> float:
     """Compute average reward across all simulations in a results file."""
     data = json.loads(path.read_text())

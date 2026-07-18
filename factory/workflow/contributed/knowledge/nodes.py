@@ -23,24 +23,9 @@ def make_run_eval_node(node_id: str = "run_eval") -> FnNode:
         command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib, subprocess; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "tau_cmd = cfg['tau_command']; "
-            "sim_path = pathlib.Path(cfg['simulation_path']); "
-            "if sim_path.exists(): sim_path.unlink(); "
-            "print(f'Running tau-bench: {tau_cmd}'); "
-            "result = subprocess.run(tau_cmd, shell=True, capture_output=True, text=True); "
-            "print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout); "
-            "if result.returncode != 0: print(result.stderr[-1000:]); "
-            "if sim_path.exists(): "
-            "    from factory.knowledge.tau_adapter import compute_aggregate_score; "
-            "    score = compute_aggregate_score(sim_path); "
-            "    if cfg.get('baseline_score') is None: cfg['baseline_score'] = score; "
-            "    cfg['current_score'] = score; "
-            "    pathlib.Path('.factory/knowledge/task_config.json').write_text("
-            "        json.dumps(cfg, indent=2)); "
-            "    print(f'Score: {score:.4f}'); "
-            "else: print('Error: simulation output not found'); exit(1)"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import run_tau_eval; "
+            "run_tau_eval(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
         notes="Run tau-bench evaluation and record score in task_config.json.",
@@ -132,23 +117,9 @@ def make_re_eval_node(node_id: str = "re_eval") -> FnNode:
         command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib, subprocess; "
-            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "tau_cmd = cfg['tau_command']; "
-            "sim_path = pathlib.Path(cfg['simulation_path']); "
-            "if sim_path.exists(): sim_path.unlink(); "
-            "print(f'Re-running tau-bench: {tau_cmd}'); "
-            "result = subprocess.run(tau_cmd, shell=True, capture_output=True, text=True); "
-            "print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout); "
-            "if sim_path.exists(): "
-            "    from factory.knowledge.tau_adapter import compute_aggregate_score; "
-            "    score = compute_aggregate_score(sim_path); "
-            "    cfg['current_score'] = score; "
-            "    pathlib.Path('.factory/knowledge/task_config.json').write_text("
-            "        json.dumps(cfg, indent=2)); "
-            '    print(f\'Re-eval score: {score:.4f} (baseline: {cfg.get("baseline_score", "N/A")})\');'
-            " "
-            "else: print('Error: simulation output not found'); exit(1)"
+            "from pathlib import Path; "
+            "from factory.knowledge.tau_adapter import run_tau_eval; "
+            "run_tau_eval(Path('.factory/knowledge/task_config.json'), is_reeval=True)"
             '"'
         ),
         notes="Re-run tau-bench evaluation after improvements and update current_score.",

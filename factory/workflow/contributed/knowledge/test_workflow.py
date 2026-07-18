@@ -196,7 +196,7 @@ class TestTauBenchWorkflow:
     def test_run_eval_is_fn(self) -> None:
         node = self._wf().nodes["run_eval"]
         assert isinstance(node, FnNode)
-        assert "tau_command" in node.command
+        assert "run_tau_eval" in node.command
 
     def test_extract_tau_is_fn(self) -> None:
         node = self._wf().nodes["extract_tau"]
@@ -217,7 +217,7 @@ class TestTauBenchWorkflow:
     def test_re_eval_is_fn(self) -> None:
         node = self._wf().nodes["re_eval"]
         assert isinstance(node, FnNode)
-        assert "tau_command" in node.command
+        assert "run_tau_eval" in node.command
 
     def test_gate_compare_is_fn_evaluator(self) -> None:
         node = self._wf().nodes["gate_compare"]
