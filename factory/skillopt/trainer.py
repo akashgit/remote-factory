@@ -361,6 +361,16 @@ class SkillOptTrainer:
                     best_score=self.best_score,
                     best_step=self.best_step,
                 )
+            if total_magnitude == 0:
+                log.warning("no actual prompt changes after merge/clip — skipping eval")
+                return GateResult(
+                    action="reject",
+                    current_skill=self.current_skill,
+                    current_score=self.current_score,
+                    best_skill=self.best_skill,
+                    best_score=self.best_score,
+                    best_step=self.best_step,
+                )
             log.info(
                 "edit magnitude ok",
                 total_magnitude=total_magnitude,
