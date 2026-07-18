@@ -268,6 +268,7 @@ class SkillOptTrainer:
         if self.yaml_surface and self.prompt_slots:
             reflect_kwargs["prompt_slots"] = self.prompt_slots
             reflect_kwargs["prompt_slots_text"] = self.prompt_slots_text
+            reflect_kwargs["learning_rate"] = self.learning_rate
 
         raw_patches = self.adapter.reflect(
             results, self.current_skill, step_dir,

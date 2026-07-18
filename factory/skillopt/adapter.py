@@ -44,6 +44,7 @@ class EnvAdapter(ABC):
             step_buffer_context=kwargs.get("step_buffer_context", ""),
             prompt_slots=kwargs.get("prompt_slots"),
             prompt_slots_text=kwargs.get("prompt_slots_text"),
+            learning_rate=kwargs.get("learning_rate", 10),
         )
 
     @abstractmethod

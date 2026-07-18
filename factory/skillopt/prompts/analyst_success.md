@@ -52,6 +52,7 @@ Output ONLY a JSON object matching this schema:
 - Produce at most {{EDIT_BUDGET}} edits
 - Each edit must specify a valid node_id and slot_name from the prompt slots above
 - The new_value must be the COMPLETE replacement prompt text for that slot
+- **CRITICAL: Make SMALL, INCREMENTAL changes.** Your new_value must differ from the original by at most {{LEARNING_RATE}} lines (counted via unified diff). If you rewrite the entire prompt, the edit WILL be rejected. Change only what the traces tell you needs changing — keep everything else verbatim.
 - Set `support_count` to the number of traces that support this edit
 - Focus on codifying winning patterns, not adding noise
 - You may ONLY modify prompt text — do NOT propose changes to timeouts, commands, edges, or node structure

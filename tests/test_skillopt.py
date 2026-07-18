@@ -1597,6 +1597,7 @@ class TestEnvAdapterReflect:
             step_buffer_context: str = "",
             prompt_slots: dict | None = None,
             prompt_slots_text: str | None = None,
+            learning_rate: int = 10,
         ) -> list:
             captured_kwargs["minibatch_size"] = minibatch_size
             captured_kwargs["edit_budget"] = edit_budget
