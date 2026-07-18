@@ -255,20 +255,11 @@ def make_update_graph_node(node_id: str = "update_graph") -> FnNode:
         command=(
             "cd {project_path} && "
             'python3 -c "'
-            "import json, pathlib, asyncio; "
+            "import json, pathlib; "
             "from factory.knowledge.store import KnowledgeStore; "
-            "from factory.knowledge.models import Triplet; "
             "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
-            "task_id = cfg['task_id']; "
             "store = KnowledgeStore(pathlib.Path('.')); "
-            "all_triplets = []; "
-            "for suffix in ['det', 'llm']: "
-            "    p = pathlib.Path(f'.factory/knowledge/{task_id}_{suffix}_triplets.json'); "
-            "    if p.exists(): "
-            "        items = json.loads(p.read_text()); "
-            "        all_triplets.extend(Triplet.model_validate(t, strict=False) for t in items); "
-            "graph = asyncio.run(store.append_triplets(task_id, all_triplets)); "
-            "print(f'Graph updated: {graph.entity_count()} entities, {graph.triplet_count()} triplets')"
+            "store.merge_triplet_files(cfg['task_id'], pathlib.Path('.'))"
             '"'
         ),
         notes="Merge extracted triplets into the persistent knowledge graph.",

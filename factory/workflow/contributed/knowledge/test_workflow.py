@@ -67,7 +67,7 @@ class TestKnowledgeWorkflow:
         wf = workflow()
         node = wf.nodes["update_graph"]
         assert isinstance(node, FnNode)
-        assert "append_triplets" in node.command
+        assert "merge_triplet_files" in node.command
 
     def test_analyst_is_knowledge_analyst(self) -> None:
         wf = workflow()

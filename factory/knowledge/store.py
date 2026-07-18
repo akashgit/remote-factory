@@ -99,6 +99,23 @@ class KnowledgeStore:
         )
         return graph
 
+    def merge_triplet_files(self, task_id: str, project_path: Path) -> None:
+        """Load det + llm triplet files and merge into the graph.
+
+        Sync entry point for FnNode commands.
+        """
+        import asyncio
+
+        all_triplets: list[Triplet] = []
+        for suffix in ("det", "llm"):
+            p = project_path / f".factory/knowledge/{task_id}_{suffix}_triplets.json"
+            if p.exists():
+                items = json.loads(p.read_text())
+                all_triplets.extend(Triplet.model_validate(t, strict=False) for t in items)
+
+        graph = asyncio.run(self.append_triplets(task_id, all_triplets))
+        print(f"Graph updated: {graph.entity_count()} entities, {graph.triplet_count()} triplets")
+
     async def save_insights(
         self,
         task_id: str,
