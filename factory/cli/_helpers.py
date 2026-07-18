@@ -1,4 +1,5 @@
 """CLI _helpers commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -16,7 +17,23 @@ log = structlog.get_logger()
 _WIZARD_INPUT_PATH = Path("~/.factory/wizard_input.md")
 
 
-CEO_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "design", "interactive", "research", "review", "qa", "deep-qa", "create", "swebench"]
+CEO_MODES = [
+    "auto",
+    "auto-fresh",
+    "build",
+    "discover",
+    "improve",
+    "meta",
+    "design",
+    "interactive",
+    "research",
+    "review",
+    "qa",
+    "deep-qa",
+    "create",
+    "swebench",
+    "knowledge",
+]
 
 
 RUN_MODES = ["auto", "auto-fresh", "build", "discover", "improve", "meta", "research", "swebench"]
@@ -89,10 +106,16 @@ def _ensure_dashboard(project_path: Path, port: int = _DASHBOARD_PORT) -> None:
 
     # Start dashboard as a detached background process
     cmd = [
-        sys.executable, "-m", "factory", "dashboard",
-        "--projects-dir", str(projects_dir),
-        "--port", str(port),
-        "--host", "0.0.0.0",
+        sys.executable,
+        "-m",
+        "factory",
+        "dashboard",
+        "--projects-dir",
+        str(projects_dir),
+        "--port",
+        str(port),
+        "--host",
+        "0.0.0.0",
     ]
     subprocess.Popen(
         cmd,
@@ -113,8 +136,8 @@ def _print_banner(mode: str = "improve") -> None:
         return
 
     c = "\033[1;36m"  # bold cyan
-    d = "\033[2m"      # dim
-    r = "\033[0m"      # reset
+    d = "\033[2m"  # dim
+    r = "\033[0m"  # reset
 
     mode_line = "" if mode == "welcome" else f"{d}  Mode: {mode}{r}\n"
     banner = (
@@ -208,4 +231,3 @@ def _load_env_local() -> None:
                     key, _, value = line.partition("=")
                     os.environ.setdefault(key.strip(), value.strip())
             break
-

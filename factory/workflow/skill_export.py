@@ -148,6 +148,16 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "knowledge": {
+        "description": (
+            "Knowledge mode — observe an external agent, extract knowledge graph "
+            "triplets from its execution traces, and generate insights about failure "
+            "patterns, causal chains, and improvement opportunities. Use when the user "
+            "says 'analyze agent behavior', 'build knowledge graph', or wants to extract "
+            "structured knowledge from agent runs."
+        ),
+        "argument_hint": "<project_path> --mode knowledge",
+    },
 }
 
 
@@ -312,8 +322,15 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
 
 def _has_template_placeholders(text: str) -> bool:
     """Check if a command has $VARIABLE placeholders that need CEO substitution."""
-    placeholders = {"$EXP_ID", "$VERDICT", "$HYPOTHESIS", "$REQUEST",
-                     "$PR_NUMBER", "$SCORE_BEFORE", "$SCORE_AFTER"}
+    placeholders = {
+        "$EXP_ID",
+        "$VERDICT",
+        "$HYPOTHESIS",
+        "$REQUEST",
+        "$PR_NUMBER",
+        "$SCORE_BEFORE",
+        "$SCORE_AFTER",
+    }
     return any(p in text for p in placeholders)
 
 
@@ -399,7 +416,9 @@ def _gate_to_checkpoint(
 
         if proceed_edges:
             proceed_target = proceed_edges[0].target
-            lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
+            lines.append(
+                f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`"
+            )
             lines.append(
                 f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
                 "Skip to the next CEO review gate or finalize as error."
@@ -578,9 +597,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_join_to_instruction(node, workflow))
 
         elif isinstance(node, GateNode):
-            sections.append(
-                _gate_to_checkpoint(node, reloop_map.get(nid, []), workflow)
-            )
+            sections.append(_gate_to_checkpoint(node, reloop_map.get(nid, []), workflow))
 
         elif isinstance(node, Study):
             node_title = "Observe"
@@ -637,6 +654,7 @@ def export_all_skills(
 
     if workflows is None:
         from factory.workflow.definitions import register_all
+
         workflows = register_all()
 
     generated: list[Path] = []
