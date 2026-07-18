@@ -13,6 +13,178 @@ from factory.workflow.primitives import (
 )
 
 
+# ── tau-bench nodes ─────────────────────────────────────────────
+
+
+def make_run_eval_node(node_id: str = "run_eval") -> FnNode:
+    """Run tau-bench evaluation and record baseline score."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib, subprocess; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "tau_cmd = cfg['tau_command']; "
+            "sim_path = pathlib.Path(cfg['simulation_path']); "
+            "if sim_path.exists(): sim_path.unlink(); "
+            "print(f'Running tau-bench: {tau_cmd}'); "
+            "result = subprocess.run(tau_cmd, shell=True, capture_output=True, text=True); "
+            "print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout); "
+            "if result.returncode != 0: print(result.stderr[-1000:]); "
+            "if sim_path.exists(): "
+            "    from factory.knowledge.tau_adapter import compute_aggregate_score; "
+            "    score = compute_aggregate_score(sim_path); "
+            "    if cfg.get('baseline_score') is None: cfg['baseline_score'] = score; "
+            "    cfg['current_score'] = score; "
+            "    pathlib.Path('.factory/knowledge/task_config.json').write_text("
+            "        json.dumps(cfg, indent=2)); "
+            "    print(f'Score: {score:.4f}'); "
+            "else: print('Error: simulation output not found'); exit(1)"
+            '"'
+        ),
+        notes="Run tau-bench evaluation and record score in task_config.json.",
+        writes={".factory/knowledge/simulation.json"},
+    )
+
+
+def make_extract_tau_node(node_id: str = "extract_tau") -> FnNode:
+    """Parse tau-bench simulation JSON into knowledge graph triplets."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "task_id = cfg['task_id']; "
+            "sim_path = pathlib.Path(cfg['simulation_path']); "
+            "from factory.knowledge.tau_adapter import parse_simulation; "
+            "triplets = parse_simulation(sim_path, cfg.get('task_context', task_id)); "
+            "out = [t.model_dump(mode='json') for t in triplets]; "
+            "pathlib.Path(f'.factory/knowledge/{task_id}_det_triplets.json').write_text("
+            "    json.dumps(out, indent=2, default=str)); "
+            "print(f'Extracted {len(out)} tau-bench triplets')"
+            '"'
+        ),
+        notes="Parse tau-bench simulation JSON into triplets via the tau adapter.",
+        reads={".factory/knowledge/simulation.json"},
+        writes={".factory/knowledge/det_triplets.json"},
+    )
+
+
+def make_gate_score_node(node_id: str = "gate_score") -> GateNode:
+    """Gate on tau-bench score — PROCEED if meets threshold, RELOOP to improve."""
+    return GateNode(
+        id=node_id,
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "score = cfg.get('current_score', 0.0); "
+            "threshold = cfg.get('score_threshold', 0.8); "
+            "if score is not None and score >= threshold: "
+            "    print(f'pass: score {score:.4f} meets threshold {threshold}'); "
+            "else: "
+            "    print(f'reloop: score {score} below threshold {threshold}')"
+            '"'
+        ),
+        reads={".factory/knowledge/insights.json"},
+    )
+
+
+def make_improve_node(node_id: str = "improve") -> AgentNode:
+    """Apply knowledge graph insights to improve the tau-bench agent."""
+    return AgentNode(
+        id=node_id,
+        role=AgentRole.BUILDER,
+        model="opus",
+        timeout=1200,
+        max_iterations=3,
+        prompt_template=(
+            "You are improving a tau-bench airline agent based on failure analysis.\n\n"
+            "1. Read `.factory/knowledge/task_config.json` for `task_id`, "
+            "`improvement_target`, and current scores.\n"
+            "2. Read `.factory/knowledge/{task_id}_insights.json` for failure patterns.\n"
+            "3. Read `.factory/knowledge/{task_id}_report.md` for the full analysis.\n"
+            "4. Read the improvement target file(s) in `improvement_target`.\n\n"
+            "Focus on:\n"
+            "- Failed NL assertions: what did the agent do wrong?\n"
+            "- Failed action checks: what expected actions were missing?\n"
+            "- DB check failures: what state changes were incorrect?\n"
+            "- Causal chains tracing failures to root causes\n\n"
+            "Make ONE focused improvement per iteration. Only modify files "
+            "listed in `improvement_target`.\n"
+            "Write a brief summary of what you changed and why to "
+            "`.factory/knowledge/{task_id}_improvement.md`.\n"
+        ),
+        reads={".factory/knowledge/insights.json"},
+        writes={".factory/knowledge/improvement.md"},
+    )
+
+
+def make_re_eval_node(node_id: str = "re_eval") -> FnNode:
+    """Re-run tau-bench evaluation after improvements."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib, subprocess; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "tau_cmd = cfg['tau_command']; "
+            "sim_path = pathlib.Path(cfg['simulation_path']); "
+            "if sim_path.exists(): sim_path.unlink(); "
+            "print(f'Re-running tau-bench: {tau_cmd}'); "
+            "result = subprocess.run(tau_cmd, shell=True, capture_output=True, text=True); "
+            "print(result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout); "
+            "if sim_path.exists(): "
+            "    from factory.knowledge.tau_adapter import compute_aggregate_score; "
+            "    score = compute_aggregate_score(sim_path); "
+            "    cfg['current_score'] = score; "
+            "    pathlib.Path('.factory/knowledge/task_config.json').write_text("
+            "        json.dumps(cfg, indent=2)); "
+            '    print(f\'Re-eval score: {score:.4f} (baseline: {cfg.get("baseline_score", "N/A")})\');'
+            " "
+            "else: print('Error: simulation output not found'); exit(1)"
+            '"'
+        ),
+        notes="Re-run tau-bench evaluation after improvements and update current_score.",
+        reads={".factory/knowledge/improvement.md"},
+        writes={".factory/knowledge/simulation.json"},
+    )
+
+
+def make_gate_compare_node(node_id: str = "gate_compare") -> GateNode:
+    """Compare before/after tau-bench scores — PROCEED if threshold met."""
+    return GateNode(
+        id=node_id,
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "baseline = cfg.get('baseline_score', 0.0); "
+            "current = cfg.get('current_score', 0.0); "
+            "threshold = cfg.get('score_threshold', 0.8); "
+            "if current is not None and current >= threshold: "
+            "    print(f'pass: score {current:.4f} meets threshold {threshold} "
+            "(baseline was {baseline:.4f})'); "
+            "elif current is not None and current > baseline: "
+            "    print(f'reloop: improved {baseline:.4f} -> {current:.4f} "
+            "but still below threshold {threshold}'); "
+            "else: "
+            "    print(f'reloop: no improvement ({baseline} -> {current}), "
+            "try a different approach')"
+            '"'
+        ),
+        reads={".factory/knowledge/simulation.json"},
+    )
+
+
 def make_observe_node(node_id: str = "observe") -> FnNode:
     """Run the external agent and capture its output."""
     return FnNode(

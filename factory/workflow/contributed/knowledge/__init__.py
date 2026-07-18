@@ -1,3 +1,3 @@
-from .workflow import meta, workflow
+from .workflow import meta, tau_meta, tau_workflow, workflow
 
-__all__ = ["meta", "workflow"]
+__all__ = ["meta", "tau_meta", "tau_workflow", "workflow"]

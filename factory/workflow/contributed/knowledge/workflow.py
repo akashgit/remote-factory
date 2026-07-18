@@ -70,3 +70,69 @@ def workflow() -> Workflow:
         terminal=True,
         trigger=trigger,
     )
+
+
+tau_meta = {
+    "name": "knowledge-tau",
+    "description": (
+        "Tau-bench knowledge mode — closed-loop improvement cycle. "
+        "run_eval → extract → analyze → gate_insights → gate_score → "
+        "improve → re_eval → gate_compare → report. "
+        "Extracts structured triplets from tau-bench simulation JSON "
+        "and uses insights to improve the agent."
+    ),
+}
+
+
+def tau_workflow() -> Workflow:
+    """Build the tau-bench evaluation + improvement workflow."""
+    from factory.workflow.contributed.knowledge.nodes import (
+        make_extract_tau_node,
+        make_gate_compare_node,
+        make_gate_score_node,
+        make_improve_node,
+        make_re_eval_node,
+        make_run_eval_node,
+    )
+
+    nodes: dict[str, Any] = {
+        "run_eval": make_run_eval_node(),
+        "extract_tau": make_extract_tau_node(),
+        "extract_llm": make_extract_llm_node(),
+        "update_graph": make_update_graph_node(),
+        "analyst": make_analyst_node(),
+        "gate_insights": make_gate_insights_node(),
+        "gate_score": make_gate_score_node(),
+        "improve": make_improve_node(),
+        "re_eval": make_re_eval_node(),
+        "gate_compare": make_gate_compare_node(),
+        "report": make_report_node(),
+    }
+
+    edges = [
+        Edge(source="run_eval", target="extract_tau"),
+        Edge(source="extract_tau", target="extract_llm"),
+        Edge(source="extract_llm", target="update_graph"),
+        Edge(source="update_graph", target="analyst"),
+        Edge(source="analyst", target="gate_insights"),
+        Edge(source="gate_insights", target="gate_score", condition=VerdictType.PROCEED),
+        Edge(source="gate_insights", target="run_eval", condition=VerdictType.RELOOP),
+        Edge(source="gate_score", target="report", condition=VerdictType.PROCEED),
+        Edge(source="gate_score", target="improve", condition=VerdictType.RELOOP),
+        Edge(source="improve", target="re_eval"),
+        Edge(source="re_eval", target="gate_compare"),
+        Edge(source="gate_compare", target="report", condition=VerdictType.PROCEED),
+        Edge(source="gate_compare", target="improve", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "knowledge-tau"
+
+    return Workflow(
+        name="knowledge-tau",
+        nodes=nodes,
+        edges=edges,
+        start_node="run_eval",
+        terminal=True,
+        trigger=trigger,
+    )
