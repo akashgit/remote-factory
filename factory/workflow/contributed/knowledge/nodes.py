@@ -209,7 +209,7 @@ def make_extract_llm_node(node_id: str = "extract_llm") -> AgentNode:
         id=node_id,
         role=AgentRole.RESEARCHER,
         model="sonnet",
-        timeout=120,
+        timeout=300,
         prompt_template=(
             "You are extracting knowledge graph triplets from an agent execution log.\n\n"
             "1. Read `.factory/knowledge/task_config.json` to get the `task_id` and `task_context`.\n"
