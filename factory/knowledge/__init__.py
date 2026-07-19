@@ -11,6 +11,10 @@ from factory.knowledge.insight import (
     InsightType as InsightType,
     format_insights as format_insights,
 )
+from factory.knowledge.gates import (
+    evaluate_insights_gate as evaluate_insights_gate,
+    generate_report as generate_report,
+)
 from factory.knowledge.models import (
     Entity as Entity,
     EntityType as EntityType,
@@ -18,14 +22,18 @@ from factory.knowledge.models import (
     KnowledgeTaskConfig as KnowledgeTaskConfig,
     PredicateType as PredicateType,
     TauBenchTaskConfig as TauBenchTaskConfig,
+    TauRunState as TauRunState,
     Triplet as Triplet,
 )
 from factory.knowledge.store import KnowledgeStore as KnowledgeStore
 from factory.knowledge.tau_adapter import (
     compute_aggregate_score as compute_aggregate_score,
+    evaluate_compare_gate as evaluate_compare_gate,
+    evaluate_score_gate as evaluate_score_gate,
     extract_scores as extract_scores,
     parse_simulation as parse_simulation,
     run_tau_eval as run_tau_eval,
+    write_failing_tasks as write_failing_tasks,
 )
 
 __all__ = [

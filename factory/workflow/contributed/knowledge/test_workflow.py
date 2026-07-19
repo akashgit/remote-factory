@@ -279,13 +279,13 @@ class TestTauBenchWorkflow:
         ]
         assert len(edges) == 1
 
-    def test_gate_compare_reloop_to_improve(self) -> None:
+    def test_gate_compare_reloop_to_extract_tau(self) -> None:
         wf = self._wf()
         edges = [
             e
             for e in wf.edges
             if e.source == "gate_compare"
-            and e.target == "improve"
+            and e.target == "extract_tau"
             and e.condition == VerdictType.RELOOP
         ]
         assert len(edges) == 1

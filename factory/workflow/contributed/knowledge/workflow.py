@@ -125,7 +125,7 @@ def tau_workflow() -> Workflow:
         Edge(source="improve", target="re_eval"),
         Edge(source="re_eval", target="gate_compare"),
         Edge(source="gate_compare", target="report", condition=VerdictType.PROCEED),
-        Edge(source="gate_compare", target="improve", condition=VerdictType.RELOOP),
+        Edge(source="gate_compare", target="extract_tau", condition=VerdictType.RELOOP),
     ]
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:

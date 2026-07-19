@@ -41,18 +41,19 @@ def make_extract_tau_node(node_id: str = "extract_tau") -> FnNode:
             "cd {project_path} && "
             'python3 -c "'
             "import json, pathlib; "
+            "from factory.knowledge.tau_adapter import parse_simulation, write_failing_tasks; "
             "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
             "task_id = cfg['task_id']; "
             "sim_path = pathlib.Path(cfg['simulation_path']); "
-            "from factory.knowledge.tau_adapter import parse_simulation; "
             "triplets = parse_simulation(sim_path, cfg.get('task_context', task_id)); "
             "out = [t.model_dump(mode='json') for t in triplets]; "
             "pathlib.Path(f'.factory/knowledge/{task_id}_det_triplets.json').write_text("
             "    json.dumps(out, indent=2, default=str)); "
-            "print(f'Extracted {len(out)} tau-bench triplets')"
+            "print(f'Extracted {len(out)} tau-bench triplets'); "
+            "write_failing_tasks(pathlib.Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
-        notes="Parse tau-bench simulation JSON into triplets via the tau adapter.",
+        notes="Parse tau-bench simulation JSON into triplets and write failing task conversations.",
         reads={".factory/knowledge/simulation.json"},
         writes={".factory/knowledge/det_triplets.json"},
     )
@@ -86,10 +87,14 @@ def make_improve_node(node_id: str = "improve") -> AgentNode:
         prompt_template=(
             "You are improving a tau-bench airline agent based on failure analysis.\n\n"
             "1. Read `.factory/knowledge/task_config.json` for `task_id`, "
-            "`improvement_target`, and current scores.\n"
-            "2. Read `.factory/knowledge/{task_id}_insights.json` for failure patterns.\n"
-            "3. Read `.factory/knowledge/{task_id}_report.md` for the full analysis.\n"
-            "4. Read the improvement target file(s) in `improvement_target`.\n\n"
+            "`improvement_target`, and score threshold.\n"
+            "2. Read `.factory/knowledge/run_state.json` for current and baseline scores.\n"
+            "3. Read `.factory/knowledge/{task_id}_insights.json` for failure patterns.\n"
+            "4. Read `.factory/knowledge/{task_id}_failing_tasks.md` for actual failing "
+            "conversations — see exactly what the agent said and did wrong.\n"
+            "5. Read `.factory/knowledge/{task_id}_improvements.jsonl` (if it exists) "
+            "for previous improvement attempts — avoid repeating what was already tried.\n"
+            "6. Read the improvement target file(s) in `improvement_target`.\n\n"
             "Focus on:\n"
             "- Failed NL assertions: what did the agent do wrong?\n"
             "- Failed action checks: what expected actions were missing?\n"
@@ -271,7 +276,9 @@ def make_analyst_node(node_id: str = "analyst") -> AgentNode:
             "Use `python3 -c` commands to query the graph — see your system prompt "
             "for the full list of available operations (stats, query, traverse, "
             "causal_chain, find_paths, match_pattern, related_entities).\n\n"
-            "Start with stats() to understand the graph, then explore failure "
+            "Start with tool_stats() for an aggregate view of tool usage "
+            "(call counts, success/fail rates, common errors per tool), "
+            "then stats() for the full picture. Explore failure "
             "patterns, causal chains, contradictions, and improvement opportunities.\n"
         ),
         reads={".factory/knowledge/graph.json"},
@@ -288,7 +295,7 @@ def make_gate_insights_node(node_id: str = "gate_insights") -> GateNode:
             "cd {project_path} && "
             'python3 -c "'
             "from pathlib import Path; "
-            "from factory.knowledge.tau_adapter import evaluate_insights_gate; "
+            "from factory.knowledge.gates import evaluate_insights_gate; "
             "evaluate_insights_gate(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),
@@ -304,7 +311,7 @@ def make_report_node(node_id: str = "report") -> FnNode:
             "cd {project_path} && "
             'python3 -c "'
             "from pathlib import Path; "
-            "from factory.knowledge.tau_adapter import generate_report; "
+            "from factory.knowledge.gates import generate_report; "
             "generate_report(Path('.factory/knowledge/task_config.json'))"
             '"'
         ),

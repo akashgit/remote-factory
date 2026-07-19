@@ -377,12 +377,33 @@ def _extract_reward_breakdown(
     return triplets
 
 
+def _state_path(config_path: Path) -> Path:
+    return config_path.parent / "run_state.json"
+
+
+def _load_state(config_path: Path) -> dict:
+    sp = _state_path(config_path)
+    if sp.exists():
+        return json.loads(sp.read_text())
+    return {
+        "baseline_score": None,
+        "current_score": None,
+        "iteration_count": 0,
+        "score_history": [],
+    }
+
+
+def _save_state(config_path: Path, state: dict) -> None:
+    _state_path(config_path).write_text(json.dumps(state, indent=2))
+
+
 def run_tau_eval(config_path: Path, *, is_reeval: bool = False) -> None:
-    """Run tau-bench and record score in task_config.json.
+    """Run tau-bench and record score in run_state.json.
 
     Called by the run_eval and re_eval FnNodes.
     """
     import subprocess
+    from datetime import datetime
 
     cfg = json.loads(config_path.read_text())
     tau_cmd = cfg["tau_command"]
@@ -404,53 +425,61 @@ def run_tau_eval(config_path: Path, *, is_reeval: bool = False) -> None:
         raise SystemExit(1)
 
     score = compute_aggregate_score(sim_path)
-    if not is_reeval and cfg.get("baseline_score") is None:
-        cfg["baseline_score"] = score
-    cfg["current_score"] = score
-    config_path.write_text(json.dumps(cfg, indent=2))
+    state = _load_state(config_path)
+    score_before = state.get("current_score")
 
-    baseline = cfg.get("baseline_score", "N/A")
+    if not is_reeval and state.get("baseline_score") is None:
+        state["baseline_score"] = score
+    state["current_score"] = score
+    state["iteration_count"] = state.get("iteration_count", 0) + (1 if is_reeval else 0)
+    state["score_history"].append(
+        {
+            "iteration": state["iteration_count"],
+            "score": score,
+            "timestamp": datetime.now().isoformat(),
+        }
+    )
+    _save_state(config_path, state)
+
     if is_reeval:
-        print(f"Re-eval score: {score:.4f} (baseline: {baseline})")
+        _append_improvement_record(config_path, score_before, score)
+        print(f"Re-eval score: {score:.4f} (baseline: {state.get('baseline_score', 'N/A')})")
     else:
         print(f"Score: {score:.4f}")
 
 
-def evaluate_insights_gate(config_path: Path) -> None:
-    """Check insight quality — print pass/reloop verdict.
+def _append_improvement_record(
+    config_path: Path,
+    score_before: float | None,
+    score_after: float,
+) -> None:
+    """Append one record to {task_id}_improvements.jsonl."""
+    from datetime import datetime
 
-    Called by the gate_insights FnNode.
-    """
     cfg = json.loads(config_path.read_text())
     task_id = cfg["task_id"]
-    threshold = cfg.get("insight_threshold", 2)
-    conf_threshold = cfg.get("confidence_threshold", 0.5)
+    state = _load_state(config_path)
+    history_path = config_path.parent / f"{task_id}_improvements.jsonl"
 
-    p = config_path.parent / f"{task_id}_insights.json"
-    if not p.exists():
-        print("reloop: no insights file found")
-        return
+    improvement_md = config_path.parent / f"{task_id}_improvement.md"
+    changes = improvement_md.read_text() if improvement_md.exists() else ""
 
-    insights = json.loads(p.read_text())
-    if len(insights) < threshold:
-        print(f"reloop: only {len(insights)} insights, need at least {threshold}")
-        return
-
-    avg_conf = sum(i.get("confidence", 0) for i in insights) / len(insights) if insights else 0
-    if avg_conf < conf_threshold:
-        print(f"reloop: average confidence {avg_conf:.2f} below {conf_threshold}")
-        return
-
-    print(f"pass: {len(insights)} insights with avg confidence {avg_conf:.2f}")
+    record = {
+        "iteration": state.get("iteration_count", 0),
+        "score_before": score_before,
+        "score_after": score_after,
+        "changes_summary": changes[:500],
+        "timestamp": datetime.now().isoformat(),
+    }
+    with history_path.open("a") as f:
+        f.write(json.dumps(record, default=str) + "\n")
 
 
 def evaluate_score_gate(config_path: Path) -> None:
-    """Check tau-bench score vs threshold — print pass/reloop verdict.
-
-    Called by the gate_score FnNode.
-    """
+    """Check tau-bench score vs threshold — print pass/reloop verdict."""
     cfg = json.loads(config_path.read_text())
-    score = cfg.get("current_score", 0.0)
+    state = _load_state(config_path)
+    score = state.get("current_score", 0.0)
     threshold = cfg.get("score_threshold", 0.8)
 
     if score is not None and score >= threshold:
@@ -460,13 +489,11 @@ def evaluate_score_gate(config_path: Path) -> None:
 
 
 def evaluate_compare_gate(config_path: Path) -> None:
-    """Compare before/after scores — print pass/reloop verdict.
-
-    Called by the gate_compare FnNode.
-    """
+    """Compare before/after scores — print pass/reloop verdict."""
     cfg = json.loads(config_path.read_text())
-    baseline = cfg.get("baseline_score", 0.0)
-    current = cfg.get("current_score", 0.0)
+    state = _load_state(config_path)
+    baseline = state.get("baseline_score", 0.0)
+    current = state.get("current_score", 0.0)
     threshold = cfg.get("score_threshold", 0.8)
 
     if current is not None and current >= threshold:
@@ -482,36 +509,50 @@ def evaluate_compare_gate(config_path: Path) -> None:
         print(f"reloop: no improvement ({baseline} -> {current}), try a different approach")
 
 
-def generate_report(config_path: Path) -> None:
-    """Generate the final insights report.
-
-    Called by the report FnNode.
-    """
-    from factory.knowledge.insight import Insight, format_insights
-    from factory.knowledge.models import KnowledgeGraph
-
+def write_failing_tasks(config_path: Path) -> None:
+    """Write failing task conversations to {task_id}_failing_tasks.md."""
     cfg = json.loads(config_path.read_text())
     task_id = cfg["task_id"]
-    knowledge_dir = config_path.parent
+    sim_path = Path(cfg["simulation_path"])
 
-    graph_path = knowledge_dir / f"{task_id}.json"
-    insights_path = knowledge_dir / f"{task_id}_insights.json"
-
-    if not graph_path.exists() or not insights_path.exists():
-        print("No graph or insights to report")
+    if not sim_path.exists():
         return
 
-    graph = KnowledgeGraph.model_validate(json.loads(graph_path.read_text()), strict=False)
-    insights = [
-        Insight.model_validate(i, strict=False) for i in json.loads(insights_path.read_text())
-    ]
-    report = format_insights(insights, graph)
-    (knowledge_dir / f"{task_id}_report.md").write_text(report)
-    print(report)
+    data = json.loads(sim_path.read_text())
+    lines = [f"# Failing Tasks for {task_id}\n"]
+
+    for sim in data.get("simulations", []):
+        reward = sim.get("reward_info", {}).get("reward", 0.0)
+        if reward >= 1.0:
+            continue
+        tid = sim.get("task_id", "unknown")
+        breakdown = sim.get("reward_info", {}).get("reward_breakdown", {})
+        lines.append(f"## Task {tid} (reward={reward}, breakdown={breakdown})\n")
+        for msg in sim.get("messages", []):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", "")
+            tc = msg.get("tool_calls")
+            if tc:
+                tc_str = json.dumps(tc, indent=2)[:500]
+                lines.append(f"**{role}** (tool_calls):\n```json\n{tc_str}\n```\n")
+            elif content:
+                lines.append(f"**{role}:** {content[:300]}\n")
+        lines.append("---\n")
+
+    out_path = config_path.parent / f"{task_id}_failing_tasks.md"
+    out_path.write_text("\n".join(lines))
+    print(
+        f"Wrote {sum(1 for s in data.get('simulations', []) if s.get('reward_info', {}).get('reward', 0) < 1.0)} failing tasks"
+    )
+
+
+# backwards compat — moved to factory.knowledge.gates
+from factory.knowledge.gates import evaluate_insights_gate as evaluate_insights_gate  # noqa: E402, F401
+from factory.knowledge.gates import generate_report as generate_report  # noqa: E402, F401
 
 
 def compute_aggregate_score(path: Path) -> float:
-    """Compute average reward across all simulations in a results file."""
+    """Compute average reward across all simulations."""
     data = json.loads(path.read_text())
     sims = data.get("simulations", [])
     if not sims:
@@ -521,7 +562,9 @@ def compute_aggregate_score(path: Path) -> float:
 
 
 def extract_scores(path: Path) -> dict:
-    """Extract detailed scoring breakdown from a simulation results file."""
+    """Extract detailed scoring breakdown, averaging across trials per task."""
+    from collections import defaultdict
+
     data = json.loads(path.read_text())
     sims = data.get("simulations", [])
     if not sims:
@@ -533,12 +576,13 @@ def extract_scores(path: Path) -> dict:
             "per_task": {},
         }
 
-    per_task: dict[str, float] = {}
+    trial_scores: dict[str, list[float]] = defaultdict(list)
     for sim in sims:
         tid = str(sim.get("task_id", "unknown"))
         reward = sim.get("reward_info", {}).get("reward", 0.0)
-        per_task[tid] = reward
+        trial_scores[tid].append(reward)
 
+    per_task = {tid: sum(s) / len(s) for tid, s in trial_scores.items()}
     rewards = list(per_task.values())
     return {
         "mean_reward": sum(rewards) / len(rewards),

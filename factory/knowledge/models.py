@@ -347,6 +347,34 @@ class KnowledgeGraph(BaseModel):
     def triplet_count(self) -> int:
         return len(self.triplets)
 
+    def tool_stats(self) -> dict[str, dict[str, int | list[str]]]:
+        """Aggregate call count, success/fail rates, and errors per tool."""
+        tools: dict[str, dict[str, int | list[str]]] = {}
+
+        for t in self.triplets:
+            if t.predicate == PredicateType.CALLS and t.object.type == EntityType.TOOL:
+                name = t.object.name
+                if name not in tools:
+                    tools[name] = {"calls": 0, "successes": 0, "failures": 0, "errors": []}
+                tools[name]["calls"] += 1
+
+        for t in self.triplets:
+            if t.subject.type != EntityType.ACTION:
+                continue
+            tool_name = (
+                t.subject.name.rsplit("_call_", 1)[0] if "_call_" in t.subject.name else None
+            )
+            if tool_name and tool_name in tools:
+                if t.predicate == PredicateType.PRODUCES:
+                    tools[tool_name]["successes"] += 1
+                elif t.predicate == PredicateType.FAILS_WITH:
+                    tools[tool_name]["failures"] += 1
+                    err = t.object.name
+                    if err not in tools[tool_name]["errors"]:
+                        tools[tool_name]["errors"].append(err)
+
+        return tools
+
     def stats(self) -> dict[str, object]:
         """Summary statistics: degree ranking, predicate distribution, failure hotspots."""
         degree: dict[str, int] = defaultdict(int)
@@ -399,5 +427,17 @@ class TauBenchTaskConfig(KnowledgeTaskConfig):
     tau_command: str = ""
     score_threshold: float = Field(ge=0.0, le=1.0, default=0.8)
     improvement_target: str = ""
+
+
+class TauRunState(BaseModel):
+    """Mutable runtime state for tau-bench evaluation runs.
+
+    Stored at ``run_state.json`` alongside ``task_config.json``.
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
     baseline_score: float | None = None
     current_score: float | None = None
+    iteration_count: int = 0
+    score_history: list[dict[str, float | int | str]] = []
