@@ -52,6 +52,7 @@ DEFAULT_AGENT_POOL: dict[str, AgentConfig] = {
     "archivist": AgentConfig(role=AgentRole.ARCHIVIST, model="haiku", timeout=300),
     "refiner": AgentConfig(role=AgentRole.REFINER, model="opus", timeout=600),
     "skill_reviewer": AgentConfig(role=AgentRole.SKILL_REVIEWER, model="opus", timeout=600),
+    "skill_synthesizer": AgentConfig(role=AgentRole.SKILL_SYNTHESIZER, model="opus", timeout=600),
 }
 
 

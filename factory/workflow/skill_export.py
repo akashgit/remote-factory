@@ -706,16 +706,11 @@ async def _refine_skill(templatized: str, project_path: Path) -> str:
         )
 
     best = max(survivors, key=lambda c: _count_changed_slots(templatized, c))
-    best_guard = guard_check(templatized, best)
-    if best_guard.passed:
-        log.info(
-            "skill_refine.best_individual_fallback",
-            changed_slots=_count_changed_slots(templatized, best),
-        )
-        return best
-
-    log.info("skill_refine.best_individual_also_failed_mechanical_fallback")
-    return templatized
+    log.info(
+        "skill_refine.best_individual_fallback",
+        changed_slots=_count_changed_slots(templatized, best),
+    )
+    return best
 
 
 async def export_all_skills(
