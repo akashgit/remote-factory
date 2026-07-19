@@ -649,10 +649,15 @@ async def _refine_skill(templatized: str, project_path: Path) -> str:
     from factory.workflow.guard import check as guard_check
 
     reviewer: AgentRole = "skill_reviewer"
+    review_task = (
+        "Review and refine the following templatized SKILL.md. "
+        "Only modify values inside {{slot_name::value}} markers.\n\n"
+        f"{templatized}"
+    )
     tasks: list[tuple[AgentRole, str]] = [
-        (reviewer, templatized),
-        (reviewer, templatized),
-        (reviewer, templatized),
+        (reviewer, review_task),
+        (reviewer, review_task),
+        (reviewer, review_task),
     ]
 
     log.info("skill_refine.reviewing", candidates=len(tasks))
@@ -685,6 +690,9 @@ async def _refine_skill(templatized: str, project_path: Path) -> str:
         f"## Candidate {i + 1}\n\n{c}" for i, c in enumerate(survivors)
     )
     synth_task = (
+        "Synthesize the best slot values from the following candidates "
+        "into a single refined SKILL.md. Only modify values inside "
+        "{{slot_name::value}} markers.\n\n"
         f"## Original\n\n{templatized}\n\n"
         f"---\n\n{candidates_block}"
     )
