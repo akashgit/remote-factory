@@ -7,14 +7,40 @@
 | Python | 3.11+ | System or [pyenv](https://github.com/pyenv/pyenv) |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Latest | `npm install -g @anthropic-ai/claude-code` |
 | Node.js | 18+ | Required for Claude Code and MCP servers |
-| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (for dev install) |
+| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (optional) |
 | tmux | Any | `brew install tmux` (optional, for long-running sessions) |
 
 **Claude Code must be installed and authenticated.** re:factory spawns `claude` as subprocesses — it does not call the Claude API directly. However you've authenticated Claude Code (API key, Vertex AI, etc.) is how re:factory will access Claude.
 
 ## Installation
 
-### Option A: From source (recommended)
+Install re:factory globally so `factory` is available everywhere on your machine.
+
+### Option A: One-liner (recommended)
+
+```bash
+curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install.sh | bash
+```
+
+### Option B: pipx
+
+```bash
+pipx install git+https://github.com/akashgit/remote-factory.git
+```
+
+### Option C: uv tool
+
+```bash
+uv tool install git+https://github.com/akashgit/remote-factory.git
+```
+
+### Option D: pip
+
+```bash
+pip install git+https://github.com/akashgit/remote-factory.git
+```
+
+### Option E: From source (for development)
 
 re:factory evolves fast — installing from source lets you `git pull` to stay current.
 
@@ -25,25 +51,11 @@ uv sync
 uv tool install -e .
 ```
 
-### Option B: From pip
-
-```bash
-pip install git+https://github.com/akashgit/remote-factory.git
-```
-
-### Option C: One-liner
-
-```bash
-curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install.sh | bash
-```
-
 ### Verify
 
 ```bash
 factory --help
 ```
-
-If running from source without `uv tool install`, prefix commands with `uv run` (e.g., `uv run factory ceo "..."`). If you've installed the CLI, bare `factory` works directly.
 
 ## CEO Agent Registration
 
@@ -146,14 +158,14 @@ re:factory inherits Claude Code's authentication. Configure whichever method you
 ```bash
 # 1. Install tooling
 npm install -g @anthropic-ai/claude-code     # Claude Code
-curl -LsSf https://astral.sh/uv/install.sh | sh  # uv (optional, for dev install)
 
 # 2. Authenticate Claude Code (if not already done)
 claude  # follow the prompts
 
-# 3. Install re:factory
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory && uv sync && uv tool install -e .
+# 3. Install re:factory globally (pick one)
+pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
+uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
+pip install git+https://github.com/akashgit/remote-factory.git       # via pip
 
 # 4. Register CEO agent
 factory install

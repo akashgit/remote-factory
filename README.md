@@ -19,25 +19,26 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 
 ## Quick Start
 
-**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
 
 ```bash
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory
-uv sync
+# Install globally (pick one)
+pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
+uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
+pip install git+https://github.com/akashgit/remote-factory.git       # via pip
 ```
 
 Then start with one of the two main workflows:
 
 ```bash
 # Design — brainstorm an idea, refine it, then build
-uv run factory ceo "my idea" --mode design
+factory ceo "my idea" --mode design
 
 # Improve — point at an existing project for continuous improvement
-uv run factory ceo /path/to/project --mode improve --focus "issue # or whatever you want to improve or fix"
+factory ceo /path/to/project --mode improve --focus "issue # or whatever you want to improve or fix"
 
 # Co-improve — if you want to iterate on the implementation plan before implementation starts for an improvement
-uv run factory ceo /path/to/project --mode design --focus "issue # or whatever you want to improve or fix"
+factory ceo /path/to/project --mode design --focus "issue # or whatever you want to improve or fix"
 ```
 
 See the [full setup guide](docs/setup.md) for authentication and environment variables.
@@ -48,10 +49,10 @@ See the [full setup guide](docs/setup.md) for authentication and environment var
 
 | I want to… | Command |
 |---|---|
-| **Start from a raw idea** | `uv run factory ceo "my idea" --mode design` |
-| **Improve an existing project** | `uv run factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
-| **Co-improve an existing project** | `uv run factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
-| **Create a new factory mode** | `uv run factory ceo /path/to/factory --mode create --focus "mode description"` |
+| **Start from a raw idea** | `factory ceo "my idea" --mode design` |
+| **Improve an existing project** | `factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
+| **Co-improve an existing project** | `factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
+| **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
 
 ---
 
@@ -61,22 +62,22 @@ Use design mode when you want to brainstorm before building. Start a conversatio
 
 ```bash
 # From a raw idea — discuss and refine into a buildable spec
-uv run factory ceo "distributed task runner" --mode design
+factory ceo "distributed task runner" --mode design
 
 # From a spec file — read and discuss before building
-uv run factory ceo ~/ideas/my-app-spec.md --mode design
+factory ceo ~/ideas/my-app-spec.md --mode design
 ```
 
 Design mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
 
 ```bash
-uv run factory ceo ~/factory-projects/my-app --mode design
+factory ceo ~/factory-projects/my-app --mode design
 
 # Seed the conversation with a topic
-uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
+factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 ```
 
-You can also pass a spec file or URL directly — `uv run factory ceo spec.md` — and re:factory builds without the design conversation.
+You can also pass a spec file or URL directly — `factory ceo spec.md` — and re:factory builds without the design conversation.
 
 ---
 
@@ -85,7 +86,7 @@ You can also pass a spec file or URL directly — `uv run factory ceo spec.md` �
 Improve mode is re:factory's continuous improvement loop for existing projects. Point it at a codebase and it autonomously observes the project state, generates hypotheses for improvements, builds and tests changes, and keeps or reverts each experiment based on eval scores.
 
 ```bash
-uv run factory ceo ~/factory-projects/my-app --mode improve
+factory ceo ~/factory-projects/my-app --mode improve
 ```
 
 Each cycle: **observe** → **hypothesize** → **build** → **review** → **measure** → **decide** (keep or revert) → **archive**. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
@@ -93,9 +94,9 @@ Each cycle: **observe** → **hypothesize** → **build** → **review** → **m
 When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
 
 ```bash
-uv run factory ceo ~/my-app --mode improve --focus "add dark mode toggle"
-uv run factory ceo ~/my-app --mode improve --focus 42                       # GitHub issue
-uv run factory ceo ~/my-app --mode improve --focus "owner/repo#42"          # Issue shorthand
+factory ceo ~/my-app --mode improve --focus "add dark mode toggle"
+factory ceo ~/my-app --mode improve --focus 42                       # GitHub issue
+factory ceo ~/my-app --mode improve --focus "owner/repo#42"          # Issue shorthand
 ```
 
 ---
@@ -113,7 +114,7 @@ Each request runs through the full experiment pipeline: the **Refiner** scopes i
 You can also invoke refinements directly with `--refine`:
 
 ```bash
-uv run factory ceo ~/my-app --refine "add rate limiting to the API"
+factory ceo ~/my-app --refine "add rate limiting to the API"
 ```
 
 There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag context growth, but the user decides when to stop.
@@ -125,7 +126,7 @@ There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag cont
 Create mode lets you build new factory modes — new workflows, new pipelines, new factories. Pass a description via `--focus` to tell the CEO what mode to create. It's fully interactive — the CEO researches existing patterns, synthesizes a workflow spec, gets your approval, then implements everything: workflow definition, SKILL.md, CLI wiring, and tests.
 
 ```bash
-uv run factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
+factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
 ```
 
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
@@ -136,7 +137,7 @@ Point it at the factory repo itself to extend re:factory with custom pipelines.
 
 ## Eval System
 
-Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
+Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
 
 ---
 
@@ -158,7 +159,7 @@ The pipeline produces two artifacts per workflow:
 Regenerate all skills after changing workflow definitions:
 
 ```bash
-uv run factory workflow export-skills
+factory workflow export-skills
 ```
 
 A regression test (`test_annotations_match_source`) runs in CI to catch drift between workflow definitions and exported skills.
@@ -186,15 +187,15 @@ Built something with re:factory? Open a PR to add it here.
 
 ```bash
 # Core workflow
-uv run factory ceo "idea" --mode design         # Design from a raw idea
-uv run factory ceo <path> --mode improve        # Improve an existing project
-uv run factory ceo <path> --refine "..."        # Single targeted refinement
-uv run factory ceo <path> --mode create --focus "description"  # Create a new factory mode
-uv run factory ceo <path> --loop                # Continuous improvement loop
-uv run factory tmux <path> --loop               # Loop in detached tmux session
+factory ceo "idea" --mode design         # Design from a raw idea
+factory ceo <path> --mode improve        # Improve an existing project
+factory ceo <path> --refine "..."        # Single targeted refinement
+factory ceo <path> --mode create --focus "description"  # Create a new factory mode
+factory ceo <path> --loop                # Continuous improvement loop
+factory tmux <path> --loop               # Loop in detached tmux session
 ```
 
-See `uv run factory --help` for the complete list.
+See `factory --help` for the complete list.
 
 ---
 
@@ -204,11 +205,11 @@ re:factory supports multiple CLI backends. Default is Claude Code — switch wit
 
 ```bash
 # Direct
-CODEX_API_KEY="..." uv run factory ceo /path --runner codex
-BOBSHELL_API_KEY="..." uv run factory ceo /path --runner bob
+CODEX_API_KEY="..." factory ceo /path --runner codex
+BOBSHELL_API_KEY="..." factory ceo /path --runner bob
 
 # Via config.toml profile (persistent)
-uv run factory ceo /path --profile codex
+factory ceo /path --profile codex
 ```
 
 Configure profiles in `~/.factory/config.toml`:
@@ -223,7 +224,7 @@ FACTORY_RUNNER = "bob"
 BOBSHELL_API_KEY = "..."
 ```
 
-Run `uv run factory config show` to see resolved config, or `uv run factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
+Run `factory config show` to see resolved config, or `factory config edit` to open the file. See [Setup Guide](docs/setup.md) for full details.
 
 ---
 
@@ -250,7 +251,7 @@ The dev credentials above match the docker-compose setup. Add them to your `~/.b
 ### Viewing Traces
 
 1. Start LangFuse: `scripts/langfuse-setup start`
-2. Run the factory: `uv run factory ceo /path/to/project`
+2. Run the factory: `factory ceo /path/to/project`
 3. Open `http://localhost:3000` in your browser
 4. Login: `dev@localhost.local` / `devpassword123`
 
@@ -295,7 +296,7 @@ Once installed, the plugin exposes:
 - Namespaced subagents — invoke with `factory:ceo`, `factory:researcher`, `factory:builder`, etc.
 - The bundled skills under `.agents/skills/` (e.g. `pipeline-subagents`, `implement`).
 
-The plugin still shells out to the `factory` CLI for the heavy lifting, so you'll need `uv` and the `factory` package installed locally as described in [Quick Start](#quick-start).
+The plugin still shells out to the `factory` CLI for the heavy lifting, so you'll need the `factory` package installed globally as described in [Quick Start](#quick-start).
 
 To update later: `/plugin marketplace update remote-factory`. To remove: `/plugin uninstall factory@remote-factory`.
 
@@ -306,8 +307,8 @@ To update later: `/plugin marketplace update remote-factory`. To remove: `/plugi
 If you'd rather skip the marketplace and just register the specialist agents as standalone Claude Code (or Codex) subagents, use the built-in installer:
 
 ```bash
-uv run factory install                   # Install all 9 agents to ~/.claude/agents/
-uv run factory install --runner codex    # Or install Codex TOML agents to ~/.codex/agents/
+factory install                   # Install all 9 agents to ~/.claude/agents/
+factory install --runner codex    # Or install Codex TOML agents to ~/.codex/agents/
 claude --agent factory-ceo "improve this project"
 claude --agent factory-researcher "study the auth system"
 ```

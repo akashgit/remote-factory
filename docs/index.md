@@ -113,9 +113,10 @@ factory tmux ~/my-project --loop
 ## Quick Start
 
 ```bash
-# Install from source (recommended — re:factory evolves fast)
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory && uv sync && uv tool install -e .
+# Install globally (pick one)
+pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
+uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
+pip install git+https://github.com/akashgit/remote-factory.git       # via pip
 
 # Register the CEO as a Claude Code agent
 factory install
