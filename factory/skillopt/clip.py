@@ -57,6 +57,31 @@ def rank_and_select(skill_content: str, patch: Patch, max_edits: int = 3) -> Pat
             reasoning=patch.reasoning,
         )
 
+    selected_indices = data.get("selected_indices", [])
+    if selected_indices:
+        selected: list[Edit] = []
+        seen: set[int] = set()
+        for idx in selected_indices:
+            if isinstance(idx, int) and 0 <= idx < len(patch.edits) and idx not in seen:
+                selected.append(patch.edits[idx])
+                seen.add(idx)
+            if len(selected) >= max_edits:
+                break
+        if selected:
+            return Patch(
+                edits=selected,
+                reasoning=data.get("reasoning", patch.reasoning),
+                ranking_details=data.get("ranking_details"),
+            )
+
+    edits_raw = data.get("edits", [])
+    if not edits_raw:
+        log.warning("ranking LLM returned no edits, falling back to truncation")
+        return Patch(
+            edits=patch.edits[:max_edits],
+            reasoning=patch.reasoning,
+        )
+
     edits = [
         Edit(
             op=e.get("op", "append"),
@@ -65,7 +90,7 @@ def rank_and_select(skill_content: str, patch: Patch, max_edits: int = 3) -> Pat
             support_count=e.get("support_count"),
             source_type=e.get("source_type"),
         )
-        for e in data.get("edits", [])
+        for e in edits_raw
     ][:max_edits]
 
     return Patch(
