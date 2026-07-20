@@ -2285,6 +2285,7 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.contributed.programbench import workflow as programbench_workflow
     from factory.workflow.contributed.knowledge import workflow as knowledge_workflow  # noqa: E501
     from factory.workflow.contributed.knowledge import tau_workflow as knowledge_tau_workflow  # noqa: E501
+    from factory.workflow.contributed.knowledge import ols_workflow as knowledge_ols_workflow  # noqa: E501
     from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
 
     return {
@@ -2311,4 +2312,5 @@ def register_all() -> dict[str, Workflow]:
         "spec-update": spec_update_workflow(),
         "knowledge": knowledge_workflow(),
         "knowledge-tau": knowledge_tau_workflow(),
+        "knowledge-ols": knowledge_ols_workflow(),
     }

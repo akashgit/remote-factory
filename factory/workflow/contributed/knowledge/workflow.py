@@ -72,6 +72,81 @@ def workflow() -> Workflow:
     )
 
 
+ols_meta = {
+    "name": "knowledge-ols",
+    "description": (
+        "OLS troubleshooting eval knowledge mode — closed-loop improvement cycle. "
+        "run_eval → extract_ols → extract_llm → update_graph → analyst → "
+        "gate_insights → gate_score → improve → re_eval → gate_compare → report. "
+        "Extracts structured triplets from OLS eval CSV results "
+        "(answer_correctness, conversation quality metrics) "
+        "and uses insights to improve the troubleshooting agent."
+    ),
+}
+
+
+def ols_workflow() -> Workflow:
+    """Build the OLS troubleshooting eval + improvement workflow."""
+    from factory.workflow.contributed.knowledge.nodes import (
+        make_analyst_node,
+        make_extract_llm_node,
+        make_gate_insights_node,
+        make_ols_extract_node,
+        make_ols_gate_compare_node,
+        make_ols_gate_score_node,
+        make_ols_improve_node,
+        make_ols_re_eval_node,
+        make_ols_run_eval_node,
+        make_report_node,
+        make_update_graph_node,
+    )
+
+    extract_llm = make_extract_llm_node()
+    extract_llm.reads = {".factory/knowledge/det_triplets.json"}
+
+    nodes: dict[str, Any] = {
+        "run_eval": make_ols_run_eval_node(),
+        "extract_ols": make_ols_extract_node(),
+        "extract_llm": extract_llm,
+        "update_graph": make_update_graph_node(),
+        "analyst": make_analyst_node(),
+        "gate_insights": make_gate_insights_node(),
+        "gate_score": make_ols_gate_score_node(),
+        "improve": make_ols_improve_node(),
+        "re_eval": make_ols_re_eval_node(),
+        "gate_compare": make_ols_gate_compare_node(),
+        "report": make_report_node(),
+    }
+
+    edges = [
+        Edge(source="run_eval", target="extract_ols"),
+        Edge(source="extract_ols", target="extract_llm"),
+        Edge(source="extract_llm", target="update_graph"),
+        Edge(source="update_graph", target="analyst"),
+        Edge(source="analyst", target="gate_insights"),
+        Edge(source="gate_insights", target="gate_score", condition=VerdictType.PROCEED),
+        Edge(source="gate_insights", target="run_eval", condition=VerdictType.RELOOP),
+        Edge(source="gate_score", target="report", condition=VerdictType.PROCEED),
+        Edge(source="gate_score", target="improve", condition=VerdictType.RELOOP),
+        Edge(source="improve", target="re_eval"),
+        Edge(source="re_eval", target="gate_compare"),
+        Edge(source="gate_compare", target="report", condition=VerdictType.PROCEED),
+        Edge(source="gate_compare", target="extract_ols", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "knowledge-ols"
+
+    return Workflow(
+        name="knowledge-ols",
+        nodes=nodes,
+        edges=edges,
+        start_node="run_eval",
+        terminal=True,
+        trigger=trigger,
+    )
+
+
 tau_meta = {
     "name": "knowledge-tau",
     "description": (

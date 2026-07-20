@@ -145,6 +145,145 @@ def make_gate_compare_node(node_id: str = "gate_compare") -> GateNode:
     )
 
 
+# ── OLS troubleshooting eval nodes ─────────────────────────────
+
+
+def make_ols_run_eval_node(node_id: str = "run_eval") -> FnNode:
+    """Run OLS troubleshooting eval and record baseline score."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "from pathlib import Path; "
+            "from factory.knowledge.ols_adapter import run_ols_eval; "
+            "run_ols_eval(Path('.factory/knowledge/task_config.json'))"
+            '"'
+        ),
+        notes="Run OLS troubleshooting evaluation and record score in run_state.json.",
+        writes={".factory/knowledge/run_state.json"},
+    )
+
+
+def make_ols_extract_node(node_id: str = "extract_ols") -> FnNode:
+    """Parse OLS eval CSV results into knowledge graph triplets."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "import json, pathlib; "
+            "from factory.knowledge.ols_adapter import parse_results, write_failing_scenarios; "
+            "cfg = json.loads(pathlib.Path('.factory/knowledge/task_config.json').read_text()); "
+            "task_id = cfg['task_id']; "
+            "results_dir = pathlib.Path(cfg['results_dir']); "
+            "triplets = parse_results(results_dir, cfg.get('task_context', task_id)); "
+            "out = [t.model_dump(mode='json') for t in triplets]; "
+            "pathlib.Path(f'.factory/knowledge/{task_id}_det_triplets.json').write_text("
+            "    json.dumps(out, indent=2, default=str)); "
+            "print(f'Extracted {len(out)} OLS eval triplets'); "
+            "write_failing_scenarios(pathlib.Path('.factory/knowledge/task_config.json'))"
+            '"'
+        ),
+        notes="Parse OLS eval CSV results into triplets and write failing scenario details.",
+        reads={".factory/knowledge/run_state.json"},
+        writes={".factory/knowledge/det_triplets.json"},
+    )
+
+
+def make_ols_gate_score_node(node_id: str = "gate_score") -> GateNode:
+    """Gate on OLS eval score — PROCEED if meets threshold, RELOOP to improve."""
+    return GateNode(
+        id=node_id,
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "from pathlib import Path; "
+            "from factory.knowledge.ols_adapter import evaluate_score_gate; "
+            "evaluate_score_gate(Path('.factory/knowledge/task_config.json'))"
+            '"'
+        ),
+        reads={".factory/knowledge/insights.json"},
+    )
+
+
+def make_ols_improve_node(node_id: str = "improve") -> AgentNode:
+    """Apply knowledge graph insights to improve the OLS troubleshooting agent."""
+    return AgentNode(
+        id=node_id,
+        role=AgentRole.BUILDER,
+        model="opus",
+        timeout=1200,
+        max_iterations=3,
+        prompt_template=(
+            "You are improving an OLS (OpenShift LightSpeed) troubleshooting agent "
+            "based on failure analysis from Kubernetes/OpenShift eval scenarios.\n\n"
+            "1. Read `.factory/knowledge/task_config.json` for `task_id`, "
+            "`improvement_target`, `results_dir`, and score threshold.\n"
+            "2. Read `.factory/knowledge/run_state.json` for current and baseline scores.\n"
+            "3. Read `.factory/knowledge/{task_id}_insights.json` for failure patterns "
+            "and causal chains.\n"
+            "4. Read `.factory/knowledge/{task_id}_failing_scenarios.md` for actual "
+            "failing scenarios — see the agent's responses, judge rationale, and "
+            "which turns failed.\n"
+            "5. Read `.factory/knowledge/{task_id}_improvements.jsonl` (if it exists) "
+            "for previous improvement attempts — avoid repeating what was already tried.\n"
+            "6. Read the improvement target file(s) in `improvement_target`.\n\n"
+            "Focus on:\n"
+            "- Scenarios where answer_correctness failed — what did the agent miss?\n"
+            "- Judge rationale in failing scenarios — what was expected vs delivered?\n"
+            "- Multi-turn conversation quality: knowledge_retention, continuity\n"
+            "- Causal chains tracing failures to specific diagnostic gaps\n"
+            "- OLS configuration (system prompts, MCP tool setup) as improvement levers\n\n"
+            "Make ONE focused improvement per iteration. Only modify files "
+            "listed in `improvement_target`.\n"
+            "Write a brief summary of what you changed and why to "
+            "`.factory/knowledge/{task_id}_improvement.md`.\n"
+        ),
+        reads={".factory/knowledge/insights.json"},
+        writes={".factory/knowledge/improvement.md"},
+    )
+
+
+def make_ols_re_eval_node(node_id: str = "re_eval") -> FnNode:
+    """Re-run OLS eval after improvements."""
+    return FnNode(
+        id=node_id,
+        command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "from pathlib import Path; "
+            "from factory.knowledge.ols_adapter import run_ols_eval; "
+            "run_ols_eval(Path('.factory/knowledge/task_config.json'), is_reeval=True)"
+            '"'
+        ),
+        notes="Re-run OLS evaluation after improvements and update current_score.",
+        reads={".factory/knowledge/improvement.md"},
+        writes={".factory/knowledge/run_state.json"},
+    )
+
+
+def make_ols_gate_compare_node(node_id: str = "gate_compare") -> GateNode:
+    """Compare before/after OLS eval scores — PROCEED if threshold met."""
+    return GateNode(
+        id=node_id,
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && "
+            'python3 -c "'
+            "from pathlib import Path; "
+            "from factory.knowledge.ols_adapter import evaluate_compare_gate; "
+            "evaluate_compare_gate(Path('.factory/knowledge/task_config.json'))"
+            '"'
+        ),
+        reads={".factory/knowledge/run_state.json"},
+    )
+
+
+# ── generic knowledge nodes ────────────────────────────────────
+
+
 def make_observe_node(node_id: str = "observe") -> FnNode:
     """Run the external agent and capture its output."""
     return FnNode(

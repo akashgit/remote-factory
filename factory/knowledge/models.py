@@ -429,6 +429,18 @@ class TauBenchTaskConfig(KnowledgeTaskConfig):
     improvement_target: str = ""
 
 
+class OlsTaskConfig(KnowledgeTaskConfig):
+    """Extended configuration for OLS troubleshooting eval tasks."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    results_dir: str = ""
+    eval_command: str = ""
+    score_threshold: float = Field(ge=0.0, le=1.0, default=0.5)
+    improvement_target: str = ""
+    scenarios: list[str] = []
+
+
 class TauRunState(BaseModel):
     """Mutable runtime state for tau-bench evaluation runs.
 
