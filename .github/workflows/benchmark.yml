@@ -16,6 +16,7 @@ on:
           - programbench
           - legacybench
           - harborindex
+          - tomswe
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -86,6 +87,10 @@ jobs:
             solver: factory
             default_instance: 'bix-filter-chip-variants'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'harborindex' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          - benchmark: tomswe
+            solver: factory
+            default_instance: 'sympy__sympy-20590'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'tomswe' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
@@ -111,6 +116,10 @@ jobs:
             solver: claude-code
             default_instance: 'bix-filter-chip-variants'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'harborindex' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: tomswe
+            solver: claude-code
+            default_instance: 'sympy__sympy-20590'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'tomswe' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled

@@ -1,5 +1,6 @@
 """Harbor agent that runs ``factory ceo`` as a benchmark solver."""
 
+import hashlib
 import os
 import re
 from typing import override
@@ -30,6 +31,215 @@ COMMON_ENV_VARS = (
     "FACTORY_BENCHMARK",
     "FACTORY_INSTANCE_ID",
 )
+
+
+TOMSWE_PROFILES: list[dict[str, object]] = [
+    {
+        "profile_id": "P01",
+        "verbosity": "concise",
+        "question_timing": "upfront",
+        "response_style": "short",
+        "coding_preferences": [
+            "pytest over unittest",
+            "type hints required",
+            "f-strings over format()",
+            "single-responsibility functions",
+            "descriptive variable names",
+        ],
+    },
+    {
+        "profile_id": "P02",
+        "verbosity": "verbose",
+        "question_timing": "ongoing",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "unittest with setUp/tearDown",
+            "docstrings on all public methods",
+            "defensive error handling",
+            "logging over print statements",
+            "class-based design patterns",
+            "comprehensive inline comments",
+        ],
+    },
+    {
+        "profile_id": "P03",
+        "verbosity": "concise",
+        "question_timing": "upfront",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "functional programming style",
+            "list comprehensions over loops",
+            "dataclasses over plain dicts",
+            "minimal dependencies",
+            "pathlib over os.path",
+        ],
+    },
+    {
+        "profile_id": "P04",
+        "verbosity": "verbose",
+        "question_timing": "upfront",
+        "response_style": "short",
+        "coding_preferences": [
+            "pytest fixtures over setup methods",
+            "abstract base classes for interfaces",
+            "enum over string constants",
+            "context managers for resource handling",
+            "snake_case naming strictly enforced",
+            "no wildcard imports",
+        ],
+    },
+    {
+        "profile_id": "P05",
+        "verbosity": "concise",
+        "question_timing": "ongoing",
+        "response_style": "short",
+        "coding_preferences": [
+            "minimal comments — code should be self-documenting",
+            "early returns over nested if/else",
+            "prefer composition over inheritance",
+            "use walrus operator where it simplifies",
+            "keep functions under 20 lines",
+        ],
+    },
+    {
+        "profile_id": "P06",
+        "verbosity": "verbose",
+        "question_timing": "ongoing",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "type hints with Optional and Union",
+            "property decorators over getters/setters",
+            "named tuples for lightweight data",
+            "explicit exception types over bare except",
+            "reStructuredText docstring format",
+            "separate test file per module",
+            "integration tests alongside unit tests",
+        ],
+    },
+    {
+        "profile_id": "P07",
+        "verbosity": "concise",
+        "question_timing": "upfront",
+        "response_style": "short",
+        "coding_preferences": [
+            "Google-style docstrings",
+            "absolute imports only",
+            "collections.abc over typing for containers",
+            "prefer standard library over third-party",
+            "guard clauses at function start",
+        ],
+    },
+    {
+        "profile_id": "P08",
+        "verbosity": "verbose",
+        "question_timing": "upfront",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "Pydantic models for validation",
+            "structured logging with structlog",
+            "async/await for I/O operations",
+            "dependency injection pattern",
+            "conventional commits for git messages",
+            "100 char line length maximum",
+        ],
+    },
+    {
+        "profile_id": "P09",
+        "verbosity": "concise",
+        "question_timing": "ongoing",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "pytest parametrize for test variants",
+            "builder pattern for complex objects",
+            "protocol classes over ABCs",
+            "match/case for dispatch logic",
+            "X | Y union syntax over Union",
+        ],
+    },
+    {
+        "profile_id": "P10",
+        "verbosity": "verbose",
+        "question_timing": "ongoing",
+        "response_style": "short",
+        "coding_preferences": [
+            "TDD approach — write tests first",
+            "black formatter compliance",
+            "isort for import ordering",
+            "no mutable default arguments",
+            "explicit __all__ exports",
+            "slots=True on dataclasses",
+        ],
+    },
+    {
+        "profile_id": "P11",
+        "verbosity": "concise",
+        "question_timing": "upfront",
+        "response_style": "short",
+        "coding_preferences": [
+            "LBYL over EAFP where possible",
+            "itertools for complex iterations",
+            "functools.lru_cache for memoization",
+            "private methods with underscore prefix",
+            "constants in UPPER_SNAKE_CASE",
+        ],
+    },
+    {
+        "profile_id": "P12",
+        "verbosity": "verbose",
+        "question_timing": "upfront",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "EAFP over LBYL — ask forgiveness",
+            "contextlib utilities for context managers",
+            "textwrap.dedent for multiline strings",
+            "attrs over dataclasses",
+            "Numpy-style docstrings",
+            "hypothesis for property-based testing",
+            "separate constants module",
+        ],
+    },
+    {
+        "profile_id": "P13",
+        "verbosity": "concise",
+        "question_timing": "ongoing",
+        "response_style": "short",
+        "coding_preferences": [
+            "simple flat module structure",
+            "dict.get() over KeyError handling",
+            "one assert per test method",
+            "no global state",
+            "pure functions where possible",
+        ],
+    },
+    {
+        "profile_id": "P14",
+        "verbosity": "verbose",
+        "question_timing": "ongoing",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "layered architecture (services/repos/models)",
+            "factory methods for object creation",
+            "immutable data structures preferred",
+            "typing.TypeAlias for complex types",
+            "rich library for CLI output",
+            "click over argparse for CLI",
+        ],
+    },
+    {
+        "profile_id": "P15",
+        "verbosity": "concise",
+        "question_timing": "upfront",
+        "response_style": "verbose",
+        "coding_preferences": [
+            "argparse for CLI — standard library only",
+            "os.environ.get with defaults",
+            "json over yaml for configuration",
+            "subprocess.run over os.system",
+            "tempfile module for temp resources",
+            "atexit for cleanup handlers",
+        ],
+    },
+]
 
 
 class FactoryCeo(BaseInstalledAgent):
@@ -389,7 +599,11 @@ class HarborIndexFactoryCeo(FactoryCeo):
 
 
 class TomsweFactoryCeo(FactoryCeo):
-    """Runs the deterministic tomswe workflow."""
+    """Runs the deterministic tomswe workflow with user-profile injection.
+
+    Reuses the swe-bench dataset but appends a deterministically-selected
+    ToM-SWE user profile to the task instruction before solving.
+    """
 
     @staticmethod
     @override
@@ -403,4 +617,176 @@ class TomsweFactoryCeo(FactoryCeo):
             'factory workflow run tomswe . '
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
+        )
+
+    @staticmethod
+    def _select_profile(instruction: str) -> dict[str, object]:
+        idx = int(hashlib.sha256(instruction.encode()).hexdigest(), 16) % len(TOMSWE_PROFILES)
+        return TOMSWE_PROFILES[idx]
+
+    @staticmethod
+    def _format_profile(profile: dict[str, object]) -> str:
+        prefs = profile["coding_preferences"]
+        assert isinstance(prefs, list)
+        prefs_str = "\n".join(f"- {p}" for p in prefs)
+        return (
+            f"## User Profile\n\n"
+            f"**Profile ID:** {profile['profile_id']}\n"
+            f"**Verbosity:** {profile['verbosity']}\n"
+            f"**Question Timing:** {profile['question_timing']}\n"
+            f"**Response Style:** {profile['response_style']}\n\n"
+            f"**Coding Preferences:**\n{prefs_str}\n"
+        )
+
+    @override
+    async def run(
+        self,
+        instruction: str,
+        environment: BaseEnvironment,
+        context: AgentContext,
+    ) -> None:
+        """Run factory tomswe workflow with an injected user profile."""
+        api_key = (
+            self._get_env("ANTHROPIC_API_KEY")
+            or self._get_env("ANTHROPIC_AUTH_TOKEN")
+            or ""
+        )
+
+        env: dict[str, str] = {
+            "ANTHROPIC_API_KEY": api_key,
+            "IS_SANDBOX": "1",
+            "CLAUDE_CONFIG_DIR": "/logs/agent/sessions",
+        }
+
+        if self.model_name:
+            env["ANTHROPIC_MODEL"] = self.model_name.split("/")[-1]
+
+        for var in COMMON_ENV_VARS:
+            val = self._get_env(var) or os.environ.get(var)
+            if val and var not in env:
+                env[var] = val
+
+        env = {k: v for k, v in env.items() if v}
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "mkdir -p $CLAUDE_CONFIG_DIR/debug "
+                "$CLAUDE_CONFIG_DIR/projects "
+                "$CLAUDE_CONFIG_DIR/shell-snapshots "
+                "$CLAUDE_CONFIG_DIR/statsig "
+                "$CLAUDE_CONFIG_DIR/todos "
+                "$CLAUDE_CONFIG_DIR/skills"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "cat > ./factory.md << 'FACTORYEOF'\n"
+                "---\n"
+                "goal: Solve the given coding task\n"
+                "---\n"
+                "FACTORYEOF"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'set -e; '
+                'if [ ! -d .git ]; then git init -b main; fi && '
+                'git config user.name "Factory Agent" && '
+                'git config user.email "factory@agent.local" && '
+                'printf "/proc\\n/sys\\n/dev\\n/run\\n/tmp\\n/var\\n/root\\n'
+                '/home\\n/usr\\n/bin\\n/sbin\\n/lib\\n/lib64\\n/etc\\n'
+                '/boot\\n/mnt\\n/opt\\n/srv\\n/media\\n/logs\\n" > .gitignore && '
+                'git add -A && '
+                'git commit -m "initial state" --allow-empty'
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                'mkdir -p .factory && '
+                'printf \'{}\\n\' > .factory/config.json && '
+                'printf \'{"human_reviewed": true, "dimensions": []}\\n\' > .factory/eval_profile.json'
+            ),
+            env=env,
+        )
+
+        # Inject a deterministically-selected user profile into the instruction
+        profile = self._select_profile(instruction)
+        augmented = instruction + "\n\n" + self._format_profile(profile)
+
+        await self.exec_as_agent(
+            environment,
+            command=f"cat > /tmp/task-instruction.md << 'INSTREOF'\n{augmented}\nINSTREOF",
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=self._get_factory_command(),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "cp /testbed/.factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null || "
+                "cp .factory/trace_id.txt /logs/agent/trace_id.txt 2>/dev/null; "
+                "exit 0"
+            ),
+            env=env,
+        )
+
+        await self.exec_as_agent(
+            environment,
+            command=(
+                "set +e; "
+                'FACTORY_BRANCH=$(git branch --list "factory/*" | head -1 | tr -d " *"); '
+                'if [ -n "$FACTORY_BRANCH" ]; then '
+                '  echo "Merging factory branch: $FACTORY_BRANCH"; '
+                '  git merge "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                '    || git cherry-pick "$FACTORY_BRANCH" --no-edit 2>/dev/null '
+                "    || true; "
+                "fi; "
+                'if [ -z "$FACTORY_BRANCH" ]; then '
+                '  echo "No factory branch, finding orphaned commits..."; '
+                "  ORPHAN_COMMITS=$(git fsck --unreachable --no-reflogs 2>/dev/null "
+                "    | grep 'unreachable commit' | awk '{print \\$3}'); "
+                '  if [ -n "$ORPHAN_COMMITS" ]; then '
+                '    BEST_COMMIT=""; '
+                "    BEST_TIME=0; "
+                "    for SHA in $ORPHAN_COMMITS; do "
+                '      COMMIT_TIME=$(git show -s --format=\'%ct\' "$SHA" 2>/dev/null || echo 0); '
+                '      if [ "$COMMIT_TIME" -gt "$BEST_TIME" ]; then '
+                "        BEST_TIME=$COMMIT_TIME; "
+                "        BEST_COMMIT=$SHA; "
+                "      fi; "
+                "    done; "
+                '    if [ -n "$BEST_COMMIT" ]; then '
+                '      echo "Recovering from orphan tip: $BEST_COMMIT"; '
+                '      echo "  Message: $(git log -1 --format=\'%s\' $BEST_COMMIT 2>/dev/null)"; '
+                '      git checkout "$BEST_COMMIT" -- . 2>/dev/null || true; '
+                "      git checkout HEAD -- .factory/ eval/ factory.md 2>/dev/null || true; "
+                "      rm -rf .factory/ eval/ factory.md 2>/dev/null || true; "
+                "    fi; "
+                "  fi; "
+                "fi; "
+                'for wt in .factory-worktrees/*/; do '
+                '  if [ -d "$wt" ]; then '
+                '    echo "Recovering files from worktree: $wt"; '
+                "    rsync -a --exclude='.git' --exclude='.factory' "
+                '      "$wt" ./ 2>/dev/null || true; '
+                "  fi; "
+                "done; "
+                "exit 0"
+            ),
+            env=env,
         )

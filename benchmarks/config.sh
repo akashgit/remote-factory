@@ -61,10 +61,10 @@ benchmark_config() {
             BENCH_FILTER_STYLE="exact"
             ;;
         tomswe)
-            BENCH_LOCAL_PATH="${HARNESS_DIR}/benchmarks/tomswe-harbor"
+            BENCH_DATASET='swe-bench/swe-bench-verified'
             BENCH_AGENT_CLASS="factory_harbor_agent:TomsweFactoryCeo"
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
-            BENCH_FILTER_STYLE="exact"
+            BENCH_FILTER_STYLE="glob"
             ;;
         *)
             echo "ERROR: Unknown benchmark '${name}'"
