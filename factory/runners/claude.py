@@ -105,7 +105,7 @@ class ClaudeRunner:
             "-p", request.task,
             "--output-format", "stream-json",
             "--verbose",
-            "--max-turns", "1000",
+            "--disallowedTools", "Agent",
         ]
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
@@ -214,6 +214,7 @@ class ClaudeRunner:
         cmd = [
             "claude",
             "--append-system-prompt-file", prompt_file.name,
+            "--disallowedTools", "Agent",
         ]
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")

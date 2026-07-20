@@ -136,6 +136,7 @@ class FnNode(Node):
 
     command: str = ""
     callable_name: str | None = None
+    notes: str = ""
 
 
 class GateNode(Node):

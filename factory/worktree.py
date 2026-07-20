@@ -9,6 +9,9 @@ import structlog
 
 log = structlog.get_logger()
 
+# Telemetry files to preserve when cleaning up worktrees
+_TELEMETRY_FILES = ("trace_id.txt",)
+
 
 def create_worktree(
     project_path: Path,
@@ -136,6 +139,32 @@ def create_experiment_worktree(
     return wt_dir, branch
 
 
+def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
+    """Copy telemetry files from worktree .factory/ to main project .factory/.
+
+    If .factory/ is a symlink, files are already in the right place — no copy needed.
+    """
+    wt_factory = worktree_path / ".factory"
+    main_factory = project_path / ".factory"
+
+    if not wt_factory.exists():
+        return
+
+    # If .factory is a symlink to main .factory, files are already preserved
+    if wt_factory.is_symlink():
+        log.debug("telemetry_preserve_skip", reason="symlink", path=str(wt_factory))
+        return
+
+    # .factory is a separate directory — copy telemetry files to main .factory
+    main_factory.mkdir(parents=True, exist_ok=True)
+    for filename in _TELEMETRY_FILES:
+        src = wt_factory / filename
+        if src.exists():
+            dst = main_factory / filename
+            shutil.copy2(src, dst)
+            log.info("telemetry_preserved", file=filename, src=str(src), dst=str(dst))
+
+
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
@@ -151,6 +180,7 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         pass
 
     if worktree_path.exists():
+        _preserve_telemetry(worktree_path, project_path)
         shutil.rmtree(worktree_path)
 
     subprocess.run(

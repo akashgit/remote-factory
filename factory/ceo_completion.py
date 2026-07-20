@@ -389,6 +389,7 @@ async def run_ceo_with_completion_guard(
     use_profile: bool = False,
     tmux_persist: bool = False,
     background: bool = False,
+    workflow_mode: str | None = None,
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
@@ -407,6 +408,7 @@ async def run_ceo_with_completion_guard(
         use_profile: If True, inject user profile into the CEO prompt.
         tmux_persist: If True, run agents in tmux windows.
         background: If True, dispatch via claude --bg (single dispatch, no respawn).
+        workflow_mode: If set, inject the SKILL.md for this mode into the CEO prompt.
 
     Returns:
         (final_output, exit_code)
@@ -419,6 +421,7 @@ async def run_ceo_with_completion_guard(
             "ceo", initial_task, project_path,
             timeout=timeout, model=model, runner_name=runner_name,
             background=True, session_name=session_name, use_profile=use_profile,
+            workflow_mode=workflow_mode,
         )
 
     # Check escape hatch
@@ -432,6 +435,7 @@ async def run_ceo_with_completion_guard(
             session_name=session_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
+            workflow_mode=workflow_mode,
         )
 
     if max_respawns is None:
@@ -473,6 +477,7 @@ async def run_ceo_with_completion_guard(
             session_name=session_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
+            workflow_mode=workflow_mode,
         )
         final_output = result
 

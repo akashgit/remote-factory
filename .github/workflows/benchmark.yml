@@ -15,6 +15,7 @@ on:
           - terminalbench
           - programbench
           - legacybench
+          - harborindex
           - all
       instance_id:
         description: 'Instance ID (leave default for smoke test)'
@@ -81,6 +82,10 @@ jobs:
             solver: factory
             default_instance: '1907c2-c-debug-legacy-buddy-fix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
+          - benchmark: harborindex
+            solver: factory
+            default_instance: 'bix-filter-chip-variants'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'harborindex' || inputs.benchmark == 'all') && (inputs.solver != 'claude-code') }}
           # Claude Code solver entries — enabled on schedule, release, or workflow_dispatch with matching benchmark+solver
           - benchmark: swebench
             solver: claude-code
@@ -102,6 +107,10 @@ jobs:
             solver: claude-code
             default_instance: '1907c2-c-debug-legacy-buddy-fix'
             enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'legacybench' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
+          - benchmark: harborindex
+            solver: claude-code
+            default_instance: 'bix-filter-chip-variants'
+            enabled: ${{ github.event_name == 'schedule' || github.event_name == 'push' || ((github.event_name != 'workflow_dispatch') || inputs.benchmark == 'harborindex' || inputs.benchmark == 'all') && (inputs.solver == 'claude-code' || inputs.solver == 'both') }}
 
     steps:
       - name: Skip if not enabled

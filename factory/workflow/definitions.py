@@ -341,6 +341,7 @@ def build_workflow() -> Workflow:
     nodes["spec_generate"] = FnNode(
         id="spec_generate",
         command="factory spec generate {project_path}",
+        notes="Generate the project specification from current state. Runs non-blocking after archival.",
         blocking=False,
     )
 
@@ -512,6 +513,7 @@ def improve_workflow() -> Workflow:
     nodes["begin"] = FnNode(
         id="begin",
         command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
+        notes="Open a new experiment for the current hypothesis. The CEO must substitute $HYPOTHESIS with the hypothesis text.",
         writes={".factory/experiments/current_id"},
     )
 
@@ -581,6 +583,7 @@ def improve_workflow() -> Workflow:
             " --verdict $VERDICT"
             ' --hypothesis "$HYPOTHESIS"'
         ),
+        notes="Close the experiment with a keep/revert verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
         reads={".factory/reviews/adversarial-qa.md"},
         writes={".factory/experiments/verdict.json"},
     )
@@ -594,20 +597,21 @@ def improve_workflow() -> Workflow:
         blocking=False,
     )
 
-    # Non-blocking spec update — runs if GRAPH-SPEC.md exists at project root
+    # Non-blocking spec update — runs if SPEC.md exists at project root
     nodes["spec_update"] = FnNode(
         id="spec_update",
         command=(
             'python3 -c "'
             "from pathlib import Path; "
             "import subprocess, sys; "
-            "sys.exit(0) if not Path('{project_path}/GRAPH-SPEC.md').is_file() else None; "
+            "sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; "
             "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
             "capture_output=True, text=True); "
             "print(r.stdout); print(r.stderr, file=sys.stderr); "
             "sys.exit(0)"
             '"'
         ),
+        notes="Update SPEC.md if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
         blocking=False,
     )
 
@@ -713,6 +717,7 @@ def qa_workflow() -> Workflow:
             " --reason $REASON"
             " --qa-body-file .factory/reviews/adversarial-qa.md"
         ),
+        notes="Post the QA verdict as a GitHub PR review. The CEO must substitute $VERDICT (KEEP/REVERT), $PR_NUMBER, and $REASON.",
         reads={".factory/reviews/adversarial-qa.md"},
     )
 
@@ -754,6 +759,7 @@ def research_workflow() -> Workflow:
     wf.nodes["baseline"] = FnNode(
         id="baseline",
         command="factory eval {project_path}",
+        notes="Run baseline evaluation to capture current scores before any changes. Must run before failure analysis.",
         writes={".factory/experiments/baseline.json"},
     )
 
@@ -903,6 +909,7 @@ def meta_workflow() -> Workflow:
     nodes["insights"] = FnNode(
         id="insights",
         command="factory insights {project_path}",
+        notes="Collect cross-project insights from the global registry. Must run before researcher to provide data for pattern analysis.",
         writes={".factory/strategy/insights.md"},
     )
 
@@ -957,6 +964,7 @@ def meta_workflow() -> Workflow:
     nodes["apply_playbooks"] = FnNode(
         id="apply_playbooks",
         command="factory ace {project_path}",
+        notes="Apply user-approved playbook diffs via the ACE engine. Runs after user gate approval.",
         reads={".factory/strategy/playbook-diffs.md"},
         writes={".factory/archive/playbooks-applied.md"},
     )
@@ -975,6 +983,7 @@ def meta_workflow() -> Workflow:
     nodes["test_collect"] = FnNode(
         id="test_collect",
         command="pytest --co -q 2>/dev/null || true",
+        notes="Collect test inventory via pytest dry-run. Never fails (|| true) — output feeds the test pruning researcher.",
         writes={".factory/strategy/test-inventory.md"},
     )
 
@@ -1083,6 +1092,7 @@ def discover_workflow() -> Workflow:
     nodes["discover"] = FnNode(
         id="discover",
         command="factory discover {project_path}",
+        notes="Auto-discover eval dimensions and generate the eval harness (eval_profile.json + eval/score.py).",
         writes={
             ".factory/eval_profile.json",
             "eval/score.py",
@@ -1105,6 +1115,7 @@ def discover_workflow() -> Workflow:
     nodes["redetect"] = FnNode(
         id="redetect",
         command="factory detect {project_path}",
+        notes="Re-detect project state after discovery to transition out of no_factory state.",
         reads={".factory/eval_profile.json"},
     )
 
@@ -1141,6 +1152,7 @@ def review_workflow() -> Workflow:
     nodes["eval_test"] = FnNode(
         id="eval_test",
         command="cd {project_path} && python eval/score.py",
+        notes="Run the eval harness to test all discovered dimensions. Output is reviewed by the CEO gate to catch broken dimensions.",
         writes={".factory/reviews/eval-test-latest.md"},
     )
 
@@ -1167,6 +1179,7 @@ def review_workflow() -> Workflow:
             "p.write_text(json.dumps(d, indent=2))"
             '"'
         ),
+        notes="Mark the eval profile as human-reviewed by setting the human_reviewed flag. Must run after the CEO approves all dimensions.",
         writes={".factory/eval_profile.json"},
     )
 
@@ -1188,6 +1201,7 @@ def review_workflow() -> Workflow:
     nodes["factory_init"] = FnNode(
         id="factory_init",
         command="factory init {project_path}",
+        notes="Parse factory.md and generate .factory/config.json. Must run after factory.md is created.",
         reads={"factory.md"},
         writes={".factory/config.json"},
     )
@@ -1195,6 +1209,7 @@ def review_workflow() -> Workflow:
     nodes["baseline_eval"] = FnNode(
         id="baseline_eval",
         command="factory eval {project_path}",
+        notes="Run the first full eval after factory initialization to establish a baseline score.",
         reads={".factory/config.json"},
         writes={".factory/experiments/baseline.json"},
     )
@@ -1205,6 +1220,7 @@ def review_workflow() -> Workflow:
             "cd {project_path} && git add factory.md eval/score.py .factory/ "
             '&& git commit -m "factory: initialize factory config and baseline eval"'
         ),
+        notes="Commit the factory setup artifacts (factory.md, eval/score.py, .factory/) to git. Must run after baseline eval.",
         reads={"factory.md"},
     )
 
@@ -1302,6 +1318,7 @@ def refine_workflow() -> Workflow:
     nodes["begin"] = FnNode(
         id="begin",
         command='factory begin {project_path} --hypothesis "$HYPOTHESIS"',
+        notes="Open a new experiment for the refinement. The CEO must substitute $HYPOTHESIS with the refinement description.",
         writes={".factory/experiments/current_id"},
     )
 
@@ -1312,6 +1329,7 @@ def refine_workflow() -> Workflow:
             'gh issue create --title "Refine: refinement request" '
             '--label "refinement" --body "Factory refinement experiment."'
         ),
+        notes="Create a GitHub issue to track the refinement. Must run after begin so the experiment ID is available.",
         reads={".factory/reviews/refiner-latest.md"},
     )
 
@@ -1380,6 +1398,7 @@ def refine_workflow() -> Workflow:
             " --verdict $VERDICT"
             ' --hypothesis "$HYPOTHESIS"'
         ),
+        notes="Close the refinement experiment with a verdict. The CEO must substitute $EXP_ID, $VERDICT (keep/revert/error), and $HYPOTHESIS.",
         reads={".factory/reviews/adversarial-qa.md"},
         writes={".factory/experiments/verdict.json"},
     )
@@ -1735,12 +1754,14 @@ def skill_refine_workflow() -> Workflow:
     nodes["dag_sort"] = FnNode(
         id="dag_sort",
         command="factory workflow show {project_path}",
+        notes="Dump the workflow DAG in topological order. Must run first to provide node ordering for templatization.",
         writes={".factory/strategy/dag-order.md"},
     )
 
     nodes["templatize"] = FnNode(
         id="templatize",
         command="factory workflow export-skills --templatize {project_path}",
+        notes="Convert the workflow graph into a templatized SKILL.md with slot markers for the reviewer to refine.",
         reads={".factory/strategy/dag-order.md"},
         writes={".factory/strategy/templatized-skill.md"},
     )
@@ -1783,6 +1804,7 @@ def skill_refine_workflow() -> Workflow:
     nodes["split"] = FnNode(
         id="split",
         command="factory workflow export-skills --split {project_path}",
+        notes="Split the guard-approved refined skill into clean SKILL.md and SKILL.annotations.yaml.",
         reads={".factory/strategy/refined-skill.md"},
         writes={"skills/SKILL.md", "skills/SKILL.annotations.yaml"},
     )
@@ -1881,6 +1903,7 @@ def doc_generate_workflow() -> Workflow:
             "print('PROCEED' if not errors else 'FAIL: ' + '; '.join(errors[:10]))"
             '"'
         ),
+        notes="Validate that all file references in the doc scan actually exist on disk. Prints PROCEED or FAIL with missing paths.",
         reads={".factory/doc_scan.md"},
     )
 
@@ -1947,6 +1970,7 @@ def doc_update_workflow() -> Workflow:
             "print('PROCEED')"
             '"'
         ),
+        notes="Map git diff to affected documentation files. Must run first to scope the update for the patcher agent.",
         writes={".factory/doc_update_scope.md"},
     )
 
@@ -1988,6 +2012,7 @@ def doc_update_workflow() -> Workflow:
             "print('PROCEED' if not errors else 'FAIL: ' + '; '.join(errors[:10]))"
             '"'
         ),
+        notes="Re-validate file references after doc patches. Prints PROCEED or FAIL with missing paths.",
         reads={".factory/doc_update_scope.md"},
     )
 
@@ -2064,7 +2089,7 @@ def spec_generate_workflow() -> Workflow:
         reads={".factory/spec_raw.md"},
     )
 
-    # Researcher annotation — produces GRAPH-SPEC.md at project root
+    # Researcher annotation — produces SPEC.md at project root
     nodes["annotate"] = AgentNode(
         id="annotate",
         role=AgentRole.RESEARCHER,
@@ -2073,10 +2098,10 @@ def spec_generate_workflow() -> Workflow:
             "Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md. "
             "Produce a behavioral spec with RFC 2119 normative language, "
             "domain model, state machines, failure model, and module behavioral contracts. "
-            "Write output to GRAPH-SPEC.md in the project root."
+            "Write output to SPEC.md in the project root."
         ),
         reads={".factory/spec_raw.md"},
-        writes={"GRAPH-SPEC.md"},
+        writes={"SPEC.md"},
     )
 
     # CEO gate — check annotation quality and section completeness
@@ -2085,7 +2110,7 @@ def spec_generate_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the annotated spec at GRAPH-SPEC.md. "
+            "Review the annotated spec at SPEC.md. "
             "Check: do module behavioral contracts match the actual code? "
             "Does the spec use RFC 2119 normative language (MUST/SHOULD/MAY)? "
             "Are there scoring tables (there should NOT be)? "
@@ -2111,14 +2136,15 @@ def spec_generate_workflow() -> Workflow:
             "RELOOP if ANY section is missing or empty. "
             "PROCEED only if ALL 16 sections + Appendix A are present and non-empty."
         ),
-        reads={"GRAPH-SPEC.md"},
+        reads={"SPEC.md"},
     )
 
     # Validation — run automated consistency checks
     nodes["validate"] = FnNode(
         id="validate",
         command="factory spec validate {project_path}",
-        reads={"GRAPH-SPEC.md"},
+        notes="Run automated consistency checks on the annotated SPEC.md. Must run after annotation is CEO-approved.",
+        reads={"SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 
@@ -2129,10 +2155,10 @@ def spec_generate_workflow() -> Workflow:
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
             "Final quality gate for the repo spec. "
-            "Read GRAPH-SPEC.md. Is it complete, well-structured, "
+            "Read SPEC.md. Is it complete, well-structured, "
             "and under 24K tokens? PROCEED to finish."
         ),
-        reads={"GRAPH-SPEC.md"},
+        reads={"SPEC.md"},
     )
 
     edges = [
@@ -2172,10 +2198,11 @@ def spec_update_workflow() -> Workflow:
     nodes["diff_scope"] = FnNode(
         id="diff_scope",
         command="factory spec scope {project_path}",
+        notes="Map git diff to affected spec modules. Must run first to scope the patch for the spec patcher.",
         writes={".factory/spec_update_scope.md"},
     )
 
-    # Opus patcher — incrementally update GRAPH-SPEC.md
+    # Opus patcher — incrementally update SPEC.md
     nodes["patch"] = AgentNode(
         id="patch",
         role=AgentRole.RESEARCHER,
@@ -2184,14 +2211,14 @@ def spec_update_workflow() -> Workflow:
             "Patch the repo spec based on scoped changes. "
             "Read the spec_patcher prompt at factory/agents/prompts/spec_patcher.md. "
             "Read .factory/spec_update_scope.md for the list of affected modules and new files. "
-            "Read GRAPH-SPEC.md for the current spec. "
+            "Read SPEC.md for the current spec. "
             "Read changed source files and update affected module behavioral contracts. "
             "Add new module entries for unmapped files. "
             "Remove modules whose paths no longer exist. "
-            "Write updated spec to GRAPH-SPEC.md."
+            "Write updated spec to SPEC.md."
         ),
         reads={".factory/spec_update_scope.md"},
-        writes={"GRAPH-SPEC.md"},
+        writes={"SPEC.md"},
     )
 
     # CEO gate — check patch quality
@@ -2200,19 +2227,20 @@ def spec_update_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the patched spec at GRAPH-SPEC.md. "
+            "Review the patched spec at SPEC.md. "
             "Check: do updates match the diff scope? Were all affected modules touched? "
             "Were new files mapped to modules? Were deleted modules removed? "
             "PROCEED if updates are reasonable. RELOOP to patch if issues."
         ),
-        reads={"GRAPH-SPEC.md", ".factory/spec_update_scope.md"},
+        reads={"SPEC.md", ".factory/spec_update_scope.md"},
     )
 
     # Revalidation — run automated consistency checks
     nodes["revalidate"] = FnNode(
         id="revalidate",
         command="factory spec validate {project_path}",
-        reads={"GRAPH-SPEC.md"},
+        notes="Re-validate the spec after patching to catch regressions. Output feeds the final CEO quality gate.",
+        reads={"SPEC.md"},
         writes={".factory/spec_validation.md"},
     )
 

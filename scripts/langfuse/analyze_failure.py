@@ -43,6 +43,20 @@ def find_matching_trace(
     if not traces:
         return None
 
+    metadata_matches = []
+    for t in traces:
+        meta = t.get("metadata") or {}
+        if meta.get("benchmark") == benchmark and meta.get("instance_id") == instance_id:
+            metadata_matches.append(t)
+
+    if metadata_matches:
+        if verbose:
+            print(f"[verbose] Matched {len(metadata_matches)} traces by metadata", file=sys.stderr)
+        selected = min(metadata_matches, key=lambda t: t.get("startTime", "") or "")
+        if verbose:
+            print(f"[verbose] Selected trace: {selected['id']} (earliest)", file=sys.stderr)
+        return selected
+
     candidates = []
     for t in traces:
         name = (t.get("name") or "").lower()
@@ -52,17 +66,14 @@ def find_matching_trace(
             candidates.append(t)
 
     if verbose:
-        print(f"[verbose] Filtered to {len(candidates)} candidates", file=sys.stderr)
+        print(f"[verbose] Filtered to {len(candidates)} text candidates", file=sys.stderr)
 
     if not candidates:
-        candidates = traces
+        return None
 
-    selected = max(candidates, key=lambda t: t.get("latency", 0) or 0)
+    selected = min(candidates, key=lambda t: t.get("startTime", "") or "")
     if verbose:
-        print(
-            f"[verbose] Selected trace: {selected['id']} (latency={selected.get('latency', 0)}s)",
-            file=sys.stderr,
-        )
+        print(f"[verbose] Selected trace: {selected['id']} (earliest)", file=sys.stderr)
     return selected
 
 
@@ -86,7 +97,7 @@ def run_llm_summary(trace_dump: str, benchmark: str, instance_id: str) -> str | 
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--max-turns", "1"],
+            ["claude", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=120,
@@ -111,7 +122,7 @@ def run_llm_analysis(trace_dump: str, benchmark: str, instance_id: str) -> str |
 
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt, "--max-turns", "3"],
+            ["claude", "-p", prompt],
             capture_output=True,
             text=True,
             timeout=180,
@@ -123,6 +134,22 @@ def run_llm_analysis(trace_dump: str, benchmark: str, instance_id: str) -> str |
     return None
 
 
+def _find_trial_log(result_dir: Path | None, result_data: dict) -> str:
+    if result_dir is None:
+        return ""
+    timestamp = result_data.get("timestamp", "")
+    benchmark = result_data.get("benchmark", "")
+    if timestamp and benchmark:
+        trial_log_path = result_dir / f"{timestamp}-{benchmark}-trial.log"
+        if trial_log_path.exists():
+            content = trial_log_path.read_text(errors="replace")
+            max_size = 50 * 1024
+            if len(content) > max_size:
+                content = content[-max_size:]
+            return content
+    return ""
+
+
 def generate_report(
     result_data: dict,
     trace: dict | None,
@@ -131,6 +158,7 @@ def generate_report(
     use_llm: bool = True,
     verbose: bool = False,
     summary: bool = False,
+    result_dir: Path | None = None,
 ) -> str:
     benchmark = result_data["benchmark"]
     instance_id = result_data["instance_id"]
@@ -138,14 +166,27 @@ def generate_report(
     duration = result_data.get("duration_seconds", 0)
 
     if summary:
-        if trace is None or not use_llm:
+        if trace is not None:
+            if not use_llm:
+                return "No trace available for summary."
+            trace_dump = format_trace_dump(trace)
+            if verbose:
+                print(f"[verbose] Summary trace dump: {len(trace_dump)} chars", file=sys.stderr)
+            text = run_llm_summary(trace_dump, benchmark, instance_id)
+            if text:
+                return text
             return "No trace available for summary."
-        trace_dump = format_trace_dump(trace)
-        if verbose:
-            print(f"[verbose] Summary trace dump: {len(trace_dump)} chars", file=sys.stderr)
-        text = run_llm_summary(trace_dump, benchmark, instance_id)
-        if text:
-            return text
+        exception_text = (result_data.get("details") or {}).get("exception", "")
+        trial_log = _find_trial_log(result_dir, result_data)
+        combined = ""
+        if trial_log:
+            combined += f"=== trial.log ===\n{trial_log}\n"
+        if exception_text:
+            combined += f"=== exception ===\n{exception_text}\n"
+        if combined and use_llm:
+            text = run_llm_summary(combined, benchmark, instance_id)
+            if text:
+                return text
         return "No trace available for summary."
 
     header = (
@@ -157,6 +198,24 @@ def generate_report(
         header += f"**Trace:** [{trace_id}]({host}/trace/{trace_id})\n"
 
     if trace is None:
+        exception_text = (result_data.get("details") or {}).get("exception", "")
+        trial_log = _find_trial_log(result_dir, result_data)
+        combined = ""
+        if trial_log:
+            combined += f"=== trial.log ===\n{trial_log}\n"
+        if exception_text:
+            combined += f"=== exception ===\n{exception_text}\n"
+        if combined:
+            if use_llm:
+                diagnosis = run_llm_analysis(combined, benchmark, instance_id)
+                if diagnosis:
+                    return header + "\n#### Diagnosis\n\n" + diagnosis + "\n"
+            parts = header + "\n#### Harbor Artifacts\n\n"
+            if exception_text:
+                parts += "**Exception:**\n\n" + exception_text + "\n\n"
+            if trial_log:
+                parts += "**Trial Log (last 50KB):**\n\n```\n" + trial_log + "\n```\n"
+            return parts
         return header + "\nNo matching Langfuse trace found.\n"
 
     trace_dump = format_trace_dump(trace)
@@ -199,20 +258,14 @@ def main() -> int:
         return 0
 
     solver = result_data.get("solver", "")
+    result_dir = result_path.parent
+
     if solver == "claude-code":
-        if args.summary:
-            report = "Trace analysis not available for claude-code solver."
-        else:
-            benchmark = result_data.get("benchmark", "unknown")
-            instance_id = result_data.get("instance_id", "unknown")
-            duration = result_data.get("duration_seconds", 0)
-            report = (
-                f"### Failure Analysis: {benchmark} / {instance_id}\n\n"
-                f"**Solver:** {solver}\n"
-                f"**Duration:** {duration}s\n\n"
-                "Trace analysis not available — claude-code solver does not create "
-                "factory-managed Langfuse traces.\n"
-            )
+        report = generate_report(
+            result_data, trace=None, trace_id=None, host=None,
+            use_llm=not args.no_llm, verbose=args.verbose,
+            summary=args.summary, result_dir=result_dir,
+        )
         _write_output(report, args.output)
         return 0
 
@@ -220,7 +273,10 @@ def main() -> int:
         host, _, _ = load_creds()
     except (KeyError, Exception) as e:
         print(f"WARNING: Langfuse credentials not available ({e}), skipping.", file=sys.stderr)
-        report = generate_report(result_data, trace=None, trace_id=None, host=None, use_llm=False)
+        report = generate_report(
+            result_data, trace=None, trace_id=None, host=None,
+            use_llm=False, result_dir=result_dir,
+        )
         _write_output(report, args.output)
         return 0
 
@@ -260,7 +316,7 @@ def main() -> int:
     report = generate_report(
         result_data, trace=trace, trace_id=trace_id, host=host,
         use_llm=not args.no_llm, verbose=args.verbose,
-        summary=args.summary,
+        summary=args.summary, result_dir=result_dir,
     )
     _write_output(report, args.output)
     return 0

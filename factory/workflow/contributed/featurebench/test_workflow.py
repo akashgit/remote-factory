@@ -56,7 +56,7 @@ class TestFeaturebenchWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.max_iterations == 3
-        assert node.timeout == 1200
+        assert node.timeout == 7200
         assert "interface" in node.prompt_template.lower()
         assert "nameerror" in node.prompt_template.lower()
         assert "cross-file" in node.prompt_template.lower()

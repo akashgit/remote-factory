@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import json
+import sys
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 import factory.telemetry as telemetry_mod
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "langfuse"))
+from analyze_failure import _find_trial_log, find_matching_trace, generate_report, main
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +101,67 @@ class TestBeginTrace:
             input={"project": "proj", "cycle_id": "c1"},
             metadata={"model": None, "project": "proj"},
         )
+
+
+class TestBeginTraceMetadata:
+    def test_includes_benchmark_and_instance_id_from_env(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("FACTORY_BENCHMARK", "swebench")
+        monkeypatch.setenv("FACTORY_INSTANCE_ID", "django__django-12345")
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-meta"
+        mock_obs.trace_id = "trace-meta"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1", model="opus")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert call_kwargs["metadata"]["benchmark"] == "swebench"
+        assert call_kwargs["metadata"]["instance_id"] == "django__django-12345"
+        assert call_kwargs["metadata"]["model"] == "opus"
+        assert call_kwargs["metadata"]["project"] == "proj"
+
+    def test_omits_benchmark_keys_when_env_vars_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.delenv("FACTORY_BENCHMARK", raising=False)
+        monkeypatch.delenv("FACTORY_INSTANCE_ID", raising=False)
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-no-meta"
+        mock_obs.trace_id = "trace-no-meta"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert "benchmark" not in call_kwargs["metadata"]
+        assert "instance_id" not in call_kwargs["metadata"]
+
+    def test_includes_only_benchmark_when_instance_id_absent(
+        self, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("FACTORY_BENCHMARK", "featurebench")
+        monkeypatch.delenv("FACTORY_INSTANCE_ID", raising=False)
+        mock_client = MagicMock()
+        mock_obs = MagicMock()
+        mock_obs.id = "span-partial"
+        mock_obs.trace_id = "trace-partial"
+        mock_client.start_observation.return_value = mock_obs
+        telemetry_mod._client = mock_client
+
+        with patch.object(telemetry_mod, "_set_trace_name_on_span"):
+            telemetry_mod.begin_trace("proj", "c1")
+
+        call_kwargs = mock_client.start_observation.call_args[1]
+        assert call_kwargs["metadata"]["benchmark"] == "featurebench"
+        assert "instance_id" not in call_kwargs["metadata"]
 
 
 class TestBeginSpan:
@@ -282,3 +348,209 @@ class TestIngestTranscript:
                 transcript_dir.rmdir()
             except OSError:
                 pass
+
+
+class TestFindMatchingTrace:
+    @staticmethod
+    def _make_trace(
+        trace_id: str,
+        name: str = "",
+        metadata: dict | None = None,
+        start_time: str = "",
+        latency: int = 0,
+    ) -> dict:
+        return {
+            "id": trace_id,
+            "name": name,
+            "metadata": metadata or {},
+            "startTime": start_time,
+            "latency": latency,
+        }
+
+    def test_metadata_match_preferred_over_text_match(self) -> None:
+        traces = [
+            self._make_trace(
+                "text-match", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:00:00Z", latency=100,
+            ),
+            self._make_trace(
+                "meta-match", metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "meta-match"
+
+    def test_no_fallback_to_all_traces_when_no_match(self) -> None:
+        traces = [
+            self._make_trace(
+                "unrelated", name="factory:other/cycle",
+                metadata={"benchmark": "other", "instance_id": "other-1"},
+                start_time="2026-01-01T00:00:00Z", latency=500,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is None
+
+    def test_earliest_timestamp_wins_not_max_latency(self) -> None:
+        traces = [
+            self._make_trace(
+                "late-high-latency",
+                metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:10:00Z", latency=9999,
+            ),
+            self._make_trace(
+                "early-low-latency",
+                metadata={"benchmark": "swebench", "instance_id": "django-123"},
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "early-low-latency"
+
+    def test_text_fallback_uses_earliest_timestamp(self) -> None:
+        traces = [
+            self._make_trace(
+                "late", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:10:00Z", latency=500,
+            ),
+            self._make_trace(
+                "early", name="factory:swebench/cycle",
+                start_time="2026-01-01T00:01:00Z", latency=10,
+            ),
+        ]
+        with patch("analyze_failure.list_traces", return_value=traces):
+            result = find_matching_trace(
+                "swebench", "other-id",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is not None
+        assert result["id"] == "early"
+
+    def test_returns_none_on_empty_traces(self) -> None:
+        with patch("analyze_failure.list_traces", return_value=[]):
+            result = find_matching_trace(
+                "swebench", "django-123",
+                datetime(2026, 1, 1), 3600,
+            )
+        assert result is None
+
+
+class TestGenerateReportFallback:
+    @staticmethod
+    def _result_data(
+        solver: str = "factory",
+        exception: str = "",
+        benchmark: str = "swebench",
+        instance_id: str = "django-123",
+        timestamp: str = "20260101T000000Z",
+    ) -> dict:
+        data: dict = {
+            "benchmark": benchmark,
+            "instance_id": instance_id,
+            "solver": solver,
+            "duration_seconds": 120,
+            "resolved": False,
+            "timestamp": timestamp,
+        }
+        if exception:
+            data["details"] = {"exception": exception}
+        return data
+
+    def test_claude_code_solver_not_short_circuited(self, tmp_path: Path) -> None:
+        data = self._result_data(solver="claude-code", exception="RuntimeError: timeout after 300s")
+        result_json = tmp_path / "result.json"
+        result_json.write_text(json.dumps(data))
+
+        with patch("analyze_failure.run_llm_analysis"), patch("analyze_failure.run_llm_summary"):
+            with patch("sys.argv", ["analyze_failure", str(result_json), "--no-llm"]):
+                with patch("analyze_failure._write_output") as mock_write:
+                    main()
+        report = mock_write.call_args[0][0]
+        assert "RuntimeError: timeout after 300s" in report
+
+    def test_trial_log_fallback_no_trace(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver crashed at step 3\nTraceback: ...")
+
+        report = generate_report(
+            data, trace=None, trace_id=None, host=None,
+            use_llm=False, result_dir=tmp_path,
+        )
+        assert "Harbor Artifacts" in report
+        assert "solver crashed at step 3" in report
+
+    def test_trial_log_with_llm_analysis(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver crashed at step 3")
+
+        with patch("analyze_failure.run_llm_analysis", return_value="The solver crashed due to OOM") as mock_llm:
+            report = generate_report(
+                data, trace=None, trace_id=None, host=None,
+                use_llm=True, result_dir=tmp_path,
+            )
+        assert "The solver crashed due to OOM" in report
+        assert "Diagnosis" in report
+        mock_llm.assert_called_once()
+        assert "solver crashed at step 3" in mock_llm.call_args[0][0]
+
+    def test_no_trace_no_artifacts(self) -> None:
+        data = self._result_data()
+        report = generate_report(
+            data, trace=None, trace_id=None, host=None,
+            use_llm=False, result_dir=None,
+        )
+        assert "No matching Langfuse trace found" in report
+
+    def test_summary_mode_uses_trial_log(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver timeout")
+
+        with patch("analyze_failure.run_llm_summary", return_value="Solver timed out") as mock_summary:
+            report = generate_report(
+                data, trace=None, trace_id=None, host=None,
+                use_llm=True, summary=True, result_dir=tmp_path,
+            )
+        assert report == "Solver timed out"
+        mock_summary.assert_called_once()
+        assert "solver timeout" in mock_summary.call_args[0][0]
+
+
+class TestFindTrialLog:
+    def test_finds_matching_trial_log(self, tmp_path: Path) -> None:
+        log_file = tmp_path / "20260101T000000Z-swebench-trial.log"
+        log_file.write_text("log content here")
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == "log content here"
+
+    def test_truncates_large_log(self, tmp_path: Path) -> None:
+        log_file = tmp_path / "20260101T000000Z-swebench-trial.log"
+        content = "x" * (60 * 1024)
+        log_file.write_text(content)
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert len(result) == 50 * 1024
+
+    def test_returns_empty_when_no_dir(self) -> None:
+        result = _find_trial_log(None, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == ""
+
+    def test_returns_empty_when_file_missing(self, tmp_path: Path) -> None:
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == ""

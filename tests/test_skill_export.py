@@ -153,6 +153,30 @@ class TestFnToInstruction:
         result = _fn_to_instruction(fn, wf)
         assert "{{finalize_command_fn_finalize::" in result
 
+    def test_fn_node_notes_rendered(self) -> None:
+        fn = FnNode(
+            id="fn_begin",
+            command="factory begin {project_path}",
+            notes="Open a new experiment for the current hypothesis.",
+        )
+        wf = _minimal_workflow(nodes={"fn_begin": fn}, start="fn_begin")
+        result = _fn_to_instruction(fn, wf)
+        assert "Open a new experiment for the current hypothesis." in result
+        idx_notes = result.index("Open a new experiment")
+        idx_bash = result.index("```bash")
+        assert idx_notes < idx_bash, "Notes must appear before the bash command block"
+
+    def test_fn_node_empty_notes(self) -> None:
+        fn = FnNode(id="fn_eval", command="factory eval {project_path}")
+        wf = _minimal_workflow(nodes={"fn_eval": fn}, start="fn_eval")
+        result = _fn_to_instruction(fn, wf)
+        lines_before_bash = result.split("```bash")[0]
+        non_annotation_lines = [
+            line for line in lines_before_bash.strip().split("\n")
+            if line.strip() and not line.strip().startswith("<!--")
+        ]
+        assert non_annotation_lines == [], "Empty notes should produce no prose before bash block"
+
     def test_reads_writes_annotations(self) -> None:
         fn = FnNode(
             id="fn_score",

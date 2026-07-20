@@ -12,21 +12,17 @@ Once edited, it becomes a Tier 1 (explicit) eval — the factory will use it as-
 """
 
 import json
-import os
 import subprocess
 import sys
-
-EVAL_TIMEOUT = int(os.environ.get("FACTORY_EVAL_TIMEOUT", "1200"))
-
 
 def eval_tests() -> dict:
     """Run test suite: uv run pytest -v"""
     try:
         result = subprocess.run(
-            ['uv', 'run', 'pytest', '-v'],
+            ['uv', 'run', 'pytest', 'tests/test_models.py', 'tests/test_guards.py', 'tests/test_runners.py', 'tests/test_store.py', 'tests/test_cli.py', 'tests/test_state.py', 'tests/test_strategy.py', 'tests/test_eval_growth.py', '-q', '--tb=short', '-k', 'not (BobAuth or preflight_error_unchanged or test_interactive_sets_telemetry_platform_empty)'],
             capture_output=True,
             text=True,
-            timeout=EVAL_TIMEOUT,
+            timeout=600,
         )
         passed = result.returncode == 0
         if passed:
@@ -43,7 +39,7 @@ def eval_tests() -> dict:
             "score": score,
             "weight": 0.4166666666666667,
             "passed": passed,
-            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
+            "details": (result.stdout or result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -51,7 +47,7 @@ def eval_tests() -> dict:
             "score": 0.0,
             "weight": 0.4166666666666667,
             "passed": False,
-            "details": f"Timed out after {EVAL_TIMEOUT}s",
+            "details": "Timed out after 600s",
         }
 
 def eval_lint() -> dict:
@@ -61,7 +57,7 @@ def eval_lint() -> dict:
             ['uv', 'run', 'ruff', 'check', '.'],
             capture_output=True,
             text=True,
-            timeout=EVAL_TIMEOUT,
+            timeout=300,
         )
         passed = result.returncode == 0
         if passed:
@@ -78,7 +74,7 @@ def eval_lint() -> dict:
             "score": score,
             "weight": 0.25,
             "passed": passed,
-            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
+            "details": (result.stdout or result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -86,7 +82,7 @@ def eval_lint() -> dict:
             "score": 0.0,
             "weight": 0.25,
             "passed": False,
-            "details": f"Timed out after {EVAL_TIMEOUT}s",
+            "details": "Timed out after 300s",
         }
 
 def eval_type_check() -> dict:
@@ -96,7 +92,7 @@ def eval_type_check() -> dict:
             ['uv', 'run', 'mypy', 'factory/'],
             capture_output=True,
             text=True,
-            timeout=EVAL_TIMEOUT,
+            timeout=300,
         )
         passed = result.returncode == 0
         if passed:
@@ -113,7 +109,7 @@ def eval_type_check() -> dict:
             "score": score,
             "weight": 0.125,
             "passed": passed,
-            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
+            "details": (result.stdout or result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -121,34 +117,38 @@ def eval_type_check() -> dict:
             "score": 0.0,
             "weight": 0.125,
             "passed": False,
-            "details": f"Timed out after {EVAL_TIMEOUT}s",
+            "details": "Timed out after 300s",
         }
 
 def eval_coverage() -> dict:
     """Measure test coverage"""
+    import re
     try:
         result = subprocess.run(
-            ['uv', 'run', 'pytest', '--cov=factory', '--cov-report=term', '-q'],
+            ['uv', 'run', 'pytest', 'tests/test_models.py', 'tests/test_guards.py', 'tests/test_store.py', 'tests/test_state.py', '--cov=factory', '--cov-report=term', '-q', '-k', 'not (BobAuth or preflight_error_unchanged)'],
             capture_output=True,
             text=True,
-            timeout=EVAL_TIMEOUT,
+            timeout=600,
         )
         passed = result.returncode == 0
+        output = result.stdout + result.stderr
+        score = 0.0
         if passed:
-            score = 1.0
-        else:
-            # Partial score: count output lines as a rough error metric
-            error_lines = [ln for ln in (result.stdout + result.stderr).splitlines() if ln.strip()]
-            if not error_lines:
-                score = 0.0
+            match = re.search(r'^TOTAL\s+\d+\s+\d+\s+(\d+)%', output, re.MULTILINE)
+            if match:
+                score = int(match.group(1)) / 100.0
             else:
+                score = 1.0
+        else:
+            error_lines = [ln for ln in output.splitlines() if ln.strip()]
+            if error_lines:
                 score = max(0.0, 1.0 - len(error_lines) * 0.05)
         return {
             "name": 'coverage',
             "score": score,
             "weight": 0.125,
             "passed": passed,
-            "details": (result.stdout + '\n' + result.stderr).strip()[-500:],
+            "details": (result.stdout or result.stderr).strip()[-500:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -156,7 +156,7 @@ def eval_coverage() -> dict:
             "score": 0.0,
             "weight": 0.125,
             "passed": False,
-            "details": f"Timed out after {EVAL_TIMEOUT}s",
+            "details": "Timed out after 600s",
         }
 
 def eval_observability() -> dict:

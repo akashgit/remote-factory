@@ -67,6 +67,7 @@ def resolve_prompt(
     project_path: Path | None = None,
     *,
     use_profile: bool = False,
+    workflow_mode: str | None = None,
 ) -> str:
     """Resolve the prompt for an agent role.
 
@@ -76,6 +77,10 @@ def resolve_prompt(
 
     When *use_profile* is True, loads ~/.factory/profile.md and appends it
     after the ACE playbook injection.
+
+    When *workflow_mode* is set and *role* is ``"ceo"``, the corresponding
+    ``skills/workflow-{workflow_mode}/SKILL.md`` is appended to the prompt
+    so it survives context compaction.
 
     Returns the prompt content as a string.
     """
@@ -92,6 +97,8 @@ def resolve_prompt(
                 logger.info("Injected playbook for %s (project override)", role)
             if use_profile:
                 prompt = _maybe_inject_profile(prompt, role)
+            if role == "ceo" and workflow_mode and project_path is not None:
+                prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
             return prompt
 
     # Fall back to factory default
@@ -114,6 +121,9 @@ def resolve_prompt(
     if use_profile:
         prompt = _maybe_inject_profile(prompt, role)
 
+    if role == "ceo" and workflow_mode and project_path is not None:
+        prompt = _maybe_inject_skill(prompt, project_path, workflow_mode)
+
     return prompt
 
 
@@ -126,6 +136,17 @@ def _maybe_inject_profile(prompt: str, role: str) -> str:
         prompt = inject_profile(prompt, profile)
         logger.info("Injected user profile for %s", role)
     return prompt
+
+
+def _maybe_inject_skill(prompt: str, project_path: Path, workflow_mode: str) -> str:
+    """Append the workflow SKILL.md to the CEO prompt so it survives compaction."""
+    skill_path = project_path / "skills" / f"workflow-{workflow_mode}" / "SKILL.md"
+    if not skill_path.exists():
+        logger.warning("SKILL.md not found for mode %s at %s", workflow_mode, skill_path)
+        return prompt
+    skill_content = skill_path.read_text()
+    logger.info("Injected SKILL.md for workflow-%s into CEO prompt", workflow_mode)
+    return prompt + f"\n\n# Workflow Playbook ({workflow_mode})\n\n{skill_content}"
 
 
 async def invoke_agent(
@@ -143,6 +164,7 @@ async def invoke_agent(
     tmux_persist: bool = False,
     background: bool = False,
     review_tag: str | None = None,
+    workflow_mode: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -154,7 +176,7 @@ async def invoke_agent(
     """
     global _consecutive_failures
 
-    prompt = resolve_prompt(role, project_path, use_profile=use_profile)
+    prompt = resolve_prompt(role, project_path, use_profile=use_profile, workflow_mode=workflow_mode)
 
     if os.environ.get("FACTORY_NO_GITHUB") == "1":
         prompt += (

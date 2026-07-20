@@ -799,11 +799,18 @@ class WorkflowExecutor:
             if pool_entry:
                 model = pool_entry.model
 
+        timeout = node.timeout
+        if timeout is None:
+            pool_entry = self.agent_pool.get(node.role.value)
+            if pool_entry:
+                timeout = pool_entry.timeout
+
         stdout, code = await invoke_agent(
             node.role.value,  # type: ignore[arg-type]
             task,
             self.project_path,
             model=model or None,
+            timeout=float(timeout) if timeout is not None else 600.0,
         )
 
         if code != 0:
@@ -935,8 +942,11 @@ class WorkflowExecutor:
             return Verdict.halt(reason=f"precheck failed: {text[:200]}")
         if first_line.startswith("reloop"):
             target = self._next_conditional(gate_id, VerdictType.RELOOP)
+            raw_line = text.split("\n")[0].strip()
+            after_prefix = raw_line.split(":", 1)[1].strip() if ":" in raw_line else ""
+            feedback = after_prefix if after_prefix else "fn gate requested reloop"
             if target:
-                return Verdict.reloop(target=target, feedback="fn gate requested reloop")
+                return Verdict.reloop(target=target, feedback=feedback)
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 

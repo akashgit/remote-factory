@@ -89,6 +89,33 @@ class TestDetectState:
         assert detect_state(tmp_project) == ProjectState.EVALS_PENDING_REVIEW
 
 
+class TestFactoryDirWithoutConfig:
+    def test_warns_when_factory_dir_exists_without_config(self, tmp_project):
+        """detect_state warns when .factory/ exists but config.json is missing."""
+        (tmp_project / ".factory").mkdir()
+        with (
+            patch("factory.state.subprocess.run", return_value=type("R", (), {"returncode": 0, "stdout": "[]"})()),
+            patch("factory.state.log") as mock_log,
+        ):
+            state = detect_state(tmp_project)
+        assert state == ProjectState.NO_FACTORY
+        mock_log.warning.assert_called_once_with(
+            "factory_dir_without_config",
+            factory_dir=str(tmp_project / ".factory"),
+            hint="Run 'factory init' to generate config.json from factory.md",
+        )
+
+    def test_no_warning_without_factory_dir(self, tmp_project):
+        """detect_state does not warn when .factory/ doesn't exist."""
+        with (
+            patch("factory.state.subprocess.run", return_value=type("R", (), {"returncode": 0, "stdout": "[]"})()),
+            patch("factory.state.log") as mock_log,
+        ):
+            state = detect_state(tmp_project)
+        assert state == ProjectState.NO_FACTORY
+        mock_log.warning.assert_not_called()
+
+
 class TestHasOpenPlanIssues:
     def test_returns_false_when_gh_not_found(self, tmp_project):
         """_has_open_plan_issues returns False when gh CLI is not available."""

@@ -27,6 +27,8 @@ COMMON_ENV_VARS = (
     "LANGFUSE_SECRET_KEY",
     "LANGFUSE_BASE_URL",
     "FACTORY_GIT_REF",
+    "FACTORY_BENCHMARK",
+    "FACTORY_INSTANCE_ID",
 )
 
 
@@ -375,3 +377,12 @@ class FeaturebenchFactoryCeo(FactoryCeo):
             '2>&1 </dev/null | tee /logs/agent/factory-ceo.txt'
             '; exit 0'
         )
+
+
+class HarborIndexFactoryCeo(FactoryCeo):
+    """Runs the generic factory ceo approach for the Harbor-Index meta-benchmark."""
+
+    @staticmethod
+    @override
+    def name() -> str:
+        return "harbor-index-factory-ceo"

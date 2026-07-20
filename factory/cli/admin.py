@@ -62,7 +62,7 @@ def cmd_discover(args: argparse.Namespace) -> int:
     if spec_path is None:
         try:
             generate_spec(project_path)
-            spec_path = project_path / "GRAPH-SPEC.md"
+            spec_path = project_path / "SPEC.md"
         except Exception as exc:
             log.warning("spec_generate_skipped", reason=str(exc))
 

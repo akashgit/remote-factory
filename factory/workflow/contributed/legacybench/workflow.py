@@ -81,7 +81,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=7200,
         max_iterations=3,
         prompt_template=(
             "You are fixing a bug in legacy code for the Legacy-Bench benchmark.\n\n"
@@ -130,14 +130,23 @@ def workflow() -> Workflow:
             "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
             "echo 'fail: builder did not commit any changes'; "
             "exit 0; fi && "
-            "BUILDER_OUTPUT=$(cat .factory/reviews/builder-latest.md 2>/dev/null || echo '') && "
-            "if echo \"$BUILDER_OUTPUT\" | grep -qiE '(pass|succeed|ok|complete|done|verified|correct|works)'; then "
-            "echo 'pass: builder reports task completed successfully'; "
-            "elif echo \"$BUILDER_OUTPUT\" | grep -qiE '(fail|error|broken|cannot|unable|wrong)'; then "
-            "echo 'reloop: builder needs to retry — solution not confirmed'; "
-            "else "
-            "echo 'pass: changes committed, no failure signals detected'; "
-            "fi"
+            "if [ ! -f .factory/reviews/builder-latest.md ]; then "
+            "echo 'fail: builder output missing'; "
+            "exit 0; fi && "
+            "if [ ! -f Makefile ]; then "
+            "echo 'reloop: no Makefile found — cannot independently verify correctness'; "
+            "exit 0; fi && "
+            "BUILD_OUT=$(timeout 600 make 2>&1) || "
+            "{ TAIL=$(echo \"$BUILD_OUT\" | tail -50); "
+            "echo \"reloop: compilation failed — $TAIL\"; exit 0; } && "
+            "TEST_PROBE=$(make -n test 2>&1); "
+            "if [ $? -ne 0 ]; then "
+            "echo 'reloop: no test target in Makefile — cannot verify correctness'; "
+            "exit 0; fi && "
+            "TEST_OUT=$(timeout 600 make test 2>&1) || "
+            "{ TAIL=$(echo \"$TEST_OUT\" | tail -50); "
+            "echo \"reloop: tests failed — $TAIL\"; exit 0; } && "
+            "echo 'pass: compilation and tests succeeded'"
         ),
         reads={".factory/reviews/builder-latest.md"},
     )

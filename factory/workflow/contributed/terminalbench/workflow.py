@@ -83,7 +83,7 @@ def workflow() -> Workflow:
         id="builder",
         role=AgentRole.BUILDER,
         model="opus",
-        timeout=1200,
+        timeout=7200,
         max_iterations=3,
         prompt_template=(
             "You are solving a real-world engineering task in a terminal environment.\n\n"

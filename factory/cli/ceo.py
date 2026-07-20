@@ -148,7 +148,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         if not headless:
             from factory.models import AgentRunRequest
 
-            prompt = resolve_prompt("ceo", project_path)
+            prompt = resolve_prompt("ceo", project_path, workflow_mode="review")
             runner = get_runner(runner_name)
             return runner.interactive_run(
                 AgentRunRequest(
@@ -172,6 +172,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 model=model,
                 timeout=7200.0,
                 max_respawns=1,
+                workflow_mode="review",
             )
         )
         print(result)
@@ -204,8 +205,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             f"Project: {project_path}\nMode: qa\n\n"
             f"## QA Verification Directive\n\n"
             f"Run the QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
-            f"Read and follow the workflow-qa SKILL.md playbook at "
-            f"skills/workflow-qa/SKILL.md.\n\n"
+            f"Follow the workflow-qa playbook in your system prompt above.\n\n"
             f"Key parameters:\n"
             f"- PR_NUMBER={pr_number}\n"
             f"- PROJECT_PATH={project_path}\n"
@@ -228,7 +228,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         if not headless:
             from factory.models import AgentRunRequest
 
-            prompt = resolve_prompt("ceo", project_path)
+            prompt = resolve_prompt("ceo", project_path, workflow_mode="qa")
             runner = get_runner(runner_name)
             rc = runner.interactive_run(
                 AgentRunRequest(
@@ -254,6 +254,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 model=model,
                 timeout=7200.0,
                 max_respawns=1,
+                workflow_mode="qa",
             )
         )
         complete_cycle_session(project_path, cycle_span_id)
@@ -313,7 +314,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         if not headless:
             from factory.models import AgentRunRequest
 
-            prompt = resolve_prompt("ceo", project_path)
+            prompt = resolve_prompt("ceo", project_path, workflow_mode="deep-qa")
             runner = get_runner(runner_name)
             rc = runner.interactive_run(
                 AgentRunRequest(
@@ -339,6 +340,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 model=model,
                 timeout=7200.0,
                 max_respawns=1,
+                workflow_mode="deep-qa",
             )
         )
         complete_cycle_session(project_path, cycle_span_id)
@@ -577,7 +579,14 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
     )
-    ceo_mode = "create" if mode == "create" else ("build" if interactive else mode)
+    if mode == "create":
+        ceo_mode = "create"
+    elif mode == "design":
+        ceo_mode = "design"
+    elif interactive:
+        ceo_mode = "build"
+    else:
+        ceo_mode = mode
     if clean_pr_flag is not None:
         clean_pr_resolved = clean_pr_flag
     else:
@@ -662,6 +671,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                     use_profile=use_profile,
                     tmux_persist=tmux_persist,
                     background=background,
+                    workflow_mode=ceo_mode,
                 )
             )
             print(result)
@@ -706,7 +716,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             mark_read(project_path, pending_ids)
         from factory.models import AgentRunRequest as _RunReq
 
-        prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile)
+        prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode)
         runner = get_runner(runner_name)
         return runner.interactive_run(
             _RunReq(
@@ -1548,6 +1558,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
+            "--disallowedTools", "Agent",
             "--dangerously-skip-permissions",
         ]
     else:
@@ -1557,6 +1568,7 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
+            "--disallowedTools", "Agent",
             "--dangerously-skip-permissions",
         ]
 
@@ -1688,8 +1700,9 @@ def _build_ceo_task(
             f"Run the Plan Loop (P0-P3) with interactive approval. "
             f"Research the space, synthesize a build plan, and refine it "
             f"through user feedback before building.\n\n"
-            f"After the user approves the final plan, persist it to "
-            f".factory/strategy/current.md and proceed to Build mode.\n"
+            f"After you approve the plan at the strategy gate, persist it to "
+            f".factory/strategy/current.md — the workflow continues to "
+            f"implementation automatically.\n"
         )
 
     if research_ideation:
@@ -1715,7 +1728,7 @@ def _build_ceo_task(
             f"\n\n## Create Mode (New Factory Mode)\n\n"
             f"**Mode description from user:**\n{create_description}\n\n"
             f"You are in Create mode — a meta-mode for creating new factory modes.\n\n"
-            f"Follow the Create workflow (skills/workflow-create/SKILL.md):\n"
+            f"Follow the Create workflow playbook in your system prompt:\n"
             f"1. Research existing workflow patterns and the user's intent\n"
             f"2. Synthesize a complete workflow specification\n"
             f"3. Present the spec to the user for interactive approval\n"
@@ -1792,7 +1805,8 @@ def _build_ceo_task(
             "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
             "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
             "(B3-B6): Build phases → E2E verification. "
-            "Do NOT skip to Improve mode — the project needs to be built first."
+            "Do NOT skip to Improve mode — the project needs to be built first. "
+            "The full step-by-step playbook is in your system prompt above."
         )
     elif mode == "discover":
         if discover_only:
@@ -1812,7 +1826,8 @@ def _build_ceo_task(
         task += (
             "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
             "on this project (experiments, keep/revert decisions). Then run ACE playbook "
-            "evolution for all agent roles using cross-project experiment data."
+            "evolution for all agent roles using cross-project experiment data. "
+            "The full step-by-step playbook is in your system prompt above."
         )
     elif mode == "research":
         task += (
@@ -1821,19 +1836,20 @@ def _build_ceo_task(
             "target value, and run command. Each cycle: form a hypothesis to improve the "
             "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
             "untouched), run the research command, compare results against the target, and "
-            "make a keep/revert decision. Respect research_constraints and cost_budget."
+            "make a keep/revert decision. Respect research_constraints and cost_budget. "
+            "The full step-by-step playbook is in your system prompt above."
         )
     elif mode == "create":
         task += (
-            "\n\nRun Create mode: read `skills/workflow-create/SKILL.md` for the full "
-            "step-by-step playbook. This mode creates a new factory mode (workflow + skill + "
-            "CLI wiring + tests) from the user's description above."
+            "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
+            "CLI wiring + tests) from the user's description above. "
+            "The full step-by-step playbook is in your system prompt above."
         )
     else:
         task += (
-            f"\n\nRun {mode} mode: read `skills/workflow-{mode}/SKILL.md` for the full "
-            f"step-by-step playbook. Follow the instructions exactly as written — "
-            f"do not add additional steps, research, or ceremony beyond what the SKILL.md describes."
+            f"\n\nRun {mode} mode. Follow the step-by-step playbook in your system prompt "
+            f"exactly as written — do not add additional steps, research, or ceremony "
+            f"beyond what the playbook describes."
         )
 
     if no_github:
@@ -2027,6 +2043,7 @@ def _run_single_cycle(
                 use_profile=use_profile,
                 tmux_persist=tmux_persist,
                 background=background,
+                workflow_mode=mode,
             )
         )
 

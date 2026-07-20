@@ -167,6 +167,60 @@ class TestRemoveWorktree:
         assert str(wt_path) not in result.stdout
 
 
+class TestTelemetryPreservation:
+    def test_trace_id_preserved_with_symlink(self, git_project: Path) -> None:
+        """trace_id.txt written via symlink is already in main .factory/."""
+        wt_path, branch = create_worktree(git_project)
+
+        # Write trace_id.txt via the worktree's .factory symlink
+        trace_id = "test-trace-12345"
+        (wt_path / ".factory" / "trace_id.txt").write_text(trace_id)
+
+        # Verify it's already in main .factory (via symlink)
+        assert (git_project / ".factory" / "trace_id.txt").read_text() == trace_id
+
+        remove_worktree(git_project, wt_path, branch)
+
+        # File should still exist after cleanup
+        assert (git_project / ".factory" / "trace_id.txt").exists()
+        assert (git_project / ".factory" / "trace_id.txt").read_text() == trace_id
+
+    def test_trace_id_preserved_with_separate_directory(self, git_project: Path) -> None:
+        """trace_id.txt in a separate .factory/ dir is copied to main before cleanup."""
+        wt_path, branch = create_worktree(git_project)
+
+        # Remove the symlink and create a separate directory
+        wt_factory = wt_path / ".factory"
+        wt_factory.unlink()
+        wt_factory.mkdir()
+
+        # Write trace_id.txt to the separate directory
+        trace_id = "test-trace-separate-67890"
+        (wt_factory / "trace_id.txt").write_text(trace_id)
+
+        # Verify main .factory does NOT have this trace_id yet
+        main_trace = git_project / ".factory" / "trace_id.txt"
+        assert not main_trace.exists()
+
+        remove_worktree(git_project, wt_path, branch)
+
+        # File should be copied to main .factory
+        assert main_trace.exists()
+        assert main_trace.read_text() == trace_id
+
+    def test_no_trace_id_no_error(self, git_project: Path) -> None:
+        """Cleanup succeeds when trace_id.txt doesn't exist."""
+        wt_path, branch = create_worktree(git_project)
+
+        # No trace_id.txt written
+        assert not (wt_path / ".factory" / "trace_id.txt").exists()
+
+        remove_worktree(git_project, wt_path, branch)
+
+        # Should complete without error
+        assert not wt_path.exists()
+
+
 class TestPruneStale:
     def test_no_op_without_factory_dir(self, tmp_path: Path) -> None:
         project = tmp_path / "no-factory"
