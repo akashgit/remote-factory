@@ -112,11 +112,8 @@ factory tmux ~/my-project --loop
 
 ## Quick Start
 
-```bash
-# Install globally (pick one)
-pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
-uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
-pip install git+https://github.com/akashgit/remote-factory.git       # via pip
+See [setup.md](setup.md) for installation instructions.
+
 
 # Register the CEO as a Claude Code agent
 factory install

@@ -19,13 +19,21 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 
 ## Quick Start
 
-**Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/#installation) (installed) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+
+### Quick Install
 
 ```bash
-# Install globally (pick one)
-pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
-uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
-pip install git+https://github.com/akashgit/remote-factory.git       # via pip
+uv tool install git+https://github.com/akashgit/remote-factory.git
+```
+
+### Development Install
+
+```bash
+git clone https://github.com/akashgit/remote-factory.git
+cd remote-factory
+uv sync
+uv tool install -e .
 ```
 
 Then start with one of the two main workflows:
@@ -41,7 +49,7 @@ factory ceo /path/to/project --mode improve --focus "issue # or whatever you wan
 factory ceo /path/to/project --mode design --focus "issue # or whatever you want to improve or fix"
 ```
 
-See the [full setup guide](docs/setup.md) for authentication and environment variables.
+See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
 
 ---
 

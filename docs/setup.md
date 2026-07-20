@@ -14,33 +14,21 @@
 
 ## Installation
 
-Install re:factory globally so `factory` is available everywhere on your machine.
+Install re:factory globally so the `factory` command is available everywhere on your machine. This is important because factory uses worktrees that are not guaranteed to inherit the local environment.
 
-### Option A: One-liner (recommended)
+### Option A: One-liner (recommended; installs `uv` if necessary)
 
 ```bash
 curl -sSf https://raw.githubusercontent.com/akashgit/remote-factory/main/install.sh | bash
 ```
 
-### Option B: pipx
-
-```bash
-pipx install git+https://github.com/akashgit/remote-factory.git
-```
-
-### Option C: uv tool
+### Option B: `uv`
 
 ```bash
 uv tool install git+https://github.com/akashgit/remote-factory.git
 ```
 
-### Option D: pip
-
-```bash
-pip install git+https://github.com/akashgit/remote-factory.git
-```
-
-### Option E: From source (for development)
+### Option C: From source (for development)
 
 re:factory evolves fast — installing from source lets you `git pull` to stay current.
 
