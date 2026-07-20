@@ -111,13 +111,15 @@ jobs:
       - name: Set up Python
         run: uv python install 3.12
       - name: Install dependencies
-        run: uv sync --all-groups
+        run: |
+          uv sync --all-groups
+          uv tool install -e .
       - name: Ruff check
         run: uv run ruff check .
       - name: Mypy
         run: uv run mypy factory/
       - name: Lint contributed workflows
-        run: uv run factory workflow lint-contributed
+        run: factory workflow lint-contributed
       - name: Check plugin agents in sync
         if: hashFiles('agents/') != ''
         run: uv run python scripts/sync_agents.py --check

@@ -26,10 +26,12 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv sync --all-groups --extra telemetry
+        run: |
+          uv sync --all-groups --extra telemetry
+          uv tool install -e .
 
       - name: Initialize factory config
-        run: uv run factory init .
+        run: factory init .
 
       - name: Run eval
         id: eval
@@ -38,7 +40,7 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          uv run factory eval . > eval_output.json || true
+          factory eval . > eval_output.json || true
           cat eval_output.json
           python3 -c "import json; json.load(open('eval_output.json'))" || { echo 'ERROR: eval_output.json is missing or invalid JSON'; exit 1; }
 
