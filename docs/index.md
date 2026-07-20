@@ -114,11 +114,6 @@ factory tmux ~/my-project --loop
 
 See [setup.md](setup.md) for installation instructions.
 
-
-# Register the CEO as a Claude Code agent
-factory install
-```
-
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — re:factory stores all state locally.
 
 Per-project state lives in `.factory/` (experiment history, strategy, archive notes). Global state lives in `~/.factory/` (project registry, evolved playbooks). Projects are auto-registered when experiments begin — no manual setup needed. See [Setup Guide](setup.md) for environment variables and authentication options.

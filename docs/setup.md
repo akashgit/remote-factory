@@ -7,7 +7,7 @@
 | Python | 3.11+ | System or [pyenv](https://github.com/pyenv/pyenv) |
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | Latest | `npm install -g @anthropic-ai/claude-code` |
 | Node.js | 18+ | Required for Claude Code and MCP servers |
-| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (optional) |
+| [uv](https://docs.astral.sh/uv/) | Latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` (auto-installed by Option A) |
 | tmux | Any | `brew install tmux` (optional, for long-running sessions) |
 
 **Claude Code must be installed and authenticated.** re:factory spawns `claude` as subprocesses — it does not call the Claude API directly. However you've authenticated Claude Code (API key, Vertex AI, etc.) is how re:factory will access Claude.
@@ -150,10 +150,8 @@ npm install -g @anthropic-ai/claude-code     # Claude Code
 # 2. Authenticate Claude Code (if not already done)
 claude  # follow the prompts
 
-# 3. Install re:factory globally (pick one)
-pipx install git+https://github.com/akashgit/remote-factory.git      # via pipx
-uv tool install git+https://github.com/akashgit/remote-factory.git   # via uv
-pip install git+https://github.com/akashgit/remote-factory.git       # via pip
+# 3. Install re:factory globally
+uv tool install git+https://github.com/akashgit/remote-factory.git
 
 # 4. Register CEO agent
 factory install

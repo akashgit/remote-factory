@@ -19,7 +19,7 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 
 ## Quick Start
 
-**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/#installation) (installed) and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
+**Prerequisites:** Python 3.11+, [uv](https://docs.astral.sh/uv/#installation), and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated).
 
 ### Quick Install
 
