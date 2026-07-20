@@ -14,7 +14,7 @@
 
 ## Installation
 
-Install re:factory globally so the `factory` command is available everywhere on your machine. This is important because factory uses worktrees that are not guaranteed to inherit the local environment.
+Install re:factory globally so the `factory` command is available everywhere on your machine. This is important because factory creates worktrees that are not guaranteed to inherit the local environment, but we need factory agents to be able to correctly call factory commands via CLI regardless of the location of the git worktree.
 
 ### Option A: One-liner (recommended; installs `uv` if necessary)
 
