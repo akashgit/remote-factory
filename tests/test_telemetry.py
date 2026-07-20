@@ -13,7 +13,7 @@ import pytest
 import factory.telemetry as telemetry_mod
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts" / "langfuse"))
-from analyze_failure import find_matching_trace
+from analyze_failure import _find_trial_log, find_matching_trace, generate_report, main
 
 
 @pytest.fixture(autouse=True)
@@ -448,3 +448,109 @@ class TestFindMatchingTrace:
                 datetime(2026, 1, 1), 3600,
             )
         assert result is None
+
+
+class TestGenerateReportFallback:
+    @staticmethod
+    def _result_data(
+        solver: str = "factory",
+        exception: str = "",
+        benchmark: str = "swebench",
+        instance_id: str = "django-123",
+        timestamp: str = "20260101T000000Z",
+    ) -> dict:
+        data: dict = {
+            "benchmark": benchmark,
+            "instance_id": instance_id,
+            "solver": solver,
+            "duration_seconds": 120,
+            "resolved": False,
+            "timestamp": timestamp,
+        }
+        if exception:
+            data["details"] = {"exception": exception}
+        return data
+
+    def test_claude_code_solver_not_short_circuited(self, tmp_path: Path) -> None:
+        data = self._result_data(solver="claude-code", exception="RuntimeError: timeout after 300s")
+        result_json = tmp_path / "result.json"
+        result_json.write_text(json.dumps(data))
+
+        with patch("analyze_failure.run_llm_analysis"), patch("analyze_failure.run_llm_summary"):
+            with patch("sys.argv", ["analyze_failure", str(result_json), "--no-llm"]):
+                with patch("analyze_failure._write_output") as mock_write:
+                    main()
+        report = mock_write.call_args[0][0]
+        assert "RuntimeError: timeout after 300s" in report
+
+    def test_trial_log_fallback_no_trace(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver crashed at step 3\nTraceback: ...")
+
+        report = generate_report(
+            data, trace=None, trace_id=None, host=None,
+            use_llm=False, result_dir=tmp_path,
+        )
+        assert "Harbor Artifacts" in report
+        assert "solver crashed at step 3" in report
+
+    def test_trial_log_with_llm_analysis(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver crashed at step 3")
+
+        with patch("analyze_failure.run_llm_analysis", return_value="The solver crashed due to OOM") as mock_llm:
+            report = generate_report(
+                data, trace=None, trace_id=None, host=None,
+                use_llm=True, result_dir=tmp_path,
+            )
+        assert "The solver crashed due to OOM" in report
+        assert "Diagnosis" in report
+        mock_llm.assert_called_once()
+        assert "solver crashed at step 3" in mock_llm.call_args[0][0]
+
+    def test_no_trace_no_artifacts(self) -> None:
+        data = self._result_data()
+        report = generate_report(
+            data, trace=None, trace_id=None, host=None,
+            use_llm=False, result_dir=None,
+        )
+        assert "No matching Langfuse trace found" in report
+
+    def test_summary_mode_uses_trial_log(self, tmp_path: Path) -> None:
+        data = self._result_data(timestamp="20260101T000000Z", benchmark="swebench")
+        trial_log = tmp_path / "20260101T000000Z-swebench-trial.log"
+        trial_log.write_text("ERROR: solver timeout")
+
+        with patch("analyze_failure.run_llm_summary", return_value="Solver timed out") as mock_summary:
+            report = generate_report(
+                data, trace=None, trace_id=None, host=None,
+                use_llm=True, summary=True, result_dir=tmp_path,
+            )
+        assert report == "Solver timed out"
+        mock_summary.assert_called_once()
+        assert "solver timeout" in mock_summary.call_args[0][0]
+
+
+class TestFindTrialLog:
+    def test_finds_matching_trial_log(self, tmp_path: Path) -> None:
+        log_file = tmp_path / "20260101T000000Z-swebench-trial.log"
+        log_file.write_text("log content here")
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == "log content here"
+
+    def test_truncates_large_log(self, tmp_path: Path) -> None:
+        log_file = tmp_path / "20260101T000000Z-swebench-trial.log"
+        content = "x" * (60 * 1024)
+        log_file.write_text(content)
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert len(result) == 50 * 1024
+
+    def test_returns_empty_when_no_dir(self) -> None:
+        result = _find_trial_log(None, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == ""
+
+    def test_returns_empty_when_file_missing(self, tmp_path: Path) -> None:
+        result = _find_trial_log(tmp_path, {"timestamp": "20260101T000000Z", "benchmark": "swebench"})
+        assert result == ""

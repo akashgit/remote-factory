@@ -143,6 +143,122 @@ extract_langfuse_hostname() {
     echo "${hostname}"
 }
 
+# create_langfuse_trace — Create a wrapper Langfuse trace via the REST API.
+# Uses Python3 urllib (stdlib) so no pip install is needed.
+# Echoes the 32-char hex trace ID on success, empty string on failure.
+# Env: LANGFUSE_HOST (or LANGFUSE_BASE_URL), LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY
+create_langfuse_trace() {
+    local benchmark="${1:-}"
+    local instance_id="${2:-}"
+    local solver="${3:-}"
+    local git_ref="${4:-}"
+
+    python3 -c "
+import json, os, sys, uuid, urllib.request, urllib.error, base64, time
+
+host = os.environ.get('LANGFUSE_HOST') or os.environ.get('LANGFUSE_BASE_URL', '')
+pub_key = os.environ.get('LANGFUSE_PUBLIC_KEY', '')
+sec_key = os.environ.get('LANGFUSE_SECRET_KEY', '')
+
+if not host or not pub_key or not sec_key:
+    sys.exit(0)
+
+host = host.rstrip('/')
+trace_id = uuid.uuid4().hex
+auth = base64.b64encode(f'{pub_key}:{sec_key}'.encode()).decode()
+
+payload = {
+    'batch': [{
+        'id': uuid.uuid4().hex,
+        'type': 'trace-create',
+        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime()),
+        'body': {
+            'id': trace_id,
+            'name': 'benchmark:${benchmark}/${instance_id}',
+            'metadata': {
+                'benchmark': '${benchmark}',
+                'instance_id': '${instance_id}',
+                'solver': '${solver}',
+                'git_ref': '${git_ref}',
+                'source': 'run-harbor.sh',
+            },
+        },
+    }],
+    'metadata': {},
+}
+
+req = urllib.request.Request(
+    f'{host}/api/public/ingestion',
+    data=json.dumps(payload).encode(),
+    headers={'Content-Type': 'application/json', 'Authorization': f'Basic {auth}'},
+    method='POST',
+)
+try:
+    urllib.request.urlopen(req, timeout=10)
+except Exception:
+    sys.exit(0)
+
+print(trace_id)
+" 2>/dev/null || true
+}
+
+# close_langfuse_trace — Mark a wrapper Langfuse trace as completed.
+# Posts a span-end event with duration and status info.
+close_langfuse_trace() {
+    local trace_id="${1:-}"
+    local status="${2:-unknown}"
+    local duration="${3:-0}"
+
+    if [ -z "${trace_id}" ]; then
+        return 0
+    fi
+
+    python3 -c "
+import json, os, sys, uuid, urllib.request, urllib.error, base64, time
+
+host = os.environ.get('LANGFUSE_HOST') or os.environ.get('LANGFUSE_BASE_URL', '')
+pub_key = os.environ.get('LANGFUSE_PUBLIC_KEY', '')
+sec_key = os.environ.get('LANGFUSE_SECRET_KEY', '')
+
+if not host or not pub_key or not sec_key:
+    sys.exit(0)
+
+host = host.rstrip('/')
+auth = base64.b64encode(f'{pub_key}:{sec_key}'.encode()).decode()
+
+payload = {
+    'batch': [{
+        'id': uuid.uuid4().hex,
+        'type': 'span-create',
+        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime()),
+        'body': {
+            'id': uuid.uuid4().hex,
+            'traceId': '${trace_id}',
+            'name': 'harbor-execution',
+            'startTime': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime(time.time() - ${duration})),
+            'endTime': time.strftime('%Y-%m-%dT%H:%M:%S.000Z', time.gmtime()),
+            'metadata': {
+                'status': '${status}',
+                'duration_seconds': ${duration},
+            },
+        },
+    }],
+    'metadata': {},
+}
+
+req = urllib.request.Request(
+    f'{host}/api/public/ingestion',
+    data=json.dumps(payload).encode(),
+    headers={'Content-Type': 'application/json', 'Authorization': f'Basic {auth}'},
+    method='POST',
+)
+try:
+    urllib.request.urlopen(req, timeout=10)
+except Exception:
+    pass
+" 2>/dev/null || true
+}
+
 extract_trace_id() {
     local jobs_dir="$1"
     local trace_id=""

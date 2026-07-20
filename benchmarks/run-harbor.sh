@@ -123,12 +123,31 @@ cleanup() {
         if [ -n "${log_file}" ] && [ -f "${log_file}" ]; then
             mkdir -p "${CI_RESULTS_DIR}"
             cp "${log_file}" "${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-trial.log"
+        elif [ -f "${HARBOR_LOG:-}" ]; then
+            mkdir -p "${CI_RESULTS_DIR}"
+            cp "${HARBOR_LOG}" "${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-trial.log"
         fi
+    elif [ -f "${HARBOR_LOG:-}" ]; then
+        mkdir -p "${CI_RESULTS_DIR}"
+        cp "${HARBOR_LOG}" "${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-trial.log"
     fi
 
     LANGFUSE_TRACE_ID=""
     if [ "${MODE}" = "task" ] && [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
         LANGFUSE_TRACE_ID=$(extract_trace_id "${JOBS_DIR}")
+    fi
+
+    # Fall back to the pre-created wrapper trace if the container didn't produce one
+    if [ -z "${LANGFUSE_TRACE_ID}" ] && [ -n "${PRE_TRACE_ID:-}" ]; then
+        LANGFUSE_TRACE_ID="${PRE_TRACE_ID}"
+    fi
+
+    # Close the wrapper trace with duration and status
+    if [ -n "${LANGFUSE_TRACE_ID}" ] && [ -n "${PRE_TRACE_ID:-}" ]; then
+        local end_ts duration_s
+        end_ts="$(date +%s)"
+        duration_s=$(( end_ts - START_TIME ))
+        close_langfuse_trace "${LANGFUSE_TRACE_ID}" "${STATUS}" "${duration_s}"
     fi
 
     if [ -n "${JOBS_DIR}" ] && [ -d "${JOBS_DIR}" ]; then
@@ -405,9 +424,25 @@ if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     HARBOR_CMD+=(--mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]')
 fi
 
-# Execute Harbor
+# Create a wrapper Langfuse trace before Harbor starts (factory solver only).
+# If the factory CLI crashes before creating its own trace, this ensures
+# a trace_id always exists for analyze_failure.py.
+PRE_TRACE_ID=""
+if [ "${MODE}" = "task" ] && [ "${BENCHMARK_SOLVER}" = "factory" ]; then
+    PRE_TRACE_ID=$(create_langfuse_trace "${BENCHMARK}" "${INSTANCE_ID}" "${BENCHMARK_SOLVER}" "${FACTORY_GIT_REF:-}")
+    if [ -n "${PRE_TRACE_ID}" ]; then
+        echo "    Pre-trace ID:    ${PRE_TRACE_ID}"
+        mkdir -p "${JOBS_DIR}"
+        echo "${PRE_TRACE_ID}" > "${JOBS_DIR}/trace_id.txt"
+    fi
+fi
+
+# Execute Harbor — capture output to a log file for failure analysis
+HARBOR_LOG="${CI_RESULTS_DIR}/${TIMESTAMP}-${BENCHMARK}-${BENCHMARK_SOLVER}-harbor.log"
+mkdir -p "${CI_RESULTS_DIR}"
+
 HARBOR_EXIT=0
-"${HARBOR_CMD[@]}" 2>&1 || HARBOR_EXIT=$?
+"${HARBOR_CMD[@]}" 2>&1 | tee "${HARBOR_LOG}"; HARBOR_EXIT=${PIPESTATUS[0]}
 
 if [ "${HARBOR_EXIT}" -ne 0 ]; then
     echo "    Harbor exited with code ${HARBOR_EXIT}"
