@@ -11,5 +11,21 @@ RUN printf 'import pytest\nfrom pricing import calculate_total\n\ndef test_basic
 
 RUN pip install pytest
 
-# Do NOT git init here — FactoryCeo.run() handles git initialization
 RUN useradd -m -s /bin/bash agent 2>/dev/null || true && chown -R agent:agent /workspace
+
+# Mark /workspace as safe for ALL users (root writes during Harbor install
+# phase cause git safe.directory ownership mismatches for the agent user).
+RUN git config --system safe.directory /workspace && \
+    git config --system safe.directory '*'
+
+# Pre-initialize git as agent with full repo + initial commit.
+USER agent
+WORKDIR /workspace
+RUN git config --global user.name "Factory Agent" && \
+    git config --global user.email "factory@agent.local" && \
+    git config --global init.defaultBranch main && \
+    git init && \
+    printf "/proc\n/sys\n/dev\n/run\n/tmp\n/var\n/root\n/home\n/usr\n/bin\n/sbin\n/lib\n/lib64\n/etc\n/boot\n/mnt\n/opt\n/srv\n/media\n/logs\n" > .gitignore && \
+    git add -A && \
+    git commit -m "initial state"
+USER root
