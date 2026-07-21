@@ -401,14 +401,11 @@ class TestDocFreshnessGate:
 # ── Builder → QA reachability audit ────────────────────────────
 
 
-QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "swebench", "terminalbench"}  # Benchmark workflows use external verifiers
-
-
 def _workflows_with_builder() -> list[str]:
     """Return names of workflows containing a Builder AgentNode."""
     names = []
     for name, wf in register_all().items():
-        if name in QA_EXEMPT_WORKFLOWS:
+        if wf.terminal:
             continue
         has_builder = any(
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER for n in wf.nodes.values()

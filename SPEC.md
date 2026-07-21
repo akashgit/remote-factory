@@ -20,7 +20,7 @@ The Remote Factory solves this by providing an **autonomous software improvement
 2. Enforce non-overridable quality gates (precheck) that prevent regressions
 3. Support multiple CLI backends (Claude Code, Bob Shell, Codex, OpenCode) via a runner abstraction
 4. Evolve agent behavior over time through cross-project playbook learning (ACE)
-5. Provide 20 workflow modes as composable, validated DAGs with formal execution semantics
+5. Provide 22 workflow modes as composable, validated DAGs with formal execution semantics
 6. Maintain full experiment history with append-only TSV and per-experiment artifact directories
 
 ### §2.2 Non-Goals
@@ -85,7 +85,7 @@ Pure tools that do not make decisions. Entry point `factory/cli.py` dispatches v
 
 ### Layer 2: Workflow Graph Engine (`factory/workflow/`)
 
-All 20 factory modes are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives connected by `Edge` objects.
+All 22 factory modes are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives connected by `Edge` objects.
 
 The same graph definition produces two execution formats:
 - **Headless**: `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically
@@ -116,7 +116,7 @@ factory/models.py                    ← Foundation: all Pydantic types
     ├── factory/strategy.py          ← FEEC heuristic, plateau/stuck detection
     ├── factory/workflow/
     │   ├── primitives.py            ← 6 node types, Edge, Verdict, Workflow
-    │   ├── definitions.py           ← 20 workflow DAGs
+    │   ├── definitions.py           ← 22 workflow DAGs
     │   ├── executor.py              ← Async DAG walker
     │   ├── validation.py            ← Graph validation (networkx)
     │   ├── skill_export.py          ← DAG → SKILL.md conversion
@@ -560,7 +560,7 @@ check_ceilings(project_path, cycle_start):
 
 | Contract | Normative |
 |---|---|
-| `register_all()` returns exactly 20 workflows | MUST |
+| `register_all()` returns exactly 22 workflows | MUST |
 | All workflows MUST pass `validate_graph()` | MUST |
 | W₁ Build: trigger on `NO_REPO` or `REPO_INCOMPLETE` | MUST |
 | W₂ Design: W₁ with user gate at strategy approval; trigger requires `interactive=True` | MUST |
@@ -842,7 +842,7 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 | 12 | Clean PR safety: stages only specific files, never untracked | `strip_pr_artifacts` |
 | 13 | Annotation-source fidelity: exported skills match source workflow graph | `validate_skill` |
 | 14 | Broken symlink handling in `ensure_factory_dir` | store initialization |
-| 15 | `register_all()` returns exactly 20 workflows; all pass `validate_graph()` | test_annotations.py |
+| 15 | `register_all()` returns exactly 22 workflows; all pass `validate_graph()` | test_annotations.py |
 | 16 | Tiered history: MAX_INLINE_HISTORY = 10 | `format_tiered_history` |
 | 17 | Bob ceiling accumulates across invocations using `cycle.json` `started_at` | `check_ceilings` |
 | 18 | ANSI sanitization: genuine blank lines preserved; redraw-only lines dropped | `_stream.py` |
@@ -882,7 +882,7 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 - [ ] All Pydantic models use `ConfigDict(strict=True, extra="forbid")`
 - [ ] `ExperimentStore` uses `FileLock` for `begin()` and `finalize()`
 - [ ] Precheck gate is non-overridable by the CEO agent (implemented as `GateNode(evaluator_type="fn")`)
-- [ ] All 20 workflows validate cleanly via `validate_graph()`
+- [ ] All 22 workflows validate cleanly via `validate_graph()`
 - [ ] Weight sums: default hygiene 50% + growth 50% = 100%
 - [ ] FEEC priority order: FIX(0) < EXPLOIT(1) < EXPLORE(2) < COMBINE(3)
 - [ ] Consecutive agent failure threshold = 2
