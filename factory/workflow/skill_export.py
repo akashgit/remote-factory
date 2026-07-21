@@ -130,6 +130,14 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or /path/to/spec.md',
     },
+    "searchqa": {
+        "description": (
+            "SearchQA benchmark mode — minimal question-answering pipeline. "
+            "Reads question + search context, produces an answer in <answer> tags. "
+            "Use for QA benchmarks where the agent extracts answers from passages."
+        ),
+        "argument_hint": "<project_path>",
+    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
