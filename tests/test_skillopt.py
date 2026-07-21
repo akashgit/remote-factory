@@ -1527,18 +1527,13 @@ class TestCliParsing:
 
 
 class TestAdapterStubs:
-    def test_featurebench_raises(self) -> None:
+    def test_featurebench_works(self) -> None:
         from factory.skillopt.adapters.featurebench import FeaturebenchAdapter
 
         adapter = FeaturebenchAdapter()
-        with pytest.raises(NotImplementedError):
-            adapter.build_train_env(4, seed=0)
-        with pytest.raises(NotImplementedError):
-            adapter.build_eval_env(4, "eval", seed=0)
-        with pytest.raises(NotImplementedError):
-            adapter.rollout(None, "skill", "/tmp/out")
-        with pytest.raises(NotImplementedError):
-            adapter.get_task_types()
+        assert adapter.build_train_env(4, seed=0) == 4
+        assert adapter.build_eval_env(4, "eval", seed=0) == 4
+        assert adapter.get_task_types() == ["feature_implementation"]
 
     def test_programbench_raises(self) -> None:
         from factory.skillopt.adapters.programbench import ProgrambenchAdapter
