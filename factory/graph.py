@@ -99,8 +99,7 @@ def extract_graph(project_path: Path) -> Path | None:
                 "graphify",
                 "extract",
                 str(project_path),
-                "--output-dir",
-                str(out_dir),
+                "--code-only",
             ],
             capture_output=True,
             text=True,
@@ -118,8 +117,14 @@ def extract_graph(project_path: Path) -> Path | None:
         )
         return None
 
+    # graphify writes to <project>/graphify-out/ regardless of --output-dir
+    native_output = project_path / "graphify-out" / GRAPH_FILE
     gpath = _graph_path(project_path)
-    if not gpath.is_file():
+
+    if native_output.is_file() and native_output != gpath:
+        shutil.copy2(native_output, gpath)
+        log.debug("graph.extract.moved", src=str(native_output), dst=str(gpath))
+    elif not gpath.is_file():
         log.error("graph.extract.no_output", expected=str(gpath))
         return None
 
@@ -146,8 +151,7 @@ def update_graph(project_path: Path) -> Path | None:
                 "graphify",
                 "extract",
                 str(project_path),
-                "--output-dir",
-                str(out_dir),
+                "--code-only",
                 "--update",
             ],
             capture_output=True,
@@ -166,8 +170,12 @@ def update_graph(project_path: Path) -> Path | None:
         )
         return None
 
+    native_output = project_path / "graphify-out" / GRAPH_FILE
     gpath = _graph_path(project_path)
-    if not gpath.is_file():
+
+    if native_output.is_file() and native_output != gpath:
+        shutil.copy2(native_output, gpath)
+    elif not gpath.is_file():
         log.error("graph.update.no_output", expected=str(gpath))
         return None
 
