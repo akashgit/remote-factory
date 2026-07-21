@@ -57,7 +57,9 @@ jobs:
 
       - name: Install factory
         working-directory: factory-trusted
-        run: uv sync --extra telemetry
+        run: |
+          uv sync --extra telemetry
+          uv tool install -e .
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -85,7 +87,7 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
         run: |
-          uv run factory ceo ${{ github.workspace }}/pr-code --mode deep-qa --pr ${{ steps.pr.outputs.number }} --headless
+          factory ceo ${{ github.workspace }}/pr-code --mode deep-qa --pr ${{ steps.pr.outputs.number }} --headless
 
       - name: Approve PR if verdict is KEEP
         if: success()

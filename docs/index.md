@@ -112,14 +112,7 @@ factory tmux ~/my-project --loop
 
 ## Quick Start
 
-```bash
-# Install from source (recommended — re:factory evolves fast)
-git clone https://github.com/akashgit/remote-factory.git
-cd remote-factory && uv sync && uv tool install -e .
-
-# Register the CEO as a Claude Code agent
-factory install
-```
+See [setup.md](setup.md) for installation instructions.
 
 **Prerequisites:** Python 3.11+ and [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (installed and authenticated). No external services, databases, or Obsidian required — re:factory stores all state locally.
 
