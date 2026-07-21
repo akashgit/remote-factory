@@ -175,10 +175,49 @@ def group_into_batches(
     return batches
 
 
+def _qualified_name(node: dict) -> str:
+    """Derive a Python-style qualified name from graphify node attributes.
+
+    Uses source_file + label to produce names like:
+      factory.ceo_completion              (module)
+      factory.ceo_completion.read_cycle_state  (function)
+      factory.ceo_completion.IncompleteGap     (class)
+    """
+    source_file = node.get("source_file", "")
+    label = node.get("label", node.get("id", "?"))
+
+    if not source_file:
+        return label
+
+    module = source_file.removesuffix(".py").replace("/", ".")
+
+    if label.endswith(".py") or label == source_file:
+        return module
+    func_name = label.removesuffix("()")
+    return f"{module}.{func_name}"
+
+
+def _entity_type(node: dict) -> str:
+    """Infer entity type from graphify label convention."""
+    label = node.get("label", "")
+    if label.endswith(".py") or label == node.get("source_file", ""):
+        return "module"
+    if label.endswith("()"):
+        return "function"
+    if label and label[0].isupper() and not label.endswith(")"):
+        return "class"
+    return "variable"
+
+
 def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_LIMIT) -> str:
     """Build a compact text summary of a code knowledge graph for annotator consumption."""
     nodes = graph_data.get("nodes", [])
     edges = graph_data.get("edges", graph_data.get("links", []))
+
+    id_to_qname: dict[str, str] = {}
+    for node in nodes:
+        node_id = node.get("id", "")
+        id_to_qname[node_id] = _qualified_name(node)
 
     lines: list[str] = []
     lines.append(f"# Code Knowledge Graph Summary ({len(nodes)} nodes, {len(edges)} edges)\n")
@@ -190,7 +229,7 @@ def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_L
 
     by_type: dict[str, int] = defaultdict(int)
     for node in nodes:
-        by_type[node.get("type", "unknown")] += 1
+        by_type[_entity_type(node)] += 1
 
     lines.append("## Entity Counts by Type\n")
     for ntype, count in sorted(by_type.items(), key=lambda x: -x[1]):
@@ -214,9 +253,9 @@ def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_L
 
         members_by_type: dict[str, list[str]] = defaultdict(list)
         for m in members:
-            mtype = m.get("type", "unknown")
-            name = m.get("name", m.get("id", "?"))
-            members_by_type[mtype].append(name)
+            mtype = _entity_type(m)
+            qname = _qualified_name(m)
+            members_by_type[mtype].append(qname)
 
         for mtype in sorted(members_by_type):
             names = sorted(members_by_type[mtype])
@@ -231,9 +270,11 @@ def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_L
     remaining = char_limit - len("\n".join(lines))
     rel_lines: list[str] = []
     for edge in edges:
-        src = edge.get("source", edge.get("from", "?"))
-        tgt = edge.get("target", edge.get("to", "?"))
+        src_id = edge.get("source", edge.get("from", "?"))
+        tgt_id = edge.get("target", edge.get("to", "?"))
         rel = edge.get("type", edge.get("relationship", "?"))
+        src = id_to_qname.get(src_id, src_id)
+        tgt = id_to_qname.get(tgt_id, tgt_id)
         line = f"- {src} --[{rel}]--> {tgt}"
         rel_lines.append(line)
         if len("\n".join(rel_lines)) > remaining - 100:

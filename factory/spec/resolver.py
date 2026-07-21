@@ -53,9 +53,15 @@ def load_graph(project_path: Path) -> nx.DiGraph | None:
 
 
 def _find_node(name: str, graph: nx.DiGraph) -> str | None:
-    """Find a node by exact match or suffix match on the node id."""
+    """Find a node by exact match, dot-to-underscore mapping, or suffix match."""
     if name in graph:
         return name
+    underscore_name = name.replace(".", "_")
+    if underscore_name in graph:
+        return underscore_name
+    underscore_lower = underscore_name.lower()
+    if underscore_lower in graph:
+        return underscore_lower
     for node_id in graph.nodes:
         if str(node_id).endswith(f".{name}") or str(node_id).endswith(f"/{name}"):
             return node_id
