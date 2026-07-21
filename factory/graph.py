@@ -80,31 +80,31 @@ def is_graph_stale(project_path: Path) -> bool | None:
     return graph_mtime < latest_commit_ts
 
 
-def extract_graph(project_path: Path) -> Path | None:
-    """Run graphify extract on the project directory.
+def _run_graphify(project_path: Path, extra_args: list[str] | None = None) -> Path | None:
+    """Run graphify extract with --out pointing to .factory/.
 
-    Stores output in .factory/graphify-out/graph.json.
     Returns path to graph.json on success, None on failure.
     """
     if not is_graphify_installed():
         log.warning("graph.extract.skipped", reason="graphify not installed")
         return None
 
-    out_dir = _graph_dir(project_path)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    factory_dir = project_path / ".factory"
+    factory_dir.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "graphify",
+        "extract",
+        str(project_path),
+        "--code-only",
+        "--out",
+        str(factory_dir),
+    ]
+    if extra_args:
+        cmd.extend(extra_args)
 
     try:
-        result = subprocess.run(
-            [
-                "graphify",
-                "extract",
-                str(project_path),
-                "--code-only",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
         log.error("graph.extract.failed", error=str(exc))
         return None
@@ -117,14 +117,8 @@ def extract_graph(project_path: Path) -> Path | None:
         )
         return None
 
-    # graphify writes to <project>/graphify-out/ regardless of --output-dir
-    native_output = project_path / "graphify-out" / GRAPH_FILE
     gpath = _graph_path(project_path)
-
-    if native_output.is_file() and native_output != gpath:
-        shutil.copy2(native_output, gpath)
-        log.debug("graph.extract.moved", src=str(native_output), dst=str(gpath))
-    elif not gpath.is_file():
+    if not gpath.is_file():
         log.error("graph.extract.no_output", expected=str(gpath))
         return None
 
@@ -133,55 +127,21 @@ def extract_graph(project_path: Path) -> Path | None:
     return gpath
 
 
+def extract_graph(project_path: Path) -> Path | None:
+    """Run graphify extract on the project directory.
+
+    Writes directly to .factory/graphify-out/graph.json via --out.
+    Returns path to graph.json on success, None on failure.
+    """
+    return _run_graphify(project_path)
+
+
 def update_graph(project_path: Path) -> Path | None:
     """Run graphify extract with --update for incremental refresh.
 
     Returns path to graph.json on success, None on failure.
     """
-    if not is_graphify_installed():
-        log.warning("graph.update.skipped", reason="graphify not installed")
-        return None
-
-    out_dir = _graph_dir(project_path)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        result = subprocess.run(
-            [
-                "graphify",
-                "extract",
-                str(project_path),
-                "--code-only",
-                "--update",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
-    except (subprocess.TimeoutExpired, FileNotFoundError) as exc:
-        log.error("graph.update.failed", error=str(exc))
-        return None
-
-    if result.returncode != 0:
-        log.error(
-            "graph.update.failed",
-            returncode=result.returncode,
-            stderr=result.stderr[:500],
-        )
-        return None
-
-    native_output = project_path / "graphify-out" / GRAPH_FILE
-    gpath = _graph_path(project_path)
-
-    if native_output.is_file() and native_output != gpath:
-        shutil.copy2(native_output, gpath)
-    elif not gpath.is_file():
-        log.error("graph.update.no_output", expected=str(gpath))
-        return None
-
-    stats = graph_stats(project_path)
-    log.info("graph.update.complete", output=str(gpath), **(stats or {}))
-    return gpath
+    return _run_graphify(project_path, extra_args=["--update"])
 
 
 def load_graph_data(project_path: Path) -> dict | None:
