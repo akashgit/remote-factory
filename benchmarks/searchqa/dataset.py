@@ -4,8 +4,8 @@
 Usage:
     python -m benchmarks.searchqa.dataset --out-dir benchmarks/searchqa/data [--limit 50]
 
-If HuggingFace ``datasets`` is installed, loads from the ``search_qa`` dataset.
-Otherwise, generates a small built-in sample for testing.
+If HuggingFace ``datasets`` is installed, loads from ``kyunghyuncho/search_qa``.
+Otherwise, falls back to a small built-in sample for testing.
 """
 from __future__ import annotations
 
@@ -137,16 +137,23 @@ SAMPLE_DATA: list[dict] = [
     },
 ]
 
+_HF_SPLIT_MAP = {
+    "train": "train",
+    "val": "validation",
+    "test": "test",
+}
+
 
 def load_from_huggingface(split: str = "train", limit: int | None = None) -> list[dict]:
-    """Load SearchQA from HuggingFace datasets library."""
+    """Load SearchQA from HuggingFace ``kyunghyuncho/search_qa`` (raw_jeopardy config)."""
     try:
         from datasets import load_dataset  # type: ignore[import-untyped]
     except ImportError:
         return []
 
+    hf_split = _HF_SPLIT_MAP.get(split, split)
     try:
-        ds = load_dataset("search_qa", "raw_jeopardy", split=split, trust_remote_code=True)
+        ds = load_dataset("kyunghyuncho/search_qa", "raw_jeopardy", split=hf_split, trust_remote_code=True)
     except Exception:
         return []
 
@@ -156,14 +163,12 @@ def load_from_huggingface(split: str = "train", limit: int | None = None) -> lis
             break
         snippets = row.get("search_results", [])
         if isinstance(snippets, list):
-            context = "\n\n".join(
-                f"[{j + 1}] {s}" for j, s in enumerate(snippets) if isinstance(s, str)
-            )
+            context = " [DOC] ".join(s for s in snippets if isinstance(s, str))
         else:
             context = str(snippets)
         answer = row.get("answer", "")
         items.append({
-            "id": f"searchqa-hf-{i:05d}",
+            "id": f"searchqa-{split}-{i:05d}",
             "question": row.get("question", ""),
             "context": context,
             "answers": [answer] if isinstance(answer, str) else answer,
@@ -171,9 +176,9 @@ def load_from_huggingface(split: str = "train", limit: int | None = None) -> lis
     return items
 
 
-def load_dataset_items(limit: int | None = None) -> list[dict]:
+def load_dataset_items(split: str = "train", limit: int | None = None) -> list[dict]:
     """Load dataset — tries HuggingFace first, falls back to built-in sample."""
-    items = load_from_huggingface(limit=limit)
+    items = load_from_huggingface(split=split, limit=limit)
     if items:
         return items
     data = SAMPLE_DATA
@@ -196,9 +201,13 @@ def main() -> None:
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
-    items = load_dataset_items(limit=args.limit)
-    export_jsonl(items, out_dir / "searchqa.jsonl")
-    print(f"Exported {len(items)} items to {out_dir / 'searchqa.jsonl'}")
+    total = 0
+    for split in ("train", "val", "test"):
+        items = load_dataset_items(split=split, limit=args.limit)
+        export_jsonl(items, out_dir / f"{split}.jsonl")
+        total += len(items)
+        print(f"Exported {len(items)} items to {out_dir / f'{split}.jsonl'}")
+    print(f"Total: {total} items across 3 splits")
 
 
 if __name__ == "__main__":

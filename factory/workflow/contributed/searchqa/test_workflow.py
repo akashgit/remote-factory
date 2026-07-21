@@ -5,7 +5,7 @@ from __future__ import annotations
 from factory.models import ProjectState
 from factory.workflow.contributed.searchqa import meta, workflow
 from factory.workflow.definitions import register_all
-from factory.workflow.primitives import AgentNode, AgentRole, FnNode
+from factory.workflow.primitives import AgentNode, AgentRole
 
 
 class TestSearchqaWorkflow:
@@ -16,36 +16,24 @@ class TestSearchqaWorkflow:
         assert wf.name == "searchqa"
 
     def test_node_count(self) -> None:
-        """Workflow has exactly 3 nodes: study, builder, auto_merge."""
+        """Workflow has exactly 1 node: builder."""
         wf = workflow()
-        assert len(wf.nodes) == 3
-        assert set(wf.nodes.keys()) == {"study", "builder", "auto_merge"}
+        assert len(wf.nodes) == 1
+        assert set(wf.nodes.keys()) == {"builder"}
 
     def test_start_node(self) -> None:
         wf = workflow()
-        assert wf.start_node == "study"
+        assert wf.start_node == "builder"
 
     def test_graph_validates(self) -> None:
         wf = workflow()
         issues = wf.validate_graph()
         assert issues == [], f"Workflow has validation issues: {issues}"
 
-    def test_edge_count(self) -> None:
-        """2 edges: study→builder, builder→auto_merge."""
+    def test_no_edges(self) -> None:
+        """Single node — no edges needed."""
         wf = workflow()
-        assert len(wf.edges) == 2
-
-    def test_edges_correct(self) -> None:
-        wf = workflow()
-        sources_targets = [(e.source, e.target) for e in wf.edges]
-        assert ("study", "builder") in sources_targets
-        assert ("builder", "auto_merge") in sources_targets
-
-    def test_study_node_is_fn(self) -> None:
-        wf = workflow()
-        node = wf.nodes["study"]
-        assert isinstance(node, FnNode)
-        assert "task-instruction" in node.command
+        assert len(wf.edges) == 0
 
     def test_builder_node(self) -> None:
         wf = workflow()
@@ -53,7 +41,7 @@ class TestSearchqaWorkflow:
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
         assert node.model == "sonnet"
-        assert node.timeout == 300
+        assert node.timeout == 120
 
     def test_builder_has_seed_prompt(self) -> None:
         wf = workflow()
@@ -62,12 +50,6 @@ class TestSearchqaWorkflow:
         assert "Question Answering Skill" in node.prompt_template
         assert "No learned rules yet" in node.prompt_template
         assert "<answer>" in node.prompt_template
-
-    def test_auto_merge_node(self) -> None:
-        wf = workflow()
-        node = wf.nodes["auto_merge"]
-        assert isinstance(node, FnNode)
-        assert "git update-ref" in node.command
 
 
 class TestSearchqaTerminal:

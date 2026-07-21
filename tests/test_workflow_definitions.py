@@ -401,7 +401,7 @@ class TestDocFreshnessGate:
 # ── Builder → QA reachability audit ────────────────────────────
 
 
-QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "swebench", "terminalbench"}  # Benchmark workflows use external verifiers
+QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "searchqa", "swebench", "terminalbench"}  # Benchmark workflows use external verifiers
 
 
 def _workflows_with_builder() -> list[str]:
