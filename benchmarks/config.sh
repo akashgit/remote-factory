@@ -4,7 +4,7 @@
 # benchmark_all_names, and benchmark_instance_id.
 
 benchmark_all_names() {
-    echo "swebench featurebench terminalbench programbench"
+    echo "swebench featurebench terminalbench programbench searchqa"
 }
 
 benchmark_config() {
@@ -54,9 +54,16 @@ benchmark_config() {
             BENCH_AGENT_IMPORT_FLAG="--agent-import-path"
             BENCH_FILTER_STYLE="glob"
             ;;
+        searchqa)
+            BENCH_DATASET='searchqa'
+            BENCH_AGENT_CLASS='factory_harbor_agent:SearchQAFactoryCeo'
+            BENCH_AGENT_IMPORT_FLAG='--agent-import-path'
+            BENCH_FILTER_STYLE='exact'
+            BENCH_POST_EVAL_CMD=''
+            ;;
         *)
             echo "ERROR: Unknown benchmark '${name}'"
-            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench"
+            echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, searchqa"
             return 1
             ;;
     esac
