@@ -4551,10 +4551,36 @@ def plan_workflow() -> Workflow:
 
 
 def register_all() -> dict[str, Workflow]:
-    """Build and return all workflow definitions.
+    """Build and return all workflow definitions."""
+    from factory.workflow.deep_qa import workflow as deep_qa_workflow
+    from factory.workflow.contributed.legacybench import workflow as legacybench_workflow
+    from factory.workflow.contributed.swebench import workflow as swebench_workflow
+    from factory.workflow.contributed.featurebench import workflow as featurebench_workflow
+    from factory.workflow.contributed.programbench import workflow as programbench_workflow
+    from factory.workflow.contributed.searchqa import workflow as searchqa_workflow
+    from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
 
-    Uses _get_builtin_registry() internally — each callable is invoked
-    to construct the Workflow object.  Kept for backward compatibility.
-    """
-    registry = _get_builtin_registry()
-    return {name: fn() for name, fn in registry.items()}
+    return {
+        "build": build_workflow(),
+        "design": design_workflow(),
+        "discover": discover_workflow(),
+        "review": review_workflow(),
+        "improve": improve_workflow(),
+        "qa": qa_workflow(),
+        "deep-qa": deep_qa_workflow(),
+        "legacybench": legacybench_workflow(),
+        "featurebench": featurebench_workflow(),
+        "programbench": programbench_workflow(),
+        "searchqa": searchqa_workflow(),
+        "swebench": swebench_workflow(),
+        "terminalbench": terminalbench_workflow(),
+        "research": research_workflow(),
+        "meta": meta_workflow(),
+        "refine": refine_workflow(),
+        "create": create_workflow(),
+        "skill-refine": skill_refine_workflow(),
+        "doc-generate": doc_generate_workflow(),
+        "doc-update": doc_update_workflow(),
+        "spec-generate": spec_generate_workflow(),
+        "spec-update": spec_update_workflow(),
+    }
