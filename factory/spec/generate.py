@@ -1,9 +1,10 @@
-"""Spec generation orchestration — collect source files, batch for Opus, run pipeline."""
+"""Spec generation orchestration — graphify-first pipeline with batched fallback."""
 
 from __future__ import annotations
 
 import os
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 
 import structlog
@@ -60,6 +61,7 @@ SOURCE_EXTENSIONS = frozenset(
 
 BATCH_TOKEN_LIMIT = 80_000
 APPROX_CHARS_PER_TOKEN = 4
+GRAPH_SUMMARY_CHAR_LIMIT = 80_000
 
 
 def _get_gitignored(paths: list[Path], project_path: Path) -> set[Path]:
@@ -173,6 +175,77 @@ def group_into_batches(
     return batches
 
 
+def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_LIMIT) -> str:
+    """Build a compact text summary of a code knowledge graph for annotator consumption."""
+    nodes = graph_data.get("nodes", [])
+    edges = graph_data.get("edges", graph_data.get("links", []))
+
+    lines: list[str] = []
+    lines.append(f"# Code Knowledge Graph Summary ({len(nodes)} nodes, {len(edges)} edges)\n")
+
+    by_community: dict[str, list[dict]] = defaultdict(list)
+    for node in nodes:
+        community = node.get("community", node.get("group", "ungrouped"))
+        by_community[str(community)].append(node)
+
+    by_type: dict[str, int] = defaultdict(int)
+    for node in nodes:
+        by_type[node.get("type", "unknown")] += 1
+
+    lines.append("## Entity Counts by Type\n")
+    for ntype, count in sorted(by_type.items(), key=lambda x: -x[1]):
+        lines.append(f"- {ntype}: {count}")
+    lines.append("")
+
+    edge_types: dict[str, int] = defaultdict(int)
+    for edge in edges:
+        edge_types[edge.get("type", edge.get("relationship", "unknown"))] += 1
+
+    lines.append("## Relationship Counts\n")
+    for etype, count in sorted(edge_types.items(), key=lambda x: -x[1]):
+        lines.append(f"- {etype}: {count}")
+    lines.append("")
+
+    lines.append("## Communities / Subsystems\n")
+    for community_id in sorted(by_community):
+        members = by_community[community_id]
+        label = f"Community {community_id}" if community_id != "ungrouped" else "Ungrouped"
+        lines.append(f"### {label} ({len(members)} entities)\n")
+
+        members_by_type: dict[str, list[str]] = defaultdict(list)
+        for m in members:
+            mtype = m.get("type", "unknown")
+            name = m.get("name", m.get("id", "?"))
+            members_by_type[mtype].append(name)
+
+        for mtype in sorted(members_by_type):
+            names = sorted(members_by_type[mtype])
+            lines.append(f"**{mtype}:** {', '.join(names)}")
+        lines.append("")
+
+        if len("\n".join(lines)) > char_limit:
+            lines.append("(truncated — graph summary exceeds size limit)")
+            break
+
+    lines.append("## Key Relationships\n")
+    remaining = char_limit - len("\n".join(lines))
+    rel_lines: list[str] = []
+    for edge in edges:
+        src = edge.get("source", edge.get("from", "?"))
+        tgt = edge.get("target", edge.get("to", "?"))
+        rel = edge.get("type", edge.get("relationship", "?"))
+        line = f"- {src} --[{rel}]--> {tgt}"
+        rel_lines.append(line)
+        if len("\n".join(rel_lines)) > remaining - 100:
+            rel_lines.append(f"(... {len(edges) - len(rel_lines)} more relationships)")
+            break
+
+    lines.extend(rel_lines)
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 async def _extract_batch(
     batch_index: int,
     batch_files: list[Path],
@@ -217,44 +290,12 @@ async def _extract_batch(
     return result
 
 
-async def generate_spec(project_path: Path) -> Path:
-    """Generate a repo spec for a project.
-
-    Runs the extraction → annotation pipeline:
-    1. Collect source files and batch them
-    2. Run Opus extraction agents in parallel (one per batch) to produce spec_raw.md
-    3. Run Researcher annotation agent to produce SPEC.md
-
-    Returns the path to the generated SPEC.md.
-    """
-    import asyncio
-
-    from factory.agents.runner import invoke_agent
-
-    factory_dir = project_path / ".factory"
-    factory_dir.mkdir(parents=True, exist_ok=True)
-
-    source_files = collect_source_files(project_path)
-    if not source_files:
-        raise ValueError(f"No source files found in {project_path}")
-
-    batches = group_into_batches(source_files, project_path)
-    log.info("spec.generate", files=len(source_files), batches=len(batches))
-
-    tasks = [
-        _extract_batch(i, batch, project_path, len(batches)) for i, batch in enumerate(batches)
-    ]
-    results = await asyncio.gather(*tasks)
-    spec_raw_content = "\n\n".join(r for r in results if r)
-
-    spec_raw = factory_dir / "spec_raw.md"
-    spec_raw.write_text(spec_raw_content)
-    log.info("spec.extract.complete", batches=len(batches), raw_size=len(spec_raw_content))
-
-    annotate_task = (
-        f"Annotate and enrich the raw spec at {spec_raw} for the project at {project_path}.\n\n"
-        f"Read {spec_raw} and key source files.\n"
-        f"Produce a HIGH-LEVEL behavioral overview spec with RFC 2119 normative language.\n\n"
+def _build_annotate_prompt(source_context: str, project_path: Path) -> str:
+    """Build the annotator agent prompt for producing SPEC.md."""
+    return (
+        f"Generate a HIGH-LEVEL behavioral overview spec for the project at {project_path}.\n\n"
+        f"## Source Context\n\n{source_context}\n\n"
+        f"Produce a spec with RFC 2119 normative language.\n\n"
         f"## Format\n\n"
         f"The spec MUST be structured as a two-tier overview document:\n"
         f"- **Tier 1 (in SPEC.md):** Problem statement, goals, non-goals, design philosophy,\n"
@@ -286,6 +327,34 @@ async def generate_spec(project_path: Path) -> Path:
         f"Write the annotated repo spec to {project_path / 'SPEC.md'}."
     )
 
+
+async def _generate_via_batched_pipeline(project_path: Path, factory_dir: Path) -> Path:
+    """Fallback: batched Opus extraction → annotation pipeline."""
+    import asyncio
+
+    from factory.agents.runner import invoke_agent
+
+    source_files = collect_source_files(project_path)
+    if not source_files:
+        raise ValueError(f"No source files found in {project_path}")
+
+    batches = group_into_batches(source_files, project_path)
+    log.info("spec.generate.batched", files=len(source_files), batches=len(batches))
+
+    tasks = [
+        _extract_batch(i, batch, project_path, len(batches)) for i, batch in enumerate(batches)
+    ]
+    results = await asyncio.gather(*tasks)
+    spec_raw_content = "\n\n".join(r for r in results if r)
+
+    spec_raw = factory_dir / "spec_raw.md"
+    spec_raw.write_text(spec_raw_content)
+    log.info("spec.extract.complete", batches=len(batches), raw_size=len(spec_raw_content))
+
+    annotate_task = _build_annotate_prompt(
+        f"Read the raw extraction at {spec_raw} and key source files.", project_path
+    )
+
     result, code = await invoke_agent(
         "researcher",
         annotate_task,
@@ -302,5 +371,67 @@ async def generate_spec(project_path: Path) -> Path:
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"
         )
 
-    log.info("spec.generate.complete", output=str(repo_spec))
+    return repo_spec
+
+
+async def generate_spec(project_path: Path) -> Path:
+    """Generate a repo spec for a project.
+
+    Prefers graphify when available:
+    1. Run extract_graph() to produce graph.json
+    2. Build a compact graph summary
+    3. Single annotator agent reads summary → produces SPEC.md
+
+    Falls back to the batched Opus extraction pipeline if graphify is unavailable.
+
+    Returns the path to the generated SPEC.md.
+    """
+    from factory.agents.runner import invoke_agent
+    from factory.graph import extract_graph, load_graph_data
+
+    factory_dir = project_path / ".factory"
+    factory_dir.mkdir(parents=True, exist_ok=True)
+
+    graph_path = extract_graph(project_path)
+    if graph_path is None:
+        log.info("spec.generate.fallback", reason="graphify unavailable, using batched pipeline")
+        result_path = await _generate_via_batched_pipeline(project_path, factory_dir)
+        log.info("spec.generate.complete", output=str(result_path), method="batched")
+        return result_path
+
+    graph_data = load_graph_data(project_path)
+    if graph_data is None:
+        log.warning(
+            "spec.generate.fallback", reason="graph.json unreadable, using batched pipeline"
+        )
+        result_path = await _generate_via_batched_pipeline(project_path, factory_dir)
+        log.info("spec.generate.complete", output=str(result_path), method="batched")
+        return result_path
+
+    summary = build_graph_summary(graph_data)
+    log.info("spec.generate.graph", summary_len=len(summary))
+
+    annotate_task = _build_annotate_prompt(
+        f"The following is a structural summary extracted from the code knowledge graph:\n\n"
+        f"{summary}",
+        project_path,
+    )
+
+    result, code = await invoke_agent(
+        "researcher",
+        annotate_task,
+        project_path,
+        timeout=600.0,
+        dangerously_skip_permissions=True,
+    )
+    if code != 0:
+        raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
+
+    repo_spec = project_path / "SPEC.md"
+    if not repo_spec.exists():
+        raise FileNotFoundError(
+            f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"
+        )
+
+    log.info("spec.generate.complete", output=str(repo_spec), method="graph")
     return repo_spec

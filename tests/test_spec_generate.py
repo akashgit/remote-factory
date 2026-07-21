@@ -1,4 +1,4 @@
-"""Tests for factory.spec — source file collection, batching, and W₉ workflow."""
+"""Tests for factory.spec — source file collection, batching, graph summary, and generation."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from factory.spec.generate import (
     BATCH_TOKEN_LIMIT,
     _get_gitignored,
     _is_excluded_dir,
+    build_graph_summary,
     collect_source_files,
     generate_spec,
     group_into_batches,
@@ -154,6 +155,94 @@ class TestGroupIntoBatches:
         assert batches[0] == [Path("small1.py")]
         assert batches[1] == [Path("huge.py")]
         assert batches[2] == [Path("small2.py")]
+
+
+# ── Graph summary ───────────────────────────────────────────────
+
+
+class TestBuildGraphSummary:
+    def test_empty_graph(self) -> None:
+        summary = build_graph_summary({"nodes": [], "edges": []})
+        assert "0 nodes" in summary
+        assert "0 edges" in summary
+
+    def test_includes_entity_counts(self) -> None:
+        graph = {
+            "nodes": [
+                {"name": "Foo", "type": "class"},
+                {"name": "bar", "type": "function"},
+                {"name": "baz", "type": "function"},
+            ],
+            "edges": [],
+        }
+        summary = build_graph_summary(graph)
+        assert "function: 2" in summary
+        assert "class: 1" in summary
+
+    def test_includes_relationship_counts(self) -> None:
+        graph = {
+            "nodes": [{"name": "A"}, {"name": "B"}],
+            "edges": [
+                {"source": "A", "target": "B", "type": "imports"},
+                {"source": "B", "target": "A", "type": "imports"},
+            ],
+        }
+        summary = build_graph_summary(graph)
+        assert "imports: 2" in summary
+
+    def test_groups_by_community(self) -> None:
+        graph = {
+            "nodes": [
+                {"name": "Foo", "type": "class", "community": "core"},
+                {"name": "Bar", "type": "class", "community": "utils"},
+            ],
+            "edges": [],
+        }
+        summary = build_graph_summary(graph)
+        assert "Community core" in summary
+        assert "Community utils" in summary
+
+    def test_ungrouped_nodes(self) -> None:
+        graph = {
+            "nodes": [{"name": "Foo", "type": "class"}],
+            "edges": [],
+        }
+        summary = build_graph_summary(graph)
+        assert "Ungrouped" in summary
+
+    def test_includes_relationships(self) -> None:
+        graph = {
+            "nodes": [{"name": "A"}, {"name": "B"}],
+            "edges": [{"source": "A", "target": "B", "type": "calls"}],
+        }
+        summary = build_graph_summary(graph)
+        assert "A --[calls]--> B" in summary
+
+    def test_uses_links_key_fallback(self) -> None:
+        graph = {
+            "nodes": [{"name": "X"}],
+            "links": [{"source": "X", "target": "Y", "type": "imports"}],
+        }
+        summary = build_graph_summary(graph)
+        assert "1 edges" in summary
+        assert "X --[imports]--> Y" in summary
+
+    def test_uses_group_key_fallback(self) -> None:
+        graph = {
+            "nodes": [{"name": "Foo", "type": "class", "group": "infra"}],
+            "edges": [],
+        }
+        summary = build_graph_summary(graph)
+        assert "Community infra" in summary
+
+    def test_truncation_at_char_limit(self) -> None:
+        nodes = [
+            {"name": f"Entity{i}", "type": "class", "community": f"comm{i}"} for i in range(500)
+        ]
+        graph = {"nodes": nodes, "edges": []}
+        summary = build_graph_summary(graph, char_limit=2000)
+        assert len(summary) < 3000
+        assert "truncated" in summary
 
 
 # ── W₉ Spec Generate workflow ───────────────────────────────────
@@ -311,34 +400,159 @@ class TestCollectSourceFilesWithGit:
         assert files == [Path("keep.py")]
 
 
-# ── generate_spec ────────────────────────────────────────────────
+# ── generate_spec (graph path) ──────────────────────────────────
 
 
-class TestGenerateSpec:
-    async def test_success(self, tmp_path: Path) -> None:
+class TestGenerateSpecGraph:
+    async def test_graph_path_success(self, tmp_path: Path) -> None:
         (tmp_path / "main.py").write_text("print('hello')")
-
         repo_spec = tmp_path / "SPEC.md"
-        call_count = 0
+        graph_data = {
+            "nodes": [{"name": "main", "type": "module"}],
+            "edges": [],
+        }
 
         async def mock_invoke(role, task, project, **kwargs):
-            nonlocal call_count
-            call_count += 1
+            repo_spec.write_text("# Repo spec from graph")
+            return ("ok", 0)
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
+            result = await generate_spec(tmp_path)
+
+        assert result == repo_spec
+        assert "graph" in repo_spec.read_text().lower() or repo_spec.exists()
+
+    async def test_graph_path_passes_summary_to_agent(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+        repo_spec = tmp_path / "SPEC.md"
+        graph_data = {
+            "nodes": [
+                {"name": "Engine", "type": "class", "community": "core"},
+                {"name": "run", "type": "function", "community": "core"},
+            ],
+            "edges": [{"source": "Engine", "target": "run", "type": "calls"}],
+        }
+        captured_tasks: list[str] = []
+
+        async def mock_invoke(role, task, project, **kwargs):
+            captured_tasks.append(task)
+            repo_spec.write_text("# SPEC")
+            return ("ok", 0)
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
+            await generate_spec(tmp_path)
+
+        assert len(captured_tasks) == 1
+        assert "Code Knowledge Graph Summary" in captured_tasks[0]
+        assert "Engine" in captured_tasks[0]
+
+    async def test_graph_path_no_batch_agents(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+        repo_spec = tmp_path / "SPEC.md"
+        graph_data = {"nodes": [{"name": "main", "type": "module"}], "edges": []}
+        invoke_calls: list[dict] = []
+
+        async def mock_invoke(role, task, project, **kwargs):
+            invoke_calls.append({"role": role, "model": kwargs.get("model")})
+            repo_spec.write_text("# SPEC")
+            return ("ok", 0)
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
+            await generate_spec(tmp_path)
+
+        assert len(invoke_calls) == 1
+        assert invoke_calls[0]["model"] is None
+
+    async def test_graph_annotation_failure_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+        graph_data = {"nodes": [], "edges": []}
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch(
+                "factory.agents.runner.invoke_agent",
+                new_callable=lambda: AsyncMock(return_value=("error", 1)),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="Spec annotation failed"):
+                await generate_spec(tmp_path)
+
+    async def test_graph_missing_spec_raises(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("x = 1")
+        graph_data = {"nodes": [], "edges": []}
+
+        async def mock_invoke(role, task, project, **kwargs):
+            return ("ok", 0)
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
+            with pytest.raises(FileNotFoundError, match="SPEC"):
+                await generate_spec(tmp_path)
+
+
+# ── generate_spec (batched fallback) ────────────────────────────
+
+
+class TestGenerateSpecFallback:
+    async def test_fallback_when_extract_graph_returns_none(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("print('hello')")
+        repo_spec = tmp_path / "SPEC.md"
+
+        async def mock_invoke(role, task, project, **kwargs):
             if kwargs.get("model") == "opus":
                 return ("# Extracted spec", 0)
             repo_spec.write_text("# Repo spec")
             return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+        with (
+            patch("factory.graph.extract_graph", return_value=None),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
             result = await generate_spec(tmp_path)
 
         assert result == repo_spec
-        assert repo_spec.read_text() == "# Repo spec"
         spec_raw = tmp_path / ".factory" / "spec_raw.md"
         assert spec_raw.exists()
         assert spec_raw.read_text() == "# Extracted spec"
 
-    async def test_parallel_batches_concatenated(self, tmp_path: Path) -> None:
+    async def test_fallback_when_load_graph_returns_none(self, tmp_path: Path) -> None:
+        (tmp_path / "main.py").write_text("print('hello')")
+        repo_spec = tmp_path / "SPEC.md"
+
+        async def mock_invoke(role, task, project, **kwargs):
+            if kwargs.get("model") == "opus":
+                return ("# Extracted spec", 0)
+            repo_spec.write_text("# Repo spec")
+            return ("ok", 0)
+
+        with (
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=None),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
+            result = await generate_spec(tmp_path)
+
+        assert result == repo_spec
+        spec_raw = tmp_path / ".factory" / "spec_raw.md"
+        assert spec_raw.exists()
+
+    async def test_fallback_parallel_batches_concatenated(self, tmp_path: Path) -> None:
         char_limit = BATCH_TOKEN_LIMIT * APPROX_CHARS_PER_TOKEN
         (tmp_path / "a.py").write_text("x" * (char_limit // 2 + 1))
         (tmp_path / "b.py").write_text("y" * (char_limit // 2 + 1))
@@ -355,7 +569,10 @@ class TestGenerateSpec:
             repo_spec.write_text("# Final spec")
             return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+        with (
+            patch("factory.graph.extract_graph", return_value=None),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
             await generate_spec(tmp_path)
 
         assert len(extraction_calls) == 2
@@ -365,15 +582,19 @@ class TestGenerateSpec:
         assert "# Section B" in content
 
     async def test_no_source_files_raises(self, tmp_path: Path) -> None:
-        with pytest.raises(ValueError, match="No source files"):
-            await generate_spec(tmp_path)
+        with patch("factory.graph.extract_graph", return_value=None):
+            with pytest.raises(ValueError, match="No source files"):
+                await generate_spec(tmp_path)
 
     async def test_extraction_failure_raises(self, tmp_path: Path) -> None:
         (tmp_path / "main.py").write_text("x = 1")
 
-        with patch(
-            "factory.agents.runner.invoke_agent",
-            new_callable=lambda: AsyncMock(return_value=("error", 1)),
+        with (
+            patch("factory.graph.extract_graph", return_value=None),
+            patch(
+                "factory.agents.runner.invoke_agent",
+                new_callable=lambda: AsyncMock(return_value=("error", 1)),
+            ),
         ):
             with pytest.raises(RuntimeError, match="Spec extraction failed"):
                 await generate_spec(tmp_path)
@@ -386,7 +607,10 @@ class TestGenerateSpec:
                 return ("# Raw", 0)
             return ("error", 1)
 
-        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+        with (
+            patch("factory.graph.extract_graph", return_value=None),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
             with pytest.raises(RuntimeError, match="Spec annotation failed"):
                 await generate_spec(tmp_path)
 
@@ -396,6 +620,9 @@ class TestGenerateSpec:
         async def mock_invoke(role, task, project, **kwargs):
             return ("ok", 0)
 
-        with patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke):
+        with (
+            patch("factory.graph.extract_graph", return_value=None),
+            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+        ):
             with pytest.raises(FileNotFoundError, match="SPEC"):
                 await generate_spec(tmp_path)
