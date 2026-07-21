@@ -1,4 +1,4 @@
-"""Spec generation orchestration — graphify-first pipeline with batched fallback."""
+"""Spec generation orchestration — graphify extraction + single annotator agent."""
 
 from __future__ import annotations
 
@@ -287,50 +287,6 @@ def build_graph_summary(graph_data: dict, char_limit: int = GRAPH_SUMMARY_CHAR_L
     return "\n".join(lines)
 
 
-async def _extract_batch(
-    batch_index: int,
-    batch_files: list[Path],
-    project_path: Path,
-    total_batches: int,
-) -> str:
-    """Extract spec content from a single batch of source files."""
-    from factory.agents.runner import invoke_agent
-
-    file_listing = "\n".join(f"- {f}" for f in batch_files)
-    task = (
-        f"Extract a behavioral module map from batch {batch_index + 1}/{total_batches} "
-        f"of the project at {project_path}.\n\n"
-        f"## Files in This Batch ({len(batch_files)} files)\n\n"
-        f"{file_listing}\n\n"
-        f"Read ONLY the files listed above and extract their spec content.\n"
-        f"Extract domain entities, state machines, error types, and module relationships.\n"
-        f"Output the spec section as text — do NOT write any files."
-    )
-
-    log.info(
-        "spec.extract_batch.start",
-        batch=batch_index + 1,
-        total=total_batches,
-        files=len(batch_files),
-    )
-    result, code = await invoke_agent(
-        "researcher",
-        task,
-        project_path,
-        timeout=600.0,
-        dangerously_skip_permissions=True,
-        model="opus",
-    )
-    if code != 0:
-        raise RuntimeError(
-            f"Spec extraction failed for batch {batch_index + 1}/{total_batches} "
-            f"(exit {code}): {result[:500]}"
-        )
-
-    log.info("spec.extract_batch.done", batch=batch_index + 1, total=total_batches)
-    return result
-
-
 def _build_annotate_prompt(source_context: str, project_path: Path) -> str:
     """Build the annotator agent prompt for producing SPEC.md."""
     return (
@@ -369,85 +325,34 @@ def _build_annotate_prompt(source_context: str, project_path: Path) -> str:
     )
 
 
-async def _generate_via_batched_pipeline(project_path: Path, factory_dir: Path) -> Path:
-    """Fallback: batched Opus extraction → annotation pipeline."""
-    import asyncio
-
-    from factory.agents.runner import invoke_agent
-
-    source_files = collect_source_files(project_path)
-    if not source_files:
-        raise ValueError(f"No source files found in {project_path}")
-
-    batches = group_into_batches(source_files, project_path)
-    log.info("spec.generate.batched", files=len(source_files), batches=len(batches))
-
-    tasks = [
-        _extract_batch(i, batch, project_path, len(batches)) for i, batch in enumerate(batches)
-    ]
-    results = await asyncio.gather(*tasks)
-    spec_raw_content = "\n\n".join(r for r in results if r)
-
-    spec_raw = factory_dir / "spec_raw.md"
-    spec_raw.write_text(spec_raw_content)
-    log.info("spec.extract.complete", batches=len(batches), raw_size=len(spec_raw_content))
-
-    annotate_task = _build_annotate_prompt(
-        f"Read the raw extraction at {spec_raw} and key source files.", project_path
-    )
-
-    result, code = await invoke_agent(
-        "researcher",
-        annotate_task,
-        project_path,
-        timeout=600.0,
-        dangerously_skip_permissions=True,
-    )
-    if code != 0:
-        raise RuntimeError(f"Spec annotation failed (exit {code}): {result[:500]}")
-
-    repo_spec = project_path / "SPEC.md"
-    if not repo_spec.exists():
-        raise FileNotFoundError(
-            f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"
-        )
-
-    return repo_spec
-
-
 async def generate_spec(project_path: Path) -> Path:
     """Generate a repo spec for a project.
 
-    Prefers graphify when available:
-    1. Run extract_graph() to produce graph.json
-    2. Build a compact graph summary
+    1. Run graphify extract → graph.json (local AST, no LLM cost)
+    2. Build a compact graph summary with qualified Python names
     3. Single annotator agent reads summary → produces SPEC.md
 
-    Falls back to the batched Opus extraction pipeline if graphify is unavailable.
-
     Returns the path to the generated SPEC.md.
+    Raises RuntimeError if graphify is not installed or extraction fails.
     """
     from factory.agents.runner import invoke_agent
-    from factory.graph import extract_graph, load_graph_data
+    from factory.graph import extract_graph, is_graphify_installed, load_graph_data
+
+    if not is_graphify_installed():
+        raise RuntimeError(
+            "graphify is required for spec generation. Install with: uv tool install graphifyy"
+        )
 
     factory_dir = project_path / ".factory"
     factory_dir.mkdir(parents=True, exist_ok=True)
 
     graph_path = extract_graph(project_path)
     if graph_path is None:
-        log.info("spec.generate.fallback", reason="graphify unavailable, using batched pipeline")
-        result_path = await _generate_via_batched_pipeline(project_path, factory_dir)
-        log.info("spec.generate.complete", output=str(result_path), method="batched")
-        return result_path
+        raise RuntimeError("graphify extraction failed — check logs for details")
 
     graph_data = load_graph_data(project_path)
     if graph_data is None:
-        log.warning(
-            "spec.generate.fallback", reason="graph.json unreadable, using batched pipeline"
-        )
-        result_path = await _generate_via_batched_pipeline(project_path, factory_dir)
-        log.info("spec.generate.complete", output=str(result_path), method="batched")
-        return result_path
+        raise RuntimeError("graph.json is unreadable after extraction")
 
     summary = build_graph_summary(graph_data)
     log.info("spec.generate.graph", summary_len=len(summary))
@@ -474,5 +379,5 @@ async def generate_spec(project_path: Path) -> Path:
             f"Annotation agent did not produce {repo_spec}. Agent output: {result[:500]}"
         )
 
-    log.info("spec.generate.complete", output=str(repo_spec), method="graph")
+    log.info("spec.generate.complete", output=str(repo_spec))
     return repo_spec
