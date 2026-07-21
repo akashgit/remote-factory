@@ -3,10 +3,15 @@ from __future__ import annotations
 
 import copy
 import difflib
+import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import yaml
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from factory.workflow.primitives import Workflow
 
 
 class SlotEdit(BaseModel):
@@ -115,6 +120,89 @@ def compute_prompt_change_magnitude(old: str, new: str) -> int:
     new_lines = new.splitlines(keepends=True)
     diff = difflib.unified_diff(old_lines, new_lines, n=0)
     return sum(1 for line in diff if line.startswith(("+", "-")) and not line.startswith(("+++", "---")))
+
+
+_EXPORTER_SUFFIX = re.compile(
+    r"(\nRead: [^\n]+)?(\nWrite output to: [^\n]+)?$"
+)
+
+
+def _strip_exporter_suffix(prompt: str) -> str:
+    """Remove trailing Read/Write lines appended by skill_export."""
+    return _EXPORTER_SUFFIX.sub("", prompt)
+
+
+def yaml_to_workflow(
+    yaml_path: str | Path,
+    workflow_name: str,
+    *,
+    workflow: Workflow | None = None,
+) -> Workflow:
+    """Convert an annotations YAML back into a Pydantic Workflow object.
+
+    Loads the original workflow definition, then overrides all slot values
+    (task_prompt_*, timeout_*, max_iterations_*, gate_prompt_*) with values from the YAML.
+
+    If *workflow* is provided, it is used as the base (deep-copied) instead of
+    looking up *workflow_name* in ``register_all()``.
+    """
+    from factory.workflow.primitives import AgentNode, GateNode
+
+    surface = load_yaml(yaml_path)
+
+    if workflow is not None:
+        wf = workflow.model_copy(deep=True)
+    else:
+        from factory.workflow.definitions import register_all
+
+        workflows = register_all()
+        wf = workflows.get(workflow_name)
+        if not wf:
+            raise ValueError(f"Unknown workflow: {workflow_name}")
+
+    for node_id, node_data in surface.items():
+        if not isinstance(node_data, dict):
+            continue
+        slots = node_data.get("slots", {})
+        pydantic_node = wf.nodes.get(node_id)
+        if not pydantic_node or not slots:
+            continue
+
+        updates: dict[str, object] = {}
+        for slot_name, slot_value in slots.items():
+            if slot_name.startswith("task_prompt_"):
+                updates["prompt_template"] = _strip_exporter_suffix(str(slot_value))
+            elif slot_name.startswith("timeout_"):
+                updates["timeout"] = int(slot_value)
+            elif slot_name.startswith("max_iterations_"):
+                if isinstance(pydantic_node, AgentNode):
+                    updates["max_iterations"] = int(slot_value)
+            elif slot_name.startswith("gate_prompt_"):
+                if isinstance(pydantic_node, GateNode):
+                    updates["gate_prompt"] = str(slot_value)
+
+        if updates:
+            wf.nodes[node_id] = pydantic_node.model_copy(update=updates)
+
+    return wf
+
+
+def workflow_to_yaml(wf: Workflow, output_path: str | Path) -> dict:
+    """Convert a Pydantic Workflow into annotations YAML.
+
+    Renders the workflow to SKILL.md via workflow_to_skill_md(), then splits
+    into clean markdown + annotations. Returns the annotations dict and writes
+    it to output_path.
+    """
+    from factory.workflow.skill_export import workflow_to_skill_md
+    from factory.workflow.splitter import annotations_to_yaml, split_skill
+
+    templatized = workflow_to_skill_md(wf)
+    _clean_md, annotations = split_skill(templatized)
+
+    yaml_text = annotations_to_yaml(annotations)
+    Path(output_path).write_text(yaml_text)
+    return annotations
 
 
 def format_prompt_slots_for_llm(surface: dict) -> str:
