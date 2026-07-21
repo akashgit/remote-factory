@@ -532,6 +532,9 @@ class TestRealWorkflowSkills:
 # ── QA phase enforcement ──────────────────────────────────────────
 
 
+QA_EXEMPT_WORKFLOWS = {"featurebench", "legacybench", "programbench", "searchqa", "swebench", "terminalbench"}
+
+
 def _workflows_with_builder() -> list[str]:
     """Return names of workflows containing a Builder AgentNode.
 
