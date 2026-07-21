@@ -27,7 +27,7 @@ def load_graph(project_path: Path) -> nx.DiGraph | None:
         return None
 
     try:
-        G = nx.DiGraph()
+        G: nx.DiGraph = nx.DiGraph()
         for node in data.get("nodes", []):
             node_id = node.get("id", node.get("name", ""))
             if node_id:
