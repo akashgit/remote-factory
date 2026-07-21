@@ -4,6 +4,7 @@ import secrets
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Final
 
 import structlog
 
@@ -11,6 +12,15 @@ log = structlog.get_logger()
 
 # Telemetry files to preserve when cleaning up worktrees
 _TELEMETRY_FILES = ("trace_id.txt",)
+
+# .factory entries to seed into experiment worktrees so agents can read project
+# config without sharing mutable eval state (like last_eval.json) across branches.
+_EXPERIMENT_SEED_ENTRIES: Final[tuple[str, ...]] = (
+    "config.json",
+    "eval_profile.json",
+    "strategy",
+    "agents",
+)
 
 
 def create_worktree(
@@ -94,8 +104,10 @@ def create_experiment_worktree(
 ) -> tuple[Path, str]:
     """Create an isolated worktree for a parallel experiment branch.
 
-    All experiment worktrees branch from the same base commit so their
-    eval scores are comparable.
+    Each worktree gets its own `.factory/` directory (not a symlink) seeded
+    with read-only config from the project.  This ensures parallel branches
+    write independent `last_eval.json` files so the selection node can
+    compare genuinely separate scores.
 
     Returns (worktree_path, branch_name).
     """
@@ -115,13 +127,7 @@ def create_experiment_worktree(
         capture_output=True,
     )
 
-    wt_factory = wt_dir / ".factory"
-    if wt_factory.exists() or wt_factory.is_symlink():
-        if wt_factory.is_dir() and not wt_factory.is_symlink():
-            shutil.rmtree(wt_factory)
-        else:
-            wt_factory.unlink()
-    wt_factory.symlink_to(factory_dir)
+    _seed_experiment_factory(factory_dir, wt_dir / ".factory")
 
     log.info("experiment_worktree_created", branch=branch, path=str(wt_dir))
 
@@ -137,6 +143,32 @@ def create_experiment_worktree(
         pass
 
     return wt_dir, branch
+
+
+def _seed_experiment_factory(source: Path, dest: Path) -> None:
+    """Copy config entries from the project .factory/ into an experiment worktree.
+
+    Only copies entries listed in _EXPERIMENT_SEED_ENTRIES so that mutable
+    runtime state (results.tsv, experiments/, last_eval.json) stays independent.
+    """
+    if dest.is_symlink():
+        dest.unlink()
+    elif dest.is_dir():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    if not source.is_dir():
+        return
+
+    for entry_name in _EXPERIMENT_SEED_ENTRIES:
+        src = source / entry_name
+        dst = dest / entry_name
+        if not src.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
 
 
 def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
