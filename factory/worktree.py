@@ -1,5 +1,6 @@
 """Git worktree lifecycle management for experiment isolation."""
 
+import json
 import secrets
 import shutil
 import subprocess
@@ -113,6 +114,32 @@ def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
             log.info("telemetry_preserved", file=filename, src=str(src), dst=str(dst))
 
 
+def _has_active_sessions(worktree_path: Path) -> bool:
+    """Check if any Claude Code sessions are active in the worktree.
+
+    Returns True if active sessions found, False otherwise.
+    Fails open: returns False on any error so removal proceeds.
+    """
+    try:
+        result = subprocess.run(
+            ["claude", "agents", "--json", "--cwd", str(worktree_path)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+        sessions = json.loads(result.stdout)
+        if not isinstance(sessions, list):
+            return False
+        return any(
+            isinstance(s, dict) and s.get("state") in ("working", "blocked")
+            for s in sessions
+        )
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError, OSError):
+        return False
+
+
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
     """Remove a worktree and its branch. Safe to call on already-removed paths."""
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
@@ -128,6 +155,14 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
         pass
 
     if worktree_path.exists():
+        if _has_active_sessions(worktree_path):
+            log.warning(
+                "worktree_remove_skipped",
+                reason="active_sessions",
+                path=str(worktree_path),
+                branch=branch,
+            )
+            return
         _preserve_telemetry(worktree_path, project_path)
         shutil.rmtree(worktree_path)
 
