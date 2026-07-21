@@ -211,10 +211,35 @@ class ClaudeRunner:
         prompt_file.close()
         prompt_path = Path(prompt_file.name)
 
+        temp_files: list[Path] = [prompt_path]
+
+        # Write CEO prompt to .claude/CLAUDE.md so it survives session transitions
+        # (background via ←, resume, daemon restart). The system prompt file is
+        # authoritative when present; CLAUDE.md provides resilience when it's not.
+        cwd = Path(request.cwd)
+        claude_dir = cwd / ".claude"
+        claude_dir.mkdir(parents=True, exist_ok=True)
+
+        claude_md_path = claude_dir / "CLAUDE.md"
+        claude_md_path.write_text(request.prompt)
+        temp_files.append(claude_md_path)
+
+        # Write disallowedTools to settings.local.json so it survives session
+        # transitions (CLI flags are not carried over on background/resume).
+        settings_path = claude_dir / "settings.local.json"
+        settings: dict[str, object] = {}
+        if settings_path.exists():
+            try:
+                settings = json.loads(settings_path.read_text())
+            except (json.JSONDecodeError, ValueError):
+                settings = {}
+        settings["disallowedTools"] = ["Agent"]
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n")
+        temp_files.append(settings_path)
+
         cmd = [
             "claude",
             "--append-system-prompt-file", prompt_file.name,
-            "--disallowedTools", "Agent",
         ]
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
@@ -228,7 +253,7 @@ class ClaudeRunner:
         if request.model:
             env["FACTORY_MODEL"] = request.model
 
-        return cmd, env, [prompt_path]
+        return cmd, env, temp_files
 
     def interactive_run(self, request: AgentRunRequest) -> int:
         """Run an interactive Claude Code session as a subprocess."""
