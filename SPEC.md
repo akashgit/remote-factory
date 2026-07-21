@@ -1,1002 +1,984 @@
-# Behavioral Specification — Remote Factory
+# Remote Factory — Behavioral Specification
 
-> **Revision:** 2026-07-07 · **Status:** Normative · **Notation:** [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119)
-
----
-
-## §1 Problem Statement
-
-Software projects accumulate technical debt, miss best practices, and stagnate without continuous, disciplined improvement. Human-driven improvement cycles are expensive, inconsistent, and bandwidth-limited.
-
-The Remote Factory solves this by providing an **autonomous software improvement engine** — a four-layer system that detects a project's state, discovers evaluation dimensions, formulates improvement hypotheses, implements them via specialist agents, and verifies results through non-overridable quality gates. The system operates as a directed-graph workflow engine where each mode (build, improve, research, refine, etc.) is a typed DAG of agent nodes, function nodes, and gate nodes executed deterministically.
+> **Status:** Machine-generated · **RFC 2119 keywords** apply throughout
+> **Scope:** Python 3.11+ · Pydantic v2 strict models · async/await
+> **Entry point:** `factory.cli:main` → `factory` script (pyproject.toml)
 
 ---
 
-## §2 Goals and Non-Goals
+## 1  Problem Statement
 
-### §2.1 Goals
+Software projects require continuous quality improvement — fixing bugs, adding features, hardening tests, refactoring — but the cognitive overhead of detecting what to improve, prioritizing hypotheses, implementing changes, evaluating results, and archiving learnings is high. Manual iteration is slow, inconsistent, and scales poorly across multiple codebases.
 
-1. Autonomously improve any software project through hypothesis-driven experiment cycles
-2. Enforce non-overridable quality gates (precheck) that prevent regressions
-3. Support multiple CLI backends (Claude Code, Bob Shell, Codex, OpenCode) via a runner abstraction
-4. Evolve agent behavior over time through cross-project playbook learning (ACE)
-5. Provide 22 workflow modes as composable, validated DAGs with formal execution semantics
-6. Maintain full experiment history with append-only TSV and per-experiment artifact directories
-
-### §2.2 Non-Goals
-
-1. Direct API calls to LLM providers — the factory spawns CLI subprocesses exclusively
-2. Real-time collaboration or multi-user concurrency on a single project
-3. Replacement of human judgment on architectural decisions — the factory defers Tier 3 refinements
-
-### §2.3 Design Philosophy
-
-- **Hypothesis-driven**: Every change is an experiment with before/after eval, a verdict, and archival
-- **Non-overridable gates**: The precheck gate cannot be bypassed by the CEO agent; failure means mandatory revert
-- **Composable workflows**: Modes are DAGs built from 6 primitive node types, reusable via `subgraph()`
-- **Self-improvement**: ACE pipeline evolves per-agent playbooks from cross-project experiment data
-- **Fail-fast**: Consecutive agent failures (threshold=2) abort the cycle; corrupt state returns safe defaults
-- **Deterministic orchestration, non-deterministic execution**: Workflow graphs define the DAG structure; agents produce non-deterministic output within those constraints
-- **Five-tier configuration precedence**: CLI flag > env var > profile credential > config.toml > hardcoded default
-- **Append-only history**: Experiment records in `results.tsv` are append-only; no retroactive modification
+Remote Factory is a **domain-agnostic multi-agent software evolution harness**. It automates the scientific improvement loop — observe, hypothesize, experiment, evaluate, archive — by orchestrating specialist AI agents through typed workflow graphs. A CEO agent owns the full lifecycle; specialist agents (Researcher, Strategist, Builder, QA, Archivist, and others) perform scoped tasks under the CEO's coordination.
 
 ---
 
-## §3 Project Identity
+## 2  Goals
 
-| Field | Value |
+1. **Autonomous improvement cycles** — detect project state, select the correct workflow, run experiments, and keep or revert changes without human intervention.
+2. **Measurable quality** — every change MUST be evaluated by a composite scoring system (hygiene + growth + project-specific dimensions) before it can be kept.
+3. **Non-overridable safety gates** — the precheck system MUST enforce hard constraints that the CEO agent cannot override; a single failure causes mandatory revert.
+4. **Runner-agnostic execution** — the factory MUST support multiple CLI backends (Claude, Bob, Codex, OpenCode) via a pluggable runner abstraction.
+5. **Cross-project intelligence** — experiment outcomes MUST be aggregated across managed projects to inform strategy via ACE (Autonomous Continuous Evolution).
+6. **Self-improvement** — in meta mode, the factory MUST be capable of improving its own agents, prompts, and playbooks using the same experiment loop.
+
+## 3  Non-Goals
+
+- The factory MUST NOT call LLM APIs directly — it delegates to CLI backends.
+- The factory MUST NOT modify source code itself — it spawns Builder agents that make changes.
+- The factory MUST NOT serve as a general-purpose CI/CD system — it is an improvement loop, not a deployment pipeline.
+- The factory MUST NOT require a specific cloud provider or authentication method beyond what the selected runner supports.
+
+---
+
+## 4  Design Philosophy
+
+1. **Observe → Hypothesize → Experiment → Evaluate → Archive (OHEEA):** Every improvement cycle follows this scientific loop. The factory MUST NOT skip evaluation or archival.
+2. **FEEC Priority:** Hypotheses MUST be classified and ranked as Fix > Exploit > Explore > Combine. Lower-category hypotheses receive higher priority.
+3. **Keep/Revert Binary:** Every experiment ends with a keep or revert verdict. There is no partial acceptance. Errors are treated as reverts.
+4. **Layered Architecture:** Pure CLI tools (Layer 1) → Workflow graph engine (Layer 2) → CEO agent (Layer 3) → Specialist agents (Layer 4). Each layer has a clear contract boundary.
+5. **Graceful Degradation:** External integrations (GitHub, Obsidian, Langfuse, Telegram) MUST degrade silently — never crash the host process.
+
+---
+
+## 5  Project Identity
+
+| Property | Value |
 |---|---|
-| Name | remote-factory |
+| Name | `remote-factory` |
+| Version | `0.2.0` |
 | Language | Python 3.11+ |
-| Type | CLI tool + agent orchestration engine |
-| Package manager | uv |
-| Entry point | `factory.cli:main` (registered as `factory` script) |
-| Test runner | pytest (asyncio_mode=auto) |
-| Linter | ruff (100-char line length) |
-| Type checker | mypy |
-| Logging | structlog (stderr, module-level `log = structlog.get_logger()`) |
+| Build system | Hatchling |
+| Package manager | `uv` |
+| License | MIT |
+| Entry point | `factory = "factory.cli:main"` |
+| Core dependencies | pydantic, structlog, fastapi, uvicorn, mcp, pyyaml, filelock, networkx, langfuse |
 
 ---
 
-## §4 Technical Stack
+## 6  Architecture Overview
 
-| Layer | Technology | Purpose |
-|---|---|---|
-| CLI framework | argparse (`_GroupedHelpParser`) | 70+ subcommands in 9 groups |
-| Models | Pydantic v2 (strict, extra=forbid) | All domain types |
-| Async runtime | asyncio | Workflow executor, eval runner, subprocess management |
-| Concurrency | filelock (`FileLock`) | Safe concurrent experiment ID allocation and TSV append |
-| Graph validation | networkx | Reachability, cycle detection, read/write consistency |
-| Observability | Langfuse (optional, lazy init, graceful no-op) | Hierarchical span tracing with transcript ingestion |
-| Dashboard | FastAPI/Starlette + SSE | Real-time project monitoring on port 8420 |
-| Notifications | Telegram Bot API | Experiment digest delivery |
-| Knowledge store | Obsidian vault (optional) | Experiment notes, project dashboards, strategy archives |
-| Configuration | TOML (`~/.factory/config.toml`) | Five-tier precedence resolution |
+The factory is a four-layer system. Each layer has strict upward dependencies only — lower layers MUST NOT import from higher layers.
 
----
+### 6.1  Layer 1 — Python CLI (`factory/`)
 
-## §5 Architecture Overview
+Pure tools that make no decisions. The CLI is the sole entry point for all factory operations.
 
-The factory is a four-layer system:
+- `factory/cli/_main.py` builds the argument parser and dispatches to `cmd_*` handlers
+- 60+ subcommands organized into 8 groups: Entry Points, Project Setup, Experiment Lifecycle, Project Intelligence, Backlog & Refinement, Knowledge & Archive, Self-Evolution, Configuration
+- No subcommand MAY make autonomous decisions — each performs a deterministic operation
 
-### Layer 1: Python CLI (`factory/`)
+[[graph:community:CLI]]
 
-Pure tools that do not make decisions. Entry point `factory/cli.py` dispatches via a handler dict to `cmd_*` functions organized in CLI module files (`cli/ceo.py`, `cli/admin.py`, `cli/store.py`, etc.). The CLI layer MUST NOT contain agent decision logic.
+### 6.2  Layer 2 — Workflow Graph Engine (`factory/workflow/`)
 
-### Layer 2: Workflow Graph Engine (`factory/workflow/`)
+All factory modes are defined as directed graphs of typed nodes.
 
-All 22 factory modes are defined as directed graphs of typed nodes in `factory/workflow/definitions.py`. Each graph is a `Workflow` Pydantic model with `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, and `Study` primitives connected by `Edge` objects.
+- `primitives.py` defines the node types: `AgentNode`, `FnNode`, `GateNode`, `ForkNode`, `JoinNode`, `Study`
+- `definitions.py` constructs named `Workflow` instances with trigger conditions
+- `executor.py` walks the DAG deterministically — dispatching agents, evaluating gates, handling reloops
+- `skill_export.py` converts graphs to Claude Code `SKILL.md` files for the CEO agent
 
 The same graph definition produces two execution formats:
-- **Headless**: `WorkflowExecutor` (`factory/workflow/executor.py`) walks the DAG deterministically
-- **Interactive**: `skill_export.py` converts graphs to Claude Code `SKILL.md` files under `skills/workflow-*/`
+- **Headless:** `WorkflowExecutor` walks the DAG via `factory workflow run <name>`
+- **Interactive:** Exported SKILL.md files guide the CEO agent step-by-step
 
-### Layer 3: CEO Agent
+[[graph:community:WorkflowEngine]]
 
-The CEO prompt is split into core identity (`ceo.md`) and mode-specific playbooks (`skills/workflow-*/SKILL.md`). The CEO detects project state, reads the appropriate SKILL.md, and follows it as the mode-specific playbook.
+### 6.3  Layer 3 — CEO Agent
 
-### Layer 4: Specialist Agents (`factory/agents/`)
+The CEO prompt (`factory/agents/prompts/ceo.md`) plus mode-specific playbooks (`skills/workflow-*/SKILL.md`) form the orchestration layer. The CEO:
 
-12 specialist roles spawned by the CEO via `factory agent <role>`. Agent prompts use a two-tier lookup: project override (`.factory/agents/<role>.md`) then factory default (`factory/agents/prompts/<role>.md`). ACE-evolved playbooks are auto-injected.
+1. Detects project state via `factory detect`
+2. Selects the appropriate workflow mode
+3. Spawns specialist agents via `factory agent <role>`
+4. Manages the experiment lifecycle via `factory begin` / `factory finalize`
+5. Enforces Sacred Rules (mandatory QA, precheck gates, archival)
 
-### Module Dependency Graph
+[[graph:factory.ceo_completion]]
 
-```
-factory/models.py                    ← Foundation: all Pydantic types
-    ├── factory/state.py             ← 5-state project detection
-    ├── factory/store.py             ← Experiment lifecycle (FileLock)
-    ├── factory/eval/
-    │   ├── runner.py                ← Mandatory dimensions + project eval merge
-    │   ├── hygiene.py               ← 6 hygiene dimensions (multi-language)
-    │   ├── growth.py                ← 6 growth dimensions
-    │   ├── scorer.py                ← Weighted composite computation
-    │   ├── guards.py                ← Git/scope/surface/immutability checks
-    │   └── languages/{python,node,go,rust}.py  ← Per-language evaluators
-    ├── factory/precheck.py          ← 6 non-overridable checks
-    ├── factory/strategy.py          ← FEEC heuristic, plateau/stuck detection
-    ├── factory/workflow/
-    │   ├── primitives.py            ← 6 node types, Edge, Verdict, Workflow
-    │   ├── definitions.py           ← 22 workflow DAGs
-    │   ├── executor.py              ← Async DAG walker
-    │   ├── validation.py            ← Graph validation (networkx)
-    │   ├── skill_export.py          ← DAG → SKILL.md conversion
-    │   ├── guard.py                 ← Slot/annotation integrity guard
-    │   ├── splitter.py              ← Annotation extraction and slot resolution
-    │   ├── templates.py             ← {{slot::default}} template variables
-    │   └── registry.py              ← Workflow discovery (builtin/user/project)
-    ├── factory/agents/
-    │   ├── runner.py                ← Agent invocation + failure tracking
-    │   └── prompts/*.md             ← Default agent prompt files
-    ├── factory/ace/
-    │   ├── reflector.py             ← Cross-project bullet generation
-    │   ├── curator.py               ← 3-phase playbook pruning
-    │   ├── injector.py              ← Playbook → prompt injection
-    │   └── paths.py                 ← 2-tier path resolution
-    ├── factory/runners/
-    │   ├── protocol.py              ← Runner interface + RunnerMeta
-    │   ├── claude.py                ← Claude Code backend (default)
-    │   ├── bob.py                   ← Bob Shell backend + ceiling enforcement
-    │   ├── codex.py                 ← OpenAI Codex backend
-    │   ├── opencode.py              ← OpenCode backend
-    │   ├── _subprocess.py           ← Shared subprocess execution
-    │   ├── _stream.py               ← Stream processing, ANSI stripping, watchdog
-    │   ├── _background.py           ← claude --bg background dispatch
-    │   ├── _tmux_persist.py         ← Tmux window-based persistent sessions
-    │   └── usage.py                 ← Bob-specific usage logging + ceiling
-    ├── factory/research/
-    │   ├── runner.py                ← Research run execution + result parsing
-    │   └── leakage.py               ← Ground truth leakage detection
-    ├── factory/spec/
-    │   ├── generate.py              ← Batch extraction + annotation pipeline
-    │   └── ops.py                   ← Validate, scope, update, impact operations
-    ├── factory/ceo_completion.py     ← Completion guard + respawn logic
-    ├── factory/registry.py           ← Global project registry (~/.factory/registry.json)
-    ├── factory/user_config.py        ← Five-tier config resolution
-    ├── factory/telemetry.py          ← Langfuse tracing (optional)
-    ├── factory/skill_cache.py        ← SHA-256 checksum skill caching
-    ├── factory/worktree.py           ← Git worktree lifecycle
-    └── factory/clean_pr.py           ← PR artifact stripping
-```
+### 6.4  Layer 4 — Specialist Agents
+
+Eight specialist Claude Code subprocesses, each with a scoped prompt:
+
+| Role | Responsibility | Model | Timeout |
+|---|---|---|---|
+| `researcher` | Domain research, backlog assessment | sonnet | 600s |
+| `strategist` | Hypothesis generation, FEEC ranking | opus | 600s |
+| `builder` | Code implementation | opus | 1200s |
+| `health_checker` | Test/lint/type check execution | opus | 600s |
+| `code_reviewer` | Code review and style analysis | opus | 900s |
+| `adversarial_tester` | Adversarial QA, edge case testing | opus | 1800s |
+| `failure_analyst` | Research-mode failure categorization | opus | 600s |
+| `archivist` | Experiment learnings and knowledge capture | haiku | 300s |
+| `refiner` | Post-cycle user-directed refinements | opus | 600s |
+
+Agent prompt resolution follows a two-tier lookup: project override (`.factory/agents/<role>.md`) → factory default (`factory/agents/prompts/<role>.md`). Evolved playbooks from `~/.factory/playbooks/<role>.md` are auto-injected.
+
+[[graph:factory.agents.runner]]
 
 ---
 
-## §6 Domain Model
+## 7  Domain Model
 
-### §6.1 Core Enumerations
+### 7.1  Core Entities
 
-| Entity | Values | Description |
+| Entity | Module | Invariants |
 |---|---|---|
-| **ProjectState** | `no_repo`, `incomplete`, `no_factory`, `evals_pending_review`, `has_factory` | Five-state project lifecycle |
-| **VerdictType** | `proceed`, `reloop`, `halt` | Gate evaluation outcomes |
-| **AgentRole** | `researcher`, `strategist`, `builder`, `qa`, `health_checker`, `code_reviewer`, `adversarial_tester`, `failure_analyst`, `ceo`, `archivist`, `refiner`, `skill_reviewer` | 12 specialist roles |
-| **FEECCategory** | `FIX=0`, `EXPLOIT=1`, `EXPLORE=2`, `COMBINE=3` | Hypothesis priority (IntEnum; lower = higher priority) |
-| **RunStatus** | `PASS`, `FAIL`, `ERROR`, `TIMEOUT` | Research run outcomes |
-| **AggregateMethod** | `mean`, `median`, `max`, `all_pass` | Multi-run metric aggregation |
+| `ProjectState` | `models` | Enum of exactly 5 values: `NO_REPO`, `REPO_INCOMPLETE`, `NO_FACTORY`, `EVALS_PENDING_REVIEW`, `HAS_FACTORY` |
+| `FactoryConfig` | `models` | Strict Pydantic; `ConfigDict(strict=True, extra="forbid")`; parsed from `factory.md` via `ExperimentStore.reparse_config()` |
+| `EvalProfile` | `models` | `tier` ∈ {`explicit`, `discovered`, `researched`, `fallback`}; dimension weights MUST sum to 1.0 within a tier; `human_reviewed` defaults to `False` |
+| `ExperimentRecord` | `models` | `verdict` ∈ {`keep`, `revert`, `error`}; `delta` auto-computed as `score_after − score_before` when both present |
+| `CompositeScore` | `models` | `passed` MUST be `False` whenever `guard_violations` is non-empty, regardless of `total` |
+| `Hypothesis` | `models` | `description`, `rationale`, `expected_impact`, `target_files` — all REQUIRED |
+| `ExperimentStore` | `store` | Manages `.factory/` directory; all mutating operations MUST use `FileLock` at `.factory/.store.lock` |
+| `Workflow` | `workflow.primitives` | Named DAG of typed nodes; `validate_graph()` MUST return empty list for valid graphs |
+| `AgentRunRequest` / `AgentRunResult` | `models` | Structured I/O for all runner invocations |
 
-### §6.2 Configuration Models
+[[graph:factory.models]]
 
-All models use `ConfigDict(strict=True, extra="forbid")` — extra fields MUST raise `ValidationError`.
+### 7.2  Supporting Entities
 
-| Entity | Key Fields | Invariants |
+| Entity | Module | Purpose |
 |---|---|---|
-| **FactoryConfig** | `goal`, `scope`, `guards`, `eval_command`, `eval_threshold`, `hypothesis_budget`, `research_target`, `mutable_surfaces`, `fixed_surfaces`, `hard_constraints`, `clean_pr`, `eval_spec`, `hygiene_weights`, `growth_weights` | `test_timeout` ≥ 1 (Field ge=1); `research_target` nullable; incomplete research target → `None` not error |
-| **EvalProfile** | `project_type`, `dimensions[]`, `tier`, `confidence`, `human_reviewed` | `human_reviewed` defaults `false`; tier ∈ {explicit, discovered, researched, fallback}; weights MUST sum to 1.0 |
-| **HypothesisBudget** | `min_growth`, `max_new` | Defaults: `min_growth=2`, `max_new=2` |
-| **ResearchTarget** | `objective`, `metric`, `target`, `run_command`, `result_path`, `timeout` | `result_parser` MUST be `"json"`; all 4 required fields or `None` |
-| **InnerLoopConfig** | `runs_per_cycle`, `aggregate`, `plateau_threshold` | `runs_per_cycle` ≥ 1; `aggregate` coerced from string via `@field_validator` |
-| **HardConstraint** | `name`, `check`, `description` | Shell command; exit 0 = pass; non-zero = mandatory revert |
-| **EvalWeights** | `hygiene`, `growth`, `project` | Defaults: 0.50, 0.50, 0.0; normalized to sum 1.0 |
-| **TierWeights** | per-dimension weight overrides | Sparse — `None` fields keep defaults |
+| `FEECCategory` | `strategy` | `IntEnum`: FIX=0, EXPLOIT=1, EXPLORE=2, COMBINE=3 (lower = higher priority) |
+| `AdversarialState` | `models` | GAN-style loop: `active_role` alternates generator/discriminator; `converged` flag MUST be sticky once set |
+| `CycleState` | `models` | In-flight cycle identity at `.factory/state/cycle.json`; mode MUST be immutable across respawns |
+| `CheckpointState` | `checkpoint` | Crash-recovery snapshot at `.factory/checkpoint.json`; backward-compatible with missing fields |
+| `RefinementState` | `refine_state` | Post-cycle refinement tracking at `.factory/state/refinements.json` |
+| `ProjectRegistry` | `registry` | Global registry at `~/.factory/registry.json`; self-registration on `ExperimentStore.begin()` |
+| `PlaybookItem` / `Playbook` | `ace` | Per-agent behavioral rules with `helpful`/`harmful` counters; `net_score = helpful − harmful` |
+| `ResearchTarget` | `models` | Research mode objective with `run_command`, `result_path`, `timeout` (default 3600s) |
+| `ReviewPayload` | `review` | Structured PR review: verdict, scores, guards, precheck summary, QA body |
+| `LeakageReport` | `research.leakage` | `risk_level` ∈ {`none`, `medium`, `high`}; `flagged: bool` |
 
-### §6.3 Experiment Models
+[[graph:factory.models]]
+[[graph:factory.strategy]]
+[[graph:factory.ace]]
 
-| Entity | Key Fields | Invariants |
-|---|---|---|
-| **ExperimentRecord** | `id`, `timestamp`, `hypothesis`, `verdict`, `score_before`, `score_after`, `delta`, `cost_usd`, `research_citations` | `verdict` ∈ {keep, revert, error}; `delta` auto-computed on finalize; `research_citations` defaults to `[]` (backward compat) |
-| **CompositeScore** | `total`, `results[]`, `guard_violations`, `passed` | `passed = (no guard_violations) ∧ (total ≥ threshold)` |
-| **EvalResult** | `name`, `score`, `weight`, `passed`, `details` | Score clamped to [0.0, 1.0] at construction (via `EvalFragment`) |
-| **CheckResult** | `name`, `passed`, `detail` | Dataclass — outcome of a single precheck |
-| **PreCheckResult** | `passed`, `checks[]`, `blocking_failures[]` | Aggregate; `summary()` renders human-readable report |
+### 7.3  Entity Relationships
 
-### §6.4 Workflow Primitives
+```
+FactoryConfig ─1:1─→ ExperimentStore (parsed from factory.md, persisted as config.json)
+ExperimentStore ─1:*─→ ExperimentRecord (append-only results.tsv)
+ExperimentStore ─1:1─→ EvalProfile (eval_profile.json)
+ExperimentStore ─1:1─→ ProjectRegistry (self-registers on begin())
+FactoryConfig ─0:1─→ ResearchTarget (research mode only)
+FactoryConfig ─0:1─→ AdversarialConfig (adversarial mode only)
+FactoryConfig ─0:*─→ ProjectEvalDimension (user-defined eval dimensions)
+FactoryConfig ─0:*─→ HardConstraint (non-overridable quality gates)
+Workflow ─*:*─→ NodeType (AgentNode | FnNode | GateNode | ForkNode | JoinNode | Study)
+Workflow ─*:*─→ Edge (directed, optionally conditioned on VerdictType)
+Factory ─1:*─→ Workflow (select_workflow via trigger matching)
+Factory ─1:*─→ AgentConfig (DEFAULT_AGENT_POOL)
+```
 
-| Entity | Key Fields | Invariants |
-|---|---|---|
-| **Node** (base) | `id`, `reads`, `writes`, `blocking` | `blocking=True` by default; `reads`/`writes` are `set[str]` |
-| **AgentNode** | `role`, `model`, `prompt_template`, `timeout`, `max_iterations` | Spawns a specialist agent |
-| **FnNode** | `command`, `callable_name` | Runs a deterministic shell command |
-| **GateNode** | `evaluator_type`, `evaluator_role`, `evaluator_command`, `gate_prompt` | `evaluator_type` ∈ {agent, fn, user} |
-| **ForkNode** | `targets[]` | Launches all targets concurrently |
-| **JoinNode** | `sources[]` | Barrier — waits for all sources |
-| **Study** | Inherits FnNode + `focus` | Distinguished wrapper for `factory study` |
-| **Edge** | `source`, `target`, `condition` | `condition` nullable; when set ∈ VerdictType |
-| **Verdict** | `type`, `target`, `feedback`, `max_iterations`, `reason` | RELOOP MUST have target (model_validator); HALT MUST have reason |
-| **Workflow** | `name`, `nodes`, `edges`, `start_node`, `terminal`, `trigger` | `terminal=True` prevents mode chaining |
-
-### §6.5 Runtime Models
-
-| Entity | Key Fields | Invariants |
-|---|---|---|
-| **AgentRunRequest** | `prompt`, `task`, `cwd`, `timeout`, `model`, `skip_permissions`, `role`, `extras` | `timeout` defaults 600.0; `extras` carries `tmux_persist`, `background` |
-| **AgentRunResult** | `stdout`, `return_code`, `usage`, `metadata` | `usage` nullable (only Claude returns telemetry) |
-| **AgentUsage** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `total_cost_usd`, `duration_ms`, `num_turns`, `model` | All default 0 |
-| **CycleState** | `cycle_id`, `started_at`, `mode`, `initial_prompt`, `respawns`, `runner_name` | `initial_prompt` truncated to ≤1000 chars; staleness at 24h |
-| **CheckpointState** | `mode`, `active_experiment_id`, `completed_agents`, `pending_agents`, `last_eval_scores`, `current_hypothesis`, `completed_hypotheses` | `completed_hypotheses` defaults `[]` (backward compat) |
-| **SessionSummary** | `project_name`, `mode`, `experiments_kept`, `experiments_reverted`, `score_start`, `score_end`, `total_cost_usd` | Strict model — rejects extra fields |
-| **RunnerMeta** | `name`, `display_name`, `binary`, `install_hint`, `required_env_vars`, `custom_auth_check` | `is_available()` checks `shutil.which(binary)` |
-
-### §6.6 Cross-Project Models
-
-| Entity | Key Fields | Invariants |
-|---|---|---|
-| **ProjectEntry** | `path`, `name`, `registered_at`, `last_experiment_at`, `experiment_count`, `latest_score` | Global registry entry |
-| **ProjectRegistry** | `projects[]`, `updated_at` | Persisted at `~/.factory/registry.json`; atomic save via `.tmp` rename |
-| **PlaybookItem** | `id`, `content`, `helpful`, `harmful`, `section` | `net_score = helpful - harmful`; serialized as `[id] helpful=N harmful=M :: content` |
-| **Playbook** | `role`, `items[]` | YAML frontmatter; items sorted by `net_score` descending within section |
-| **PerformanceReport** | `project_name`, `total_experiments`, `keep_rate`, `agent_verdicts[]`, `observations[]`, `verdict_patterns` | Consolidated for ACE consumption |
+[[graph:path:FactoryConfig:ExperimentStore]]
+[[graph:path:Workflow:AgentNode]]
 
 ---
 
-## §7 State Machines and Lifecycles
+## 8  State Machines
 
-### §7.1 Project State Detection
+### 8.1  Project State Detection
 
-```
-detect_state(path) →
-  !exists or !.git               → NO_REPO
-  eval_profile.json[human_reviewed=false] → EVALS_PENDING_REVIEW
-  .factory/config.json exists    → HAS_FACTORY
-  .git + open 'plan' issues      → REPO_INCOMPLETE
-  .git, no open issues           → NO_FACTORY
-```
-
-The factory MUST check `EVALS_PENDING_REVIEW` before `HAS_FACTORY` to handle the discover → review → init flow. Missing `human_reviewed` key MUST default to pending review. Malformed `eval_profile.json` MUST fall through to `NO_FACTORY`. Only the `plan` label signals unbuilt repos — `implementation` label MUST NOT trigger `REPO_INCOMPLETE`.
-
-### §7.2 Experiment Lifecycle
+The factory MUST detect project state via `detect_state()` using this priority-ordered evaluation. Higher-priority checks MUST short-circuit lower ones.
 
 ```
-store.init() → store.begin(hypothesis) → [exp_id allocated, FileLock]
-  → save_eval(exp_id, "before") → Builder implements
-  → save_eval(exp_id, "after")  → save_diff(exp_id)
-  → finalize(exp_id, record)    → [verdict.json + TSV append, FileLock]
-  → registry.update_project_stats()
+┌──────────────────────────────────────────────────────────────────────┐
+│  1. Path missing OR no .git/         →  NO_REPO                     │
+│  2. eval_profile.json exists with    →  EVALS_PENDING_REVIEW        │
+│     human_reviewed ≠ true                                           │
+│  3. .factory/config.json exists      →  HAS_FACTORY                 │
+│  4. Open GitHub issues with          →  REPO_INCOMPLETE             │
+│     label="plan" (via gh CLI)                                       │
+│  5. Otherwise                        →  NO_FACTORY                  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-- `init()` MUST be idempotent — safe to call multiple times
-- `begin()` MUST use `FileLock` for concurrent ID allocation
-- `begin()` MUST NOT overwrite existing `hypothesis.md`
-- `begin()` MUST register project in global registry (errors swallowed)
-- `finalize()` MUST use `FileLock` for TSV append
-- `finalize()` MUST auto-create experiment dir if deleted (crash resilience)
-- `finalize()` MUST compute `delta = score_after - score_before` when `delta is None`
-- `load_history()` MUST handle missing `research_citations` column (backward compat)
-- Invalid verdict values MUST be coerced to `"error"`
+**Constraints:**
+- `implementation` label issues MUST NOT trigger `REPO_INCOMPLETE` — that is the factory's own backlog label.
+- `_has_open_plan_issues` MUST return `False` on `FileNotFoundError`, `TimeoutExpired`, empty response, or non-zero returncode.
+- Malformed `eval_profile.json` (invalid JSON, missing `human_reviewed` key) MUST be treated as pending review.
+- `.factory/` directory without `config.json` SHOULD log a structured warning.
 
-### §7.3 Workflow Execution
+[[graph:factory.state]]
+
+### 8.2  CEO Mode Resolution
 
 ```
-WorkflowExecutor.execute() →
-  _execute_from(start_node) →
-    ForkNode  → asyncio.gather(branch_targets) → follow next
-    JoinNode  → increment nodes_executed → follow next
-    GateNode  → _evaluate_gate → Verdict:
-      PROCEED → follow proceed edge
-      RELOOP  → check iteration_counts[(gate_id, target)]
-                if < max_iterations → inject feedback → _execute_from(target)
-                if ≥ max_iterations → HALT
-      HALT    → set halted=True, record reason
-    AgentNode/FnNode/Study →
-      if blocking: execute synchronously → follow next
-      if non-blocking: asyncio.Task → follow next immediately
+INPUT ──→ _resolve_input ──→ (project_path, context)
+
+Mode detection (_auto_detect_mode):
+  In-flight CycleState exists?
+    YES → return cycle mode (prevents mode flip on respawn)
+    NO  →
+      NO_REPO | REPO_INCOMPLETE  → "build"
+      NO_FACTORY + has_prompt    → "build"
+      NO_FACTORY + no_prompt     → "discover"
+      EVALS_PENDING_REVIEW       → "discover"
+      HAS_FACTORY + research_target → "research"
+      HAS_FACTORY                → "improve"
+
+Mode chaining (_chain_modes):
+  Build → Discover → Review → Improve (auto-chain, max 3 hops)
+  Terminal workflows (terminal=True) → stop chaining immediately
 ```
 
-- The executor MUST track `iteration_counts` per `(gate_id, target)` pair
-- Gate feedback MUST be accumulated in `node_context` across iterations
-- Non-blocking nodes MUST run as `asyncio.Task`
-- Node failure (exit 1) MUST halt workflow with "failed" reason
-- Events emitted: `workflow.started`, `node.started`, `node.completed`, `gate.verdict`, `workflow.completed`, `workflow.halted`
+**Constraints:**
+- `--design` + `--headless` → MUST exit 1 (incompatible).
+- `--focus` + `--loop` → MUST exit 1 (mutually exclusive).
+- `--refine` + (`--mode` | `--prompt` | `--focus`) → MUST exit 1 (mutually exclusive).
+- `--mode review/qa/deep-qa` without `--pr` → MUST exit 1.
+- Stale `CycleState` (>24 hours) MUST be ignored.
 
-### §7.4 CEO Completion Guard
+[[graph:factory.cli.ceo]]
+[[graph:factory.ceo_completion]]
 
-```
-run_with_completion_guard() →
-  check existing cycle_state → restore mode + runner
-  OR create new CycleState → persist to cycle.json
-  → invoke CEO → check exit code
-  → user interrupt (signal >128) → preserve cycle state, return
-  → explicit ABORT event → delete cycle state, return
-  → _detect_incomplete():
-    improve/research/meta: verdict_count < hypothesis_count → incomplete
-    build: phase_count < total_phases → incomplete
-    discover: no eval_profile.json → incomplete
-  → if incomplete: _build_continuation_task → respawn (max 5)
-  → if cap hit: write cycle-incomplete.md, return error
-```
-
-- The guard MUST NOT respawn when `FACTORY_CEO_RESPAWN_DISABLED=1`
-- `background=True` MUST bypass respawn loop entirely (single dispatch)
-- Cycle state older than 24 hours MUST be treated as stale (return `None`)
-- Mode MUST be preserved from initial cycle across all respawns
-- Continuation tasks MUST include `## CRITICAL: Mode Override` section with `cycle_id`
-- Each respawn MUST emit `ceo.respawn` event with `cycle_id` and `mode`
-- `_count_verdicts` MUST use `since_ts` parameter to scope to current cycle only
-
-### §7.5 Precheck Gate (Non-Overridable)
+### 8.3  Experiment Lifecycle
 
 ```
-run_precheck() →
-  1. check_score_direction  — no regression, meets threshold
-  2. check_scope           — factory guard --check-scope (if baseline_sha)
-  3. check_surfaces        — factory guard --check-surfaces (if baseline_sha + fixed_surfaces)
-  4. check_anti_pattern    — hypothesis not similar to reverted experiments (Jaccard ≥ 0.6)
-  5. check_hard_constraints — user-defined shell commands exit 0
-  6. check_qa_execution    — QA agent was invoked (Sacred Rule 9)
-  → ANY failure = mandatory revert; CEO MUST NOT override
+           ┌─────────────────────────────────────────────────┐
+           │                                                 │
+  begin() ─→ ACTIVE ─→ save_eval("before") ─→ [builder] ─→ │
+           │             save_eval("after")  ─→ save_diff() │
+           │                                                 │
+           └─→ finalize(record) ─→ FINALIZED                │
+                  │                     │                    │
+                  │  verdict="keep"     │  verdict="revert"  │
+                  │  + precheck pass    │  OR precheck fail  │
+                  ▼                     ▼                    │
+              KEPT                   REVERTED                │
+                                                             │
+                  verdict="error" ───────→ ERRORED           │
+                                                             │
+           └─────────────────────────────────────────────────┘
 ```
 
-- `check_score_direction`: `None` scores → MUST fail
-- `check_qa_execution`: matches both old monolithic QA and new deep-QA specialist events
-- `check_qa_execution`: MUST be skipped when `exp_id=None`
-- When verdict is `keep` but precheck fails → override to `revert`, emit `verdict.overridden` event
+**Invariants:**
+- `begin()` MUST use `FileLock` for concurrent ID allocation; IDs MUST be sequential starting at 1.
+- `begin()` MUST NOT overwrite an existing `hypothesis.md`.
+- `begin()` MUST register the project in the global registry (non-blocking, failure tolerated).
+- `finalize()` MUST auto-compute `delta` as `score_after − score_before` when both are non-None and `delta` is None.
+- `finalize()` MUST use `FileLock` for concurrent TSV append.
+- `finalize()` MUST auto-create the experiment directory if it was deleted.
+- `cmd_finalize` with `verdict="keep"` + failing precheck → MUST override to `"revert"` with `"OVERRIDDEN"` note.
+- `cmd_finalize` with `verdict="revert"` → MUST skip precheck entirely.
+- `cmd_finalize` with `force=True` → MUST bypass precheck.
 
-### §7.6 FEEC Priority and Stuck/Plateau Detection
+[[graph:factory.store]]
 
-**Category classification** (keyword matching, checked in priority order):
+### 8.4  Workflow Execution
 
-| Priority | Category | Keywords |
+```
+START_NODE ──→ [dispatch by type]
+
+  AgentNode/FnNode/Study:
+    blocking=True  → execute → follow unconditional edge
+    blocking=False → fire as background task → follow edge immediately
+
+  ForkNode:
+    dispatch all targets concurrently via asyncio.gather
+    → follow fork's unconditional edge (excluding branch targets)
+
+  JoinNode:
+    pass-through (no execution) → follow unconditional edge
+
+  GateNode:
+    evaluate → Verdict
+    PROCEED → follow PROCEED edge (or unconditional fallback)
+    RELOOP  → check iteration_count < max_iterations
+              → accumulate feedback in node_context
+              → re-execute target node
+    HALT    → set halted=True, stop workflow
+```
+
+**Invariants:**
+- Background tasks MUST be awaited with 30s timeout at workflow end; pending tasks MUST be cancelled.
+- `_wait_for_reads` MUST poll `completed_files` with 0.1s interval, 60s timeout. Timeout MUST cause halt.
+- Reloop exceeding `max_iterations` (default 3) MUST halt the workflow.
+- Agent nodes that exit non-zero MUST raise `RuntimeError`.
+- Dry-run mode: all nodes MUST return `"[dry-run] {id} executed"`; all gates MUST return PROCEED.
+- User gates in non-dry-run mode MUST auto-PROCEED (no interactive prompt in headless).
+- Fn gate verdict parsing: JSON `{"passed": true}` → PROCEED; `{"passed": false}` → HALT. Line-prefix fallback: `pass:` → PROCEED, `fail:`/`revert:` → HALT, `reloop:` → RELOOP with feedback.
+
+[[graph:factory.workflow.executor]]
+
+### 8.5  Adversarial Eval Loop
+
+```
+Start: active_role="generator", current_round=0
+
+For each record_phase_result(score):
+  1. Increment current_round
+  2. If score ≥ threshold:
+       increment consecutive_above
+       increment per-role counter (generator_ or discriminator_consecutive_above)
+     Else:
+       reset consecutive_above to 0
+       reset per-role counter to 0
+  3. If consecutive_above ≥ hysteresis:
+       switch active_role (generator ↔ discriminator)
+       reset consecutive_above to 0
+       (preserve per-role counters)
+  4. If BOTH per-role counters ≥ convergence_window:
+       set converged = True (sticky — MUST NOT be unset)
+```
+
+[[graph:factory.adversarial]]
+
+### 8.6  CEO Completion Guard
+
+```
+FRESH_CYCLE → RUNNING → [COMPLETE | INCOMPLETE]
+  INCOMPLETE → RESPAWN (increment respawns) → RUNNING
+  INCOMPLETE → CAP_HIT (write cycle-incomplete.md, exit 1)
+  RUNNING + SIGINT (code 130) → EXIT (no respawn)
+  RUNNING + cycle.aborted event → EXIT (no respawn)
+  COMPLETE → DELETE_CYCLE_STATE → EXIT(0)
+```
+
+**Constraints:**
+- Max respawns: default 5, env-overridable via `FACTORY_CEO_MAX_RESPAWNS`.
+- `FACTORY_CEO_RESPAWN_DISABLED=1` MUST disable the entire guard.
+- `background=True` MUST bypass the respawn loop entirely.
+- Continuation tasks MUST include mode override header with `cycle_id` to prevent mode flipping.
+
+[[graph:factory.ceo_completion]]
+
+### 8.7  ACE Curator (3-Phase Pruning)
+
+```
+Phase 1: Merge candidates — deduplicate at similarity ≥ 0.75, merge counters
+Phase 2: Remove net-negative items — (harmful > helpful with ≥3 observations)
+         OR (harmful − helpful ≥ 3)
+Phase 3: Cap at max_items=15 by net_score → reassign sequential IDs
+```
+
+[[graph:factory.ace.curator]]
+
+---
+
+## 9  Shared Contracts
+
+### 9.1  Eval Runner — Score Computation
+
+The eval runner MUST compute scores in this order:
+1. **Hygiene dimensions** (6 mandatory) — auto-detect project tooling via language evaluators
+2. **Project eval** (`eval/score.py`) — optional additive dimensions (MUST NOT override mandatory)
+3. **Growth dimensions** (6 mandatory) — capability surface, experiment diversity, observability, research grounding, factory effectiveness, spec compliance
+4. **Custom project eval** (from `factory.md ## Project Eval`) — user-defined dimensions
+5. **Auto-promoted eval_spec** — executable items promoted to `ProjectEvalDimension`
+6. **Merge all** with weight normalization
+
+**Weight distribution:**
+- No project eval: 50% hygiene + 50% growth
+- With project eval, explicit weights: normalize to sum 1.0
+- With project eval, default weights: auto-distribute to 30% hygiene + 20% growth + 50% project
+
+**`_normalize_tier` contract:**
+- Within-tier weight overrides MUST be applied before normalization.
+- Weights MUST sum to `target_weight` after normalization.
+- Empty results or zero target → MUST return `[]`.
+- Scores, details, and `passed` flags MUST be preserved through normalization.
+
+[[graph:factory.eval.runner]]
+[[graph:factory.eval.scorer]]
+
+### 9.2  Strategy — FEEC Priority Heuristic
+
+**`categorize_hypothesis(text)` contract:**
+- MUST check keywords in priority order: FIX → EXPLOIT → COMBINE → EXPLORE
+- First match wins; no match → EXPLORE
+- Case-insensitive matching
+- FIX keywords: `fix`, `error`, `bug`, `crash`, `fail`, `regression`, `broken`, `repair`
+- EXPLOIT keywords: `improve`, `increase`, `extend`, `enhance`, `build on`, `optimize`, `boost`
+- COMBINE keywords: `combine`, `merge`, `integrate`, `unify`, `consolidate`
+
+**`detect_stuck(history, threshold)` contract:**
+- MUST return `True` only when the last `threshold` consecutive reverts share the same FEEC category.
+- A `keep` verdict MUST reset the streak.
+- Fewer than `threshold` entries → MUST return `False`.
+
+**`detect_plateau(history, threshold)` contract:**
+- MUST compare running-best `score_after` across scored experiments.
+- Experiments without `score_after` MUST be skipped (not counted toward streak).
+- Fewer than `threshold` scored experiments → MUST return `False`.
+
+[[graph:factory.strategy]]
+
+### 9.3  Store — Experiment Filesystem Store
+
+**`init(config)` contract:**
+- MUST create `.factory/`, `experiments/`, `strategy/`, `agents/`, `reviews/` directories.
+- MUST write `config.json` from config model.
+- MUST create `results.tsv` with column headers if not present.
+- MUST handle broken symlinks at `.factory/` path (remove and recreate).
+- MUST be idempotent.
+
+**`reparse_config()` contract:**
+- MUST parse `factory.md` markdown sections by heading level.
+- MUST handle code fences (content inside treated as scalar value).
+- Section name mapping: `command` → `eval_command`, `threshold` → `eval_threshold`, `modifiable` → `scope`, `multi-run`/`multi_run` → `inner_loop`, `surface_scoping` → `outer_loop_surfaces`.
+- `test_timeout` MUST clamp to minimum 1 (negative/zero → 600).
+
+**`load_history()` contract:**
+- Invalid verdict values MUST be coerced to `"error"`.
+- `""`, `"-"`, `"n/a"` MUST parse as `None` for numeric fields.
+
+[[graph:factory.store]]
+
+### 9.4  Precheck — Non-Overridable Quality Gate
+
+The CEO CANNOT override precheck failures — a single failure MUST cause mandatory revert.
+
+**Checks (6):**
+1. `check_score_direction` — score MUST NOT regress AND MUST meet threshold
+2. `check_scope` — changed files MUST match scope glob patterns
+3. `check_surfaces` — fixed surfaces MUST NOT be modified
+4. `check_anti_pattern` — hypothesis MUST NOT match reverted experiments above similarity threshold
+5. `check_hard_constraints` — all user-defined shell commands MUST exit 0
+6. `check_qa_execution` — QA agent MUST have been invoked (Sacred Rule 9); matches both monolithic QA and deep-QA specialist events
+
+**`run_precheck()` contract:**
+- MUST run all applicable checks and aggregate results.
+- A single check failure MUST cause `passed=False`.
+- MUST report `blocking_failures` list.
+
+[[graph:factory.precheck]]
+
+### 9.5  Agent Runner — Agent Invocation
+
+**`resolve_prompt(role)` contract:**
+- Resolution order: project override (`.factory/agents/<role>.md`) > factory default.
+- Playbook injection MUST follow the prompt, before user profile.
+- CEO role with `workflow_mode`: MUST inject workflow playbook from `skills/workflow-*/SKILL.md`.
+- Non-CEO roles MUST ignore `workflow_mode`.
+- Missing skill file MUST NOT cause an error.
+
+**`invoke_agent()` contract:**
+- MUST track consecutive failures via global counter.
+- 2 consecutive failures → MUST raise `ConsecutiveAgentFailureError`.
+- Success MUST reset the failure counter.
+- MUST emit `agent.started`, `agent.completed`/`agent.failed`/`agent.timeout` events.
+- MUST save review output to `.factory/reviews/<role>-latest.md`.
+
+[[graph:factory.agents.runner]]
+
+### 9.6  Runner Abstraction
+
+**Runner selection (`get_runner`):**
+- Resolution: explicit name → `FACTORY_RUNNER` env → config.toml → `"claude"` default.
+- Unknown name → MUST raise `ValueError`.
+- Four registered runners: `claude`, `bob`, `codex`, `opencode`.
+
+**ClaudeRunner:**
+- MUST include `--disallowedTools Agent` in all execution paths.
+- MUST include `--output-format stream-json` and `--verbose` in headless mode.
+- MUST strip `VIRTUAL_ENV` from subprocess environment.
+
+**BobRunner:**
+- MUST enforce invocation ceilings per cycle (default 8, env-overridable).
+- `CeilingExceededError` at limit; `CeilingWarning` when ≤2 remaining.
+- MUST log all invocations to `.factory/bob_usage.jsonl`.
+
+**CodexRunner:**
+- MUST isolate OAuth and API key auth modes (OAuth strips API key from env).
+- MUST use `codex exec --sandbox workspace-write` for headless.
+
+[[graph:factory.runners]]
+
+### 9.7  Worktree Isolation
+
+**`create_worktree()` contract:**
+- MUST resolve `base_branch` to commit SHA before creating (handles amended HEAD).
+- Directory: `project/.factory-worktrees/run-<id>`.
+- Branch: `factory/run-<id>`.
+- MUST symlink `.factory/` from worktree to main project (shared state).
+- MUST emit `worktree.created` event.
+
+**`remove_worktree()` contract:**
+- MUST be idempotent (safe to call twice).
+- MUST delete both directory and branch.
+- MUST emit `worktree.removed` event.
+
+**Concurrency invariant:**
+- `ExperimentStore.begin()` across worktrees MUST produce unique sequential IDs (ensured by shared `FileLock` via `.factory` symlink).
+
+[[graph:factory.worktree]]
+
+---
+
+## 10  Entry Points
+
+| Command | Purpose | Key Flags |
 |---|---|---|
-| 0 (highest) | FIX | fix, error, bug, crash, fail, regression, broken, repair |
-| 1 | EXPLOIT | improve, increase, extend, enhance, build on, optimize, boost |
-| 2 | EXPLORE | (catch-all default — no keyword match) |
-| 3 (lowest) | COMBINE | combine, merge, integrate, unify, consolidate |
+| `factory ceo <path>` | Launch CEO agent (interactive by default) | `--mode`, `--focus`, `--headless`, `--refine`, `--loop` |
+| `factory run <path>` | Run factory cycle (delegates to CEO) | `--loop`, `--interval`, `--max-cycles` |
+| `factory tmux <path>` | Launch in detached tmux session | `--attach`, `--session` |
+| `factory agent <role>` | Invoke specialist agent directly | `--task`, `--project`, `--runner` |
+| `factory eval <path>` | Run project evals, print JSON | `--skip-project-eval` |
+| `factory begin <path>` | Start experiment, print ID | `--hypothesis` |
+| `factory finalize <path>` | Finalize experiment with verdict | `--verdict`, `--force` |
+| `factory precheck <path>` | Run hard precheck gate | `--score-before`, `--score-after` |
+| `factory spec generate <path>` | Generate repo spec | — |
+| `factory workflow run <name>` | Execute workflow graph headlessly | `--project`, `--dry-run` |
+| `factory dashboard` | Launch live web dashboard | `--port`, `--projects-dir` |
+| `factory refactory` | Launch persistent supervisor agent | `--reset` |
 
-**Stuck detection**: `detect_stuck(history, threshold=3)` — walks history backwards collecting consecutive reverts. Returns `True` when last `threshold` consecutive reverts share the same FEEC category. A `keep` verdict breaks the streak.
+When invoked without a subcommand in a TTY, the CLI MUST default to `refactory` mode.
 
-**Plateau detection** (two variants):
-- `detect_research_plateau(run_summaries, threshold=3)`: requires `threshold + 1` entries; no improvement in last N cycles vs. best-before-window
-- `detect_plateau(history, threshold=3)`: walks scored experiments tracking running best; plateau when `no_improvement_streak >= threshold`
-
-### §7.7 Consecutive Agent Failure Tracking
-
-```
-invoke_agent() called →
-  return_code == 0 → reset _consecutive_failures to 0
-  return_code != 0 → increment _consecutive_failures
-    _consecutive_failures >= 2 → emit cycle.aborted → raise ConsecutiveAgentFailureError
-    _consecutive_failures < 2 → return (output, 1)
-  exception → increment _consecutive_failures → return ("Error: ...", 1)
-```
-
-For parallel invocations: `invoke_agents_parallel` tracks failures locally. If ALL agents in a batch fail AND count ≥ 2 → raise `ConsecutiveAgentFailureError`.
-
-### §7.8 ACE Pipeline (Playbook Evolution)
-
-```
-Reflect → scan experiments → compute category stats → _detect_repetition
-  → generate candidate bullets per role (role-specific generators)
-Curate → merge by dedup (SequenceMatcher) → sum counters
-  → prune net-negative (harmful - helpful ≥ 3 AND observations ≥ 3)
-  → cap at max_items → reassign sequential IDs
-Inject → append "Behavioral Playbook" section to agent prompt at invocation
-Persist → write to ~/.factory/playbooks/<role>.md (YAML frontmatter)
-```
-
-- `PlaybookItem.from_line()` MUST return `None` on invalid input
-- Items MUST be sorted by `net_score` descending within each section (DO/DON'T)
-- Roundtrip: `to_markdown()` ↔ `from_markdown()` MUST be lossless
-
-### §7.9 Worktree Lifecycle
-
-```
-create_worktree(project, base_branch?, run_id?)
-  → run_id truncated to 8 chars
-  → git worktree add .factory-worktrees/run-{id}, branch factory/run-{id}
-  → create .factory symlink to main project's .factory/
-  → emit worktree.created event (errors swallowed)
-remove_worktree(project, wt_path, branch)
-  → remove directory + branch + git worktree entry
-  → idempotent (safe to call twice)
-  → emit worktree.removed event (errors swallowed)
-prune_stale(project)
-  → no-op without .factory-worktrees/
-  → cleans orphaned directories not in git worktree list
-  → preserves active worktrees
-```
-
-- `ExperimentStore` via worktree symlink MUST resolve to main `.factory/`
-- Two concurrent `store.begin()` calls MUST get sequential IDs (filelock)
-
-### §7.10 Runner Selection and Auth
-
-```
-get_runner(name=None, project_path=None)
-  1. Explicit name argument
-  2. FACTORY_RUNNER env var
-  3. Default: "claude"
-  Unknown name → ValueError("Unknown runner 'X'")
-```
-
-**Bob auth resolution**:
-```
-_check_auth(start_path):
-  1. BOBSHELL_API_KEY env var → authenticated
-  2. Walk up for .factory/.bob_auth → load into env
-  3. ~/.bob/settings.json exists → native auth
-  4. None → raise BobAuthError
-```
-
-**Codex auth resolution**:
-```
-_check_auth():
-  1. ~/.codex/auth.json → OAuth (preferred)
-  2. CODEX_API_KEY or OPENAI_API_KEY in env → API key mode
-  3. None → raise CodexAuthError
-  OAuth mode → strip OPENAI_API_KEY from env
-  API key mode → set CODEX_HOME to temp dir (avoid stale OAuth)
-```
-
-**Bob ceiling enforcement**:
-```
-check_ceilings(project_path, cycle_start):
-  count = count_cycle_invocations(project_path, cycle_start)
-    → filters: timestamp > cycle_start AND dry_run=false
-  count ≥ max → raise CeilingExceededError
-  remaining ≤ 2 → return CeilingWarning
-  otherwise → return None
-```
+[[graph:factory.cli]]
 
 ---
 
-## §8 Module Specifications
+## 11  Eval System
 
-### §8.1 `factory/state.py` — Project State Detection
+### 11.1  Dimension Taxonomy
 
-| Contract | Normative |
+**Hygiene dimensions (6 mandatory, sum to 1.0 within tier):**
+
+| Dimension | Detection | Scoring |
+|---|---|---|
+| `tests` | pytest, jest/vitest, go test, cargo test | Pass/fail + partial credit |
+| `lint` | ruff, eslint, go vet, cargo clippy | `max(0.0, 1.0 − violations × 0.05)` |
+| `type_check` | mypy, tsc, go build, cargo check | Pass/fail |
+| `coverage` | coverage.py, jest --coverage, go test -cover, tarpaulin | Percentage-based |
+| `config_parser` | Config file validation | Pass/fail |
+| `architecture` | sentrux scan (requires `.sentrux/rules.toml`) | 0.5 neutral when missing |
+
+**Growth dimensions (6 mandatory, sum to 1.0 within tier):**
+
+| Dimension | Scoring |
 |---|---|
-| `detect_state` returns one of 5 `ProjectState` values | MUST |
-| Check `EVALS_PENDING_REVIEW` before `HAS_FACTORY` | MUST |
-| Only `plan` label signals unbuilt repo (not `implementation`) | MUST |
-| `_has_open_plan_issues` timeout at 15s | SHOULD |
-| Graceful on `gh` CLI unavailable (returns `False`) | MUST |
-| Malformed `eval_profile.json` falls through to `NO_FACTORY` | MUST |
+| `capability_surface` | Module and public function count, scaled to project size |
+| `experiment_diversity` | 0.5 neutral for <3 experiments; penalizes repeated hypotheses |
+| `observability` | 0.40×coverage + 0.25×structured + 0.20×tracing + 0.15×density |
+| `research_grounding` | Archive sources or vault fallback; `doc_ratio` from experiment notes |
+| `factory_effectiveness` | Keep rate across managed projects; 0.5 neutral for <2 experiments |
+| `spec_compliance` | From `.factory/spec_results.json`; stale (>24h) → 0.5 |
 
-### §8.2 `factory/store.py` — Experiment Store
+[[graph:factory.eval.hygiene]]
+[[graph:factory.eval.growth]]
 
-| Contract | Normative |
+### 11.2  Language Evaluator Registry
+
+Evaluators MUST be registered at import time. `detect_languages()` returns all matching evaluators (multi-language projects supported).
+
+| Evaluator | Language | Test | Lint | Type Check | Coverage |
+|---|---|---|---|---|---|
+| `PythonEvaluator` | Python | pytest | ruff | mypy | coverage.py |
+| `NodeEvaluator` | TypeScript/JS | jest/vitest | eslint | tsc | jest --coverage |
+| `GoEvaluator` | Go | go test | go vet | go build | go test -cover |
+| `RustEvaluator` | Rust | cargo test | cargo clippy | cargo check | tarpaulin |
+
+**`EvalFragment` invariant:** Scores MUST be clamped to [0.0, 1.0].
+
+[[graph:factory.eval.languages]]
+
+### 11.3  Guard System
+
+`check_all()` MUST run all applicable guards and return a flat list of violation strings (empty ≡ pass).
+
+| Guard | Check |
 |---|---|
-| `init` creates `.factory/` with `experiments/`, `strategy/`, `agents/`, `reviews/`, `config.json`, `results.tsv` | MUST |
-| `begin` uses `FileLock` for concurrent ID allocation | MUST |
-| `begin` auto-registers project in global registry (errors swallowed) | MUST |
-| `begin` MUST NOT overwrite existing `hypothesis.md` | MUST |
-| `finalize` uses `FileLock` for TSV append | MUST |
-| `finalize` computes delta when not pre-set | MUST |
-| `finalize` auto-creates experiment dir if deleted | MUST |
-| `load_history` handles missing `research_citations` column | MUST |
-| `read_config` uses `strict=False` for enum coercion from JSON | MUST |
-| `reparse_config` parses `factory.md` sections, HTML comments, code blocks, list continuations | MUST |
-| `reparse_config`: incomplete research target → `None` (not crash) | MUST |
-| `reparse_config`: negative/zero `test_timeout` → fallback to 600 | MUST |
-| `ensure_factory_dir` removes broken/circular symlinks before mkdir | MUST |
+| `check_git_clean` | Working tree clean (lock files excluded) |
+| `check_eval_immutable` | Eval tree unchanged since snapshot |
+| `check_experiment_branch` | At least one commit after baseline |
+| `check_scope` | Changed files match scope glob patterns |
+| `check_fixed_surfaces` | Fixed surface globs not modified (lock files excluded) |
 
-### §8.3 `factory/eval/runner.py` — Eval Runner
+**`_glob_match()` MUST support:** exact match, `**` recursive matching, `*` single-level wildcard, prefix matching.
 
-| Contract | Normative |
-|---|---|
-| Compute 6 mandatory hygiene + 6 mandatory growth dimensions | MUST |
-| Default weight split: 50% hygiene / 50% growth (no project eval) | MUST |
-| With project eval (no explicit weights): 30% hygiene / 20% growth / 50% project | MUST |
-| With explicit weights: normalize to sum 1.0 | MUST |
-| `_normalize_tier` rescales weights to target sum, preserving scores/passed/details | MUST |
-| Sparse within-tier overrides applied before normalization | SHOULD |
-| Mandatory dimension names MUST NOT be overridden by project eval | MUST |
-| `VIRTUAL_ENV` stripped from subprocess environment | MUST |
-| Save results to `.factory/last_eval.json` | SHOULD |
-| Auto-promote executable `eval_spec` items to project eval | SHOULD |
-
-### §8.4 `factory/eval/scorer.py` — Composite Score
-
-| Contract | Normative |
-|---|---|
-| Normalize weights if sum ≠ 1.0 (within 1e-9 tolerance) | MUST |
-| `passed = (no guard_violations) ∧ (total ≥ threshold)` | MUST |
-| Empty results → `total = 0.0`, passed only if `threshold ≤ 0.0` | MUST |
-
-### §8.5 `factory/precheck.py` — Non-Overridable Gate
-
-| Contract | Normative |
-|---|---|
-| A single failure makes the entire precheck fail | MUST |
-| The CEO MUST NOT override a failed precheck | MUST |
-| `check_score_direction`: `None` scores → fail | MUST |
-| `check_anti_pattern`: Jaccard threshold default 0.6 | MUST |
-| `check_qa_execution`: matches both monolithic QA and deep-QA specialist events | MUST |
-| `check_qa_execution`: skipped when `exp_id=None` | MUST |
-| `check_qa_execution`: no `experiment.begin` event → pass (skip check) | MUST |
-| Hard constraint timeout: 120s default | SHOULD |
-
-### §8.6 `factory/strategy.py` — FEEC Heuristic
-
-| Contract | Normative |
-|---|---|
-| `categorize_hypothesis`: keyword match, FIX first, then EXPLOIT, then COMBINE, default EXPLORE | MUST |
-| `rank_hypotheses`: stable sort by FEEC priority; injects `category` key | MUST |
-| `detect_stuck`: True when N consecutive reverts share a FEEC category | MUST |
-| `detect_plateau`: True when `no_improvement_streak ≥ threshold` among scored experiments | MUST |
-| `detect_research_plateau`: requires `threshold + 1` entries; compares window best vs. pre-window best | MUST |
-| `hypothesis_similarity`: Jaccard on tokens ≥ 3 chars | MUST |
-| `format_tiered_history`: Tier 1 (last 3) full, Tier 2 (4-10) one-line, Tier 3 (11+) aggregate | MUST |
-| `MAX_INLINE_HISTORY = 10` | MUST |
-
-### §8.7 `factory/agents/runner.py` — Agent Runner
-
-| Contract | Normative |
-|---|---|
-| Two-tier prompt lookup: project override (`.factory/agents/<role>.md`) → factory default | MUST |
-| Auto-inject ACE playbook (even with project overrides) | MUST |
-| Auto-inject user profile when `use_profile=True` | SHOULD |
-| Append GitHub disabled directive when `FACTORY_NO_GITHUB=1` | MUST |
-| Emit `agent.started`/`completed`/`failed` events | MUST |
-| Consecutive failure threshold = 2 → raise `ConsecutiveAgentFailureError` | MUST |
-| Emit `cycle.aborted` event before raising | MUST |
-| Save agent output to `.factory/reviews/<role>[-<tag>]-latest.md` | MUST |
-| Append `IDENTITY_REANCHOR` to non-CEO review files (Sacred Rule 8) | MUST |
-| Auto-generate numeric review tags for duplicate roles in parallel invocations | MUST |
-| Event emissions MUST be swallowed on error (never block agent invocation) | MUST |
-| Telemetry spans MUST be swallowed on error | MUST |
-
-### §8.8 `factory/workflow/primitives.py` — Workflow Primitives
-
-| Contract | Normative |
-|---|---|
-| `Verdict` RELOOP requires `target` (model_validator) | MUST |
-| `Verdict` HALT requires `reason` (model_validator) | MUST |
-| `Workflow.validate_graph()` delegates to networkx validation | MUST |
-| `Workflow.subgraph()` deep-copies nodes, filters edges to internal only | MUST |
-| `Workflow.subgraph()`: missing node → `ValueError` | MUST |
-| `Factory.select_workflow` returns first workflow whose trigger matches | MUST |
-| `DEFAULT_AGENT_POOL`: 12 entries with role-specific model and timeout defaults | MUST |
-
-### §8.9 `factory/workflow/definitions.py` — Workflow Definitions
-
-| Contract | Normative |
-|---|---|
-| `register_all()` returns exactly 22 workflows | MUST |
-| All workflows MUST pass `validate_graph()` | MUST |
-| W₁ Build: trigger on `NO_REPO` or `REPO_INCOMPLETE` | MUST |
-| W₂ Design: W₁ with user gate at strategy approval; trigger requires `interactive=True` | MUST |
-| W₃ Improve: trigger on `HAS_FACTORY` | MUST |
-| W₃b QA: subgraph of W₃; gate_qa HALT (not RELOOP to builder) | MUST |
-| W₄ Research: extends W₃ with baseline, failure_analyst, plateau gate; trigger requires `research_target` | MUST |
-| W₅ Meta: insights → playbook evolution → test pruning; archivist non-blocking | MUST |
-| W₆ Discover: trigger on `NO_FACTORY` | MUST |
-| W₇ Review: trigger on `EVALS_PENDING_REVIEW` | MUST |
-| W₈ Refine: Tier 3 → HALT via `gate_tier` (fn evaluator) | MUST |
-| W₉ Create: fork/join research → user gate → builder → deep-QA | MUST |
-| Deep-QA subgraph: health_checker → code_reviewer → gate_review (CRITICAL_FOUND) → adversarial_tester | MUST |
-| Doc freshness gate: present in build, improve, research, refine, create | MUST |
-| Terminal workflows (`terminal=True`) MUST NOT trigger mode chaining | MUST |
-| Every non-benchmark workflow with Builder MUST have deep-QA reachable | MUST |
-| Contributed benchmarks (swebench, featurebench, terminalbench, legacybench): `terminal=True`, no factory eval, no deep-QA | MUST |
-
-### §8.10 `factory/eval/guards.py` — Guard Rules
-
-| Contract | Normative |
-|---|---|
-| `check_eval_immutable`: `eval/` directory MUST NOT be modified | MUST |
-| `check_git_clean`: working tree MUST be clean (ignoring lock files like `uv.lock`) | MUST |
-| `check_scope`: changed files MUST be within declared scope globs | MUST |
-| `check_fixed_surfaces`: fixed surface files MUST NOT be modified (lock files ignored even with `**`) | MUST |
-| `check_experiment_branch`: no commits since baseline → "No commits" violation | MUST |
-| `_glob_match`: `**` matches across directory boundaries; `*` does not | MUST |
-
-### §8.11 `factory/runners/` — Runner Abstraction
-
-| Contract | Normative |
-|---|---|
-| Resolution order: explicit name → `FACTORY_RUNNER` env var → `"claude"` | MUST |
-| Each runner implements `headless() → AgentRunResult` | MUST |
-| Only Claude returns `usage` telemetry; others `usage=None` | MUST |
-| Only Claude has `supports_background=True` | MUST |
-| Bob Shell ceiling enforcement via `check_ceilings()` using cycle `started_at` | MUST |
-| Bob ceiling uses `started_at` from `cycle.json`, not `now()` | MUST |
-| Bob `sanitize=True` (strips ANSI from dest, keeps raw in buffer) | MUST |
-| Claude sets `TELEMETRY_PLATFORM=''` to suppress native tracing | MUST |
-| `VIRTUAL_ENV` stripped from all subprocess environments | MUST |
-| Dry-run modes: `FACTORY_BOB_DRY_RUN`, `FACTORY_CODEX_DRY_RUN`, `FACTORY_OPENCODE_DRY_RUN` | MUST |
-| Inactivity watchdog kills silent processes; genuine blank lines preserved | MUST |
-| 1MB readline limit on subprocess output | SHOULD |
-| Plugin discovery via `entry_points("factory.runners")` — lazy, once-per-process | SHOULD |
-
-### §8.12 `factory/registry.py` — Global Project Registry
-
-| Contract | Normative |
-|---|---|
-| Persisted at `~/.factory/registry.json` (overridable via `FACTORY_REGISTRY_DIR`) | MUST |
-| Atomic save via `.tmp` rename | MUST |
-| `register_project`: idempotent — skips if path already registered | MUST |
-| `update_project_stats`: updates `last_experiment_at`, `experiment_count`, `latest_score` | MUST |
-| Missing/corrupt registry → empty registry (no crash) | MUST |
-| `get_project_paths`: stale entries (directory no longer exists) silently filtered | MUST |
-
-### §8.13 `factory/spec/` — Behavioral Specification Engine
-
-| Contract | Normative |
-|---|---|
-| `collect_source_files`: multi-language, excludes node_modules/.factory/__pycache__/.venv, respects `.gitignore` | MUST |
-| `group_into_batches`: token-limited (80k), oversized files get own batch | MUST |
-| `generate_spec`: parallel batch extraction (opus) → annotation → SPEC.md | MUST |
-| No source files → `ValueError` | MUST |
-| Agent nonzero exit → `RuntimeError` | MUST |
-| `validate_spec` → (report, is_valid) via `_parse_verdict` | MUST |
-| `_get_diff_text`: experiment diff → spec commit diff → HEAD~1 → --root (fallback chain) | MUST |
-
-### §8.14 `factory/skill_cache.py` — Skill Cache
-
-| Contract | Normative |
-|---|---|
-| `_compute_checksum`: SHA-256 of all workflow models; MUST sort sets for determinism | MUST |
-| Cache at `~/.factory/cache/skills/{checksum}/` | MUST |
-| Cache hit → copy workflow-* dirs to project | MUST |
-| Cache miss → export → cache → copy; evict stale checksum dirs | MUST |
-| Hand-written skills (non-workflow-*) MUST be preserved | MUST |
+[[graph:factory.eval.guards]]
 
 ---
 
-## §9 Shared Contracts
+## 12  Workflow Definitions
 
-### §9.1 Event Protocol
+### 12.1  Registered Workflows
 
-All events MUST be appended to `.factory/events.jsonl` as newline-delimited JSON with fields: `type`, `timestamp` (ISO 8601), `project`, `agent` (nullable), `data` (dict).
+**Core:** build, design, improve, qa, research, meta, discover, review, refine, create, skill-refine, doc-generate, doc-update, spec-generate, spec-update.
 
-Event types: `agent.started`, `agent.completed`, `agent.failed`, `agent.timeout`, `cycle.started`, `cycle.completed`, `cycle.aborted`, `ceo.respawn`, `ceo.message`, `experiment.begin`, `experiment.finalize`, `verdict.overridden`, `eval.started`, `eval.completed`, `worktree.created`, `worktree.removed`, `backlog.added`, `backlog.removed`, `bob.ceiling_warning`.
+**Contributed benchmarks:** swebench, featurebench, legacybench, terminalbench, programbench.
 
-- `emit_event` MUST create `.factory/events.jsonl` and `.factory/` directory if absent
-- `emit_event` MUST resolve symlinks before writing
-- `load_events` supports `since` datetime filter; MUST skip blank lines
-- Event emission exceptions MUST be swallowed silently (never block operations)
+All workflows MUST pass `validate_graph()` — structural DAG invariant.
 
-### §9.2 File I/O Contracts
+### 12.2  Workflow Composition Rules
 
-- `ensure_factory_dir` MUST remove broken/circular symlinks before mkdir
-- All file writes to `.factory/` SHOULD handle `OSError` gracefully
-- Registry writes MUST use atomic `.tmp` rename
-- Config files MUST be created with `0o600` permissions
+- `design_workflow()` MUST mutate `build_workflow()` — same node set, `gate_strategy.evaluator_type` changed to `"user"`.
+- `research_workflow()` MUST mutate `improve_workflow()` — replaces `study` with `baseline`, adds `failure_analyst` and `plateau_gate`.
+- `meta_workflow()` MUST extend `improve_workflow()` with `insights` FnNode and test pruning pipeline.
 
-### §9.3 Pydantic Model Contract
+### 12.3  Deep-QA Subgraph
 
-All domain models MUST use `ConfigDict(strict=True, extra="forbid")`. Extra fields MUST raise `ValidationError`. All models MUST support JSON roundtrip serialization.
+Shared by build, improve, research, refine, and create workflows:
+- Nodes: `health_checker` → `code_reviewer` → `gate_review` (fn, checks `CRITICAL_FOUND`) → `adversarial_tester`
+- `gate_doc_freshness`: CEO agent gate between `gate_qa` and `gate_precheck`; RELOOP → builder.
 
-### §9.4 Runner Protocol
+**Builder→QA reachability:** MUST be enforced for all non-benchmark workflows.
 
-All runners MUST implement:
-```python
-async def headless(request: AgentRunRequest) -> AgentRunResult
-def interactive_run(request: AgentRunRequest) -> int
-```
+### 12.4  Trigger Conditions
 
-`RunnerMeta` describes capabilities: `is_available()` checks `shutil.which(binary)`; `check_auth()` validates credentials.
+| Workflow | State | Additional |
+|---|---|---|
+| build | `NO_REPO` or `REPO_INCOMPLETE` | — |
+| design | `NO_REPO` | `interactive=True` |
+| improve | `HAS_FACTORY` | — |
+| research | `HAS_FACTORY` | `research_target` present |
+| meta | `HAS_FACTORY` | `mode="meta"` |
+| create | any | `mode="create"` |
 
-### §9.5 Notifier Protocol
+### 12.5  Benchmark Workflows
 
-```python
-class Notifier(Protocol):
-    async def send_digest(
-        self, project_name: str,
-        records: list[ExperimentRecord],
-        composite: CompositeScore | None,
-    ) -> None: ...
-```
+All 5 contributed benchmark workflows share:
+- **Pipeline:** study → builder → gate_verify → auto_merge (programbench adds `reviewer`)
+- **Terminal:** `terminal=True` — no factory infrastructure (no eval, experiments, or deep-QA)
+- **RELOOP:** gate_verify → builder on test failure, max 3 iterations
+- **Auto-merge:** Updates main branch ref via `git update-ref`, copies changed files
+
+| Benchmark | Domain | Gate Logic |
+|---|---|---|
+| swebench | Python bug fixes | Builder self-report (pass/fail keywords) |
+| featurebench | Python features | Builder self-report |
+| legacybench | COBOL/Fortran/C/Java7/Assembly | `make test` execution |
+| terminalbench | Terminal tasks | Broad keyword matching |
+| programbench | Binary reverse engineering | Structured `todos.md` + compile.sh + multi-tier test |
+
+[[graph:factory.workflow.definitions]]
 
 ---
 
-## §10 Configuration Specification
+## 13  Failure Model
 
-### §10.1 Five-Tier Precedence
+### 13.1  Error Types
+
+| Error | Module | Trigger | Recovery |
+|---|---|---|---|
+| `ConsecutiveAgentFailureError` | `agents.runner` | 2+ consecutive spawn failures | Emits `cycle.aborted`; CEO completion guard stops respawning |
+| `CeilingExceededError` | `runners.usage` | Bob invocations exceed per-cycle limit | Actionable message with env var to bump |
+| `ResultParseError` | `models` | Result file unparseable | `RunStatus.ERROR`, metric_value=0.0 |
+| `FileNotFoundError` | `store.read_config` | `.factory/config.json` missing | Message: "Run 'factory init' first" |
+| `ValueError` | `store.read_config` | Invalid JSON or failed validation | Message: "Run 'factory init --reparse' to regenerate" |
+| `ValidationError` | `models` | Extra fields on strict Pydantic models | Pydantic error detail with field name |
+
+### 13.2  Graceful Degradation
+
+The following modules MUST degrade gracefully (return empty/no-op) on external failures:
+
+| Module | Degradation |
+|---|---|
+| `study.py` | All external ops return empty results, MUST NOT raise |
+| `telemetry.py` | All Langfuse operations wrapped in try/except with `log.debug` |
+| `registry.py` | Missing/corrupt registry file → empty registry |
+| `obsidian/notes.py` | All write functions return `None` when vault unconfigured |
+| `notify/telegram.py` | POST failure logged but MUST NOT be raised |
+| `checkpoint.py` | Corrupt/invalid-schema files → return `None` |
+| `skill_cache.py` | Any I/O error → return empty list |
+| `state.py` | `_has_open_plan_issues` returns `False` on timeout, missing `gh`, or any subprocess error |
+
+### 13.3  Concurrency Safety
+
+| Operation | Mechanism |
+|---|---|
+| Experiment ID allocation | `FileLock` at `.factory/.store.lock` |
+| TSV append | `FileLock` at `.factory/.store.lock` |
+| Registry writes | Atomic tmp-file + rename pattern |
+| Config file creation | `O_EXCL` (atomic create-or-skip) with `0o600` permissions |
+| Worktree creation | Unique branch names via `run_id` |
+| Background agent nodes | `asyncio.Task` with 30s timeout on workflow exit |
+
+---
+
+## 14  Security Constraints
+
+- Sensitive keys in config.toml MUST be masked (show last 4 chars or `****`).
+- Bob auth file (`.factory/.bob_auth`) MUST have `0o600` permissions.
+- Config.toml MUST be created with `0o600` permissions via `O_EXCL`.
+- Message queue MUST block path traversal via `is_relative_to()` check.
+- Message queue MUST skip symlinks in the message directory.
+- Dashboard MUST validate all path segments against `_SAFE_NAME_RE`.
+- `VIRTUAL_ENV` MUST be stripped from all runner subprocess environments.
+- Agent prompts MUST include `--disallowedTools Agent` (prevents native Agent tool).
+- Ground truth leakage detection MUST run before research hypotheses are accepted.
+
+---
+
+## 15  External Integrations
+
+### 15.1  Issue Tracking (`factory.issue`)
+
+`parse_issue_ref()` MUST handle: bare numbers, GitHub/GitLab URLs, `owner/repo#N` shorthand.
+`fetch_issue()` MUST shell out to `gh`/`glab` CLI — MUST NOT call APIs directly.
+
+[[graph:factory.issue]]
+
+### 15.2  Obsidian Vault (`factory.obsidian`)
+
+All vault operations MUST be gated on `FACTORY_VAULT_PATH` env var. Legacy `OBSIDIAN_VAULT_PATH` MUST be ignored.
+
+[[graph:factory.obsidian]]
+
+### 15.3  Langfuse Telemetry (`factory.telemetry`)
+
+Enabling requires: `langfuse` package installed AND (`LANGFUSE_HOST` or `LANGFUSE_BASE_URL`) env var set.
+TranscriptTailer MUST run as daemon thread, polling JSONL transcripts at 5s interval.
+
+[[graph:factory.telemetry]]
+
+### 15.4  Telegram Notifications (`factory.notify.telegram`)
+
+Implements `Notifier` protocol. MUST silently skip when `TELEGRAM_BOT_TOKEN` or `TELEGRAM_CHAT_ID` are missing.
+
+[[graph:factory.notify.telegram]]
+
+### 15.5  MCP Server (`factory.mcp_server`)
+
+Exposes 4 tools: `factory_get_score`, `factory_list_experiments`, `factory_get_status`, `factory_list_projects`. All MUST return JSON strings. Error cases MUST return `{"error": "..."}`.
+
+[[graph:factory.mcp_server]]
+
+### 15.6  Dashboard (`factory.dashboard`)
+
+FastAPI server on port 8420 with SSE event streaming. Path-segment parameters MUST be validated against `_SAFE_NAME_RE` to prevent directory traversal.
+
+[[graph:factory.dashboard]]
+
+---
+
+## 16  Extension Points
+
+### 16.1  Contributed Workflows
+
+New benchmark or domain-specific workflows MAY be added to `factory/workflow/contributed/`. Each contributed workflow MUST:
+1. Define a `Workflow` instance with a trigger function.
+2. Register itself in `register_all()`.
+3. Include a `test_workflow.py` validating registration, meta fields, and terminal status.
+4. Set `terminal=True` if it does not use factory eval/experiment infrastructure.
+
+[[graph:factory.workflow.definitions]]
+
+### 16.2  Language Evaluators
+
+New language evaluators MAY be added to `factory/eval/languages/`. Each evaluator MUST:
+1. Implement the evaluator protocol: `detect()`, `run_tests()`, `run_lint()`, `run_type_check()`, `run_coverage()`.
+2. Register via `register_evaluator()` at import time.
+3. Return `EvalFragment` values with scores clamped to [0.0, 1.0].
+
+[[graph:factory.eval.languages]]
+
+### 16.3  Runner Backends
+
+New runner backends MAY be added to `factory/runners/`. Each runner MUST:
+1. Implement the `Runner` protocol: `headless()`, `interactive_run()`, `build_command()`, `metadata()`.
+2. Register via `register_runner()`.
+3. Provide dry-run support via an environment variable flag.
+
+[[graph:factory.runners]]
+
+### 16.4  Agent Prompt Overrides
+
+Per-project agent behavior MAY be customized by placing `<role>.md` files in `.factory/agents/`. These override the factory default prompts for the corresponding role.
+
+---
+
+## 17  Configuration
+
+### 17.1  Five-Tier Precedence
 
 ```
-CLI flag > env var > profile credential > config.toml [defaults] > hardcoded default
+CLI flag > env var > profile credential > config.toml default > hardcoded default
 ```
 
-Empty/whitespace CLI values MUST be skipped (fall through to lower tiers).
+Profile credentials collapse into the env tier via `os.environ.setdefault` — env vars always win.
 
-### §10.2 Config File (`~/.factory/config.toml`)
+### 17.2  `~/.factory/config.toml` Structure
 
 ```toml
 [defaults]
-runner = "claude"
+runner = "claude"          # Runner backend
+model = ""                 # Model override
 projects_dir = "~/factory-projects"
 
-[credentials.vertex]
+[credentials.vertex]       # Named credential profile
 FACTORY_RUNNER = "claude"
 ANTHROPIC_API_KEY = "sk-ant-..."
 ```
 
-- Profile names MUST match `[a-zA-Z0-9_-]+` (validated by `_validate_profile_name`)
-- Credential keys MUST match `[A-Z_][A-Z0-9_]*` (validated by `_validate_credential_keys`)
-- Config file MUST be created with `0o600` permissions
-- Sensitive keys (containing "key", "token", "secret", "password") MUST be masked in `show_config`
-- `migrate_env_to_config` MUST raise `FileExistsError` if config exists
-- Profile not found → `KeyError`; file missing with profile → `FileNotFoundError`
+**Validation:**
+- Profile names MUST match `[a-zA-Z0-9_-]+`.
+- Credential keys MUST match `[A-Z_][A-Z0-9_]*`.
+- Sensitive keys (containing `key`, `token`, `secret`, `password`) MUST be masked in display.
+- Config file MUST be created with `0o600` permissions.
 
-### §10.3 Project Config (`factory.md` → `.factory/config.json`)
-
-`ExperimentStore.reparse_config()` parses `factory.md` markdown into `FactoryConfig`. Section names mapped case-insensitively via `section_map` dict. Code blocks, HTML comments, and list continuations are handled.
+[[graph:factory.user_config]]
 
 ---
 
-## §11 Entry Points
+## 18  Event System
 
-| Entry Point | Mechanism | Purpose |
-|---|---|---|
-| `factory` CLI | `pyproject.toml` script → `factory.cli:main` | Primary user interface |
-| `factory ceo /path` | CLI → completion guard → agent subprocess | Orchestrate improvement cycle |
-| `factory run /path --loop` | Heartbeat wrapper (default interval 1800s) | Continuous improvement |
-| `factory tmux /path --loop` | Detached tmux session | Background continuous improvement |
-| `factory agent <role>` | CLI → `invoke_agent()` → runner subprocess | Direct specialist invocation |
-| `factory workflow run <name>` | CLI → `WorkflowExecutor` | Headless DAG execution |
-| `factory dashboard` | FastAPI server on :8420 | Web monitoring UI |
+All events MUST be appended to `.factory/events.jsonl` in JSONL format. The file MUST resolve symlinks before writing.
 
-### §11.1 CLI Subcommand Groups
+### 18.1  Event Types
 
-| Group | Commands |
-|---|---|
-| Entry Points | `ceo`, `run`, `tmux` |
-| Project Setup | `detect`, `discover`, `init`, `eval` |
-| Experiment Lifecycle | `begin`, `finalize`, `emit` |
-| Project Intelligence | `study`, `diff`, `explain`, `insights` |
-| Backlog & Refinement | `backlog-list`, `backlog-add`, `backlog-remove` |
-| Knowledge & Archive | `export`, `backfill-archive` |
-| Self-Evolution | `ace`, `ace-stats` |
-| Configuration | `config show`, `config edit`, `config migrate` |
-| Validation & Recovery | `checkpoint`, `resume`, `baseline`, `precheck`, `guard`, `review`, `spec` |
+**Agent lifecycle:** `agent.started`, `agent.completed`, `agent.failed`, `agent.timeout`
+**Experiment lifecycle:** `experiment.begin`, `experiment.finalize`
+**Workflow lifecycle:** `workflow.started`, `node.started`, `node.completed`, `node.failed`, `gate.verdict`, `workflow.completed`, `workflow.halted`
+**Other:** `cycle.started`, `cycle.completed`, `worktree.created`, `worktree.removed`, `backlog.added`, `backlog.removed`, `verdict.overridden`, `ceo.message`, `bob.ceiling_warning`, `bob.ceiling_exceeded`
 
-### §11.2 Mode Dispatch Rules
+### 18.2  Safety
 
-| Mode | Preconditions | Rejects |
-|---|---|---|
-| `build` | New project or idea | — |
-| `design` | New or existing project, interactive | `--headless`, `--prompt` |
-| `improve` | `HAS_FACTORY` | — |
-| `research` | `HAS_FACTORY` + `research_target` | Existing without `research_target`; new + `--headless` |
-| `review` | Existing directory + `--pr` | Missing `--pr` |
-| `qa`/`deep-qa` | Existing directory + `--pr` | Missing `--pr` |
-| `refine` | Existing directory | `--mode`, `--prompt`, `--focus` (mutually exclusive) |
-| `create` | Any + `--focus` (mode description) | — |
-| `auto` | Default; auto-detects | — |
+`_emit_cli_event` MUST swallow exceptions (MUST NOT crash the CLI).
+`load_events` MUST support `since` datetime filter and skip blank lines.
+
+[[graph:factory.events]]
 
 ---
 
-## §12 Failure Model and Recovery
+## 19  Cross-Project Intelligence
 
-### §12.1 Error Types
+### 19.1  Insights Engine
 
-| Error | Module | Trigger | Recovery |
-|---|---|---|---|
-| `ConsecutiveAgentFailureError` | `agents/runner.py` | 2+ consecutive failures | Abort cycle; emit `cycle.aborted`; check API keys |
-| `ResultParseError` | `models.py` | Unparseable result: missing file, invalid JSON, non-numeric, NaN/Inf, zero denominator, unsupported parser | Return ERROR status |
-| `BobAuthError` | `runners/bob.py` | No API key in env, file, or native config | Set `BOBSHELL_API_KEY` or `.factory/.bob_auth` |
-| `CodexAuthError` | `runners/codex.py` | No API key and no OAuth credentials | Set `CODEX_API_KEY` or authenticate via OAuth |
-| `OpenCodeAuthError` | `runners/opencode.py` | `OPENAI_API_KEY` unset and not sourceable | Set env var |
-| `CeilingExceededError` | `runners/usage.py` | Invocations ≥ per-cycle max | Bump `FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE` |
-| `FileNotFoundError` | `store.py` | Missing `config.json` | Run `factory init` |
-| `ValueError` | `store.py` | Invalid JSON or schema mismatch | Run `factory init --reparse` |
-| `ValueError` | `runners/__init__.py` | Unknown runner name | Use `claude`, `bob`, `codex`, or `opencode` |
-| `FileNotFoundError` | `agents/runner.py` | Missing prompt file for role | Create `.factory/agents/<role>.md` or factory default |
-| `ValueError("path traversal")` | `research/runner.py` | Cycle ID contains `..` or `/` | Use safe cycle IDs |
+`classify_hypothesis()` uses 13 categories in priority order: bugfix > observability > coverage > testing > lint > type_safety > refactoring > performance > eval_improvement > agent_improvement > prompt_engineering > infrastructure > feature.
 
-### §12.2 Recovery Patterns
+Projects with <3 experiments MUST be excluded from category stats.
 
-| Scenario | Recovery |
-|---|---|
-| CEO premature exit | Completion guard detects incomplete work → auto-respawn (max 5) |
-| Stale cycle state (>24h) | Ignored; fresh cycle created |
-| Corrupt `cycle.json` | Returns `None` (no crash) |
-| Corrupt `config.json` | Raises `ValueError` with "Run 'factory init --reparse'" message |
-| Corrupt `results.tsv` | Invalid verdict values coerced to `"error"` |
-| Missing `eval_profile.json` | Returns `None`; discovery mode triggered |
-| Corrupt checkpoint | `load_checkpoint` returns `None` (no crash) |
-| Missing experiment dir on finalize | Auto-created |
-| Broken `.factory` symlink | `ensure_factory_dir` replaces with real directory |
-| Worktree crash | `prune_stale()` cleans orphaned worktrees on next run |
-| `gh` CLI unavailable | Graceful fallback (empty results, skipped checks) |
-| Langfuse unavailable | Silent no-op; tracing disabled |
-| Telegram send failure | Logged warning; returns without effect |
-| Obsidian vault unconfigured | All write functions return `None`; no directories created |
+[[graph:factory.insights]]
+
+### 19.2  ACE — Autonomous Continuous Evolution
+
+**Reflector contract:**
+- MUST be deterministic (no LLM) — pattern extraction from experiment histories only.
+- Counter wiring: fuzzy-matches hypothesis text against bullet content (term overlap ≥0.4 or SequenceMatcher ≥0.35).
+- keep → `helpful+1`; revert → `harmful+1`; error → no change.
+
+**Injector contract:**
+- Two-tier playbook resolution: user-local (`~/.factory/playbooks/`) > factory defaults.
+- `seed_user_playbooks()` copies defaults but MUST NOT overwrite existing files.
+
+[[graph:factory.ace]]
 
 ---
 
-## §13 Security and Safety
+## 20  Discovery Pipeline
 
-| Control | Implementation |
-|---|---|
-| API key isolation | Config file at `0o600` permissions; secrets masked in `show_config` |
-| Fixed surface protection | Precheck gate blocks modifications to declared fixed surfaces |
-| Scope enforcement | Guard checks restrict changes to declared scope patterns |
-| Ground truth leakage detection | 3-check pipeline: token overlap (Jaccard), negation hints, specific values |
-| Bob usage ceiling | Hard limit on invocations per cycle (`FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE`, default 8) |
-| QA execution mandate | Sacred Rule 9: QA agent MUST be invoked for every experiment |
-| CEO identity enforcement | Sacred Rule 8: identity re-anchor appended to all non-CEO review files |
-| Path traversal prevention | `create_run_dir` rejects cycle IDs containing `..` or `/` |
-| Environment isolation | `VIRTUAL_ENV` stripped; `TELEMETRY_PLATFORM` cleared; Codex OAuth strips API keys |
-| Clean PR safety | `strip_pr_artifacts` stages only specific files; new files `git rm`'d, modified files `git checkout`'d; never includes untracked files |
+```
+introspect.py → ProjectProfile
+     │  (language, type, framework, tooling detection)
+     ▼
+profile.py → EvalProfile
+     │  (3-tier dimension resolution: discovered > researched > fallback)
+     │  (weight normalization to sum 1.0)
+     ▼
+generate.py → eval/score.py
+     │  (templated Python wrapping discovered tools)
+     ▼
+eval_spec.py → starter eval_spec items
+     │  (auto-promotion: executable → ProjectEvalDimension)
+     ▼
+spec.py → SPEC.md
+     (graphify-first with batched fallback)
+```
 
----
+**Tier confidence:** explicit=1.0, discovered=0.8, researched=0.5, fallback=0.2.
 
-## §14 Test and Validation Matrix
-
-### §14.1 Key Behavioral Invariants
-
-| # | Invariant | Enforcement |
-|---|---|---|
-| 1 | Eval 50/50 weight split (hygiene/growth) when no project eval | `_effective_weights` |
-| 2 | Mandatory dimension names immutable — project eval cannot override | `_merge_all` name filtering |
-| 3 | Neutral score = 0.5 for undetected tools/languages | hygiene evaluators |
-| 4 | ACE pruning: `harmful - helpful ≥ 3` AND observations ≥ 3 | `curate_playbook` |
-| 5 | Consecutive failure abort at threshold 2 | `_check_failure_threshold` |
-| 6 | Cross-cycle isolation via `since_ts` parameter | `_count_verdicts` |
-| 7 | `--bg` and `--bg-agents` mutually exclusive | `cmd_ceo` |
-| 8 | CEO message filtering: only `type: "assistant"` with non-empty content | `_make_ceo_message_emitter` |
-| 9 | Terminal workflows (`terminal=True`) don't chain | `_chain_modes` |
-| 10 | Checkpoint backwards compat: missing `completed_hypotheses` → `[]` | `load_checkpoint` |
-| 11 | Skill cache determinism: sets sorted before hashing | `_compute_checksum` |
-| 12 | Clean PR safety: stages only specific files, never untracked | `strip_pr_artifacts` |
-| 13 | Annotation-source fidelity: exported skills match source workflow graph | `validate_skill` |
-| 14 | Broken symlink handling in `ensure_factory_dir` | store initialization |
-| 15 | `register_all()` returns exactly 22 workflows; all pass `validate_graph()` | test_annotations.py |
-| 16 | Tiered history: MAX_INLINE_HISTORY = 10 | `format_tiered_history` |
-| 17 | Bob ceiling accumulates across invocations using `cycle.json` `started_at` | `check_ceilings` |
-| 18 | ANSI sanitization: genuine blank lines preserved; redraw-only lines dropped | `_stream.py` |
-| 19 | Review file convention: `<role>[-<tag>]-latest.md`; parallel auto-tags | `_save_review` |
-| 20 | Config parsing: incomplete research target → `None` (not crash) | `reparse_config` |
-
-### §14.2 Test Infrastructure
-
-- Shared fixtures in `tests/conftest.py`: `tmp_project`, `sample_config`, `python_project`
-- Autouse `_isolate_registry` fixture redirects global registry to temp directory
-- `asyncio_mode = "auto"` — async test functions run without `@pytest.mark.asyncio`
-- Dry-run modes: `FACTORY_BOB_DRY_RUN=1`, `FACTORY_CODEX_DRY_RUN=1`, `FACTORY_OPENCODE_DRY_RUN=1`
+[[graph:factory.discovery]]
 
 ---
 
-## §15 Extension Points
+## 21  Specification Operations
 
-| Extension Point | Mechanism | Description |
-|---|---|---|
-| Custom runners | `factory.runners` entry point group | Register new CLI backends via `importlib.metadata` |
-| Project agent overrides | `.factory/agents/<role>.md` | Per-project prompt customization; ACE playbook still injected |
-| Custom workflows | `.factory/workflows/` or registered search paths | Project-specific workflow definitions; shadows built-ins |
-| Hard constraints | `factory.md` `## Hard Constraints` section | User-defined shell checks enforced at precheck |
-| Project eval dimensions | `factory.md` `## Project Eval` section | User-defined eval commands with name, command, parse, weight, timeout |
-| Eval spec items | `factory.md` `## Eval Spec` section | Auto-promoted to project eval dimensions when executable |
-| Within-tier weight overrides | `factory.md` `## Hygiene Weights` / `## Growth Weights` | Sparse weight adjustment per dimension |
-| Playbook evolution | `~/.factory/playbooks/<role>.md` | ACE-evolved behavioral rules (user-local, persists across projects) |
-| Obsidian vault | `FACTORY_VAULT_PATH` env var | Knowledge export destination (not `OBSIDIAN_VAULT_PATH`) |
-| Notification backends | `Notifier` protocol | Currently: Telegram; extensible via protocol |
+**`generate_spec()` pipeline (two paths):**
+1. **Graph path (preferred):** `extract_graph()` → `load_graph_data()` → single agent call with graph summary → write `SPEC.md`
+2. **Batched fallback:** collect source files → group into batches (80K token limit) → parallel agent extraction → concatenate to `spec_raw.md` → annotation agent → write `SPEC.md`
+
+**`validate_spec()` MUST include graph reference validation** — `[[graph:...]]` entity/community refs MUST resolve to actual graph nodes.
+
+**`get_impact()` MUST prefer graph-based analysis** (instant NetworkX traversal) with agent fallback.
+
+[[graph:factory.spec]]
 
 ---
 
-## §16 Implementation Checklist
+## Appendix A  `.factory/` File Layout
 
-### §16.1 Invariants That MUST Hold
+```
+.factory/
+├── config.json               # FactoryConfig (from factory.md)
+├── eval_profile.json          # EvalProfile (from discover)
+├── results.tsv                # Append-only experiment history
+├── performance_report.json    # Consolidated for ACE
+├── checkpoint.json            # Crash-recovery state
+├── adversarial_state.json     # GAN-style loop state
+├── last_eval.json             # Latest eval for dashboard
+├── events.jsonl               # Append-only event log
+├── bob_usage.jsonl            # Bob invocation log
+├── citations.json             # Research citation backfill
+├── .store.lock                # FileLock for concurrent access
+├── experiments/
+│   └── NNN/                   # hypothesis.md, eval_*.json, changes.diff, verdict.json
+├── strategy/
+│   ├── current.md             # Active hypotheses
+│   ├── backlog.md             # Pending items
+│   ├── observations.md        # Study output
+│   ├── research.md            # Researcher output
+│   └── insights.md            # Cross-project insights
+├── reviews/
+│   ├── <role>-latest.md       # Agent output capture
+│   └── ceo-verdict-<role>.md  # CEO review verdicts
+├── research/
+│   └── runs/<cycle_id>/       # stdout.log, stderr.log, summary.json
+├── state/
+│   ├── cycle.json             # CycleState
+│   └── refinements.json       # RefinementState
+├── archive/
+│   ├── experiments/           # Per-experiment learnings
+│   ├── patterns/              # Recurring patterns
+│   ├── decisions/             # Architecture decisions
+│   └── sources/               # Research source notes
+├── agents/                    # Per-project agent prompt overrides
+├── messages/                  # User→CEO message queue
+│   └── read/                  # Consumed messages
+├── spec_raw.md                # Raw spec extraction (batched path)
+├── spec_validation.md         # Spec validation report
+├── spec_update_scope.md       # Spec update scope
+└── graphify-out/
+    └── graph.json             # Code knowledge graph
+```
+
+---
+
+## Appendix B  Implementation Checklist
 
 - [ ] All Pydantic models use `ConfigDict(strict=True, extra="forbid")`
-- [ ] `ExperimentStore` uses `FileLock` for `begin()` and `finalize()`
-- [ ] Precheck gate is non-overridable by the CEO agent (implemented as `GateNode(evaluator_type="fn")`)
-- [ ] All 22 workflows validate cleanly via `validate_graph()`
-- [ ] Weight sums: default hygiene 50% + growth 50% = 100%
-- [ ] FEEC priority order: FIX(0) < EXPLOIT(1) < EXPLORE(2) < COMBINE(3)
-- [ ] Consecutive agent failure threshold = 2
-- [ ] Max CEO respawns = 5 (configurable via `FACTORY_CEO_MAX_RESPAWNS`)
-- [ ] Cycle staleness threshold = 24 hours
-- [ ] Anti-pattern Jaccard similarity threshold = 0.6
-- [ ] Tiered history: MAX_INLINE_HISTORY = 10
-- [ ] `detect_state` checks EVALS_PENDING_REVIEW before HAS_FACTORY
-
-### §16.2 Workflow-Specific Invariants
-
-- [ ] W₁ Build: Phase 1 MUST be scaffold + eval harness
-- [ ] W₂ Design: gate_strategy MUST be user evaluator
-- [ ] W₃b QA: gate_qa MUST HALT (not RELOOP to builder) on failure
-- [ ] W₄ Research: code_reviewer extra MUST verify mutable/fixed surface compliance
-- [ ] W₅ Meta: Archivist MUST be non-blocking; test chain proceeds immediately
-- [ ] W₈ Refine: Tier 3 MUST halt early via `gate_tier` (fn evaluator)
-- [ ] W₁₀ Skill Refine: guard max 2 reloops, then fallback to unrefined output
-- [ ] Doc freshness gate: present in build, improve, research, refine, create (5 workflows)
-- [ ] Deep-QA subgraph: gate_review checks CRITICAL_FOUND via grep, not agent judgment
-- [ ] Every non-benchmark workflow with Builder MUST have deep-QA specialist reachable
+- [ ] All mutating store operations acquire `FileLock`
+- [ ] All workflows pass `validate_graph()`
+- [ ] Builder→QA reachability enforced for non-benchmark workflows
+- [ ] All language evaluators register at import time
+- [ ] All runners provide dry-run support
+- [ ] Event emission never crashes the host process
+- [ ] Precheck failures always cause mandatory revert
+- [ ] Config files created with `0o600` permissions
+- [ ] Dashboard validates path segments against `_SAFE_NAME_RE`
+- [ ] `VIRTUAL_ENV` stripped from all runner subprocess environments
+- [ ] Graceful degradation modules never raise on external failure
+- [ ] Contributed workflows set `terminal=True` and register in `register_all()`
 
 ---
 
-## Appendix A: Reference Algorithms
+## How to Read the Knowledge Graph
 
-### A.1 FEEC Hypothesis Categorization
+This spec uses `[[graph:...]]` reference links to point into a code knowledge graph extracted by graphify. The graph contains AST-derived entities (modules, classes, functions) and their typed relationships (imports, calls, inherits).
 
-```python
-def categorize_hypothesis(text: str) -> FEECCategory:
-    lower = text.lower()
-    if any(kw in lower for kw in ["fix","error","bug","crash","fail","regression","broken","repair"]):
-        return FEECCategory.FIX
-    if any(kw in lower for kw in ["improve","increase","extend","enhance","build on","optimize","boost"]):
-        return FEECCategory.EXPLOIT
-    if any(kw in lower for kw in ["combine","merge","integrate","unify","consolidate"]):
-        return FEECCategory.COMBINE
-    return FEECCategory.EXPLORE
-```
+### Reference Link Types
 
-### A.2 Hypothesis Similarity (Jaccard)
+- `[[graph:EntityName]]` — look up a specific entity (module, class, function)
+- `[[graph:path:A:B]]` — find the dependency path between entities A and B
+- `[[graph:query:question]]` — run a natural language query against the graph
+- `[[graph:community:subsystem]]` — list all entities in a detected subsystem
 
-```python
-def hypothesis_similarity(a: str, b: str) -> float:
-    tokens_a = {w for w in a.lower().split() if len(w) >= 3}
-    tokens_b = {w for w in b.lower().split() if len(w) >= 3}
-    if not tokens_a or not tokens_b:
-        return 0.0
-    return len(tokens_a & tokens_b) / len(tokens_a | tokens_b)
-```
+### When to Use
 
-### A.3 Weight Normalization
-
-```python
-def _normalize_tier(results, target_weight, overrides=None):
-    if overrides:
-        results = [r.copy(weight=overrides.get(r.name, r.weight)) for r in results]
-    weight_sum = sum(r.weight for r in results)
-    if weight_sum <= 0:
-        return results
-    return [r.copy(weight=(r.weight / weight_sum) * target_weight) for r in results]
-```
-
-### A.4 Composite Score
-
-```python
-def compute_composite(results, guard_violations, threshold):
-    weight_sum = sum(r.weight for r in results)
-    if weight_sum > 0 and abs(weight_sum - 1.0) > 1e-9:
-        results = [r.copy(weight=r.weight / weight_sum) for r in results]
-    total = sum(r.score * r.weight for r in results)
-    passed = len(guard_violations) == 0 and total >= threshold
-    return CompositeScore(total=total, results=results, guard_violations=guard_violations, passed=passed)
-```
-
-### A.5 Plateau Detection
-
-```python
-def detect_plateau(history, threshold=3):
-    scored = [r for r in history if r.score_after is not None]
-    if len(scored) < threshold:
-        return False
-    best = scored[0].score_after
-    streak = 0
-    for r in scored[1:]:
-        if r.score_after > best:
-            best = r.score_after
-            streak = 0
-        else:
-            streak += 1
-    return streak >= threshold
-```
-
-### A.6 Stuck Detection
-
-```python
-def detect_stuck(history, threshold=3):
-    consecutive_reverts = []
-    for entry in reversed(history):
-        if entry["verdict"] != "revert":
-            break
-        consecutive_reverts.append(categorize_hypothesis(entry["hypothesis"]))
-    if len(consecutive_reverts) < threshold:
-        return False
-    return len(set(consecutive_reverts[:threshold])) == 1
-```
-
-### A.7 Skill Cache Checksum
-
-```python
-def _compute_checksum(workflows):
-    # Sort sets before hashing to avoid Python set-ordering nondeterminism
-    data = sorted(serialize(workflow_models))
-    return hashlib.sha256(json.dumps(data).encode()).hexdigest()
-    # Cache path: ~/.factory/cache/skills/{checksum}/
-    # On miss: export → cache → copy; evict sibling dirs
-```
+- **Planning and design:** Read the overview sections in this spec
+- **Implementation details:** Resolve `[[graph:...]]` links via `factory spec resolve` or query the graph directly with `graphify explain`, `graphify path`, `graphify query`
