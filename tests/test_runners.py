@@ -1831,15 +1831,107 @@ class TestClaudeBuildInteractiveCommand:
         for f in temp_files:
             f.unlink(missing_ok=True)
 
-    def test_temp_file_in_list(self, tmp_path: Path) -> None:
+    def test_temp_files_include_prompt_and_claude_md_and_settings(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
         _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
             prompt="Test prompt content", task="Test", cwd=tmp_path,
         ))
 
-        assert len(temp_files) == 1
-        assert temp_files[0].exists()
-        assert temp_files[0].read_text() == "Test prompt content"
+        assert len(temp_files) == 3
+        prompt_file = temp_files[0]
+        claude_md = temp_files[1]
+        settings_file = temp_files[2]
+
+        assert prompt_file.exists()
+        assert prompt_file.read_text() == "Test prompt content"
+        assert claude_md == tmp_path / ".claude" / "CLAUDE.md"
+        assert settings_file == tmp_path / ".claude" / "settings.local.json"
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_writes_claude_md_with_prompt(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        prompt = "You are the CEO.\n\n## Instructions\nDo great things."
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt=prompt, task="Test", cwd=tmp_path,
+        ))
+
+        claude_md = tmp_path / ".claude" / "CLAUDE.md"
+        assert claude_md.exists()
+        assert claude_md.read_text() == prompt
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_creates_claude_dir_if_missing(self, tmp_path: Path) -> None:
+        assert not (tmp_path / ".claude").exists()
+
+        runner = ClaudeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert (tmp_path / ".claude").is_dir()
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_writes_settings_local_json(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        settings_path = tmp_path / ".claude" / "settings.local.json"
+        assert settings_path.exists()
+        settings = json.loads(settings_path.read_text())
+        assert settings["disallowedTools"] == ["Agent"]
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_merges_existing_settings_local_json(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        settings_path = claude_dir / "settings.local.json"
+        settings_path.write_text(json.dumps({"existingKey": "value", "disallowedTools": ["OldTool"]}))
+
+        runner = ClaudeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        settings = json.loads(settings_path.read_text())
+        assert settings["existingKey"] == "value"
+        assert settings["disallowedTools"] == ["Agent"]
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_handles_corrupt_settings_local_json(self, tmp_path: Path) -> None:
+        claude_dir = tmp_path / ".claude"
+        claude_dir.mkdir()
+        (claude_dir / "settings.local.json").write_text("not valid json{{{")
+
+        runner = ClaudeRunner()
+        _, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        settings = json.loads((claude_dir / "settings.local.json").read_text())
+        assert settings["disallowedTools"] == ["Agent"]
+
+        for f in temp_files:
+            f.unlink(missing_ok=True)
+
+    def test_no_disallowed_tools_in_cmd(self, tmp_path: Path) -> None:
+        runner = ClaudeRunner()
+        cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
+            prompt="Test", task="Test", cwd=tmp_path,
+        ))
+
+        assert "--disallowedTools" not in cmd
 
         for f in temp_files:
             f.unlink(missing_ok=True)
@@ -1861,15 +1953,18 @@ class TestDisallowedAgentTool:
         for f in temp_files:
             f.unlink(missing_ok=True)
 
-    def test_build_interactive_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
+    def test_build_interactive_command_uses_settings_not_cli_flag(self, tmp_path: Path) -> None:
         runner = ClaudeRunner()
         cmd, _, temp_files = runner.build_interactive_command(AgentRunRequest(
             prompt="Test", task="Test", cwd=tmp_path,
         ))
 
-        assert "--disallowedTools" in cmd
-        dt_idx = cmd.index("--disallowedTools")
-        assert cmd[dt_idx + 1] == "Agent"
+        assert "--disallowedTools" not in cmd
+
+        settings_path = tmp_path / ".claude" / "settings.local.json"
+        assert settings_path.exists()
+        settings = json.loads(settings_path.read_text())
+        assert settings["disallowedTools"] == ["Agent"]
 
         for f in temp_files:
             f.unlink(missing_ok=True)

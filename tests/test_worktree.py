@@ -1,11 +1,14 @@
 """Tests for factory/worktree.py — git worktree lifecycle management."""
 
+import json
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from factory.worktree import (
+    _has_active_sessions,
     _seed_experiment_factory,
     create_experiment_worktree,
     create_worktree,
@@ -414,6 +417,87 @@ class TestSymlinkResolution:
         config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
         assert config_via_symlink == config_direct
+
+
+class TestSessionGuard:
+    """Tests for _has_active_sessions() and the remove_worktree() guard."""
+
+    def test_active_session_detected(self, tmp_path: Path) -> None:
+        sessions = [{"state": "working", "id": "abc"}]
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(sessions), stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is True
+
+    def test_blocked_session_detected(self, tmp_path: Path) -> None:
+        sessions = [{"state": "blocked", "id": "def"}]
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(sessions), stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is True
+
+    def test_no_active_sessions(self, tmp_path: Path) -> None:
+        sessions = [{"state": "completed", "id": "xyz"}]
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=json.dumps(sessions), stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_empty_session_list(self, tmp_path: Path) -> None:
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="[]", stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_command_failure_returns_false(self, tmp_path: Path) -> None:
+        result = subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="error",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_timeout_returns_false(self, tmp_path: Path) -> None:
+        with patch(
+            "factory.worktree.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="claude", timeout=5),
+        ):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_invalid_json_returns_false(self, tmp_path: Path) -> None:
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout="not json", stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_non_list_json_returns_false(self, tmp_path: Path) -> None:
+        result = subprocess.CompletedProcess(
+            args=[], returncode=0, stdout='{"state": "working"}', stderr="",
+        )
+        with patch("factory.worktree.subprocess.run", return_value=result):
+            assert _has_active_sessions(tmp_path) is False
+
+    def test_remove_worktree_skips_when_active_sessions(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+        assert wt_path.exists()
+
+        with patch("factory.worktree._has_active_sessions", return_value=True):
+            remove_worktree(git_project, wt_path, branch)
+
+        assert wt_path.exists()
+
+    def test_remove_worktree_proceeds_when_no_active_sessions(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+        assert wt_path.exists()
+
+        with patch("factory.worktree._has_active_sessions", return_value=False):
+            remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
 
 
 class TestFilelockConcurrency:
