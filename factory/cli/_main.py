@@ -78,6 +78,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "baseline",
             "clean-pr",
             "spec",
+            "graph",
             "adversarial-state",
         ],
     ),
@@ -1095,6 +1096,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Force-kill a session even if it's not in the factory registry",
     )
 
+    # graph — code knowledge graph operations
+    graph_parser = sub.add_parser("graph", help="Code knowledge graph via graphify")
+    graph_sub = graph_parser.add_subparsers(dest="graph_command")
+    p_graph_extract = graph_sub.add_parser("extract", help="Extract a code knowledge graph")
+    p_graph_extract.add_argument("path", help="Path to the project")
+    p_graph_update = graph_sub.add_parser("update", help="Incrementally update the knowledge graph")
+    p_graph_update.add_argument("path", help="Path to the project")
+    p_graph_status = graph_sub.add_parser("status", help="Show graph freshness and stats")
+    p_graph_status.add_argument("path", help="Path to the project")
+
     # spec — repo spec generation and analysis
     spec_parser = sub.add_parser("spec", help="Repo spec generation and analysis")
     spec_sub = spec_parser.add_subparsers(dest="spec_command")
@@ -1212,6 +1223,14 @@ def main(argv: list[str] | None = None) -> int:
         "tmux-capture": _cli.cmd_tmux_capture,
         "tmux-stop": _cli.cmd_tmux_stop,
         "refactory": _cli.cmd_refactory,
+        "graph": lambda a: {
+            "extract": _cli.cmd_graph_extract,
+            "update": _cli.cmd_graph_update,
+            "status": _cli.cmd_graph_status,
+        }.get(
+            str(getattr(a, "graph_command", "")),
+            lambda args: print("Usage: factory graph {extract,update,status}") or 1,
+        )(a),
         "spec": lambda a: {
             "generate": _cli.cmd_spec_generate,
             "validate": _cli.cmd_spec_validate,
