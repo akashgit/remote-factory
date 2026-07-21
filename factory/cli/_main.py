@@ -1121,6 +1121,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_spec_impact = spec_sub.add_parser("impact", help="Show impact subgraph for a module")
     p_spec_impact.add_argument("module", help="Module name to query")
     p_spec_impact.add_argument("--project", required=True, help="Path to the project")
+    p_spec_resolve = spec_sub.add_parser(
+        "resolve", help="Resolve [[graph:...]] references in SPEC.md"
+    )
+    p_spec_resolve.add_argument("path", help="Path to the project")
 
     # refactory — persistent supervisor agent
     p = sub.add_parser("refactory", help="Launch the re:factory persistent supervisor agent")
@@ -1237,9 +1241,12 @@ def main(argv: list[str] | None = None) -> int:
             "scope": _cli.cmd_spec_scope,
             "update": _cli.cmd_spec_update,
             "impact": _cli.cmd_spec_impact,
+            "resolve": _cli.cmd_spec_resolve,
         }.get(
             str(getattr(a, "spec_command", "")),
-            lambda args: print("Usage: factory spec {generate,validate,scope,update,impact}") or 1,
+            lambda args: (
+                print("Usage: factory spec {generate,validate,scope,update,impact,resolve}") or 1
+            ),
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]

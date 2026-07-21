@@ -11,6 +11,14 @@ from factory.spec.ops import (
     update_spec,
     validate_spec,
 )
+from factory.spec.resolver import (
+    load_graph,
+    resolve_community,
+    resolve_entity,
+    resolve_path,
+    resolve_query,
+    resolve_references,
+)
 
 
 def read_spec(project_path: Path) -> str:
@@ -28,7 +36,13 @@ __all__ = [
     "generate_spec",
     "get_impact",
     "group_into_batches",
+    "load_graph",
     "read_spec",
+    "resolve_community",
+    "resolve_entity",
+    "resolve_path",
+    "resolve_query",
+    "resolve_references",
     "scope_diff",
     "update_spec",
     "validate_spec",

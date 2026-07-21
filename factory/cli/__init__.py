@@ -118,6 +118,7 @@ from factory.cli.review import (
 from factory.cli.spec import (
     cmd_spec_generate as cmd_spec_generate,
     cmd_spec_impact as cmd_spec_impact,
+    cmd_spec_resolve as cmd_spec_resolve,
     cmd_spec_scope as cmd_spec_scope,
     cmd_spec_update as cmd_spec_update,
     cmd_spec_validate as cmd_spec_validate,

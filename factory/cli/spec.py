@@ -156,3 +156,25 @@ def cmd_spec_impact(args: argparse.Namespace) -> int:
 
     print(snippet)
     return 0
+
+
+def cmd_spec_resolve(args: argparse.Namespace) -> int:
+    """Resolve all [[graph:...]] references in SPEC.md and print the result."""
+    from factory.discovery.spec import resolve_spec
+    from factory.spec import read_spec
+    from factory.spec.resolver import resolve_references
+
+    project_path = Path(args.path).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    spec_path = resolve_spec(project_path)
+    if spec_path is None:
+        print("Error: no repo spec found (run 'factory spec generate' first)", file=sys.stderr)
+        return 1
+
+    spec_content = read_spec(project_path)
+    resolved = resolve_references(spec_content, project_path)
+    print(resolved)
+    return 0
