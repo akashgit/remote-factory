@@ -1,4 +1,5 @@
 """Shared pytest fixtures for remote-factory tests."""
+from __future__ import annotations
 
 import os
 from pathlib import Path
