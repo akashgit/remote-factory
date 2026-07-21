@@ -5,6 +5,7 @@ import secrets
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Final
 
 import structlog
 
@@ -12,6 +13,15 @@ log = structlog.get_logger()
 
 # Telemetry files to preserve when cleaning up worktrees
 _TELEMETRY_FILES = ("trace_id.txt",)
+
+# .factory entries to seed into experiment worktrees so agents can read project
+# config without sharing mutable eval state (like last_eval.json) across branches.
+_EXPERIMENT_SEED_ENTRIES: Final[tuple[str, ...]] = (
+    "config.json",
+    "eval_profile.json",
+    "strategy",
+    "agents",
+)
 
 
 def create_worktree(
@@ -86,6 +96,80 @@ def create_worktree(
         pass
 
     return wt_dir, branch
+
+
+def create_experiment_worktree(
+    project_path: Path,
+    exp_id: int,
+    base_commit: str,
+) -> tuple[Path, str]:
+    """Create an isolated worktree for a parallel experiment branch.
+
+    Each worktree gets its own `.factory/` directory (not a symlink) seeded
+    with read-only config from the project.  This ensures parallel branches
+    write independent `last_eval.json` files so the selection node can
+    compare genuinely separate scores.
+
+    Returns (worktree_path, branch_name).
+    """
+    project_path = project_path.resolve()
+    branch = f"factory/exp-{exp_id}"
+    factory_dir = project_path / ".factory"
+    wt_parent = project_path / ".factory-worktrees"
+    wt_dir = wt_parent / f"exp-{exp_id}"
+
+    log.info("experiment_worktree_create", branch=branch, base=base_commit[:12], exp_id=exp_id)
+
+    wt_parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["git", "worktree", "add", str(wt_dir), "-b", branch, base_commit],
+        cwd=project_path,
+        check=True,
+        capture_output=True,
+    )
+
+    _seed_experiment_factory(factory_dir, wt_dir / ".factory")
+
+    log.info("experiment_worktree_created", branch=branch, path=str(wt_dir))
+
+    try:
+        from factory.events import emit_event
+        emit_event(project_path, "experiment_worktree.created", data={
+            "exp_id": exp_id,
+            "worktree_path": str(wt_dir),
+            "branch": branch,
+            "base_commit": base_commit,
+        })
+    except Exception:
+        pass
+
+    return wt_dir, branch
+
+
+def _seed_experiment_factory(source: Path, dest: Path) -> None:
+    """Copy config entries from the project .factory/ into an experiment worktree.
+
+    Only copies entries listed in _EXPERIMENT_SEED_ENTRIES so that mutable
+    runtime state (results.tsv, experiments/, last_eval.json) stays independent.
+    """
+    if dest.is_symlink():
+        dest.unlink()
+    elif dest.is_dir():
+        shutil.rmtree(dest)
+    dest.mkdir(parents=True, exist_ok=True)
+
+    if not source.is_dir():
+        return
+
+    for entry_name in _EXPERIMENT_SEED_ENTRIES:
+        src = source / entry_name
+        dst = dest / entry_name
+        if not src.exists():
+            continue
+        if src.is_dir():
+            shutil.copytree(src, dst)
+        else:
+            shutil.copy2(src, dst)
 
 
 def _preserve_telemetry(worktree_path: Path, project_path: Path) -> None:
@@ -206,11 +290,14 @@ def prune_stale(project_path: Path) -> list[str]:
             active = _list_active_worktrees(project_path)
         for d in wt_parent.iterdir():
             if d.is_dir() and str(d.resolve()) not in active:
-                run_id = d.name.removeprefix("run-")
+                name = d.name
+                if name.startswith("exp-"):
+                    branch = f"factory/{name}"
+                else:
+                    branch = f"factory/run-{name.removeprefix('run-')}"
                 shutil.rmtree(d)
-                pruned.append(f"Removed orphaned directory: {d.name}")
-                log.info("worktree_pruned_orphan", name=d.name)
-                branch = f"factory/run-{run_id}"
+                pruned.append(f"Removed orphaned directory: {name}")
+                log.info("worktree_pruned_orphan", name=name)
                 subprocess.run(
                     ["git", "branch", "-D", branch],
                     cwd=project_path,

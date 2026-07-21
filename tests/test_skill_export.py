@@ -13,6 +13,7 @@ from factory.workflow.primitives import (
     GateNode,
     JoinNode,
     Study,
+    SubgraphForkNode,
     VerdictType,
     Workflow,
 )
@@ -521,7 +522,11 @@ class TestRealWorkflowSkills:
 
 
 def _workflows_with_builder() -> list[str]:
-    """Return names of workflows containing a Builder AgentNode."""
+    """Return names of workflows containing a Builder AgentNode.
+
+    Excludes workflows with SubgraphForkNode — QA runs inside the subgraph,
+    not in the top-level skill prose.
+    """
     from factory.workflow.definitions import register_all
 
     names = []
@@ -532,7 +537,11 @@ def _workflows_with_builder() -> list[str]:
             isinstance(n, AgentNode) and n.role == AgentRole.BUILDER
             for n in wf.nodes.values()
         )
-        if has_builder:
+        has_subgraph_fork = any(
+            isinstance(n, SubgraphForkNode)
+            for n in wf.nodes.values()
+        )
+        if has_builder and not has_subgraph_fork:
             names.append(name)
     return sorted(names)
 

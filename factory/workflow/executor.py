@@ -31,7 +31,9 @@ from factory.workflow.primitives import (
     GateNode,
     JoinNode,
     NodeType,
+    SelectionNode,
     Study,
+    SubgraphForkNode,
     Verdict,
     VerdictType,
     Workflow,
@@ -167,8 +169,16 @@ class WorkflowExecutor:
         if self.result.halted:
             return
 
+        if isinstance(node, SubgraphForkNode):
+            await self._execute_subgraph_fork(node)
+            return
+
         if isinstance(node, ForkNode):
             await self._execute_fork(node)
+            return
+
+        if isinstance(node, SelectionNode):
+            await self._execute_selection(node)
             return
 
         if isinstance(node, JoinNode):
@@ -450,6 +460,300 @@ class WorkflowExecutor:
         if next_id:
             await self._execute_from(next_id)
 
+    async def _execute_subgraph_fork(self, node: SubgraphForkNode) -> None:
+        """Execute N copies of a subgraph in parallel, each in an isolated worktree.
+
+        Each branch gets an independent WorkflowExecutor with its own state,
+        running against a separate git worktree branching from the same commit.
+        """
+        import subprocess as sp
+
+        from factory.worktree import create_experiment_worktree
+
+        self.result.nodes_executed += 1
+
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node.id,
+                node_type="SubgraphForkNode",
+            ),
+        )
+
+        start = time.monotonic()
+
+        # Resolve base commit for all branches
+        if self.dry_run:
+            base_commit = "0" * 40
+        else:
+            result = sp.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            base_commit = result.stdout.strip()
+
+        # Parse hypotheses from strategist output to determine branch count
+        strategy_file = self.project_path / ".factory" / "strategy" / "current.md"
+        hypotheses = _parse_hypotheses(strategy_file) if strategy_file.exists() else []
+        branch_count = min(len(hypotheses), node.parallelism) if hypotheses else node.parallelism
+
+        if branch_count < 1:
+            branch_count = 1
+
+        # Collect subgraph node IDs by walking edges from entry to exit
+        subgraph_ids = _collect_subgraph_nodes(
+            self.workflow, node.subgraph_entry, node.subgraph_exit,
+        )
+        sub_workflow = self.workflow.subgraph(
+            subgraph_ids, name=f"{self.workflow.name}__branch", start_node=node.subgraph_entry,
+        )
+
+        branch_results: list[dict[str, Any]] = []
+        worktrees: list[tuple[Path, str, int]] = []
+
+        async def run_branch(idx: int) -> dict[str, Any]:
+            from factory.store import ExperimentStore
+
+            hypothesis = hypotheses[idx] if idx < len(hypotheses) else f"Hypothesis {idx + 1}"
+
+            if self.dry_run:
+                wt_path = self.project_path / ".factory-worktrees" / f"exp-dry-{idx}"
+                branch_name = f"factory/exp-dry-{idx}"
+                exp_id = idx + 1
+            else:
+                store = ExperimentStore(self.project_path)
+                exp_id = await store.begin(hypothesis)
+                wt_path, branch_name = create_experiment_worktree(
+                    self.project_path, exp_id, base_commit,
+                )
+                worktrees.append((wt_path, branch_name, exp_id))
+
+            branch_executor = WorkflowExecutor(
+                sub_workflow.model_copy(deep=True),
+                wt_path if not self.dry_run else self.project_path,
+                agent_pool=self.agent_pool,
+                dry_run=self.dry_run,
+            )
+            branch_result = await branch_executor.execute()
+
+            return {
+                "exp_id": exp_id,
+                "hypothesis": hypothesis,
+                "worktree_path": str(wt_path),
+                "branch": branch_name,
+                "success": branch_result.success,
+                "halted": branch_result.halted,
+                "halt_reason": branch_result.halt_reason,
+                "nodes_executed": branch_result.nodes_executed,
+                "node_outputs": branch_result.node_outputs,
+            }
+
+        sem = asyncio.Semaphore(node.parallelism)
+
+        async def throttled_branch(idx: int) -> dict[str, Any]:
+            async with sem:
+                return await run_branch(idx)
+
+        tasks = [throttled_branch(i) for i in range(branch_count)]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        for r in results:
+            if isinstance(r, BaseException):
+                log.warning("subgraph_branch_failed", error=str(r))
+                branch_results.append({
+                    "success": False, "halted": True, "halt_reason": str(r),
+                })
+            else:
+                branch_results.append(r)  # type: ignore[arg-type]
+
+        elapsed = (time.monotonic() - start) * 1000
+        self.result.node_outputs[node.id] = json.dumps(branch_results)
+        self.completed_files |= node.writes
+
+        self._emit(
+            "node.completed",
+            NodeCompleted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node.id,
+                node_type="SubgraphForkNode",
+                files_written=sorted(node.writes),
+                duration_ms=elapsed,
+            ),
+        )
+
+        next_id = self._next_unconditional(node.id)
+        if next_id:
+            await self._execute_from(next_id)
+
+    async def _execute_selection(self, node: SelectionNode) -> None:
+        """Compare parallel experiment results and select the best."""
+        import subprocess as sp
+
+        from factory.worktree import remove_worktree
+
+        self.result.nodes_executed += 1
+
+        self._emit(
+            "node.started",
+            NodeStarted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node.id,
+                node_type="SelectionNode",
+            ),
+        )
+
+        start = time.monotonic()
+
+        # Find the SubgraphForkNode's output (branch results)
+        fork_output = ""
+        for nid, output in self.result.node_outputs.items():
+            try:
+                parsed = json.loads(output)
+                if isinstance(parsed, list) and parsed and "exp_id" in parsed[0]:
+                    fork_output = output
+                    break
+            except (json.JSONDecodeError, TypeError, KeyError):
+                continue
+
+        if self.dry_run or not fork_output:
+            selection_result: dict[str, Any] = {"strategy": node.strategy, "winner": None, "reason": "dry-run"}
+            self.result.node_outputs[node.id] = json.dumps(selection_result)
+            self.completed_files |= node.writes
+            elapsed = (time.monotonic() - start) * 1000
+            self._emit(
+                "node.completed",
+                NodeCompleted(
+                    workflow_name=self.workflow.name,
+                    run_id=self.run_id,
+                    node_id=node.id,
+                    node_type="SelectionNode",
+                    files_written=sorted(node.writes),
+                    duration_ms=elapsed,
+                ),
+            )
+            next_id = self._next_unconditional(node.id)
+            if next_id:
+                await self._execute_from(next_id)
+            return
+
+        branches: list[dict[str, Any]] = json.loads(fork_output)
+        successful = [b for b in branches if b.get("success")]
+
+        if not successful:
+            self.result.halted = True
+            self.result.halt_reason = "all parallel experiment branches failed"
+            return
+
+        # best_score: read eval results from each worktree
+        best: dict[str, Any] | None = None
+        best_score = -1.0
+
+        for branch in successful:
+            wt_path = Path(branch["worktree_path"])
+            eval_file = wt_path / ".factory" / "last_eval.json"
+            score = 0.0
+            if eval_file.exists():
+                try:
+                    data = json.loads(eval_file.read_text())
+                    score = float(data.get("total", data.get("score", 0.0)))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    pass
+
+            branch["score"] = score
+            if score > best_score:
+                best_score = score
+                best = branch
+
+        if not best:
+            best = successful[0]
+
+        # Merge winner branch into baseline
+        winner_branch = best["branch"]
+        try:
+            sp.run(
+                ["git", "merge", winner_branch, "--no-edit", "-m",
+                 f"Merge parallel experiment winner (exp {best['exp_id']})"],
+                cwd=self.project_path,
+                check=True,
+                capture_output=True,
+            )
+        except sp.CalledProcessError as exc:
+            log.error("selection_merge_failed", branch=winner_branch, error=str(exc))
+            self.result.halted = True
+            self.result.halt_reason = f"failed to merge winner branch {winner_branch}"
+            return
+
+        # Finalize losers as superseded, clean up all worktrees
+        from factory.store import ExperimentStore
+
+        store = ExperimentStore(self.project_path)
+        for branch in branches:
+            wt_path = Path(branch.get("worktree_path", ""))
+            branch_name = branch.get("branch", "")
+            exp_id = branch.get("exp_id")
+
+            if branch is not best and exp_id is not None:
+                from factory.models import ExperimentRecord
+                record = ExperimentRecord(
+                    id=exp_id,
+                    timestamp=__import__("datetime").datetime.now(tz=__import__("datetime").timezone.utc),
+                    hypothesis=branch.get("hypothesis", ""),
+                    change_summary="superseded by experiment " + str(best["exp_id"]),
+                    issue_number=None,
+                    pr_number=None,
+                    score_before=None,
+                    score_after=branch.get("score"),
+                    delta=None,
+                    verdict="superseded",
+                    cost_usd=None,
+                    notes="",
+                )
+                try:
+                    await store.finalize(exp_id, record)
+                except Exception as exc:
+                    log.warning("finalize_superseded_failed", exp_id=exp_id, error=str(exc))
+
+            if wt_path.exists() and branch_name:
+                try:
+                    remove_worktree(self.project_path, wt_path, branch_name)
+                except Exception as exc:
+                    log.warning("worktree_cleanup_failed", path=str(wt_path), error=str(exc))
+
+        selection_result = {
+            "strategy": node.strategy,
+            "winner_exp_id": best["exp_id"],
+            "winner_score": best.get("score", 0.0),
+            "winner_hypothesis": best.get("hypothesis", ""),
+            "total_branches": len(branches),
+            "successful_branches": len(successful),
+        }
+        self.result.node_outputs[node.id] = json.dumps(selection_result)
+        self.completed_files |= node.writes
+
+        elapsed = (time.monotonic() - start) * 1000
+        self._emit(
+            "node.completed",
+            NodeCompleted(
+                workflow_name=self.workflow.name,
+                run_id=self.run_id,
+                node_id=node.id,
+                node_type="SelectionNode",
+                files_written=sorted(node.writes),
+                duration_ms=elapsed,
+            ),
+        )
+
+        next_id = self._next_unconditional(node.id)
+        if next_id:
+            await self._execute_from(next_id)
+
     async def _run_node(self, node: NodeType) -> str:
         """Execute a single node and return its output."""
         if self.dry_run:
@@ -712,3 +1016,61 @@ class WorkflowExecutor:
             emit_workflow_event(self.project_path, event_type, event)
         except Exception:
             log.debug("event_emission_failed", event_type=event_type)
+
+
+def _parse_hypotheses(strategy_file: Path) -> list[str]:
+    """Extract individual hypotheses from the strategist's current.md output."""
+    text = strategy_file.read_text()
+    hypotheses: list[str] = []
+    current: list[str] = []
+
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("## Hypothesis") or stripped.startswith("### Hypothesis"):
+            if current:
+                hypotheses.append("\n".join(current).strip())
+                current = []
+            current.append(stripped)
+        elif stripped.startswith("## ") and current:
+            hypotheses.append("\n".join(current).strip())
+            current = []
+        elif current:
+            current.append(line)
+
+    if current:
+        hypotheses.append("\n".join(current).strip())
+
+    if not hypotheses:
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- **") or stripped.startswith("1. **"):
+                hypotheses.append(stripped.lstrip("- 0123456789.").strip())
+
+    return hypotheses
+
+
+def _collect_subgraph_nodes(
+    workflow: Workflow,
+    entry: str,
+    exit_node: str,
+) -> set[str]:
+    """Collect all node IDs on paths from entry to exit_node (inclusive)."""
+    edges_by_source: dict[str, list[str]] = {}
+    for edge in workflow.edges:
+        edges_by_source.setdefault(edge.source, []).append(edge.target)
+
+    # BFS from entry, stop at exit_node
+    visited: set[str] = set()
+    queue = [entry]
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        if nid == exit_node:
+            continue
+        for target in edges_by_source.get(nid, []):
+            if target not in visited:
+                queue.append(target)
+
+    return visited

@@ -21,11 +21,13 @@ class CheckpointState(BaseModel):
 
     mode: str
     active_experiment_id: int | None
+    active_experiment_ids: list[int] = []
     completed_agents: list[str]
     pending_agents: list[str]
     last_eval_scores: dict[str, float]
     current_hypothesis: str | None
     completed_hypotheses: list[int] = []
+    parallel_branch_status: dict[str, str] = {}
     plateau_count: int = 0
     loop_level: Literal["inner", "outer"] = "inner"
     timestamp: str
@@ -76,6 +78,11 @@ def format_checkpoint(state: CheckpointState) -> str:
         f"Completed:     {', '.join(state.completed_agents) or 'none'}",
         f"Pending:       {', '.join(state.pending_agents) or 'none'}",
     ]
+    if state.active_experiment_ids:
+        lines.append(f"Parallel exps: {', '.join(str(e) for e in state.active_experiment_ids)}")
+    if state.parallel_branch_status:
+        branch_info = ", ".join(f"{k}={v}" for k, v in state.parallel_branch_status.items())
+        lines.append(f"Branch status: {branch_info}")
     if state.completed_hypotheses:
         lines.append(f"Done hypotheses: {', '.join(str(h) for h in state.completed_hypotheses)}")
     if state.last_eval_scores:

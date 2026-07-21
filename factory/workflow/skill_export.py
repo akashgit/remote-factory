@@ -25,7 +25,9 @@ from factory.workflow.primitives import (
     ForkNode,
     GateNode,
     JoinNode,
+    SelectionNode,
     Study,
+    SubgraphForkNode,
     VerdictType,
     Workflow,
 )
@@ -63,6 +65,15 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "state is has_factory."
         ),
         "argument_hint": "<project_path> [--focus <target>]",
+    },
+    "parallel-improve": {
+        "description": (
+            "Parallel improve mode — runs N hypotheses concurrently in isolated "
+            "worktrees, then selects the best result. Use when the user says "
+            "'parallel improve', 'try multiple hypotheses', or wants tournament-style "
+            "experimentation."
+        ),
+        "argument_hint": "<project_path>",
     },
     "deep-qa": {
         "description": (
@@ -497,6 +508,56 @@ def _join_to_instruction(node: JoinNode, workflow: Workflow) -> str:
     return "\n".join(lines)
 
 
+def _subgraph_fork_to_instruction(node: SubgraphForkNode, workflow: Workflow) -> str:
+    """Convert a SubgraphForkNode to parallel worktree experiment instructions."""
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+
+    annotations = [
+        f"<!-- node: SubgraphForkNode id={node.id} entry={node.subgraph_entry} exit={node.subgraph_exit} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [
+        *annotations,
+        "",
+        f"Fork up to {node.parallelism} parallel experiment branches, each in an isolated worktree:",
+        "",
+        "For each hypothesis from the strategy:",
+        "1. Create an experiment worktree branching from the current commit",
+        f"2. Run the experiment subgraph (`{node.subgraph_entry}` → `{node.subgraph_exit}`)",
+        "3. Each branch runs independently: begin → builder → QA → eval",
+        "",
+        "All branches run concurrently. Results are collected at the barrier.",
+    ]
+    return "\n".join(lines)
+
+
+def _selection_to_instruction(node: SelectionNode, workflow: Workflow) -> str:
+    """Convert a SelectionNode to selection protocol instructions."""
+    out_edges = _outgoing_edges(workflow, node.id)
+    edges_str = _format_edges(out_edges)
+
+    annotations = [
+        f"<!-- node: SelectionNode id={node.id} strategy={node.strategy} -->",
+        f"<!-- edges: {edges_str} -->",
+    ]
+
+    lines = [
+        *annotations,
+        "",
+        f"**Selection strategy: `{node.strategy}`**",
+        "",
+        "Compare all completed experiment branches:",
+        "1. Read eval results from each branch's worktree",
+        "2. Select the branch with the highest composite score",
+        "3. Merge the winner's branch into the baseline",
+        "4. Mark losing experiments as `superseded`",
+        "5. Clean up all experiment worktrees",
+    ]
+    return "\n".join(lines)
+
+
 # ── frontmatter builder ────────────────────────────────────────
 
 
@@ -552,21 +613,36 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
 
     sorted_nodes = _topological_sort(workflow)
     fork_targets: set[str] = set()
+    subgraph_nodes: set[str] = set()
     for nid in sorted_nodes:
         node = workflow.nodes[nid]
         if isinstance(node, ForkNode):
             fork_targets.update(node.targets)
+        elif isinstance(node, SubgraphForkNode):
+            from factory.workflow.executor import _collect_subgraph_nodes
+            subgraph_nodes |= _collect_subgraph_nodes(workflow, node.subgraph_entry, node.subgraph_exit)
 
     sections: list[str] = []
     phase_num = 1
 
     for nid in sorted_nodes:
-        if nid in fork_targets:
+        if nid in fork_targets or nid in subgraph_nodes:
             continue
 
         node = workflow.nodes[nid]
 
-        if isinstance(node, ForkNode):
+        if isinstance(node, SubgraphForkNode):
+            node_title = nid.replace("fork_", "").replace("_", " ").title()
+            sections.append(f"## Phase {phase_num}: {node_title} (Parallel Experiments)\n")
+            sections.append(_subgraph_fork_to_instruction(node, workflow))
+            phase_num += 1
+
+        elif isinstance(node, SelectionNode):
+            sections.append(f"## Phase {phase_num}: Select Best Experiment\n")
+            sections.append(_selection_to_instruction(node, workflow))
+            phase_num += 1
+
+        elif isinstance(node, ForkNode):
             node_title = nid.replace("fork_", "").replace("_", " ").title()
             sections.append(f"## Phase {phase_num}: {node_title} (Parallel)\n")
             sections.append(_fork_to_instruction(node, workflow))

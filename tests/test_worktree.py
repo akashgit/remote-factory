@@ -9,6 +9,8 @@ import pytest
 
 from factory.worktree import (
     _has_active_sessions,
+    _seed_experiment_factory,
+    create_experiment_worktree,
     create_worktree,
     detect_default_branch,
     prune_stale,
@@ -528,3 +530,192 @@ class TestFilelockConcurrency:
 
         assert id_a != id_b
         assert {id_a, id_b} == {1, 2}
+
+
+class TestCreateExperimentWorktree:
+    def test_creates_experiment_worktree(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, branch = create_experiment_worktree(git_project, 1, head_sha)
+
+        assert wt_path.exists()
+        assert wt_path.is_dir()
+        assert branch == "factory/exp-1"
+        assert wt_path.name == "exp-1"
+        assert wt_path.parent == git_project / ".factory-worktrees"
+
+    def test_experiment_worktree_has_independent_factory_dir(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, _ = create_experiment_worktree(git_project, 2, head_sha)
+
+        wt_factory = wt_path / ".factory"
+        assert wt_factory.is_dir()
+        assert not wt_factory.is_symlink()
+        assert (wt_factory / "config.json").read_text() == "{}"
+
+    def test_experiment_worktree_has_project_files(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, _ = create_experiment_worktree(git_project, 3, head_sha)
+
+        assert (wt_path / "README.md").exists()
+        assert (wt_path / "README.md").read_text() == "hello"
+
+    def test_experiment_branch_checked_out(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, branch = create_experiment_worktree(git_project, 4, head_sha)
+
+        result = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=wt_path, capture_output=True, text=True,
+        )
+        assert result.stdout.strip() == branch
+
+    def test_multiple_experiment_worktrees_coexist(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt1, br1 = create_experiment_worktree(git_project, 5, head_sha)
+        wt2, br2 = create_experiment_worktree(git_project, 6, head_sha)
+
+        assert wt1 != wt2
+        assert br1 != br2
+        assert wt1.exists()
+        assert wt2.exists()
+
+    def test_experiment_worktrees_have_isolated_eval_state(self, git_project: Path) -> None:
+        """Parallel experiment worktrees must not share last_eval.json."""
+        import json
+
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt1, _ = create_experiment_worktree(git_project, 10, head_sha)
+        wt2, _ = create_experiment_worktree(git_project, 11, head_sha)
+
+        (wt1 / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.9}))
+        (wt2 / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.3}))
+
+        score1 = json.loads((wt1 / ".factory" / "last_eval.json").read_text())["total"]
+        score2 = json.loads((wt2 / ".factory" / "last_eval.json").read_text())["total"]
+        assert score1 == 0.9
+        assert score2 == 0.3
+
+    def test_remove_experiment_worktree(self, git_project: Path) -> None:
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        wt_path, branch = create_experiment_worktree(git_project, 7, head_sha)
+        assert wt_path.exists()
+
+        remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
+        result = subprocess.run(
+            ["git", "branch", "--list", branch],
+            cwd=git_project, capture_output=True, text=True,
+        )
+        assert branch not in result.stdout
+
+
+class TestPruneStaleExperimentWorktrees:
+    def test_cleans_orphaned_exp_directory(self, git_project: Path) -> None:
+        """prune_stale handles exp- prefixed directories with correct branch naming."""
+        wt_dir = git_project / ".factory-worktrees"
+        wt_dir.mkdir(parents=True, exist_ok=True)
+        orphan = wt_dir / "exp-99"
+        orphan.mkdir()
+        (orphan / "some_file.txt").write_text("stale")
+
+        pruned = prune_stale(git_project)
+        assert len(pruned) >= 1
+        assert not orphan.exists()
+        assert any("exp-99" in msg for msg in pruned)
+
+
+class TestSeedExperimentFactory:
+    def test_copies_config_files(self, tmp_path: Path) -> None:
+        source = tmp_path / ".factory"
+        source.mkdir()
+        (source / "config.json").write_text('{"key": "val"}')
+        (source / "eval_profile.json").write_text('{"dims": []}')
+
+        dest = tmp_path / "worktree" / ".factory"
+        _seed_experiment_factory(source, dest)
+
+        assert dest.is_dir()
+        assert not dest.is_symlink()
+        assert (dest / "config.json").read_text() == '{"key": "val"}'
+        assert (dest / "eval_profile.json").read_text() == '{"dims": []}'
+
+    def test_copies_strategy_directory(self, tmp_path: Path) -> None:
+        source = tmp_path / ".factory"
+        source.mkdir()
+        (source / "strategy").mkdir()
+        (source / "strategy" / "current.md").write_text("# strategy")
+
+        dest = tmp_path / "worktree" / ".factory"
+        _seed_experiment_factory(source, dest)
+
+        assert (dest / "strategy" / "current.md").read_text() == "# strategy"
+
+    def test_skips_mutable_state(self, tmp_path: Path) -> None:
+        source = tmp_path / ".factory"
+        source.mkdir()
+        (source / "config.json").write_text("{}")
+        (source / "results.tsv").write_text("id\n")
+        (source / "last_eval.json").write_text('{"total": 0.5}')
+        (source / "experiments").mkdir()
+        (source / "experiments" / "001").mkdir()
+
+        dest = tmp_path / "worktree" / ".factory"
+        _seed_experiment_factory(source, dest)
+
+        assert (dest / "config.json").exists()
+        assert not (dest / "results.tsv").exists()
+        assert not (dest / "last_eval.json").exists()
+        assert not (dest / "experiments").exists()
+
+    def test_replaces_existing_symlink(self, tmp_path: Path) -> None:
+        source = tmp_path / ".factory"
+        source.mkdir()
+        (source / "config.json").write_text("{}")
+
+        dest = tmp_path / "worktree" / ".factory"
+        dest.parent.mkdir(parents=True)
+        dest.symlink_to(source)
+        assert dest.is_symlink()
+
+        _seed_experiment_factory(source, dest)
+
+        assert dest.is_dir()
+        assert not dest.is_symlink()
+
+    def test_handles_missing_source(self, tmp_path: Path) -> None:
+        source = tmp_path / ".factory"
+        dest = tmp_path / "worktree" / ".factory"
+
+        _seed_experiment_factory(source, dest)
+
+        assert dest.is_dir()
+        assert list(dest.iterdir()) == []
