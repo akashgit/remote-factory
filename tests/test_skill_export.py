@@ -227,6 +227,41 @@ class TestForkToInstruction:
         result = _fork_to_instruction(fork, wf)
         assert "3 agents" in result
 
+    def test_fork_commands_in_single_code_block(self) -> None:
+        """All parallel commands must be in ONE bash code block, not separate ones.
+
+        Separate blocks cause each ``&`` to run in an isolated shell where
+        ``wait`` has nothing to wait for — the CEO ends up with orphaned
+        processes and sequential fallback.
+        """
+        r1 = _make_agent("researcher_a", AgentRole.RESEARCHER, blocking=True)
+        r2 = _make_agent("researcher_b", AgentRole.RESEARCHER, blocking=True)
+        fork = ForkNode(id="fork_research", targets=["researcher_a", "researcher_b"])
+        wf = _minimal_workflow(
+            nodes={"fork_research": fork, "researcher_a": r1, "researcher_b": r2},
+            start="fork_research",
+        )
+        result = _fork_to_instruction(fork, wf)
+        bash_blocks = result.count("```bash")
+        assert bash_blocks == 1, (
+            f"Expected 1 bash code block, got {bash_blocks}. "
+            "Separate blocks cause & and wait to run in different shells."
+        )
+
+    def test_fork_includes_timeout_guidance(self) -> None:
+        """Fork with long-running agents should tell the CEO to set a longer Bash timeout."""
+        r1 = _make_agent("researcher_a", AgentRole.RESEARCHER, blocking=True)
+        r2 = _make_agent("researcher_b", AgentRole.RESEARCHER, blocking=True)
+        fork = ForkNode(id="fork_research", targets=["researcher_a", "researcher_b"])
+        wf = _minimal_workflow(
+            nodes={"fork_research": fork, "researcher_a": r1, "researcher_b": r2},
+            start="fork_research",
+        )
+        result = _fork_to_instruction(fork, wf)
+        assert "single" in result.lower() and "timeout" in result.lower(), (
+            "Fork output must include timeout guidance for the CEO"
+        )
+
     def test_fork_skips_non_agent_targets(self) -> None:
         fn = FnNode(id="fn_eval", command="factory eval {project_path}")
         fork = ForkNode(id="fork_mixed", targets=["fn_eval"])
