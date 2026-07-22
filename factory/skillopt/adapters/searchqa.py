@@ -100,7 +100,7 @@ class SearchQAAdapter(EnvAdapter):
         items = list(source)
         rng = random.Random(seed)
         rng.shuffle(items)
-        batch = items[:env_num]
+        batch = items[:env_num] if env_num > 0 else items
         log.info("eval env built", count=len(batch), split=split, seed=seed)
         return batch
 
