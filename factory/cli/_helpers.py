@@ -110,6 +110,8 @@ def _print_banner(mode: str = "improve") -> None:
             print("The Factory — Self-Evolving Meta-Harness", file=sys.stderr)
         else:
             print(f"Factory v2 — mode: {mode}", file=sys.stderr)
+        if mode == "founder":
+            print("WARNING: Founder mode — prototype only, not for production use.", file=sys.stderr)
         return
 
     c = "\033[1;36m"  # bold cyan
@@ -117,12 +119,18 @@ def _print_banner(mode: str = "improve") -> None:
     r = "\033[0m"      # reset
 
     mode_line = "" if mode == "welcome" else f"{d}  Mode: {mode}{r}\n"
+    y = "\033[1;33m"  # bold yellow
+    founder_warn = (
+        f"{y}  ⚠  PROTOTYPE ONLY — not for production use.{r}\n"
+        f"{y}  ⚠  Run --mode improve afterward to harden.{r}\n"
+    ) if mode == "founder" else ""
     banner = (
         f"\n{c}  ┏━╸┏━┓┏━╸╺┳╸┏━┓┏━┓╻ ╻{r}\n"
         f"{c}  ┣╸ ┣━┫┃   ┃ ┃ ┃┣┳┛┗┳┛{r}\n"
         f"{c}  ╹  ╹ ╹┗━╸ ╹ ┗━┛╹┗╸ ╹ {r}\n"
         f"{d}  Self-Evolving Meta-Harness{r}\n"
         f"{mode_line}"
+        f"{founder_warn}"
     )
     print(banner, file=sys.stderr)
 
