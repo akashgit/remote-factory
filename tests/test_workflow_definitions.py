@@ -14,6 +14,7 @@ from factory.workflow.definitions import (
     design_workflow,
     doc_generate_workflow,
     doc_update_workflow,
+    founder_workflow,
     improve_workflow,
     meta_workflow,
     qa_workflow,
@@ -248,6 +249,7 @@ class TestRegisterAll:
             "skill-refine",
             "spec-generate",
             "spec-update",
+            "founder",
         }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -590,6 +592,54 @@ class TestTerminalFlagDefaults:
 
     def test_design_not_terminal(self) -> None:
         assert design_workflow().terminal is False
+
+
+# ── W₁₆: Founder structure ──────────────────────────────────────
+
+
+class TestFounderStructure:
+    def test_founder_valid(self) -> None:
+        wf = founder_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"founder workflow has issues: {issues}"
+
+    def test_founder_name(self) -> None:
+        wf = founder_workflow()
+        assert wf.name == "founder"
+
+    def test_founder_terminal(self) -> None:
+        wf = founder_workflow()
+        assert wf.terminal is True
+
+    def test_founder_trigger(self) -> None:
+        wf = founder_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+        assert not wf.trigger(ProjectState.NO_FACTORY, {"mode": "founder"})
+
+    def test_founder_node_count(self) -> None:
+        wf = founder_workflow()
+        assert len(wf.nodes) == 5
+
+    def test_founder_has_no_deep_qa(self) -> None:
+        wf = founder_workflow()
+        assert "health_checker" not in wf.nodes
+        assert "code_reviewer" not in wf.nodes
+        assert "adversarial_tester" not in wf.nodes
+
+    def test_founder_builder_max_iterations(self) -> None:
+        wf = founder_workflow()
+        builder = wf.nodes["builder"]
+        assert builder.max_iterations == 1
+
+    def test_founder_skill_export(self) -> None:
+        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
+        wf = founder_workflow()
+        skill_md = workflow_to_skill_md(wf)
+        issues = validate_skill(skill_md)
+        assert issues == [], f"founder skill has issues: {issues}"
+        assert "workflow-founder" in skill_md
 
 
 # ── W₁₁: Doc Generate structure ──────────────────────────────────

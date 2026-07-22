@@ -57,6 +57,7 @@ __all__ = [
     "spec_generate_workflow",
     "spec_update_workflow",
     "parallel_improve_workflow",
+    "founder_workflow",
     "register_all",
 ]
 
@@ -2532,6 +2533,99 @@ def parallel_improve_workflow() -> Workflow:
     )
 
 
+# ── W₁₆: Founder Mode ────────────────────────────────────────
+
+
+def founder_workflow() -> Workflow:
+    """W₁₆: Founder Mode — rapid prototyping pipeline.
+
+    Study → Strategist → Builder → gate_tests → archivist(FnNode)
+    Gate RELOOPs to builder (max 1 retry). No deep-QA, no eval scoring.
+    Terminal — does not chain to other modes.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Pick ONE high-leverage hypothesis to prototype. "
+            "Read observations at .factory/strategy/observations.md. "
+            "Skip FEEC classification and backlog grooming — just pick the "
+            "most promising idea and write it to .factory/strategy/current.md. "
+            "Keep it scoped: one idea, one PR, fast to implement."
+        ),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Prototype the hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md for project context. "
+            "Prioritize getting something working over code quality. "
+            "Skip edge cases and comprehensive error handling. "
+            "Run tests to verify it works. Commit the changes."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+        max_iterations=1,
+    )
+
+    nodes["gate_tests"] = GateNode(
+        id="gate_tests",
+        evaluator_type="fn",
+        evaluator_command="cd {project_path} && python -m pytest --tb=short -q 2>&1; ruff check . 2>&1",
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    nodes["archivist"] = FnNode(
+        id="archivist",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+            " --force"
+        ),
+        notes=(
+            "Record experiment to .factory/results.tsv, bypassing precheck gates "
+            "(no QA agents or eval scores in founder mode). "
+            "The CEO must substitute $EXP_ID, $VERDICT (keep/revert), and $HYPOTHESIS."
+        ),
+        writes={".factory/experiments/verdict.json"},
+    )
+
+    edges = [
+        Edge(source="study", target="strategist"),
+        Edge(source="strategist", target="builder"),
+        Edge(source="builder", target="gate_tests"),
+        Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.HAS_FACTORY and ctx.get("mode") == "founder"
+
+    return Workflow(
+        name="founder",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+        terminal=True,
+        trigger=trigger,
+    )
+
+
 def register_all() -> dict[str, Workflow]:
     """Build and return all workflow definitions."""
     from factory.workflow.deep_qa import workflow as deep_qa_workflow
@@ -2566,4 +2660,5 @@ def register_all() -> dict[str, Workflow]:
         "doc-update": doc_update_workflow(),
         "spec-generate": spec_generate_workflow(),
         "spec-update": spec_update_workflow(),
+        "founder": founder_workflow(),
     }
