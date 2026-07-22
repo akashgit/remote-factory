@@ -13,7 +13,6 @@ from factory.skillopt.gate import evaluate_gate, select_gate_score
 from factory.skillopt.skill import apply_patch
 from factory.skillopt.types import GateResult, Patch, RolloutResult
 from factory.skillopt.yaml_surface import (
-    compute_prompt_change_magnitude,
     extract_prompt_slots,
     format_prompt_slots_for_llm,
     load_yaml,
@@ -334,34 +333,12 @@ class SkillOptTrainer:
                             candidate_slots[slot_name] = edit.content
                             break
 
-            total_magnitude = 0
-            for slot_name, new_value in candidate_slots.items():
-                old_value = self.prompt_slots.get(slot_name, "")
-                if new_value == old_value:
-                    continue
-                magnitude = compute_prompt_change_magnitude(old_value, new_value)
-                total_magnitude += magnitude
-                log.info(
-                    "slot edit magnitude",
-                    slot=slot_name,
-                    magnitude=magnitude,
-                )
-            if total_magnitude > self.learning_rate:
-                log.warning(
-                    "total edit magnitude exceeds learning rate",
-                    total_magnitude=total_magnitude,
-                    limit=self.learning_rate,
-                )
-                self.rejected_edits.append(clipped)
-                return GateResult(
-                    action="reject",
-                    current_skill=self.current_skill,
-                    current_score=self.current_score,
-                    best_skill=self.best_skill,
-                    best_score=self.best_score,
-                    best_step=self.best_step,
-                )
-            if total_magnitude == 0:
+            n_ops = len(clipped.edits)
+            has_changes = any(
+                candidate_slots.get(s) != self.prompt_slots.get(s)
+                for s in candidate_slots
+            )
+            if not has_changes:
                 log.warning("no actual prompt changes after merge/clip — skipping eval")
                 return GateResult(
                     action="reject",
@@ -372,8 +349,8 @@ class SkillOptTrainer:
                     best_step=self.best_step,
                 )
             log.info(
-                "edit magnitude ok",
-                total_magnitude=total_magnitude,
+                "edit budget ok",
+                n_ops=n_ops,
                 limit=self.learning_rate,
             )
 
