@@ -153,14 +153,39 @@ class SearchQAAdapter(EnvAdapter):
             gold_answers = item.get("answers", [])
             scores = score_prediction(prediction, gold_answers)
 
+            if scores["exact_match"] < 1.0 and raw_response:
+                fail_reason = (
+                    f"EM=0: predicted '{prediction}' "
+                    f"but expected {gold_answers}"
+                )
+            elif not raw_response:
+                fail_reason = "no_response"
+            else:
+                fail_reason = ""
+
+            trace_dump = (
+                f"[EVALUATION RESULT]\n"
+                f"Question: {item['question']}\n"
+                f"Predicted answer: {prediction!r}\n"
+                f"Gold answers: {gold_answers!r}\n"
+                f"Exact Match: {scores['exact_match']}\n"
+                f"F1: {scores['f1']:.4f}"
+            )
+
             return RolloutResult(
                 id=item["id"],
                 hard=scores["exact_match"],
                 soft=scores["f1"],
                 n_turns=1,
-                fail_reason="" if raw_response else "no_response",
+                fail_reason=fail_reason,
                 task_type="question_answering",
-                extras={"response": raw_response, "prediction": prediction},
+                extras={
+                    "response": raw_response,
+                    "prediction": prediction,
+                    "question": item["question"],
+                    "gold_answers": gold_answers,
+                    "trace_dump": trace_dump,
+                },
             )
 
         results: list[RolloutResult] = []
