@@ -12,9 +12,99 @@
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
 [![Docs](https://img.shields.io/badge/docs-akashgit.github.io-blue)](https://akashgit.github.io/remote-factory/)
 
+<p align="center">📖 <b><a href="https://akashgit.github.io/remote-factory/">Full Documentation</a></b></p>
+
 **Describe what you want — re:factory builds it, tests it, and keeps improving it.** Design an idea from scratch or point at an existing project for continuous improvement. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
+
+---
+
+## How It Works
+
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and also handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In design mode, the Strategist synthesizes research into a buildable plan through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+
+**The experiment cycle:** observe → hypothesize → build → review → measure → decide (keep or revert) → archive. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
+
+---
+
+## Workflows
+
+### Build — start from an idea
+
+```bash
+uv run factory ceo "Build a REST API for bookmark management"
+uv run factory ceo ~/ideas/weather-dashboard.md
+uv run factory ceo https://github.com/user/repo
+```
+
+Give re:factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
+
+### Improve — make an existing codebase better
+
+```bash
+uv run factory ceo ~/my-project
+uv run factory run ~/my-project --loop
+```
+
+Point it at any codebase. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.
+
+### Focus — build exactly one thing
+
+```bash
+uv run factory ceo ~/my-project --focus "add authentication middleware"
+uv run factory ceo ~/my-app --focus 42                       # GitHub issue
+uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
+```
+
+When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits. The entire pipeline is scoped to that single target.
+
+### Design — brainstorm before building
+
+```bash
+# From a raw idea — discuss and refine into a buildable spec
+uv run factory ceo "distributed eval runner" --mode design
+
+# From a spec file — read and discuss before building
+uv run factory ceo ~/ideas/my-app-spec.md --mode design
+```
+
+Have a rough idea? Design mode researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.
+
+Design mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
+
+```bash
+uv run factory ceo ~/factory-projects/my-app --mode design
+
+# Seed the conversation with a topic
+uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
+```
+
+### Research — optimize a metric iteratively
+
+```bash
+uv run factory ceo "SWE-bench solver agent" --mode research
+uv run factory ceo ~/my-research-project --mode research
+```
+
+For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. Leakage guards prevent ground truth from contaminating hypotheses, and monotonic improvement ensures the metric never regresses below the previous best. See [Getting Started](docs/getting-started.md#research-mode-in-detail) for the full picture.
+
+### Headless & continuous loop
+
+For unattended operation — scripting, cron jobs, or always-on machines:
+
+```bash
+# Headless — pipe mode, no interaction
+uv run factory ceo ~/my-project --headless
+
+# Loop — continuous improvement (default: every 30 min)
+uv run factory run ~/my-project --loop
+
+# Detached tmux — loop in the background
+uv run factory tmux ~/my-project --loop
+```
+
+`--headless` disables the interactive session. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine with `uv run factory tmux` to leave re:factory running on an always-on machine. See [Getting Started](docs/getting-started.md) for full details.
 
 ---
 
@@ -54,7 +144,7 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 
 ---
 
-## What Do You Want to Do?
+## Self-Evolving Agents
 
 | I want to… | Command |
 |---|---|
@@ -64,50 +154,65 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 | **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
 | **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
 
----
+re:factory doesn't just improve your project — it improves *itself*. Every keep/revert decision becomes training data for the next cycle.
 
-## Design Workflow
+This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
 
-Use design mode when you want to brainstorm before building. Start a conversation with the CEO to refine an idea, then build:
-
-```bash
-# From a raw idea — discuss and refine into a buildable spec
-factory ceo "distributed task runner" --mode design
-
-# From a spec file — read and discuss before building
-factory ceo ~/ideas/my-app-spec.md --mode design
-```
-
-Design mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
+Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
 
 ```bash
-factory ceo ~/factory-projects/my-app --mode design
-
-# Seed the conversation with a topic
-factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
+# Run a full improvement cycle, then evolve all agent playbooks
+uv run factory ceo ~/my-project --mode meta
 ```
 
-You can also pass a spec file or URL directly — `factory ceo spec.md` — and re:factory builds without the design conversation.
+See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
 
 ---
 
-## Improve Workflow
+## Architecture
 
-Improve mode is re:factory's continuous improvement loop for existing projects. Point it at a codebase and it autonomously observes the project state, generates hypotheses for improvements, builds and tests changes, and keeps or reverts each experiment based on eval scores.
+re:factory is a three-layer system:
 
-```bash
-factory ceo ~/factory-projects/my-app --mode improve
-```
+**Layer 1 — Python CLI** (`factory/`): Pure tools that don't make decisions. Eval runner, strategy engine, experiment store, discovery, event logging. Entry point: `uv run factory --help`.
 
-Each cycle: **observe** → **hypothesize** → **build** → **review** → **measure** → **decide** (keep or revert) → **archive**. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
+**Layer 2 — CEO Agent** (`factory/agents/prompts/ceo.md`): The orchestrator. Detects project state, routes to the right mode (build, improve, design, research, meta, create, review, refine), spawns specialist agents, and makes the keep/revert decision for each experiment. Mode-specific playbooks are auto-generated from workflow graph definitions.
 
-When you know exactly what you want, `--focus` pins a single target — one hypothesis, one experiment, done:
+**Layer 3 — Specialist Agents** (`factory/agents/`): Eight independent Claude Code subprocesses — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst. Each has a focused prompt, receives context from the CEO, and returns structured output. Agent prompts support per-project overrides via `.factory/agents/<role>.md`.
 
-```bash
-factory ceo ~/my-app --mode improve --focus "add dark mode toggle"
-factory ceo ~/my-app --mode improve --focus 42                       # GitHub issue
-factory ceo ~/my-app --mode improve --focus "owner/repo#42"          # Issue shorthand
-```
+Data flows down: the CEO calls the CLI for eval, store, and guard operations. Agents call nothing — they produce text that the CEO interprets.
+
+---
+
+## Eval System
+
+Every change is measured by a composite score across three tiers:
+
+| Tier | What it measures | Examples |
+|------|-----------------|---------|
+| **Hygiene** (6 dimensions) | Code quality basics | Tests, lint, type checking, coverage, guards, config |
+| **Growth** (5 dimensions) | Capability evolution | API surface area, experiment diversity, observability, research effectiveness |
+| **Project** (user-defined) | Domain-specific metrics | Benchmark accuracy, latency, win rate |
+
+On first run, `uv run factory discover` auto-detects your project's language and framework to generate the eval profile. The weighted composite of all dimensions determines whether each experiment is kept or reverted. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
+
+---
+
+## Built with re:factory
+
+re:factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
+
+| Project | What it does | Mode |
+|---------|-------------|------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
+| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
+| **re:factory itself** | re:factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+
+Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
 
 ---
 
@@ -151,54 +256,6 @@ Without a colon, `--focus` always creates a new mode.
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
 
 Point it at the factory repo itself to extend re:factory with custom pipelines.
-
----
-
-## Eval System
-
-Every change is measured by an 11-dimension composite score across three tiers: **Hygiene** (tests, lint, types, coverage), **Growth** (API surface, experiment diversity, observability), and **Project** (user-defined domain metrics). On first run, `factory discover` auto-detects your project's language and framework to generate the eval profile. See [Eval System](docs/eval.md) for scoring details, weights, and guards.
-
----
-
-## Verified Skill Generation
-
-Workflow graphs (Pydantic definitions) are converted to SKILL.md prose files that the CEO follows at runtime. This conversion goes through a verified pipeline to prevent information loss:
-
-```
-Workflow (Pydantic) → templatize → review agent → guard → split
-                         │              │           │        │
-                    {{slot::default}}   opus    structural   SKILL.md +
-                    + annotations     refines    diff check  annotations.yaml
-```
-
-The pipeline produces two artifacts per workflow:
-- **SKILL.md** — clean prose the CEO reads at runtime
-- **SKILL.annotations.yaml** — structured metadata per node for programmatic verification
-
-Regenerate all skills after changing workflow definitions:
-
-```bash
-factory workflow export-skills
-```
-
-A regression test (`test_annotations_match_source`) runs in CI to catch drift between workflow definitions and exported skills.
-
----
-
-## Built with re:factory
-
-| Project | What it does | Mode |
-|---------|-------------|------|
-| **SWE-bench solver** | Autonomous agent that resolves GitHub issues, improved via failure analysis | Research |
-| **HMMT math solver** | Multi-agent team that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
-| **Text/Sketch → CAD** | Natural language and sketches to executable CadQuery Python code for 3D models | Research |
-| **HLS design space explorer** | Per-function AI agents + ILP solver for HLS optimization — 92% execution time reduction | Build |
-| **Pluck** | iOS app that extracts structured data from screenshots using on-device AI | Build + Improve |
-| **[SDG Hub](https://github.com/Red-Hat-AI-Innovation-Team/sdg_hub)** | Agent-maintained open-source framework for synthetic data generation | Build + Improve |
-| **[OpenSkies Airline Corpus](https://github.com/lukeinglis/OpenSkiesAirline)** | 85-document fictional airline corpus for RAG/fine-tuning evaluation with cross-document consistency validation | Design + Improve |
-| **re:factory itself** | Runs on itself — continuously improved via its own experiment outcomes | Meta |
-
-Built something with re:factory? Open a PR to add it here.
 
 ---
 
@@ -334,6 +391,31 @@ claude --agent factory-researcher "study the auth system"
 ```
 
 This path only ships the agent prompts (no skills, no slash commands) and is independent of the plugin marketplace install above.
+
+---
+
+## Verified Skill Generation
+
+Workflow graphs (Pydantic definitions) are converted to SKILL.md prose files that the CEO follows at runtime. This conversion goes through a verified pipeline to prevent information loss:
+
+```
+Workflow (Pydantic) → templatize → review agent → guard → split
+                         │              │           │        │
+                    {{slot::default}}   opus    structural   SKILL.md +
+                    + annotations     refines    diff check  annotations.yaml
+```
+
+The pipeline produces two artifacts per workflow:
+- **SKILL.md** — clean prose the CEO reads at runtime
+- **SKILL.annotations.yaml** — structured metadata per node for programmatic verification
+
+Regenerate all skills after changing workflow definitions:
+
+```bash
+factory workflow export-skills
+```
+
+A regression test (`test_annotations_match_source`) runs in CI to catch drift between workflow definitions and exported skills.
 
 ---
 
