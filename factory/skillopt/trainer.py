@@ -379,7 +379,7 @@ class SkillOptTrainer:
         else:
             self._save_skill(candidate_skill)
             eval_env = self.adapter.build_eval_env(
-                env_num=self.batch_size, split="eval", seed=self.eval_split_seed,
+                env_num=0, split="eval", seed=self.eval_split_seed,
             )
             eval_results = self.adapter.rollout(eval_env, candidate_skill, step_dir + "/eval")
             cand_hard, cand_soft = self._compute_score(eval_results)
