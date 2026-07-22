@@ -104,6 +104,28 @@ class SearchQAAdapter(EnvAdapter):
         log.info("eval env built", count=len(batch), split=split, seed=seed)
         return batch
 
+    def _extract_skill_prompt(self, skill_content: str) -> str:
+        """Extract the QA skill prompt from SKILL.md content.
+
+        The rendered SKILL.md wraps the prompt inside a factory agent --task \"...\" block.
+        For direct LLM calls we need just the prompt text, not the wrapper.
+        If the content doesn't look like a rendered SKILL.md, return it as-is.
+        """
+        if not skill_content.startswith("---"):
+            return skill_content
+        match = re.search(
+            r'factory agent builder --task "(.*?)"'
+            r'\s*--project',
+            skill_content,
+            re.DOTALL,
+        )
+        if match:
+            prompt = match.group(1)
+            prompt = re.sub(r"\nRead: [^\n]+$", "", prompt)
+            prompt = re.sub(r"\nWrite output to: [^\n]+$", "", prompt)
+            return prompt.strip()
+        return skill_content
+
     def rollout(
         self, env_manager: Any, skill_content: str, out_dir: str,
     ) -> list[RolloutResult]:
@@ -114,11 +136,13 @@ class SearchQAAdapter(EnvAdapter):
             log.warning("rollout called with empty env")
             return []
 
-        log.info("rollout starting", items=len(items), workers=self.workers)
+        skill_prompt = self._extract_skill_prompt(skill_content)
+        log.info("rollout starting", items=len(items), workers=self.workers,
+                 skill_chars=len(skill_prompt))
 
         def _run_one(item: dict) -> RolloutResult:
             prompt = (
-                f"{skill_content}\n\n"
+                f"{skill_prompt}\n\n"
                 f"## Question\n{item['question']}\n\n"
                 f"## Search Results\n{item['context']}\n\n"
                 f"Put your final answer inside <answer> tags."
