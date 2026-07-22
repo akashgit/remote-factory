@@ -69,10 +69,24 @@ def fmt_minibatch_trajectories(items: list[RolloutResult]) -> str:
     sections: list[str] = []
     for i, item in enumerate(items):
         header = f"--- Trace {i + 1}/{len(items)} (id={item.id}, hard={item.hard}) ---"
+        parts = [header]
+        if item.fail_reason:
+            parts.append(f"Failure: {item.fail_reason}")
+        question = item.extras.get("question")
+        prediction = item.extras.get("prediction")
+        gold_answers = item.extras.get("gold_answers")
+        if question is not None:
+            parts.append(f"Question: {question}")
+        if prediction is not None:
+            parts.append(f"Predicted answer: {prediction!r}")
+        if gold_answers is not None:
+            parts.append(f"Gold answers: {gold_answers!r}")
         trace_dump = item.extras.get("trace_dump", "")
-        fail_info = f"Failure: {item.fail_reason}" if item.fail_reason else ""
-        body = trace_dump[:8000] if trace_dump else "(no trace data)"
-        sections.append(f"{header}\n{fail_info}\n{body}")
+        if trace_dump:
+            parts.append(trace_dump[:8000])
+        elif question is None:
+            parts.append("(no trace data)")
+        sections.append("\n".join(parts))
     return "\n\n".join(sections)
 
 
