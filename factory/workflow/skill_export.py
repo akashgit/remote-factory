@@ -161,16 +161,6 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path> --prompt /tmp/task-instruction.md",
     },
-    "founder": {
-        "description": (
-            "Founder mode — rapid prototyping pipeline for fast hypothesis iteration. "
-            "Use when you want to test ideas quickly without full QA overhead. "
-            "Picks one hypothesis, builds a prototype, runs tests once, records the result. "
-            "No research, no code review, no adversarial QA, no eval scoring. "
-            "Terminal — does not chain to other modes. Run --mode improve to harden."
-        ),
-        "argument_hint": "<project_path>",
-    },
     "skill-refine": {
         "description": (
             "Verified skill generation pipeline — templatize, review, guard, split. "
