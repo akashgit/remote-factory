@@ -1845,6 +1845,15 @@ def _build_ceo_task(
             "CLI wiring + tests) from the user's description above. "
             "The full step-by-step playbook is in your system prompt above."
         )
+    elif mode == "founder":
+        task += (
+            "\n\nRun Founder mode: rapid prototyping — one hypothesis, one build, "
+            "minimal verification. Pick the highest-leverage idea, prototype it fast, "
+            "run tests once. No research, no code review, no adversarial QA, no eval "
+            "scoring. Record the experiment and stop. This is NOT production-quality — "
+            "run --mode improve afterward to harden what works. "
+            "The full step-by-step playbook is in your system prompt above."
+        )
     else:
         task += (
             f"\n\nRun {mode} mode. Follow the step-by-step playbook in your system prompt "
