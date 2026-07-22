@@ -34,12 +34,7 @@ def workflow() -> Workflow:
             timeout=120,
             prompt_template=(
                 "# Question Answering Skill\n\n"
-                "(No learned rules yet. Rules will be added through the reflection process.)\n\n"
-                "## Task\n\n"
-                "Read /tmp/task-instruction.md which contains a question and search results.\n"
-                "Answer the question using ONLY the information in the search results.\n"
-                "Put your final answer inside <answer> tags.\n\n"
-                "Example: <answer>Paris</answer>\n"
+                "(No learned rules yet. Rules will be added through the reflection process.)"
             ),
             writes={".factory/reviews/builder-latest.md"},
         ),
