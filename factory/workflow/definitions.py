@@ -2589,7 +2589,7 @@ def founder_workflow() -> Workflow:
         id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && python -m pytest --tb=short -q 2>&1; "
+            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && "
             "ruff check . 2>&1"
         ),
         reads={".factory/reviews/builder-latest.md"},
