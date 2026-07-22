@@ -2533,39 +2533,43 @@ def parallel_improve_workflow() -> Workflow:
     )
 
 
-# ── W₁₆: Founder Mode ────────────────────────────────────────
+# ── W₁₃: Founder Mode ──────────────────────────────────────────
 
 
 def founder_workflow() -> Workflow:
-    """W₁₆: Founder Mode — rapid prototyping pipeline.
+    """W₁₃: Founder Mode — rapid prototyping pipeline for fast hypothesis iteration.
 
-    Study → Strategist → Builder → gate_tests → archivist(FnNode)
-    Gate RELOOPs to builder (max 1 retry). No deep-QA, no eval scoring.
-    Terminal — does not chain to other modes.
+    Study → Strategist → Builder → gate_tests → finalize(async)
+
+    No research, no deep-QA, no eval scoring. Terminal — does not chain to
+    other modes. Uses pass/fail tests only.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
+    # Study
     nodes["study"] = Study(
         id="study",
         command="factory study {project_path}",
         writes={".factory/strategy/observations.md"},
     )
 
+    # Strategist — pick ONE hypothesis, skip FEEC/backlog
     nodes["strategist"] = AgentNode(
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
             "Pick ONE high-leverage hypothesis to prototype. "
             "Read observations at .factory/strategy/observations.md. "
-            "Skip FEEC classification and backlog grooming — just pick the "
-            "most promising idea and write it to .factory/strategy/current.md. "
+            "Skip FEEC classification and backlog grooming — just pick the most "
+            "promising idea and write it to .factory/strategy/current.md. "
             "Keep it scoped: one idea, one PR, fast to implement."
         ),
         reads={".factory/strategy/observations.md"},
         writes={".factory/strategy/current.md"},
     )
 
+    # Builder — prototype quickly
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
@@ -2578,18 +2582,22 @@ def founder_workflow() -> Workflow:
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
-        max_iterations=1,
     )
 
+    # Gate — pytest + ruff pass/fail
     nodes["gate_tests"] = GateNode(
         id="gate_tests",
         evaluator_type="fn",
-        evaluator_command="cd {project_path} && python -m pytest --tb=short -q 2>&1; ruff check . 2>&1",
+        evaluator_command=(
+            "cd {project_path} && python -m pytest --tb=short -q 2>&1; "
+            "ruff check . 2>&1"
+        ),
         reads={".factory/reviews/builder-latest.md"},
     )
 
-    nodes["archivist"] = FnNode(
-        id="archivist",
+    # Finalize — record results, bypassing precheck (no eval scores in founder mode)
+    nodes["finalize"] = FnNode(
+        id="finalize",
         command=(
             "factory finalize {project_path}"
             " --id $EXP_ID"
@@ -2602,14 +2610,16 @@ def founder_workflow() -> Workflow:
             "(no QA agents or eval scores in founder mode). "
             "The CEO must substitute $EXP_ID, $VERDICT (keep/revert), and $HYPOTHESIS."
         ),
+        reads={".factory/reviews/builder-latest.md"},
         writes={".factory/experiments/verdict.json"},
+        blocking=False,
     )
 
     edges = [
         Edge(source="study", target="strategist"),
         Edge(source="strategist", target="builder"),
         Edge(source="builder", target="gate_tests"),
-        Edge(source="gate_tests", target="archivist", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="finalize", condition=VerdictType.PROCEED),
         Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
     ]
 
@@ -2621,8 +2631,8 @@ def founder_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
-        terminal=True,
         trigger=trigger,
+        terminal=True,
     )
 
 
