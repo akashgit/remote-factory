@@ -96,7 +96,7 @@ class SearchQAAdapter(EnvAdapter):
 
     def build_eval_env(self, env_num: int, split: str, seed: int) -> Any:
         self._ensure_loaded()
-        source = self._val_data if split == "val" else self._train_data
+        source = self._val_data if split in ("val", "eval") else self._train_data
         items = list(source)
         rng = random.Random(seed)
         rng.shuffle(items)
