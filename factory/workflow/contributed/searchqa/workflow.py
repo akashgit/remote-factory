@@ -36,7 +36,7 @@ def workflow() -> Workflow:
                 "# Question Answering Skill\n\n"
                 "(No learned rules yet. Rules will be added through the reflection process.)"
             ),
-            writes={".factory/reviews/builder-latest.md"},
+            writes=set(),
         ),
     }
 
