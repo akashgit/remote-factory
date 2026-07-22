@@ -32,7 +32,7 @@ def _load_jsonl(path: Path) -> list[dict]:
     return items
 
 
-def _call_claude(prompt: str, timeout: int = 120, model: str = "sonnet") -> str:
+def _call_claude(prompt: str, timeout: int = 120, model: str = "haiku") -> str:
     if not shutil.which("claude"):
         log.warning("claude CLI not found")
         return ""
