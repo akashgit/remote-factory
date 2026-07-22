@@ -32,13 +32,13 @@ def _load_jsonl(path: Path) -> list[dict]:
     return items
 
 
-def _call_claude(prompt: str, timeout: int = 120) -> str:
+def _call_claude(prompt: str, timeout: int = 120, model: str = "sonnet") -> str:
     if not shutil.which("claude"):
         log.warning("claude CLI not found")
         return ""
     try:
         result = subprocess.run(
-            ["claude", "-p", prompt],
+            ["claude", "-p", "--model", model, prompt],
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -145,7 +145,8 @@ class SearchQAAdapter(EnvAdapter):
                 f"{skill_prompt}\n\n"
                 f"## Question\n{item['question']}\n\n"
                 f"## Search Results\n{item['context']}\n\n"
-                f"Put your final answer inside <answer> tags."
+                f"Answer the question using ONLY the information in the search results.\n"
+                f"Put your final answer inside <answer> tags. Example: <answer>Paris</answer>"
             )
             raw_response = _call_claude(prompt)
             prediction = _extract_answer(raw_response) if raw_response else ""
