@@ -7,6 +7,7 @@ import sys
 
 _ADAPTERS = {
     "swebench": "factory.skillopt.adapters.swebench:SwebenchAdapter",
+    "searchqa": "factory.skillopt.adapters.searchqa:SearchQAAdapter",
     "featurebench": "factory.skillopt.adapters.featurebench:FeaturebenchAdapter",
     "programbench": "factory.skillopt.adapters.programbench:ProgrambenchAdapter",
     "terminalbench": "factory.skillopt.adapters.terminalbench:TerminalbenchAdapter",
@@ -115,6 +116,11 @@ def main() -> int:
         default="",
         help="Path to YAML annotations file (default: SKILL.annotations.yaml next to --skill-path)",
     )
+    parser.add_argument(
+        "--dataset-dir",
+        default="",
+        help="Path to dataset directory (for searchqa: directory with train.jsonl/val.jsonl)",
+    )
     args = parser.parse_args()
 
     adapter_name = args.adapter or args.benchmark
@@ -125,6 +131,7 @@ def main() -> int:
         "instances_file": args.instances_file,
         "skill_path": args.skill_path,
         "instances": instances,
+        "dataset_dir": args.dataset_dir,
     })
 
     from factory.skillopt.trainer import SkillOptTrainer
