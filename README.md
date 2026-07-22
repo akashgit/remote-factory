@@ -10,6 +10,7 @@
 [![Runner: Claude Code](https://img.shields.io/badge/runner-Claude_Code-7c3aed)](https://docs.anthropic.com/en/docs/claude-code)
 [![Runner: Bob Shell](https://img.shields.io/badge/runner-Bob_Shell-f59e0b)](https://bob.ibm.com)
 [![Runner: OpenAI Codex](https://img.shields.io/badge/runner-OpenAI_Codex-10a37f)](https://openai.com/index/codex/)
+[![Docs](https://img.shields.io/badge/docs-akashgit.github.io-blue)](https://akashgit.github.io/remote-factory/)
 
 **Describe what you want — re:factory builds it, tests it, and keeps improving it.** Design an idea from scratch or point at an existing project for continuous improvement. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
