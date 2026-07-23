@@ -11,6 +11,15 @@ import pytest
 from factory.workflow.cli import _cmd_run
 from factory.workflow.executor import ExecutionResult
 from factory.workflow.primitives import DEFAULT_AGENT_POOL
+from factory.workflow.registry import WorkflowRegistry
+
+
+@pytest.fixture(autouse=True)
+def _reset_registry():
+    """Reset registry state before each test."""
+    WorkflowRegistry.reset()
+    yield
+    WorkflowRegistry.reset()
 
 
 def _make_args(name: str, project_path: str, dry_run: bool = False) -> argparse.Namespace:
@@ -40,7 +49,7 @@ def _failure_result() -> ExecutionResult:
 class TestCmdRun:
     def test_unknown_workflow_returns_1(self, tmp_path: Path) -> None:
         args = _make_args("nonexistent", str(tmp_path))
-        with patch("factory.workflow.cli.register_all", return_value={}):
+        with patch.object(WorkflowRegistry, "get_workflow", return_value=None):
             assert _cmd_run(args) == 1
 
     def test_success_returns_0(self, tmp_path: Path) -> None:
@@ -49,7 +58,7 @@ class TestCmdRun:
         mock_executor.execute = AsyncMock(return_value=_success_result())
 
         with (
-            patch("factory.workflow.cli.register_all", return_value={"build": mock_wf}),
+            patch.object(WorkflowRegistry, "get_workflow", return_value=mock_wf),
             patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
             patch("factory.agents.runner.begin_cycle_session", return_value="span-123") as mock_begin,
             patch("factory.agents.runner.complete_cycle_session") as mock_complete,
@@ -66,7 +75,7 @@ class TestCmdRun:
         mock_executor.execute = AsyncMock(return_value=_failure_result())
 
         with (
-            patch("factory.workflow.cli.register_all", return_value={"build": mock_wf}),
+            patch.object(WorkflowRegistry, "get_workflow", return_value=mock_wf),
             patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
             patch("factory.agents.runner.begin_cycle_session", return_value=None),
             patch("factory.agents.runner.complete_cycle_session"),
@@ -81,7 +90,7 @@ class TestCmdRun:
         mock_executor.execute = AsyncMock(side_effect=RuntimeError("boom"))
 
         with (
-            patch("factory.workflow.cli.register_all", return_value={"build": mock_wf}),
+            patch.object(WorkflowRegistry, "get_workflow", return_value=mock_wf),
             patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor),
             patch("factory.agents.runner.begin_cycle_session", return_value="span-456") as mock_begin,
             patch("factory.agents.runner.complete_cycle_session") as mock_complete,
@@ -98,7 +107,7 @@ class TestCmdRun:
         mock_executor.execute = AsyncMock(return_value=_success_result())
 
         with (
-            patch("factory.workflow.cli.register_all", return_value={"improve": mock_wf}),
+            patch.object(WorkflowRegistry, "get_workflow", return_value=mock_wf),
             patch("factory.workflow.cli.WorkflowExecutor", return_value=mock_executor) as mock_cls,
             patch("factory.agents.runner.begin_cycle_session", return_value=None),
             patch("factory.agents.runner.complete_cycle_session"),
