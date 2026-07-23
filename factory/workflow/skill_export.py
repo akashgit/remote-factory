@@ -133,13 +133,14 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "create": {
         "description": (
-            "Create mode — meta-mode for creating new factory modes from user descriptions. "
-            "Takes a description (text, spec file, or flow) and produces a fully working "
-            "workflow definition, SKILL.md, CLI wiring, and tests. Use when the user says "
-            "'create a mode for X', 'add a new workflow', or wants to extend the factory "
-            "with a custom pipeline."
+            "Create mode — meta-mode for creating new factory modes or updating existing ones. "
+            "For new modes: takes a description and produces a fully working workflow definition, "
+            "SKILL.md, CLI wiring, and tests. For updates: use --focus \"mode_name: change description\" "
+            "to modify an existing registered mode (e.g. --focus \"improve: add plateau detection\"). "
+            "Use when the user says 'create a mode for X', 'update the improve mode', "
+            "'add a new workflow', or wants to extend/modify factory pipelines."
         ),
-        "argument_hint": '"mode description" or /path/to/spec.md',
+        "argument_hint": '"mode description" or "existing_mode: change description"',
     },
     "swebench": {
         "description": (
