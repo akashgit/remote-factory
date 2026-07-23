@@ -8,7 +8,9 @@ from unittest.mock import patch
 import pytest
 
 from factory.worktree import (
+    _bootstrap_unborn_repo,
     _has_active_sessions,
+    _is_unborn_repo,
     _seed_experiment_factory,
     create_experiment_worktree,
     create_worktree,
@@ -719,3 +721,103 @@ class TestSeedExperimentFactory:
 
         assert dest.is_dir()
         assert list(dest.iterdir()) == []
+
+
+@pytest.fixture
+def unborn_repo(tmp_path: Path) -> Path:
+    """Create a git repo with no commits (unborn HEAD)."""
+    project = tmp_path / "unborn"
+    project.mkdir()
+    subprocess.run(["git", "init", "-b", "main"], cwd=project, capture_output=True, check=True)
+    factory_dir = project / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "config.json").write_text("{}")
+    return project
+
+
+class TestIsUnbornRepo:
+    def test_unborn_repo_detected(self, unborn_repo: Path) -> None:
+        assert _is_unborn_repo(unborn_repo) is True
+
+    def test_repo_with_commits_not_unborn(self, git_project: Path) -> None:
+        assert _is_unborn_repo(git_project) is False
+
+
+class TestBootstrapUnbornRepo:
+    def test_creates_initial_commit(self, unborn_repo: Path) -> None:
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(unborn_repo.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        with patch.dict("os.environ", env):
+            _bootstrap_unborn_repo(unborn_repo)
+
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=unborn_repo, capture_output=True, text=True,
+        )
+        assert result.returncode == 0
+
+    def test_commit_message_is_factory_bootstrap(self, unborn_repo: Path) -> None:
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(unborn_repo.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        with patch.dict("os.environ", env):
+            _bootstrap_unborn_repo(unborn_repo)
+
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-1"],
+            cwd=unborn_repo, capture_output=True, text=True,
+        )
+        assert "init (factory bootstrap)" in result.stdout
+
+
+class TestCreateWorktreeUnbornRepo:
+    def test_worktree_created_on_unborn_repo(self, unborn_repo: Path) -> None:
+        """create_worktree bootstraps an unborn repo and creates the worktree."""
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(unborn_repo.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        with patch.dict("os.environ", env):
+            wt_path, branch = create_worktree(unborn_repo)
+
+        assert wt_path.exists()
+        assert branch.startswith("factory/run-")
+
+    def test_error_when_branch_missing_on_non_unborn_repo(self, git_project: Path) -> None:
+        """Raises RuntimeError if the base branch doesn't exist and repo is not unborn."""
+        with pytest.raises(RuntimeError, match="does not exist"):
+            create_worktree(git_project, base_branch="nonexistent-branch")
+
+
+class TestDetectDefaultBranchUnborn:
+    def test_unborn_repo_returns_branch_via_symbolic_ref(self, unborn_repo: Path) -> None:
+        """Unborn repo (no commits) still detects the branch name from symbolic HEAD."""
+        result = detect_default_branch(unborn_repo)
+        assert result == "main"
+
+    def test_unborn_repo_with_custom_branch(self, tmp_path: Path) -> None:
+        """Unborn repo initialized with a non-standard branch name."""
+        project = tmp_path / "custom-branch"
+        project.mkdir()
+        subprocess.run(
+            ["git", "init", "-b", "trunk"],
+            cwd=project, capture_output=True, check=True,
+        )
+
+        result = detect_default_branch(project)
+        assert result == "trunk"
