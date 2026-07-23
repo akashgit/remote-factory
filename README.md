@@ -62,6 +62,7 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 | **Improve an existing project** | `factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
 | **Co-improve an existing project** | `factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
 | **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
+| **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
 
 ---
 
@@ -138,6 +139,15 @@ Create mode lets you build new factory modes — new workflows, new pipelines, n
 factory ceo /path/to/factory --mode create --focus "a mode that validates PRs with multi-stage checks"
 ```
 
+To update an existing mode, prefix `--focus` with the mode name and a colon. The name before the colon is matched against registered workflows — if it matches, the CEO enters update mode instead of creating a new one:
+
+```bash
+factory ceo /path/to/factory --mode create --focus "improve: add plateau detection after 3 consecutive reverts"
+factory ceo /path/to/factory --mode create --focus "build: add a code review gate after the builder"
+```
+
+Without a colon, `--focus` always creates a new mode.
+
 The pipeline: **3 parallel researchers** (existing patterns, intent analysis, best practices) → **Strategist** synthesizes a workflow spec → **you approve** (like design mode) → **Builder** implements → **QA** verifies end-to-end → **PR**.
 
 Point it at the factory repo itself to extend re:factory with custom pipelines.
@@ -200,6 +210,7 @@ factory ceo "idea" --mode design         # Design from a raw idea
 factory ceo <path> --mode improve        # Improve an existing project
 factory ceo <path> --refine "..."        # Single targeted refinement
 factory ceo <path> --mode create --focus "description"  # Create a new factory mode
+factory ceo <path> --mode create --focus "mode: change"  # Update an existing mode
 factory ceo <path> --loop                # Continuous improvement loop
 factory tmux <path> --loop               # Loop in detached tmux session
 ```
