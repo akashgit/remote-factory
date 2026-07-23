@@ -142,6 +142,27 @@ Output format:
 
 **Do NOT re-run pytest, lint, or type checking.** The health check already did that. Your job is to test the feature as a real user would — by actually running the project and interacting with it.
 
+#### Step 3.0: Read the spec — this is your source of truth
+
+Before writing any test plan, read ALL of these:
+- The GitHub issue: `gh issue view <issue_number>`
+- The strategy: `.factory/strategy/current.md`
+- The Builder's report: `.factory/reviews/builder-latest.md`
+
+These documents define what was built and how it should be tested. Trust them. If the issue or strategy has a 'Testing', 'Validation', 'MUST DO', or 'Real-world validation' section, those are MANDATORY tests you must execute — they are not optional or nice-to-have.
+
+#### Step 3.0b: Run what was built
+
+**This is non-negotiable.** Before any other adversarial testing, you MUST actually run the new feature or fix that the Builder implemented. Not a mock. Not a programmatic import. The actual command, endpoint, UI flow, or pipeline — the same way a user would invoke it.
+
+Examples:
+- Builder added a CLI flag → run the CLI with that flag and verify the output
+- Builder added an API endpoint → curl it and verify the response
+- Builder added a pipeline step → run the pipeline and verify the step executes
+- Builder fixed a bug → reproduce the original bug scenario and verify it's fixed
+
+If running the feature requires LLM calls, external services, or credentials that aren't available, document what you attempted, what blocked you, and report it as SKIPPED with the reason — do NOT silently skip it.
+
 #### Step 3.1: Determine project type
 
 Read `factory.md`, `README.md`, `pyproject.toml`, or file structure to classify:
@@ -277,6 +298,8 @@ python -m json.tool <result_path> > /dev/null && echo "Valid JSON" || echo "Inva
 #### Step 3.5: Verify acceptance criteria
 
 For each criterion from Step 3.2: provide the command you ran and its output. Mark VERIFIED or NOT_VERIFIED.
+
+If the issue or strategy contains a MUST DO, Real-world validation, or similar mandatory testing section, verify each item from that section independently. These are first-class acceptance criteria even if not labeled as such.
 
 #### Step 3.6: Check Builder's claimed blockers
 

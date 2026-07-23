@@ -39,7 +39,7 @@ def _compute_checksum(workflows: dict[str, Workflow]) -> str:
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
-def ensure_skills(project_dir: Path) -> list[Path]:
+async def ensure_skills(project_dir: Path, *, refine: bool = True) -> list[Path]:
     """Generate workflow skills into *project_dir*/skills/, using a local cache.
 
     Cache location: ``~/.factory/cache/skills/{checksum}/``.
@@ -47,13 +47,13 @@ def ensure_skills(project_dir: Path) -> list[Path]:
     never touched.  Returns an empty list on any I/O error (non-fatal).
     """
     try:
-        return _ensure_skills_inner(project_dir)
+        return await _ensure_skills_inner(project_dir, refine=refine)
     except OSError as exc:
         log.warning("skill_cache.error", error=str(exc))
         return []
 
 
-def _ensure_skills_inner(project_dir: Path) -> list[Path]:
+async def _ensure_skills_inner(project_dir: Path, *, refine: bool = True) -> list[Path]:
     from factory.workflow.definitions import register_all
     from factory.workflow.skill_export import export_all_skills
 
@@ -71,7 +71,9 @@ def _ensure_skills_inner(project_dir: Path) -> list[Path]:
     else:
         log.info("skill_cache.miss", checksum=checksum)
         cache_dir.mkdir(parents=True, exist_ok=True)
-        export_all_skills(cache_dir, workflows)
+        await export_all_skills(
+            cache_dir, workflows, refine=refine, project_path=project_dir,
+        )
         workflow_dirs = sorted(cache_dir.glob("workflow-*"))
 
         cache_parent = cache_dir.parent

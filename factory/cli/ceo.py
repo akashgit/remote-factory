@@ -574,7 +574,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path)
+    _run(ensure_skills(wt_path))
 
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
@@ -2012,7 +2012,7 @@ def _run_single_cycle(
 
     from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path)
+    _run(ensure_skills(wt_path))
 
     try:
         task = _build_ceo_task(

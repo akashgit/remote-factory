@@ -25,6 +25,7 @@ _SLOT_PREFIXES = (
     "max_iterations_",
     "failure_action_",
     "finalize_command_",
+    "notes_",
 )
 
 

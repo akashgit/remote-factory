@@ -190,9 +190,12 @@ def _cmd_export_skills(args: argparse.Namespace) -> int:
 
     output_dir = Path(getattr(args, "output_dir", None) or ".").resolve()
     verify = getattr(args, "verify", False)
+    no_refine = getattr(args, "no_refine", False)
 
     workflows = register_all()
-    generated = export_all_skills(output_dir, workflows)
+    generated = asyncio.run(
+        export_all_skills(output_dir, workflows, refine=not no_refine)
+    )
 
     print(f"Exported {len(generated)} skills to {output_dir}/")
     for path in generated:
@@ -264,6 +267,10 @@ def add_workflow_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]
         "--output-dir", default=".", help="Output directory (default: current directory)"
     )
     p.add_argument("--verify", action="store_true", help="Validate generated skills")
+    p.add_argument(
+        "--no-refine", action="store_true", default=False,
+        help="Skip LLM refinement pipeline (mechanical output only)",
+    )
 
     # lint-contributed
     p = wf_sub.add_parser("lint-contributed", help="Lint contributed workflow directories")

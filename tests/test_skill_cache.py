@@ -58,44 +58,46 @@ class TestComputeChecksum:
 
 
 class TestEnsureSkills:
-    def test_cache_miss(self, tmp_path: Path, monkeypatch: object) -> None:
+    async def test_cache_miss(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
 
         project = tmp_path / "proj"
         project.mkdir()
 
-        paths = ensure_skills(project)
+        paths = await ensure_skills(project, refine=False)
         assert len(paths) > 0
         assert all(p.name == "SKILL.md" for p in paths)
 
         cache_root = tmp_path / ".factory" / "cache" / "skills"
         assert cache_root.exists()
 
-    def test_cache_hit(self, tmp_path: Path, monkeypatch: object) -> None:
+    async def test_cache_hit(self, tmp_path: Path, monkeypatch: object) -> None:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
 
         project = tmp_path / "proj"
         project.mkdir()
 
-        ensure_skills(project)
+        await ensure_skills(project, refine=False)
 
         with patch(
             "factory.workflow.skill_export.export_all_skills",
             wraps=None,
         ) as mock_export:
             mock_export.return_value = []
-            paths = ensure_skills(project)
+            paths = await ensure_skills(project, refine=False)
             mock_export.assert_not_called()
 
         assert len(paths) > 0
 
-    def test_cache_miss_evicts_stale_checksums(self, tmp_path: Path, monkeypatch: object) -> None:
+    async def test_cache_miss_evicts_stale_checksums(
+        self, tmp_path: Path, monkeypatch: object,
+    ) -> None:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
 
         project = tmp_path / "proj"
         project.mkdir()
 
-        ensure_skills(project)
+        await ensure_skills(project, refine=False)
 
         cache_root = tmp_path / ".factory" / "cache" / "skills"
         first_dirs = list(cache_root.iterdir())
@@ -110,13 +112,15 @@ class TestEnsureSkills:
             lambda: different_workflow,
         )
 
-        ensure_skills(project)
+        await ensure_skills(project, refine=False)
 
         remaining = [d for d in cache_root.iterdir() if d.is_dir()]
         assert len(remaining) == 1
         assert remaining[0] != old_checksum_dir
 
-    def test_only_workflow_dirs_copied(self, tmp_path: Path, monkeypatch: object) -> None:
+    async def test_only_workflow_dirs_copied(
+        self, tmp_path: Path, monkeypatch: object,
+    ) -> None:
         monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
 
         project = tmp_path / "proj"
@@ -127,6 +131,6 @@ class TestEnsureSkills:
         marker = hand_written / "SKILL.md"
         marker.write_text("hand-written")
 
-        ensure_skills(project)
+        await ensure_skills(project, refine=False)
 
         assert marker.read_text() == "hand-written"
