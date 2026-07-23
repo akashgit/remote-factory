@@ -1,0 +1,1594 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="A harness for agentic software evolution — detect, delegate, evaluate, archive">
+      
+      
+      
+        <link rel="canonical" href="https://akashgit.github.io/remote-factory/full-eval/">
+      
+      
+        <link rel="prev" href="../benchmarks/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Full Eval - re:factory</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#full-eval-dashboard" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="re:factory" class="md-header__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            re:factory
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Full Eval
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="re:factory" class="md-nav__button md-logo" aria-label="re:factory" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    re:factory
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/akashgit/remote-factory" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M173.9 397.4c0 2-2.3 3.6-5.2 3.6-3.3.3-5.6-1.3-5.6-3.6 0-2 2.3-3.6 5.2-3.6 3-.3 5.6 1.3 5.6 3.6m-31.1-4.5c-.7 2 1.3 4.3 4.3 4.9 2.6 1 5.6 0 6.2-2s-1.3-4.3-4.3-5.2c-2.6-.7-5.5.3-6.2 2.3m44.2-1.7c-2.9.7-4.9 2.6-4.6 4.9.3 2 2.9 3.3 5.9 2.6 2.9-.7 4.9-2.6 4.6-4.6-.3-1.9-3-3.2-5.9-2.9M252.8 8C114.1 8 8 113.3 8 252c0 110.9 69.8 205.8 169.5 239.2 12.8 2.3 17.3-5.6 17.3-12.1 0-6.2-.3-40.4-.3-61.4 0 0-70 15-84.7-29.8 0 0-11.4-29.1-27.8-36.6 0 0-22.9-15.7 1.6-15.4 0 0 24.9 2 38.6 25.8 21.9 38.6 58.6 27.5 72.9 20.9 2.3-16 8.8-27.1 16-33.7-55.9-6.2-112.3-14.3-112.3-110.5 0-27.5 7.6-41.3 23.6-58.9-2.6-6.5-11.1-33.3 2.6-67.9 20.9-6.5 69 27 69 27 20-5.6 41.5-8.5 62.8-8.5s42.8 2.9 62.8 8.5c0 0 48.1-33.6 69-27 13.7 34.7 5.2 61.4 2.6 67.9 16 17.7 25.8 31.5 25.8 58.9 0 96.5-58.9 104.2-114.8 110.5 9.2 7.9 17 22.9 17 46.4 0 33.7-.3 75.4-.3 83.6 0 6.5 4.6 14.4 17.3 12.1C436.2 457.8 504 362.9 504 252 504 113.3 391.5 8 252.8 8M105.2 352.9c-1.3 1-1 3.3.7 5.2 1.6 1.6 3.9 2.3 5.2 1 1.3-1 1-3.3-.7-5.2-1.6-1.6-3.9-2.3-5.2-1m-10.8-8.1c-.7 1.3.3 2.9 2.3 3.9 1.6 1 3.6.7 4.3-.7.7-1.3-.3-2.9-2.3-3.9-2-.6-3.6-.3-4.3.7m32.4 35.6c-1.6 1.3-1 4.3 1.3 6.2 2.3 2.3 5.2 2.6 6.5 1 1.3-1.3.7-4.3-1.3-6.2-2.2-2.3-5.2-2.6-6.5-1m-11.4-14.7c-1.6 1-1.6 3.6 0 5.9s4.3 3.3 5.6 2.3c1.6-1.3 1.6-3.9 0-6.2-1.4-2.3-4-3.3-5.6-2"/></svg>
+  </div>
+  <div class="md-source__repository">
+    akashgit/remote-factory
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../setup/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Setup
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../eval/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Eval System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../self-improvement/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Self-Improvement Loop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ace/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ACE Playbook Evolution
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Eval
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Full Eval
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing-benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#how-to-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How to Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="full-eval-dashboard">Full Eval Dashboard<a class="headerlink" href="#full-eval-dashboard" title="Permanent link">&para;</a></h1>
+<h2 id="how-to-run">How to Run<a class="headerlink" href="#how-to-run" title="Permanent link">&para;</a></h2>
+<p>Run a full evaluation of any benchmark through Harbor. Results appear on this dashboard after committing.</p>
+<p><strong>Run all benchmarks (parallel):</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>benchmarks/run-full-eval.sh<span class="w"> </span>all<span class="w"> </span>--solver<span class="w"> </span>factory<span class="w"> </span>--concurrency<span class="w"> </span><span class="m">5</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">36000</span>
+</code></pre></div></p>
+<p><strong>Run individual benchmarks:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>benchmarks/run-full-eval.sh<span class="w"> </span>swebench<span class="w"> </span>--solver<span class="w"> </span>factory<span class="w"> </span>--concurrency<span class="w"> </span><span class="m">5</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">36000</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>benchmarks/run-full-eval.sh<span class="w"> </span>featurebench<span class="w"> </span>--solver<span class="w"> </span>factory<span class="w"> </span>--concurrency<span class="w"> </span><span class="m">5</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">36000</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>benchmarks/run-full-eval.sh<span class="w"> </span>terminalbench<span class="w"> </span>--solver<span class="w"> </span>factory<span class="w"> </span>--concurrency<span class="w"> </span><span class="m">5</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">36000</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>benchmarks/run-full-eval.sh<span class="w"> </span>programbench<span class="w"> </span>--solver<span class="w"> </span>factory<span class="w"> </span>--concurrency<span class="w"> </span><span class="m">5</span><span class="w"> </span>--timeout<span class="w"> </span><span class="m">36000</span>
+</code></pre></div></p>
+<p><strong>Commit results:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>benchmarks/commit-full-eval.sh
+</code></pre></div></p>
+<p>Use <code>--limit N</code> to run a subset of tasks (useful for testing).</p>
+<div id="full-eval-dashboard">
+  <p>Loading full eval results...</p>
+</div>
+
+<style>
+#full-eval-dashboard table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+#full-eval-dashboard th {
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-bottom: 2px solid var(--md-default-fg-color--lightest);
+  white-space: nowrap;
+}
+#full-eval-dashboard td {
+  padding: 0.5rem 0.8rem;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  vertical-align: top;
+}
+#full-eval-dashboard tr:hover td {
+  background: var(--md-default-fg-color--lightest);
+}
+#full-eval-dashboard .status-success { color: #22863a; }
+#full-eval-dashboard .status-failure { color: #cb2431; }
+#full-eval-dashboard .error-msg {
+  color: var(--md-default-fg-color--light);
+  font-style: italic;
+}
+#full-eval-dashboard .section-title {
+  margin-top: 2.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+#full-eval-dashboard .section-explanation {
+  font-size: 0.85rem;
+  opacity: 0.6;
+  margin: 0.3rem 0 1.5rem 0;
+  font-style: italic;
+}
+
+/* Hero section */
+#full-eval-dashboard .hero-section { text-align: center; margin: 1rem 0 2.5rem 0; }
+#full-eval-dashboard .hero-cards { display: flex; gap: 1.5rem; justify-content: center; flex-wrap: wrap; margin: 1.5rem 0; }
+#full-eval-dashboard .hero-card { flex: 0 1 220px; text-align: center; padding: 1.5rem 1rem; border-radius: 12px; background: var(--md-default-bg-color--light, #f5f5f5); border: 2px solid; }
+#full-eval-dashboard .hero-card.factory { border-color: #4285f4; }
+#full-eval-dashboard .hero-card.claude-code { border-color: #ff7043; }
+#full-eval-dashboard .hero-score { font-size: 2.4rem; font-weight: 800; line-height: 1.1; }
+#full-eval-dashboard .hero-label { font-size: 0.85rem; color: var(--md-default-fg-color--light); margin-bottom: 0.3rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+#full-eval-dashboard .hero-sublabel { font-size: 0.75rem; color: var(--md-default-fg-color--light); opacity: 0.7; }
+#full-eval-dashboard .hero-trend { font-size: 0.85rem; margin-top: 0.4rem; }
+#full-eval-dashboard .hero-explanation { font-size: 0.85rem; opacity: 0.6; max-width: 700px; margin: 0 auto; }
+
+/* Filter bar */
+#full-eval-dashboard .filter-bar {
+  display: flex;
+  gap: 1rem;
+  margin: 0.5rem 0 1rem 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#full-eval-dashboard .filter-bar select {
+  padding: 0.3rem 0.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  background: var(--md-default-bg-color);
+  color: var(--md-default-fg-color);
+  font-size: 0.85rem;
+}
+#full-eval-dashboard .filter-bar label {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+/* Expandable rows */
+#full-eval-dashboard .run-detail { background: rgba(255,255,255,0.02); }
+#full-eval-dashboard .run-detail td:first-child { padding-left: 2rem; font-size: 0.85rem; opacity: 0.85; }
+#full-eval-dashboard .run-detail.hidden { display: none; }
+#full-eval-dashboard .toggle-details {
+  background: none;
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--md-default-fg-color);
+}
+#full-eval-dashboard .toggle-details:hover {
+  background: var(--md-default-fg-color--lightest);
+}
+
+/* Task detail rows */
+#full-eval-dashboard .task-row { font-size: 0.82rem; }
+#full-eval-dashboard .task-row td { padding: 0.3rem 0.8rem; opacity: 0.9; }
+#full-eval-dashboard .task-row.hidden { display: none; }
+
+/* Trend indicators */
+#full-eval-dashboard .trend-up { color: #22863a; }
+#full-eval-dashboard .trend-down { color: #cb2431; }
+#full-eval-dashboard .trend-neutral { color: #888; }
+
+/* Pagination controls */
+#full-eval-dashboard .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin: 16px 0; flex-wrap: wrap; }
+#full-eval-dashboard .pagination button { background: #2a2a3e; color: #e0e0e0; border: 1px solid #444; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 0.85rem; }
+#full-eval-dashboard .pagination button:hover:not(:disabled) { background: #3a3a5e; }
+#full-eval-dashboard .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+#full-eval-dashboard .pagination button.active { background: #667eea; border-color: #667eea; }
+#full-eval-dashboard .pagination .page-info { color: #aaa; font-size: 0.85em; }
+
+/* Cost analytics */
+#full-eval-dashboard .cost-grid { display: flex; gap: 1.5rem; flex-wrap: wrap; margin: 1rem 0; }
+#full-eval-dashboard .cost-card { flex: 1; min-width: 200px; padding: 1.2rem; border-radius: 8px; background: var(--md-default-bg-color--light, #f5f5f5); border: 1px solid var(--md-default-fg-color--lightest); }
+#full-eval-dashboard .cost-card .cost-value { font-size: 1.8rem; font-weight: 700; }
+#full-eval-dashboard .cost-card .cost-label { font-size: 0.8rem; color: var(--md-default-fg-color--light); text-transform: uppercase; letter-spacing: 0.04em; }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+<script>
+const FE_REPO = 'akashgit/remote-factory';
+const FE_JSONL_URL = `https://raw.githubusercontent.com/${FE_REPO}/benchmark-data/full-eval-results.jsonl`;
+
+function feIsDarkMode() {
+  return document.body.getAttribute('data-md-color-scheme') === 'slate';
+}
+
+function feChartColors() {
+  const dark = feIsDarkMode();
+  return {
+    text: dark ? '#ccc' : '#333',
+    grid: dark ? '#444' : '#e0e0e0',
+  };
+}
+
+function feFormatDuration(seconds) {
+  if (seconds == null) return '—';
+  if (seconds >= 3600) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    return h + 'h ' + m + 'm';
+  }
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return m > 0 ? m + 'm ' + s + 's' : s + 's';
+}
+
+function feFormatCost(usd) {
+  if (usd == null) return '—';
+  return '$' + usd.toFixed(2);
+}
+
+function feFormatDate(ts) {
+  if (!ts) return '—';
+  const d = feParseTimestamp(ts);
+  if (!d) return ts;
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+}
+
+function feParseTimestamp(ts) {
+  if (!ts) return null;
+  const iso = ts.replace(
+    /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/,
+    '$1-$2-$3T$4:$5:$6Z'
+  );
+  const d = new Date(iso);
+  return isNaN(d) ? null : d;
+}
+
+function feStatusIcon(resolved) {
+  return resolved
+    ? '<span class="status-success">&#10003;</span>'
+    : '<span class="status-failure">&#10007;</span>';
+}
+
+async function feFetchJsonl() {
+  const resp = await fetch(FE_JSONL_URL);
+  if (!resp.ok) return null;
+  const text = await resp.text();
+  const lines = text.trim().split('\n').filter(Boolean);
+  return lines.map(l => {
+    try { return JSON.parse(l); }
+    catch { return null; }
+  }).filter(Boolean);
+}
+
+// Section 1: Hero — Latest accuracy per benchmark x solver
+function feRenderHero(results) {
+  const latest = {};
+  for (const r of results) {
+    const key = r.benchmark + '|' + r.solver;
+    if (!latest[key] || (r.timestamp > latest[key].timestamp)) {
+      latest[key] = r;
+    }
+  }
+
+  const priorByKey = {};
+  for (const r of results) {
+    const key = r.benchmark + '|' + r.solver;
+    const cur = latest[key];
+    if (r.timestamp < cur.timestamp) {
+      if (!priorByKey[key] || r.timestamp > priorByKey[key].timestamp) {
+        priorByKey[key] = r;
+      }
+    }
+  }
+
+  const entries = Object.entries(latest).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return '';
+
+  let html = '<div class="hero-section">';
+  html += '<div class="hero-cards">';
+
+  for (const [key, r] of entries) {
+    const acc = r.total > 0 ? (r.passed / r.total * 100) : null;
+    const solverClass = r.solver === 'claude-code' ? 'claude-code' : 'factory';
+    const prior = priorByKey[key];
+    const prevAcc = prior && prior.total > 0 ? (prior.passed / prior.total * 100) : null;
+
+    let trendHtml = '';
+    if (acc != null && prevAcc != null) {
+      const delta = acc - prevAcc;
+      if (Math.abs(delta) < 0.5) {
+        trendHtml = '<div class="hero-trend trend-neutral">= no change</div>';
+      } else {
+        const sign = delta > 0 ? '+' : '';
+        const cls = delta > 0 ? 'trend-up' : 'trend-down';
+        const arrow = delta > 0 ? '&#9650;' : '&#9660;';
+        trendHtml = `<div class="hero-trend ${cls}">${arrow} ${sign}${delta.toFixed(1)}% vs prior</div>`;
+      }
+    } else if (acc != null) {
+      trendHtml = '<div class="hero-trend trend-neutral">first run</div>';
+    }
+
+    html += `<div class="hero-card ${solverClass}">`;
+    html += `<div class="hero-label">${r.benchmark}</div>`;
+    html += `<div class="hero-sublabel">${r.solver}</div>`;
+    html += `<div class="hero-score">${acc != null ? acc.toFixed(1) + '%' : '—'}</div>`;
+    html += `<div class="hero-sublabel">${r.passed}/${r.total} tasks</div>`;
+    html += trendHtml;
+    html += '</div>';
+  }
+
+  html += '</div>';
+  html += '<div class="hero-explanation">Latest full eval accuracy per benchmark and solver. Accuracy = percentage of all tasks in the dataset solved correctly.</div>';
+  html += '</div>';
+  return html;
+}
+
+// Section 2: Accuracy Trend Chart
+function feRenderAccuracyTrend(results) {
+  const benchmarks = [...new Set(results.map(r => r.benchmark))].sort();
+  const solvers = [...new Set(results.map(r => r.solver))].sort();
+
+  const datasets = [];
+  const colorMap = { factory: '#4285f4', 'claude-code': '#ff7043' };
+  const dashMap = { factory: [], 'claude-code': [5, 5] };
+  const benchColors = ['#4285f4', '#ff7043', '#66bb6a', '#ab47bc', '#ffa726', '#26c6da'];
+
+  let colorIdx = 0;
+  for (const bench of benchmarks) {
+    for (const solver of solvers) {
+      const subset = results
+        .filter(r => r.benchmark === bench && r.solver === solver)
+        .sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+
+      if (subset.length === 0) continue;
+
+      const points = subset
+        .map(r => {
+          const d = feParseTimestamp(r.timestamp);
+          if (!d || r.total === 0) return null;
+          return { x: d, y: (r.passed / r.total) * 100 };
+        })
+        .filter(Boolean);
+
+      if (points.length === 0) continue;
+
+      const color = benchmarks.length === 1
+        ? (colorMap[solver] || benchColors[colorIdx % benchColors.length])
+        : benchColors[colorIdx % benchColors.length];
+
+      datasets.push({
+        label: bench + ' / ' + solver,
+        data: points,
+        borderColor: color,
+        backgroundColor: color,
+        tension: 0.2,
+        pointRadius: 4,
+        borderDash: solvers.length > 1 && solver === 'claude-code' ? [5, 5] : [],
+      });
+      colorIdx++;
+    }
+  }
+
+  if (datasets.length === 0) return '';
+
+  let html = '<div class="section-title">Accuracy Over Time</div>';
+  html += '<p class="section-explanation">Solve rate across the full dataset for each benchmark/solver combination.</p>';
+
+  html += '<div class="filter-bar">';
+  html += '<label>Benchmark: <select id="fe-filter-trend-bench"><option value="">All</option>';
+  for (const b of benchmarks) html += `<option value="${b}">${b}</option>`;
+  html += '</select></label>';
+  html += '<label>Solver: <select id="fe-filter-trend-solver"><option value="">All</option>';
+  for (const s of solvers) html += `<option value="${s}">${s}</option>`;
+  html += '</select></label>';
+  html += '</div>';
+
+  html += '<div style="width:100%;margin:1rem 0 2rem 0"><canvas id="fe-accuracy-chart" style="width:100%!important;height:400px!important"></canvas></div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('fe-accuracy-chart');
+    if (!ctx) return;
+    const colors = feChartColors();
+
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: colors.text } },
+          tooltip: {
+            callbacks: {
+              label: (item) => item.dataset.label + ': ' + item.raw.y.toFixed(1) + '%',
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy HH:mm' },
+            title: { display: true, text: 'Date', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y: {
+            min: 0,
+            max: 100,
+            title: { display: true, text: 'Accuracy (%)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+        },
+      },
+    });
+
+    const benchSelect = document.getElementById('fe-filter-trend-bench');
+    const solverSelect = document.getElementById('fe-filter-trend-solver');
+
+    function updateChart() {
+      const bv = benchSelect?.value || '';
+      const sv = solverSelect?.value || '';
+      chart.data.datasets.forEach(ds => {
+        const [dsBench, dsSolver] = ds.label.split(' / ');
+        const matchB = !bv || dsBench === bv;
+        const matchS = !sv || dsSolver === sv;
+        ds.hidden = !(matchB && matchS);
+      });
+      chart.update();
+    }
+
+    if (benchSelect) benchSelect.addEventListener('change', updateChart);
+    if (solverSelect) solverSelect.addEventListener('change', updateChart);
+  }, 0);
+
+  return html;
+}
+
+// Section 3: Per-task results table with expandable rows
+let feCurrentPage = 1;
+const FE_RUNS_PER_PAGE = 15;
+let feAllRuns = [];
+let feFilteredRuns = [];
+
+function feGetFilteredRuns() {
+  const bv = document.getElementById('fe-filter-bench')?.value || '';
+  const sv = document.getElementById('fe-filter-solver')?.value || '';
+  return feAllRuns.filter(r => {
+    return (!bv || r.benchmark === bv) && (!sv || r.solver === sv);
+  });
+}
+
+function feRenderPaginationControls(current, total, totalItems, startIdx, endIdx) {
+  if (totalItems === 0) return '<span class="page-info">No matching runs</span>';
+  if (total <= 1) return `<span class="page-info">Showing all ${totalItems} runs</span>`;
+
+  let html = `<span class="page-info">Showing ${startIdx + 1}–${endIdx} of ${totalItems}</span>`;
+  html += `<button class="fe-page-btn" data-page="${current - 1}" ${current === 1 ? 'disabled' : ''}>&#8592; Prev</button>`;
+
+  const pages = [];
+  pages.push(1);
+  if (current > 3) pages.push('...');
+  for (let p = Math.max(2, current - 1); p <= Math.min(total - 1, current + 1); p++) pages.push(p);
+  if (current < total - 2) pages.push('...');
+  if (total > 1) pages.push(total);
+
+  for (const p of pages) {
+    if (p === '...') {
+      html += '<span class="page-info">&#8230;</span>';
+    } else {
+      html += `<button class="fe-page-btn${p === current ? ' active' : ''}" data-page="${p}">${p}</button>`;
+    }
+  }
+
+  html += `<button class="fe-page-btn" data-page="${current + 1}" ${current === total ? 'disabled' : ''}>Next &#8594;</button>`;
+  return html;
+}
+
+function feUpdateTable() {
+  feFilteredRuns = feGetFilteredRuns();
+  const totalPages = Math.max(1, Math.ceil(feFilteredRuns.length / FE_RUNS_PER_PAGE));
+  if (feCurrentPage > totalPages) feCurrentPage = totalPages;
+
+  const start = (feCurrentPage - 1) * FE_RUNS_PER_PAGE;
+  const pageRuns = feFilteredRuns.slice(start, start + FE_RUNS_PER_PAGE);
+
+  let rowsHtml = '';
+  for (let i = 0; i < pageRuns.length; i++) {
+    const r = pageRuns[i];
+    const rid = 'fe-run-' + (start + i);
+    const acc = r.total > 0 ? (r.passed / r.total * 100).toFixed(1) + '%' : '—';
+    const cost = r.details?.cost_usd;
+    const tasks = r.tasks || [];
+
+    rowsHtml += `<tr class="run-summary">`;
+    rowsHtml += `<td style="white-space:nowrap">${feFormatDate(r.timestamp)}</td>`;
+    rowsHtml += `<td>${r.benchmark}</td>`;
+    rowsHtml += `<td>${r.solver}</td>`;
+    rowsHtml += `<td>${r.passed}/${r.total}</td>`;
+    rowsHtml += `<td>${acc}</td>`;
+    rowsHtml += `<td>${feFormatCost(cost)}</td>`;
+    rowsHtml += `<td>${feFormatDuration(r.duration_seconds)}</td>`;
+    if (tasks.length > 0) {
+      rowsHtml += `<td><button class="toggle-details" data-target="${rid}">+ ${tasks.length} tasks</button></td>`;
+    } else {
+      rowsHtml += '<td></td>';
+    }
+    rowsHtml += '</tr>';
+
+    for (const t of tasks) {
+      rowsHtml += `<tr class="task-row hidden" data-parent="${rid}">`;
+      rowsHtml += `<td></td>`;
+      rowsHtml += `<td colspan="2" style="padding-left:2rem;font-family:monospace;font-size:0.78rem">${t.instance_id}</td>`;
+      rowsHtml += `<td>${feStatusIcon(t.resolved)}</td>`;
+      rowsHtml += `<td>${t.resolved ? '<span class="status-success">PASS</span>' : '<span class="status-failure">FAIL</span>'}</td>`;
+      rowsHtml += `<td>${feFormatCost(t.cost_usd)}</td>`;
+      rowsHtml += `<td>${feFormatDuration(t.duration_seconds)}</td>`;
+      rowsHtml += '<td></td>';
+      rowsHtml += '</tr>';
+    }
+  }
+
+  const tbody = document.getElementById('fe-tbody');
+  if (tbody) tbody.innerHTML = rowsHtml;
+
+  const endIdx = start + pageRuns.length;
+  const pHtml = feRenderPaginationControls(feCurrentPage, totalPages, feFilteredRuns.length, start, endIdx);
+  const pTop = document.getElementById('fe-pagination-top');
+  const pBottom = document.getElementById('fe-pagination-bottom');
+  if (pTop) pTop.innerHTML = pHtml;
+  if (pBottom) pBottom.innerHTML = pHtml;
+}
+
+function feRenderResultsTable(results) {
+  feAllRuns = [...results].sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+  feCurrentPage = 1;
+
+  const benchmarks = [...new Set(results.map(r => r.benchmark))].sort();
+  const solvers = [...new Set(results.map(r => r.solver))].sort();
+
+  let html = '<div class="section-title">Run History</div>';
+  html += '<p class="section-explanation">All full eval runs, newest first. Click a row to see per-task breakdown.</p>';
+
+  html += '<div class="filter-bar">';
+  html += '<label>Benchmark: <select id="fe-filter-bench"><option value="">All</option>';
+  for (const b of benchmarks) html += `<option value="${b}">${b}</option>`;
+  html += '</select></label>';
+  html += '<label>Solver: <select id="fe-filter-solver"><option value="">All</option>';
+  for (const s of solvers) html += `<option value="${s}">${s}</option>`;
+  html += '</select></label>';
+  html += '</div>';
+
+  html += '<div id="fe-pagination-top" class="pagination"></div>';
+  html += '<table><thead><tr>';
+  html += '<th>Date</th><th>Benchmark</th><th>Solver</th><th>Passed</th><th>Score</th><th>Cost</th><th>Duration</th><th></th>';
+  html += '</tr></thead><tbody id="fe-tbody"></tbody></table>';
+  html += '<div id="fe-pagination-bottom" class="pagination"></div>';
+
+  setTimeout(() => {
+    feUpdateTable();
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.toggle-details');
+      if (!btn || !btn.dataset.target?.startsWith('fe-run-')) return;
+      const rid = btn.dataset.target;
+      const details = document.querySelectorAll(`.task-row[data-parent="${rid}"]`);
+      const isHidden = details[0]?.classList.contains('hidden');
+      details.forEach(row => row.classList.toggle('hidden'));
+      const count = details.length;
+      btn.textContent = isHidden ? `− ${count} tasks` : `+ ${count} tasks`;
+    });
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('.fe-page-btn');
+      if (!btn || btn.disabled) return;
+      const page = parseInt(btn.dataset.page);
+      if (page && page !== feCurrentPage) {
+        feCurrentPage = page;
+        feUpdateTable();
+      }
+    });
+
+    const benchSelect = document.getElementById('fe-filter-bench');
+    const solverSelect = document.getElementById('fe-filter-solver');
+    if (benchSelect) benchSelect.addEventListener('change', () => { feCurrentPage = 1; feUpdateTable(); });
+    if (solverSelect) solverSelect.addEventListener('change', () => { feCurrentPage = 1; feUpdateTable(); });
+  }, 0);
+
+  return html;
+}
+
+// Section 4: Cost & Duration Analytics
+function feRenderCostAnalytics(results) {
+  if (results.length === 0) return '';
+
+  const totalCost = results.reduce((s, r) => s + (r.details?.cost_usd || 0), 0);
+  const totalTasks = results.reduce((s, r) => s + (r.total || 0), 0);
+  const avgCostPerTask = totalTasks > 0 ? totalCost / totalTasks : 0;
+  const totalDuration = results.reduce((s, r) => s + (r.duration_seconds || 0), 0);
+  const avgDuration = results.length > 0 ? totalDuration / results.length : 0;
+  const totalRuns = results.length;
+
+  let html = '<div class="section-title">Cost &amp; Duration Analytics</div>';
+  html += '<p class="section-explanation">Aggregate cost and duration statistics across all full eval runs. Vertex AI runs may show $0 when billing is at the platform level.</p>';
+
+  html += '<div class="cost-grid">';
+  html += '<div class="cost-card">';
+  html += `<div class="cost-value">${feFormatCost(totalCost)}</div>`;
+  html += `<div class="cost-label">Total Spend (${totalRuns} runs)</div>`;
+  html += '</div>';
+  html += '<div class="cost-card">';
+  html += `<div class="cost-value">${feFormatCost(avgCostPerTask)}</div>`;
+  html += `<div class="cost-label">Avg Cost / Task (${totalTasks} tasks)</div>`;
+  html += '</div>';
+  html += '<div class="cost-card">';
+  html += `<div class="cost-value">${feFormatDuration(avgDuration)}</div>`;
+  html += '<div class="cost-label">Avg Duration / Run</div>';
+  html += '</div>';
+  html += '</div>';
+
+  html += '<div style="width:100%;margin:1.5rem 0"><canvas id="fe-cost-chart" style="width:100%!important;height:300px!important"></canvas></div>';
+
+  setTimeout(() => {
+    const ctx = document.getElementById('fe-cost-chart');
+    if (!ctx) return;
+    const colors = feChartColors();
+
+    const sortedByDate = [...results].sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    const costPoints = sortedByDate
+      .map(r => {
+        const d = feParseTimestamp(r.timestamp);
+        return d ? { x: d, y: r.details?.cost_usd || 0, label: r.benchmark + ' / ' + r.solver } : null;
+      })
+      .filter(Boolean);
+
+    const durationPoints = sortedByDate
+      .map(r => {
+        const d = feParseTimestamp(r.timestamp);
+        return d ? { x: d, y: (r.duration_seconds || 0) / 3600, label: r.benchmark + ' / ' + r.solver } : null;
+      })
+      .filter(Boolean);
+
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        datasets: [
+          {
+            label: 'Cost (USD)',
+            data: costPoints,
+            backgroundColor: '#4285f4aa',
+            yAxisID: 'y',
+          },
+          {
+            label: 'Duration (hours)',
+            data: durationPoints,
+            backgroundColor: '#ff704388',
+            yAxisID: 'y1',
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: colors.text } },
+          tooltip: {
+            callbacks: {
+              title: (items) => items[0]?.raw?.label || '',
+              label: (item) => {
+                if (item.datasetIndex === 0) return 'Cost: ' + feFormatCost(item.raw.y);
+                return 'Duration: ' + (item.raw.y).toFixed(1) + 'h';
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'day', tooltipFormat: 'MMM d, yyyy' },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y: {
+            position: 'left',
+            title: { display: true, text: 'Cost (USD)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { color: colors.grid },
+          },
+          y1: {
+            position: 'right',
+            title: { display: true, text: 'Duration (hours)', color: colors.text },
+            ticks: { color: colors.text },
+            grid: { drawOnChartArea: false },
+          },
+        },
+      },
+    });
+  }, 0);
+
+  return html;
+}
+
+async function feRenderDashboard() {
+  const container = document.getElementById('full-eval-dashboard');
+
+  try {
+    const results = await feFetchJsonl();
+
+    if (results && results.length > 0) {
+      let html = '';
+      html += feRenderHero(results);
+      html += feRenderAccuracyTrend(results);
+      html += feRenderResultsTable(results);
+      html += feRenderCostAnalytics(results);
+      container.innerHTML = html;
+      return;
+    }
+
+    container.innerHTML = '<p class="error-msg">No full eval results available yet.<br>'
+      + 'Run a full benchmark evaluation to generate data:<br>'
+      + '<code>benchmarks/run-full-eval.sh swebench --solver factory</code></p>';
+  } catch (err) {
+    container.innerHTML = `<p class="error-msg">${err.message}</p>`;
+  }
+}
+
+feRenderDashboard();
+</script>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.sections", "navigation.expand", "navigation.top", "content.code.copy", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
