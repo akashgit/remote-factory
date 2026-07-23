@@ -2212,47 +2212,94 @@ class TestCreateModeUpdate:
             assert name in registered, f"{name} in CEO_MODES but not in register_all()"
 
     def test_create_update_loop_integration(self, tmp_path):
-        """Full lifecycle: create_workflow registered, simulate update detection, verify consistency."""
-        from factory.workflow.definitions import create_workflow, register_all
-        from factory.workflow.skill_export import WORKFLOW_META
-        from factory.cli._helpers import CEO_MODES
-
+        """Full lifecycle: define dummy workflow, monkeypatch into register_all, detect update,
+        generate task, simulate modification, re-validate, verify registration surface."""
         import re as _re
-        import typing
-        from factory.models import CycleState
+        import unittest.mock
 
-        wf = create_workflow()
-        assert wf.name == "create"
+        from factory.models import ProjectState
+        from factory.workflow.primitives import Workflow, AgentNode, Edge, AgentRole
 
-        registered = register_all()
-        assert "create" in registered
+        # 1. Define a minimal dummy workflow
+        def dummy_workflow() -> Workflow:
+            nodes: dict[str, AgentNode] = {
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="Research the topic.",
+                ),
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Build the thing.",
+                    timeout=600,
+                ),
+            }
+            edges = [Edge(source="researcher", target="builder")]
 
-        focus = "improve: add a new node"
-        m = _re.match(r"^([a-z_-]+):\s*(.+)$", focus, _re.DOTALL)
-        assert m is not None
-        mode_name = m.group(1)
-        change_desc = m.group(2).strip()
-        assert mode_name == "improve"
-        assert mode_name in registered
-        assert change_desc == "add a new node"
+            def trigger(state: ProjectState, ctx: dict) -> bool:
+                return ctx.get("mode") == "dummy_test_mode"
 
-        task = _build_ceo_task(
-            tmp_path, "create",
-            create_description=change_desc,
-            update_existing_mode=mode_name,
-        )
-        assert "## Create Mode (Update Existing Mode)" in task
-        assert "**Target mode:** improve" in task
+            return Workflow(
+                name="dummy_test_mode",
+                nodes=nodes,
+                edges=edges,
+                start_node="researcher",
+                trigger=trigger,
+            )
 
-        mode_field = CycleState.model_fields["mode"]
-        literal_args = typing.get_args(mode_field.annotation)
-        for name in WORKFLOW_META:
-            assert name in registered, f"{name} missing from register_all()"
-        for name in CEO_MODES:
-            if name in ("auto", "auto-fresh", "interactive"):
-                continue
-            assert name in literal_args, f"{name} missing from CycleState.mode"
-            assert name in registered, f"{name} missing from register_all()"
+        # 2. Monkeypatch register_all to include the dummy
+        from factory.workflow.definitions import register_all
+
+        original = register_all()
+        patched = {**original, "dummy_test_mode": dummy_workflow()}
+
+        with unittest.mock.patch(
+            "factory.workflow.definitions.register_all", return_value=patched
+        ):
+            # 3. Verify detection: parse focus string, confirm update path
+            focus = "dummy_test_mode: add a log node after researcher"
+            m = _re.match(r"^([a-z_-]+):\s*(.+)$", focus, _re.DOTALL)
+            assert m is not None
+            assert m.group(1) == "dummy_test_mode"
+
+            from factory.workflow.definitions import register_all as reg
+
+            assert m.group(1) in reg()
+
+            # 4. Generate task string and verify contents
+            task = _build_ceo_task(
+                tmp_path,
+                "create",
+                create_description=m.group(2).strip(),
+                update_existing_mode="dummy_test_mode",
+            )
+            assert "## Create Mode (Update Existing Mode)" in task
+            assert "**Target mode:** dummy_test_mode" in task
+            assert "20 registration points" in task
+
+            # 5. Simulate modification: append text to a node prompt
+            wf = patched["dummy_test_mode"]
+            original_prompt = wf.nodes["builder"].prompt_template
+            wf.nodes["builder"].prompt_template = original_prompt + " Also add structured logging."
+
+            # 6. Re-validate after modification
+            assert wf.name == "dummy_test_mode"
+            assert "researcher" in wf.nodes
+            assert "builder" in wf.nodes
+            assert wf.start_node in wf.nodes
+            assert len(wf.edges) > 0
+            assert wf.trigger is not None
+            assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "dummy_test_mode"}) is True
+            assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"}) is False
+            assert "Also add structured logging." in wf.nodes["builder"].prompt_template
+
+            # 7. Verify registration surface still consistent
+            reg_result = reg()
+            assert "dummy_test_mode" in reg_result
+            assert reg_result["dummy_test_mode"].name == "dummy_test_mode"
+            for name in original:
+                assert name in reg_result, f"{name} disappeared after adding dummy mode"
 
     def test_registration_surface_catches_inconsistency(self):
         """Negative test: breaking a registration point is detected by completeness logic."""
