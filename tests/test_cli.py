@@ -2070,6 +2070,269 @@ class TestCreateModeFocus:
         assert "## Create Mode (New Factory Mode)" not in task
 
 
+class TestCreateModeUpdate:
+    """Tests for create-mode update detection (issue #1044)."""
+
+    def test_create_mode_detects_existing_mode(self, tmp_path):
+        """--focus 'improve: add X' detects 'improve' as existing and extracts description."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "improve: add plateau detection"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Create Mode (Update Existing Mode)" in task
+        assert "**Target mode:** improve" in task
+        assert "add plateau detection" in task
+
+    def test_create_mode_update_task_string(self, tmp_path):
+        """_build_ceo_task with update_existing_mode produces Update Existing Mode section."""
+        task = _build_ceo_task(
+            tmp_path, "create",
+            create_description="add plateau detection",
+            update_existing_mode="improve",
+        )
+        assert "## Create Mode (Update Existing Mode)" in task
+        assert "## Create Mode (New Factory Mode)" not in task
+
+    def test_create_mode_update_task_names_target(self, tmp_path):
+        """Task string includes **Target mode:** improve."""
+        task = _build_ceo_task(
+            tmp_path, "create",
+            create_description="add plateau detection",
+            update_existing_mode="improve",
+        )
+        assert "**Target mode:** improve" in task
+
+    def test_create_mode_update_preserves_focus_description(self, tmp_path):
+        """Change description after colon is passed through correctly."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "research: add citation tracking"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "add citation tracking" in task
+        assert "**Requested changes:** add citation tracking" in task
+
+    def test_create_mode_unknown_name_falls_through_to_new(self, tmp_path):
+        """--focus 'totally_new_thing: desc' falls through to new mode creation."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "totally_new_thing: some description"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Create Mode (New Factory Mode)" in task
+        assert "## Create Mode (Update Existing Mode)" not in task
+        assert "totally_new_thing: some description" in task
+
+    def test_create_mode_update_still_foreground_only(self, tmp_path):
+        """--headless rejected with create mode (update or not)."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground():
+            rc = main(["ceo", str(tmp_path), "--mode", "create", "--headless",
+                        "--focus", "improve: add X"])
+        assert rc == 1
+
+    def test_create_mode_update_still_rejects_prompt(self, tmp_path):
+        """--prompt rejected with create mode (update or not)."""
+        (tmp_path / ".git").mkdir()
+        prompt_file = tmp_path / "spec.md"
+        prompt_file.write_text("spec content")
+        with _mock_foreground():
+            rc = main(["ceo", str(tmp_path), "--mode", "create",
+                        "--prompt", str(prompt_file)])
+        assert rc == 1
+
+    def test_create_workflow_graph_validates(self):
+        """create_workflow() returns a valid Workflow with all required fields."""
+        from factory.workflow.definitions import create_workflow
+
+        wf = create_workflow()
+        assert wf.name == "create"
+        assert wf.start_node in wf.nodes
+        assert len(wf.edges) > 0
+        assert wf.trigger is not None
+
+    def test_create_workflow_skill_exports(self):
+        """workflow_to_skill_md(create_workflow()) produces valid markdown."""
+        from factory.workflow.definitions import create_workflow
+        from factory.workflow.skill_export import workflow_to_skill_md
+
+        wf = create_workflow()
+        md = workflow_to_skill_md(wf)
+        assert "# " in md
+        assert len(md) > 100
+
+    def test_create_workflow_trigger_unchanged(self):
+        """Trigger returns True only for ctx.get('mode') == 'create'."""
+        from factory.workflow.definitions import create_workflow
+        from factory.models import ProjectState
+
+        wf = create_workflow()
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "create"}) is True
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"}) is False
+        assert wf.trigger(ProjectState.HAS_FACTORY, {}) is False
+
+    def test_update_mode_e2e_smoke(self, tmp_path):
+        """Full CLI parse with --mode create --focus 'improve: add X' produces update directives."""
+        (tmp_path / ".git").mkdir()
+        with _mock_foreground() as mock_run:
+            main(["ceo", str(tmp_path), "--mode", "create", "--focus", "improve: add convergence check"])
+        cmd = mock_run.call_args[0][0]
+        dsp_idx = cmd.index("--dangerously-skip-permissions")
+        task = cmd[dsp_idx + 1]
+        assert "## Create Mode (Update Existing Mode)" in task
+        assert "factory workflow validate improve" in task
+        assert "factory workflow show improve" in task
+        assert "20 registration points" in task
+
+    def test_registration_surface_completeness(self):
+        """Registration surfaces are consistent: WORKFLOW_META ⊆ register_all(), CEO modes ⊆ CycleState."""
+        from factory.workflow.definitions import register_all
+        from factory.workflow.skill_export import WORKFLOW_META
+        from factory.cli._helpers import CEO_MODES
+
+        import typing
+        from factory.models import CycleState
+
+        mode_field = CycleState.model_fields["mode"]
+        literal_args = typing.get_args(mode_field.annotation)
+
+        registered = register_all()
+
+        for name in WORKFLOW_META:
+            assert name in registered, f"{name} in WORKFLOW_META but not in register_all()"
+
+        for name in CEO_MODES:
+            if name in ("auto", "auto-fresh", "interactive"):
+                continue
+            assert name in literal_args, f"{name} in CEO_MODES but not in CycleState.mode Literal"
+            assert name in registered, f"{name} in CEO_MODES but not in register_all()"
+
+    def test_create_update_loop_integration(self, tmp_path):
+        """Full lifecycle: define dummy workflow, monkeypatch into register_all, detect update,
+        generate task, simulate modification, re-validate, verify registration surface."""
+        import re as _re
+        import unittest.mock
+
+        from factory.models import ProjectState
+        from factory.workflow.primitives import Workflow, AgentNode, Edge, AgentRole
+
+        # 1. Define a minimal dummy workflow
+        def dummy_workflow() -> Workflow:
+            nodes: dict[str, AgentNode] = {
+                "researcher": AgentNode(
+                    id="researcher",
+                    role=AgentRole.RESEARCHER,
+                    prompt_template="Research the topic.",
+                ),
+                "builder": AgentNode(
+                    id="builder",
+                    role=AgentRole.BUILDER,
+                    prompt_template="Build the thing.",
+                    timeout=600,
+                ),
+            }
+            edges = [Edge(source="researcher", target="builder")]
+
+            def trigger(state: ProjectState, ctx: dict) -> bool:
+                return ctx.get("mode") == "dummy_test_mode"
+
+            return Workflow(
+                name="dummy_test_mode",
+                nodes=nodes,
+                edges=edges,
+                start_node="researcher",
+                trigger=trigger,
+            )
+
+        # 2. Monkeypatch register_all to include the dummy
+        from factory.workflow.definitions import register_all
+
+        original = register_all()
+        patched = {**original, "dummy_test_mode": dummy_workflow()}
+
+        with unittest.mock.patch(
+            "factory.workflow.definitions.register_all", return_value=patched
+        ):
+            # 3. Verify detection: parse focus string, confirm update path
+            focus = "dummy_test_mode: add a log node after researcher"
+            m = _re.match(r"^([a-z_-]+):\s*(.+)$", focus, _re.DOTALL)
+            assert m is not None
+            assert m.group(1) == "dummy_test_mode"
+
+            from factory.workflow.definitions import register_all as reg
+
+            assert m.group(1) in reg()
+
+            # 4. Generate task string and verify contents
+            task = _build_ceo_task(
+                tmp_path,
+                "create",
+                create_description=m.group(2).strip(),
+                update_existing_mode="dummy_test_mode",
+            )
+            assert "## Create Mode (Update Existing Mode)" in task
+            assert "**Target mode:** dummy_test_mode" in task
+            assert "20 registration points" in task
+
+            # 5. Simulate modification: append text to a node prompt
+            wf = patched["dummy_test_mode"]
+            original_prompt = wf.nodes["builder"].prompt_template
+            wf.nodes["builder"].prompt_template = original_prompt + " Also add structured logging."
+
+            # 6. Re-validate after modification
+            assert wf.name == "dummy_test_mode"
+            assert "researcher" in wf.nodes
+            assert "builder" in wf.nodes
+            assert wf.start_node in wf.nodes
+            assert len(wf.edges) > 0
+            assert wf.trigger is not None
+            assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "dummy_test_mode"}) is True
+            assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"}) is False
+            assert "Also add structured logging." in wf.nodes["builder"].prompt_template
+
+            # 7. Verify registration surface still consistent
+            reg_result = reg()
+            assert "dummy_test_mode" in reg_result
+            assert reg_result["dummy_test_mode"].name == "dummy_test_mode"
+            for name in original:
+                assert name in reg_result, f"{name} disappeared after adding dummy mode"
+
+    def test_registration_surface_catches_inconsistency(self):
+        """Negative test: breaking a registration point is detected by completeness logic."""
+        from factory.workflow.definitions import register_all
+        from factory.workflow.skill_export import WORKFLOW_META
+
+        registered = register_all()
+
+        patched_meta = {k: v for k, v in WORKFLOW_META.items() if k != "create"}
+        inconsistencies = []
+        for name in patched_meta:
+            if name not in registered:
+                inconsistencies.append(f"{name} missing from register_all()")
+
+        patched_registered = {k: v for k, v in registered.items() if k != "create"}
+        for name in WORKFLOW_META:
+            if name not in patched_registered:
+                inconsistencies.append(f"{name} missing from register_all()")
+
+        assert len(inconsistencies) > 0, "Guard should detect removed 'create' from register_all()"
+        assert any("create" in i for i in inconsistencies)
+
+    def test_no_colon_identical_behavior(self, tmp_path):
+        """Focus without colon produces identical create-new behavior."""
+        task = _build_ceo_task(
+            tmp_path, "create",
+            create_description="a PR validation mode",
+        )
+        assert "## Create Mode (New Factory Mode)" in task
+        assert "## Create Mode (Update Existing Mode)" not in task
+        assert "a PR validation mode" in task
+
+
 class TestProfileParser:
     def test_profile_build_subcommand(self):
         parser = build_parser()

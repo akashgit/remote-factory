@@ -1480,7 +1480,12 @@ def create_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Existing workflow analysis. "
-            "Read factory/workflow/definitions.py and analyze all existing workflow "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', read the "
+            "**Target mode:** field and focus your analysis on that specific mode's workflow "
+            "definition via `factory workflow show <target_mode>`. Document its current node "
+            "sequences, gate logic, edge wiring, trigger function, and reads/writes. Also read "
+            "its SKILL.md at skills/workflow-<target_mode>/SKILL.md for the generated playbook. "
+            "Otherwise, read factory/workflow/definitions.py and analyze all existing workflow "
             "definitions (build, design, improve, research, meta, discover, review, refine). "
             "Document common patterns: node sequences, gate conventions, fork/join patterns, "
             "archivist placement, edge wiring, trigger functions, reads/writes declarations. "
@@ -1499,7 +1504,11 @@ def create_workflow() -> Workflow:
         prompt_template=(
             "Mode description analysis. "
             "Read the user's mode description from the CEO task. "
-            "Parse and structure it into a workflow specification: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', parse the "
+            "**Requested changes:** field and structure the requested modifications against "
+            "the existing mode's current behavior. Identify which nodes, edges, prompts, or "
+            "gates need to change and which must remain untouched. "
+            "Otherwise, parse and structure the description into a new workflow specification: "
             "- Purpose and trigger conditions "
             "- Agent roles needed (which specialists) "
             "- Gate logic (user vs agent vs fn evaluators) "
@@ -1557,9 +1566,14 @@ def create_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Synthesize a complete workflow specification for a new factory mode. "
+            "Synthesize a workflow specification. "
             "Read ALL tagged research files at .factory/strategy/research-*.md. "
-            "Produce a complete specification including: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', produce a "
+            "change spec describing modifications to the existing workflow: which nodes/edges/"
+            "prompts/gates to modify, what to add or remove, and a diff-oriented implementation "
+            "plan. Include the 20-point verification checklist from the CEO task. Do NOT produce "
+            "a complete new workflow definition — describe changes to the existing one. "
+            "Otherwise, produce a complete specification for a new factory mode including: "
             "1) Python code for the workflow function (nodes dict, edges list, trigger) "
             "2) WORKFLOW_META entry (description, argument_hint) "
             "3) CLI wiring changes (build_parser mode choices, cmd_ceo routing, _build_ceo_task section) "
@@ -1598,10 +1612,16 @@ def create_workflow() -> Workflow:
         role=AgentRole.BUILDER,
         timeout=1800,
         prompt_template=(
-            "Implement the new factory mode from the approved workflow specification. "
+            "Implement the workflow changes from the approved specification. "
             "Read the approved spec at .factory/strategy/current.md. "
             "Read CLAUDE.md for project conventions. "
-            "Implementation checklist: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', follow the "
+            "update checklist: modify the existing workflow function in definitions.py, verify "
+            "the register_all() entry still resolves, update WORKFLOW_META if needed, verify all "
+            "20 registration points from the CEO task, run factory workflow validate <name>, "
+            "regenerate SKILL.md via factory workflow export-skills, update tests, run pytest "
+            "and ruff check. "
+            "Otherwise, follow the new-mode checklist: "
             "1) Add the workflow function to factory/workflow/definitions.py "
             "2) Register it in register_all() "
             "3) Add WORKFLOW_META entry in factory/workflow/skill_export.py "
