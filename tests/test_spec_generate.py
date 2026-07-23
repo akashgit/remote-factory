@@ -169,9 +169,9 @@ class TestBuildGraphSummary:
     def test_includes_entity_counts(self) -> None:
         graph = {
             "nodes": [
-                {"name": "Foo", "type": "class"},
-                {"name": "bar", "type": "function"},
-                {"name": "baz", "type": "function"},
+                {"id": "mod_foo", "label": "Foo", "source_file": "mod.py"},
+                {"id": "mod_bar", "label": "bar()", "source_file": "mod.py"},
+                {"id": "mod_baz", "label": "baz()", "source_file": "mod.py"},
             ],
             "edges": [],
         }
@@ -506,123 +506,55 @@ class TestGenerateSpecGraph:
                 await generate_spec(tmp_path)
 
 
-# ── generate_spec (batched fallback) ────────────────────────────
+# ── generate_spec (graphify pipeline errors) ─────────────────────
 
 
-class TestGenerateSpecFallback:
-    async def test_fallback_when_extract_graph_returns_none(self, tmp_path: Path) -> None:
-        (tmp_path / "main.py").write_text("print('hello')")
-        repo_spec = tmp_path / "SPEC.md"
+class TestGenerateSpecErrors:
+    async def test_graphify_not_installed_raises(self, tmp_path: Path) -> None:
+        with patch("factory.graph.is_graphify_installed", return_value=False):
+            with pytest.raises(RuntimeError, match="graphify is required"):
+                await generate_spec(tmp_path)
 
-        async def mock_invoke(role, task, project, **kwargs):
-            if kwargs.get("model") == "opus":
-                return ("# Extracted spec", 0)
-            repo_spec.write_text("# Repo spec")
-            return ("ok", 0)
-
+    async def test_extract_graph_failure_raises(self, tmp_path: Path) -> None:
         with (
+            patch("factory.graph.is_graphify_installed", return_value=True),
             patch("factory.graph.extract_graph", return_value=None),
-            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
         ):
-            result = await generate_spec(tmp_path)
+            with pytest.raises(RuntimeError, match="graphify extraction failed"):
+                await generate_spec(tmp_path)
 
-        assert result == repo_spec
-        spec_raw = tmp_path / ".factory" / "spec_raw.md"
-        assert spec_raw.exists()
-        assert spec_raw.read_text() == "# Extracted spec"
-
-    async def test_fallback_when_load_graph_returns_none(self, tmp_path: Path) -> None:
-        (tmp_path / "main.py").write_text("print('hello')")
-        repo_spec = tmp_path / "SPEC.md"
-
-        async def mock_invoke(role, task, project, **kwargs):
-            if kwargs.get("model") == "opus":
-                return ("# Extracted spec", 0)
-            repo_spec.write_text("# Repo spec")
-            return ("ok", 0)
-
+    async def test_load_graph_failure_raises(self, tmp_path: Path) -> None:
         with (
             patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
             patch("factory.graph.load_graph_data", return_value=None),
-            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
         ):
-            result = await generate_spec(tmp_path)
-
-        assert result == repo_spec
-        spec_raw = tmp_path / ".factory" / "spec_raw.md"
-        assert spec_raw.exists()
-
-    async def test_fallback_parallel_batches_concatenated(self, tmp_path: Path) -> None:
-        char_limit = BATCH_TOKEN_LIMIT * APPROX_CHARS_PER_TOKEN
-        (tmp_path / "a.py").write_text("x" * (char_limit // 2 + 1))
-        (tmp_path / "b.py").write_text("y" * (char_limit // 2 + 1))
-
-        repo_spec = tmp_path / "SPEC.md"
-        extraction_calls = []
-
-        async def mock_invoke(role, task, project, **kwargs):
-            if kwargs.get("model") == "opus":
-                extraction_calls.append(task)
-                if "a.py" in task:
-                    return ("# Section A", 0)
-                return ("# Section B", 0)
-            repo_spec.write_text("# Final spec")
-            return ("ok", 0)
-
-        with (
-            patch("factory.graph.extract_graph", return_value=None),
-            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
-        ):
-            await generate_spec(tmp_path)
-
-        assert len(extraction_calls) == 2
-        spec_raw = tmp_path / ".factory" / "spec_raw.md"
-        content = spec_raw.read_text()
-        assert "# Section A" in content
-        assert "# Section B" in content
-
-    async def test_no_source_files_raises(self, tmp_path: Path) -> None:
-        with patch("factory.graph.extract_graph", return_value=None):
-            with pytest.raises(ValueError, match="No source files"):
+            with pytest.raises(RuntimeError, match="graph.json is unreadable"):
                 await generate_spec(tmp_path)
 
-    async def test_extraction_failure_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "main.py").write_text("x = 1")
+    async def test_annotation_failure_raises(self, tmp_path: Path) -> None:
+        graph_data = {"nodes": [{"id": "a", "label": "a.py"}], "edges": []}
 
         with (
-            patch("factory.graph.extract_graph", return_value=None),
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
             patch(
                 "factory.agents.runner.invoke_agent",
                 new_callable=lambda: AsyncMock(return_value=("error", 1)),
             ),
         ):
-            with pytest.raises(RuntimeError, match="Spec extraction failed"):
-                await generate_spec(tmp_path)
-
-    async def test_annotation_failure_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "main.py").write_text("x = 1")
-
-        async def mock_invoke(role, task, project, **kwargs):
-            if kwargs.get("model") == "opus":
-                return ("# Raw", 0)
-            return ("error", 1)
-
-        with (
-            patch("factory.graph.extract_graph", return_value=None),
-            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
-        ):
             with pytest.raises(RuntimeError, match="Spec annotation failed"):
                 await generate_spec(tmp_path)
 
-    async def test_missing_spec_raises(self, tmp_path: Path) -> None:
-        (tmp_path / "main.py").write_text("x = 1")
-
-        async def mock_invoke(role, task, project, **kwargs):
-            return ("ok", 0)
+    async def test_missing_spec_after_annotation_raises(self, tmp_path: Path) -> None:
+        graph_data = {"nodes": [{"id": "a", "label": "a.py"}], "edges": []}
 
         with (
-            patch("factory.graph.extract_graph", return_value=None),
-            patch("factory.agents.runner.invoke_agent", side_effect=mock_invoke),
+            patch("factory.graph.extract_graph", return_value=tmp_path / "graph.json"),
+            patch("factory.graph.load_graph_data", return_value=graph_data),
+            patch(
+                "factory.agents.runner.invoke_agent",
+                new_callable=lambda: AsyncMock(return_value=("ok", 0)),
+            ),
         ):
             with pytest.raises(FileNotFoundError, match="SPEC"):
                 await generate_spec(tmp_path)
