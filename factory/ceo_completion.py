@@ -390,6 +390,7 @@ async def run_ceo_with_completion_guard(
     tmux_persist: bool = False,
     background: bool = False,
     workflow_mode: str | None = None,
+    settings_file: str | None = None,
 ) -> tuple[str, int]:
     """Spawn CEO; if it exits with planned work undone, re-spawn until done or cap hit.
 
@@ -422,6 +423,7 @@ async def run_ceo_with_completion_guard(
             timeout=timeout, model=model, runner_name=runner_name,
             background=True, session_name=session_name, use_profile=use_profile,
             workflow_mode=workflow_mode,
+            settings_file=settings_file,
         )
 
     # Check escape hatch
@@ -436,6 +438,7 @@ async def run_ceo_with_completion_guard(
             use_profile=use_profile,
             tmux_persist=tmux_persist,
             workflow_mode=workflow_mode,
+            settings_file=settings_file,
         )
 
     if max_respawns is None:
@@ -478,6 +481,7 @@ async def run_ceo_with_completion_guard(
             use_profile=use_profile,
             tmux_persist=tmux_persist,
             workflow_mode=workflow_mode,
+            settings_file=settings_file,
         )
         final_output = result
 

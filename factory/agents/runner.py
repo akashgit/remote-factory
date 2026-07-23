@@ -165,6 +165,7 @@ async def invoke_agent(
     background: bool = False,
     review_tag: str | None = None,
     workflow_mode: str | None = None,
+    settings_file: str | None = None,
 ) -> tuple[str, int]:
     """Invoke a Claude Code agent with the resolved prompt + task.
 
@@ -213,7 +214,11 @@ async def invoke_agent(
         role=role,
         session_name=agent_session_name,
         project_path=project_path,
-        extras={"tmux_persist": tmux_persist, "background": background},
+        extras={
+            "tmux_persist": tmux_persist,
+            "background": background,
+            **({"settings_file": settings_file} if settings_file else {}),
+        },
     )
 
     old_parent_span = os.environ.get("FACTORY_PARENT_SPAN_ID")

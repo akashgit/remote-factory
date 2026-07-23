@@ -26,6 +26,7 @@ from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    ArtifactCheck,
     Edge,
     FnNode,
     ForkNode,
@@ -170,6 +171,7 @@ def build_workflow() -> Workflow:
             "differentiation opportunities."
         ),
         writes={".factory/strategy/research-similar.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-similar.md", must_exist=True, min_size=50)],
     )
     nodes["researcher_techstack"] = AgentNode(
         id="researcher_techstack",
@@ -184,6 +186,7 @@ def build_workflow() -> Workflow:
             "framework comparisons."
         ),
         writes={".factory/strategy/research-techstack.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50)],
     )
     nodes["researcher_pitfalls"] = AgentNode(
         id="researcher_pitfalls",
@@ -198,6 +201,7 @@ def build_workflow() -> Workflow:
             "lessons from similar past builds."
         ),
         writes={".factory/strategy/research-pitfalls.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50)],
     )
 
     # Join
@@ -238,6 +242,12 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/research-combined.md"},
         writes={".factory/strategy/current.md"},
+        post_checks=[ArtifactCheck(
+            path=".factory/strategy/current.md",
+            must_exist=True,
+            min_size=100,
+            must_contain=["## Build Plan", "### Phase 1"],
+        )],
     )
 
     # CEO gate on strategy quality — HARD GATE

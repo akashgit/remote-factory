@@ -116,6 +116,17 @@ class Node(BaseModel):
     blocking: bool = True
 
 
+class ArtifactCheck(BaseModel):
+    """Validation rule for an agent-produced artifact."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    path: str
+    must_exist: bool = True
+    min_size: int = 0
+    must_contain: list[str] = Field(default_factory=list)
+
+
 class AgentNode(Node):
     """Node that invokes a Claude Code agent."""
 
@@ -127,6 +138,7 @@ class AgentNode(Node):
     tools: list[str] = Field(default_factory=list)
     timeout: int | None = None
     max_iterations: int = 1
+    post_checks: list[ArtifactCheck] = Field(default_factory=list)
 
 
 class FnNode(Node):
