@@ -40,6 +40,75 @@ Use FAIL if there are any errors, PASS otherwise.
 """
 
 
+def _validate_graph_references(spec_content: str, project_path: Path) -> str:
+    """Verify that [[graph:...]] entity references resolve to actual graph nodes.
+
+    Returns a Markdown section with validation results, or empty string
+    if graph is unavailable or no references found.
+    """
+    from factory.graph import is_graph_available
+    from factory.spec.resolver import _BARE_REF, _TYPED_REF, _find_node, load_graph
+
+    if not is_graph_available(project_path):
+        return ""
+
+    graph = load_graph(project_path)
+    if graph is None:
+        return ""
+
+    resolved: list[str] = []
+    orphans: list[str] = []
+
+    seen: set[str] = set()
+
+    for match in _TYPED_REF.finditer(spec_content):
+        ref_type = match.group(1)
+        value = match.group(2).strip()
+        ref_key = f"{ref_type}:{value}"
+        if ref_key in seen:
+            continue
+        seen.add(ref_key)
+
+        if ref_type == "entity":
+            if _find_node(value, graph) is not None:
+                resolved.append(value)
+            else:
+                orphans.append(value)
+        elif ref_type == "community":
+            name_lower = value.lower()
+            found = any(
+                str(attrs.get("community", attrs.get("group", ""))).lower() == name_lower
+                for _, attrs in graph.nodes(data=True)
+            )
+            if found:
+                resolved.append(f"community:{value}")
+            else:
+                orphans.append(f"community:{value}")
+
+    for match in _BARE_REF.finditer(spec_content):
+        name = match.group(1).strip()
+        if name in seen:
+            continue
+        seen.add(name)
+
+        if _find_node(name, graph) is not None:
+            resolved.append(name)
+        else:
+            orphans.append(name)
+
+    if not resolved and not orphans:
+        return ""
+
+    lines = ["## Graph Reference Validation"]
+    lines.append(f"\nResolved: {len(resolved)} | Orphans: {len(orphans)}")
+    if orphans:
+        lines.append("\n**Orphan references** (entity not found in graph):")
+        for name in sorted(orphans):
+            lines.append(f"- `[[graph:{name}]]`")
+
+    return "\n".join(lines)
+
+
 def _parse_verdict(text: str) -> bool:
     """Extract pass/fail verdict from agent output. Defaults to True if absent."""
     match = re.search(r"^Verdict:\s*(PASS|FAIL)\s*$", text, re.MULTILINE)
@@ -81,6 +150,10 @@ async def validate_spec(project_path: Path) -> tuple[str, bool]:
     else:
         report = result_text.strip()
         is_valid = _parse_verdict(report)
+
+    graph_report = _validate_graph_references(spec_content, project_path)
+    if graph_report:
+        report += f"\n\n{graph_report}"
 
     output_path = project_path / ".factory" / "spec_validation.md"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -166,6 +239,56 @@ def _get_diff_text(project_path: Path, experiment_id: int | None, spec_rel: str)
     return result.stdout
 
 
+def _graph_context_for_diff(diff_text: str, project_path: Path) -> str:
+    """Extract graph dependency context for changed files in a diff.
+
+    Returns a compact summary of graph neighbors for changed files,
+    or empty string if graph is unavailable.
+    """
+    from factory.graph import is_graph_available
+    from factory.spec.resolver import _find_node, load_graph
+
+    if not is_graph_available(project_path):
+        return ""
+
+    graph = load_graph(project_path)
+    if graph is None:
+        return ""
+
+    changed_files: set[str] = set()
+    for line in diff_text.splitlines():
+        if line.startswith("diff --git"):
+            parts = line.split()
+            if len(parts) >= 3:
+                path = parts[2].lstrip("a/")
+                changed_files.add(path)
+        elif line.startswith("+++ b/"):
+            changed_files.add(line[6:])
+
+    if not changed_files:
+        return ""
+
+    sections: list[str] = []
+    for fpath in sorted(changed_files):
+        node_id = _find_node(fpath, graph)
+        if node_id is None:
+            stem = fpath.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+            node_id = _find_node(stem, graph)
+        if node_id is None:
+            continue
+
+        neighbors = sorted(set(graph.successors(node_id)) | set(graph.predecessors(node_id)))
+        if neighbors:
+            neighbor_list = ", ".join(neighbors[:10])
+            extra = f" (+{len(neighbors) - 10} more)" if len(neighbors) > 10 else ""
+            sections.append(f"- **{fpath}** → {neighbor_list}{extra}")
+
+    if not sections:
+        return ""
+
+    return "Changed files and their graph neighbors:\n" + "\n".join(sections)
+
+
 async def scope_diff(project_path: Path, experiment_id: int | None = None) -> str:
     """Scope a diff against the existing repo spec using a Haiku agent call.
 
@@ -187,7 +310,10 @@ async def scope_diff(project_path: Path, experiment_id: int | None = None) -> st
 
     diff_text = _get_diff_text(project_path, experiment_id, spec_rel)
 
+    graph_context = _graph_context_for_diff(diff_text, project_path)
     prompt = SCOPE_PROMPT.format(spec_content=spec_content, diff_text=diff_text)
+    if graph_context:
+        prompt += f"\n\n## Graph Dependency Context\n{graph_context}"
 
     result_text, code = await invoke_agent(
         "researcher",
@@ -278,12 +404,85 @@ Keep the output under 30 lines. Return ONLY the Markdown snippet.
 """
 
 
+def _graph_impact(module_name: str, project_path: Path) -> str | None:
+    """Try to produce impact analysis from the code knowledge graph.
+
+    Returns a Markdown snippet or None if graph is unavailable or lookup fails.
+    """
+    from factory.graph import is_graph_available
+    from factory.spec.resolver import _find_node, load_graph
+
+    if not is_graph_available(project_path):
+        return None
+
+    graph = load_graph(project_path)
+    if graph is None:
+        return None
+
+    node_id = _find_node(module_name, graph)
+    if node_id is None:
+        return None
+
+    attrs = graph.nodes[node_id]
+    lines = [f"## Impact: {module_name}"]
+
+    node_type = attrs.get("type", attrs.get("kind", ""))
+    file_path = attrs.get("file", attrs.get("path", ""))
+    if file_path or node_type:
+        parts = []
+        if file_path:
+            parts.append(f"Path: {file_path}")
+        if node_type:
+            parts.append(f"Type: {node_type}")
+        lines.append(" | ".join(parts))
+
+    deps = list(graph.successors(node_id))
+    if deps:
+        lines.append(f"\n**Dependencies** ({len(deps)}):")
+        for dep in sorted(deps)[:15]:
+            edge_data = graph.edges[node_id, dep]
+            rel = edge_data.get("type", edge_data.get("relationship", ""))
+            suffix = f" ({rel})" if rel else ""
+            lines.append(f"- {dep}{suffix}")
+        if len(deps) > 15:
+            lines.append(f"- … and {len(deps) - 15} more")
+
+    dependents = list(graph.predecessors(node_id))
+    if dependents:
+        lines.append(f"\n**Dependents** ({len(dependents)}):")
+        for dep in sorted(dependents)[:15]:
+            edge_data = graph.edges[dep, node_id]
+            rel = edge_data.get("type", edge_data.get("relationship", ""))
+            suffix = f" ({rel})" if rel else ""
+            lines.append(f"- {dep}{suffix}")
+        if len(dependents) > 15:
+            lines.append(f"- … and {len(dependents) - 15} more")
+
+    community = attrs.get("community", attrs.get("group", ""))
+    if community:
+        lines.append(f"\n**Community:** {community}")
+
+    severity = "HIGH" if len(dependents) > 5 else "MEDIUM" if len(dependents) > 2 else "LOW"
+    lines.append(f"\n**Change impact:** {severity} ({len(dependents)} direct dependents)")
+
+    log.info("spec.impact.graph", module=module_name, deps=len(deps), dependents=len(dependents))
+    return "\n".join(lines)
+
+
 async def get_impact(module_name: str, project_path: Path) -> str:
     """Extract the subgraph centered on a named module from the repo spec.
+
+    When the code knowledge graph is available, uses NetworkX traversal
+    for instant, deterministic results. Falls back to agent-based extraction
+    from SPEC.md when graph is unavailable.
 
     Returns a compact Markdown snippet sized for agent context inclusion.
     Raises FileNotFoundError if the spec file does not exist.
     """
+    graph_result = _graph_impact(module_name, project_path)
+    if graph_result is not None:
+        return graph_result
+
     from factory.agents.runner import invoke_agent
     from factory.spec import read_spec
 

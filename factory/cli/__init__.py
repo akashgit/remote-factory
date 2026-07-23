@@ -75,6 +75,11 @@ from factory.cli.ceo import (
     cmd_tmux_ls as cmd_tmux_ls,
     cmd_tmux_stop as cmd_tmux_stop,
 )
+from factory.cli.graph import (
+    cmd_graph_extract as cmd_graph_extract,
+    cmd_graph_status as cmd_graph_status,
+    cmd_graph_update as cmd_graph_update,
+)
 from factory.cli.eval_cmds import (
     cmd_adversarial_state as cmd_adversarial_state,
     cmd_baseline as cmd_baseline,
@@ -113,6 +118,7 @@ from factory.cli.review import (
 from factory.cli.spec import (
     cmd_spec_generate as cmd_spec_generate,
     cmd_spec_impact as cmd_spec_impact,
+    cmd_spec_resolve as cmd_spec_resolve,
     cmd_spec_scope as cmd_spec_scope,
     cmd_spec_update as cmd_spec_update,
     cmd_spec_validate as cmd_spec_validate,
