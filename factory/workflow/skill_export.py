@@ -236,13 +236,13 @@ def _format_edges(edges: list[Edge]) -> str:
 # ── node → instruction converters ──────────────────────────────
 
 
-def _agent_to_instruction(
+def _build_agent_command(
     node: AgentNode,
     workflow: Workflow,
     *,
     is_parallel: bool = False,
 ) -> str:
-    """Convert an AgentNode to a CLI invocation instruction with template slots."""
+    """Build the raw CLI command string for an AgentNode (no code block wrapping)."""
     role = node.role.value
     pool_entry = DEFAULT_AGENT_POOL.get(role)
     default_timeout = node.timeout or (pool_entry.timeout if pool_entry else 600)
@@ -266,10 +266,21 @@ def _agent_to_instruction(
     timeout_slot = emit(f"timeout_{node.id}", str(default_timeout))
     task_slot = emit(f"task_prompt_{node.id}", prompt)
 
-    cmd = (
+    return (
         f'factory agent {role}{tag_flag} --task "{task_slot}"'
         f' --project "$PROJECT_PATH" --timeout {timeout_slot}{model_flag}{bg_suffix}'
     )
+
+
+def _agent_to_instruction(
+    node: AgentNode,
+    workflow: Workflow,
+    *,
+    is_parallel: bool = False,
+) -> str:
+    """Convert an AgentNode to a CLI invocation instruction with template slots."""
+    cmd = _build_agent_command(node, workflow, is_parallel=is_parallel)
+    role = node.role.value
 
     out_edges = _outgoing_edges(workflow, node.id)
     edges_str = _format_edges(out_edges)
@@ -463,7 +474,12 @@ def _resolve_max_iterations(edge: Edge, workflow: Workflow) -> int:
 
 
 def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
-    """Convert a ForkNode to parallel agent spawning instructions."""
+    """Convert a ForkNode to parallel agent spawning instructions.
+
+    All parallel commands are rendered in a SINGLE bash code block so the CEO
+    executes them in one Bash tool call.  Separate code blocks would cause each
+    ``&`` to run in an isolated shell where ``wait`` has nothing to wait for.
+    """
     out_edges = _outgoing_edges(workflow, node.id)
     edges_str = _format_edges(out_edges)
 
@@ -474,13 +490,41 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
 
     lines = [*annotations, "", f"Spawn {len(node.targets)} agents in parallel:\n"]
 
+    commands: list[str] = []
+    max_timeout = 0
     for target_id in node.targets:
         target_node = workflow.nodes.get(target_id)
         if isinstance(target_node, AgentNode):
-            lines.append(_agent_to_instruction(target_node, workflow, is_parallel=True))
-            lines.append("")
+            role = target_node.role.value
+            reads_ann = ", ".join(sorted(target_node.reads)) if target_node.reads else "none"
+            writes_ann = ", ".join(sorted(target_node.writes)) if target_node.writes else "none"
+            t_edges = _outgoing_edges(workflow, target_node.id)
+            t_edges_str = _format_edges(t_edges)
+            lines.extend([
+                f"<!-- node: AgentNode id={target_node.id} role={role}"
+                f" blocking={str(target_node.blocking).lower()} -->",
+                f"<!-- reads: {reads_ann} -->",
+                f"<!-- writes: {writes_ann} -->",
+                f"<!-- edges: {t_edges_str} -->",
+            ])
+            commands.append(_build_agent_command(target_node, workflow, is_parallel=True))
+            pool_entry = DEFAULT_AGENT_POOL.get(role)
+            agent_timeout = target_node.timeout or (pool_entry.timeout if pool_entry else 600)
+            max_timeout = max(max_timeout, agent_timeout)
 
-    lines.append("```bash\nwait\n```")
+    if commands:
+        combined = "\n".join(commands + ["wait", 'echo "All parallel agents complete"'])
+        lines.append("")
+        lines.append(f"```bash\n{combined}\n```")
+        if max_timeout > 120:
+            lines.append("")
+            lines.append(
+                f"**Important:** Run ALL commands above in a **single** Bash tool call "
+                f"with timeout set to at least {max_timeout} seconds."
+            )
+    else:
+        lines.append("```bash\nwait\n```")
+
     return "\n".join(lines)
 
 

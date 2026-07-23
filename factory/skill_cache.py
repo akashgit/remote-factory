@@ -14,6 +14,9 @@ from factory.workflow.primitives import Workflow
 
 log = structlog.get_logger()
 
+# Bump when export code changes affect SKILL.md output (invalidates cached skills).
+_EXPORT_FORMAT_VERSION = "2"
+
 
 def _sort_recursive(obj: object) -> Any:
     """Recursively sort dicts by key and lists by value for deterministic serialization."""
@@ -35,7 +38,7 @@ def _compute_checksum(workflows: dict[str, Workflow]) -> str:
     """
     payload = {name: wf.model_dump(mode="json") for name, wf in sorted(workflows.items())}
     payload = _sort_recursive(payload)
-    blob = json.dumps(payload, sort_keys=True).encode()
+    blob = json.dumps(payload, sort_keys=True).encode() + _EXPORT_FORMAT_VERSION.encode()
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
