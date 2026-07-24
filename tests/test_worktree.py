@@ -804,6 +804,133 @@ class TestCreateWorktreeUnbornRepo:
             create_worktree(git_project, base_branch="nonexistent-branch")
 
 
+class TestDetectDefaultBranchRemoteHead:
+    def test_uses_remote_head_when_available(self, git_project: Path) -> None:
+        """detect_default_branch returns the remote HEAD ref when origin is configured."""
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(git_project)],
+            cwd=git_project, capture_output=True, check=True,
+        )
+        subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"],
+            cwd=git_project, capture_output=True, check=True,
+        )
+
+        assert detect_default_branch(git_project) == "main"
+
+
+class TestPruneStaleNonexistentPath:
+    def test_returns_empty_for_nonexistent_path(self, tmp_path: Path) -> None:
+        gone = tmp_path / "does-not-exist"
+        assert prune_stale(gone) == []
+
+
+class TestSeedExperimentFactoryExistingDir:
+    def test_replaces_existing_directory(self, tmp_path: Path) -> None:
+        """When dest is an existing directory (not a symlink), it is replaced."""
+        source = tmp_path / ".factory"
+        source.mkdir()
+        (source / "config.json").write_text('{"new": true}')
+
+        dest = tmp_path / "worktree" / ".factory"
+        dest.mkdir(parents=True)
+        (dest / "stale.txt").write_text("old data")
+
+        _seed_experiment_factory(source, dest)
+
+        assert dest.is_dir()
+        assert not dest.is_symlink()
+        assert (dest / "config.json").read_text() == '{"new": true}'
+        assert not (dest / "stale.txt").exists()
+
+
+class TestEventEmissionFailure:
+    def test_event_error_does_not_propagate(self, git_project: Path) -> None:
+        """create_experiment_worktree swallows event emission errors."""
+        head_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=git_project, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        with patch("factory.events.emit_event", side_effect=RuntimeError("event bus down")):
+            wt_path, branch = create_experiment_worktree(git_project, 99, head_sha)
+
+        assert wt_path.exists()
+        assert branch == "factory/exp-99"
+
+
+class TestCreateWorktreeEventFailure:
+    def test_create_worktree_swallows_event_error(self, git_project: Path) -> None:
+        with patch("factory.events.emit_event", side_effect=RuntimeError("boom")):
+            wt_path, branch = create_worktree(git_project)
+
+        assert wt_path.exists()
+        assert branch.startswith("factory/run-")
+
+    def test_remove_worktree_swallows_event_error(self, git_project: Path) -> None:
+        wt_path, branch = create_worktree(git_project)
+
+        with patch("factory.events.emit_event", side_effect=RuntimeError("boom")):
+            remove_worktree(git_project, wt_path, branch)
+
+        assert not wt_path.exists()
+
+
+class TestCreateWorktreeExistingFactory:
+    def test_replaces_existing_factory_dir_with_symlink(self, tmp_path: Path) -> None:
+        """When .factory/ is tracked in git, the worktree gets a real dir that must be replaced."""
+        project = tmp_path / "project"
+        project.mkdir()
+
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+
+        subprocess.run(["git", "init", "-b", "main"], cwd=project, capture_output=True, check=True)
+        factory_dir = project / ".factory"
+        factory_dir.mkdir()
+        (factory_dir / "config.json").write_text("{}")
+        subprocess.run(["git", "add", "."], cwd=project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "initial with .factory"],
+            cwd=project, capture_output=True, check=True, env=env,
+        )
+
+        wt_path, _ = create_worktree(project)
+
+        assert (wt_path / ".factory").is_symlink()
+        assert (wt_path / ".factory").resolve() == factory_dir.resolve()
+
+
+class TestPreserveTelemetryNoFactory:
+    def test_no_factory_dir_is_noop(self, git_project: Path) -> None:
+        """_preserve_telemetry returns early when worktree has no .factory/."""
+        from factory.worktree import _preserve_telemetry
+
+        fake_wt = git_project / "no-factory-here"
+        fake_wt.mkdir()
+
+        _preserve_telemetry(fake_wt, git_project)
+
+
+class TestDetectDefaultBranchFallback:
+    def test_fallback_when_all_detection_fails(self, tmp_path: Path) -> None:
+        """When every detection method fails, returns 'main'."""
+        project = tmp_path / "bare"
+        project.mkdir()
+        subprocess.run(["git", "init"], cwd=project, capture_output=True, check=True)
+
+        with patch("factory.worktree.subprocess.run", return_value=subprocess.CompletedProcess(
+            args=[], returncode=1, stdout="", stderr="",
+        )):
+            assert detect_default_branch(project) == "main"
+
+
 class TestDetectDefaultBranchUnborn:
     def test_unborn_repo_returns_branch_via_symbolic_ref(self, unborn_repo: Path) -> None:
         """Unborn repo (no commits) still detects the branch name from symbolic HEAD."""
