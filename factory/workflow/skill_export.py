@@ -493,8 +493,8 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
 
     lines.append("```bash\nwait\n```")
 
-    agent_nodes = [
-        workflow.nodes[tid]
+    agent_nodes: list[AgentNode] = [
+        workflow.nodes[tid]  # type: ignore[misc]
         for tid in node.targets
         if isinstance(workflow.nodes.get(tid), AgentNode)
     ]
