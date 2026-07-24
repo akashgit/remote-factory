@@ -4,6 +4,8 @@ The agent reads /tmp/task-instruction.md (question + search context),
 produces an answer in <answer> tags. No repo to study, no code to merge.
 """
 
+import base64
+import os
 from typing import Any
 
 from factory.models import ProjectState
@@ -22,6 +24,22 @@ meta = {
     ),
 }
 
+_DEFAULT_PROMPT = (
+    "# Question Answering Skill\n\n"
+    "(No learned rules yet. Rules will be added through the reflection process.)\n\n"
+    "## Instructions\n\n"
+    "Read the question and search results from /tmp/task-instruction.md.\n"
+    "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
+    "Also include your answer in <answer> tags in your response.\n"
+)
+
+
+def _resolve_prompt() -> str:
+    b64 = os.environ.get("SEARCHQA_SKILL_B64")
+    if b64:
+        return base64.b64decode(b64).decode()
+    return _DEFAULT_PROMPT
+
 
 def workflow() -> Workflow:
     """Build the SearchQA workflow — single builder node."""
@@ -32,14 +50,7 @@ def workflow() -> Workflow:
             role=AgentRole.BUILDER,
             model="sonnet",
             timeout=120,
-            prompt_template=(
-                "# Question Answering Skill\n\n"
-                "(No learned rules yet. Rules will be added through the reflection process.)\n\n"
-                "## Instructions\n\n"
-                "Read the question and search results from /tmp/task-instruction.md.\n"
-                "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
-                "Also include your answer in <answer> tags in your response.\n"
-            ),
+            prompt_template=_resolve_prompt(),
             writes=set(),
         ),
     }

@@ -1,12 +1,11 @@
-"""SearchQA adapter — direct LLM evaluation, no Harbor/Docker."""
+"""SearchQA adapter — runs Harbor SearchQA benchmarks and collects results."""
 from __future__ import annotations
 
+import base64
 import json
-import random
+import os
 import re
-import shutil
 import subprocess
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -17,200 +16,197 @@ from factory.skillopt.types import RolloutResult
 
 log = structlog.get_logger()
 
-_DEFAULT_DATA_DIR = Path(__file__).resolve().parents[3] / "benchmarks" / "searchqa" / "data"
+_BENCHMARKS_DIR = Path(__file__).resolve().parents[3] / "benchmarks"
+_RESULTS_DIR = _BENCHMARKS_DIR / "results"
+_SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills" / "workflow-searchqa"
+_DATA_DIR = _BENCHMARKS_DIR / "searchqa-harbor"
 
-_ANSWER_RE = re.compile(r"<answer>(.*?)</answer>", re.DOTALL)
-
-
-def _load_jsonl(path: Path) -> list[dict]:
-    items: list[dict] = []
-    with path.open() as f:
-        for line in f:
-            line = line.strip()
-            if line:
-                items.append(json.loads(line))
-    return items
-
-
-def _call_claude(prompt: str, timeout: int = 120, model: str = "haiku") -> str:
-    if not shutil.which("claude"):
-        log.warning("claude CLI not found")
-        return ""
-    try:
-        result = subprocess.run(
-            ["claude", "-p", "--model", model, prompt],
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-        )
-        return result.stdout.strip()
-    except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
-        log.warning("claude call failed", error=str(exc))
-        return ""
-
-
-def _extract_answer(text: str) -> str:
-    m = _ANSWER_RE.search(text)
-    if m:
-        return m.group(1).strip()
-    for line in reversed(text.strip().splitlines()):
-        line = line.strip()
-        if line:
-            return line
-    return text.strip()
+_JOBS_DIR_PATTERN = re.compile(r"Jobs directory:\s*(.+)")
+_TRIAL_SUFFIX_PATTERN = re.compile(r"__[A-Za-z0-9]{7}$")
 
 
 class SearchQAAdapter(EnvAdapter):
 
     def __init__(self) -> None:
-        self.data_dir: Path = _DEFAULT_DATA_DIR
-        self.workers: int = 4
-        self._train_data: list[dict] = []
-        self._val_data: list[dict] = []
+        self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
+        self.data_dir: Path = _DATA_DIR
+        self.instances: list[str] = []
 
     def setup(self, cfg: dict) -> None:
+        self.skill_path = Path(cfg.get("skill_path", str(self.skill_path)))
         if cfg.get("dataset_dir"):
             self.data_dir = Path(cfg["dataset_dir"])
-        self.workers = int(cfg.get("workers", 4))
+        self.instances = cfg.get("instances", [])
 
-    def _ensure_loaded(self) -> None:
-        if not self._train_data:
-            train_path = self.data_dir / "train.jsonl"
-            if train_path.exists():
-                self._train_data = _load_jsonl(train_path)
-                log.info("loaded train data", count=len(self._train_data))
-        if not self._val_data:
-            val_path = self.data_dir / "val.jsonl"
-            if val_path.exists():
-                self._val_data = _load_jsonl(val_path)
-                log.info("loaded val data", count=len(self._val_data))
+    def _list_task_ids(self, split: str) -> list[str]:
+        split_dir = self.data_dir / split
+        if not split_dir.is_dir():
+            log.warning("split directory not found", path=str(split_dir))
+            return []
+        return sorted(d.name for d in split_dir.iterdir() if d.is_dir())
 
     def build_train_env(self, batch_size: int, seed: int) -> Any:
-        self._ensure_loaded()
-        items = list(self._train_data)
-        rng = random.Random(seed)
-        rng.shuffle(items)
-        batch = items[:batch_size]
-        log.info("train env built", count=len(batch), seed=seed)
-        return batch
+        if self.instances:
+            log.info("train env built (pinned instances)", count=len(self.instances), seed=seed)
+            return self.instances
+        log.info("train env built", limit=batch_size, seed=seed)
+        return batch_size
 
     def build_eval_env(self, env_num: int, split: str, seed: int) -> Any:
-        self._ensure_loaded()
-        source = self._val_data if split in ("val", "eval") else self._train_data
-        items = list(source)
-        rng = random.Random(seed)
-        rng.shuffle(items)
-        batch = items[:env_num] if env_num > 0 else items
-        log.info("eval env built", count=len(batch), split=split, seed=seed)
-        return batch
-
-    def _extract_skill_prompt(self, skill_content: str) -> str:
-        """Extract the QA skill prompt from SKILL.md content.
-
-        The rendered SKILL.md wraps the prompt inside a factory agent --task \"...\" block.
-        For direct LLM calls we need just the prompt text, not the wrapper.
-        If the content doesn't look like a rendered SKILL.md, return it as-is.
-        """
-        if not skill_content.startswith("---"):
-            return skill_content
-        match = re.search(
-            r'factory agent builder --task "(.*?)"'
-            r'\s*--project',
-            skill_content,
-            re.DOTALL,
-        )
-        if match:
-            prompt = match.group(1)
-            prompt = re.sub(r"\nRead: [^\n]+$", "", prompt)
-            prompt = re.sub(r"\nWrite output to: [^\n]+$", "", prompt)
-            return prompt.strip()
-        return skill_content
+        if self.instances:
+            log.info("eval env built (pinned instances)", count=len(self.instances), split=split, seed=seed)
+            return self.instances
+        log.info("eval env built", limit=env_num, split=split, seed=seed)
+        return env_num
 
     def rollout(
         self, env_manager: Any, skill_content: str, out_dir: str,
     ) -> list[RolloutResult]:
-        from benchmarks.searchqa.evaluator import score_prediction
+        self.skill_path.parent.mkdir(parents=True, exist_ok=True)
+        self.skill_path.write_text(skill_content)
+        log.info("skill written", path=str(self.skill_path))
 
-        items: list[dict] = env_manager
-        if not items:
-            log.warning("rollout called with empty env")
+        script = _BENCHMARKS_DIR / "run-harbor.sh"
+        if not script.exists():
+            log.error("run-harbor.sh not found", path=str(script))
             return []
 
-        skill_prompt = self._extract_skill_prompt(skill_content)
-        log.info("rollout starting", items=len(items), workers=self.workers,
-                 skill_chars=len(skill_prompt))
+        _clean_result_files()
 
-        def _run_one(item: dict) -> RolloutResult:
-            prompt = (
-                f"{skill_prompt}\n\n"
-                f"## Question\n{item['question']}\n\n"
-                f"## Search Results\n{item['context']}\n\n"
-                f"Answer the question using ONLY the information in the search results.\n"
-                f"Put your final answer inside <answer> tags. Example: <answer>Paris</answer>"
+        cmd = [
+            str(script), "searchqa",
+            "--all",
+            "--timeout", "3600",
+            "--preserve",
+        ]
+        if self.instances:
+            for instance_id in self.instances:
+                cmd += ["--include-task-name", instance_id]
+        else:
+            limit = int(env_manager) if env_manager else 0
+            if limit > 0:
+                cmd += ["--limit", str(limit)]
+
+        env = dict(os.environ)
+        env["SEARCHQA_SKILL_B64"] = base64.b64encode(
+            skill_content.encode()
+        ).decode()
+
+        git_ref = _get_git_ref()
+        if git_ref:
+            env["FACTORY_GIT_REF"] = git_ref
+
+        log.info("running harbor", cmd=" ".join(cmd))
+
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=9000,
+                env=env,
             )
-            raw_response = _call_claude(prompt)
-            prediction = _extract_answer(raw_response) if raw_response else ""
-            gold_answers = item.get("answers", [])
-            scores = score_prediction(prediction, gold_answers)
+            log.info("benchmark finished", returncode=result.returncode)
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            log.error("benchmark failed", error=str(exc))
+            return []
 
-            if scores["exact_match"] < 1.0 and raw_response:
-                fail_reason = (
-                    f"EM=0: predicted '{prediction}' "
-                    f"but expected {gold_answers}"
-                )
-            elif not raw_response:
-                fail_reason = "no_response"
-            else:
-                fail_reason = ""
+        jobs_dir = _parse_jobs_dir(result.stdout)
+        if jobs_dir:
+            log.info("jobs dir found", path=jobs_dir)
 
-            trace_dump = (
-                f"[EVALUATION RESULT]\n"
-                f"Question: {item['question']}\n"
-                f"Predicted answer: {prediction!r}\n"
-                f"Gold answers: {gold_answers!r}\n"
-                f"Exact Match: {scores['exact_match']}\n"
-                f"F1: {scores['f1']:.4f}"
+        results = _collect_results(out_dir, jobs_dir)
+        if not results:
+            log.error(
+                "rollout produced no results — possible Harbor dedup or task mismatch",
+                instances=self.instances,
+                returncode=result.returncode,
+                stderr_tail=result.stderr[-500:] if result.stderr else "",
             )
-
-            return RolloutResult(
-                id=item["id"],
-                hard=scores["exact_match"],
-                soft=scores["f1"],
-                n_turns=1,
-                fail_reason=fail_reason,
-                task_type="question_answering",
-                extras={
-                    "response": raw_response,
-                    "prediction": prediction,
-                    "question": item["question"],
-                    "gold_answers": gold_answers,
-                    "trace_dump": trace_dump,
-                },
-            )
-
-        results: list[RolloutResult] = []
-        with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            futures = {pool.submit(_run_one, item): item["id"] for item in items}
-            for future in as_completed(futures):
-                item_id = futures[future]
-                try:
-                    results.append(future.result())
-                except Exception as exc:
-                    log.warning("item failed", id=item_id, error=str(exc))
-                    results.append(RolloutResult(
-                        id=item_id,
-                        hard=0.0,
-                        soft=0.0,
-                        fail_reason=str(exc),
-                        task_type="question_answering",
-                    ))
-
-        Path(out_dir).mkdir(parents=True, exist_ok=True)
-        (Path(out_dir) / "rollout_results.json").write_text(
-            json.dumps([r.model_dump() for r in results], indent=2)
-        )
-        log.info("rollout complete", count=len(results))
         return results
 
     def get_task_types(self) -> list[str]:
         return ["question_answering"]
+
+
+def _get_git_ref() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
+
+
+def _clean_result_files() -> None:
+    if not _RESULTS_DIR.is_dir():
+        return
+    for f in _RESULTS_DIR.glob("*-searchqa-*.json"):
+        try:
+            f.unlink()
+            log.info("removed stale result file", path=str(f))
+        except OSError:
+            pass
+
+
+def _parse_jobs_dir(stdout: str) -> str:
+    for line in stdout.splitlines():
+        m = _JOBS_DIR_PATTERN.search(line)
+        if m:
+            return m.group(1).strip()
+    return ""
+
+
+def _find_latest_result_file() -> Path | None:
+    if not _RESULTS_DIR.is_dir():
+        return None
+    candidates = sorted(
+        _RESULTS_DIR.glob("*-searchqa-*.json"),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:
+    result_file = _find_latest_result_file()
+    if not result_file:
+        log.warning("no result file found in benchmarks/results/")
+        return []
+
+    try:
+        data = json.loads(result_file.read_text())
+    except (json.JSONDecodeError, OSError) as exc:
+        log.error("failed to parse result file", path=str(result_file), error=str(exc))
+        return []
+
+    tasks = data.get("tasks", [])
+    if not tasks:
+        log.warning("no tasks in result file", path=str(result_file))
+        return []
+
+    results: list[RolloutResult] = []
+    for task in tasks:
+        instance_id = task.get("instance_id", "")
+        resolved = task.get("resolved", False)
+        reward = 1.0 if resolved else 0.0
+
+        results.append(RolloutResult(
+            id=instance_id,
+            hard=reward,
+            soft=reward,
+            n_turns=0,
+            fail_reason="" if resolved else "not_resolved",
+            task_type="question_answering",
+        ))
+
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    (Path(out_dir) / "rollout_results.json").write_text(
+        json.dumps([r.model_dump() for r in results], indent=2)
+    )
+    log.info("collected results", count=len(results))
+    return results
