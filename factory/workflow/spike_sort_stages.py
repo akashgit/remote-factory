@@ -231,10 +231,13 @@ def cluster(project_path: str, output_dir: str) -> None:
 
 def compute_templates(project_path: str, output_dir: str) -> None:
     """Compute unit templates (average waveforms) from clustered spikes."""
+    from dataclasses import replace
+
     import spikeinterface.core as si
     from dartsort.templates import estimate_template_library
     from dartsort.util.data_util import DARTsortSorting
     from dartsort.util.internal_config import (
+        WhiteningConfig,
         default_matching_cfg,
         default_template_cfg,
         default_waveform_cfg,
@@ -249,6 +252,10 @@ def compute_templates(project_path: str, output_dir: str) -> None:
     motion = MotionInfo.load(motion_dir) if motion_dir.exists() else None
 
     mcfg = default_matching_cfg
+    tcfg = replace(
+        default_template_cfg,
+        whitening=WhiteningConfig(strategy="prewhiten_postapply"),
+    )
     sorting, template_data = estimate_template_library(
         recording=recording,
         sorting=sorting,
@@ -256,7 +263,7 @@ def compute_templates(project_path: str, output_dir: str) -> None:
         min_template_ptp=mcfg.min_template_ptp,
         min_template_count=mcfg.min_template_count,
         waveform_cfg=default_waveform_cfg,
-        template_cfg=default_template_cfg,
+        template_cfg=tcfg,
     )
 
     (out / "templates").mkdir(exist_ok=True)
