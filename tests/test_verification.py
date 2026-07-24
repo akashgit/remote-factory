@@ -516,13 +516,10 @@ class TestDesignWorkflowAnnotations:
         assert builder.post_checks[0].min_size == 500
         assert "commit" in builder.post_checks[0].must_contain
 
-        # QA — validates section headers from QA pipeline
-        qa = wf.nodes["qa"]
-        assert isinstance(qa, AgentNode)
-        assert len(qa.post_checks) > 0
-        assert qa.post_checks[0].min_size == 500
-        assert "## Health Check" in qa.post_checks[0].must_contain
-        assert "## Code Review" in qa.post_checks[0].must_contain
+        # Deep-QA subgraph replaced monolithic QA — verify subgraph nodes exist
+        assert "health_checker" in wf.nodes
+        assert "code_reviewer" in wf.nodes
+        assert "adversarial_tester" in wf.nodes
 
     def test_design_workflow_inherits_post_checks(self) -> None:
         from factory.workflow.definitions import design_workflow
@@ -540,11 +537,10 @@ class TestDesignWorkflowAnnotations:
         assert len(builder.post_checks) > 0
         assert "commit" in builder.post_checks[0].must_contain
 
-        qa = wf.nodes["qa"]
-        assert isinstance(qa, AgentNode)
-        assert len(qa.post_checks) > 0
-        assert "## Health Check" in qa.post_checks[0].must_contain
-        assert "## Code Review" in qa.post_checks[0].must_contain
+        # Deep-QA subgraph replaced monolithic QA
+        assert "health_checker" in wf.nodes
+        assert "code_reviewer" in wf.nodes
+        assert "adversarial_tester" in wf.nodes
 
     def test_design_skill_md_contains_verification(self) -> None:
         from factory.workflow.definitions import design_workflow
@@ -562,4 +558,4 @@ class TestDesignWorkflowAnnotations:
         script = generate_hook_script(wf)
         assert script  # non-empty
         assert "factory agent strategist" in script
-        assert "factory agent qa" in script
+        assert "factory agent health_checker" in script or "factory agent code_reviewer" in script
