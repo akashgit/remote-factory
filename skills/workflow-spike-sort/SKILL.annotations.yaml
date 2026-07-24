@@ -1,0 +1,273 @@
+preprocess:
+  type: FnNode
+  id: preprocess
+  command: ''
+  reads: []
+  writes:
+  - noise_stats.json
+  - preprocessed/
+  edges_out:
+  - target: detect_trial
+    condition: null
+detect_trial:
+  type: FnNode
+  id: detect_trial
+  command: ''
+  reads:
+  - noise_stats.json
+  - preprocessed/
+  writes:
+  - trial_results.json
+  edges_out:
+  - target: detect_params
+    condition: null
+detect_params:
+  type: AgentNode
+  id: detect_params
+  role: researcher
+  blocking: 'true'
+  reads:
+  - noise_stats.json
+  - trial_results.json
+  writes:
+  - detection_params.json
+  edges_out:
+  - target: detect
+    condition: null
+  slots:
+    task_prompt_detect_params: 'You are a spike detection parameter advisor for extracellular
+      neural recordings. Read the noise statistics at {output_dir}/noise_stats.json
+      and the trial detection results at {output_dir}/trial_results.json.
+
+
+      TRIAL RESULTS: A threshold sweep has already been run on a small subset of the
+      recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json file contains
+      for each threshold: spike_count, spike_rate_hz, mean_amplitude, and amplitude_distribution_percentiles.
+      Use this empirical data to inform your threshold selection.
+
+
+      IMPORTANT: DARTsort''s detection operates on standardized (SNR-unit) traces.
+      The threshold 4.0 is the DARTsort-calibrated baseline, validated on Neuropixels
+      recordings with default preprocessing. A single-channel denoiser NN runs before
+      detection and recovers low-amplitude spikes, so you do NOT need an aggressive
+      (low) threshold to catch weak units. Prefer the default. Only deviate with clear
+      evidence from the trial results AND noise statistics.
+
+
+      Select detection parameters:
+
+      - voltage_threshold (3.0-6.0): SNR threshold in standardized units. Default:
+      4.0. Do NOT lower below 4.0 unless you have strong evidence that the recording
+      has exceptionally high SNR AND the denoiser is disabled. Raising above 4.0 is
+      safer than lowering — it reduces false positives with minimal loss of real spikes.
+
+      - peak_sign (''neg'', ''pos'', ''both''): Which polarity peaks to detect. ''both''
+      is standard for extracellular recordings.
+
+      - dedup_temporal_radius (5-20): Samples to deduplicate within. 11 is typical
+      at 30kHz.
+
+      - use_denoiser (true/false): Whether to apply the single-channel denoiser NN
+      before detection. Default: true. The denoiser cleans waveforms and improves
+      detection of low-amplitude spikes. Disable only if the recording has unusual
+      artifacts that the denoiser was not trained on.
+
+
+      Decision rules:
+
+      - Start with voltage_threshold=4.0 (the calibrated default).
+
+      - Compare trial results across thresholds: if 4.0 produces a reasonable spike
+      rate (20-200 Hz per channel) keep it. If the rate is extremely high (>500 Hz),
+      consider raising to 4.5 or 5.0.
+
+      - Very noisy data (median noise >20 µV after standardization): raise to 5.0-6.0.
+
+      - Clean data (<8 µV): keep 4.0 — the denoiser handles low-amplitude recovery.
+
+      - DO NOT lower the threshold to compensate for expected low-amplitude neurons.
+      The denoiser NN is designed for this.
+
+      - Neuropixels probes → ''both'' peak_sign.
+
+
+      In your reasoning field, explicitly state why you chose your threshold. Reference
+      the trial results — cite the spike counts and rates you observed. If you chose
+      anything other than 4.0, justify the deviation with specific evidence from the
+      trial data and noise_stats.json.
+
+
+      Output your selection as a DetectionParams JSON object with a reasoning field.
+
+      Read: noise_stats.json, trial_results.json
+
+      Write output to: detection_params.json'
+    timeout_detect_params: '60'
+detect:
+  type: FnNode
+  id: detect
+  command: ''
+  reads:
+  - detection_params.json
+  - preprocessed/
+  writes:
+  - denoised/
+  - detection_summary.json
+  - detections/
+  edges_out:
+  - target: localize
+    condition: null
+localize:
+  type: FnNode
+  id: localize
+  command: ''
+  reads:
+  - detections/
+  - preprocessed/
+  writes:
+  - cluster_input_stats.json
+  - localizations.npz
+  - motion/
+  edges_out:
+  - target: cluster_params
+    condition: null
+cluster_params:
+  type: AgentNode
+  id: cluster_params
+  role: strategist
+  blocking: 'true'
+  reads:
+  - cluster_input_stats.json
+  writes:
+  - clustering_params.json
+  edges_out:
+  - target: cluster
+    condition: null
+  slots:
+    task_prompt_cluster_params: 'You are a spike clustering strategy advisor. Read
+      the cluster input statistics at {output_dir}/cluster_input_stats.json.
+
+
+      Select a clustering strategy and parameters:
+
+      - strategy: ''channel_snap'' (fast, coarse — good for <20K spikes), ''grid_snap''
+      (spatial grid — good for high density), ''dpc'' (density peak clustering — slow
+      but accurate, best for >20K spikes with drift), ''none'' (skip clustering —
+      only for pre-sorted data).
+
+      - grid_dx, grid_dz (5-50 µm): Spatial grid resolution. Smaller = more clusters
+      initially. 15 µm is typical.
+
+      - initial_steps: Refinement sequence. [''split'', ''demolish'', ''demolish'']
+      is standard. Add ''merge'' if you expect many similar units.
+
+      - n_waveforms_fit (10K-100K): Subsample size for fitting. Higher = better but
+      slower. 40K is typical.
+
+
+      Decision tree:
+
+      - spike_count < 20K → channel_snap
+
+      - drift > 15 µm → dpc with drift correction
+
+      - spike_density > 1.0 spikes/ch/s → grid_snap
+
+      - Otherwise → dpc
+
+
+      Output your selection as a ClusteringParams JSON object with a reasoning field.
+
+      Read: cluster_input_stats.json
+
+      Write output to: clustering_params.json'
+    timeout_cluster_params: '120'
+cluster:
+  type: FnNode
+  id: cluster
+  command: ''
+  reads:
+  - clustering_params.json
+  - detections/
+  - motion/
+  - preprocessed/
+  writes:
+  - cluster_summary.json
+  - clusters/
+  edges_out:
+  - target: templates
+    condition: null
+templates:
+  type: FnNode
+  id: templates
+  command: ''
+  reads:
+  - clusters/
+  - motion/
+  - preprocessed/
+  writes:
+  - template_stats.json
+  - templates/
+  edges_out:
+  - target: qc_templates
+    condition: null
+qc_templates:
+  type: AgentNode
+  id: qc_templates
+  role: researcher
+  blocking: 'true'
+  reads:
+  - template_stats.json
+  writes:
+  - template_decisions.json
+  edges_out:
+  - target: match
+    condition: null
+  slots:
+    task_prompt_qc_templates: 'You are a spike sorting template quality control reviewer.
+      Read the template statistics at {output_dir}/template_stats.json.
+
+
+      For each template, decide: keep, discard, or merge.
+
+
+      Decision criteria:
+
+      - DISCARD if: SNR < 1.5 (noise unit), spike_count < 10 (too few spikes), or
+      ptp_amplitude < 5 µV (below noise floor).
+
+      - MERGE if: two templates have very similar spatial positions (within 25 µm)
+      AND similar PTP amplitudes (within 30%). Specify merge_with = template_id of
+      partner.
+
+      - KEEP otherwise.
+
+
+      Quality heuristics:
+
+      - Good units: SNR > 3, count > 50, stability > 0.7
+
+      - Marginal units: SNR 1.5-3, count 10-50 — keep if isolated
+
+      - High spatial_spread (>200 µm) may indicate multi-unit — flag for discard
+
+
+      Output a TemplateQCOutput JSON with decisions list and summary string.
+
+      Read: template_stats.json
+
+      Write output to: template_decisions.json'
+    timeout_qc_templates: '120'
+match:
+  type: FnNode
+  id: match
+  command: ''
+  reads:
+  - motion/
+  - preprocessed/
+  - template_decisions.json
+  - templates/
+  writes:
+  - sorting/
+  - sorting_result.json
+  edges_out: []
