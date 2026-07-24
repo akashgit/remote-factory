@@ -57,8 +57,8 @@ benchmark_config() {
         searchqa)
             BENCH_LOCAL_PATH="${HARNESS_DIR}/benchmarks/searchqa-harbor/train"
             BENCH_AGENT_CLASS='factory_harbor_agent:SearchQAFactoryCeo'
-            BENCH_AGENT_IMPORT_FLAG='--agent-import-path'
-            BENCH_FILTER_STYLE='exact'
+            BENCH_AGENT_IMPORT_FLAG='--agent'
+            BENCH_FILTER_STYLE='none'
             ;;
 
         *)
