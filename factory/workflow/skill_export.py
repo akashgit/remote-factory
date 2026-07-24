@@ -287,6 +287,14 @@ def _agent_to_instruction(
 
     if not node.blocking:
         lines.append("*(fire-and-forget — CEO continues immediately)*")
+    elif not is_parallel and (node.writes or node.post_checks):
+        from factory.workflow.verification import compile_agent_verification
+
+        verify_script = compile_agent_verification(node)
+        if verify_script:
+            lines.append("")
+            lines.append(f"```bash\n{verify_script}\n```")
+            lines.append("*(harness verification — DO NOT SKIP)*")
 
     return "\n".join(lines)
 
@@ -479,8 +487,26 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
         if isinstance(target_node, AgentNode):
             lines.append(_agent_to_instruction(target_node, workflow, is_parallel=True))
             lines.append("")
+        elif isinstance(target_node, FnNode):
+            lines.append(_fn_to_instruction(target_node, workflow))
+            lines.append("")
 
     lines.append("```bash\nwait\n```")
+
+    agent_nodes = [
+        workflow.nodes[tid]
+        for tid in node.targets
+        if isinstance(workflow.nodes.get(tid), AgentNode)
+    ]
+    if agent_nodes:
+        from factory.workflow.verification import compile_fork_verification
+
+        verify_script = compile_fork_verification(agent_nodes)
+        if verify_script:
+            lines.append("")
+            lines.append(f"```bash\n{verify_script}\n```")
+            lines.append("*(post-barrier harness verification — DO NOT SKIP)*")
+
     return "\n".join(lines)
 
 

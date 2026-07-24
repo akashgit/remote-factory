@@ -584,7 +584,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path)
+    ensure_skills(wt_path, mode=mode)
+
+    verification_settings = wt_path / ".factory" / "hooks" / f"settings-{mode}.json"
+    _verification_settings_file = str(verification_settings) if verification_settings.exists() else None
 
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
@@ -683,6 +686,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                     tmux_persist=tmux_persist,
                     background=background,
                     workflow_mode=ceo_mode,
+                    settings_file=_verification_settings_file,
                 )
             )
             print(result)
@@ -729,6 +733,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode)
         runner = get_runner(runner_name)
+        extras: dict[str, object] = {}
+        if _verification_settings_file:
+            extras["settings_file"] = _verification_settings_file
         return runner.interactive_run(
             _RunReq(
                 prompt=prompt,
@@ -738,6 +745,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 role="ceo",
                 skip_permissions=True,
                 session_name=session_name,
+                extras=extras,
             )
         )
     finally:
