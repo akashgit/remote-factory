@@ -34,7 +34,11 @@ def workflow() -> Workflow:
             timeout=120,
             prompt_template=(
                 "# Question Answering Skill\n\n"
-                "(No learned rules yet. Rules will be added through the reflection process.)"
+                "(No learned rules yet. Rules will be added through the reflection process.)\n\n"
+                "## Instructions\n\n"
+                "Read the question and search results from /tmp/task-instruction.md.\n"
+                "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
+                "Also include your answer in <answer> tags in your response.\n"
             ),
             writes=set(),
         ),
