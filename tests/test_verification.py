@@ -213,6 +213,22 @@ class TestGenerateHookScript:
         assert "if" in script
         assert "elif" in script
         assert "fi" in script
+        assert "hook-log.txt" in script
+
+    def test_logs_every_invocation(self) -> None:
+        script = generate_hook_script(self._make_workflow())
+        assert "HOOK_FIRED" in script
+        assert 'HOOK_FIRED command=$_COMMAND' in script
+
+    def test_logs_verify_ok(self) -> None:
+        script = generate_hook_script(self._make_workflow())
+        assert "VERIFY_OK node=builder" in script
+        assert "VERIFY_OK node=qa" in script
+
+    def test_logs_verify_fail(self) -> None:
+        script = generate_hook_script(self._make_workflow())
+        assert "VERIFY_FAIL node=builder" in script
+        assert "VERIFY_FAIL node=qa" in script
 
     def test_reads_stdin_json(self) -> None:
         script = generate_hook_script(self._make_workflow())

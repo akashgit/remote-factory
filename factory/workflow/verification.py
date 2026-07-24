@@ -49,8 +49,15 @@ def checks_to_bash(checks: list[ArtifactCheck], node_id: str) -> str:
                 f'&& echo "VERIFY FAIL: {node_id}: {path} missing required sentinel ({labels})" && _vfail=1'
             )
 
-    lines.append('[ "$_vfail" -ne 0 ] && exit 1')
+    lines.append(
+        f'[ "$_vfail" -ne 0 ] && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_FAIL node={node_id}"'
+        f' >> "$PROJECT_PATH/.factory/hooks/hook-log.txt" && exit 1'
+    )
     lines.append(f'echo "VERIFY OK: {node_id} artifacts validated"')
+    lines.append(
+        f'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) VERIFY_OK node={node_id}"'
+        f' >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"'
+    )
 
     return "\n".join(lines)
 
@@ -138,6 +145,11 @@ def generate_hook_script(workflow: Workflow) -> str:
         'PROJECT_PATH="${CLAUDE_PROJECT_DIR:-$PWD}"',
         "",
         '[ -z "$_COMMAND" ] && exit 0',
+        "",
+        "# Log every hook invocation",
+        'mkdir -p "$PROJECT_PATH/.factory/hooks"',
+        'echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) HOOK_FIRED command=$_COMMAND"'
+        ' >> "$PROJECT_PATH/.factory/hooks/hook-log.txt"',
         "",
     ]
 
