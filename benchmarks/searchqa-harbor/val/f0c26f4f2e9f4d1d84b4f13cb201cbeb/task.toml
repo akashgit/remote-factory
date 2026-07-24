@@ -5,7 +5,7 @@ name = "searchqa/f0c26f4f2e9f4d1d84b4f13cb201cbeb"
 description = "Answer a question using search results"
 
 [environment]
-network_mode = "none"
+network_mode = "public"
 cpus = 1
 memory_mb = 512
 storage_mb = 1024
