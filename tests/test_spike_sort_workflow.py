@@ -22,12 +22,12 @@ def test_spike_sort_workflow_validates():
 # ── Node structure ────────────────────────────────────────────────
 
 
-def test_spike_sort_has_9_nodes():
-    """Spike-sort pipeline has exactly 9 nodes: 6 FnNodes + 3 AgentNodes."""
+def test_spike_sort_has_10_nodes():
+    """Spike-sort pipeline has exactly 10 nodes: 7 FnNodes + 3 AgentNodes."""
     wf = spike_sort_workflow()
     fn_nodes = [n for n in wf.nodes.values() if isinstance(n, FnNode)]
     agent_nodes = [n for n in wf.nodes.values() if isinstance(n, AgentNode)]
-    assert len(fn_nodes) == 6, f"Expected 6 FnNodes, got {len(fn_nodes)}"
+    assert len(fn_nodes) == 7, f"Expected 7 FnNodes, got {len(fn_nodes)}"
     assert len(agent_nodes) == 3, f"Expected 3 AgentNodes, got {len(agent_nodes)}"
 
 
@@ -36,6 +36,7 @@ def test_spike_sort_node_ids():
     wf = spike_sort_workflow()
     expected = {
         "preprocess",
+        "detect_trial",
         "detect_params",
         "detect",
         "localize",
@@ -52,12 +53,13 @@ def test_spike_sort_node_ids():
 
 
 def test_spike_sort_is_linear():
-    """Spike-sort has exactly 8 edges forming a linear chain."""
+    """Spike-sort has exactly 9 edges forming a linear chain."""
     wf = spike_sort_workflow()
-    assert len(wf.edges) == 8
+    assert len(wf.edges) == 9
 
     expected_chain = [
-        ("preprocess", "detect_params"),
+        ("preprocess", "detect_trial"),
+        ("detect_trial", "detect_params"),
         ("detect_params", "detect"),
         ("detect", "localize"),
         ("localize", "cluster_params"),
@@ -108,6 +110,7 @@ def test_spike_sort_fn_callables():
 
     expected_callables = {
         "preprocess": "factory.workflow.spike_sort_stages:preprocess",
+        "detect_trial": "factory.workflow.spike_sort_stages:detect_trial",
         "detect": "factory.workflow.spike_sort_stages:detect",
         "localize": "factory.workflow.spike_sort_stages:localize",
         "cluster": "factory.workflow.spike_sort_stages:cluster",
@@ -131,6 +134,7 @@ def test_spike_sort_data_flow():
 
     node_order = [
         "preprocess",
+        "detect_trial",
         "detect_params",
         "detect",
         "localize",
@@ -153,31 +157,54 @@ def test_spike_sort_data_flow():
 
 
 def test_detection_params_schema():
-    """DetectionParams validates within bounds."""
+    """DetectionParams validates within tightened bounds [3.0, 6.0]."""
     from factory.workflow.spike_sort_schemas import DetectionParams
 
     params = DetectionParams(
-        voltage_threshold=3.5,
+        voltage_threshold=4.0,
         peak_sign="both",
         dedup_temporal_radius=11,
         reasoning="Standard parameters for clean cortical recording",
     )
-    assert params.voltage_threshold == 3.5
+    assert params.voltage_threshold == 4.0
+    assert params.use_denoiser is True
 
     with pytest.raises(Exception):
         DetectionParams(
-            voltage_threshold=1.0,
+            voltage_threshold=2.5,
             peak_sign="both",
             dedup_temporal_radius=11,
-            reasoning="too low",
+            reasoning="below tightened lower bound",
         )
     with pytest.raises(Exception):
         DetectionParams(
-            voltage_threshold=9.0,
+            voltage_threshold=7.0,
             peak_sign="both",
             dedup_temporal_radius=11,
-            reasoning="too high",
+            reasoning="above tightened upper bound",
         )
+
+
+def test_detection_params_use_denoiser():
+    """DetectionParams use_denoiser defaults to True and accepts False."""
+    from factory.workflow.spike_sort_schemas import DetectionParams
+
+    params_default = DetectionParams(
+        voltage_threshold=4.0,
+        peak_sign="both",
+        dedup_temporal_radius=11,
+        reasoning="default denoiser",
+    )
+    assert params_default.use_denoiser is True
+
+    params_disabled = DetectionParams(
+        voltage_threshold=4.0,
+        peak_sign="both",
+        dedup_temporal_radius=11,
+        use_denoiser=False,
+        reasoning="denoiser disabled",
+    )
+    assert params_disabled.use_denoiser is False
 
 
 def test_clustering_params_schema():
@@ -288,6 +315,44 @@ def test_template_stats_schema():
             spatial_spread_um=75.0,
             stability=1.5,
         )
+
+
+# ── detect_trial node ────────────────────────────────────────────
+
+
+def test_detect_trial_node_exists():
+    """detect_trial FnNode is present with correct callable and data flow."""
+    wf = spike_sort_workflow()
+    node = wf.nodes["detect_trial"]
+    assert isinstance(node, FnNode)
+    assert node.callable_name == "factory.workflow.spike_sort_stages:detect_trial"
+    assert node.reads == {"preprocessed/", "noise_stats.json"}
+    assert node.writes == {"trial_results.json"}
+
+
+def test_detect_trial_edge_wiring():
+    """preprocess → detect_trial → detect_params edge chain is correct."""
+    wf = spike_sort_workflow()
+    edges = [(e.source, e.target) for e in wf.edges]
+    assert ("preprocess", "detect_trial") in edges
+    assert ("detect_trial", "detect_params") in edges
+    assert ("preprocess", "detect_params") not in edges
+
+
+def test_detect_node_writes_denoised():
+    """detect FnNode writes include denoised/ directory."""
+    wf = spike_sort_workflow()
+    detect_node = wf.nodes["detect"]
+    assert isinstance(detect_node, FnNode)
+    assert "denoised/" in detect_node.writes
+
+
+def test_detect_params_reads_trial_results():
+    """detect_params AgentNode reads trial_results.json."""
+    wf = spike_sort_workflow()
+    node = wf.nodes["detect_params"]
+    assert isinstance(node, AgentNode)
+    assert "trial_results.json" in node.reads
 
 
 # ── Registration ──────────────────────────────────────────────────
