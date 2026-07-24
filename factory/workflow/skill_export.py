@@ -142,6 +142,19 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
+    "optimize": {
+        "description": (
+            "Optimize an existing factory mode by analyzing its performance across "
+            "recent cycles, identifying weaknesses (high redirect rates, agent timeouts, "
+            "low keep rates), and generating targeted workflow changes. Delegates "
+            "implementation to create mode (update-existing-mode path) which runs "
+            "its own full QA pipeline. "
+            "Use when the user says 'optimize the improve mode', 'tune the build workflow', "
+            "or wants to improve factory mode effectiveness based on historical data. "
+            "Requires --focus <target_mode_name>."
+        ),
+        "argument_hint": '"<project_path> --focus <target_mode>"',
+    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "

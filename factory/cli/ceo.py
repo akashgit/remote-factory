@@ -390,6 +390,34 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+    if mode == "optimize":
+        for flag in ("headless", "bg"):
+            if getattr(args, flag, False):
+                print(
+                    f"Error: --mode optimize requires foreground mode (incompatible with {flag})",
+                    file=sys.stderr,
+                )
+                return 1
+        if prompt_file:
+            print(
+                "Error: --mode optimize and --prompt are mutually exclusive.",
+                file=sys.stderr,
+            )
+            return 1
+        if not focus:
+            print(
+                "Error: --mode optimize requires --focus <target_mode_name>. "
+                "Example: factory ceo /path --mode optimize --focus improve",
+                file=sys.stderr,
+            )
+            return 1
+        if not Path(raw_path).expanduser().resolve().is_dir():
+            print(
+                "Error: --mode optimize requires an existing project directory.",
+                file=sys.stderr,
+            )
+            return 1
+
     if mode == "research":
         if prompt_file:
             print(
@@ -540,7 +568,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in ("improve", "research", "create") and not design_existing:
+    if focus and mode not in ("improve", "research", "create", "optimize") and not design_existing:
         print(
             f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",
@@ -587,10 +615,13 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     ensure_skills(wt_path)
 
     interactive = (
-        design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+        design_existing or bool(design_idea) or bool(research_ideation)
+        or mode == "create" or mode == "optimize"
     )
     if mode == "create":
         ceo_mode = "create"
+    elif mode == "optimize":
+        ceo_mode = "optimize"
     elif mode == "design":
         ceo_mode = "design"
     elif interactive:
@@ -1889,6 +1920,32 @@ def _build_ceo_task(
             "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above. "
             "The full step-by-step playbook is in your system prompt above."
+        )
+    elif mode == "optimize":
+        task += (
+            f"\n\n## Optimize Mode\n\n"
+            f"**Target mode:** {focus}\n\n"
+            f"You are analyzing the `{focus}` workflow mode to identify performance "
+            f"weaknesses and generate targeted improvements.\n\n"
+            f"**Workflow:**\n"
+            f"1. Study the project to gather baseline context\n"
+            f"2. Spawn the Researcher to analyze `{focus}` mode performance:\n"
+            f"   - Keep/revert rates from .factory/results.tsv\n"
+            f"   - Agent redirect/timeout patterns from .factory/events.jsonl\n"
+            f"   - CEO verdict patterns from .factory/reviews/\n"
+            f"   - Workflow definition via `factory workflow show {focus}`\n"
+            f"   - SKILL.md at skills/workflow-{focus}/SKILL.md\n"
+            f"3. Review the analysis (CEO gate)\n"
+            f"4. Spawn the Strategist to generate a change specification\n"
+            f"5. Present changes to user for approval\n"
+            f"6. Delegate to create mode: "
+            f"`factory ceo {{project_path}} --mode create --focus \"{focus}: <changes>\"`\n\n"
+            f"**Constraints:**\n"
+            f"- Max 1 optimization per invocation\n"
+            f"- Do NOT propose removing safety gates or QA verification steps\n"
+            f"- Prefer prompt/gate/timeout changes over structural graph rewiring\n"
+            f"- The change spec must be implementable in a single PR\n"
+            f"- Create mode handles all QA — do NOT run your own deep-QA pipeline\n"
         )
     else:
         task += (

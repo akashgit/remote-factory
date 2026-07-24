@@ -519,7 +519,7 @@ class CycleState(BaseModel):
     started_at: datetime
     mode: Literal[
         "build", "create", "deep-qa", "design", "discover",
-        "improve", "meta", "parallel-improve", "qa", "refine",
+        "improve", "meta", "optimize", "parallel-improve", "qa", "refine",
         "research", "review", "swebench",
     ]
     initial_prompt: str = ""
