@@ -1,17 +1,19 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 ANSWER_FILE="/workspace/answer.txt"
-REWARD_FILE="/workspace/reward.txt"
+
+# Ensure verifier output directory exists
+mkdir -p /logs/verifier
 
 if [ ! -f "$ANSWER_FILE" ]; then
   echo "FAIL: No answer found at $ANSWER_FILE"
-  echo "0.0" > "$REWARD_FILE"
-  exit 1
+  echo '{"reward": 0.0}' > /logs/verifier/reward.json
+  exit 0
 fi
 
 python3 -c "
-import json, re, string, sys
+import json, re, string
 
 def normalize(s):
     s = s.lower()
@@ -31,7 +33,5 @@ reward = 1.0 if match else 0.0
 print(f'Predicted: {answer}')
 print(f'Gold: {gold}')
 print(f'Match: {match}')
-with open('/workspace/reward.txt', 'w') as f:
-    f.write(str(reward))
-sys.exit(0 if match else 1)
+json.dump({'reward': reward}, open('/logs/verifier/reward.json', 'w'))
 "
