@@ -11,6 +11,12 @@ from factory.skillopt.aggregate import merge_patches
 from factory.skillopt.clip import rank_and_select
 from factory.skillopt.gate import evaluate_gate, select_gate_score
 from factory.skillopt.skill import apply_patch
+from factory.skillopt.slow_update import (
+    extract_slow_update_field,
+    inject_empty_slow_update_field,
+    replace_slow_update_field,
+    run_slow_update,
+)
 from factory.skillopt.types import GateResult, Patch, RolloutResult
 from factory.skillopt.yaml_surface import (
     extract_prompt_slots,
@@ -39,6 +45,8 @@ class SkillOptTrainer:
         results_from: str = "",
         annotations_path: str = "",
         workflow_name: str = "",
+        use_slow_update: bool = False,
+        slow_update_samples: int = 20,
     ) -> None:
         self.adapter = adapter
         self.skill_path = Path(skill_path)
@@ -51,6 +59,9 @@ class SkillOptTrainer:
         self.out_dir = Path(out_dir)
         self.overfit = overfit
         self.results_from = Path(results_from) if results_from else None
+
+        self.use_slow_update = use_slow_update
+        self.slow_update_samples = slow_update_samples
 
         self.rejected_edits: list[Patch] = []
         self.best_skill: str = ""
@@ -227,6 +238,8 @@ class SkillOptTrainer:
 
                 self._checkpoint(f"epoch{epoch + 1}_step{step + 1}")
 
+            self._run_slow_update_epoch(epoch)
+
             log.info("epoch completed", epoch=epoch + 1)
 
         self._save_skill(self.best_skill)
@@ -237,6 +250,67 @@ class SkillOptTrainer:
             best_step=self.best_step,
             total_steps=self.global_step,
         )
+
+    def _run_slow_update_epoch(self, epoch: int) -> None:
+        if not self.use_slow_update:
+            return
+
+        if epoch == 0:
+            self.current_skill = inject_empty_slow_update_field(self.current_skill)
+            self._save_skill(self.current_skill)
+            log.info("slow update placeholder injected", epoch=epoch + 1)
+            return
+
+        prev_label = f"epoch{epoch}_step{self.steps_per_epoch}"
+        prev_ckpt = self.out_dir / "checkpoints" / f"{prev_label}_skill.md"
+        if not prev_ckpt.exists():
+            log.warning("slow update: previous checkpoint not found", path=str(prev_ckpt))
+            return
+        prev_skill = prev_ckpt.read_text()
+
+        env = self.adapter.build_train_env(self.slow_update_samples, seed=1000 + epoch)
+
+        slow_dir = self.out_dir / "slow_update" / f"epoch{epoch + 1}"
+        slow_dir.mkdir(parents=True, exist_ok=True)
+
+        result_path = slow_dir / "slow_result.json"
+        if result_path.exists():
+            log.info("slow update: resuming from cached result", epoch=epoch + 1)
+            return
+
+        results_prev = self.adapter.rollout(env, prev_skill, str(slow_dir / "rollout_prev"))
+        results_curr = self.adapter.rollout(env, self.current_skill, str(slow_dir / "rollout_curr"))
+
+        prev_hard, _ = self._compute_score(results_prev)
+        curr_hard, _ = self._compute_score(results_curr)
+
+        prev_guidance = extract_slow_update_field(self.current_skill)
+
+        slow_result = run_slow_update(
+            skill_content=self.current_skill,
+            prev_skill=prev_skill,
+            results_prev=results_prev,
+            results_curr=results_curr,
+            prev_slow_update_content=prev_guidance,
+        )
+
+        if slow_result and slow_result.get("slow_update_content"):
+            self.current_skill = replace_slow_update_field(
+                self.current_skill, slow_result["slow_update_content"],
+            )
+            self._save_skill(self.current_skill)
+            slow_result["prev_hard"] = round(prev_hard, 4)
+            slow_result["curr_hard"] = round(curr_hard, 4)
+            result_path.write_text(json.dumps(slow_result, indent=2))
+            log.info(
+                "slow update applied",
+                epoch=epoch + 1,
+                guidance_len=len(slow_result["slow_update_content"]),
+                prev_hard=round(prev_hard, 4),
+                curr_hard=round(curr_hard, 4),
+            )
+        else:
+            log.info("slow update: no guidance produced", epoch=epoch + 1)
 
     def _run_step(self, epoch: int, step: int) -> GateResult:
         step_dir = str(self.out_dir / f"epoch{epoch + 1}" / f"step{step + 1}")

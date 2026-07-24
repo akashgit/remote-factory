@@ -121,6 +121,11 @@ def main() -> int:
         default="",
         help="Path to dataset directory (for searchqa: directory with train.jsonl/val.jsonl)",
     )
+    parser.add_argument(
+        "--slow-update",
+        action="store_true",
+        help="Enable epoch-level slow update (longitudinal skill refinement)",
+    )
     args = parser.parse_args()
 
     adapter_name = args.adapter or args.benchmark
@@ -150,6 +155,7 @@ def main() -> int:
         results_from=args.results_from,
         annotations_path=args.annotations,
         workflow_name=args.benchmark,
+        use_slow_update=args.slow_update,
     )
     trainer.train()
     return 0
