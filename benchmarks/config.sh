@@ -55,12 +55,12 @@ benchmark_config() {
             BENCH_FILTER_STYLE="glob"
             ;;
         searchqa)
-            BENCH_DATASET='searchqa'
+            BENCH_LOCAL_PATH="${HARNESS_DIR}/benchmarks/searchqa-harbor/train"
             BENCH_AGENT_CLASS='factory_harbor_agent:SearchQAFactoryCeo'
             BENCH_AGENT_IMPORT_FLAG='--agent-import-path'
             BENCH_FILTER_STYLE='exact'
-            BENCH_POST_EVAL_CMD=''
             ;;
+
         *)
             echo "ERROR: Unknown benchmark '${name}'"
             echo "Valid benchmarks: swebench, featurebench, terminalbench, programbench, legacybench, searchqa"
