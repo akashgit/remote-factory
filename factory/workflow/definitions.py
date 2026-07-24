@@ -245,8 +245,8 @@ def build_workflow() -> Workflow:
         post_checks=[ArtifactCheck(
             path=".factory/strategy/current.md",
             must_exist=True,
-            min_size=100,
-            must_contain=["## Build Plan", "### Phase 1"],
+            min_size=200,
+            must_contain=["### Phase 1", "### Architecture"],
         )],
     )
 
@@ -290,6 +290,12 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
+        post_checks=[ArtifactCheck(
+            path=".factory/reviews/builder-latest.md",
+            must_exist=True,
+            min_size=500,
+            must_contain=["commit"],
+        )],
     )
 
     nodes["gate_build"] = GateNode(

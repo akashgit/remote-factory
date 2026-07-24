@@ -501,29 +501,50 @@ class TestDesignWorkflowAnnotations:
             assert isinstance(node, AgentNode)
             assert len(node.post_checks) > 0, f"{nid} should have post_checks"
 
-        # Strategist
+        # Strategist — sentinels match real output structure
         strat = wf.nodes["strategist"]
         assert isinstance(strat, AgentNode)
         assert len(strat.post_checks) > 0
-        assert strat.post_checks[0].must_contain  # has sentinels
+        assert strat.post_checks[0].min_size == 200
+        assert "### Phase 1" in strat.post_checks[0].must_contain
+        assert "### Architecture" in strat.post_checks[0].must_contain
 
-        # QA
+        # Builder — validates real agent output, not just auto-header
+        builder = wf.nodes["builder"]
+        assert isinstance(builder, AgentNode)
+        assert len(builder.post_checks) > 0
+        assert builder.post_checks[0].min_size == 500
+        assert "commit" in builder.post_checks[0].must_contain
+
+        # QA — validates section headers from QA pipeline
         qa = wf.nodes["qa"]
         assert isinstance(qa, AgentNode)
         assert len(qa.post_checks) > 0
+        assert qa.post_checks[0].min_size == 500
+        assert "## Health Check" in qa.post_checks[0].must_contain
+        assert "## Code Review" in qa.post_checks[0].must_contain
 
     def test_design_workflow_inherits_post_checks(self) -> None:
         from factory.workflow.definitions import design_workflow
 
         wf = design_workflow()
-        # Design inherits from build, so post_checks should be present
+        # Design inherits from build — verify inherited sentinel values
         strat = wf.nodes["strategist"]
         assert isinstance(strat, AgentNode)
         assert len(strat.post_checks) > 0
+        assert "### Phase 1" in strat.post_checks[0].must_contain
+        assert "### Architecture" in strat.post_checks[0].must_contain
+
+        builder = wf.nodes["builder"]
+        assert isinstance(builder, AgentNode)
+        assert len(builder.post_checks) > 0
+        assert "commit" in builder.post_checks[0].must_contain
 
         qa = wf.nodes["qa"]
         assert isinstance(qa, AgentNode)
         assert len(qa.post_checks) > 0
+        assert "## Health Check" in qa.post_checks[0].must_contain
+        assert "## Code Review" in qa.post_checks[0].must_contain
 
     def test_design_skill_md_contains_verification(self) -> None:
         from factory.workflow.definitions import design_workflow
