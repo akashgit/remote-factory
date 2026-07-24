@@ -69,3 +69,13 @@ class GateResult(BaseModel):
     best_skill: str
     best_score: float
     best_step: int
+
+
+class SlowUpdateResult(BaseModel):
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    reasoning: str = ""
+    slow_update_content: str = ""
+    action: str = ""
+    prev_hard: float | None = None
+    curr_hard: float | None = None

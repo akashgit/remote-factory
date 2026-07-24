@@ -1228,6 +1228,142 @@ class TestTrainLoop:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# slow_update.py — Field manipulation and comparison pairs
+# ---------------------------------------------------------------------------
+
+
+class TestHasSlowUpdateField:
+    def test_present(self) -> None:
+        from factory.skillopt.slow_update import has_slow_update_field
+
+        skill = "# Skill\n<!-- SLOW_UPDATE_START -->\nguidance\n<!-- SLOW_UPDATE_END -->"
+        assert has_slow_update_field(skill) is True
+
+    def test_absent(self) -> None:
+        from factory.skillopt.slow_update import has_slow_update_field
+
+        assert has_slow_update_field("# Skill\nno markers") is False
+
+    def test_partial_start_only(self) -> None:
+        from factory.skillopt.slow_update import has_slow_update_field
+
+        assert has_slow_update_field("<!-- SLOW_UPDATE_START -->") is False
+
+
+class TestInjectEmptySlowUpdateField:
+    def test_adds_markers(self) -> None:
+        from factory.skillopt.slow_update import has_slow_update_field, inject_empty_slow_update_field
+
+        skill = "# Skill\nsome content"
+        result = inject_empty_slow_update_field(skill)
+        assert has_slow_update_field(result)
+        assert result.startswith("# Skill\nsome content")
+
+    def test_idempotent(self) -> None:
+        from factory.skillopt.slow_update import inject_empty_slow_update_field
+
+        skill = "# Skill\n<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+        assert inject_empty_slow_update_field(skill) == skill
+
+
+class TestExtractSlowUpdateField:
+    def test_extracts_content(self) -> None:
+        from factory.skillopt.slow_update import extract_slow_update_field
+
+        skill = "header\n<!-- SLOW_UPDATE_START -->\nguidance text\n<!-- SLOW_UPDATE_END -->"
+        assert extract_slow_update_field(skill) == "guidance text"
+
+    def test_empty_when_no_markers(self) -> None:
+        from factory.skillopt.slow_update import extract_slow_update_field
+
+        assert extract_slow_update_field("no markers") == ""
+
+    def test_empty_content(self) -> None:
+        from factory.skillopt.slow_update import extract_slow_update_field
+
+        skill = "<!-- SLOW_UPDATE_START -->\n<!-- SLOW_UPDATE_END -->"
+        assert extract_slow_update_field(skill) == ""
+
+
+class TestReplaceSlowUpdateField:
+    def test_replaces_existing(self) -> None:
+        from factory.skillopt.slow_update import (
+            extract_slow_update_field,
+            has_slow_update_field,
+            replace_slow_update_field,
+        )
+
+        skill = "header\n<!-- SLOW_UPDATE_START -->\nold guidance\n<!-- SLOW_UPDATE_END -->"
+        result = replace_slow_update_field(skill, "new guidance")
+        assert has_slow_update_field(result)
+        assert extract_slow_update_field(result) == "new guidance"
+        assert "old guidance" not in result
+
+    def test_adds_when_absent(self) -> None:
+        from factory.skillopt.slow_update import extract_slow_update_field, replace_slow_update_field
+
+        result = replace_slow_update_field("# Skill", "first guidance")
+        assert extract_slow_update_field(result) == "first guidance"
+
+    def test_strips_multiple(self) -> None:
+        from factory.skillopt.slow_update import extract_slow_update_field, replace_slow_update_field
+
+        skill = (
+            "header\n"
+            "<!-- SLOW_UPDATE_START -->\nold1\n<!-- SLOW_UPDATE_END -->\n"
+            "middle\n"
+            "<!-- SLOW_UPDATE_START -->\nold2\n<!-- SLOW_UPDATE_END -->"
+        )
+        result = replace_slow_update_field(skill, "unified")
+        assert result.count("<!-- SLOW_UPDATE_START -->") == 1
+        assert extract_slow_update_field(result) == "unified"
+
+
+class TestBuildComparisonPairs:
+    def test_categorizes_correctly(self) -> None:
+        from factory.skillopt.slow_update import build_comparison_pairs
+
+        prev = [
+            RolloutResult(id="q1", hard=0.0, soft=0.3, fail_reason="wrong answer"),
+            RolloutResult(id="q2", hard=1.0, soft=1.0),
+        ]
+        curr = [
+            RolloutResult(id="q1", hard=1.0, soft=0.9),
+            RolloutResult(id="q2", hard=0.0, soft=0.2, fail_reason="timeout"),
+        ]
+        pairs = build_comparison_pairs(prev, curr)
+        assert len(pairs) == 2
+
+        by_id = {p["id"]: p for p in pairs}
+        assert by_id["q1"]["category"] == "improved"
+        assert by_id["q2"]["category"] == "regressed"
+        assert by_id["q1"]["prev"]["hard"] == 0
+        assert by_id["q1"]["curr"]["hard"] == 1
+        assert by_id["q2"]["curr"]["fail_reason"] == "timeout"
+
+
+class TestFormatComparisonText:
+    def test_summary_stats(self) -> None:
+        from factory.skillopt.slow_update import format_comparison_text
+
+        pairs = [
+            {"id": "q1", "category": "improved", "prev": {"hard": 0, "soft": 0.3,
+             "predicted_answer": "old", "fail_reason": "wrong"},
+             "curr": {"hard": 1, "soft": 0.9, "predicted_answer": "right", "fail_reason": ""}},
+            {"id": "q2", "category": "regressed", "prev": {"hard": 1, "soft": 1.0,
+             "predicted_answer": "good", "fail_reason": ""},
+             "curr": {"hard": 0, "soft": 0.2, "predicted_answer": "bad", "fail_reason": "crash"}},
+        ]
+        text = format_comparison_text(pairs)
+        assert "Total samples: 2" in text
+        assert "Improved (wrong->right): 1" in text
+        assert "Regressed (right->wrong): 1" in text
+        assert "HIGHEST PRIORITY" in text
+        assert "Task q2" in text
+        assert "crash" in text
+
+
 class TestSwebenchAdapter:
     def test_build_train_env(self) -> None:
         from factory.skillopt.adapters.swebench import SwebenchAdapter
