@@ -14,7 +14,7 @@
 
 <p align="center">📖 <b><a href="https://akashgit.github.io/remote-factory/">Full Documentation</a></b></p>
 
-**Describe what you want — re:factory builds it, tests it, and keeps improving it.** Design an idea from scratch or point at an existing project for continuous improvement. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
+**Describe what you want — re:factory designs and builds it.** Brainstorm an idea from scratch, refine a plan for an existing project, or create entirely new factory modes. Runs with [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [Bob Shell](https://bob.ibm.com), and [OpenAI Codex](https://openai.com/index/codex/).
 
 All state is local — per-project in `.factory/` (add to `.gitignore`), global in `~/.factory/`. See [Architecture](docs/architecture.md) for the full deep-dive.
 
@@ -22,89 +22,45 @@ All state is local — per-project in `.factory/` (add to `.gitignore`), global 
 
 ## How It Works
 
-A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and also handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning. In design mode, the Strategist synthesizes research into a buildable plan through user feedback. In research mode, the Failure Analyst classifies run failures to guide targeted hypothesis generation.
+A CEO agent orchestrates eight specialists — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst — each running as an independent [Claude Code](https://docs.anthropic.com/en/docs/claude-code) subprocess. The Researcher searches the web and reads prior knowledge from the archive. The Strategist generates ranked hypotheses and handles design-mode ideation. The Builder implements one on an experiment branch. The Evaluator scores before and after. The CEO decides keep or revert. The Archivist records everything to `.factory/archive/` and regenerates performance reports for cross-project learning.
 
 **The experiment cycle:** observe → hypothesize → build → review → measure → decide (keep or revert) → archive. The Strategist picks work from the backlog using FEEC priority (Fix > Exploit > Explore > Combine).
 
 ---
 
-## Workflows
-
-### Build — start from an idea
-
-```bash
-uv run factory ceo "Build a REST API for bookmark management"
-uv run factory ceo ~/ideas/weather-dashboard.md
-uv run factory ceo https://github.com/user/repo
-```
-
-Give re:factory an idea (raw string, spec file, or GitHub URL) and it builds a complete project: scaffolding, tests, eval, and iterative improvement.
-
-### Improve — make an existing codebase better
-
-```bash
-uv run factory ceo ~/my-project
-uv run factory run ~/my-project --loop
-```
-
-Point it at any codebase. Each cycle observes the project, hypothesizes changes, implements one, and keeps it only if the score goes up.
-
-### Focus — build exactly one thing
-
-```bash
-uv run factory ceo ~/my-project --focus "add authentication middleware"
-uv run factory ceo ~/my-app --focus 42                       # GitHub issue
-uv run factory ceo ~/my-app --focus "owner/repo#42"          # Issue shorthand
-```
-
-When you know exactly what you want, `--focus` pins a single backlog item, generates one hypothesis, runs one experiment, and exits. The entire pipeline is scoped to that single target.
+## Design Mode
 
 ### Design — brainstorm before building
 
-```bash
-# From a raw idea — discuss and refine into a buildable spec
-uv run factory ceo "distributed eval runner" --mode design
+Design mode is the primary way to use re:factory. It researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.
 
-# From a spec file — read and discuss before building
+**From a raw idea** — describe what you want and refine it into a buildable spec:
+
+```bash
+uv run factory ceo "distributed eval runner" --mode design
+uv run factory ceo "Build a REST API for bookmark management" --mode design
+```
+
+**From a spec file** — read and discuss before building:
+
+```bash
+uv run factory ceo ~/ideas/weather-dashboard.md --mode design
 uv run factory ceo ~/ideas/my-app-spec.md --mode design
 ```
 
-Have a rough idea? Design mode researches the space, drafts a structured plan via the Strategist, and lets you iterate on it before any code is written.
-
-Design mode also works on existing projects. The CEO studies the backlog, eval scores, open issues, and experiment history, then discusses what to work on before executing:
+**On an existing project** — study the backlog, eval scores, open issues, and experiment history, then discuss what to work on before executing:
 
 ```bash
 uv run factory ceo ~/factory-projects/my-app --mode design
+```
 
-# Seed the conversation with a topic
+**Seed the conversation with a topic** — use `--focus` to start the discussion around a specific area:
+
+```bash
 uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
+uv run factory ceo ~/my-app --mode design --focus 42                       # GitHub issue
+uv run factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shorthand
 ```
-
-### Research — optimize a metric iteratively
-
-```bash
-uv run factory ceo "SWE-bench solver agent" --mode research
-uv run factory ceo ~/my-research-project --mode research
-```
-
-For projects with a measurable target metric (benchmark accuracy, solve rate, query precision). Research mode replaces the standard Improve loop with a specialized cycle: Baseline → Failure Analyst → Researcher → Strategist → Builder → Run → Verdict. Leakage guards prevent ground truth from contaminating hypotheses, and monotonic improvement ensures the metric never regresses below the previous best. See [Getting Started](docs/getting-started.md#research-mode-in-detail) for the full picture.
-
-### Headless & continuous loop
-
-For unattended operation — scripting, cron jobs, or always-on machines:
-
-```bash
-# Headless — pipe mode, no interaction
-uv run factory ceo ~/my-project --headless
-
-# Loop — continuous improvement (default: every 30 min)
-uv run factory run ~/my-project --loop
-
-# Detached tmux — loop in the background
-uv run factory tmux ~/my-project --loop
-```
-
-`--headless` disables the interactive session. `--loop` wraps the CEO in a heartbeat loop: run one cycle, sleep, repeat. Combine with `uv run factory tmux` to leave re:factory running on an always-on machine. See [Getting Started](docs/getting-started.md) for full details.
 
 ---
 
@@ -133,11 +89,8 @@ Then start with one of the two main workflows:
 # Design — brainstorm an idea, refine it, then build
 factory ceo "my idea" --mode design
 
-# Improve — point at an existing project for continuous improvement
-factory ceo /path/to/project --mode improve --focus "issue # or whatever you want to improve or fix"
-
-# Co-improve — if you want to iterate on the implementation plan before implementation starts for an improvement
-factory ceo /path/to/project --mode design --focus "issue # or whatever you want to improve or fix"
+# Improve an existing project — use design mode with a focus area
+factory ceo /path/to/project --mode design --focus "issue # or area to improve"
 ```
 
 See the [full setup guide](docs/setup.md) for authentication, environment variables, and justification for why we install globally.
@@ -149,8 +102,7 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 | I want to… | Command |
 |---|---|
 | **Start from a raw idea** | `factory ceo "my idea" --mode design` |
-| **Improve an existing project** | `factory ceo /path/to/project --mode improve --focus "issue number or whatever you want to improve or fix ` |
-| **Co-improve an existing project** | `factory ceo /path/to/project --mode design --focus "description of whatever you want to improve or fix ` |
+| **Improve an existing project** | `factory ceo /path/to/project --mode design --focus "issue # or area to improve"` |
 | **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
 | **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
 
@@ -159,11 +111,6 @@ re:factory doesn't just improve your project — it improves *itself*. Every kee
 This is powered by **ACE (Autonomous Context Engineering)** — inspired by Anthropic's work on [context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) — a Reflect → Curate → Inject loop that evolves agent playbooks from real experiment outcomes.
 
 Each agent accumulates behavioral rules — DOs and DON'Ts — with evidence counters. Rules that correlate with kept experiments get reinforced. Rules that correlate with reverts get pruned.
-
-```bash
-# Run a full improvement cycle, then evolve all agent playbooks
-uv run factory ceo ~/my-project --mode meta
-```
 
 See [ACE Playbook Evolution](docs/ace.md) for the playbook mechanics.
 
@@ -175,7 +122,7 @@ re:factory is a three-layer system:
 
 **Layer 1 — Python CLI** (`factory/`): Pure tools that don't make decisions. Eval runner, strategy engine, experiment store, discovery, event logging. Entry point: `uv run factory --help`.
 
-**Layer 2 — CEO Agent** (`factory/agents/prompts/ceo.md`): The orchestrator. Detects project state, routes to the right mode (build, improve, design, research, meta, create, review, refine), spawns specialist agents, and makes the keep/revert decision for each experiment. Mode-specific playbooks are auto-generated from workflow graph definitions.
+**Layer 2 — CEO Agent** (`factory/agents/prompts/ceo.md`): The orchestrator. Detects project state, spawns specialist agents, and makes the keep/revert decision for each experiment. Mode-specific playbooks are auto-generated from workflow graph definitions.
 
 **Layer 3 — Specialist Agents** (`factory/agents/`): Eight independent Claude Code subprocesses — Researcher, Strategist, Builder, Reviewer, Evaluator, Archivist, Refiner, and Failure Analyst. Each has a focused prompt, receives context from the CEO, and returns structured output. Agent prompts support per-project overrides via `.factory/agents/<role>.md`.
 
@@ -201,38 +148,18 @@ On first run, `uv run factory discover` auto-detects your project's language and
 
 re:factory has shipped something every day for the last 30 days — products, research experiments, production features, papers. Here are a few examples:
 
-| Project | What it does | Mode |
-|---------|-------------|------|
-| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis | Research |
-| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 | Research |
-| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation | Research |
-| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks | Build |
-| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI | Build + Improve |
-| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection | Build + Improve |
-| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase | Focus + Improve |
-| **re:factory itself** | re:factory runs on itself in meta mode — its own agent playbooks are evolved from its own experiment outcomes | Meta |
+| Project | What it does |
+|---------|-------------|
+| **SWE-bench solver** | Autonomous agent that resolves GitHub issues from the SWE-bench dataset, iteratively improved via failure analysis |
+| **HMMT math solver** | Multi-agent team (Explorer, Theorist, Computationalist, Critic, Synthesizer) that solved HMMT Feb 2025 Combinatorics Problem 7 |
+| **Text/Sketch → CAD** | Converts natural language and hand-drawn sketches into executable CadQuery code for 3D model generation |
+| **HLS design space explorer** | Per-function AI agents explore HLS pragma/code variants in parallel, an ILP solver finds the optimal combination, then global expert agents apply cross-function optimizations — achieving up to 92% execution time reduction on cryptographic benchmarks |
+| **Pluck** | iOS app that extracts structured data from screenshots, links, and shared content using on-device AI |
+| **Group chat digest** | Turns iMessage group chats into weekly family newsletters with AI-curated highlights and photo selection |
+| **Production enterprise features** | Complete UI components and backend features shipped into a large-scale production codebase |
+| **re:factory itself** | re:factory runs on itself — its own agent playbooks are evolved from its own experiment outcomes |
 
 Built something with re:factory? [Open a PR](https://github.com/akashgit/remote-factory/pulls) to add it here.
-
----
-
-## Post-Cycle Refinement
-
-After a build or improve cycle finishes in foreground mode, the CEO stays active — it doesn't exit. Ask for changes directly:
-
-> "Fix the typo in the header"
-> "Add error handling to the upload endpoint"
-> "Make the tests more thorough"
-
-Each request runs through the full experiment pipeline: the **Refiner** scopes it → **Builder** implements → review + eval + E2E gate → keep/revert verdict. No shortcuts — every refinement is a tracked experiment with its own PR.
-
-You can also invoke refinements directly with `--refine`:
-
-```bash
-factory ceo ~/my-app --refine "add rate limiting to the API"
-```
-
-There's no cap on refinements. Advisory warnings appear at 5 and 10 to flag context growth, but the user decides when to stop.
 
 ---
 
@@ -262,14 +189,15 @@ Point it at the factory repo itself to extend re:factory with custom pipelines.
 ## CLI Quick Reference
 
 ```bash
-# Core workflow
-factory ceo "idea" --mode design         # Design from a raw idea
-factory ceo <path> --mode improve        # Improve an existing project
-factory ceo <path> --refine "..."        # Single targeted refinement
-factory ceo <path> --mode create --focus "description"  # Create a new factory mode
-factory ceo <path> --mode create --focus "mode: change"  # Update an existing mode
-factory ceo <path> --loop                # Continuous improvement loop
-factory tmux <path> --loop               # Loop in detached tmux session
+# Design — brainstorm and build
+factory ceo "idea" --mode design                              # Design from a raw idea
+factory ceo ~/ideas/spec.md --mode design                     # Design from a spec file
+factory ceo <path> --mode design                              # Design improvements for existing project
+factory ceo <path> --mode design --focus "topic"              # Seed with a specific topic
+
+# Create — extend the factory
+factory ceo <path> --mode create --focus "description"        # Create a new factory mode
+factory ceo <path> --mode create --focus "mode: change"       # Update an existing mode
 ```
 
 See `factory --help` for the complete list.
