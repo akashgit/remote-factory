@@ -15,8 +15,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
-
 import numpy as np
 import structlog
 
@@ -158,59 +156,14 @@ def detect_trial(project_path: str, output_dir: str) -> None:
     (out / "trial_results.json").write_text(json.dumps(trial_results, indent=2))
     log.info("detect_trial.complete", thresholds_tested=len(candidate_thresholds))
 
-
-def _load_denoiser() -> Any:
-    """Load the pretrained single-channel denoiser from DARTsort."""
-    import torch
-    from dartsort.transform.single_channel_denoiser import (
-        SingleChanDenoiser,
-        default_pretrained_path,
-    )
-
-    denoiser = SingleChanDenoiser()
-    weights_path = Path(str(default_pretrained_path))
-    if not weights_path.exists():
-        ref = Path(_DS_REF)
-        for candidate in [
-            ref / "pretrained" / "single_chan_denoiser.pt",
-            ref / "src" / "dartsort" / "pretrained" / "single_chan_denoiser.pt",
-        ]:
-            if candidate.exists():
-                weights_path = candidate
-                break
-    denoiser.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
-    denoiser.eval()
-    log.info("denoiser.loaded", weights=str(weights_path))
-    return denoiser
-
-
-def _denoise_traces(traces: np.ndarray, denoiser: Any) -> np.ndarray:
-    """Apply single-channel denoiser to traces channel-by-channel."""
-    import torch
-
-    device = next(denoiser.parameters()).device
-    denoised = np.empty_like(traces)
-    n_channels = traces.shape[1]
-
-    with torch.no_grad():
-        for ch in range(n_channels):
-            ch_trace = (
-                torch.tensor(traces[:, ch], dtype=torch.float32, device=device)
-                .unsqueeze(0)
-                .unsqueeze(0)
-            )
-            ch_denoised = denoiser(ch_trace)
-            denoised[:, ch] = ch_denoised.squeeze().cpu().numpy()
-
-    log.info("denoise.complete", channels=n_channels)
-    return denoised
-
-
 def detect(project_path: str, output_dir: str) -> None:
     """Run threshold-crossing detection with LLM-selected parameters.
 
-    Optionally applies the single-channel denoiser NN before threshold detection
-    when use_denoiser=True in detection_params.json.
+    Note: The use_denoiser parameter in detection_params.json is currently ignored.
+    DARTsort's single-channel denoiser operates on extracted waveforms during
+    featurization/matching, not on raw traces. Trace-level denoising would
+    require a different approach (e.g., CAR, bandpass filtering, or a
+    trained trace denoiser).
     """
     import spikeinterface.core as si
     from dartsort.main import threshold as ds_threshold
@@ -224,28 +177,6 @@ def detect(project_path: str, output_dir: str) -> None:
     out = Path(output_dir)
     recording = si.load(out / "preprocessed")
     params = json.loads((out / "detection_params.json").read_text())
-
-    use_denoiser = params.get("use_denoiser", True)
-
-    if use_denoiser:
-        denoiser = _load_denoiser()
-        traces = recording.get_traces()
-        denoised_traces = _denoise_traces(traces, denoiser)
-
-        denoised_dir = out / "denoised"
-        denoised_dir.mkdir(exist_ok=True)
-        np.save(denoised_dir / "traces.npy", denoised_traces)
-
-        from spikeinterface.core import NumpyRecording
-
-        recording = NumpyRecording(
-            traces_list=[denoised_traces],
-            sampling_frequency=recording.get_sampling_frequency(),
-        )
-        recording.set_channel_locations(
-            si.load(out / "preprocessed").get_channel_locations()
-        )
-        log.info("detect.denoiser_applied")
 
     thresh_cfg = dataclasses.replace(
         default_thresholding_cfg,
@@ -270,13 +201,10 @@ def detect(project_path: str, output_dir: str) -> None:
         "spike_count": int(n_spikes),
         "spike_rate_hz": float(n_spikes / recording.get_total_duration()),
         "detection_params_used": params,
-        "denoiser_applied": use_denoiser,
     }
     (out / "detection_summary.json").write_text(json.dumps(summary, indent=2))
     sorting.save(out / "detections" / "sorting.npz")
-    log.info(
-        "detect.complete", spikes=n_spikes, rate_hz=summary["spike_rate_hz"], denoised=use_denoiser
-    )
+    log.info("detect.complete", spikes=n_spikes, rate_hz=summary["spike_rate_hz"])
 
 
 def localize(project_path: str, output_dir: str) -> None:
@@ -290,10 +218,14 @@ def localize(project_path: str, output_dir: str) -> None:
     recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "detections" / "sorting.npz")
 
+    # Create motion directory before calling get_motion_info
+    motion_dir = out / "motion"
+    motion_dir.mkdir(parents=True, exist_ok=True)
+
     cfg = default_dartsort_cfg
     try:
         motion = get_motion_info(
-            output_directory=out / "motion",
+            output_directory=motion_dir,
             recording=recording,
             sorting=sorting,
             detect_new_peaks=False,
@@ -361,13 +293,14 @@ def cluster(project_path: str, output_dir: str) -> None:
     params = json.loads((out / "clustering_params.json").read_text())
 
     motion_dir = out / "motion"
-    motion = MotionInfo.load(motion_dir) if motion_dir.exists() else None
+    motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
 
-    clust_cfg = default_clustering_cfg
-    clust_cfg.cluster_strategy = params["strategy"]
-    clust_cfg.grid_dx = params["grid_dx"]
-    clust_cfg.grid_dz = params["grid_dz"]
-    clust_cfg.n_waveforms_fit = params["n_waveforms_fit"]
+    clust_cfg = dataclasses.replace(
+        default_clustering_cfg,
+        cluster_strategy=params["strategy"],
+        grid_dx=params["grid_dx"],
+        grid_dz=params["grid_dz"],
+    )
 
     result = ds_cluster(
         recording=recording,
@@ -419,7 +352,7 @@ def compute_templates(project_path: str, output_dir: str) -> None:
     sorting = DARTsortSorting.load(out / "clusters" / "sorting.npz")
 
     motion_dir = out / "motion"
-    motion = MotionInfo.load(motion_dir) if motion_dir.exists() else None
+    motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
 
     mcfg = default_matching_cfg
     tcfg = replace(
@@ -437,7 +370,7 @@ def compute_templates(project_path: str, output_dir: str) -> None:
     )
 
     (out / "templates").mkdir(exist_ok=True)
-    template_data.save(out / "templates" / "template_data.npz")
+    template_data.to_npz(out / "templates" / "template_data.npz")
     sorting.save(out / "templates" / "sorting.npz")
 
     templates_arr = template_data.templates if hasattr(template_data, "templates") else np.array([])
@@ -482,7 +415,7 @@ def template_match(project_path: str, output_dir: str) -> None:
     out = Path(output_dir)
     recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "templates" / "sorting.npz")
-    template_data = TemplateData.load(out / "templates" / "template_data.npz")
+    template_data = TemplateData.from_npz(out / "templates" / "template_data.npz")
 
     decisions = json.loads((out / "template_decisions.json").read_text())
     keep_ids = {d["template_id"] for d in decisions["decisions"] if d["action"] == "keep"}
@@ -493,7 +426,7 @@ def template_match(project_path: str, output_dir: str) -> None:
     }
 
     motion_dir = out / "motion"
-    motion = MotionInfo.load(motion_dir) if motion_dir.exists() else None
+    motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
 
     final_sorting = ds_match(
         output_dir=out / "sorting",

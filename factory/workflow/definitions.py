@@ -2409,7 +2409,13 @@ def spike_sort_workflow() -> Workflow:
             "Reference the trial results — cite the spike counts and rates you observed. "
             "If you chose anything other than 4.0, justify the deviation with specific "
             "evidence from the trial data and noise_stats.json.\n\n"
-            "Output your selection as a DetectionParams JSON object with a reasoning field."
+            "IMPORTANT: Write your selection as a JSON file to {output_dir}/detection_params.json "
+            "using the Write tool. The JSON must have these fields:\n"
+            '- "detection_threshold": float (3.0-6.0)\n'
+            '- "peak_sign": string ("neg", "pos", or "both")\n'
+            '- "temporal_dedup_radius_samples": int (5-20)\n'
+            '- "use_denoiser": boolean\n'
+            '- "reasoning": string (your brief justification)'
         ),
         reads={"noise_stats.json", "trial_results.json"},
         writes={"detection_params.json"},
@@ -2460,18 +2466,18 @@ def spike_sort_workflow() -> Workflow:
             "'dpc' (density peak clustering — slow but accurate, best for >20K spikes with drift), "
             "'none' (skip clustering — only for pre-sorted data).\n"
             "- grid_dx, grid_dz (5-50 µm): Spatial grid resolution. "
-            "Smaller = more clusters initially. 15 µm is typical.\n"
-            "- initial_steps: Refinement sequence. "
-            "['split', 'demolish', 'demolish'] is standard. "
-            "Add 'merge' if you expect many similar units.\n"
-            "- n_waveforms_fit (10K-100K): Subsample size for fitting. "
-            "Higher = better but slower. 40K is typical.\n\n"
+            "Smaller = more clusters initially. 15 µm is typical.\n\n"
             "Decision tree:\n"
             "- spike_count < 20K → channel_snap\n"
             "- drift > 15 µm → dpc with drift correction\n"
             "- spike_density > 1.0 spikes/ch/s → grid_snap\n"
             "- Otherwise → dpc\n\n"
-            "Output your selection as a ClusteringParams JSON object with a reasoning field."
+            "IMPORTANT: Write your selection as a JSON file to {output_dir}/clustering_params.json "
+            "using the Write tool. The JSON must have these fields:\n"
+            '- "strategy": string ("channel_snap", "grid_snap", "dpc", or "none")\n'
+            '- "grid_dx": float (5.0-50.0)\n'
+            '- "grid_dz": float (5.0-50.0)\n'
+            '- "reasoning": string (your brief justification)'
         ),
         reads={"cluster_input_stats.json"},
         writes={"clustering_params.json"},
@@ -2525,7 +2531,14 @@ def spike_sort_workflow() -> Workflow:
             "- Good units: SNR > 3, count > 50, stability > 0.7\n"
             "- Marginal units: SNR 1.5-3, count 10-50 — keep if isolated\n"
             "- High spatial_spread (>200 µm) may indicate multi-unit — flag for discard\n\n"
-            "Output a TemplateQCOutput JSON with decisions list and summary string."
+            "IMPORTANT: Write your decisions as a JSON file to {output_dir}/template_decisions.json "
+            "using the Write tool. The JSON must have:\n"
+            '- "decisions": array of objects, each with:\n'
+            '  - "template_id": int\n'
+            '  - "action": string ("keep", "discard", or "merge")\n'
+            '  - "merge_with": int or null (only if action is "merge")\n'
+            '  - "reasoning": string (brief justification)\n'
+            '- "summary": string (overall QC summary)'
         ),
         reads={"template_stats.json"},
         writes={"template_decisions.json"},
