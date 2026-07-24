@@ -778,7 +778,16 @@ class WorkflowExecutor:
         return await self._run_shell(cmd)
 
     async def _run_fn(self, node: FnNode) -> str:
-        """Run a FnNode's shell command."""
+        """Run a FnNode's shell command or Python callable."""
+        if node.callable_name:
+            import importlib
+
+            module_path, func_name = node.callable_name.rsplit(":", 1)
+            module = importlib.import_module(module_path)
+            func = getattr(module, func_name)
+            output_dir = str(self.project_path / ".factory" / "spike_sort_output")
+            func(project_path=str(self.project_path), output_dir=output_dir)
+            return f"{func_name} completed"
         if not node.command:
             return ""
         cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
