@@ -24,10 +24,13 @@ meta = {
     ),
 }
 
-_DEFAULT_PROMPT = (
+_DEFAULT_SKILL = (
     "# Question Answering Skill\n\n"
-    "(No learned rules yet. Rules will be added through the reflection process.)\n\n"
-    "## Instructions\n\n"
+    "(No learned rules yet. Rules will be added through the reflection process.)"
+)
+
+_FIXED_INSTRUCTIONS = (
+    "\n\n## Instructions\n\n"
     "Read the question and search results from /tmp/task-instruction.md.\n"
     "Answer the question and write ONLY your final answer to /workspace/answer.txt.\n"
     "Also include your answer in <answer> tags in your response.\n"
@@ -36,9 +39,8 @@ _DEFAULT_PROMPT = (
 
 def _resolve_prompt() -> str:
     b64 = os.environ.get("SEARCHQA_SKILL_B64")
-    if b64:
-        return base64.b64decode(b64).decode()
-    return _DEFAULT_PROMPT
+    skill = base64.b64decode(b64).decode() if b64 else _DEFAULT_SKILL
+    return skill + _FIXED_INSTRUCTIONS
 
 
 def workflow() -> Workflow:
