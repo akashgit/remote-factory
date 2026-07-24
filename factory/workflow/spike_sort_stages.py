@@ -262,6 +262,7 @@ def detect(project_path: str, output_dir: str) -> None:
         featurization_cfg=default_featurization_cfg,
         sampling_cfg=default_peeling_fit_sampling_cfg,
         hdf5_filename="detections.h5",
+        model_subdir="detections_models",
     )
 
     n_spikes = sorting.n_spikes
@@ -290,17 +291,22 @@ def localize(project_path: str, output_dir: str) -> None:
     sorting = DARTsortSorting.load(out / "detections" / "sorting.npz")
 
     cfg = default_dartsort_cfg
-    get_motion_info(
-        output_directory=out / "motion",
-        recording=recording,
-        sorting=sorting,
-        detect_new_peaks=True,
-        motion_cfg=cfg.motion_estimation_cfg,
-        computation_cfg=cfg.computation_cfg,
-        sampling_cfg=cfg.peeler_sampling_cfg,
-        waveform_cfg=cfg.waveform_cfg,
-        overwrite=True,
-    )
+    try:
+        motion = get_motion_info(
+            output_directory=out / "motion",
+            recording=recording,
+            sorting=sorting,
+            detect_new_peaks=False,
+            motion_cfg=cfg.motion_estimation_cfg,
+            computation_cfg=cfg.computation_cfg,
+            sampling_cfg=cfg.peeler_sampling_cfg,
+            waveform_cfg=cfg.waveform_cfg,
+            overwrite=True,
+        )
+        log.info("localize.motion_estimated", drifting=motion.drifting)
+    except Exception:
+        log.exception("localize.motion_estimation_failed")
+        raise
 
     locs: dict[str, list[float]] = {}
     if hasattr(sorting, "point_source_localizations"):
@@ -395,10 +401,13 @@ def cluster(project_path: str, output_dir: str) -> None:
 
 def compute_templates(project_path: str, output_dir: str) -> None:
     """Compute unit templates (average waveforms) from clustered spikes."""
+    from dataclasses import replace
+
     import spikeinterface.core as si
     from dartsort.templates import estimate_template_library
     from dartsort.util.data_util import DARTsortSorting
     from dartsort.util.internal_config import (
+        WhiteningConfig,
         default_matching_cfg,
         default_template_cfg,
         default_waveform_cfg,
@@ -413,6 +422,10 @@ def compute_templates(project_path: str, output_dir: str) -> None:
     motion = MotionInfo.load(motion_dir) if motion_dir.exists() else None
 
     mcfg = default_matching_cfg
+    tcfg = replace(
+        default_template_cfg,
+        whitening=WhiteningConfig(strategy="prewhiten_postapply"),
+    )
     sorting, template_data = estimate_template_library(
         recording=recording,
         sorting=sorting,
@@ -420,7 +433,7 @@ def compute_templates(project_path: str, output_dir: str) -> None:
         min_template_ptp=mcfg.min_template_ptp,
         min_template_count=mcfg.min_template_count,
         waveform_cfg=default_waveform_cfg,
-        template_cfg=default_template_cfg,
+        template_cfg=tcfg,
     )
 
     (out / "templates").mkdir(exist_ok=True)
