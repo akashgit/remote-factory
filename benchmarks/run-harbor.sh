@@ -423,7 +423,12 @@ COMMON_AE=(
     --ae "FACTORY_INSTANCE_ID=${INSTANCE_ID}"
 )
 
-HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}")
+BENCHMARK_AE=()
+if [ -n "${SEARCHQA_SKILL_B64:-}" ]; then
+    BENCHMARK_AE+=(--ae "SEARCHQA_SKILL_B64=${SEARCHQA_SKILL_B64}")
+fi
+
+HARBOR_CMD+=(${AUTH_AE[@]+"${AUTH_AE[@]}"} "${COMMON_AE[@]}" ${BENCHMARK_AE[@]+"${BENCHMARK_AE[@]}"})
 
 if [ -n "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
     HARBOR_CMD+=(--mounts '[{"type": "bind", "source": "'"${GCLOUD_ADC}"'", "target": "/tmp/gcloud-adc.json", "read_only": true}]')
