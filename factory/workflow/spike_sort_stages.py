@@ -95,6 +95,7 @@ def detect(project_path: str, output_dir: str) -> None:
         featurization_cfg=default_featurization_cfg,
         sampling_cfg=default_peeling_fit_sampling_cfg,
         hdf5_filename="detections.h5",
+        model_subdir="detections_models",
     )
 
     n_spikes = sorting.count
@@ -120,17 +121,22 @@ def localize(project_path: str, output_dir: str) -> None:
     sorting = DARTsortSorting.load(out / "detections" / "sorting.npz")
 
     cfg = default_dartsort_cfg
-    get_motion_info(
-        output_directory=out / "motion",
-        recording=recording,
-        sorting=sorting,
-        detect_new_peaks=True,
-        motion_cfg=cfg.motion_estimation_cfg,
-        computation_cfg=cfg.computation_cfg,
-        sampling_cfg=cfg.peeler_sampling_cfg,
-        waveform_cfg=cfg.waveform_cfg,
-        overwrite=True,
-    )
+    try:
+        motion = get_motion_info(
+            output_directory=out / "motion",
+            recording=recording,
+            sorting=sorting,
+            detect_new_peaks=False,
+            motion_cfg=cfg.motion_estimation_cfg,
+            computation_cfg=cfg.computation_cfg,
+            sampling_cfg=cfg.peeler_sampling_cfg,
+            waveform_cfg=cfg.waveform_cfg,
+            overwrite=True,
+        )
+        log.info("localize.motion_estimated", drifting=motion.drifting)
+    except Exception:
+        log.exception("localize.motion_estimation_failed")
+        raise
 
     locs: dict[str, list[float]] = {}
     if hasattr(sorting, "point_source_localizations"):
