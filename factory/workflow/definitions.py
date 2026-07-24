@@ -2322,9 +2322,10 @@ def spike_sort_workflow() -> Workflow:
     NOT a software engineering workflow. This IS the spike sorting pipeline:
     FnNodes execute DARTsort algorithms, AgentNodes select parameters via LLM.
 
-    preprocess (FnNode) → detect_params (AgentNode/haiku) → detect (FnNode) →
-    localize (FnNode) → cluster_params (AgentNode/sonnet) → cluster (FnNode) →
-    templates (FnNode) → qc_templates (AgentNode/haiku) → match (FnNode)
+    preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
+    detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
+    cluster (FnNode) → templates (FnNode) → qc_templates (AgentNode/haiku) →
+    match (FnNode)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -2342,6 +2343,22 @@ def spike_sort_workflow() -> Workflow:
         writes={"preprocessed/", "noise_stats.json"},
     )
 
+    # ── Stage 1b: Detection Trial Run (threshold sweep) ──────────
+
+    nodes["detect_trial"] = FnNode(
+        id="detect_trial",
+        callable_name="factory.workflow.spike_sort_stages:detect_trial",
+        notes=(
+            "Fast threshold sweep on a small subset of the recording. "
+            "Runs dartsort.threshold() at 3 candidate thresholds (3.5, 4.0, 4.5) "
+            "with early termination (stop_after_n_spikes=10000, ensure_coverage=0.05). "
+            "Writes trial results to {output_dir}/trial_results.json for the "
+            "detection parameter advisor to make a data-informed threshold choice."
+        ),
+        reads={"preprocessed/", "noise_stats.json"},
+        writes={"trial_results.json"},
+    )
+
     # ── Stage 2: Detection Parameter Selection (LLM) ───────────────
 
     nodes["detect_params"] = AgentNode(
@@ -2351,23 +2368,50 @@ def spike_sort_workflow() -> Workflow:
         timeout=60,
         prompt_template=(
             "You are a spike detection parameter advisor for extracellular neural recordings. "
-            "Read the noise statistics at {output_dir}/noise_stats.json.\n\n"
-            "Based on the recording characteristics, select detection parameters:\n"
-            "- voltage_threshold (2.0-8.0): SNR threshold for spike detection. "
-            "Higher = fewer false positives but may miss low-amplitude neurons. "
-            "Typical: 3.0 for clean data, 4.0-6.0 for noisy data.\n"
+            "Read the noise statistics at {output_dir}/noise_stats.json and the trial "
+            "detection results at {output_dir}/trial_results.json.\n\n"
+            "TRIAL RESULTS: A threshold sweep has already been run on a small subset of "
+            "the recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json file "
+            "contains for each threshold: spike_count, spike_rate_hz, mean_amplitude, "
+            "and amplitude_distribution_percentiles. Use this empirical data to inform "
+            "your threshold selection.\n\n"
+            "IMPORTANT: DARTsort's detection operates on standardized (SNR-unit) traces. "
+            "The threshold 4.0 is the DARTsort-calibrated baseline, validated on Neuropixels "
+            "recordings with default preprocessing. A single-channel denoiser NN runs before "
+            "detection and recovers low-amplitude spikes, so you do NOT need an aggressive "
+            "(low) threshold to catch weak units. Prefer the default. Only deviate with "
+            "clear evidence from the trial results AND noise statistics.\n\n"
+            "Select detection parameters:\n"
+            "- voltage_threshold (3.0-6.0): SNR threshold in standardized units. "
+            "Default: 4.0. Do NOT lower below 4.0 unless you have strong evidence "
+            "that the recording has exceptionally high SNR AND the denoiser is disabled. "
+            "Raising above 4.0 is safer than lowering — it reduces false positives "
+            "with minimal loss of real spikes.\n"
             "- peak_sign ('neg', 'pos', 'both'): Which polarity peaks to detect. "
-            "'both' is standard for extracellular recordings unless you know the cell type.\n"
+            "'both' is standard for extracellular recordings.\n"
             "- dedup_temporal_radius (5-20): Samples to deduplicate within. "
-            "Higher = more aggressive deduplication. 11 is typical at 30kHz.\n\n"
-            "Decision factors:\n"
-            "- High median noise (>15 µV) → raise threshold to 4.0+\n"
-            "- Low noise (<8 µV) → can lower to 2.5-3.0\n"
-            "- Neuropixels probes → 'both' peak_sign is standard\n"
-            "- Short recordings (<60s) → lower threshold to catch more units\n\n"
+            "11 is typical at 30kHz.\n"
+            "- use_denoiser (true/false): Whether to apply the single-channel denoiser NN "
+            "before detection. Default: true. The denoiser cleans waveforms and improves "
+            "detection of low-amplitude spikes. Disable only if the recording has unusual "
+            "artifacts that the denoiser was not trained on.\n\n"
+            "Decision rules:\n"
+            "- Start with voltage_threshold=4.0 (the calibrated default).\n"
+            "- Compare trial results across thresholds: if 4.0 produces a reasonable "
+            "spike rate (20-200 Hz per channel) keep it. If the rate is extremely high "
+            "(>500 Hz), consider raising to 4.5 or 5.0.\n"
+            "- Very noisy data (median noise >20 µV after standardization): raise to 5.0-6.0.\n"
+            "- Clean data (<8 µV): keep 4.0 — the denoiser handles low-amplitude recovery.\n"
+            "- DO NOT lower the threshold to compensate for expected low-amplitude neurons. "
+            "The denoiser NN is designed for this.\n"
+            "- Neuropixels probes → 'both' peak_sign.\n\n"
+            "In your reasoning field, explicitly state why you chose your threshold. "
+            "Reference the trial results — cite the spike counts and rates you observed. "
+            "If you chose anything other than 4.0, justify the deviation with specific "
+            "evidence from the trial data and noise_stats.json.\n\n"
             "Output your selection as a DetectionParams JSON object with a reasoning field."
         ),
-        reads={"noise_stats.json"},
+        reads={"noise_stats.json", "trial_results.json"},
         writes={"detection_params.json"},
     )
 
@@ -2383,7 +2427,7 @@ def spike_sort_workflow() -> Workflow:
             "and summary to {output_dir}/detection_summary.json."
         ),
         reads={"preprocessed/", "detection_params.json"},
-        writes={"detections/", "detection_summary.json"},
+        writes={"detections/", "detection_summary.json", "denoised/"},
     )
 
     # ── Stage 4: Localization ──────────────────────────────────────
@@ -2504,7 +2548,8 @@ def spike_sort_workflow() -> Workflow:
     # ── Edges (linear pipeline) ────────────────────────────────────
 
     edges = [
-        Edge(source="preprocess", target="detect_params"),
+        Edge(source="preprocess", target="detect_trial"),
+        Edge(source="detect_trial", target="detect_params"),
         Edge(source="detect_params", target="detect"),
         Edge(source="detect", target="localize"),
         Edge(source="localize", target="cluster_params"),

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import structlog
@@ -67,8 +68,145 @@ def preprocess(project_path: str, output_dir: str) -> None:
     )
 
 
+def detect_trial(project_path: str, output_dir: str) -> None:
+    """Run threshold sweep on a small subset to inform parameter selection.
+
+    Tests 3 candidate thresholds (3.5, 4.0, 4.5) with early termination.
+    Writes trial_results.json for the detect_params AgentNode.
+    """
+    import copy
+
+    import spikeinterface.core as si
+    from dartsort.main import threshold as ds_threshold
+    from dartsort.util.internal_config import (
+        default_featurization_cfg,
+        default_peeling_fit_sampling_cfg,
+        default_thresholding_cfg,
+        default_waveform_cfg,
+    )
+
+    out = Path(output_dir)
+    recording = si.load_extractor(out / "preprocessed")
+    noise_stats = json.loads((out / "noise_stats.json").read_text())
+
+    candidate_thresholds = [3.5, 4.0, 4.5]
+    trial_results: dict = {
+        "recording_duration_s": noise_stats["recording_duration_s"],
+        "n_channels": recording.get_num_channels(),
+        "thresholds": {},
+    }
+
+    for thresh in candidate_thresholds:
+        trial_dir = out / "trial_runs" / f"thresh_{thresh}"
+        trial_dir.mkdir(parents=True, exist_ok=True)
+
+        thresh_cfg = copy.deepcopy(default_thresholding_cfg)
+        thresh_cfg.voltage_threshold = thresh
+        thresh_cfg.peak_sign = "both"
+        thresh_cfg.dedup_temporal_radius = 11
+
+        log.info("detect_trial.start", threshold=thresh)
+        sorting = ds_threshold(
+            output_dir=trial_dir,
+            recording=recording,
+            waveform_cfg=default_waveform_cfg,
+            thresholding_cfg=thresh_cfg,
+            featurization_cfg=default_featurization_cfg,
+            sampling_cfg=default_peeling_fit_sampling_cfg,
+            hdf5_filename="trial.h5",
+            stop_after_n_spikes=10_000,
+            ensure_coverage=0.05,
+            overwrite=True,
+        )
+
+        n_spikes = sorting.count
+        duration = noise_stats["recording_duration_s"]
+
+        amplitudes: list[float] = []
+        if (
+            hasattr(sorting, "point_source_localizations")
+            and sorting.point_source_localizations is not None
+        ):
+            amplitudes = sorting.point_source_localizations[:, 3].tolist()
+        elif (
+            hasattr(sorting, "denoised_ptp_amplitudes")
+            and sorting.denoised_ptp_amplitudes is not None
+        ):
+            amplitudes = sorting.denoised_ptp_amplitudes.tolist()
+
+        amp_percentiles: dict[str, float] = {}
+        if amplitudes:
+            amp_arr = np.array(amplitudes)
+            amp_percentiles = {
+                "p10": float(np.percentile(amp_arr, 10)),
+                "p25": float(np.percentile(amp_arr, 25)),
+                "p50": float(np.percentile(amp_arr, 50)),
+                "p75": float(np.percentile(amp_arr, 75)),
+                "p90": float(np.percentile(amp_arr, 90)),
+            }
+
+        trial_results["thresholds"][str(thresh)] = {
+            "spike_count": int(n_spikes),
+            "spike_rate_hz": float(n_spikes / duration) if duration > 0 else 0.0,
+            "mean_amplitude": float(np.mean(amplitudes)) if amplitudes else None,
+            "amplitude_distribution_percentiles": amp_percentiles if amp_percentiles else None,
+        }
+        log.info(
+            "detect_trial.done",
+            threshold=thresh,
+            spikes=n_spikes,
+            rate_hz=trial_results["thresholds"][str(thresh)]["spike_rate_hz"],
+        )
+
+    (out / "trial_results.json").write_text(json.dumps(trial_results, indent=2))
+    log.info("detect_trial.complete", thresholds_tested=len(candidate_thresholds))
+
+
+def _load_denoiser() -> Any:
+    """Load the pretrained single-channel denoiser from DARTsort."""
+    import torch
+    from dartsort.transform.single_channel_denoiser import SingleChanDenoiser
+
+    denoiser = SingleChanDenoiser()
+    weights_path = Path(_DS_REF) / "pretrained" / "single_chan_denoiser.pt"
+    if not weights_path.exists():
+        weights_path = Path(_DS_REF) / "src" / "dartsort" / "pretrained" / "single_chan_denoiser.pt"
+    denoiser.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
+    denoiser.eval()
+    log.info("denoiser.loaded", weights=str(weights_path))
+    return denoiser
+
+
+def _denoise_traces(traces: np.ndarray, denoiser: Any) -> np.ndarray:
+    """Apply single-channel denoiser to traces channel-by-channel."""
+    import torch
+
+    device = next(denoiser.parameters()).device
+    denoised = np.empty_like(traces)
+    n_channels = traces.shape[1]
+
+    with torch.no_grad():
+        for ch in range(n_channels):
+            ch_trace = (
+                torch.tensor(traces[:, ch], dtype=torch.float32, device=device)
+                .unsqueeze(0)
+                .unsqueeze(0)
+            )
+            ch_denoised = denoiser(ch_trace)
+            denoised[:, ch] = ch_denoised.squeeze().cpu().numpy()
+
+    log.info("denoise.complete", channels=n_channels)
+    return denoised
+
+
 def detect(project_path: str, output_dir: str) -> None:
-    """Run threshold-crossing detection with LLM-selected parameters."""
+    """Run threshold-crossing detection with LLM-selected parameters.
+
+    Optionally applies the single-channel denoiser NN before threshold detection
+    when use_denoiser=True in detection_params.json.
+    """
+    import copy
+
     import spikeinterface.core as si
     from dartsort.main import threshold as ds_threshold
     from dartsort.util.internal_config import (
@@ -82,7 +220,29 @@ def detect(project_path: str, output_dir: str) -> None:
     recording = si.load_extractor(out / "preprocessed")
     params = json.loads((out / "detection_params.json").read_text())
 
-    thresh_cfg = default_thresholding_cfg
+    use_denoiser = params.get("use_denoiser", True)
+
+    if use_denoiser:
+        denoiser = _load_denoiser()
+        traces = recording.get_traces()
+        denoised_traces = _denoise_traces(traces, denoiser)
+
+        denoised_dir = out / "denoised"
+        denoised_dir.mkdir(exist_ok=True)
+        np.save(denoised_dir / "traces.npy", denoised_traces)
+
+        from spikeinterface.core import NumpyRecording
+
+        recording = NumpyRecording(
+            traces_list=[denoised_traces],
+            sampling_frequency=recording.get_sampling_frequency(),
+        )
+        recording.set_channel_locations(
+            si.load_extractor(out / "preprocessed").get_channel_locations()
+        )
+        log.info("detect.denoiser_applied")
+
+    thresh_cfg = copy.deepcopy(default_thresholding_cfg)
     thresh_cfg.voltage_threshold = params["voltage_threshold"]
     thresh_cfg.peak_sign = params["peak_sign"]
     thresh_cfg.dedup_temporal_radius = params["dedup_temporal_radius"]
@@ -103,10 +263,13 @@ def detect(project_path: str, output_dir: str) -> None:
         "spike_count": int(n_spikes),
         "spike_rate_hz": float(n_spikes / recording.get_total_duration()),
         "detection_params_used": params,
+        "denoiser_applied": use_denoiser,
     }
     (out / "detection_summary.json").write_text(json.dumps(summary, indent=2))
     sorting.save(out / "detections" / "sorting.npz")
-    log.info("detect.complete", spikes=n_spikes, rate_hz=summary["spike_rate_hz"])
+    log.info(
+        "detect.complete", spikes=n_spikes, rate_hz=summary["spike_rate_hz"], denoised=use_denoiser
+    )
 
 
 def localize(project_path: str, output_dir: str) -> None:
