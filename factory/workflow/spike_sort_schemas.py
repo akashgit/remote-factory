@@ -31,13 +31,13 @@ class DetectionParams(BaseModel):
 
     model_config = ConfigDict(strict=True, extra="forbid")
 
-    voltage_threshold: float = Field(
+    detection_threshold: float = Field(
         ge=3.0,
         le=6.0,
         description="SNR threshold for spike detection (4.0 is DARTsort calibrated default)",
     )
     peak_sign: Literal["neg", "pos", "both"] = Field(description="Which polarity peaks to detect")
-    dedup_temporal_radius: int = Field(
+    temporal_dedup_radius_samples: int = Field(
         ge=5,
         le=20,
         description="Temporal deduplication radius in samples",
