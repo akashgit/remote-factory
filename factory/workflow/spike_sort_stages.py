@@ -10,7 +10,9 @@ Each function follows the signature:
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,7 @@ import structlog
 
 log = structlog.get_logger()
 
-_DS_REF = "/workspace/home/churwitz/ds_ref"
+_DS_REF = os.environ.get("DS_REF_PATH", "/workspace/home/churwitz/ds_ref")
 if _DS_REF not in sys.path:
     sys.path.insert(0, _DS_REF)
 
@@ -36,12 +38,12 @@ def preprocess(project_path: str, output_dir: str) -> None:
 
     config = json.loads(Path(project_path, ".factory", "config.json").read_text())
     recording_path = config["recording_path"]
-    recording = si.load_extractor(recording_path)
+    recording = si.load(recording_path)
 
     cfg = default_dartsort_cfg
     rec_processed = ds_preprocess(recording, cfg.preprocessing, cfg.preprocessing_dtype)
 
-    si.save(rec_processed, out / "preprocessed", overwrite=True)
+    rec_processed.save(folder=out / "preprocessed")
 
     traces_sample = rec_processed.get_traces(
         start_frame=0, end_frame=min(30000, rec_processed.get_num_frames())
@@ -74,8 +76,6 @@ def detect_trial(project_path: str, output_dir: str) -> None:
     Tests 3 candidate thresholds (3.5, 4.0, 4.5) with early termination.
     Writes trial_results.json for the detect_params AgentNode.
     """
-    import copy
-
     import spikeinterface.core as si
     from dartsort.main import threshold as ds_threshold
     from dartsort.util.internal_config import (
@@ -86,7 +86,7 @@ def detect_trial(project_path: str, output_dir: str) -> None:
     )
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     noise_stats = json.loads((out / "noise_stats.json").read_text())
 
     candidate_thresholds = [3.5, 4.0, 4.5]
@@ -100,10 +100,12 @@ def detect_trial(project_path: str, output_dir: str) -> None:
         trial_dir = out / "trial_runs" / f"thresh_{thresh}"
         trial_dir.mkdir(parents=True, exist_ok=True)
 
-        thresh_cfg = copy.deepcopy(default_thresholding_cfg)
-        thresh_cfg.voltage_threshold = thresh
-        thresh_cfg.peak_sign = "both"
-        thresh_cfg.dedup_temporal_radius = 11
+        thresh_cfg = dataclasses.replace(
+            default_thresholding_cfg,
+            detection_threshold=thresh,
+            peak_sign="both",
+            temporal_dedup_radius_samples=11,
+        )
 
         log.info("detect_trial.start", threshold=thresh)
         sorting = ds_threshold(
@@ -119,16 +121,11 @@ def detect_trial(project_path: str, output_dir: str) -> None:
             overwrite=True,
         )
 
-        n_spikes = sorting.count
+        n_spikes = sorting.n_spikes
         duration = noise_stats["recording_duration_s"]
 
         amplitudes: list[float] = []
         if (
-            hasattr(sorting, "point_source_localizations")
-            and sorting.point_source_localizations is not None
-        ):
-            amplitudes = sorting.point_source_localizations[:, 3].tolist()
-        elif (
             hasattr(sorting, "denoised_ptp_amplitudes")
             and sorting.denoised_ptp_amplitudes is not None
         ):
@@ -165,12 +162,22 @@ def detect_trial(project_path: str, output_dir: str) -> None:
 def _load_denoiser() -> Any:
     """Load the pretrained single-channel denoiser from DARTsort."""
     import torch
-    from dartsort.transform.single_channel_denoiser import SingleChanDenoiser
+    from dartsort.transform.single_channel_denoiser import (
+        SingleChanDenoiser,
+        default_pretrained_path,
+    )
 
     denoiser = SingleChanDenoiser()
-    weights_path = Path(_DS_REF) / "pretrained" / "single_chan_denoiser.pt"
+    weights_path = Path(str(default_pretrained_path))
     if not weights_path.exists():
-        weights_path = Path(_DS_REF) / "src" / "dartsort" / "pretrained" / "single_chan_denoiser.pt"
+        ref = Path(_DS_REF)
+        for candidate in [
+            ref / "pretrained" / "single_chan_denoiser.pt",
+            ref / "src" / "dartsort" / "pretrained" / "single_chan_denoiser.pt",
+        ]:
+            if candidate.exists():
+                weights_path = candidate
+                break
     denoiser.load_state_dict(torch.load(weights_path, map_location="cpu", weights_only=True))
     denoiser.eval()
     log.info("denoiser.loaded", weights=str(weights_path))
@@ -205,8 +212,6 @@ def detect(project_path: str, output_dir: str) -> None:
     Optionally applies the single-channel denoiser NN before threshold detection
     when use_denoiser=True in detection_params.json.
     """
-    import copy
-
     import spikeinterface.core as si
     from dartsort.main import threshold as ds_threshold
     from dartsort.util.internal_config import (
@@ -217,7 +222,7 @@ def detect(project_path: str, output_dir: str) -> None:
     )
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     params = json.loads((out / "detection_params.json").read_text())
 
     use_denoiser = params.get("use_denoiser", True)
@@ -238,14 +243,16 @@ def detect(project_path: str, output_dir: str) -> None:
             sampling_frequency=recording.get_sampling_frequency(),
         )
         recording.set_channel_locations(
-            si.load_extractor(out / "preprocessed").get_channel_locations()
+            si.load(out / "preprocessed").get_channel_locations()
         )
         log.info("detect.denoiser_applied")
 
-    thresh_cfg = copy.deepcopy(default_thresholding_cfg)
-    thresh_cfg.voltage_threshold = params["voltage_threshold"]
-    thresh_cfg.peak_sign = params["peak_sign"]
-    thresh_cfg.dedup_temporal_radius = params["dedup_temporal_radius"]
+    thresh_cfg = dataclasses.replace(
+        default_thresholding_cfg,
+        detection_threshold=params["detection_threshold"],
+        peak_sign=params["peak_sign"],
+        temporal_dedup_radius_samples=params["temporal_dedup_radius_samples"],
+    )
 
     sorting = ds_threshold(
         output_dir=out / "detections",
@@ -257,7 +264,7 @@ def detect(project_path: str, output_dir: str) -> None:
         hdf5_filename="detections.h5",
     )
 
-    n_spikes = sorting.count
+    n_spikes = sorting.n_spikes
     summary = {
         "spike_count": int(n_spikes),
         "spike_rate_hz": float(n_spikes / recording.get_total_duration()),
@@ -279,7 +286,7 @@ def localize(project_path: str, output_dir: str) -> None:
     from dartsort.util.motion import get_motion_info
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "detections" / "sorting.npz")
 
     cfg = default_dartsort_cfg
@@ -343,7 +350,7 @@ def cluster(project_path: str, output_dir: str) -> None:
     from dartsort.util.motion import MotionInfo
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "detections" / "sorting.npz")
     params = json.loads((out / "clustering_params.json").read_text())
 
@@ -399,7 +406,7 @@ def compute_templates(project_path: str, output_dir: str) -> None:
     from dartsort.util.motion import MotionInfo
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "clusters" / "sorting.npz")
 
     motion_dir = out / "motion"
@@ -460,7 +467,7 @@ def template_match(project_path: str, output_dir: str) -> None:
     from dartsort.util.motion import MotionInfo
 
     out = Path(output_dir)
-    recording = si.load_extractor(out / "preprocessed")
+    recording = si.load(out / "preprocessed")
     sorting = DARTsortSorting.load(out / "templates" / "sorting.npz")
     template_data = TemplateData.load(out / "templates" / "template_data.npz")
 

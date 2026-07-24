@@ -161,26 +161,26 @@ def test_detection_params_schema():
     from factory.workflow.spike_sort_schemas import DetectionParams
 
     params = DetectionParams(
-        voltage_threshold=4.0,
+        detection_threshold=4.0,
         peak_sign="both",
-        dedup_temporal_radius=11,
+        temporal_dedup_radius_samples=11,
         reasoning="Standard parameters for clean cortical recording",
     )
-    assert params.voltage_threshold == 4.0
+    assert params.detection_threshold == 4.0
     assert params.use_denoiser is True
 
     with pytest.raises(Exception):
         DetectionParams(
-            voltage_threshold=2.5,
+            detection_threshold=2.5,
             peak_sign="both",
-            dedup_temporal_radius=11,
+            temporal_dedup_radius_samples=11,
             reasoning="below tightened lower bound",
         )
     with pytest.raises(Exception):
         DetectionParams(
-            voltage_threshold=7.0,
+            detection_threshold=7.0,
             peak_sign="both",
-            dedup_temporal_radius=11,
+            temporal_dedup_radius_samples=11,
             reasoning="above tightened upper bound",
         )
 
@@ -190,17 +190,17 @@ def test_detection_params_use_denoiser():
     from factory.workflow.spike_sort_schemas import DetectionParams
 
     params_default = DetectionParams(
-        voltage_threshold=4.0,
+        detection_threshold=4.0,
         peak_sign="both",
-        dedup_temporal_radius=11,
+        temporal_dedup_radius_samples=11,
         reasoning="default denoiser",
     )
     assert params_default.use_denoiser is True
 
     params_disabled = DetectionParams(
-        voltage_threshold=4.0,
+        detection_threshold=4.0,
         peak_sign="both",
-        dedup_temporal_radius=11,
+        temporal_dedup_radius_samples=11,
         use_denoiser=False,
         reasoning="denoiser disabled",
     )
