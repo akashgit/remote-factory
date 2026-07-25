@@ -6,7 +6,7 @@ import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import register_all, spike_sort_workflow
-from factory.workflow.primitives import AgentNode, FnNode
+from factory.workflow.primitives import AgentNode, AgentRole, FnNode
 
 
 # ── Graph validation ──────────────────────────────────────────────
@@ -43,8 +43,8 @@ def test_spike_sort_node_ids():
         "cluster_params",
         "cluster",
         "templates",
-        "qc_templates",
         "match",
+        "qa_sorting",
     }
     assert set(wf.nodes.keys()) == expected
 
@@ -65,8 +65,8 @@ def test_spike_sort_is_linear():
         ("localize", "cluster_params"),
         ("cluster_params", "cluster"),
         ("cluster", "templates"),
-        ("templates", "qc_templates"),
-        ("qc_templates", "match"),
+        ("templates", "match"),
+        ("match", "qa_sorting"),
     ]
     actual_chain = [(e.source, e.target) for e in wf.edges]
     assert actual_chain == expected_chain
@@ -85,20 +85,26 @@ def test_spike_sort_no_conditional_edges():
 
 
 def test_spike_sort_agent_models():
-    """Detection and QC use haiku; clustering uses sonnet."""
+    """Detection uses haiku; clustering and QA use sonnet."""
     wf = spike_sort_workflow()
 
     detect_params = wf.nodes["detect_params"]
     assert isinstance(detect_params, AgentNode)
+    assert detect_params.role == AgentRole.RESEARCHER
     assert detect_params.model == "haiku"
+    assert detect_params.timeout == 60
 
     cluster_params = wf.nodes["cluster_params"]
     assert isinstance(cluster_params, AgentNode)
+    assert cluster_params.role == AgentRole.STRATEGIST
     assert cluster_params.model == "sonnet"
+    assert cluster_params.timeout == 120
 
-    qc_templates = wf.nodes["qc_templates"]
-    assert isinstance(qc_templates, AgentNode)
-    assert qc_templates.model == "haiku"
+    qa_sorting = wf.nodes["qa_sorting"]
+    assert isinstance(qa_sorting, AgentNode)
+    assert qa_sorting.role == AgentRole.HEALTH_CHECKER
+    assert qa_sorting.model == "sonnet"
+    assert qa_sorting.timeout == 300
 
 
 # ── FnNode callable names ────────────────────────────────────────
@@ -141,8 +147,8 @@ def test_spike_sort_data_flow():
         "cluster_params",
         "cluster",
         "templates",
-        "qc_templates",
         "match",
+        "qa_sorting",
     ]
 
     available: set[str] = set()
@@ -355,6 +361,39 @@ def test_detect_params_reads_trial_results():
     assert "trial_results.json" in node.reads
 
 
+# ── QA sorting node ──────────────────────────────────────────────
+
+
+def test_qa_sorting_node_exists():
+    """qa_sorting AgentNode exists with correct config."""
+    wf = spike_sort_workflow()
+    assert "qa_sorting" in wf.nodes
+    qa_node = wf.nodes["qa_sorting"]
+    assert isinstance(qa_node, AgentNode)
+    assert qa_node.role == AgentRole.HEALTH_CHECKER
+    assert qa_node.model == "sonnet"
+    assert qa_node.timeout == 300
+    assert "sorting/" in qa_node.reads
+    assert "qa_report.json" in qa_node.writes
+    assert "flagged_units.json" in qa_node.writes
+
+
+def test_qa_sorting_edge():
+    """match → qa_sorting edge exists and is unconditional."""
+    wf = spike_sort_workflow()
+    edges_from_match = [e for e in wf.edges if e.source == "match"]
+    assert len(edges_from_match) == 1
+    assert edges_from_match[0].target == "qa_sorting"
+    assert edges_from_match[0].condition is None
+
+
+def test_qa_sorting_is_terminal():
+    """qa_sorting has no outgoing edges (terminal node)."""
+    wf = spike_sort_workflow()
+    outgoing = [e for e in wf.edges if e.source == "qa_sorting"]
+    assert len(outgoing) == 0
+
+
 # ── Registration ──────────────────────────────────────────────────
 
 
@@ -381,8 +420,9 @@ def test_spike_sort_input_output_format():
     first_node = wf.nodes[wf.start_node]
     assert "preprocessed/" in first_node.writes
 
-    last_node = wf.nodes["match"]
-    assert "sorting/" in last_node.writes
+    # qa_sorting reads sorting/ (produced by match) and writes qa artifacts
+    qa_node = wf.nodes["qa_sorting"]
+    assert "sorting/" in qa_node.reads
 
 
 # ── Trigger function ──────────────────────────────────────────────
