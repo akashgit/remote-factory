@@ -462,9 +462,14 @@ def template_match(project_path: str, output_dir: str) -> None:
         model_subdir="matching_final_models",
     )
 
-    # Step 2: Post-match refinement (like vanilla DARTsort's final_refinement)
-    # Use the post_refinement_cfgs which do filtering/cleanup
-    refinement_cfgs = list(default_dartsort_cfg.post_refinement_cfgs)
+    # Step 2: Post-match refinement (vanilla DARTsort's final_refinement)
+    # Uses [pre_refinement_cfg, refinement_cfg, agglomerate_cfg] - the agglomerate
+    # step has merge_distance_threshold=0.6 for aggressive merging
+    refinement_cfgs = [
+        default_dartsort_cfg.pre_refinement_cfg,
+        default_dartsort_cfg.refinement_cfg,
+        default_dartsort_cfg.agglomerate_cfg,
+    ]
 
     final_sorting = ds_cluster(
         recording=recording,
