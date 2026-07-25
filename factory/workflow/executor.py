@@ -780,6 +780,10 @@ class WorkflowExecutor:
     async def _run_fn(self, node: FnNode) -> str:
         """Run a FnNode's shell command or Python callable."""
         if node.callable_name:
+            # Check if this is a spike-sort stage that needs the ds_ref environment
+            if node.callable_name.startswith("factory.workflow.spike_sort_stages:"):
+                return await self._run_fn_subprocess(node)
+
             import importlib
 
             module_path, func_name = node.callable_name.rsplit(":", 1)
@@ -793,11 +797,58 @@ class WorkflowExecutor:
         cmd = node.command.replace("{project_path}", shlex.quote(str(self.project_path)))
         return await self._run_shell(cmd)
 
+    async def _run_fn_subprocess(self, node: FnNode) -> str:
+        """Run a FnNode callable in a subprocess (for stages requiring external venvs)."""
+        import os
+
+        module_path, func_name = node.callable_name.rsplit(":", 1)  # type: ignore[union-attr]
+        output_dir = str(self.project_path / ".factory" / "spike_sort_output")
+
+        # Get the ds_ref path and Python interpreter
+        ds_ref_path = os.environ.get("DS_REF_PATH", "/workspace/home/churwitz/ds_ref")
+        venv_python = f"{ds_ref_path}/.venv/bin/python"
+
+        # Map callable names to stage names
+        stage_map = {
+            "preprocess": "preprocess",
+            "detect_trial": "detect_trial",
+            "detect": "detect",
+            "localize": "localize",
+            "cluster": "cluster",
+            "compute_templates": "templates",
+            "template_match": "match",
+        }
+        stage_name = stage_map.get(func_name, func_name)
+
+        # Build command to run the spike_sort_runner.py
+        runner_path = Path(__file__).parent / "spike_sort_runner.py"
+        cmd = (
+            f"{shlex.quote(venv_python)} {shlex.quote(str(runner_path))} "
+            f"{stage_name} "
+            f"--project-path {shlex.quote(str(self.project_path))} "
+            f"--output-dir {shlex.quote(output_dir)}"
+        )
+
+        # Set environment variables
+        env = os.environ.copy()
+        env["DS_REF_PATH"] = ds_ref_path
+        # Add factory module path to PYTHONPATH
+        factory_root = str(Path(__file__).parent.parent.parent)
+        pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = f"{factory_root}:{pythonpath}" if pythonpath else factory_root
+
+        log.info("fn_subprocess.start", node=node.id, cmd=cmd[:100])
+        return await self._run_shell(cmd, env=env)
+
     async def _run_agent(self, node: AgentNode) -> str:
         """Invoke an agent via factory/agents/runner.py."""
         from factory.agents.runner import invoke_agent
 
         task = node.prompt_template
+        # Substitute {output_dir} placeholder in spike-sort workflow prompts
+        output_dir = str(self.project_path / ".factory" / "spike_sort_output")
+        task = task.replace("{output_dir}", output_dir)
+
         context = self.node_context.get(node.id, "")
         if context:
             task = f"{task}\n\n{context}"
@@ -959,13 +1010,16 @@ class WorkflowExecutor:
             return Verdict.halt(reason="fn gate returned RELOOP but no RELOOP edge defined")
         return Verdict.proceed()
 
-    async def _run_shell(self, cmd: str) -> str:
+    async def _run_shell(
+        self, cmd: str, env: dict[str, str] | None = None
+    ) -> str:
         """Run a shell command and return stdout."""
         proc = await asyncio.create_subprocess_shell(
             cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=self.project_path,
+            env=env,
         )
         stdout_bytes, stderr_bytes = await proc.communicate()
         stdout = stdout_bytes.decode() if stdout_bytes else ""

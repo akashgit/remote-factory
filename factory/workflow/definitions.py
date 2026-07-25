@@ -2322,10 +2322,17 @@ def spike_sort_workflow() -> Workflow:
     NOT a software engineering workflow. This IS the spike sorting pipeline:
     FnNodes execute DARTsort algorithms, AgentNodes select parameters via LLM.
 
+    Pipeline:
     preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
     detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
-    cluster (FnNode) → templates (FnNode) → qc_templates (AgentNode/haiku) →
-    match (FnNode)
+    cluster (FnNode) → templates (FnNode) → match (FnNode)
+
+    Agent roles:
+    - detect_params: Selects detection threshold based on noise stats and trial sweep
+    - cluster_params: Chooses clustering strategy based on spike count, drift, density
+
+    The pipeline matches vanilla DARTsort's deterministic stages, with agents
+    providing recording-specific parameter tuning.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -2375,41 +2382,32 @@ def spike_sort_workflow() -> Workflow:
             "contains for each threshold: spike_count, spike_rate_hz, mean_amplitude, "
             "and amplitude_distribution_percentiles. Use this empirical data to inform "
             "your threshold selection.\n\n"
-            "IMPORTANT: DARTsort's detection operates on standardized (SNR-unit) traces. "
-            "The threshold 4.0 is the DARTsort-calibrated baseline, validated on Neuropixels "
-            "recordings with default preprocessing. A single-channel denoiser NN runs before "
-            "detection and recovers low-amplitude spikes, so you do NOT need an aggressive "
-            "(low) threshold to catch weak units. Prefer the default. Only deviate with "
-            "clear evidence from the trial results AND noise statistics.\n\n"
+            "IMPORTANT: We use DARTsort's subtract() function (SubtractionPeeler) for "
+            "detection. This is an iterative template-subtraction algorithm that produces "
+            "cleaner spike detections than simple thresholding. The subtract algorithm "
+            "includes a neural network denoiser in its pipeline. "
+            "The default detection_threshold is 3.0 for subtract().\n\n"
             "Select detection parameters:\n"
-            "- voltage_threshold (3.0-6.0): SNR threshold in standardized units. "
-            "Default: 4.0. Do NOT lower below 4.0 unless you have strong evidence "
-            "that the recording has exceptionally high SNR AND the denoiser is disabled. "
-            "Raising above 4.0 is safer than lowering — it reduces false positives "
-            "with minimal loss of real spikes.\n"
+            "- detection_threshold (2.5-5.0): SNR threshold in standardized units. "
+            "Default: 3.0 (subtract's calibrated default). Higher values reduce false "
+            "positives but may miss weak units. Lower values catch more spikes but "
+            "may include noise.\n"
             "- peak_sign ('neg', 'pos', 'both'): Which polarity peaks to detect. "
-            "'both' is standard for extracellular recordings.\n"
-            "- dedup_temporal_radius (5-20): Samples to deduplicate within. "
-            "11 is typical at 30kHz.\n"
-            "- use_denoiser (true/false): Whether to apply the single-channel denoiser NN "
-            "before detection. Default: true. The denoiser cleans waveforms and improves "
-            "detection of low-amplitude spikes. Disable only if the recording has unusual "
-            "artifacts that the denoiser was not trained on.\n\n"
+            "'both' is standard for extracellular recordings.\n\n"
             "Decision rules:\n"
-            "- Start with voltage_threshold=4.0 (the calibrated default).\n"
-            "- Compare trial results across thresholds: if 4.0 produces a reasonable "
-            "spike rate (20-200 Hz per channel) keep it. If the rate is extremely high "
-            "(>500 Hz), consider raising to 4.5 or 5.0.\n"
-            "- Very noisy data (median noise >20 µV after standardization): raise to 5.0-6.0.\n"
-            "- Clean data (<8 µV): keep 4.0 — the denoiser handles low-amplitude recovery.\n"
-            "- DO NOT lower the threshold to compensate for expected low-amplitude neurons. "
-            "The denoiser NN is designed for this.\n"
+            "- Start with detection_threshold=3.0 (the subtract default).\n"
+            "- Compare trial results across thresholds: if 4.0 produces reasonable "
+            "spike rate (20-200 Hz per channel), consider using 4.0 for cleaner output.\n"
+            "- Very noisy data (median noise >20 µV): raise to 4.0-5.0.\n"
+            "- Clean data (<8 µV): keep 3.0.\n"
             "- Neuropixels probes → 'both' peak_sign.\n\n"
             "In your reasoning field, explicitly state why you chose your threshold. "
-            "Reference the trial results — cite the spike counts and rates you observed. "
-            "If you chose anything other than 4.0, justify the deviation with specific "
-            "evidence from the trial data and noise_stats.json.\n\n"
-            "Output your selection as a DetectionParams JSON object with a reasoning field."
+            "Reference the trial results — cite the spike counts and rates you observed.\n\n"
+            "IMPORTANT: Write your selection as a JSON file to {output_dir}/detection_params.json "
+            "using the Write tool. The JSON must have these fields:\n"
+            '- "detection_threshold": float (2.5-5.0)\n'
+            '- "peak_sign": string ("neg", "pos", or "both")\n'
+            '- "reasoning": string (your brief justification)'
         ),
         reads={"noise_stats.json", "trial_results.json"},
         writes={"detection_params.json"},
@@ -2421,13 +2419,14 @@ def spike_sort_workflow() -> Workflow:
         id="detect",
         callable_name="factory.workflow.spike_sort_stages:detect",
         notes=(
-            "Threshold-crossing detection with LLM-selected parameters. "
-            "Reads preprocessed recording and detection_params.json. "
-            "Writes detections to {output_dir}/detections/ "
+            "Subtraction-based spike detection (SubtractionPeeler) with LLM-selected "
+            "parameters. Uses iterative template subtraction for cleaner detection "
+            "than simple thresholding. Reads preprocessed recording and "
+            "detection_params.json. Writes detections to {output_dir}/detections/ "
             "and summary to {output_dir}/detection_summary.json."
         ),
         reads={"preprocessed/", "detection_params.json"},
-        writes={"detections/", "detection_summary.json", "denoised/"},
+        writes={"detections/", "detection_summary.json"},
     )
 
     # ── Stage 4: Localization ──────────────────────────────────────
@@ -2460,18 +2459,18 @@ def spike_sort_workflow() -> Workflow:
             "'dpc' (density peak clustering — slow but accurate, best for >20K spikes with drift), "
             "'none' (skip clustering — only for pre-sorted data).\n"
             "- grid_dx, grid_dz (5-50 µm): Spatial grid resolution. "
-            "Smaller = more clusters initially. 15 µm is typical.\n"
-            "- initial_steps: Refinement sequence. "
-            "['split', 'demolish', 'demolish'] is standard. "
-            "Add 'merge' if you expect many similar units.\n"
-            "- n_waveforms_fit (10K-100K): Subsample size for fitting. "
-            "Higher = better but slower. 40K is typical.\n\n"
+            "Smaller = more clusters initially. 15 µm is typical.\n\n"
             "Decision tree:\n"
             "- spike_count < 20K → channel_snap\n"
             "- drift > 15 µm → dpc with drift correction\n"
             "- spike_density > 1.0 spikes/ch/s → grid_snap\n"
             "- Otherwise → dpc\n\n"
-            "Output your selection as a ClusteringParams JSON object with a reasoning field."
+            "IMPORTANT: Write your selection as a JSON file to {output_dir}/clustering_params.json "
+            "using the Write tool. The JSON must have these fields:\n"
+            '- "strategy": string ("channel_snap", "grid_snap", "dpc", or "none")\n'
+            '- "grid_dx": float (5.0-50.0)\n'
+            '- "grid_dz": float (5.0-50.0)\n'
+            '- "reasoning": string (your brief justification)'
         ),
         reads={"cluster_input_stats.json"},
         writes={"clustering_params.json"},
@@ -2504,44 +2503,20 @@ def spike_sort_workflow() -> Workflow:
         writes={"templates/", "template_stats.json"},
     )
 
-    # ── Stage 8: Template Quality Control (LLM) ────────────────────
-
-    nodes["qc_templates"] = AgentNode(
-        id="qc_templates",
-        role=AgentRole.RESEARCHER,
-        model="haiku",
-        timeout=120,
-        prompt_template=(
-            "You are a spike sorting template quality control reviewer. "
-            "Read the template statistics at {output_dir}/template_stats.json.\n\n"
-            "For each template, decide: keep, discard, or merge.\n\n"
-            "Decision criteria:\n"
-            "- DISCARD if: SNR < 1.5 (noise unit), spike_count < 10 (too few spikes), "
-            "or ptp_amplitude < 5 µV (below noise floor).\n"
-            "- MERGE if: two templates have very similar spatial positions (within 25 µm) "
-            "AND similar PTP amplitudes (within 30%). Specify merge_with = template_id of partner.\n"
-            "- KEEP otherwise.\n\n"
-            "Quality heuristics:\n"
-            "- Good units: SNR > 3, count > 50, stability > 0.7\n"
-            "- Marginal units: SNR 1.5-3, count 10-50 — keep if isolated\n"
-            "- High spatial_spread (>200 µm) may indicate multi-unit — flag for discard\n\n"
-            "Output a TemplateQCOutput JSON with decisions list and summary string."
-        ),
-        reads={"template_stats.json"},
-        writes={"template_decisions.json"},
-    )
-
-    # ── Stage 9: Template Matching ─────────────────────────────────
+    # ── Stage 8: Template Matching ─────────────────────────────────
+    # Note: Manual template QC was removed - DARTsort's refinement handles
+    # merge/split decisions automatically via agglomerate_cfg
 
     nodes["match"] = FnNode(
         id="match",
         callable_name="factory.workflow.spike_sort_stages:template_match",
         notes=(
-            "Template matching refinement using QC-filtered templates. "
-            "Reads template_decisions.json to filter templates before matching. "
+            "Template matching refinement with post-match agglomeration. "
+            "Matches spikes to templates, then runs DARTsort's final refinement "
+            "(pre_refinement → refinement → agglomerate) to merge overclustered units. "
             "Produces the final sorting result."
         ),
-        reads={"preprocessed/", "templates/", "template_decisions.json", "motion/"},
+        reads={"preprocessed/", "templates/", "motion/"},
         writes={"sorting/", "sorting_result.json"},
     )
 
@@ -2555,8 +2530,7 @@ def spike_sort_workflow() -> Workflow:
         Edge(source="localize", target="cluster_params"),
         Edge(source="cluster_params", target="cluster"),
         Edge(source="cluster", target="templates"),
-        Edge(source="templates", target="qc_templates"),
-        Edge(source="qc_templates", target="match"),
+        Edge(source="templates", target="match"),
     ]
 
     # ── Trigger ────────────────────────────────────────────────────

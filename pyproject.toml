@@ -51,6 +51,19 @@ markers = [
     "slow: tests that make real API calls (deselect with -m 'not slow')",
 ]
 
+[tool.coverage.run]
+branch = true
+source = ["factory"]
+omit = [
+    "tests/*",
+    "eval/*",
+    "factory/dashboard/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
 [tool.ruff]
 line-length = 100
 extend-exclude = ["mkdocs.yml"]
