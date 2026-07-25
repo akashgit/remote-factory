@@ -102,9 +102,7 @@ class TestQaSortingNode:
         assert qa_node.role == AgentRole.HEALTH_CHECKER
         assert qa_node.model == "sonnet"
         assert qa_node.timeout == 300
-        assert "sorting_result.json" in qa_node.reads
         assert "sorting/" in qa_node.reads
-        assert "templates/" in qa_node.reads
         assert "qa_report.json" in qa_node.writes
         assert "flagged_units.json" in qa_node.writes
 

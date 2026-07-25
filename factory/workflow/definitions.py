@@ -2747,62 +2747,53 @@ def spike_sort_workflow() -> Workflow:
         model="sonnet",
         timeout=300,
         prompt_template=(
-            "You are a neuroscience data quality expert. Review the final spike sorting "
+            "You are a neuroscience data quality expert. Review the FINAL spike sorting "
             "results and identify units that may be problematic.\n\n"
-            "### Input Files\n"
-            "- **sorting_result.json**: Unit count and basic statistics at "
-            "{output_dir}/sorting_result.json\n"
-            "- **sorting/**: Full SpikeInterface sorting object at {output_dir}/sorting/\n"
+            "### Input Files — CRITICAL: Use the FINAL sorting, NOT templates\n\n"
+            "**Primary data source (MUST use this):**\n"
+            "- **sorting/sorting.npz**: The FINAL sorted spikes at {output_dir}/sorting/sorting.npz\n"
+            "  Load with: `data = np.load(path); times = data['times_samples']; labels = data['labels']`\n"
+            "  - `times_samples`: spike times in samples (int64)\n"
+            "  - `labels`: unit ID for each spike (int32, -1 = noise)\n"
+            "  - `sampling_frequency`: Hz (float)\n"
+            "  Count spikes per unit: `for uid in np.unique(labels[labels >= 0]): count = (labels == uid).sum()`\n\n"
+            "**Secondary (for waveform analysis):**\n"
             "- **templates/**: Template waveforms at {output_dir}/templates/\n\n"
+            "**DO NOT USE** template_stats.json — it has pre-merge statistics that don't match final units.\n\n"
             "### Quality Criteria\n\n"
             "**Multi-unit activity indicators:**\n"
             "- ISI violation rate > 0.1 (10% of spikes violate 2ms refractory period)\n"
-            "- Bimodal or multi-peaked waveform shapes\n"
-            "- High spike amplitude variance\n\n"
+            "- Bimodal or multi-peaked amplitude distributions\n\n"
             "**Noise indicators:**\n"
-            "- SNR < 3.0 (signal-to-noise ratio too low)\n"
-            "- Amplitude stability < 0.7 (coefficient of variation > 0.3)\n"
-            "- Very low spike count (< 50 spikes — insufficient data)\n\n"
-            "**Suspicious waveform shapes:**\n"
-            "- Non-physiological rise/fall times\n"
-            "- Excessive baseline noise\n"
-            "- Artifact-like sharp transients\n\n"
+            "- Very low spike count (< 50 spikes in a 2-minute recording)\n"
+            "- For a 120s recording, healthy neurons fire 500-3000+ spikes\n\n"
             "### Quality Thresholds\n\n"
             "| Metric              | Threshold | Flag if...          |\n"
             "|---------------------|-----------|---------------------|\n"
             "| ISI violation rate  | > 0.1     | possible_multi_unit |\n"
-            "| SNR                 | < 3.0     | low_snr             |\n"
-            "| Amplitude stability | < 0.7     | unstable_amplitude  |\n"
-            "| Spike count         | < 50      | low_spike_count     |\n\n"
+            "| Spike count         | < 50      | low_spike_count     |\n"
+            "| Spike count         | < 500     | sparse_firing       |\n\n"
             "### Instructions\n\n"
-            "1. Read sorting_result.json for unit list and spike counts\n"
-            "2. Compute quality metrics for each unit:\n"
-            "   - ISI violation rate (fraction of spikes violating 2ms refractory period)\n"
-            "   - SNR from waveforms\n"
-            "   - Amplitude stability (1 - amplitude CV)\n"
-            "3. Apply thresholds to flag problematic units\n"
-            "4. Generate confidence scores (weighted combination):\n"
-            "   - Start at 1.0\n"
-            "   - Subtract 0.3 for ISI violations > 0.1\n"
-            "   - Subtract 0.4 for SNR < 3.0\n"
-            "   - Subtract 0.2 for amplitude stability < 0.7\n"
-            "   - Subtract 0.1 for spike count < 50\n"
-            "   - Clamp to [0.0, 1.0]\n\n"
+            "1. Load {output_dir}/sorting/sorting.npz with numpy\n"
+            "2. Extract times_samples, labels, sampling_frequency\n"
+            "3. Filter out noise labels (labels == -1)\n"
+            "4. For each unique unit ID (labels >= 0):\n"
+            "   - Count spikes: (labels == unit_id).sum()\n"
+            "   - Compute ISI violations: consecutive spikes < 2ms apart\n"
+            "5. Flag units based on thresholds\n"
+            "6. Write output files\n\n"
             "### Output Files\n\n"
             "IMPORTANT: Write BOTH output files using the Write tool.\n\n"
             "1. **qa_report.json** at {output_dir}/qa_report.json with:\n"
+            '   - "summary": object with total_units, flagged_unit_count, recording_duration_s\n'
             '   - "units": list of objects, each with: unit_id (int), spike_count (int), '
-            "isi_violation_rate (float), snr (float), amplitude_stability (float), "
-            'waveform_quality ("clean"|"noisy"|"artifact"), confidence_score (float 0-1), '
-            "flags (list of strings)\n"
-            '   - "summary": object with: total_units (int), high_quality_units (int), '
-            "flagged_units (int), avg_confidence (float)\n\n"
+            "isi_violation_rate (float or null), flags (list of strings), "
+            "confidence_score (float 0-1)\n\n"
             "2. **flagged_units.json** at {output_dir}/flagged_units.json with:\n"
-            '   - "flagged_units": list of unit IDs (ints)\n'
-            '   - "flags_by_unit": dict mapping unit_id string to list of flag strings\n'
-            '   - "total_flagged": int count'
+            '   - "flagged_units": list of objects with unit_id, spike_count, flags\n'
+            '   - "summary": object with total_flagged, by_flag_type counts'
         ),
-        reads={"sorting_result.json", "sorting/", "templates/"},
+        reads={"sorting/"},
         writes={"qa_report.json", "flagged_units.json"},
     )
 
