@@ -157,20 +157,18 @@ def detect_trial(project_path: str, output_dir: str) -> None:
     log.info("detect_trial.complete", thresholds_tested=len(candidate_thresholds))
 
 def detect(project_path: str, output_dir: str) -> None:
-    """Run threshold-crossing detection with LLM-selected parameters.
+    """Run subtraction-based spike detection with LLM-selected parameters.
 
-    Note: The use_denoiser parameter in detection_params.json is currently ignored.
-    DARTsort's single-channel denoiser operates on extracted waveforms during
-    featurization/matching, not on raw traces. Trace-level denoising would
-    require a different approach (e.g., CAR, bandpass filtering, or a
-    trained trace denoiser).
+    Uses DARTsort's SubtractionPeeler for initial detection, which is more
+    selective than simple thresholding and produces cleaner spike trains.
+    The detection_threshold parameter controls the SNR threshold.
     """
     import spikeinterface.core as si
-    from dartsort.main import threshold as ds_threshold
+    from dartsort.main import subtract as ds_subtract
     from dartsort.util.internal_config import (
         default_featurization_cfg,
         default_peeling_fit_sampling_cfg,
-        default_thresholding_cfg,
+        default_subtraction_cfg,
         default_waveform_cfg,
     )
 
@@ -178,22 +176,21 @@ def detect(project_path: str, output_dir: str) -> None:
     recording = si.load(out / "preprocessed")
     params = json.loads((out / "detection_params.json").read_text())
 
-    thresh_cfg = dataclasses.replace(
-        default_thresholding_cfg,
+    # Configure subtraction with LLM-selected threshold
+    subtract_cfg = dataclasses.replace(
+        default_subtraction_cfg,
         detection_threshold=params["detection_threshold"],
         peak_sign=params["peak_sign"],
-        temporal_dedup_radius_samples=params["temporal_dedup_radius_samples"],
     )
 
-    sorting = ds_threshold(
+    sorting = ds_subtract(
         output_dir=out / "detections",
         recording=recording,
         waveform_cfg=default_waveform_cfg,
-        thresholding_cfg=thresh_cfg,
+        subtraction_cfg=subtract_cfg,
         featurization_cfg=default_featurization_cfg,
         sampling_cfg=default_peeling_fit_sampling_cfg,
-        hdf5_filename="detections.h5",
-        model_subdir="detections_models",
+        overwrite=True,
     )
 
     n_spikes = sorting.n_spikes
@@ -201,6 +198,7 @@ def detect(project_path: str, output_dir: str) -> None:
         "spike_count": int(n_spikes),
         "spike_rate_hz": float(n_spikes / recording.get_total_duration()),
         "detection_params_used": params,
+        "detection_method": "subtract",
     }
     (out / "detection_summary.json").write_text(json.dumps(summary, indent=2))
     sorting.save(out / "detections" / "sorting.npz")
@@ -277,13 +275,18 @@ def localize(project_path: str, output_dir: str) -> None:
 
 
 def cluster(project_path: str, output_dir: str) -> None:
-    """Cluster spikes into putative units using LLM-selected strategy."""
+    """Cluster spikes into putative units using LLM-selected strategy with refinement.
+
+    Uses DARTsort's default refinement configs (pcmerge, tmm, filter) to merge
+    overclustered units and clean up the clustering result.
+    """
     import spikeinterface.core as si
     from dartsort.main import cluster as ds_cluster
     from dartsort.util.data_util import DARTsortSorting
     from dartsort.util.internal_config import (
         default_clustering_cfg,
         default_clustering_features_cfg,
+        default_dartsort_cfg,
     )
     from dartsort.util.motion import MotionInfo
 
@@ -302,12 +305,20 @@ def cluster(project_path: str, output_dir: str) -> None:
         grid_dz=params["grid_dz"],
     )
 
+    # Use DARTsort's default refinement configs for merge/split cleanup
+    refinement_cfgs = [
+        default_dartsort_cfg.pre_refinement_cfg,
+        default_dartsort_cfg.initial_refinement_cfg,
+        *default_dartsort_cfg.post_refinement_cfgs,
+    ]
+
     result = ds_cluster(
         recording=recording,
         sorting=sorting,
         motion=motion,
         clustering_cfg=clust_cfg,
         clustering_features_cfg=default_clustering_features_cfg,
+        refinement_cfgs=refinement_cfgs,
     )
 
     (out / "clusters").mkdir(exist_ok=True)
@@ -398,12 +409,19 @@ def compute_templates(project_path: str, output_dir: str) -> None:
 
 
 def template_match(project_path: str, output_dir: str) -> None:
-    """Template matching refinement using QC-filtered templates."""
+    """Template matching refinement with post-match refinement.
+
+    Matches spikes to templates then runs a final refinement pass to merge
+    overclustered units, following vanilla DARTsort's approach.
+    """
     import spikeinterface.core as si
     from dartsort.main import match as ds_match
+    from dartsort.main import cluster as ds_cluster
     from dartsort.templates import TemplateData
     from dartsort.util.data_util import DARTsortSorting
     from dartsort.util.internal_config import (
+        default_clustering_features_cfg,
+        default_dartsort_cfg,
         default_featurization_cfg,
         default_matching_cfg,
         default_peeling_fit_sampling_cfg,
@@ -428,7 +446,8 @@ def template_match(project_path: str, output_dir: str) -> None:
     motion_dir = out / "motion"
     motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
 
-    final_sorting = ds_match(
+    # Step 1: Template matching
+    matched_sorting = ds_match(
         output_dir=out / "sorting",
         recording=recording,
         sorting=sorting,
@@ -441,6 +460,19 @@ def template_match(project_path: str, output_dir: str) -> None:
         template_data=template_data,
         hdf5_filename="matching_final.h5",
         model_subdir="matching_final_models",
+    )
+
+    # Step 2: Post-match refinement (like vanilla DARTsort's final_refinement)
+    # Use the post_refinement_cfgs which do filtering/cleanup
+    refinement_cfgs = list(default_dartsort_cfg.post_refinement_cfgs)
+
+    final_sorting = ds_cluster(
+        recording=recording,
+        sorting=matched_sorting,
+        motion=motion,
+        clustering_cfg=None,  # No re-clustering, just refinement
+        clustering_features_cfg=default_clustering_features_cfg,
+        refinement_cfgs=refinement_cfgs,
     )
 
     final_sorting.save(out / "sorting" / "sorting.npz")
