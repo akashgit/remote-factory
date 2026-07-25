@@ -435,14 +435,6 @@ def template_match(project_path: str, output_dir: str) -> None:
     sorting = DARTsortSorting.load(out / "templates" / "sorting.npz")
     template_data = TemplateData.from_npz(out / "templates" / "template_data.npz")
 
-    decisions = json.loads((out / "template_decisions.json").read_text())
-    keep_ids = {d["template_id"] for d in decisions["decisions"] if d["action"] == "keep"}
-    merge_map = {
-        d["template_id"]: d["merge_with"]
-        for d in decisions["decisions"]
-        if d["action"] == "merge" and d["merge_with"] is not None
-    }
-
     motion_dir = out / "motion"
     motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
 
@@ -487,9 +479,6 @@ def template_match(project_path: str, output_dir: str) -> None:
     result = {
         "final_unit_count": int(len(unique)),
         "final_spike_count": int(len(labels)),
-        "templates_kept": len(keep_ids),
-        "templates_merged": len(merge_map),
-        "templates_discarded": len(decisions["decisions"]) - len(keep_ids) - len(merge_map),
     }
     (out / "sorting_result.json").write_text(json.dumps(result, indent=2))
     log.info(

@@ -2322,10 +2322,17 @@ def spike_sort_workflow() -> Workflow:
     NOT a software engineering workflow. This IS the spike sorting pipeline:
     FnNodes execute DARTsort algorithms, AgentNodes select parameters via LLM.
 
+    Pipeline:
     preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
     detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
-    cluster (FnNode) → templates (FnNode) → qc_templates (AgentNode/haiku) →
-    match (FnNode)
+    cluster (FnNode) → templates (FnNode) → match (FnNode)
+
+    Agent roles:
+    - detect_params: Selects detection threshold based on noise stats and trial sweep
+    - cluster_params: Chooses clustering strategy based on spike count, drift, density
+
+    The pipeline matches vanilla DARTsort's deterministic stages, with agents
+    providing recording-specific parameter tuning.
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -2496,51 +2503,20 @@ def spike_sort_workflow() -> Workflow:
         writes={"templates/", "template_stats.json"},
     )
 
-    # ── Stage 8: Template Quality Control (LLM) ────────────────────
-
-    nodes["qc_templates"] = AgentNode(
-        id="qc_templates",
-        role=AgentRole.RESEARCHER,
-        model="haiku",
-        timeout=120,
-        prompt_template=(
-            "You are a spike sorting template quality control reviewer. "
-            "Read the template statistics at {output_dir}/template_stats.json.\n\n"
-            "For each template, decide: keep, discard, or merge.\n\n"
-            "Decision criteria:\n"
-            "- DISCARD if: SNR < 1.5 (noise unit), spike_count < 10 (too few spikes), "
-            "or ptp_amplitude < 5 µV (below noise floor).\n"
-            "- MERGE if: two templates have very similar spatial positions (within 25 µm) "
-            "AND similar PTP amplitudes (within 30%). Specify merge_with = template_id of partner.\n"
-            "- KEEP otherwise.\n\n"
-            "Quality heuristics:\n"
-            "- Good units: SNR > 3, count > 50, stability > 0.7\n"
-            "- Marginal units: SNR 1.5-3, count 10-50 — keep if isolated\n"
-            "- High spatial_spread (>200 µm) may indicate multi-unit — flag for discard\n\n"
-            "IMPORTANT: Write your decisions as a JSON file to {output_dir}/template_decisions.json "
-            "using the Write tool. The JSON must have:\n"
-            '- "decisions": array of objects, each with:\n'
-            '  - "template_id": int\n'
-            '  - "action": string ("keep", "discard", or "merge")\n'
-            '  - "merge_with": int or null (only if action is "merge")\n'
-            '  - "reasoning": string (brief justification)\n'
-            '- "summary": string (overall QC summary)'
-        ),
-        reads={"template_stats.json"},
-        writes={"template_decisions.json"},
-    )
-
-    # ── Stage 9: Template Matching ─────────────────────────────────
+    # ── Stage 8: Template Matching ─────────────────────────────────
+    # Note: Manual template QC was removed - DARTsort's refinement handles
+    # merge/split decisions automatically via agglomerate_cfg
 
     nodes["match"] = FnNode(
         id="match",
         callable_name="factory.workflow.spike_sort_stages:template_match",
         notes=(
-            "Template matching refinement using QC-filtered templates. "
-            "Reads template_decisions.json to filter templates before matching. "
+            "Template matching refinement with post-match agglomeration. "
+            "Matches spikes to templates, then runs DARTsort's final refinement "
+            "(pre_refinement → refinement → agglomerate) to merge overclustered units. "
             "Produces the final sorting result."
         ),
-        reads={"preprocessed/", "templates/", "template_decisions.json", "motion/"},
+        reads={"preprocessed/", "templates/", "motion/"},
         writes={"sorting/", "sorting_result.json"},
     )
 
@@ -2554,8 +2530,7 @@ def spike_sort_workflow() -> Workflow:
         Edge(source="localize", target="cluster_params"),
         Edge(source="cluster_params", target="cluster"),
         Edge(source="cluster", target="templates"),
-        Edge(source="templates", target="qc_templates"),
-        Edge(source="qc_templates", target="match"),
+        Edge(source="templates", target="match"),
     ]
 
     # ── Trigger ────────────────────────────────────────────────────
