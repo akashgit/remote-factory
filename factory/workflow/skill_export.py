@@ -162,14 +162,12 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "spike-sort": {
         "description": (
-            "Spike sorting data pipeline with LLM-in-the-loop parameter selection. "
-            "NOT a code-writing workflow — directly executes DARTsort algorithms "
-            "(FnNodes) with LLM parameter advisors (AgentNodes) at three decision "
-            "points: detection threshold, clustering strategy, and template QC. "
-            "Input: SpikeInterface BaseRecording. Output: BaseSorting. "
-            "Use with --mode spike-sort on a configured recording."
+            "Spike sorting pipeline with LLM quality gates — executes DARTsort "
+            "algorithms with three quality gates (post-clustering, post-template, "
+            "post-matching) that compute metrics deterministically and use LLM agents "
+            "to interpret them in recording context. Use when invoked with --mode spike-sort."
         ),
-        "argument_hint": "<project_path> --mode spike-sort",
+        "argument_hint": "<project_path>",
     },
 }
 

@@ -1,11 +1,11 @@
-"""Tests for the spike-sort workflow definition and schemas."""
+"""Tests for the spike-sort workflow definition (15-node LLM gates version)."""
 
 from __future__ import annotations
 
 import pytest
 
 from factory.models import ProjectState
-from factory.workflow.definitions import register_all, spike_sort_workflow
+from factory.workflow.definitions import spike_sort_workflow
 from factory.workflow.primitives import AgentNode, AgentRole, FnNode
 
 
@@ -22,13 +22,14 @@ def test_spike_sort_workflow_validates():
 # ── Node structure ────────────────────────────────────────────────
 
 
-def test_spike_sort_has_10_nodes():
-    """Spike-sort pipeline has exactly 10 nodes: 7 FnNodes + 3 AgentNodes."""
+def test_spike_sort_has_15_nodes():
+    """Spike-sort pipeline has exactly 15 nodes: 12 FnNodes + 3 AgentNodes."""
     wf = spike_sort_workflow()
     fn_nodes = [n for n in wf.nodes.values() if isinstance(n, FnNode)]
     agent_nodes = [n for n in wf.nodes.values() if isinstance(n, AgentNode)]
-    assert len(fn_nodes) == 7, f"Expected 7 FnNodes, got {len(fn_nodes)}"
+    assert len(fn_nodes) == 12, f"Expected 12 FnNodes, got {len(fn_nodes)}"
     assert len(agent_nodes) == 3, f"Expected 3 AgentNodes, got {len(agent_nodes)}"
+    assert len(wf.nodes) == 15
 
 
 def test_spike_sort_node_ids():
@@ -36,37 +37,54 @@ def test_spike_sort_node_ids():
     wf = spike_sort_workflow()
     expected = {
         "preprocess",
-        "detect_trial",
-        "detect_params",
         "detect",
         "localize",
-        "cluster_params",
         "cluster",
+        "compute_cluster_metrics",
+        "gate_post_cluster",
+        "apply_cluster_actions",
         "templates",
+        "compute_template_metrics",
+        "gate_post_template",
+        "apply_template_actions",
         "match",
-        "qa_sorting",
+        "compute_final_metrics",
+        "gate_post_match",
+        "apply_final_actions",
     }
     assert set(wf.nodes.keys()) == expected
+
+
+def test_spike_sort_removed_nodes_absent():
+    """Old parameter-picking and QA nodes are removed."""
+    wf = spike_sort_workflow()
+    for removed in ["detect_trial", "detect_params", "cluster_params", "qa_sorting"]:
+        assert removed not in wf.nodes, f"{removed} should have been removed"
 
 
 # ── Linear pipeline structure ────────────────────────────────────
 
 
 def test_spike_sort_is_linear():
-    """Spike-sort has exactly 9 edges forming a linear chain."""
+    """Spike-sort has exactly 14 edges forming a linear chain."""
     wf = spike_sort_workflow()
-    assert len(wf.edges) == 9
+    assert len(wf.edges) == 14
 
     expected_chain = [
-        ("preprocess", "detect_trial"),
-        ("detect_trial", "detect_params"),
-        ("detect_params", "detect"),
+        ("preprocess", "detect"),
         ("detect", "localize"),
-        ("localize", "cluster_params"),
-        ("cluster_params", "cluster"),
-        ("cluster", "templates"),
-        ("templates", "match"),
-        ("match", "qa_sorting"),
+        ("localize", "cluster"),
+        ("cluster", "compute_cluster_metrics"),
+        ("compute_cluster_metrics", "gate_post_cluster"),
+        ("gate_post_cluster", "apply_cluster_actions"),
+        ("apply_cluster_actions", "templates"),
+        ("templates", "compute_template_metrics"),
+        ("compute_template_metrics", "gate_post_template"),
+        ("gate_post_template", "apply_template_actions"),
+        ("apply_template_actions", "match"),
+        ("match", "compute_final_metrics"),
+        ("compute_final_metrics", "gate_post_match"),
+        ("gate_post_match", "apply_final_actions"),
     ]
     actual_chain = [(e.source, e.target) for e in wf.edges]
     assert actual_chain == expected_chain
@@ -81,33 +99,63 @@ def test_spike_sort_no_conditional_edges():
         )
 
 
-# ── Agent model assignment ────────────────────────────────────────
+# ── Gate triplet structure ───────────────────────────────────────
 
 
-def test_spike_sort_agent_models():
-    """Detection uses haiku; clustering and QA use sonnet."""
+def test_gate1_triplet_wiring():
+    """cluster → compute_cluster_metrics → gate_post_cluster → apply_cluster_actions."""
+    wf = spike_sort_workflow()
+    edges = [(e.source, e.target) for e in wf.edges]
+    assert ("cluster", "compute_cluster_metrics") in edges
+    assert ("compute_cluster_metrics", "gate_post_cluster") in edges
+    assert ("gate_post_cluster", "apply_cluster_actions") in edges
+
+
+def test_gate2_triplet_wiring():
+    """templates → compute_template_metrics → gate_post_template → apply_template_actions."""
+    wf = spike_sort_workflow()
+    edges = [(e.source, e.target) for e in wf.edges]
+    assert ("templates", "compute_template_metrics") in edges
+    assert ("compute_template_metrics", "gate_post_template") in edges
+    assert ("gate_post_template", "apply_template_actions") in edges
+
+
+def test_gate3_triplet_wiring():
+    """match → compute_final_metrics → gate_post_match → apply_final_actions."""
+    wf = spike_sort_workflow()
+    edges = [(e.source, e.target) for e in wf.edges]
+    assert ("match", "compute_final_metrics") in edges
+    assert ("compute_final_metrics", "gate_post_match") in edges
+    assert ("gate_post_match", "apply_final_actions") in edges
+
+
+# ── Agent model assignment ───────────────────────────────────────
+
+
+def test_spike_sort_gate_models():
+    """Gate 1 uses sonnet; Gates 2 and 3 use haiku."""
     wf = spike_sort_workflow()
 
-    detect_params = wf.nodes["detect_params"]
-    assert isinstance(detect_params, AgentNode)
-    assert detect_params.role == AgentRole.RESEARCHER
-    assert detect_params.model == "haiku"
-    assert detect_params.timeout == 60
+    gate1 = wf.nodes["gate_post_cluster"]
+    assert isinstance(gate1, AgentNode)
+    assert gate1.role == AgentRole.HEALTH_CHECKER
+    assert gate1.model == "sonnet"
+    assert gate1.timeout == 300
 
-    cluster_params = wf.nodes["cluster_params"]
-    assert isinstance(cluster_params, AgentNode)
-    assert cluster_params.role == AgentRole.STRATEGIST
-    assert cluster_params.model == "sonnet"
-    assert cluster_params.timeout == 120
+    gate2 = wf.nodes["gate_post_template"]
+    assert isinstance(gate2, AgentNode)
+    assert gate2.role == AgentRole.HEALTH_CHECKER
+    assert gate2.model == "haiku"
+    assert gate2.timeout == 120
 
-    qa_sorting = wf.nodes["qa_sorting"]
-    assert isinstance(qa_sorting, AgentNode)
-    assert qa_sorting.role == AgentRole.HEALTH_CHECKER
-    assert qa_sorting.model == "sonnet"
-    assert qa_sorting.timeout == 300
+    gate3 = wf.nodes["gate_post_match"]
+    assert isinstance(gate3, AgentNode)
+    assert gate3.role == AgentRole.HEALTH_CHECKER
+    assert gate3.model == "haiku"
+    assert gate3.timeout == 120
 
 
-# ── FnNode callable names ────────────────────────────────────────
+# ── FnNode callable names ───────────────────────────────────────
 
 
 def test_spike_sort_fn_callables():
@@ -116,22 +164,27 @@ def test_spike_sort_fn_callables():
 
     expected_callables = {
         "preprocess": "factory.workflow.spike_sort_stages:preprocess",
-        "detect_trial": "factory.workflow.spike_sort_stages:detect_trial",
         "detect": "factory.workflow.spike_sort_stages:detect",
         "localize": "factory.workflow.spike_sort_stages:localize",
         "cluster": "factory.workflow.spike_sort_stages:cluster",
+        "compute_cluster_metrics": "factory.workflow.spike_sort_stages:compute_cluster_metrics",
+        "apply_cluster_actions": "factory.workflow.spike_sort_stages:apply_cluster_actions",
         "templates": "factory.workflow.spike_sort_stages:compute_templates",
         "match": "factory.workflow.spike_sort_stages:template_match",
+        "compute_template_metrics": "factory.workflow.spike_sort_stages:compute_template_metrics",
+        "apply_template_actions": "factory.workflow.spike_sort_stages:apply_template_actions",
+        "compute_final_metrics": "factory.workflow.spike_sort_stages:compute_final_metrics",
+        "apply_final_actions": "factory.workflow.spike_sort_stages:apply_final_actions",
     }
     for node_id, expected in expected_callables.items():
         node = wf.nodes[node_id]
-        assert isinstance(node, FnNode)
+        assert isinstance(node, FnNode), f"{node_id} should be FnNode"
         assert node.callable_name == expected, (
             f"{node_id}: expected {expected}, got {node.callable_name}"
         )
 
 
-# ── Data flow connectivity ────────────────────────────────────────
+# ── Data flow connectivity ───────────────────────────────────────
 
 
 def test_spike_sort_data_flow():
@@ -140,15 +193,20 @@ def test_spike_sort_data_flow():
 
     node_order = [
         "preprocess",
-        "detect_trial",
-        "detect_params",
         "detect",
         "localize",
-        "cluster_params",
         "cluster",
+        "compute_cluster_metrics",
+        "gate_post_cluster",
+        "apply_cluster_actions",
         "templates",
+        "compute_template_metrics",
+        "gate_post_template",
+        "apply_template_actions",
         "match",
-        "qa_sorting",
+        "compute_final_metrics",
+        "gate_post_match",
+        "apply_final_actions",
     ]
 
     available: set[str] = set()
@@ -159,7 +217,7 @@ def test_spike_sort_data_flow():
         available |= node.writes
 
 
-# ── Schema validation ─────────────────────────────────────────────
+# ── Schema validation ────────────────────────────────────────────
 
 
 def test_detection_params_schema():
@@ -323,82 +381,13 @@ def test_template_stats_schema():
         )
 
 
-# ── detect_trial node ────────────────────────────────────────────
-
-
-def test_detect_trial_node_exists():
-    """detect_trial FnNode is present with correct callable and data flow."""
-    wf = spike_sort_workflow()
-    node = wf.nodes["detect_trial"]
-    assert isinstance(node, FnNode)
-    assert node.callable_name == "factory.workflow.spike_sort_stages:detect_trial"
-    assert node.reads == {"preprocessed/", "noise_stats.json"}
-    assert node.writes == {"trial_results.json"}
-
-
-def test_detect_trial_edge_wiring():
-    """preprocess → detect_trial → detect_params edge chain is correct."""
-    wf = spike_sort_workflow()
-    edges = [(e.source, e.target) for e in wf.edges]
-    assert ("preprocess", "detect_trial") in edges
-    assert ("detect_trial", "detect_params") in edges
-    assert ("preprocess", "detect_params") not in edges
-
-
-def test_detect_node_writes_denoised():
-    """detect FnNode writes include denoised/ directory."""
-    wf = spike_sort_workflow()
-    detect_node = wf.nodes["detect"]
-    assert isinstance(detect_node, FnNode)
-    assert "denoised/" in detect_node.writes
-
-
-def test_detect_params_reads_trial_results():
-    """detect_params AgentNode reads trial_results.json."""
-    wf = spike_sort_workflow()
-    node = wf.nodes["detect_params"]
-    assert isinstance(node, AgentNode)
-    assert "trial_results.json" in node.reads
-
-
-# ── QA sorting node ──────────────────────────────────────────────
-
-
-def test_qa_sorting_node_exists():
-    """qa_sorting AgentNode exists with correct config."""
-    wf = spike_sort_workflow()
-    assert "qa_sorting" in wf.nodes
-    qa_node = wf.nodes["qa_sorting"]
-    assert isinstance(qa_node, AgentNode)
-    assert qa_node.role == AgentRole.HEALTH_CHECKER
-    assert qa_node.model == "sonnet"
-    assert qa_node.timeout == 300
-    assert "sorting/" in qa_node.reads
-    assert "qa_report.json" in qa_node.writes
-    assert "flagged_units.json" in qa_node.writes
-
-
-def test_qa_sorting_edge():
-    """match → qa_sorting edge exists and is unconditional."""
-    wf = spike_sort_workflow()
-    edges_from_match = [e for e in wf.edges if e.source == "match"]
-    assert len(edges_from_match) == 1
-    assert edges_from_match[0].target == "qa_sorting"
-    assert edges_from_match[0].condition is None
-
-
-def test_qa_sorting_is_terminal():
-    """qa_sorting has no outgoing edges (terminal node)."""
-    wf = spike_sort_workflow()
-    outgoing = [e for e in wf.edges if e.source == "qa_sorting"]
-    assert len(outgoing) == 0
-
-
-# ── Registration ──────────────────────────────────────────────────
+# ── Registration ─────────────────────────────────────────────────
 
 
 def test_spike_sort_workflow_registered():
     """spike-sort is registered in register_all()."""
+    from factory.workflow.definitions import register_all
+
     workflows = register_all()
     assert "spike-sort" in workflows
 
@@ -410,22 +399,21 @@ def test_spike_sort_workflow_in_meta():
     assert "spike-sort" in WORKFLOW_META
 
 
-# ── SpikeInterface compatibility ──────────────────────────────────
+# ── Skill export ─────────────────────────────────────────────────
 
 
-def test_spike_sort_input_output_format():
-    """Pipeline start writes preprocessed/ and final node produces sorting/."""
+def test_spike_sort_skill_export():
+    """Verify spike-sort workflow generates a valid SKILL.md."""
+    from factory.workflow.skill_export import workflow_to_skill_md
+
     wf = spike_sort_workflow()
-
-    first_node = wf.nodes[wf.start_node]
-    assert "preprocessed/" in first_node.writes
-
-    # qa_sorting reads sorting/ (produced by match) and writes qa artifacts
-    qa_node = wf.nodes["qa_sorting"]
-    assert "sorting/" in qa_node.reads
+    skill = workflow_to_skill_md(wf)
+    assert "gate_post_cluster" in skill
+    assert "gate_post_template" in skill
+    assert "gate_post_match" in skill
 
 
-# ── Trigger function ──────────────────────────────────────────────
+# ── Trigger function ─────────────────────────────────────────────
 
 
 def test_spike_sort_trigger():
@@ -438,7 +426,7 @@ def test_spike_sort_trigger():
     assert not wf.trigger(ProjectState.HAS_FACTORY, {})
 
 
-# ── CLI mode registration ────────────────────────────────────────
+# ── CLI mode registration ───────────────────────────────────────
 
 
 def test_spike_sort_in_ceo_modes():
@@ -455,7 +443,7 @@ def test_spike_sort_in_run_modes():
     assert "spike-sort" in RUN_MODES
 
 
-# ── Start node ────────────────────────────────────────────────────
+# ── Start node ───────────────────────────────────────────────────
 
 
 def test_spike_sort_start_node():
@@ -464,10 +452,58 @@ def test_spike_sort_start_node():
     assert wf.start_node == "preprocess"
 
 
-# ── Workflow name ─────────────────────────────────────────────────
+# ── Workflow name ────────────────────────────────────────────────
 
 
 def test_spike_sort_workflow_name():
     """Workflow name is spike-sort."""
     wf = spike_sort_workflow()
     assert wf.name == "spike-sort"
+
+
+# ── Input/output format ─────────────────────────────────────────
+
+
+def test_spike_sort_input_output_format():
+    """Pipeline start writes preprocessed/ and final node produces sorting_final/."""
+    wf = spike_sort_workflow()
+
+    first_node = wf.nodes[wf.start_node]
+    assert "preprocessed/" in first_node.writes
+
+    final_node = wf.nodes["apply_final_actions"]
+    assert "sorting_final/" in final_node.writes
+
+
+# ── Gate prompt constants ────────────────────────────────────────
+
+
+def test_gate_prompt_constants_exist():
+    """Gate prompt constants are defined and used by agent nodes."""
+    from factory.workflow.definitions import (
+        GATE_POST_CLUSTER_PROMPT,
+        GATE_POST_MATCH_PROMPT,
+        GATE_POST_TEMPLATE_PROMPT,
+    )
+
+    wf = spike_sort_workflow()
+    assert wf.nodes["gate_post_cluster"].prompt_template == GATE_POST_CLUSTER_PROMPT
+    assert wf.nodes["gate_post_template"].prompt_template == GATE_POST_TEMPLATE_PROMPT
+    assert wf.nodes["gate_post_match"].prompt_template == GATE_POST_MATCH_PROMPT
+
+
+def test_gate_prompts_are_context_first():
+    """Gate prompts emphasize context-aware reasoning, not mechanical thresholds."""
+    from factory.workflow.definitions import (
+        GATE_POST_CLUSTER_PROMPT,
+        GATE_POST_MATCH_PROMPT,
+        GATE_POST_TEMPLATE_PROMPT,
+    )
+
+    assert "recording_context.json" in GATE_POST_CLUSTER_PROMPT
+    assert "recording_context.json" in GATE_POST_TEMPLATE_PROMPT
+    assert "recording_context.json" in GATE_POST_MATCH_PROMPT
+
+    assert "context" in GATE_POST_CLUSTER_PROMPT.lower()
+    assert "context" in GATE_POST_TEMPLATE_PROMPT.lower()
+    assert "context" in GATE_POST_MATCH_PROMPT.lower()

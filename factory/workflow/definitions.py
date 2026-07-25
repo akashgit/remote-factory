@@ -2313,240 +2313,6 @@ def spec_update_workflow() -> Workflow:
     )
 
 
-# ── W₁₃: Spike Sort Pipeline ──────────────────────────────────
-
-
-def spike_sort_workflow() -> Workflow:
-    """W₁₃: Spike-sort pipeline — LLM-in-the-loop parameter selection.
-
-    NOT a software engineering workflow. This IS the spike sorting pipeline:
-    FnNodes execute DARTsort algorithms, AgentNodes select parameters via LLM.
-
-    Pipeline:
-    preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
-    detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
-    cluster (FnNode) → templates (FnNode) → match (FnNode)
-
-    Agent roles:
-    - detect_params: Selects detection threshold based on noise stats and trial sweep
-    - cluster_params: Chooses clustering strategy based on spike count, drift, density
-
-    The pipeline matches vanilla DARTsort's deterministic stages, with agents
-    providing recording-specific parameter tuning.
-    """
-    nodes: dict[str, Any] = {}
-    edges: list[Edge] = []
-
-    # ── Stage 1: Preprocessing ─────────────────────────────────────
-
-    nodes["preprocess"] = FnNode(
-        id="preprocess",
-        callable_name="factory.workflow.spike_sort_stages:preprocess",
-        notes=(
-            "Bandpass filter, standardize, whiten the raw recording. "
-            "Writes preprocessed recording to {output_dir}/preprocessed/ "
-            "and noise statistics to {output_dir}/noise_stats.json."
-        ),
-        writes={"preprocessed/", "noise_stats.json"},
-    )
-
-    # ── Stage 1b: Detection Trial Run (threshold sweep) ──────────
-
-    nodes["detect_trial"] = FnNode(
-        id="detect_trial",
-        callable_name="factory.workflow.spike_sort_stages:detect_trial",
-        notes=(
-            "Fast threshold sweep on a small subset of the recording. "
-            "Runs dartsort.threshold() at 3 candidate thresholds (3.5, 4.0, 4.5) "
-            "with early termination (stop_after_n_spikes=10000, ensure_coverage=0.05). "
-            "Writes trial results to {output_dir}/trial_results.json for the "
-            "detection parameter advisor to make a data-informed threshold choice."
-        ),
-        reads={"preprocessed/", "noise_stats.json"},
-        writes={"trial_results.json"},
-    )
-
-    # ── Stage 2: Detection Parameter Selection (LLM) ───────────────
-
-    nodes["detect_params"] = AgentNode(
-        id="detect_params",
-        role=AgentRole.RESEARCHER,
-        model="haiku",
-        timeout=60,
-        prompt_template=(
-            "You are a spike detection parameter advisor for extracellular neural recordings. "
-            "Read the noise statistics at {output_dir}/noise_stats.json and the trial "
-            "detection results at {output_dir}/trial_results.json.\n\n"
-            "TRIAL RESULTS: A threshold sweep has already been run on a small subset of "
-            "the recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json file "
-            "contains for each threshold: spike_count, spike_rate_hz, mean_amplitude, "
-            "and amplitude_distribution_percentiles. Use this empirical data to inform "
-            "your threshold selection.\n\n"
-            "IMPORTANT: We use DARTsort's subtract() function (SubtractionPeeler) for "
-            "detection. This is an iterative template-subtraction algorithm that produces "
-            "cleaner spike detections than simple thresholding. The subtract algorithm "
-            "includes a neural network denoiser in its pipeline. "
-            "The default detection_threshold is 3.0 for subtract().\n\n"
-            "Select detection parameters:\n"
-            "- detection_threshold (2.5-5.0): SNR threshold in standardized units. "
-            "Default: 3.0 (subtract's calibrated default). Higher values reduce false "
-            "positives but may miss weak units. Lower values catch more spikes but "
-            "may include noise.\n"
-            "- peak_sign ('neg', 'pos', 'both'): Which polarity peaks to detect. "
-            "'both' is standard for extracellular recordings.\n\n"
-            "Decision rules:\n"
-            "- Start with detection_threshold=3.0 (the subtract default).\n"
-            "- Compare trial results across thresholds: if 4.0 produces reasonable "
-            "spike rate (20-200 Hz per channel), consider using 4.0 for cleaner output.\n"
-            "- Very noisy data (median noise >20 µV): raise to 4.0-5.0.\n"
-            "- Clean data (<8 µV): keep 3.0.\n"
-            "- Neuropixels probes → 'both' peak_sign.\n\n"
-            "In your reasoning field, explicitly state why you chose your threshold. "
-            "Reference the trial results — cite the spike counts and rates you observed.\n\n"
-            "IMPORTANT: Write your selection as a JSON file to {output_dir}/detection_params.json "
-            "using the Write tool. The JSON must have these fields:\n"
-            '- "detection_threshold": float (2.5-5.0)\n'
-            '- "peak_sign": string ("neg", "pos", or "both")\n'
-            '- "reasoning": string (your brief justification)'
-        ),
-        reads={"noise_stats.json", "trial_results.json"},
-        writes={"detection_params.json"},
-    )
-
-    # ── Stage 3: Spike Detection ───────────────────────────────────
-
-    nodes["detect"] = FnNode(
-        id="detect",
-        callable_name="factory.workflow.spike_sort_stages:detect",
-        notes=(
-            "Subtraction-based spike detection (SubtractionPeeler) with LLM-selected "
-            "parameters. Uses iterative template subtraction for cleaner detection "
-            "than simple thresholding. Reads preprocessed recording and "
-            "detection_params.json. Writes detections to {output_dir}/detections/ "
-            "and summary to {output_dir}/detection_summary.json."
-        ),
-        reads={"preprocessed/", "detection_params.json"},
-        writes={"detections/", "detection_summary.json"},
-    )
-
-    # ── Stage 4: Localization ──────────────────────────────────────
-
-    nodes["localize"] = FnNode(
-        id="localize",
-        callable_name="factory.workflow.spike_sort_stages:localize",
-        notes=(
-            "Point-source localization of detected spikes via Levenberg-Marquardt. "
-            "Also estimates motion (drift). "
-            "Writes localizations and cluster_input_stats.json for the clustering agent."
-        ),
-        reads={"preprocessed/", "detections/"},
-        writes={"localizations.npz", "motion/", "cluster_input_stats.json"},
-    )
-
-    # ── Stage 5: Clustering Parameter Selection (LLM) ──────────────
-
-    nodes["cluster_params"] = AgentNode(
-        id="cluster_params",
-        role=AgentRole.STRATEGIST,
-        model="sonnet",
-        timeout=120,
-        prompt_template=(
-            "You are a spike clustering strategy advisor. "
-            "Read the cluster input statistics at {output_dir}/cluster_input_stats.json.\n\n"
-            "Select a clustering strategy and parameters:\n"
-            "- strategy: 'channel_snap' (fast, coarse — good for <20K spikes), "
-            "'grid_snap' (spatial grid — good for high density), "
-            "'dpc' (density peak clustering — slow but accurate, best for >20K spikes with drift), "
-            "'none' (skip clustering — only for pre-sorted data).\n"
-            "- grid_dx, grid_dz (5-50 µm): Spatial grid resolution. "
-            "Smaller = more clusters initially. 15 µm is typical.\n\n"
-            "Decision tree:\n"
-            "- spike_count < 20K → channel_snap\n"
-            "- drift > 15 µm → dpc with drift correction\n"
-            "- spike_density > 1.0 spikes/ch/s → grid_snap\n"
-            "- Otherwise → dpc\n\n"
-            "IMPORTANT: Write your selection as a JSON file to {output_dir}/clustering_params.json "
-            "using the Write tool. The JSON must have these fields:\n"
-            '- "strategy": string ("channel_snap", "grid_snap", "dpc", or "none")\n'
-            '- "grid_dx": float (5.0-50.0)\n'
-            '- "grid_dz": float (5.0-50.0)\n'
-            '- "reasoning": string (your brief justification)'
-        ),
-        reads={"cluster_input_stats.json"},
-        writes={"clustering_params.json"},
-    )
-
-    # ── Stage 6: Clustering ────────────────────────────────────────
-
-    nodes["cluster"] = FnNode(
-        id="cluster",
-        callable_name="factory.workflow.spike_sort_stages:cluster",
-        notes=(
-            "GMM/DPC clustering with LLM-selected strategy and parameters. "
-            "Reads detections and clustering_params.json. "
-            "Writes clustered sorting to {output_dir}/clusters/."
-        ),
-        reads={"preprocessed/", "detections/", "clustering_params.json", "motion/"},
-        writes={"clusters/", "cluster_summary.json"},
-    )
-
-    # ── Stage 7: Template Computation ──────────────────────────────
-
-    nodes["templates"] = FnNode(
-        id="templates",
-        callable_name="factory.workflow.spike_sort_stages:compute_templates",
-        notes=(
-            "Compute unit templates (average/median waveforms) from clustered spikes. "
-            "Writes per-template quality statistics for the QC agent."
-        ),
-        reads={"preprocessed/", "clusters/", "motion/"},
-        writes={"templates/", "template_stats.json"},
-    )
-
-    # ── Stage 8: Template Matching ─────────────────────────────────
-    # Note: Manual template QC was removed - DARTsort's refinement handles
-    # merge/split decisions automatically via agglomerate_cfg
-
-    nodes["match"] = FnNode(
-        id="match",
-        callable_name="factory.workflow.spike_sort_stages:template_match",
-        notes=(
-            "Template matching refinement with post-match agglomeration. "
-            "Matches spikes to templates, then runs DARTsort's final refinement "
-            "(pre_refinement → refinement → agglomerate) to merge overclustered units. "
-            "Produces the final sorting result."
-        ),
-        reads={"preprocessed/", "templates/", "motion/"},
-        writes={"sorting/", "sorting_result.json"},
-    )
-
-    # ── Edges (linear pipeline) ────────────────────────────────────
-
-    edges = [
-        Edge(source="preprocess", target="detect_trial"),
-        Edge(source="detect_trial", target="detect_params"),
-        Edge(source="detect_params", target="detect"),
-        Edge(source="detect", target="localize"),
-        Edge(source="localize", target="cluster_params"),
-        Edge(source="cluster_params", target="cluster"),
-        Edge(source="cluster", target="templates"),
-        Edge(source="templates", target="match"),
-    ]
-
-    # ── Trigger ────────────────────────────────────────────────────
-
-    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return ctx.get("mode") == "spike-sort"
-
-    return Workflow(
-        name="spike-sort",
-        nodes=nodes,
-        edges=edges,
-        start_node="preprocess",
-        trigger=trigger,
-    )
-
-
 # ── Registry ─────────────────────────────────────────────────────
 
 
@@ -2803,246 +2569,427 @@ def parallel_improve_workflow() -> Workflow:
     )
 
 
+# ── Spike-Sort Gate Prompts (Section 13 — context-first) ─────────
+
+GATE_POST_CLUSTER_PROMPT = (
+    "You are a spike sorting quality gate for the POST-CLUSTERING stage. "
+    "Your role is to make context-aware decisions about cluster merging, "
+    "splitting, and deletion — decisions that require judgment, not just "
+    "threshold checking.\n\n"
+
+    "## Why You Exist\n\n"
+    "If we could just apply fixed thresholds, we'd use deterministic code. "
+    "You exist because the same metric means different things in different "
+    "contexts. A 5% ISI violation rate might be acceptable contamination in "
+    "a fast-spiking interneuron or catastrophic in a sparse pyramidal cell. "
+    "Your job is to reason about what the metrics mean for THIS recording.\n\n"
+
+    "## Step 1: Understand the Recording Context\n\n"
+    "Read {output_dir}/recording_context.json FIRST. Before looking at any "
+    "metrics, understand:\n"
+    "- **Brain region:** What cell types are expected? What firing rates?\n"
+    "- **Drift magnitude:** High drift (>15µm) causes fragmentation — be more "
+    "aggressive about merging\n"
+    "- **Recording duration:** Affects what spike counts are reasonable\n"
+    "- **Expected cell types:** Purkinje cells fire at 50-150Hz; pyramidal "
+    "cells at 0.5-10Hz; fast interneurons at 20-100Hz\n\n"
+
+    "## Step 2: Review Cluster Metrics\n\n"
+    "Read {output_dir}/cluster_metrics.json. For each cluster and pair, "
+    "interpret the metrics IN CONTEXT:\n\n"
+
+    "**Per-cluster metrics:**\n"
+    "- spike_count, firing_rate_hz — Is this plausible for the expected cell types?\n"
+    "- isi_violation_rate — Raw fraction of ISIs < 1.5ms\n"
+    "- isi_fp_estimate — Hill formula estimate accounting for firing rate "
+    "(USE THIS, not raw ISI rate)\n"
+    "- snr — Signal quality\n"
+    "- amplitude_bimodality — Suggests two populations merged if high\n"
+    "- spatial_centroid — Position on probe\n\n"
+
+    "**Pairwise metrics (clusters within 100µm):**\n"
+    "- template_correlation — Waveform similarity\n"
+    "- spatial_distance_um — Physical proximity\n"
+    "- ccg_refractory_r12, ccg_refractory_q12 — CCG refractory dip scores. "
+    "Low R12 (<0.25) with low Q12 (<0.05) suggests same neuron.\n\n"
+
+    "## Step 3: Make Decisions\n\n"
+    "For each decision, reason about the specific context:\n\n"
+
+    "### MERGE Decisions\n"
+    "The clustering algorithm deliberately oversplits — your primary job is "
+    "to identify and merge fragments of the same neuron.\n\n"
+    "Strong merge signal: CCG shows refractory dip (independent confirmation "
+    "that spikes come from the same neuron). If CCG is refractory AND clusters "
+    "are nearby AND templates are similar, merge.\n\n"
+    "Weak merge signal without CCG: Template correlation alone is not enough — "
+    "similar waveforms can come from different neurons. Require additional "
+    "evidence (proximity, firing pattern continuity).\n\n"
+    "Drift consideration: If drift is high, waveforms from the same neuron "
+    "may differ across time. CCG refractory is more reliable than template "
+    "correlation in drifting recordings.\n\n"
+
+    "### DELETE Decisions\n"
+    "Delete clusters that are clearly not single neurons. But interpret "
+    "in context:\n\n"
+    "- High ISI + high rate: Likely garbage collector (noise unit). But check "
+    "brain region — cerebellar Purkinje cells legitimately fire at 100+ Hz.\n"
+    "- High ISI + low rate: Use isi_fp_estimate, not raw ISI. A 1% ISI rate "
+    "at 3Hz firing indicates ~50% contamination (delete), while 1% at 50Hz "
+    "is ~3% contamination (keep).\n"
+    "- Very low spike count: May be a real but sparse neuron, or may be noise. "
+    "Check SNR — low count + low SNR = noise.\n\n"
+
+    "### SPLIT Decisions\n"
+    "Split when evidence suggests two neurons were merged:\n"
+    "- Bimodal amplitude distribution (two distinct sizes)\n"
+    "- CCG shows NO refractory dip (neurons fire independently)\n"
+    "- Spatial spread larger than expected for one neuron\n\n"
+
+    "## Output\n\n"
+    "Write {output_dir}/gate1_decision.json:\n"
+    "```json\n"
+    "{\n"
+    '  "merge_pairs": [[id1, id2], ...],\n'
+    '  "split_clusters": [id, ...],\n'
+    '  "delete_clusters": [id, ...],\n'
+    '  "confidence": 0.0-1.0,\n'
+    '  "reasoning": "..."\n'
+    "}\n"
+    "```\n\n"
+    "In your reasoning, explain HOW CONTEXT influenced your decisions. "
+    "Don't just cite threshold values — explain what the metrics mean for "
+    "this specific recording and why your decisions make sense."
+)
+
+GATE_POST_TEMPLATE_PROMPT = (
+    "You are a spike sorting quality gate for the POST-TEMPLATE stage.\n\n"
+
+    "## Context First\n\n"
+    "Read {output_dir}/recording_context.json. Key factors:\n"
+    "- **Drift:** High drift makes templates less stable — instability may "
+    "be drift, not noise\n"
+    "- **Recording duration:** Affects expected spike counts per template\n\n"
+
+    "## Template Metrics\n\n"
+    "Read {output_dir}/template_metrics.json:\n"
+    "- template_spike_count — More spikes = more reliable template\n"
+    "- template_snr — Signal quality\n"
+    "- template_stability — Variance over time (lower = more stable)\n"
+    "- template_similarity_max — Correlation with most similar other template\n"
+    "- template_amplitude_uv, template_spatial_spread_um\n\n"
+
+    "## Decision Guidance\n\n"
+    "**DELETE:** Templates that will cause matching problems:\n"
+    "- Very few spikes AND low SNR — noise template, will match noise\n"
+    "- But consider: a template with few spikes but high SNR might be a "
+    "real sparse neuron, not noise\n\n"
+
+    "**MERGE:** Near-duplicate templates:\n"
+    "- Very high similarity (>0.95) suggests same neuron split into two templates\n"
+    "- But check spatial locations — similar waveforms from distant sites "
+    "are different neurons\n\n"
+
+    "**Context matters:**\n"
+    "- If many templates look bad, that's an upstream clustering problem, "
+    "not a template problem — note this\n"
+    "- Low stability in high-drift recordings is expected, not a delete signal\n\n"
+
+    "## Output\n\n"
+    "Write {output_dir}/gate2_decision.json:\n"
+    "```json\n"
+    "{\n"
+    '  "merge_pairs": [[id1, id2], ...],\n'
+    '  "delete_templates": [id, ...],\n'
+    '  "confidence": 0.0-1.0,\n'
+    '  "reasoning": "..."\n'
+    "}\n"
+    "```\n\n"
+    "This is a lighter gate. If templates look reasonable for the recording "
+    "context, output empty action lists."
+)
+
+GATE_POST_MATCH_PROMPT = (
+    "You are a spike sorting quality gate for the POST-MATCHING stage. "
+    "This is final cleanup — you cannot recover lost accuracy, only remove "
+    "clear garbage.\n\n"
+
+    "## Context First\n\n"
+    "Read {output_dir}/recording_context.json. Critical:\n"
+    "- **Expected cell types:** What firing rates are biologically plausible?\n"
+    "- **Brain region:** Cerebellum allows 100+ Hz; cortex typically <50 Hz\n\n"
+
+    "## Final Metrics\n\n"
+    "Read {output_dir}/final_metrics.json:\n"
+    "- final_spike_count, final_firing_rate_hz\n"
+    "- final_isi_violation_rate (raw) vs final_isi_fp_estimate (rate-adjusted)\n"
+    "- amplitude_cutoff, presence_ratio, snr\n\n"
+
+    "## Decision Guidance\n\n"
+    "**DELETE with confidence:**\n"
+    "- Obvious garbage collectors: implausibly high rate + high ISI + low SNR\n"
+    "- But ALWAYS check brain region first — 150 Hz is garbage in cortex, "
+    "normal in cerebellum\n\n"
+
+    "**DELETE with caution:**\n"
+    "- Low spike count — might be sparse neuron, check SNR and presence_ratio\n"
+    "- High ISI at low rate — use isi_fp_estimate to assess true contamination\n\n"
+
+    "**MERGE conservatively:**\n"
+    "- At this stage, prefer keeping units separate for human review\n"
+    "- Only merge with overwhelming evidence (high correlation + refractory CCG + proximity)\n"
+    "- Merging two different neurons is worse than keeping one neuron split\n\n"
+
+    "## Output\n\n"
+    "Write {output_dir}/gate3_decision.json:\n"
+    "```json\n"
+    "{\n"
+    '  "merge_pairs": [[id1, id2], ...],\n'
+    '  "delete_units": [id, ...],\n'
+    '  "confidence": 0.0-1.0,\n'
+    '  "reasoning": "..."\n'
+    "}\n"
+    "```\n\n"
+    "Explain your reasoning in context. Don't just cite numbers — explain "
+    "why this unit is/isn't plausible for the recording context."
+)
+
+
 def spike_sort_workflow() -> Workflow:
-    """Spike sorting data pipeline with LLM-in-the-loop parameter selection.
+    """Spike sorting pipeline with LLM quality gates at critical handoffs.
 
-    NOT a code-writing workflow — directly executes DARTsort algorithms (FnNodes)
-    with LLM parameter advisors (AgentNodes) at two decision points plus a final
-    QA assessment.
+    NOT a software engineering workflow — directly executes DARTsort algorithms
+    (FnNodes) with LLM quality gates (AgentNodes) at three decision points.
 
-    10 nodes (7 FnNodes + 3 AgentNodes), 9 edges, linear chain:
+    Architecture: Deterministic COMPUTE → LLM INTERPRET → Deterministic EXECUTE
 
-    Pipeline:
-    preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
-    detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
-    cluster (FnNode) → templates (FnNode) → match (FnNode) → qa_sorting (AgentNode/sonnet)
+    15 nodes (12 FnNodes + 3 AgentNodes), 14 edges, linear chain:
+
+    preprocess → detect → localize → cluster →
+    compute_cluster_metrics → gate_post_cluster → apply_cluster_actions →
+    templates → compute_template_metrics → gate_post_template →
+    apply_template_actions → match → compute_final_metrics →
+    gate_post_match → apply_final_actions
     """
     nodes: dict[str, Any] = {}
 
-    # ── Stage 0: Preprocessing (deterministic) ────────────────────
+    # ── Stage 1: Preprocessing (deterministic) ────────────────────
+
     nodes["preprocess"] = FnNode(
         id="preprocess",
-        command="",
-        notes="Bandpass filter, standardize, whiten the raw recording.",
+        callable_name="factory.workflow.spike_sort_stages:preprocess",
+        notes=(
+            "Bandpass filter, standardize, whiten the raw recording. "
+            "Writes preprocessed recording to {output_dir}/preprocessed/ "
+            "and noise statistics to {output_dir}/noise_stats.json."
+        ),
         writes={"preprocessed/", "noise_stats.json"},
     )
 
-    # ── Stage 1: Detection Trial (deterministic) ──────────────────
-    nodes["detect_trial"] = FnNode(
-        id="detect_trial",
-        command="",
-        notes=(
-            "Fast threshold sweep on a small subset of the recording. "
-            "Runs dartsort.threshold() at 3 candidate thresholds (3.5, 4.0, 4.5) "
-            "with early termination."
-        ),
-        reads={"noise_stats.json", "preprocessed/"},
-        writes={"trial_results.json"},
-    )
+    # ── Stage 2: Detection (deterministic, hardcoded defaults) ────
 
-    # ── Stage 2: Detection Parameters (LLM) ──────────────────────
-    nodes["detect_params"] = AgentNode(
-        id="detect_params",
-        role=AgentRole.RESEARCHER,
-        model="haiku",
-        timeout=60,
-        prompt_template=(
-            "You are a spike detection parameter advisor for extracellular neural "
-            "recordings. Read the noise statistics at {output_dir}/noise_stats.json "
-            "and the trial detection results at {output_dir}/trial_results.json.\n\n"
-            "TRIAL RESULTS: A threshold sweep has already been run on a small subset "
-            "of the recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json "
-            "file contains for each threshold: spike_count, spike_rate_hz, "
-            "mean_amplitude, and amplitude_distribution_percentiles. Use this "
-            "empirical data to inform your threshold selection.\n\n"
-            "IMPORTANT: We use DARTsort's subtract() function (SubtractionPeeler) "
-            "for detection. This is an iterative template-subtraction algorithm that "
-            "produces cleaner spike detections than simple thresholding. The subtract "
-            "algorithm includes a neural network denoiser in its pipeline. The default "
-            "detection_threshold is 3.0 for subtract().\n\n"
-            "Select detection parameters:\n"
-            "- detection_threshold (2.5-5.0): SNR threshold in standardized units. "
-            "Default: 3.0 (subtract's calibrated default). Higher values reduce "
-            "false positives but may miss weak units. Lower values catch more spikes "
-            "but may include noise.\n"
-            "- peak_sign ('neg', 'pos', 'both'): Which polarity peaks to detect. "
-            "'both' is standard for extracellular recordings.\n\n"
-            "Decision rules:\n"
-            "- Start with detection_threshold=3.0 (the subtract default).\n"
-            "- Compare trial results across thresholds: if 4.0 produces reasonable "
-            "spike rate (20-200 Hz per channel), consider using 4.0 for cleaner output.\n"
-            "- Very noisy data (median noise >20 µV): raise to 4.0-5.0.\n"
-            "- Clean data (<8 µV): keep 3.0.\n"
-            "- Neuropixels probes → 'both' peak_sign.\n\n"
-            "In your reasoning field, explicitly state why you chose your threshold. "
-            "Reference the trial results — cite the spike counts and rates you observed.\n\n"
-            "IMPORTANT: Write your selection as a JSON file to "
-            "{output_dir}/detection_params.json using the Write tool. The JSON must "
-            "have these fields:\n"
-            '- "detection_threshold": float (2.5-5.0)\n'
-            '- "peak_sign": string ("neg", "pos", or "both")\n'
-            '- "reasoning": string (your brief justification)'
-        ),
-        reads={"noise_stats.json", "trial_results.json"},
-        writes={"detection_params.json"},
-    )
-
-    # ── Stage 3: Detection (deterministic) ────────────────────────
     nodes["detect"] = FnNode(
         id="detect",
-        command="",
+        callable_name="factory.workflow.spike_sort_stages:detect",
         notes=(
             "Subtraction-based spike detection (SubtractionPeeler) with "
-            "LLM-selected parameters."
+            "DARTsort defaults: detection_threshold=3.0, peak_sign='both'. "
+            "No longer reads detection_params.json — parameters are hardcoded."
         ),
-        reads={"preprocessed/", "detection_params.json"},
+        reads={"preprocessed/"},
         writes={"detections/", "detection_summary.json"},
     )
 
-    # ── Stage 4: Localization (deterministic) ─────────────────────
+    # ── Stage 3: Localization (deterministic) ─────────────────────
+
     nodes["localize"] = FnNode(
         id="localize",
-        command="",
+        callable_name="factory.workflow.spike_sort_stages:localize",
         notes=(
             "Point-source localization of detected spikes via "
             "Levenberg-Marquardt. Also estimates motion (drift)."
         ),
-        reads={"detections/", "preprocessed/"},
-        writes={"localizations.npz", "cluster_input_stats.json", "motion/"},
+        reads={"preprocessed/", "detections/"},
+        writes={"localizations.npz", "motion/", "cluster_input_stats.json"},
     )
 
-    # ── Stage 5: Clustering Parameters (LLM) ─────────────────────
-    nodes["cluster_params"] = AgentNode(
-        id="cluster_params",
-        role=AgentRole.STRATEGIST,
-        model="sonnet",
-        timeout=120,
-        prompt_template=(
-            "You are a spike clustering strategy advisor. Read the cluster input "
-            "statistics at {output_dir}/cluster_input_stats.json.\n\n"
-            "Select a clustering strategy and parameters:\n"
-            "- strategy: 'channel_snap' (fast, coarse — good for <20K spikes), "
-            "'grid_snap' (spatial grid — good for high density), 'dpc' (density "
-            "peak clustering — slow but accurate, best for >20K spikes with drift), "
-            "'none' (skip clustering — only for pre-sorted data).\n"
-            "- grid_dx, grid_dz (5-50 µm): Spatial grid resolution. Smaller = more "
-            "clusters initially. 15 µm is typical.\n\n"
-            "Decision tree:\n"
-            "- spike_count < 20K → channel_snap\n"
-            "- drift > 15 µm → dpc with drift correction\n"
-            "- spike_density > 1.0 spikes/ch/s → grid_snap\n"
-            "- Otherwise → dpc\n\n"
-            "IMPORTANT: Write your selection as a JSON file to "
-            "{output_dir}/clustering_params.json using the Write tool. The JSON must "
-            "have these fields:\n"
-            '- "strategy": string ("channel_snap", "grid_snap", "dpc", or "none")\n'
-            '- "grid_dx": float (5.0-50.0)\n'
-            '- "grid_dz": float (5.0-50.0)\n'
-            '- "reasoning": string (your brief justification)'
-        ),
-        reads={"cluster_input_stats.json"},
-        writes={"clustering_params.json"},
-    )
+    # ── Stage 4: Clustering (deterministic, hardcoded defaults) ───
 
-    # ── Stage 6: Clustering (deterministic) ───────────────────────
     nodes["cluster"] = FnNode(
         id="cluster",
-        command="",
-        notes="GMM/DPC clustering with LLM-selected strategy and parameters.",
-        reads={"preprocessed/", "detections/", "motion/", "clustering_params.json"},
-        writes={"clusters/", "cluster_summary.json"},
-    )
-
-    # ── Stage 7: Templates (deterministic) ────────────────────────
-    nodes["templates"] = FnNode(
-        id="templates",
-        command="",
-        notes="Compute unit templates (average/median waveforms) from clustered spikes.",
-        reads={"preprocessed/", "clusters/", "motion/"},
-        writes={"templates/", "template_stats.json"},
-    )
-
-    # ── Stage 8: Match (deterministic) ────────────────────────────
-    nodes["match"] = FnNode(
-        id="match",
-        command="",
+        callable_name="factory.workflow.spike_sort_stages:cluster",
         notes=(
-            "Template matching refinement with post-match agglomeration. "
-            "Produces the final sorting result."
+            "DPC clustering with hardcoded defaults: strategy='dpc', "
+            "grid_dx=15.0, grid_dz=15.0. No longer reads clustering_params.json. "
+            "Creates recording_context.json from config + computed drift."
         ),
-        reads={"preprocessed/", "templates/", "motion/"},
-        writes={"sorting/", "sorting_result.json"},
+        reads={"preprocessed/", "detections/", "motion/"},
+        writes={"clusters/", "cluster_summary.json", "recording_context.json"},
     )
 
-    # ── Stage 9: Quality Assessment (LLM) ─────────────────────────
-    nodes["qa_sorting"] = AgentNode(
-        id="qa_sorting",
+    # ── Gate 1 Triplet: Post-Clustering (CRITICAL) ────────────────
+
+    nodes["compute_cluster_metrics"] = FnNode(
+        id="compute_cluster_metrics",
+        callable_name="factory.workflow.spike_sort_stages:compute_cluster_metrics",
+        notes=(
+            "Compute per-cluster and pairwise metrics for Gate 1. "
+            "Per-cluster: spike_count, firing_rate_hz, isi_violation_rate, "
+            "isi_fp_estimate (Hill formula), snr, amplitude_bimodality "
+            "(Hartigan dip), spatial_centroid. "
+            "Pairwise (clusters within 100um): template_correlation, "
+            "spatial_distance_um, ccg_refractory_r12, ccg_refractory_q12."
+        ),
+        reads={"clusters/", "localizations.npz", "recording_context.json"},
+        writes={"cluster_metrics.json"},
+    )
+
+    nodes["gate_post_cluster"] = AgentNode(
+        id="gate_post_cluster",
         role=AgentRole.HEALTH_CHECKER,
         model="sonnet",
         timeout=300,
-        prompt_template=(
-            "You are a neuroscience data quality expert. Review the FINAL spike sorting "
-            "results and identify units that may be problematic.\n\n"
-            "### Input Files — CRITICAL: Use the FINAL sorting, NOT templates\n\n"
-            "**Primary data source (MUST use this):**\n"
-            "- **sorting/sorting.npz**: The FINAL sorted spikes at {output_dir}/sorting/sorting.npz\n"
-            "  Load with: `data = np.load(path); times = data['times_samples']; labels = data['labels']`\n"
-            "  - `times_samples`: spike times in samples (int64)\n"
-            "  - `labels`: unit ID for each spike (int32, -1 = noise)\n"
-            "  - `sampling_frequency`: Hz (float)\n"
-            "  Count spikes per unit: `for uid in np.unique(labels[labels >= 0]): count = (labels == uid).sum()`\n\n"
-            "**Secondary (for waveform analysis):**\n"
-            "- **templates/**: Template waveforms at {output_dir}/templates/\n\n"
-            "**DO NOT USE** template_stats.json — it has pre-merge statistics that don't match final units.\n\n"
-            "### Quality Criteria\n\n"
-            "**Multi-unit activity indicators:**\n"
-            "- ISI violation rate > 0.1 (10% of spikes violate 2ms refractory period)\n"
-            "- Bimodal or multi-peaked amplitude distributions\n\n"
-            "**Noise indicators:**\n"
-            "- Very low spike count (< 50 spikes in a 2-minute recording)\n"
-            "- For a 120s recording, healthy neurons fire 500-3000+ spikes\n\n"
-            "### Quality Thresholds\n\n"
-            "| Metric              | Threshold | Flag if...          |\n"
-            "|---------------------|-----------|---------------------|\n"
-            "| ISI violation rate  | > 0.1     | possible_multi_unit |\n"
-            "| Spike count         | < 50      | low_spike_count     |\n"
-            "| Spike count         | < 500     | sparse_firing       |\n\n"
-            "### Instructions\n\n"
-            "1. Load {output_dir}/sorting/sorting.npz with numpy\n"
-            "2. Extract times_samples, labels, sampling_frequency\n"
-            "3. Filter out noise labels (labels == -1)\n"
-            "4. For each unique unit ID (labels >= 0):\n"
-            "   - Count spikes: (labels == unit_id).sum()\n"
-            "   - Compute ISI violations: consecutive spikes < 2ms apart\n"
-            "5. Flag units based on thresholds\n"
-            "6. Write output files\n\n"
-            "### Output Files\n\n"
-            "IMPORTANT: Write BOTH output files using the Write tool.\n\n"
-            "1. **qa_report.json** at {output_dir}/qa_report.json with:\n"
-            '   - "summary": object with total_units, flagged_unit_count, recording_duration_s\n'
-            '   - "units": list of objects, each with: unit_id (int), spike_count (int), '
-            "isi_violation_rate (float or null), flags (list of strings), "
-            "confidence_score (float 0-1)\n\n"
-            "2. **flagged_units.json** at {output_dir}/flagged_units.json with:\n"
-            '   - "flagged_units": list of objects with unit_id, spike_count, flags\n'
-            '   - "summary": object with total_flagged, by_flag_type counts'
-        ),
-        reads={"sorting/"},
-        writes={"qa_report.json", "flagged_units.json"},
+        prompt_template=GATE_POST_CLUSTER_PROMPT,
+        reads={"cluster_metrics.json", "recording_context.json"},
+        writes={"gate1_decision.json"},
     )
 
-    # ── Edges ─────────────────────────────────────────────────────
+    nodes["apply_cluster_actions"] = FnNode(
+        id="apply_cluster_actions",
+        callable_name="factory.workflow.spike_sort_stages:apply_cluster_actions",
+        notes=(
+            "Execute Gate 1 decisions. "
+            "MERGE: agglomerate refinement (merge_distance_threshold=0.3). "
+            "SPLIT: TMM refinement (mixture_steps=['split']). "
+            "DELETE: labels[np.isin(labels, delete_clusters)] = -1."
+        ),
+        reads={"gate1_decision.json", "clusters/"},
+        writes={"clusters_refined/"},
+    )
+
+    # ── Stage 5: Template Computation (deterministic) ─────────────
+
+    nodes["templates"] = FnNode(
+        id="templates",
+        callable_name="factory.workflow.spike_sort_stages:compute_templates",
+        notes=(
+            "Compute unit templates (average/median waveforms) from "
+            "refined clusters. Reads clusters_refined/ if present, "
+            "else clusters/."
+        ),
+        reads={"preprocessed/", "clusters_refined/", "motion/"},
+        writes={"templates/", "template_stats.json"},
+    )
+
+    # ── Gate 2 Triplet: Post-Template (MODERATE) ──────────────────
+
+    nodes["compute_template_metrics"] = FnNode(
+        id="compute_template_metrics",
+        callable_name="factory.workflow.spike_sort_stages:compute_template_metrics",
+        notes=(
+            "Compute per-template metrics for Gate 2. "
+            "Metrics: template_spike_count, template_snr, template_stability, "
+            "template_similarity_max, template_amplitude_uv, "
+            "template_spatial_spread_um."
+        ),
+        reads={"templates/", "template_stats.json"},
+        writes={"template_metrics.json"},
+    )
+
+    nodes["gate_post_template"] = AgentNode(
+        id="gate_post_template",
+        role=AgentRole.HEALTH_CHECKER,
+        model="haiku",
+        timeout=120,
+        prompt_template=GATE_POST_TEMPLATE_PROMPT,
+        reads={"template_metrics.json", "recording_context.json"},
+        writes={"gate2_decision.json"},
+    )
+
+    nodes["apply_template_actions"] = FnNode(
+        id="apply_template_actions",
+        callable_name="factory.workflow.spike_sort_stages:apply_template_actions",
+        notes=(
+            "Execute Gate 2 decisions. "
+            "DELETE: remove templates from set. "
+            "MERGE: average similar templates, update mapping."
+        ),
+        reads={"gate2_decision.json", "templates/"},
+        writes={"templates_refined/"},
+    )
+
+    # ── Stage 6: Template Matching (deterministic) ────────────────
+
+    nodes["match"] = FnNode(
+        id="match",
+        callable_name="factory.workflow.spike_sort_stages:template_match",
+        notes=(
+            "Template matching refinement with post-match agglomeration. "
+            "Reads templates_refined/ if present, else templates/. "
+            "Produces the final sorting result."
+        ),
+        reads={"preprocessed/", "templates_refined/", "motion/"},
+        writes={"sorting/", "sorting_result.json"},
+    )
+
+    # ── Gate 3 Triplet: Post-Matching (CLEANUP) ──────────────────
+
+    nodes["compute_final_metrics"] = FnNode(
+        id="compute_final_metrics",
+        callable_name="factory.workflow.spike_sort_stages:compute_final_metrics",
+        notes=(
+            "Compute final unit metrics for Gate 3. "
+            "Metrics: final_spike_count, final_firing_rate_hz, "
+            "final_isi_violation_rate, final_isi_fp_estimate, "
+            "amplitude_cutoff, presence_ratio, snr."
+        ),
+        reads={"sorting/"},
+        writes={"final_metrics.json"},
+    )
+
+    nodes["gate_post_match"] = AgentNode(
+        id="gate_post_match",
+        role=AgentRole.HEALTH_CHECKER,
+        model="haiku",
+        timeout=120,
+        prompt_template=GATE_POST_MATCH_PROMPT,
+        reads={"final_metrics.json", "recording_context.json"},
+        writes={"gate3_decision.json"},
+    )
+
+    nodes["apply_final_actions"] = FnNode(
+        id="apply_final_actions",
+        callable_name="factory.workflow.spike_sort_stages:apply_final_actions",
+        notes=(
+            "Execute Gate 3 decisions. "
+            "DELETE: labels[labels == unit_id] = -1. "
+            "MERGE: labels[labels == unit_b] = unit_a. "
+            "Writes final cleaned sorting."
+        ),
+        reads={"gate3_decision.json", "sorting/"},
+        writes={"sorting_final/", "sorting_result.json"},
+    )
+
+    # ── Edges (14-edge linear pipeline) ───────────────────────────
+
     edges = [
-        Edge(source="preprocess", target="detect_trial"),
-        Edge(source="detect_trial", target="detect_params"),
-        Edge(source="detect_params", target="detect"),
+        Edge(source="preprocess", target="detect"),
         Edge(source="detect", target="localize"),
-        Edge(source="localize", target="cluster_params"),
-        Edge(source="cluster_params", target="cluster"),
-        Edge(source="cluster", target="templates"),
-        Edge(source="templates", target="match"),
-        Edge(source="match", target="qa_sorting"),
+        Edge(source="localize", target="cluster"),
+        Edge(source="cluster", target="compute_cluster_metrics"),
+        Edge(source="compute_cluster_metrics", target="gate_post_cluster"),
+        Edge(source="gate_post_cluster", target="apply_cluster_actions"),
+        Edge(source="apply_cluster_actions", target="templates"),
+        Edge(source="templates", target="compute_template_metrics"),
+        Edge(source="compute_template_metrics", target="gate_post_template"),
+        Edge(source="gate_post_template", target="apply_template_actions"),
+        Edge(source="apply_template_actions", target="match"),
+        Edge(source="match", target="compute_final_metrics"),
+        Edge(source="compute_final_metrics", target="gate_post_match"),
+        Edge(source="gate_post_match", target="apply_final_actions"),
     ]
+
+    # ── Trigger ───────────────────────────────────────────────────
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return ctx.get("mode") == "spike-sort"
