@@ -58,6 +58,7 @@ __all__ = [
     "spec_generate_workflow",
     "spec_update_workflow",
     "parallel_improve_workflow",
+    "spike_sort_workflow",
     "register_all",
 ]
 
@@ -2564,6 +2565,268 @@ def parallel_improve_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="study",
+        trigger=trigger,
+    )
+
+
+def spike_sort_workflow() -> Workflow:
+    """Spike sorting data pipeline with LLM-in-the-loop parameter selection.
+
+    NOT a code-writing workflow — directly executes DARTsort algorithms (FnNodes)
+    with LLM parameter advisors (AgentNodes) at two decision points plus a final
+    QA assessment.
+
+    10 nodes (7 FnNodes + 3 AgentNodes), 9 edges, linear chain:
+
+    Pipeline:
+    preprocess (FnNode) → detect_trial (FnNode) → detect_params (AgentNode/haiku) →
+    detect (FnNode) → localize (FnNode) → cluster_params (AgentNode/sonnet) →
+    cluster (FnNode) → templates (FnNode) → match (FnNode) → qa_sorting (AgentNode/sonnet)
+    """
+    nodes: dict[str, Any] = {}
+
+    # ── Stage 0: Preprocessing (deterministic) ────────────────────
+    nodes["preprocess"] = FnNode(
+        id="preprocess",
+        command="",
+        notes="Bandpass filter, standardize, whiten the raw recording.",
+        writes={"preprocessed/", "noise_stats.json"},
+    )
+
+    # ── Stage 1: Detection Trial (deterministic) ──────────────────
+    nodes["detect_trial"] = FnNode(
+        id="detect_trial",
+        command="",
+        notes=(
+            "Fast threshold sweep on a small subset of the recording. "
+            "Runs dartsort.threshold() at 3 candidate thresholds (3.5, 4.0, 4.5) "
+            "with early termination."
+        ),
+        reads={"noise_stats.json", "preprocessed/"},
+        writes={"trial_results.json"},
+    )
+
+    # ── Stage 2: Detection Parameters (LLM) ──────────────────────
+    nodes["detect_params"] = AgentNode(
+        id="detect_params",
+        role=AgentRole.RESEARCHER,
+        model="haiku",
+        timeout=60,
+        prompt_template=(
+            "You are a spike detection parameter advisor for extracellular neural "
+            "recordings. Read the noise statistics at {output_dir}/noise_stats.json "
+            "and the trial detection results at {output_dir}/trial_results.json.\n\n"
+            "TRIAL RESULTS: A threshold sweep has already been run on a small subset "
+            "of the recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json "
+            "file contains for each threshold: spike_count, spike_rate_hz, "
+            "mean_amplitude, and amplitude_distribution_percentiles. Use this "
+            "empirical data to inform your threshold selection.\n\n"
+            "IMPORTANT: We use DARTsort's subtract() function (SubtractionPeeler) "
+            "for detection. This is an iterative template-subtraction algorithm that "
+            "produces cleaner spike detections than simple thresholding. The subtract "
+            "algorithm includes a neural network denoiser in its pipeline. The default "
+            "detection_threshold is 3.0 for subtract().\n\n"
+            "Select detection parameters:\n"
+            "- detection_threshold (2.5-5.0): SNR threshold in standardized units. "
+            "Default: 3.0 (subtract's calibrated default). Higher values reduce "
+            "false positives but may miss weak units. Lower values catch more spikes "
+            "but may include noise.\n"
+            "- peak_sign ('neg', 'pos', 'both'): Which polarity peaks to detect. "
+            "'both' is standard for extracellular recordings.\n\n"
+            "Decision rules:\n"
+            "- Start with detection_threshold=3.0 (the subtract default).\n"
+            "- Compare trial results across thresholds: if 4.0 produces reasonable "
+            "spike rate (20-200 Hz per channel), consider using 4.0 for cleaner output.\n"
+            "- Very noisy data (median noise >20 µV): raise to 4.0-5.0.\n"
+            "- Clean data (<8 µV): keep 3.0.\n"
+            "- Neuropixels probes → 'both' peak_sign.\n\n"
+            "In your reasoning field, explicitly state why you chose your threshold. "
+            "Reference the trial results — cite the spike counts and rates you observed.\n\n"
+            "IMPORTANT: Write your selection as a JSON file to "
+            "{output_dir}/detection_params.json using the Write tool. The JSON must "
+            "have these fields:\n"
+            '- "detection_threshold": float (2.5-5.0)\n'
+            '- "peak_sign": string ("neg", "pos", or "both")\n'
+            '- "reasoning": string (your brief justification)'
+        ),
+        reads={"noise_stats.json", "trial_results.json"},
+        writes={"detection_params.json"},
+    )
+
+    # ── Stage 3: Detection (deterministic) ────────────────────────
+    nodes["detect"] = FnNode(
+        id="detect",
+        command="",
+        notes=(
+            "Subtraction-based spike detection (SubtractionPeeler) with "
+            "LLM-selected parameters."
+        ),
+        reads={"preprocessed/", "detection_params.json"},
+        writes={"detections/", "detection_summary.json"},
+    )
+
+    # ── Stage 4: Localization (deterministic) ─────────────────────
+    nodes["localize"] = FnNode(
+        id="localize",
+        command="",
+        notes=(
+            "Point-source localization of detected spikes via "
+            "Levenberg-Marquardt. Also estimates motion (drift)."
+        ),
+        reads={"detections/", "preprocessed/"},
+        writes={"localizations.npz", "cluster_input_stats.json", "motion/"},
+    )
+
+    # ── Stage 5: Clustering Parameters (LLM) ─────────────────────
+    nodes["cluster_params"] = AgentNode(
+        id="cluster_params",
+        role=AgentRole.STRATEGIST,
+        model="sonnet",
+        timeout=120,
+        prompt_template=(
+            "You are a spike clustering strategy advisor. Read the cluster input "
+            "statistics at {output_dir}/cluster_input_stats.json.\n\n"
+            "Select a clustering strategy and parameters:\n"
+            "- strategy: 'channel_snap' (fast, coarse — good for <20K spikes), "
+            "'grid_snap' (spatial grid — good for high density), 'dpc' (density "
+            "peak clustering — slow but accurate, best for >20K spikes with drift), "
+            "'none' (skip clustering — only for pre-sorted data).\n"
+            "- grid_dx, grid_dz (5-50 µm): Spatial grid resolution. Smaller = more "
+            "clusters initially. 15 µm is typical.\n\n"
+            "Decision tree:\n"
+            "- spike_count < 20K → channel_snap\n"
+            "- drift > 15 µm → dpc with drift correction\n"
+            "- spike_density > 1.0 spikes/ch/s → grid_snap\n"
+            "- Otherwise → dpc\n\n"
+            "IMPORTANT: Write your selection as a JSON file to "
+            "{output_dir}/clustering_params.json using the Write tool. The JSON must "
+            "have these fields:\n"
+            '- "strategy": string ("channel_snap", "grid_snap", "dpc", or "none")\n'
+            '- "grid_dx": float (5.0-50.0)\n'
+            '- "grid_dz": float (5.0-50.0)\n'
+            '- "reasoning": string (your brief justification)'
+        ),
+        reads={"cluster_input_stats.json"},
+        writes={"clustering_params.json"},
+    )
+
+    # ── Stage 6: Clustering (deterministic) ───────────────────────
+    nodes["cluster"] = FnNode(
+        id="cluster",
+        command="",
+        notes="GMM/DPC clustering with LLM-selected strategy and parameters.",
+        reads={"preprocessed/", "detections/", "motion/", "clustering_params.json"},
+        writes={"clusters/", "cluster_summary.json"},
+    )
+
+    # ── Stage 7: Templates (deterministic) ────────────────────────
+    nodes["templates"] = FnNode(
+        id="templates",
+        command="",
+        notes="Compute unit templates (average/median waveforms) from clustered spikes.",
+        reads={"preprocessed/", "clusters/", "motion/"},
+        writes={"templates/", "template_stats.json"},
+    )
+
+    # ── Stage 8: Match (deterministic) ────────────────────────────
+    nodes["match"] = FnNode(
+        id="match",
+        command="",
+        notes=(
+            "Template matching refinement with post-match agglomeration. "
+            "Produces the final sorting result."
+        ),
+        reads={"preprocessed/", "templates/", "motion/"},
+        writes={"sorting/", "sorting_result.json"},
+    )
+
+    # ── Stage 9: Quality Assessment (LLM) ─────────────────────────
+    nodes["qa_sorting"] = AgentNode(
+        id="qa_sorting",
+        role=AgentRole.HEALTH_CHECKER,
+        model="sonnet",
+        timeout=300,
+        prompt_template=(
+            "You are a neuroscience data quality expert. Review the final spike sorting "
+            "results and identify units that may be problematic.\n\n"
+            "### Input Files\n"
+            "- **sorting_result.json**: Unit count and basic statistics at "
+            "{output_dir}/sorting_result.json\n"
+            "- **sorting/**: Full SpikeInterface sorting object at {output_dir}/sorting/\n"
+            "- **templates/**: Template waveforms at {output_dir}/templates/\n\n"
+            "### Quality Criteria\n\n"
+            "**Multi-unit activity indicators:**\n"
+            "- ISI violation rate > 0.1 (10% of spikes violate 2ms refractory period)\n"
+            "- Bimodal or multi-peaked waveform shapes\n"
+            "- High spike amplitude variance\n\n"
+            "**Noise indicators:**\n"
+            "- SNR < 3.0 (signal-to-noise ratio too low)\n"
+            "- Amplitude stability < 0.7 (coefficient of variation > 0.3)\n"
+            "- Very low spike count (< 50 spikes — insufficient data)\n\n"
+            "**Suspicious waveform shapes:**\n"
+            "- Non-physiological rise/fall times\n"
+            "- Excessive baseline noise\n"
+            "- Artifact-like sharp transients\n\n"
+            "### Quality Thresholds\n\n"
+            "| Metric              | Threshold | Flag if...          |\n"
+            "|---------------------|-----------|---------------------|\n"
+            "| ISI violation rate  | > 0.1     | possible_multi_unit |\n"
+            "| SNR                 | < 3.0     | low_snr             |\n"
+            "| Amplitude stability | < 0.7     | unstable_amplitude  |\n"
+            "| Spike count         | < 50      | low_spike_count     |\n\n"
+            "### Instructions\n\n"
+            "1. Read sorting_result.json for unit list and spike counts\n"
+            "2. Compute quality metrics for each unit:\n"
+            "   - ISI violation rate (fraction of spikes violating 2ms refractory period)\n"
+            "   - SNR from waveforms\n"
+            "   - Amplitude stability (1 - amplitude CV)\n"
+            "3. Apply thresholds to flag problematic units\n"
+            "4. Generate confidence scores (weighted combination):\n"
+            "   - Start at 1.0\n"
+            "   - Subtract 0.3 for ISI violations > 0.1\n"
+            "   - Subtract 0.4 for SNR < 3.0\n"
+            "   - Subtract 0.2 for amplitude stability < 0.7\n"
+            "   - Subtract 0.1 for spike count < 50\n"
+            "   - Clamp to [0.0, 1.0]\n\n"
+            "### Output Files\n\n"
+            "IMPORTANT: Write BOTH output files using the Write tool.\n\n"
+            "1. **qa_report.json** at {output_dir}/qa_report.json with:\n"
+            '   - "units": list of objects, each with: unit_id (int), spike_count (int), '
+            "isi_violation_rate (float), snr (float), amplitude_stability (float), "
+            'waveform_quality ("clean"|"noisy"|"artifact"), confidence_score (float 0-1), '
+            "flags (list of strings)\n"
+            '   - "summary": object with: total_units (int), high_quality_units (int), '
+            "flagged_units (int), avg_confidence (float)\n\n"
+            "2. **flagged_units.json** at {output_dir}/flagged_units.json with:\n"
+            '   - "flagged_units": list of unit IDs (ints)\n'
+            '   - "flags_by_unit": dict mapping unit_id string to list of flag strings\n'
+            '   - "total_flagged": int count'
+        ),
+        reads={"sorting_result.json", "sorting/", "templates/"},
+        writes={"qa_report.json", "flagged_units.json"},
+    )
+
+    # ── Edges ─────────────────────────────────────────────────────
+    edges = [
+        Edge(source="preprocess", target="detect_trial"),
+        Edge(source="detect_trial", target="detect_params"),
+        Edge(source="detect_params", target="detect"),
+        Edge(source="detect", target="localize"),
+        Edge(source="localize", target="cluster_params"),
+        Edge(source="cluster_params", target="cluster"),
+        Edge(source="cluster", target="templates"),
+        Edge(source="templates", target="match"),
+        Edge(source="match", target="qa_sorting"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "spike-sort"
+
+    return Workflow(
+        name="spike-sort",
+        nodes=nodes,
+        edges=edges,
+        start_node="preprocess",
         trigger=trigger,
     )
 
