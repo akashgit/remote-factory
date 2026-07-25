@@ -55,7 +55,7 @@ benchmark_config() {
             BENCH_FILTER_STYLE="glob"
             ;;
         searchqa)
-            BENCH_LOCAL_PATH="${HARNESS_DIR}/benchmarks/searchqa-harbor/train"
+            BENCH_LOCAL_PATH="${HARNESS_DIR}/benchmarks/searchqa-harbor/${SEARCHQA_SPLIT:-train}"
             BENCH_AGENT_CLASS='factory_harbor_agent:SearchQAFactoryCeo'
             BENCH_AGENT_IMPORT_FLAG='--agent'
             BENCH_FILTER_STYLE='none'

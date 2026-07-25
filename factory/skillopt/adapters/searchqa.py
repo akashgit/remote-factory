@@ -55,9 +55,9 @@ class SearchQAAdapter(EnvAdapter):
     def build_eval_env(self, env_num: int, split: str, seed: int) -> Any:
         if self.instances:
             log.info("eval env built (pinned instances)", count=len(self.instances), split=split, seed=seed)
-            return self.instances
+            return ("val", self.instances)
         log.info("eval env built", limit=env_num, split=split, seed=seed)
-        return env_num
+        return ("val", env_num)
 
     def _extract_prompt_slot(self, skill_content: str) -> str:
         """Extract just the prompt text from SKILL.md or return as-is if already raw."""
@@ -93,21 +93,34 @@ class SearchQAAdapter(EnvAdapter):
 
         _clean_result_files()
 
+        split = "train"
+        limit = 0
+        instances: list[str] = []
+        if isinstance(env_manager, tuple):
+            split, payload = env_manager
+            if isinstance(payload, list):
+                instances = payload
+            else:
+                limit = int(payload) if payload else 0
+        elif isinstance(env_manager, list):
+            instances = env_manager
+        else:
+            limit = int(env_manager) if env_manager else 0
+
         cmd = [
             str(script), "searchqa",
             "--all",
             "--timeout", "3600",
             "--preserve",
         ]
-        if self.instances:
-            for instance_id in self.instances:
+        if instances:
+            for instance_id in instances:
                 cmd += ["--include-task-name", instance_id]
-        else:
-            limit = int(env_manager) if env_manager else 0
-            if limit > 0:
-                cmd += ["--limit", str(limit)]
+        elif limit > 0:
+            cmd += ["--limit", str(limit)]
 
         env = dict(os.environ)
+        env["SEARCHQA_SPLIT"] = split
         prompt = self._extract_prompt_slot(skill_content)
         env["SEARCHQA_SKILL_B64"] = base64.b64encode(
             prompt.encode()
@@ -193,6 +206,32 @@ def _find_latest_result_file() -> Path | None:
     return candidates[0] if candidates else None
 
 
+def _extract_verifier_outputs(jobs_dir: str) -> dict[str, dict]:
+    """Read verifier test-stdout.txt from Harbor jobs to get predicted/gold answers."""
+    outputs: dict[str, dict] = {}
+    if not jobs_dir:
+        return outputs
+    jobs_path = Path(jobs_dir)
+    for stdout_file in jobs_path.rglob("verifier/test-stdout.txt"):
+        trial_dir = stdout_file.parent.parent
+        instance_id = _TRIAL_SUFFIX_PATTERN.sub("", trial_dir.name)
+        if not instance_id:
+            continue
+        text = stdout_file.read_text()
+        predicted = ""
+        gold: list[str] = []
+        for line in text.splitlines():
+            if line.startswith("Predicted: "):
+                predicted = line[len("Predicted: "):]
+            elif line.startswith("Gold: "):
+                try:
+                    gold = json.loads(line[len("Gold: "):].replace("'", '"'))
+                except (json.JSONDecodeError, ValueError):
+                    gold = [line[len("Gold: "):]]
+        outputs[instance_id] = {"predicted": predicted, "gold": gold}
+    return outputs
+
+
 def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:
     result_file = _find_latest_result_file()
     if not result_file:
@@ -210,19 +249,41 @@ def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:
         log.warning("no tasks in result file", path=str(result_file))
         return []
 
+    verifier_outputs = _extract_verifier_outputs(jobs_dir) if jobs_dir else {}
+
     results: list[RolloutResult] = []
     for task in tasks:
         instance_id = task.get("instance_id", "")
         resolved = task.get("resolved", False)
         reward = 1.0 if resolved else 0.0
 
+        verifier = verifier_outputs.get(instance_id, {})
+        predicted = verifier.get("predicted", "")
+        gold = verifier.get("gold", [])
+
+        fail_reason = ""
+        if not resolved and predicted:
+            fail_reason = f"EM=0: predicted '{predicted}' but expected {gold}"
+        elif not resolved:
+            fail_reason = "not_resolved"
+
         results.append(RolloutResult(
             id=instance_id,
             hard=reward,
             soft=reward,
             n_turns=0,
-            fail_reason="" if resolved else "not_resolved",
+            fail_reason=fail_reason,
             task_type="question_answering",
+            extras={
+                "prediction": predicted,
+                "gold_answers": gold,
+                "trace_dump": (
+                    f"[EVALUATION RESULT]\n"
+                    f"Predicted answer: {predicted!r}\n"
+                    f"Gold answers: {gold!r}\n"
+                    f"Exact Match: {reward}\n"
+                ) if predicted else "",
+            },
         ))
 
     Path(out_dir).mkdir(parents=True, exist_ok=True)
