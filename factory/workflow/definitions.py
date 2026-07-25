@@ -2865,4 +2865,5 @@ def register_all() -> dict[str, Workflow]:
         "doc-update": doc_update_workflow(),
         "spec-generate": spec_generate_workflow(),
         "spec-update": spec_update_workflow(),
+        "spike-sort": spike_sort_workflow(),
     }
