@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 # Add ds_ref to path
 import os
@@ -26,7 +25,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run spike-sort stages")
     parser.add_argument(
         "stage",
-        choices=["preprocess", "detect_trial", "detect", "localize", "cluster", "templates", "match"],
+        choices=[
+            "preprocess", "detect_trial", "detect", "localize", "cluster",
+            "templates", "match", "evaluate_accuracy",
+        ],
         help="Stage name to execute",
     )
     parser.add_argument("--project-path", required=True, help="Path to the project")
@@ -37,6 +39,7 @@ def main() -> int:
         preprocess,
         detect_trial,
         detect,
+        evaluate_accuracy,
         localize,
         cluster,
         compute_templates,
@@ -51,6 +54,7 @@ def main() -> int:
         "cluster": cluster,
         "templates": compute_templates,
         "match": template_match,
+        "evaluate_accuracy": evaluate_accuracy,
     }
 
     func = stage_map[args.stage]

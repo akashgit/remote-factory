@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import re
 import sys
 from pathlib import Path
 import numpy as np
@@ -23,6 +24,44 @@ log = structlog.get_logger()
 _DS_REF = os.environ.get("DS_REF_PATH", "/workspace/home/churwitz/ds_ref")
 if _DS_REF not in sys.path:
     sys.path.insert(0, _DS_REF)
+
+
+@dataclasses.dataclass
+class BenchmarkProfile:
+    """Benchmark configuration for spike sorting evaluation."""
+
+    data_path: str
+    ground_truth_path: str
+    duration_seconds: float | None
+    n_channels: int
+    sampling_frequency: float
+
+    baseline_accuracy: float
+    target_accuracy: float
+    match_tolerance_samples: int
+
+    @classmethod
+    def from_file(cls, path: Path) -> BenchmarkProfile:
+        """Parse benchmark.md YAML frontmatter."""
+        text = Path(path).read_text()
+        match = re.match(r"^---\s*\n(.*?)\n---", text, re.DOTALL)
+        if not match:
+            raise ValueError(f"No YAML frontmatter found in {path}")
+
+        import yaml  # lazy import — yaml not needed by other stages
+
+        data = yaml.safe_load(match.group(1))
+        duration = data.get("duration_seconds")
+        return cls(
+            data_path=str(data["data_path"]),
+            ground_truth_path=str(data["ground_truth_path"]),
+            duration_seconds=float(duration) if duration is not None else None,
+            n_channels=int(data["n_channels"]),
+            sampling_frequency=float(data["sampling_frequency"]),
+            baseline_accuracy=float(data["baseline_accuracy"]),
+            target_accuracy=float(data["target_accuracy"]),
+            match_tolerance_samples=int(data["match_tolerance_samples"]),
+        )
 
 
 def preprocess(project_path: str, output_dir: str) -> None:
@@ -1153,3 +1192,84 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
         after=n_after,
         merged=n_before - n_after,
     )
+
+
+def evaluate_accuracy(project_path: str, output_dir: str) -> dict:
+    """Compare final sorting to ground truth using benchmark profile."""
+    import spikeinterface.core as si
+    from spikeinterface.comparison import compare_sorter_to_ground_truth
+
+    out = Path(output_dir)
+    benchmark_path = Path(project_path) / "benchmark.md"
+    if not benchmark_path.exists():
+        raise FileNotFoundError(
+            f"benchmark.md not found at {benchmark_path}. "
+            "Create one with YAML frontmatter to enable accuracy evaluation."
+        )
+
+    profile = BenchmarkProfile.from_file(benchmark_path)
+
+    gt_sorting = si.load(profile.ground_truth_path)
+    if profile.duration_seconds is not None:
+        n_frames = int(profile.duration_seconds * profile.sampling_frequency)
+        gt_sorting = gt_sorting.frame_slice(start_frame=0, end_frame=n_frames)
+
+    sorting_dir = out / "sorting_final"
+    sorting_npz = sorting_dir / "sorting.npz"
+    if not sorting_npz.exists():
+        raise FileNotFoundError(f"Final sorting not found at {sorting_npz}")
+
+    data = np.load(sorting_npz)
+    times = data["times_samples"]
+    labels = data["labels"]
+    sampling_freq = float(data["sampling_frequency"]) if "sampling_frequency" in data else profile.sampling_frequency
+
+    from spikeinterface.core import NumpySorting
+
+    unique_ids = np.unique(labels[labels >= 0])
+    units_dict: dict[str, np.ndarray] = {}
+    for uid in unique_ids:
+        spike_times = times[labels == uid]
+        units_dict[str(int(uid))] = np.sort(spike_times)
+
+    tested_sorting = NumpySorting.from_unit_dict(
+        units_dict, sampling_frequency=sampling_freq,
+    )
+
+    delta_time = profile.match_tolerance_samples / profile.sampling_frequency
+    comp = compare_sorter_to_ground_truth(
+        gt_sorting=gt_sorting,
+        tested_sorting=tested_sorting,
+        delta_time=delta_time,
+    )
+
+    perf = comp.get_performance()
+    accuracy_values = perf["accuracy"].values
+    accuracy = float(np.mean(accuracy_values))
+
+    gt_unit_ids = comp.get_ordered_agreement_scores().index.tolist()
+    per_unit_accuracy = {}
+    for i, uid in enumerate(gt_unit_ids):
+        if i < len(accuracy_values):
+            per_unit_accuracy[str(uid)] = round(float(accuracy_values[i]), 4)
+
+    result = {
+        "accuracy": round(accuracy, 4),
+        "baseline": profile.baseline_accuracy,
+        "delta": round(accuracy - profile.baseline_accuracy, 4),
+        "target": profile.target_accuracy,
+        "target_met": accuracy >= profile.target_accuracy,
+        "n_gt_units": len(gt_sorting.unit_ids),
+        "n_sorted_units": len(tested_sorting.unit_ids),
+        "per_unit_accuracy": per_unit_accuracy,
+    }
+
+    (out / "benchmark_result.json").write_text(json.dumps(result, indent=2))
+    log.info(
+        "evaluate_accuracy.complete",
+        accuracy=result["accuracy"],
+        baseline=result["baseline"],
+        delta=result["delta"],
+        target_met=result["target_met"],
+    )
+    return result
