@@ -1231,7 +1231,11 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
 
 
 def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
-    """Correlation-based recovery of unassigned and low-count spikes."""
+    """Correlation-based recovery of unassigned and low-count spikes.
+
+    Computes templates from sorting_final's assigned spikes rather than loading
+    from template_data.npz, which was computed on different spike times.
+    """
     import spikeinterface.core as si
 
     out = Path(output_dir)
@@ -1244,18 +1248,34 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     labels = data["labels"].copy()
     sampling_freq = float(data["sampling_frequency"])
 
-    template_npz = out / "templates_refined" / "template_data.npz"
-    if not template_npz.exists():
-        template_npz = out / "templates" / "template_data.npz"
-    template_data = np.load(template_npz)
-    templates_arr = template_data["templates"]
-    template_unit_ids = template_data["unit_ids"]
+    unique_ids = np.unique(labels[labels >= 0])
+
+    half_width = 41
+    n_time = 2 * half_width
+    templates_dict = _compute_quick_templates(
+        recording, labels, times, unique_ids, n_sample=200, half_width=half_width,
+    )
 
     unassigned_mask = labels < 0
     unassigned_indices = np.flatnonzero(unassigned_mask)
     n_unassigned = len(unassigned_indices)
 
-    unique_ids = np.unique(labels[labels >= 0])
+    if not templates_dict:
+        log.info("recover_low_snr_spikes.skip", reason="no templates computed")
+        stats = {
+            "n_unassigned_before": int(n_unassigned),
+            "n_candidates_evaluated": 0,
+            "n_recovered": 0,
+            "recovery_rate": 0.0,
+            "n_low_count_units": 0,
+            "per_unit_recovered": {},
+        }
+        (out / "recovery_stats.json").write_text(json.dumps(stats, indent=2))
+        return
+
+    template_unit_ids = np.array(sorted(templates_dict.keys()), dtype=np.int64)
+    templates_arr = np.stack([templates_dict[uid] for uid in template_unit_ids])
+
     unit_counts = {int(uid): int((labels == uid).sum()) for uid in unique_ids}
     low_count_units = {uid for uid, count in unit_counts.items() if count < 500}
 
@@ -1266,7 +1286,6 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     else:
         candidate_indices = unassigned_indices
 
-    half_width = templates_arr.shape[1] // 2
     n_recovered = 0
     recovered_per_unit: dict[int, int] = {}
 
@@ -1300,7 +1319,7 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
         spike_time = times[idx]
 
         start = spike_time - half_width
-        end = spike_time + half_width + 1
+        end = start + n_time
         if start < 0 or end > recording.get_num_samples():
             continue
 
