@@ -1230,6 +1230,155 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
     )
 
 
+def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
+    """Correlation-based recovery of unassigned and low-count spikes."""
+    import spikeinterface.core as si
+
+    out = Path(output_dir)
+
+    recording = si.load(out / "preprocessed")
+
+    sorting_npz = out / "sorting_final" / "sorting.npz"
+    data = np.load(sorting_npz)
+    times = data["times_samples"]
+    labels = data["labels"].copy()
+    sampling_freq = float(data["sampling_frequency"])
+
+    template_npz = out / "templates_refined" / "template_data.npz"
+    if not template_npz.exists():
+        template_npz = out / "templates" / "template_data.npz"
+    template_data = np.load(template_npz)
+    templates_arr = template_data["templates"]
+    template_unit_ids = template_data["unit_ids"]
+
+    unassigned_mask = labels < 0
+    unassigned_indices = np.flatnonzero(unassigned_mask)
+    n_unassigned = len(unassigned_indices)
+
+    unique_ids = np.unique(labels[labels >= 0])
+    unit_counts = {int(uid): int((labels == uid).sum()) for uid in unique_ids}
+    low_count_units = {uid for uid, count in unit_counts.items() if count < 500}
+
+    max_candidates = 10_000
+    if n_unassigned > max_candidates:
+        rng = np.random.default_rng(42)
+        candidate_indices = rng.choice(unassigned_indices, size=max_candidates, replace=False)
+    else:
+        candidate_indices = unassigned_indices
+
+    half_width = templates_arr.shape[1] // 2
+    n_recovered = 0
+    recovered_per_unit: dict[int, int] = {}
+
+    n_templates = len(templates_arr)
+    flat_templates = templates_arr.reshape(n_templates, -1).astype(np.float64)
+    template_means = flat_templates.mean(axis=1, keepdims=True)
+    flat_templates_centered = flat_templates - template_means
+    template_norms = np.linalg.norm(flat_templates_centered, axis=1)
+    valid_template_mask = template_norms > 1e-10
+
+    valid_flat = flat_templates_centered[valid_template_mask]
+    valid_norms = template_norms[valid_template_mask]
+    valid_flat_normed = valid_flat / valid_norms[:, np.newaxis]
+
+    n_valid = int(valid_template_mask.sum())
+    n_components = min(20, n_valid - 1, valid_flat_normed.shape[1])
+
+    if n_components > 0 and n_valid > 2:
+        U, S, Vt = np.linalg.svd(valid_flat_normed, full_matrices=False)
+        compressed_templates = U[:, :n_components] * S[:n_components]
+        c_norms = np.linalg.norm(compressed_templates, axis=1, keepdims=True)
+        compressed_templates /= np.maximum(c_norms, 1e-10)
+        projection_matrix = Vt[:n_components, :]
+    else:
+        compressed_templates = valid_flat_normed
+        projection_matrix = None
+
+    valid_unit_ids = template_unit_ids[valid_template_mask]
+
+    for idx in candidate_indices:
+        spike_time = times[idx]
+
+        start = spike_time - half_width
+        end = spike_time + half_width + 1
+        if start < 0 or end > recording.get_num_samples():
+            continue
+
+        waveform = recording.get_traces(start_frame=int(start), end_frame=int(end))
+        waveform_flat = waveform.flatten().astype(np.float64)
+        waveform_flat_centered = waveform_flat - waveform_flat.mean()
+        waveform_norm = np.linalg.norm(waveform_flat_centered)
+
+        if waveform_norm < 1e-10:
+            continue
+
+        waveform_normed = waveform_flat_centered / waveform_norm
+
+        if projection_matrix is not None:
+            waveform_projected = waveform_normed @ projection_matrix.T
+            wp_norm = np.linalg.norm(waveform_projected)
+            if wp_norm < 1e-10:
+                continue
+            waveform_projected /= wp_norm
+            correlations = compressed_templates @ waveform_projected
+        else:
+            correlations = compressed_templates @ waveform_normed
+
+        best_idx = int(np.argmax(correlations))
+        best_corr = float(correlations[best_idx])
+        best_unit_id = int(valid_unit_ids[best_idx])
+
+        base_threshold = 0.65
+        if best_unit_id in low_count_units:
+            threshold = base_threshold * 0.6
+        else:
+            threshold = base_threshold
+
+        if best_corr < threshold:
+            continue
+
+        orig_template_idx = np.flatnonzero(valid_template_mask)[best_idx]
+        best_template = templates_arr[orig_template_idx]
+        residual = waveform - best_template
+        residual_rms = float(np.sqrt(np.mean(residual ** 2)))
+        waveform_rms = float(np.sqrt(np.mean(waveform ** 2)))
+
+        if waveform_rms < 1e-10:
+            continue
+
+        if residual_rms >= 0.3 * waveform_rms:
+            continue
+
+        labels[idx] = best_unit_id
+        n_recovered += 1
+        recovered_per_unit[best_unit_id] = recovered_per_unit.get(best_unit_id, 0) + 1
+
+    np.savez(
+        sorting_npz,
+        times_samples=times,
+        labels=labels,
+        sampling_frequency=sampling_freq,
+    )
+
+    stats = {
+        "n_unassigned_before": int(n_unassigned),
+        "n_candidates_evaluated": int(len(candidate_indices)),
+        "n_recovered": n_recovered,
+        "recovery_rate": round(n_recovered / max(n_unassigned, 1), 4),
+        "n_low_count_units": len(low_count_units),
+        "per_unit_recovered": {str(k): v for k, v in recovered_per_unit.items()},
+    }
+    (out / "recovery_stats.json").write_text(json.dumps(stats, indent=2))
+
+    log.info(
+        "recover_low_snr_spikes.complete",
+        unassigned=n_unassigned,
+        recovered=n_recovered,
+        rate=stats["recovery_rate"],
+        low_count_units=len(low_count_units),
+    )
+
+
 def evaluate_accuracy(project_path: str, output_dir: str) -> dict:
     """Compare final sorting to ground truth using benchmark profile.
 

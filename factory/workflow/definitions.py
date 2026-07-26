@@ -2763,13 +2763,14 @@ def spike_sort_workflow() -> Workflow:
 
     Architecture: Deterministic COMPUTE → LLM INTERPRET → Deterministic EXECUTE
 
-    15 nodes (12 FnNodes + 3 AgentNodes), 14 edges, linear chain:
+    17 nodes (14 FnNodes + 3 AgentNodes), 16 edges, linear chain:
 
     preprocess → detect → localize → cluster →
     compute_cluster_metrics → gate_post_cluster → apply_cluster_actions →
     templates → compute_template_metrics → gate_post_template →
     apply_template_actions → match → compute_final_metrics →
-    gate_post_match → apply_final_actions
+    gate_post_match → apply_final_actions →
+    recover_low_snr_spikes → evaluate_accuracy
     """
     nodes: dict[str, Any] = {}
 
@@ -2970,7 +2971,39 @@ def spike_sort_workflow() -> Workflow:
         writes={"sorting_final/", "sorting_result.json"},
     )
 
-    # ── Edges (14-edge linear pipeline) ───────────────────────────
+    # ── Stage 7: Low-SNR Recovery (deterministic) ────────────────
+
+    nodes["recover_low_snr_spikes"] = FnNode(
+        id="recover_low_snr_spikes",
+        callable_name="factory.workflow.spike_sort_stages:recover_low_snr_spikes",
+        notes=(
+            "Correlation-based recovery of unassigned and low-count spikes. "
+            "Identifies spikes with label=-1 and units with <500 spikes. "
+            "For each unassigned spike: correlates with templates, applies "
+            "lower threshold (0.6x normal) for low-count units, verifies "
+            "via residual energy (RMS(residual) < 0.3 * RMS(waveform)). "
+            "Updates sorting_final/ in-place with recovered assignments."
+        ),
+        reads={"preprocessed/", "sorting_final/", "templates_refined/"},
+        writes={"sorting_final/", "recovery_stats.json"},
+    )
+
+    # ── Stage 8: Accuracy Evaluation (deterministic) ─────────────
+
+    nodes["evaluate_accuracy"] = FnNode(
+        id="evaluate_accuracy",
+        callable_name="factory.workflow.spike_sort_stages:evaluate_accuracy",
+        notes=(
+            "Compare final sorting against ground truth benchmark. "
+            "Reads benchmark.md from project root for ground truth path "
+            "and accuracy targets. Computes per-unit accuracy, recall, "
+            "and precision. Writes benchmark_result.json."
+        ),
+        reads={"sorting_final/"},
+        writes={"benchmark_result.json"},
+    )
+
+    # ── Edges (16-edge linear pipeline) ───────────────────────────
 
     edges = [
         Edge(source="preprocess", target="detect"),
@@ -2987,6 +3020,8 @@ def spike_sort_workflow() -> Workflow:
         Edge(source="match", target="compute_final_metrics"),
         Edge(source="compute_final_metrics", target="gate_post_match"),
         Edge(source="gate_post_match", target="apply_final_actions"),
+        Edge(source="apply_final_actions", target="recover_low_snr_spikes"),
+        Edge(source="recover_low_snr_spikes", target="evaluate_accuracy"),
     ]
 
     # ── Trigger ───────────────────────────────────────────────────

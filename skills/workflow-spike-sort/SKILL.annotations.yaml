@@ -7,111 +7,15 @@ preprocess:
   - noise_stats.json
   - preprocessed/
   edges_out:
-  - target: detect_trial
-    condition: null
-detect_trial:
-  type: FnNode
-  id: detect_trial
-  command: ''
-  reads:
-  - noise_stats.json
-  - preprocessed/
-  writes:
-  - trial_results.json
-  edges_out:
-  - target: detect_params
-    condition: null
-detect_params:
-  type: AgentNode
-  id: detect_params
-  role: researcher
-  blocking: 'true'
-  reads:
-  - noise_stats.json
-  - trial_results.json
-  writes:
-  - detection_params.json
-  edges_out:
   - target: detect
     condition: null
-  slots:
-    task_prompt_detect_params: 'You are a spike detection parameter advisor for extracellular
-      neural recordings. Read the noise statistics at {output_dir}/noise_stats.json
-      and the trial detection results at {output_dir}/trial_results.json.
-
-
-      TRIAL RESULTS: A threshold sweep has already been run on a small subset of the
-      recording at thresholds 3.5, 4.0, and 4.5. The trial_results.json file contains
-      for each threshold: spike_count, spike_rate_hz, mean_amplitude, and amplitude_distribution_percentiles.
-      Use this empirical data to inform your threshold selection.
-
-
-      IMPORTANT: DARTsort''s detection operates on standardized (SNR-unit) traces.
-      The threshold 4.0 is the DARTsort-calibrated baseline, validated on Neuropixels
-      recordings with default preprocessing. A single-channel denoiser NN runs before
-      detection and recovers low-amplitude spikes, so you do NOT need an aggressive
-      (low) threshold to catch weak units. Prefer the default. Only deviate with clear
-      evidence from the trial results AND noise statistics.
-
-
-      Select detection parameters:
-
-      - voltage_threshold (3.0-6.0): SNR threshold in standardized units. Default:
-      4.0. Do NOT lower below 4.0 unless you have strong evidence that the recording
-      has exceptionally high SNR AND the denoiser is disabled. Raising above 4.0 is
-      safer than lowering — it reduces false positives with minimal loss of real spikes.
-
-      - peak_sign (''neg'', ''pos'', ''both''): Which polarity peaks to detect. ''both''
-      is standard for extracellular recordings.
-
-      - dedup_temporal_radius (5-20): Samples to deduplicate within. 11 is typical
-      at 30kHz.
-
-      - use_denoiser (true/false): Whether to apply the single-channel denoiser NN
-      before detection. Default: true. The denoiser cleans waveforms and improves
-      detection of low-amplitude spikes. Disable only if the recording has unusual
-      artifacts that the denoiser was not trained on.
-
-
-      Decision rules:
-
-      - Start with voltage_threshold=4.0 (the calibrated default).
-
-      - Compare trial results across thresholds: if 4.0 produces a reasonable spike
-      rate (20-200 Hz per channel) keep it. If the rate is extremely high (>500 Hz),
-      consider raising to 4.5 or 5.0.
-
-      - Very noisy data (median noise >20 µV after standardization): raise to 5.0-6.0.
-
-      - Clean data (<8 µV): keep 4.0 — the denoiser handles low-amplitude recovery.
-
-      - DO NOT lower the threshold to compensate for expected low-amplitude neurons.
-      The denoiser NN is designed for this.
-
-      - Neuropixels probes → ''both'' peak_sign.
-
-
-      In your reasoning field, explicitly state why you chose your threshold. Reference
-      the trial results — cite the spike counts and rates you observed. If you chose
-      anything other than 4.0, justify the deviation with specific evidence from the
-      trial data and noise_stats.json.
-
-
-      Output your selection as a DetectionParams JSON object with a reasoning field.
-
-      Read: noise_stats.json, trial_results.json
-
-      Write output to: detection_params.json'
-    timeout_detect_params: '60'
 detect:
   type: FnNode
   id: detect
   command: ''
   reads:
-  - detection_params.json
   - preprocessed/
   writes:
-  - denoised/
   - detection_summary.json
   - detections/
   edges_out:
@@ -129,71 +33,111 @@ localize:
   - localizations.npz
   - motion/
   edges_out:
-  - target: cluster_params
-    condition: null
-cluster_params:
-  type: AgentNode
-  id: cluster_params
-  role: strategist
-  blocking: 'true'
-  reads:
-  - cluster_input_stats.json
-  writes:
-  - clustering_params.json
-  edges_out:
   - target: cluster
     condition: null
-  slots:
-    task_prompt_cluster_params: 'You are a spike clustering strategy advisor. Read
-      the cluster input statistics at {output_dir}/cluster_input_stats.json.
-
-
-      Select a clustering strategy and parameters:
-
-      - strategy: ''channel_snap'' (fast, coarse — good for <20K spikes), ''grid_snap''
-      (spatial grid — good for high density), ''dpc'' (density peak clustering — slow
-      but accurate, best for >20K spikes with drift), ''none'' (skip clustering —
-      only for pre-sorted data).
-
-      - grid_dx, grid_dz (5-50 µm): Spatial grid resolution. Smaller = more clusters
-      initially. 15 µm is typical.
-
-      - initial_steps: Refinement sequence. [''split'', ''demolish'', ''demolish'']
-      is standard. Add ''merge'' if you expect many similar units.
-
-      - n_waveforms_fit (10K-100K): Subsample size for fitting. Higher = better but
-      slower. 40K is typical.
-
-
-      Decision tree:
-
-      - spike_count < 20K → channel_snap
-
-      - drift > 15 µm → dpc with drift correction
-
-      - spike_density > 1.0 spikes/ch/s → grid_snap
-
-      - Otherwise → dpc
-
-
-      Output your selection as a ClusteringParams JSON object with a reasoning field.
-
-      Read: cluster_input_stats.json
-
-      Write output to: clustering_params.json'
-    timeout_cluster_params: '120'
 cluster:
   type: FnNode
   id: cluster
   command: ''
   reads:
-  - clustering_params.json
   - detections/
   - motion/
   - preprocessed/
   writes:
   - cluster_summary.json
   - clusters/
+  - recording_context.json
+  edges_out:
+  - target: compute_cluster_metrics
+    condition: null
+compute_cluster_metrics:
+  type: FnNode
+  id: compute_cluster_metrics
+  command: ''
+  reads:
+  - clusters/
+  - localizations.npz
+  - recording_context.json
+  writes:
+  - cluster_metrics.json
+  edges_out:
+  - target: gate_post_cluster
+    condition: null
+gate_post_cluster:
+  type: AgentNode
+  id: gate_post_cluster
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - cluster_metrics.json
+  - recording_context.json
+  writes:
+  - gate1_decision.json
+  edges_out:
+  - target: apply_cluster_actions
+    condition: null
+  slots:
+    task_prompt_gate_post_cluster: "You are a spike sorting quality gate for the POST-CLUSTERING\
+      \ stage. Your role is to make context-aware decisions about cluster merging,\
+      \ splitting, and deletion — decisions that require judgment, not just threshold\
+      \ checking.\n\n## Why You Exist\n\nIf we could just apply fixed thresholds,\
+      \ we'd use deterministic code. You exist because the same metric means different\
+      \ things in different contexts. A 5% ISI violation rate might be acceptable\
+      \ contamination in a fast-spiking interneuron or catastrophic in a sparse pyramidal\
+      \ cell. Your job is to reason about what the metrics mean for THIS recording.\n\
+      \n## Step 1: Understand the Recording Context\n\nRead {output_dir}/recording_context.json\
+      \ FIRST. Before looking at any metrics, understand:\n- **Brain region:** What\
+      \ cell types are expected? What firing rates?\n- **Drift magnitude:** High drift\
+      \ (>15µm) causes fragmentation — be more aggressive about merging\n- **Recording\
+      \ duration:** Affects what spike counts are reasonable\n- **Expected cell types:**\
+      \ Purkinje cells fire at 50-150Hz; pyramidal cells at 0.5-10Hz; fast interneurons\
+      \ at 20-100Hz\n\n## Step 2: Review Cluster Metrics\n\nRead {output_dir}/cluster_metrics.json.\
+      \ For each cluster and pair, interpret the metrics IN CONTEXT:\n\n**Per-cluster\
+      \ metrics:**\n- spike_count, firing_rate_hz — Is this plausible for the expected\
+      \ cell types?\n- isi_violation_rate — Raw fraction of ISIs < 1.5ms\n- isi_fp_estimate\
+      \ — Hill formula estimate accounting for firing rate (USE THIS, not raw ISI\
+      \ rate)\n- snr — Signal quality\n- amplitude_bimodality — Suggests two populations\
+      \ merged if high\n- spatial_centroid — Position on probe\n\n**Pairwise metrics\
+      \ (clusters within 100µm):**\n- template_correlation — Waveform similarity\n\
+      - spatial_distance_um — Physical proximity\n- ccg_refractory_r12, ccg_refractory_q12\
+      \ — CCG refractory dip scores. Low R12 (<0.25) with low Q12 (<0.05) suggests\
+      \ same neuron.\n\n## Step 3: Make Decisions\n\nFor each decision, reason about\
+      \ the specific context:\n\n### MERGE Decisions\nThe clustering algorithm deliberately\
+      \ oversplits — your primary job is to identify and merge fragments of the same\
+      \ neuron.\n\nStrong merge signal: CCG shows refractory dip (independent confirmation\
+      \ that spikes come from the same neuron). If CCG is refractory AND clusters\
+      \ are nearby AND templates are similar, merge.\n\nWeak merge signal without\
+      \ CCG: Template correlation alone is not enough — similar waveforms can come\
+      \ from different neurons. Require additional evidence (proximity, firing pattern\
+      \ continuity).\n\nDrift consideration: If drift is high, waveforms from the\
+      \ same neuron may differ across time. CCG refractory is more reliable than template\
+      \ correlation in drifting recordings.\n\n### DELETE Decisions\nDelete clusters\
+      \ that are clearly not single neurons. But interpret in context:\n\n- High ISI\
+      \ + high rate: Likely garbage collector (noise unit). But check brain region\
+      \ — cerebellar Purkinje cells legitimately fire at 100+ Hz.\n- High ISI + low\
+      \ rate: Use isi_fp_estimate, not raw ISI. A 1% ISI rate at 3Hz firing indicates\
+      \ ~50% contamination (delete), while 1% at 50Hz is ~3% contamination (keep).\n\
+      - Very low spike count: May be a real but sparse neuron, or may be noise. Check\
+      \ SNR — low count + low SNR = noise.\n\n### SPLIT Decisions\nSplit when evidence\
+      \ suggests two neurons were merged:\n- Bimodal amplitude distribution (two distinct\
+      \ sizes)\n- CCG shows NO refractory dip (neurons fire independently)\n- Spatial\
+      \ spread larger than expected for one neuron\n\n## Output\n\nWrite {output_dir}/gate1_decision.json:\n\
+      ```json\n{\n  \"merge_pairs\": [[id1, id2], ...],\n  \"split_clusters\": [id,\
+      \ ...],\n  \"delete_clusters\": [id, ...],\n  \"confidence\": 0.0-1.0,\n  \"\
+      reasoning\": \"...\"\n}\n```\n\nIn your reasoning, explain HOW CONTEXT influenced\
+      \ your decisions. Don't just cite threshold values — explain what the metrics\
+      \ mean for this specific recording and why your decisions make sense.\nRead:\
+      \ cluster_metrics.json, recording_context.json\nWrite output to: gate1_decision.json"
+    timeout_gate_post_cluster: '300'
+apply_cluster_actions:
+  type: FnNode
+  id: apply_cluster_actions
+  command: ''
+  reads:
+  - clusters/
+  - gate1_decision.json
+  writes:
+  - clusters_refined/
   edges_out:
   - target: templates
     condition: null
@@ -202,62 +146,77 @@ templates:
   id: templates
   command: ''
   reads:
-  - clusters/
+  - clusters_refined/
   - motion/
   - preprocessed/
   writes:
   - template_stats.json
   - templates/
   edges_out:
-  - target: qc_templates
+  - target: compute_template_metrics
     condition: null
-qc_templates:
-  type: AgentNode
-  id: qc_templates
-  role: researcher
-  blocking: 'true'
+compute_template_metrics:
+  type: FnNode
+  id: compute_template_metrics
+  command: ''
   reads:
   - template_stats.json
+  - templates/
   writes:
-  - template_decisions.json
+  - template_metrics.json
+  edges_out:
+  - target: gate_post_template
+    condition: null
+gate_post_template:
+  type: AgentNode
+  id: gate_post_template
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - recording_context.json
+  - template_metrics.json
+  writes:
+  - gate2_decision.json
+  edges_out:
+  - target: apply_template_actions
+    condition: null
+  slots:
+    task_prompt_gate_post_template: "You are a spike sorting quality gate for the\
+      \ POST-TEMPLATE stage.\n\n## Context First\n\nRead {output_dir}/recording_context.json.\
+      \ Key factors:\n- **Drift:** High drift makes templates less stable — instability\
+      \ may be drift, not noise\n- **Recording duration:** Affects expected spike\
+      \ counts per template\n\n## Template Metrics\n\nRead {output_dir}/template_metrics.json:\n\
+      - template_spike_count — More spikes = more reliable template\n- template_snr\
+      \ — Signal quality\n- template_stability — Variance over time (lower = more\
+      \ stable)\n- template_similarity_max — Correlation with most similar other template\n\
+      - template_amplitude_uv, template_spatial_spread_um\n\n## Decision Guidance\n\
+      \n**DELETE:** Templates that will cause matching problems:\n- Very few spikes\
+      \ AND low SNR — noise template, will match noise\n- But consider: a template\
+      \ with few spikes but high SNR might be a real sparse neuron, not noise\n\n\
+      **MERGE:** Near-duplicate templates:\n- Very high similarity (>0.95) suggests\
+      \ same neuron split into two templates\n- But check spatial locations — similar\
+      \ waveforms from distant sites are different neurons\n\n**Context matters:**\n\
+      - If many templates look bad, that's an upstream clustering problem, not a template\
+      \ problem — note this\n- Low stability in high-drift recordings is expected,\
+      \ not a delete signal\n\n## Output\n\nWrite {output_dir}/gate2_decision.json:\n\
+      ```json\n{\n  \"merge_pairs\": [[id1, id2], ...],\n  \"delete_templates\": [id,\
+      \ ...],\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"...\"\n}\n```\n\nThis\
+      \ is a lighter gate. If templates look reasonable for the recording context,\
+      \ output empty action lists.\nRead: recording_context.json, template_metrics.json\n\
+      Write output to: gate2_decision.json"
+    timeout_gate_post_template: '120'
+apply_template_actions:
+  type: FnNode
+  id: apply_template_actions
+  command: ''
+  reads:
+  - gate2_decision.json
+  - templates/
+  writes:
+  - templates_refined/
   edges_out:
   - target: match
     condition: null
-  slots:
-    task_prompt_qc_templates: 'You are a spike sorting template quality control reviewer.
-      Read the template statistics at {output_dir}/template_stats.json.
-
-
-      For each template, decide: keep, discard, or merge.
-
-
-      Decision criteria:
-
-      - DISCARD if: SNR < 1.5 (noise unit), spike_count < 10 (too few spikes), or
-      ptp_amplitude < 5 µV (below noise floor).
-
-      - MERGE if: two templates have very similar spatial positions (within 25 µm)
-      AND similar PTP amplitudes (within 30%). Specify merge_with = template_id of
-      partner.
-
-      - KEEP otherwise.
-
-
-      Quality heuristics:
-
-      - Good units: SNR > 3, count > 50, stability > 0.7
-
-      - Marginal units: SNR 1.5-3, count 10-50 — keep if isolated
-
-      - High spatial_spread (>200 µm) may indicate multi-unit — flag for discard
-
-
-      Output a TemplateQCOutput JSON with decisions list and summary string.
-
-      Read: template_stats.json
-
-      Write output to: template_decisions.json'
-    timeout_qc_templates: '120'
 match:
   type: FnNode
   id: match
@@ -265,9 +224,94 @@ match:
   reads:
   - motion/
   - preprocessed/
-  - template_decisions.json
-  - templates/
+  - templates_refined/
   writes:
   - sorting/
   - sorting_result.json
+  edges_out:
+  - target: compute_final_metrics
+    condition: null
+compute_final_metrics:
+  type: FnNode
+  id: compute_final_metrics
+  command: ''
+  reads:
+  - sorting/
+  writes:
+  - final_metrics.json
+  edges_out:
+  - target: gate_post_match
+    condition: null
+gate_post_match:
+  type: AgentNode
+  id: gate_post_match
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - final_metrics.json
+  - recording_context.json
+  writes:
+  - gate3_decision.json
+  edges_out:
+  - target: apply_final_actions
+    condition: null
+  slots:
+    task_prompt_gate_post_match: "You are a spike sorting quality gate for the POST-MATCHING\
+      \ stage. This is final cleanup — you cannot recover lost accuracy, only remove\
+      \ clear garbage.\n\n## Context First\n\nRead {output_dir}/recording_context.json.\
+      \ Critical:\n- **Expected cell types:** What firing rates are biologically plausible?\n\
+      - **Brain region:** Cerebellum allows 100+ Hz; cortex typically <50 Hz\n\n##\
+      \ Final Metrics\n\nRead {output_dir}/final_metrics.json:\n- final_spike_count,\
+      \ final_firing_rate_hz\n- final_isi_violation_rate (raw) vs final_isi_fp_estimate\
+      \ (rate-adjusted)\n- amplitude_cutoff, presence_ratio, snr\n\n## Decision Guidance\n\
+      \n**DELETE with confidence:**\n- Obvious garbage collectors: implausibly high\
+      \ rate + high ISI + low SNR\n- But ALWAYS check brain region first — 150 Hz\
+      \ is garbage in cortex, normal in cerebellum\n\n**DELETE with caution:**\n-\
+      \ Low spike count — might be sparse neuron, check SNR and presence_ratio\n-\
+      \ High ISI at low rate — use isi_fp_estimate to assess true contamination\n\n\
+      **MERGE conservatively:**\n- At this stage, prefer keeping units separate for\
+      \ human review\n- Only merge with overwhelming evidence (high correlation +\
+      \ refractory CCG + proximity)\n- Merging two different neurons is worse than\
+      \ keeping one neuron split\n\n## Output\n\nWrite {output_dir}/gate3_decision.json:\n\
+      ```json\n{\n  \"merge_pairs\": [[id1, id2], ...],\n  \"delete_units\": [id,\
+      \ ...],\n  \"confidence\": 0.0-1.0,\n  \"reasoning\": \"...\"\n}\n```\n\nExplain\
+      \ your reasoning in context. Don't just cite numbers — explain why this unit\
+      \ is/isn't plausible for the recording context.\nRead: final_metrics.json, recording_context.json\n\
+      Write output to: gate3_decision.json"
+    timeout_gate_post_match: '120'
+apply_final_actions:
+  type: FnNode
+  id: apply_final_actions
+  command: ''
+  reads:
+  - gate3_decision.json
+  - sorting/
+  writes:
+  - sorting_final/
+  - sorting_result.json
+  edges_out:
+  - target: recover_low_snr_spikes
+    condition: null
+recover_low_snr_spikes:
+  type: FnNode
+  id: recover_low_snr_spikes
+  command: ''
+  reads:
+  - preprocessed/
+  - sorting_final/
+  - templates_refined/
+  writes:
+  - recovery_stats.json
+  - sorting_final/
+  edges_out:
+  - target: evaluate_accuracy
+    condition: null
+evaluate_accuracy:
+  type: FnNode
+  id: evaluate_accuracy
+  command: ''
+  reads:
+  - sorting_final/
+  writes:
+  - benchmark_result.json
   edges_out: []
