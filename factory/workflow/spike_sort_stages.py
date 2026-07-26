@@ -1276,6 +1276,26 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     template_unit_ids = np.array(sorted(templates_dict.keys()), dtype=np.int64)
     templates_arr = np.stack([templates_dict[uid] for uid in template_unit_ids])
 
+    # Per-channel standardization so templates and candidate waveforms
+    # are on the same scale (templates average out noise → std~1,
+    # individual waveforms retain full noise → std~5 without this).
+    noise_stats_path = out / "noise_stats.json"
+    if noise_stats_path.exists():
+        noise_data = json.loads(noise_stats_path.read_text())
+        channel_stds = np.array(noise_data["mad_per_channel"], dtype=np.float64)
+        channel_stds = np.maximum(channel_stds, 1e-6)
+    else:
+        sample_traces = recording.get_traces(
+            start_frame=0, end_frame=min(30000, recording.get_num_samples()),
+        )
+        channel_stds = (
+            np.median(np.abs(sample_traces - np.median(sample_traces, axis=0)), axis=0)
+            * 1.4826
+        )
+        channel_stds = np.maximum(channel_stds, 1e-6)
+
+    templates_arr = templates_arr / channel_stds[np.newaxis, np.newaxis, :]
+
     unit_counts = {int(uid): int((labels == uid).sum()) for uid in unique_ids}
     low_count_units = {uid for uid, count in unit_counts.items() if count < 500}
 
@@ -1324,7 +1344,8 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
             continue
 
         waveform = recording.get_traces(start_frame=int(start), end_frame=int(end))
-        waveform_flat = waveform.flatten().astype(np.float64)
+        waveform = waveform.astype(np.float64) / channel_stds
+        waveform_flat = waveform.flatten()
         waveform_flat_centered = waveform_flat - waveform_flat.mean()
         waveform_norm = np.linalg.norm(waveform_flat_centered)
 
