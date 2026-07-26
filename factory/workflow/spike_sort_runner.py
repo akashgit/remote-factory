@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 # Add ds_ref to path
 import os
@@ -31,6 +30,7 @@ def main() -> int:
             "compute_cluster_metrics", "apply_cluster_actions",
             "templates", "compute_template_metrics", "apply_template_actions",
             "match", "compute_final_metrics", "apply_final_actions",
+            "evaluate_accuracy",
         ],
         help="Stage name to execute",
     )
@@ -42,6 +42,7 @@ def main() -> int:
         preprocess,
         detect_trial,
         detect,
+        evaluate_accuracy,
         localize,
         cluster,
         compute_cluster_metrics,
@@ -68,6 +69,7 @@ def main() -> int:
         "match": template_match,
         "compute_final_metrics": compute_final_metrics,
         "apply_final_actions": apply_final_actions,
+        "evaluate_accuracy": evaluate_accuracy,
     }
 
     func = stage_map[args.stage]
