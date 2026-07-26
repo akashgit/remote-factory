@@ -529,6 +529,7 @@ def test_spike_sort_recovery_node_properties():
     assert recovery.callable_name == "factory.workflow.spike_sort_stages:recover_low_snr_spikes"
     assert "preprocessed/" in recovery.reads
     assert "sorting_final/" in recovery.reads
+    assert "templates_refined/" in recovery.reads
     assert "sorting_final/" in recovery.writes
     assert "recovery_stats.json" in recovery.writes
 

@@ -1233,8 +1233,8 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
 def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     """Correlation-based recovery of unassigned and low-count spikes.
 
-    Computes templates from sorting_final's assigned spikes rather than loading
-    from template_data.npz, which was computed on different spike times.
+    Uses DARTsort templates from templates_refined/ with the correct
+    asymmetric window (42 before + 79 after trough = 121 samples).
     """
     import spikeinterface.core as si
 
@@ -1250,18 +1250,42 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
 
     unique_ids = np.unique(labels[labels >= 0])
 
-    half_width = 41
-    n_time = 2 * half_width
-    templates_dict = _compute_quick_templates(
-        recording, labels, times, unique_ids, n_sample=200, half_width=half_width,
-    )
+    templates_refined_path = out / "templates_refined" / "template_data.npz"
+    if not templates_refined_path.exists():
+        log.info("recover_low_snr_spikes.skip", reason="templates_refined not found")
+        stats = {
+            "n_unassigned_before": int((labels < 0).sum()),
+            "n_candidates_evaluated": 0,
+            "n_recovered": 0,
+            "recovery_rate": 0.0,
+            "n_low_count_units": 0,
+            "per_unit_recovered": {},
+        }
+        (out / "recovery_stats.json").write_text(json.dumps(stats, indent=2))
+        return
+
+    templates_data = np.load(templates_refined_path, allow_pickle=True)
+    templates_arr = templates_data["templates"]  # (n_units, 121, n_channels)
+    n_time = templates_arr.shape[1]
+    samples_before = 42
+    samples_after = n_time - samples_before  # 79
+
+    if "unit_ids" in templates_data:
+        template_unit_ids = templates_data["unit_ids"].astype(np.int64)
+    else:
+        template_unit_ids = np.arange(templates_arr.shape[0], dtype=np.int64)
+
+    present_set = set(unique_ids.tolist())
+    keep_mask = np.array([int(uid) in present_set for uid in template_unit_ids])
+    templates_arr = templates_arr[keep_mask]
+    template_unit_ids = template_unit_ids[keep_mask]
 
     unassigned_mask = labels < 0
     unassigned_indices = np.flatnonzero(unassigned_mask)
     n_unassigned = len(unassigned_indices)
 
-    if not templates_dict:
-        log.info("recover_low_snr_spikes.skip", reason="no templates computed")
+    if len(templates_arr) == 0:
+        log.info("recover_low_snr_spikes.skip", reason="no matching templates")
         stats = {
             "n_unassigned_before": int(n_unassigned),
             "n_candidates_evaluated": 0,
@@ -1272,9 +1296,6 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
         }
         (out / "recovery_stats.json").write_text(json.dumps(stats, indent=2))
         return
-
-    template_unit_ids = np.array(sorted(templates_dict.keys()), dtype=np.int64)
-    templates_arr = np.stack([templates_dict[uid] for uid in template_unit_ids])
 
     # Per-channel standardization so templates and candidate waveforms
     # are on the same scale (templates average out noise → std~1,
@@ -1338,8 +1359,8 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     for idx in candidate_indices:
         spike_time = times[idx]
 
-        start = spike_time - half_width
-        end = start + n_time
+        start = spike_time - samples_before
+        end = spike_time + samples_after
         if start < 0 or end > recording.get_num_samples():
             continue
 

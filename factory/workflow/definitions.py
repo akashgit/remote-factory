@@ -2984,7 +2984,7 @@ def spike_sort_workflow() -> Workflow:
             "via residual energy (RMS(residual) < 0.3 * RMS(waveform)). "
             "Updates sorting_final/ in-place with recovered assignments."
         ),
-        reads={"preprocessed/", "sorting_final/"},
+        reads={"preprocessed/", "sorting_final/", "templates_refined/"},
         writes={"sorting_final/", "recovery_stats.json"},
     )
 
