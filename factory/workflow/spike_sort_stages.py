@@ -545,49 +545,124 @@ def _compute_ccg_refractory(
     times_b: np.ndarray,
     sampling_rate: float = 30000.0,
     refractory_ms: float = 1.5,
-    window_ms: float = 50.0,
+    duration_s: float | None = None,
 ) -> tuple[float, float]:
-    """Compute R12 and Q12 refractory scores from cross-correlogram."""
-    max_lag = int(window_ms * sampling_rate / 1000)
-    refractory_samples = refractory_ms * sampling_rate / 1000
-    baseline_samples = 10.0 * sampling_rate / 1000
+    """Compute R12 and Q12 refractory scores for a cross-correlogram.
 
-    all_diffs = []
-    for t in times_a:
-        diffs = times_b - t
-        mask = np.abs(diffs) <= max_lag
-        all_diffs.extend(diffs[mask].tolist())
+    R12: ratio of observed to expected refractory violations under independence.
+    Q12: statistical significance of the refractory dip (Poisson z-score
+    converted to a [0,1] confidence via the error function). High Q12 means the
+    refractory dip is statistically significant (contamination evidence).
 
-    if not all_diffs:
+    Vectorized via searchsorted for O(N_a log N_b) performance.
+    """
+    import math
+
+    if len(times_a) < 2 or len(times_b) < 2:
         return 1.0, 0.0
 
-    diffs_arr = np.array(all_diffs)
-    refractory_mask = np.abs(diffs_arr) < refractory_samples
-    baseline_mask = np.abs(diffs_arr) > baseline_samples
+    refractory_s = refractory_ms / 1000.0
+    refractory_samples = refractory_s * sampling_rate
 
-    if baseline_mask.any() or refractory_mask.any():
-        n_baseline = baseline_mask.sum()
-        n_refractory = refractory_mask.sum()
-        baseline_density = n_baseline / (max_lag - baseline_samples) if (max_lag - baseline_samples) > 0 else 1.0
-        refractory_density = n_refractory / refractory_samples if refractory_samples > 0 else 0.0
-        r12 = refractory_density / baseline_density if baseline_density > 0 else 1.0
+    sorted_b = np.sort(times_b)
+    lo = np.searchsorted(sorted_b, times_a - refractory_samples)
+    hi = np.searchsorted(sorted_b, times_a + refractory_samples)
+    n_violations = int(np.sum(hi - lo))
+
+    if duration_s is None:
+        all_times = np.concatenate([times_a, times_b])
+        duration_s = float((all_times.max() - all_times.min()) / sampling_rate)
+
+    if duration_s <= 0:
+        return 1.0, 0.0
+
+    n_a, n_b = len(times_a), len(times_b)
+    expected = 2 * refractory_s * n_a * n_b / duration_s
+    if expected <= 0:
+        return 1.0, 0.0
+
+    r12 = float(n_violations / expected)
+
+    # Poisson z-score: how many σ below expected is the observed count
+    z = (expected - n_violations) / max(expected**0.5, 1e-10)
+    if z > 0 and expected >= 5:
+        q12 = math.erf(z / 2**0.5)
     else:
-        r12 = 1.0
+        q12 = 0.0
 
-    q12 = max(0.0, 1.0 - r12)
-    return r12, q12
+    return r12, float(q12)
 
 
 # ── Gate FnNode implementations ──────────────────────────────────
 
 
+def _compute_quick_templates(
+    recording: object,
+    labels: np.ndarray,
+    times: np.ndarray,
+    unique_ids: np.ndarray,
+    n_sample: int = 200,
+    half_width: int = 41,
+) -> dict[int, np.ndarray]:
+    """Compute mean waveforms per cluster by sampling spikes from the recording.
+
+    Reads data in sorted time order for sequential I/O performance.
+    Returns dict mapping cluster ID to mean waveform (n_time, n_channels).
+    """
+    n_time = 2 * half_width
+    n_frames = recording.get_num_frames()
+
+    all_times_list: list[int] = []
+    all_uids_list: list[int] = []
+    for uid in unique_ids:
+        uid_int = int(uid)
+        mask = labels == uid_int
+        spike_t = times[mask]
+        if len(spike_t) == 0:
+            continue
+        rng = np.random.default_rng(uid_int)
+        n = min(n_sample, len(spike_t))
+        chosen = spike_t[rng.choice(len(spike_t), n, replace=False)]
+        valid = (chosen >= half_width) & (chosen + half_width <= n_frames)
+        chosen = chosen[valid]
+        all_times_list.extend(chosen.tolist())
+        all_uids_list.extend([uid_int] * len(chosen))
+
+    if not all_times_list:
+        return {}
+
+    all_t = np.array(all_times_list, dtype=np.int64)
+    all_u = np.array(all_uids_list, dtype=np.int64)
+    order = np.argsort(all_t)
+    all_t = all_t[order]
+    all_u = all_u[order]
+
+    n_channels = recording.get_num_channels()
+    sums: dict[int, np.ndarray] = {}
+    counts: dict[int, int] = {}
+
+    for t, uid in zip(all_t, all_u):
+        start = int(t) - half_width
+        wf = recording.get_traces(start_frame=start, end_frame=start + n_time)
+        if wf.shape[0] == n_time:
+            if uid not in sums:
+                sums[uid] = np.zeros((n_time, n_channels), dtype=np.float64)
+                counts[uid] = 0
+            sums[uid] += wf
+            counts[uid] += 1
+
+    return {uid: sums[uid] / counts[uid] for uid in sums if counts.get(uid, 0) > 0}
+
+
 def compute_cluster_metrics(project_path: str, output_dir: str) -> None:
     """Compute per-cluster and pairwise metrics for Gate 1 (post-clustering)."""
+    import spikeinterface.core as si
     from dartsort.util.data_util import DARTsortSorting
 
     out = Path(output_dir)
     sorting = DARTsortSorting.load(out / "clusters" / "sorting.npz")
     context = json.loads((out / "recording_context.json").read_text())
+    recording = si.load(out / "preprocessed")
 
     labels = sorting.labels if hasattr(sorting, "labels") else np.array([])
     times = sorting.times_samples if hasattr(sorting, "times_samples") else np.array([])
@@ -600,6 +675,8 @@ def compute_cluster_metrics(project_path: str, output_dir: str) -> None:
     loc_path = out / "localizations.npz"
     if loc_path.exists():
         locs = np.load(loc_path)
+
+    templates_dict = _compute_quick_templates(recording, labels, times, unique_ids)
 
     per_cluster = []
     centroids: dict[int, tuple[float, float]] = {}
@@ -670,8 +747,17 @@ def compute_cluster_metrics(project_path: str, output_dir: str) -> None:
             if dist > 100.0:
                 continue
 
-            # Template correlation (using mean spike amplitudes as proxy)
+            # Template correlation from mean waveforms
             corr = 0.0
+            if uid_a in templates_dict and uid_b in templates_dict:
+                ta = templates_dict[uid_a].flatten()
+                tb = templates_dict[uid_b].flatten()
+                ta_c = ta - ta.mean()
+                tb_c = tb - tb.mean()
+                na = np.linalg.norm(ta_c)
+                nb = np.linalg.norm(tb_c)
+                if na > 1e-10 and nb > 1e-10:
+                    corr = float(np.dot(ta_c, tb_c) / (na * nb))
 
             # CCG refractory
             mask_a = labels == uid_a
@@ -683,7 +769,9 @@ def compute_cluster_metrics(project_path: str, output_dir: str) -> None:
             if len(times_a) > 10 and len(times_b) > 10:
                 sub_a = times_a[:min(5000, len(times_a))]
                 sub_b = times_b[:min(5000, len(times_b))]
-                r12, q12 = _compute_ccg_refractory(sub_a, sub_b, sampling_rate)
+                r12, q12 = _compute_ccg_refractory(
+                    sub_a, sub_b, sampling_rate, duration_s=duration_s
+                )
 
             pairwise.append({
                 "cluster_a": uid_a,
@@ -750,18 +838,61 @@ def apply_cluster_actions(project_path: str, output_dir: str) -> None:
     )
 
 
+def _compute_template_similarities(templates_arr: np.ndarray | None) -> np.ndarray:
+    """Compute max pairwise correlation per template using SVD compression.
+
+    O(N*D*k + N^2*k) with rank-k SVD instead of O(N^2*D) for the naive loop.
+    For 1253 templates this runs in seconds instead of 20+ minutes.
+    """
+    if templates_arr is None or len(templates_arr) < 2:
+        return np.zeros(len(templates_arr) if templates_arr is not None else 0)
+
+    n = len(templates_arr)
+    flat = templates_arr.reshape(n, -1).astype(np.float64)
+    flat -= flat.mean(axis=1, keepdims=True)
+    norms = np.linalg.norm(flat, axis=1)
+    valid_mask = norms > 1e-10
+
+    result = np.zeros(n)
+    n_valid = int(valid_mask.sum())
+    if n_valid < 2:
+        return result
+
+    valid_flat = flat[valid_mask] / norms[valid_mask, np.newaxis]
+
+    n_components = min(20, n_valid - 1, valid_flat.shape[1])
+    if n_components > 0 and valid_flat.shape[1] > 2 * n_components:
+        U, S, _ = np.linalg.svd(valid_flat, full_matrices=False)
+        compressed = U[:, :n_components] * S[:n_components]
+        c_norms = np.linalg.norm(compressed, axis=1, keepdims=True)
+        c_norms = np.maximum(c_norms, 1e-10)
+        compressed /= c_norms
+        corr_matrix = compressed @ compressed.T
+    else:
+        corr_matrix = valid_flat @ valid_flat.T
+
+    np.fill_diagonal(corr_matrix, -np.inf)
+    max_corr = np.maximum(corr_matrix.max(axis=1), 0.0)
+
+    valid_indices = np.flatnonzero(valid_mask)
+    result[valid_indices] = max_corr
+
+    return result
+
+
 def compute_template_metrics(project_path: str, output_dir: str) -> None:
     """Compute per-template metrics for Gate 2 (post-template)."""
     out = Path(output_dir)
     template_stats = json.loads((out / "template_stats.json").read_text())
 
-    # Load template data for similarity computation
     templates_arr = None
     template_npz = out / "templates" / "template_data.npz"
     if template_npz.exists():
         tdata = np.load(template_npz, allow_pickle=True)
         if "templates" in tdata:
             templates_arr = tdata["templates"]
+
+    similarity_scores = _compute_template_similarities(templates_arr)
 
     per_template = []
     for stats in template_stats:
@@ -772,17 +903,7 @@ def compute_template_metrics(project_path: str, output_dir: str) -> None:
         ptp_uv = stats.get("ptp_amplitude_uv", 0.0)
         spatial_spread = stats.get("spatial_spread_um", 0.0)
 
-        # Compute max similarity with other templates
-        similarity_max = 0.0
-        if templates_arr is not None and len(templates_arr) > 1 and tid < len(templates_arr):
-            t_flat = templates_arr[tid].flatten()
-            for j in range(len(templates_arr)):
-                if j == tid:
-                    continue
-                other_flat = templates_arr[j].flatten()
-                if len(t_flat) == len(other_flat) and np.std(t_flat) > 0 and np.std(other_flat) > 0:
-                    corr = float(np.corrcoef(t_flat, other_flat)[0, 1])
-                    similarity_max = max(similarity_max, corr)
+        similarity_max = float(similarity_scores[tid]) if tid < len(similarity_scores) else 0.0
 
         per_template.append({
             "template_id": tid,
@@ -974,4 +1095,61 @@ def apply_final_actions(project_path: str, output_dir: str) -> None:
         units=result["final_unit_count"],
         deleted=result["units_deleted"],
         merged=result["units_merged"],
+    )
+
+
+def merge_clusters(project_path: str, output_dir: str) -> None:
+    """Post-clustering merge using DARTsort's agglomerate with SVD template distances.
+
+    Uses template_distances() for SVD-compressed pairwise distances, firing_corr()
+    for temporal correlation, and linkage clustering for transitive merges.
+    Overwrites clusters/sorting.npz with the merged result.
+    """
+    import spikeinterface.core as si
+    from dartsort.clustering.agglomerate import agglomerate
+    from dartsort.util.data_util import DARTsortSorting
+    from dartsort.util.internal_config import default_dartsort_cfg, default_waveform_cfg
+    from dartsort.util.motion import MotionInfo
+
+    out = Path(output_dir)
+    recording = si.load(out / "preprocessed")
+    sorting = DARTsortSorting.load(out / "clusters" / "sorting.npz")
+
+    motion_dir = out / "motion"
+    motion = MotionInfo.try_load(motion_dir) if motion_dir.exists() else None
+    if motion is None:
+        log.warning("merge_clusters.skip", reason="no motion data available")
+        return
+
+    agg_cfg = default_dartsort_cfg.agglomerate_cfg
+
+    labels_before = sorting.labels
+    n_before = len(np.unique(labels_before[labels_before >= 0])) if labels_before is not None else 0
+
+    result = agglomerate(
+        sorting=sorting,
+        recording=recording,
+        template_merge_cfg=agg_cfg.template_merge_cfg,
+        refinement_cfg=agg_cfg,
+        motion=motion,
+        waveform_cfg=default_waveform_cfg,
+    )
+
+    merged_sorting = result.agglomerated_sorting
+    merged_sorting.save(out / "clusters" / "sorting.npz")
+
+    labels_after = merged_sorting.labels if hasattr(merged_sorting, "labels") else np.array([])
+    n_after = len(np.unique(labels_after[labels_after >= 0])) if len(labels_after) > 0 else 0
+
+    summary = {
+        "units_before_merge": n_before,
+        "units_after_merge": n_after,
+        "units_merged": n_before - n_after,
+    }
+    (out / "merge_summary.json").write_text(json.dumps(summary, indent=2))
+    log.info(
+        "merge_clusters.complete",
+        before=n_before,
+        after=n_after,
+        merged=n_before - n_after,
     )
