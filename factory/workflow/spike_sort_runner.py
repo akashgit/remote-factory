@@ -26,7 +26,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run spike-sort stages")
     parser.add_argument(
         "stage",
-        choices=["preprocess", "detect_trial", "detect", "localize", "cluster", "templates", "match"],
+        choices=[
+            "preprocess", "detect_trial", "detect", "localize", "cluster",
+            "compute_cluster_metrics", "apply_cluster_actions",
+            "templates", "compute_template_metrics", "apply_template_actions",
+            "match", "compute_final_metrics", "apply_final_actions",
+        ],
         help="Stage name to execute",
     )
     parser.add_argument("--project-path", required=True, help="Path to the project")
@@ -39,8 +44,14 @@ def main() -> int:
         detect,
         localize,
         cluster,
+        compute_cluster_metrics,
+        apply_cluster_actions,
         compute_templates,
+        compute_template_metrics,
+        apply_template_actions,
         template_match,
+        compute_final_metrics,
+        apply_final_actions,
     )
 
     stage_map = {
@@ -49,8 +60,14 @@ def main() -> int:
         "detect": detect,
         "localize": localize,
         "cluster": cluster,
+        "compute_cluster_metrics": compute_cluster_metrics,
+        "apply_cluster_actions": apply_cluster_actions,
         "templates": compute_templates,
+        "compute_template_metrics": compute_template_metrics,
+        "apply_template_actions": apply_template_actions,
         "match": template_match,
+        "compute_final_metrics": compute_final_metrics,
+        "apply_final_actions": apply_final_actions,
     }
 
     func = stage_map[args.stage]

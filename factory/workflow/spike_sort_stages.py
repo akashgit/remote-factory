@@ -880,30 +880,66 @@ def _compute_template_similarities(templates_arr: np.ndarray | None) -> np.ndarr
     return result
 
 
+def _compute_template_snr(template: np.ndarray) -> float:
+    """Compute SNR for a single template as peak amplitude / noise std.
+
+    SNR = max absolute amplitude / std of baseline (first/last 10 samples).
+    """
+    if template is None or template.size == 0:
+        return 0.0
+    # Find peak channel
+    peak_channel = np.argmax(np.ptp(template, axis=0))
+    waveform = template[:, peak_channel]
+    # Peak amplitude (absolute)
+    peak_amp = np.max(np.abs(waveform))
+    # Noise estimate from baseline (first and last 10 samples)
+    n_baseline = min(10, len(waveform) // 4)
+    baseline = np.concatenate([waveform[:n_baseline], waveform[-n_baseline:]])
+    noise_std = np.std(baseline)
+    if noise_std < 1e-10:
+        return 0.0
+    return float(peak_amp / noise_std)
+
+
 def compute_template_metrics(project_path: str, output_dir: str) -> None:
     """Compute per-template metrics for Gate 2 (post-template)."""
     out = Path(output_dir)
     template_stats = json.loads((out / "template_stats.json").read_text())
 
     templates_arr = None
+    unit_ids = None
     template_npz = out / "templates" / "template_data.npz"
     if template_npz.exists():
         tdata = np.load(template_npz, allow_pickle=True)
         if "templates" in tdata:
             templates_arr = tdata["templates"]
+        if "unit_ids" in tdata:
+            unit_ids = tdata["unit_ids"]
 
     similarity_scores = _compute_template_similarities(templates_arr)
 
+    # Build template lookup by unit_id
+    template_by_id: dict[int, np.ndarray] = {}
+    if templates_arr is not None and unit_ids is not None:
+        for i, uid in enumerate(unit_ids):
+            template_by_id[int(uid)] = templates_arr[i]
+
     per_template = []
-    for stats in template_stats:
+    for idx, stats in enumerate(template_stats):
         tid = stats["template_id"]
         spike_count = stats.get("spike_count", 0)
-        snr = stats.get("snr", 0.0)
         stability = stats.get("stability", 0.9)
         ptp_uv = stats.get("ptp_amplitude_uv", 0.0)
         spatial_spread = stats.get("spatial_spread_um", 0.0)
 
-        similarity_max = float(similarity_scores[tid]) if tid < len(similarity_scores) else 0.0
+        # Compute SNR from actual template waveform
+        snr = 0.0
+        if tid in template_by_id:
+            snr = _compute_template_snr(template_by_id[tid])
+        elif templates_arr is not None and idx < len(templates_arr):
+            snr = _compute_template_snr(templates_arr[idx])
+
+        similarity_max = float(similarity_scores[idx]) if idx < len(similarity_scores) else 0.0
 
         per_template.append({
             "template_id": tid,
