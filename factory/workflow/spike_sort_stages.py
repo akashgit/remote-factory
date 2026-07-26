@@ -641,14 +641,19 @@ def _compute_quick_templates(
     times: np.ndarray,
     unique_ids: np.ndarray,
     n_sample: int = 200,
-    half_width: int = 41,
+    half_width: int | None = None,
+    samples_before: int = 42,
+    samples_after: int = 79,
 ) -> dict[int, np.ndarray]:
     """Compute mean waveforms per cluster by sampling spikes from the recording.
 
     Reads data in sorted time order for sequential I/O performance.
     Returns dict mapping cluster ID to mean waveform (n_time, n_channels).
     """
-    n_time = 2 * half_width
+    if half_width is not None:
+        samples_before = half_width
+        samples_after = half_width
+    n_time = samples_before + samples_after
     n_frames = recording.get_num_frames()
 
     all_times_list: list[int] = []
@@ -662,7 +667,7 @@ def _compute_quick_templates(
         rng = np.random.default_rng(uid_int)
         n = min(n_sample, len(spike_t))
         chosen = spike_t[rng.choice(len(spike_t), n, replace=False)]
-        valid = (chosen >= half_width) & (chosen + half_width <= n_frames)
+        valid = (chosen >= samples_before) & (chosen + samples_after <= n_frames)
         chosen = chosen[valid]
         all_times_list.extend(chosen.tolist())
         all_uids_list.extend([uid_int] * len(chosen))
@@ -681,7 +686,7 @@ def _compute_quick_templates(
     counts: dict[int, int] = {}
 
     for t, uid in zip(all_t, all_u):
-        start = int(t) - half_width
+        start = int(t) - samples_before
         wf = recording.get_traces(start_frame=start, end_frame=start + n_time)
         if wf.shape[0] == n_time:
             if uid not in sums:
@@ -1231,7 +1236,11 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
 
 
 def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
-    """Correlation-based recovery of unassigned and low-count spikes."""
+    """Correlation-based recovery of unassigned and low-count spikes.
+
+    Computes templates directly from sorting_final using DARTsort's
+    asymmetric window (42 before + 79 after trough = 121 samples).
+    """
     import spikeinterface.core as si
 
     out = Path(output_dir)
@@ -1244,18 +1253,58 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     labels = data["labels"].copy()
     sampling_freq = float(data["sampling_frequency"])
 
-    template_npz = out / "templates_refined" / "template_data.npz"
-    if not template_npz.exists():
-        template_npz = out / "templates" / "template_data.npz"
-    template_data = np.load(template_npz)
-    templates_arr = template_data["templates"]
-    template_unit_ids = template_data["unit_ids"]
+    unique_ids = np.unique(labels[labels >= 0])
+
+    samples_before = 42
+    samples_after = 79
+
+    templates_dict = _compute_quick_templates(
+        recording, labels, times, unique_ids,
+        samples_before=samples_before, samples_after=samples_after,
+    )
+
+    template_unit_ids = np.array(sorted(templates_dict.keys()), dtype=np.int64)
+    if len(template_unit_ids) == 0:
+        log.info("recover_low_snr_spikes.skip", reason="no templates computed")
+        stats = {
+            "n_unassigned_before": int((labels < 0).sum()),
+            "n_candidates_evaluated": 0,
+            "n_recovered": 0,
+            "recovery_rate": 0.0,
+            "n_low_count_units": 0,
+            "per_unit_recovered": {},
+        }
+        (out / "recovery_stats.json").write_text(json.dumps(stats, indent=2))
+        return
+
+    templates_arr = np.stack(
+        [templates_dict[int(uid)] for uid in template_unit_ids]
+    )
 
     unassigned_mask = labels < 0
     unassigned_indices = np.flatnonzero(unassigned_mask)
     n_unassigned = len(unassigned_indices)
 
-    unique_ids = np.unique(labels[labels >= 0])
+    # Per-channel standardization so templates and candidate waveforms
+    # are on the same scale (templates average out noise → std~1,
+    # individual waveforms retain full noise → std~5 without this).
+    noise_stats_path = out / "noise_stats.json"
+    if noise_stats_path.exists():
+        noise_data = json.loads(noise_stats_path.read_text())
+        channel_stds = np.array(noise_data["mad_per_channel"], dtype=np.float64)
+        channel_stds = np.maximum(channel_stds, 1e-6)
+    else:
+        sample_traces = recording.get_traces(
+            start_frame=0, end_frame=min(30000, recording.get_num_samples()),
+        )
+        channel_stds = (
+            np.median(np.abs(sample_traces - np.median(sample_traces, axis=0)), axis=0)
+            * 1.4826
+        )
+        channel_stds = np.maximum(channel_stds, 1e-6)
+
+    templates_arr = templates_arr / channel_stds[np.newaxis, np.newaxis, :]
+
     unit_counts = {int(uid): int((labels == uid).sum()) for uid in unique_ids}
     low_count_units = {uid for uid, count in unit_counts.items() if count < 500}
 
@@ -1266,7 +1315,6 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     else:
         candidate_indices = unassigned_indices
 
-    half_width = templates_arr.shape[1] // 2
     n_recovered = 0
     recovered_per_unit: dict[int, int] = {}
 
@@ -1299,13 +1347,14 @@ def recover_low_snr_spikes(project_path: str, output_dir: str) -> None:
     for idx in candidate_indices:
         spike_time = times[idx]
 
-        start = spike_time - half_width
-        end = spike_time + half_width + 1
+        start = spike_time - samples_before
+        end = spike_time + samples_after
         if start < 0 or end > recording.get_num_samples():
             continue
 
         waveform = recording.get_traces(start_frame=int(start), end_frame=int(end))
-        waveform_flat = waveform.flatten().astype(np.float64)
+        waveform = waveform.astype(np.float64) / channel_stds
+        waveform_flat = waveform.flatten()
         waveform_flat_centered = waveform_flat - waveform_flat.mean()
         waveform_norm = np.linalg.norm(waveform_flat_centered)
 
