@@ -1195,9 +1195,14 @@ def merge_clusters(project_path: str, output_dir: str) -> None:
 
 
 def evaluate_accuracy(project_path: str, output_dir: str) -> dict:
-    """Compare final sorting to ground truth using benchmark profile."""
+    """Compare final sorting to ground truth using benchmark profile.
+
+    Uses make_match_count_matrix directly instead of compare_sorter_to_ground_truth
+    because the latter has a bug in SpikeInterface 0.104.x where delta_frames=0.
+    """
     import spikeinterface.core as si
-    from spikeinterface.comparison import compare_sorter_to_ground_truth
+    from spikeinterface.core import NumpySorting
+    from spikeinterface.comparison.comparisontools import make_match_count_matrix
 
     out = Path(output_dir)
     benchmark_path = Path(project_path) / "benchmark.md"
@@ -1224,44 +1229,64 @@ def evaluate_accuracy(project_path: str, output_dir: str) -> dict:
     labels = data["labels"]
     sampling_freq = float(data["sampling_frequency"]) if "sampling_frequency" in data else profile.sampling_frequency
 
-    from spikeinterface.core import NumpySorting
-
     unique_ids = np.unique(labels[labels >= 0])
-    units_dict: dict[str, np.ndarray] = {}
+    units_dict: dict[int, np.ndarray] = {}
     for uid in unique_ids:
         spike_times = times[labels == uid]
-        units_dict[str(int(uid))] = np.sort(spike_times)
+        units_dict[int(uid)] = np.sort(spike_times)
 
     tested_sorting = NumpySorting.from_unit_dict(
         units_dict, sampling_frequency=sampling_freq,
     )
 
-    delta_time = profile.match_tolerance_samples / profile.sampling_frequency
-    comp = compare_sorter_to_ground_truth(
-        gt_sorting=gt_sorting,
-        tested_sorting=tested_sorting,
-        delta_time=delta_time,
+    # Use make_match_count_matrix directly with delta_frames (not delta_time)
+    # This avoids a bug in compare_sorter_to_ground_truth where delta_frames=0
+    match_matrix = make_match_count_matrix(
+        gt_sorting, tested_sorting,
+        delta_frames=profile.match_tolerance_samples,
+        ensure_symmetry=False,
     )
 
-    perf = comp.get_performance()
-    accuracy_values = perf["accuracy"].values
-    accuracy = float(np.mean(accuracy_values))
+    # Compute per-GT-unit accuracy using best match
+    per_unit_results = []
+    for gt_id in gt_sorting.unit_ids:
+        gt_count = len(gt_sorting.get_unit_spike_train(gt_id))
 
-    gt_unit_ids = comp.get_ordered_agreement_scores().index.tolist()
-    per_unit_accuracy = {}
-    for i, uid in enumerate(gt_unit_ids):
-        if i < len(accuracy_values):
-            per_unit_accuracy[str(uid)] = round(float(accuracy_values[i]), 4)
+        row = match_matrix.loc[gt_id]
+        best_tested_id = row.idxmax()
+        n_match = float(row[best_tested_id])
+        tested_count = len(tested_sorting.get_unit_spike_train(best_tested_id))
+
+        # accuracy = TP / (TP + FP + FN) = n_match / (gt + tested - n_match)
+        denom = gt_count + tested_count - n_match
+        accuracy = n_match / denom if denom > 0 else 0.0
+        recall = n_match / gt_count if gt_count > 0 else 0.0
+        precision = n_match / tested_count if tested_count > 0 else 0.0
+
+        per_unit_results.append({
+            "gt_id": int(gt_id),
+            "best_match": int(best_tested_id),
+            "n_match": int(n_match),
+            "accuracy": round(accuracy, 4),
+            "recall": round(recall, 4),
+            "precision": round(precision, 4),
+        })
+
+    accuracies = [r["accuracy"] for r in per_unit_results]
+    mean_accuracy = float(np.mean(accuracies))
+
+    per_unit_accuracy = {str(r["gt_id"]): r["accuracy"] for r in per_unit_results}
 
     result = {
-        "accuracy": round(accuracy, 4),
+        "accuracy": round(mean_accuracy, 4),
         "baseline": profile.baseline_accuracy,
-        "delta": round(accuracy - profile.baseline_accuracy, 4),
+        "delta": round(mean_accuracy - profile.baseline_accuracy, 4),
         "target": profile.target_accuracy,
-        "target_met": accuracy >= profile.target_accuracy,
+        "target_met": mean_accuracy >= profile.target_accuracy,
         "n_gt_units": len(gt_sorting.unit_ids),
         "n_sorted_units": len(tested_sorting.unit_ids),
         "per_unit_accuracy": per_unit_accuracy,
+        "per_unit_details": per_unit_results,
     }
 
     (out / "benchmark_result.json").write_text(json.dumps(result, indent=2))
