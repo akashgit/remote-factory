@@ -1,4 +1,4 @@
-"""Tests for the spike-sort workflow definition (15-node LLM gates version)."""
+"""Tests for the spike-sort workflow definition (17-node LLM gates version)."""
 
 from __future__ import annotations
 
@@ -22,14 +22,14 @@ def test_spike_sort_workflow_validates():
 # ── Node structure ────────────────────────────────────────────────
 
 
-def test_spike_sort_has_15_nodes():
-    """Spike-sort pipeline has exactly 15 nodes: 12 FnNodes + 3 AgentNodes."""
+def test_spike_sort_has_17_nodes():
+    """Spike-sort pipeline has exactly 17 nodes: 14 FnNodes + 3 AgentNodes."""
     wf = spike_sort_workflow()
     fn_nodes = [n for n in wf.nodes.values() if isinstance(n, FnNode)]
     agent_nodes = [n for n in wf.nodes.values() if isinstance(n, AgentNode)]
-    assert len(fn_nodes) == 12, f"Expected 12 FnNodes, got {len(fn_nodes)}"
+    assert len(fn_nodes) == 14, f"Expected 14 FnNodes, got {len(fn_nodes)}"
     assert len(agent_nodes) == 3, f"Expected 3 AgentNodes, got {len(agent_nodes)}"
-    assert len(wf.nodes) == 15
+    assert len(wf.nodes) == 17
 
 
 def test_spike_sort_node_ids():
@@ -51,6 +51,8 @@ def test_spike_sort_node_ids():
         "compute_final_metrics",
         "gate_post_match",
         "apply_final_actions",
+        "recover_low_snr_spikes",
+        "evaluate_accuracy",
     }
     assert set(wf.nodes.keys()) == expected
 
@@ -66,9 +68,9 @@ def test_spike_sort_removed_nodes_absent():
 
 
 def test_spike_sort_is_linear():
-    """Spike-sort has exactly 14 edges forming a linear chain."""
+    """Spike-sort has exactly 16 edges forming a linear chain."""
     wf = spike_sort_workflow()
-    assert len(wf.edges) == 14
+    assert len(wf.edges) == 16
 
     expected_chain = [
         ("preprocess", "detect"),
@@ -85,6 +87,8 @@ def test_spike_sort_is_linear():
         ("match", "compute_final_metrics"),
         ("compute_final_metrics", "gate_post_match"),
         ("gate_post_match", "apply_final_actions"),
+        ("apply_final_actions", "recover_low_snr_spikes"),
+        ("recover_low_snr_spikes", "evaluate_accuracy"),
     ]
     actual_chain = [(e.source, e.target) for e in wf.edges]
     assert actual_chain == expected_chain
@@ -175,6 +179,8 @@ def test_spike_sort_fn_callables():
         "apply_template_actions": "factory.workflow.spike_sort_stages:apply_template_actions",
         "compute_final_metrics": "factory.workflow.spike_sort_stages:compute_final_metrics",
         "apply_final_actions": "factory.workflow.spike_sort_stages:apply_final_actions",
+        "recover_low_snr_spikes": "factory.workflow.spike_sort_stages:recover_low_snr_spikes",
+        "evaluate_accuracy": "factory.workflow.spike_sort_stages:evaluate_accuracy",
     }
     for node_id, expected in expected_callables.items():
         node = wf.nodes[node_id]
@@ -207,6 +213,8 @@ def test_spike_sort_data_flow():
         "compute_final_metrics",
         "gate_post_match",
         "apply_final_actions",
+        "recover_low_snr_spikes",
+        "evaluate_accuracy",
     ]
 
     available: set[str] = set()
@@ -465,14 +473,14 @@ def test_spike_sort_workflow_name():
 
 
 def test_spike_sort_input_output_format():
-    """Pipeline start writes preprocessed/ and final node produces sorting_final/."""
+    """Pipeline start writes preprocessed/ and final node produces benchmark_result.json."""
     wf = spike_sort_workflow()
 
     first_node = wf.nodes[wf.start_node]
     assert "preprocessed/" in first_node.writes
 
-    final_node = wf.nodes["apply_final_actions"]
-    assert "sorting_final/" in final_node.writes
+    final_node = wf.nodes["evaluate_accuracy"]
+    assert "benchmark_result.json" in final_node.writes
 
 
 # ── Gate prompt constants ────────────────────────────────────────
@@ -507,3 +515,50 @@ def test_gate_prompts_are_context_first():
     assert "context" in GATE_POST_CLUSTER_PROMPT.lower()
     assert "context" in GATE_POST_TEMPLATE_PROMPT.lower()
     assert "context" in GATE_POST_MATCH_PROMPT.lower()
+
+
+# ── Recovery and accuracy node tests ──────────────────────────────
+
+
+def test_spike_sort_recovery_node_properties():
+    """Verify recover_low_snr_spikes node has correct reads/writes."""
+    wf = spike_sort_workflow()
+
+    recovery = wf.nodes["recover_low_snr_spikes"]
+    assert isinstance(recovery, FnNode)
+    assert recovery.callable_name == "factory.workflow.spike_sort_stages:recover_low_snr_spikes"
+    assert "preprocessed/" in recovery.reads
+    assert "sorting_final/" in recovery.reads
+    assert "templates_refined/" in recovery.reads
+    assert "sorting_final/" in recovery.writes
+    assert "recovery_stats.json" in recovery.writes
+
+
+def test_spike_sort_evaluate_accuracy_node_properties():
+    """Verify evaluate_accuracy node has correct reads/writes."""
+    wf = spike_sort_workflow()
+
+    eval_node = wf.nodes["evaluate_accuracy"]
+    assert isinstance(eval_node, FnNode)
+    assert eval_node.callable_name == "factory.workflow.spike_sort_stages:evaluate_accuracy"
+    assert "sorting_final/" in eval_node.reads
+    assert "benchmark_result.json" in eval_node.writes
+
+
+def test_spike_sort_recovery_edges():
+    """Verify recovery and eval nodes are correctly wired."""
+    wf = spike_sort_workflow()
+
+    edge_pairs = [(e.source, e.target) for e in wf.edges]
+    assert ("apply_final_actions", "recover_low_snr_spikes") in edge_pairs
+    assert ("recover_low_snr_spikes", "evaluate_accuracy") in edge_pairs
+
+
+def test_spike_sort_pipeline_ends_at_evaluate_accuracy():
+    """Verify the pipeline terminates at evaluate_accuracy."""
+    wf = spike_sort_workflow()
+
+    outgoing = [e for e in wf.edges if e.source == "evaluate_accuracy"]
+    assert len(outgoing) == 0
+
+    assert wf.start_node == "preprocess"

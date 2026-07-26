@@ -162,10 +162,13 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "spike-sort": {
         "description": (
-            "Spike sorting pipeline with LLM quality gates — executes DARTsort "
-            "algorithms with three quality gates (post-clustering, post-template, "
-            "post-matching) that compute metrics deterministically and use LLM agents "
-            "to interpret them in recording context. Use when invoked with --mode spike-sort."
+            "Spike sorting pipeline with LLM quality gates and low-SNR recovery — "
+            "executes DARTsort algorithms with three quality gates (post-clustering, "
+            "post-template, post-matching) that compute metrics deterministically and "
+            "use LLM agents to interpret them in recording context. Includes "
+            "correlation-based recovery of unassigned/low-count spikes with residual "
+            "verification, and benchmark accuracy evaluation against ground truth. "
+            "Use when invoked with --mode spike-sort."
         ),
         "argument_hint": "<project_path>",
     },
