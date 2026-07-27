@@ -514,8 +514,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     # resume
-    p = sub.add_parser("resume", help="Load checkpoint and display resume context")
+    p = sub.add_parser("resume", help="Resume a CEO session via Claude --resume")
     p.add_argument("path", help="Path to the project")
+    p.add_argument("--model", help="Model override for the resumed session")
 
     # log
     p = sub.add_parser("log", help="Append a structured event to .factory/events.jsonl")

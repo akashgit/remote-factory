@@ -1,4 +1,5 @@
 """CLI infra commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,6 +12,7 @@ from pathlib import Path
 from factory.cli._helpers import _emit_cli_event, _print_banner, _run
 
 log = structlog.get_logger()
+
 
 def cmd_archive(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import (
@@ -60,10 +62,14 @@ def cmd_archive(args: argparse.Namespace) -> int:
     from factory.obsidian.notes import vault_path as get_vault_path
 
     vp = get_vault_path()
-    _emit_cli_event(project_path, "archive.completed", {
-        "experiments": len(records),
-        "vault": str(vp) if vp else "none",
-    })
+    _emit_cli_event(
+        project_path,
+        "archive.completed",
+        {
+            "experiments": len(records),
+            "vault": str(vp) if vp else "none",
+        },
+    )
     if vp:
         print(f"Archived {len(records)} experiments to {vp}")
     else:
@@ -91,11 +97,15 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
     if args.save:
         completed_hyps: list[int] = []
         if args.completed_hypotheses:
-            completed_hyps = [int(x.strip()) for x in args.completed_hypotheses.split(",") if x.strip()]
+            completed_hyps = [
+                int(x.strip()) for x in args.completed_hypotheses.split(",") if x.strip()
+            ]
         state = CheckpointState(
             mode=args.mode or "improve",
             active_experiment_id=args.experiment,
-            completed_agents=[a.strip() for a in args.completed.split(",")] if args.completed else [],
+            completed_agents=[a.strip() for a in args.completed.split(",")]
+            if args.completed
+            else [],
             pending_agents=[a.strip() for a in args.pending.split(",")] if args.pending else [],
             last_eval_scores=json.loads(args.scores) if args.scores else {},
             current_hypothesis=args.hypothesis,
@@ -116,20 +126,49 @@ def cmd_checkpoint(args: argparse.Namespace) -> int:
 
 
 def cmd_resume(args: argparse.Namespace) -> int:
-    """Load checkpoint and display resume context for the CEO."""
-    from factory.checkpoint import format_checkpoint, load_checkpoint
+    """Resume a CEO session via Claude --resume.
+
+    Checks two sources for a session ID:
+    1. CycleState.claude_session_id (headless run interrupted mid-cycle)
+    2. .factory/state/session.json (any CEO run)
+    """
+    import os
+    import shutil
+
+    from factory.ceo_completion import read_ceo_session_id, read_cycle_state
 
     project_path = Path(args.path).resolve()
-    state = load_checkpoint(project_path)
-    if state is None:
-        print("No checkpoint found. Nothing to resume.")
+    model = getattr(args, "model", None)
+
+    session_id: str | None = None
+
+    cycle_state = read_cycle_state(project_path)
+    if cycle_state and cycle_state.claude_session_id:
+        session_id = cycle_state.claude_session_id
+        log.info("resume_from_cycle_state", session_id=session_id)
+
+    if not session_id:
+        session_id = read_ceo_session_id(project_path)
+        if session_id:
+            log.info("resume_from_session_file", session_id=session_id)
+
+    if not session_id:
+        print("No CEO session found to resume.", file=sys.stderr)
+        print("Run 'factory ceo <path>' first to create a session.", file=sys.stderr)
         return 1
 
-    print("=== Resume Context ===")
-    print(format_checkpoint(state))
-    print()
-    print("The CEO should resume from this state, skipping completed agents")
-    print(f"and continuing with: {', '.join(state.pending_agents) or 'none'}")
+    claude_path = shutil.which("claude")
+    if not claude_path:
+        print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
+        return 1
+
+    cmd = ["claude", "--resume", session_id]
+    if model:
+        cmd.extend(["--model", model])
+
+    print(f"Resuming CEO session: {session_id[:12]}...")
+    os.chdir(project_path)
+    os.execvp("claude", cmd)
     return 0
 
 
@@ -185,4 +224,3 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
     uvicorn.run(app, host=host, port=port, log_level="warning")
     return 0
-

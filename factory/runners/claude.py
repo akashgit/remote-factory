@@ -81,6 +81,7 @@ class ClaudeRunner:
     @classmethod
     def metadata(cls) -> RunnerMeta:
         from factory.runners.protocol import RunnerMeta
+
         return RunnerMeta(
             name="claude",
             display_name="Claude Code",
@@ -88,24 +89,35 @@ class ClaudeRunner:
             install_hint="npm install -g @anthropic-ai/claude-code",
             supports_usage_telemetry=True,
             supports_session_name=True,
+            supports_session_resume=True,
             supports_background=True,
         )
 
-    def build_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+    def build_command(
+        self, request: AgentRunRequest
+    ) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the Claude CLI command, env dict, and temp files."""
         prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+            mode="w",
+            suffix=".md",
+            prefix="factory-prompt-",
+            delete=False,
         )
         prompt_file.write(request.prompt)
         prompt_file.close()
         prompt_path = Path(prompt_file.name)
 
         cmd = [
-            "claude", "--append-system-prompt-file", prompt_file.name,
-            "-p", request.task,
-            "--output-format", "stream-json",
+            "claude",
+            "--append-system-prompt-file",
+            prompt_file.name,
+            "-p",
+            request.task,
+            "--output-format",
+            "stream-json",
             "--verbose",
-            "--disallowedTools", "Agent",
+            "--disallowedTools",
+            "Agent",
         ]
         settings_file = request.extras.get("settings_file")
         if settings_file:
@@ -116,6 +128,10 @@ class ClaudeRunner:
             cmd.extend(["--model", request.model])
         if request.session_name:
             cmd.extend(["--name", request.session_name])
+        if request.resume_session_id:
+            cmd.extend(["--resume", request.resume_session_id])
+        elif request.session_id:
+            cmd.extend(["--session-id", request.session_id])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.model:
@@ -132,7 +148,10 @@ class ClaudeRunner:
             from factory.runners._background import run_in_background
 
             stdout, rc, usage = await run_in_background(
-                request.prompt, request.task, request.cwd, request.role,
+                request.prompt,
+                request.task,
+                request.cwd,
+                request.role,
                 timeout=request.timeout,
                 model=request.model,
                 dangerously_skip_permissions=request.skip_permissions,
@@ -145,7 +164,10 @@ class ClaudeRunner:
 
             if tmux_available():
                 stdout, rc, usage = await run_in_tmux(
-                    request.prompt, request.task, request.cwd, request.role,
+                    request.prompt,
+                    request.task,
+                    request.cwd,
+                    request.role,
                     find_project_path(request.cwd),
                     model=request.model,
                     dangerously_skip_permissions=request.skip_permissions,
@@ -163,8 +185,12 @@ class ClaudeRunner:
                 on_line = _make_ceo_message_emitter(request.project_path)
 
             result = await run_subprocess(
-                cmd, cwd=str(request.cwd), env=env,
-                timeout=request.timeout, runner_name="claude", role=request.role,
+                cmd,
+                cwd=str(request.cwd),
+                env=env,
+                timeout=request.timeout,
+                runner_name="claude",
+                role=request.role,
                 on_line=on_line,
             )
 
@@ -189,8 +215,16 @@ class ClaudeRunner:
                 result_value = data.get("result", result.stdout)
                 result_text = result_value if isinstance(result_value, str) else result.stdout
                 usage = _parse_usage(data)
-                for key in ("session_id", "uuid", "stop_reason", "terminal_reason",
-                            "duration_api_ms", "ttft_ms", "is_error", "subtype"):
+                for key in (
+                    "session_id",
+                    "uuid",
+                    "stop_reason",
+                    "terminal_reason",
+                    "duration_api_ms",
+                    "ttft_ms",
+                    "is_error",
+                    "subtype",
+                ):
                     metadata[key] = data.get(key)
                 metadata["model_usage"] = data.get("modelUsage")
                 metadata["permission_denials"] = data.get("permission_denials")
@@ -205,10 +239,15 @@ class ClaudeRunner:
             for f in temp_files:
                 f.unlink(missing_ok=True)
 
-    def build_interactive_command(self, request: AgentRunRequest) -> tuple[list[str], dict[str, str], list[Path]]:
+    def build_interactive_command(
+        self, request: AgentRunRequest
+    ) -> tuple[list[str], dict[str, str], list[Path]]:
         """Build the CLI command, env dict, and temp files for an interactive invocation."""
         prompt_file = tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", prefix="factory-prompt-", delete=False,
+            mode="w",
+            suffix=".md",
+            prefix="factory-prompt-",
+            delete=False,
         )
         prompt_file.write(request.prompt)
         prompt_file.close()
@@ -242,7 +281,8 @@ class ClaudeRunner:
 
         cmd = [
             "claude",
-            "--append-system-prompt-file", prompt_file.name,
+            "--append-system-prompt-file",
+            prompt_file.name,
         ]
         settings_file = request.extras.get("settings_file")
         if settings_file:
@@ -254,6 +294,10 @@ class ClaudeRunner:
             cmd.extend(["--model", request.model])
         if request.session_name:
             cmd.extend(["--name", request.session_name])
+        if request.resume_session_id:
+            cmd.extend(["--resume", request.resume_session_id])
+        elif request.session_id:
+            cmd.extend(["--session-id", request.session_id])
 
         env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
         if request.model:
