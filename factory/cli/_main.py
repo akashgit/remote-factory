@@ -700,12 +700,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=CEO_MODES,
         default="auto",
-        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-        "build, discover, improve, meta, design (research + brainstorm → spec → build), "
-        "research (autonomous research optimization), review (on-demand PR review), "
-        "qa (QA verification pipeline for PRs), "
-        "or create (meta-mode for creating or updating factory modes — "
-        'use --focus "mode_name: change" to update an existing mode)',
+        help="Operating mode. Only 'create' and 'design' are actively supported; "
+        "other modes (build, improve, research, meta, discover, review, refine, "
+        "parallel-improve, interactive) are deprecated — use --mode design instead",
     )
     p.add_argument(
         "--focus",
@@ -848,8 +845,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=RUN_MODES,
         default="auto",
-        help="Run mode: auto (default, respects in-flight cycle), auto-fresh (ignores in-flight cycle), "
-        "build, discover, improve, meta, or research",
+        help="Operating mode. Only 'create' and 'design' are actively supported; "
+        "other modes (build, improve, research, meta, discover, parallel-improve) "
+        "are deprecated — use --mode design instead",
     )
     p.add_argument(
         "--focus",

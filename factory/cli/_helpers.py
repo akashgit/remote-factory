@@ -22,6 +22,29 @@ CEO_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "m
 RUN_MODES = ["auto", "auto-fresh", "build", "discover", "founder", "improve", "meta", "parallel-improve", "research", "swebench"]
 
 
+DEPRECATED_MODES: frozenset[str] = frozenset({
+    "build", "improve", "research", "meta", "discover",
+    "review", "refine", "parallel-improve", "interactive",
+})
+
+
+def warn_deprecated_mode(mode: str) -> None:
+    """Emit a deprecation warning if *mode* is in the deprecated set."""
+    if mode not in DEPRECATED_MODES:
+        return
+    replacement = "design"
+    extra = ""
+    if mode == "interactive":
+        extra = " ('interactive' is an alias for 'design')"
+    log.warning("deprecated_cli_mode", mode=mode, replacement=replacement)
+    print(
+        f"WARNING: --mode {mode} is deprecated{extra}. "
+        f"Use --mode {replacement} instead. "
+        f"This mode remains functional but will be removed in a future release.",
+        file=sys.stderr,
+    )
+
+
 def _run(coro):  # noqa: ANN001, ANN202
     """Run an async coroutine synchronously."""
     return asyncio.run(coro)

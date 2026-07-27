@@ -30,6 +30,7 @@ from factory.cli._helpers import (
     _run,
     _safe_is_dir,
     _safe_is_file,
+    warn_deprecated_mode,
 )
 from factory.cli._wizard import (
     _CLI_REF as _CLI_REF,
@@ -67,6 +68,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     mode = getattr(args, "mode", "auto")
     if mode == "interactive":
         mode = "design"
+    warn_deprecated_mode(getattr(args, "mode", "auto"))
     bg = getattr(args, "bg", False)
     bg_agents = _resolve_bg_agents(args)
     if bg and bg_agents:
@@ -2176,6 +2178,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             title, context, issue_number, issue_url = issue_resolved
             focus = f"{title} (issue #{issue_number})"
     mode = getattr(args, "mode", "auto")
+    warn_deprecated_mode(mode)
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
