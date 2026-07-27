@@ -414,59 +414,15 @@ factory ceo /path/to/project --headless
     log.warning("cycle_incomplete", reason=reason, gap=gap)
 
 
-async def _invoke_agent_core(
-    task: str,
-    project_path: Path,
-    *,
-    timeout: float = 600.0,
-    model: str | None = None,
-    runner_name: str | None = None,
-    session_name: str | None = None,
-    session_id: str | None = None,
-    resume_session_id: str | None = None,
-    use_profile: bool = False,
-    tmux_persist: bool = False,
-    workflow_mode: str | None = None,
-    settings_file: str | None = None,
-) -> tuple[str, int, dict[str, object]]:
-    """Invoke the CEO agent and return (stdout, exit_code, metadata).
-
-    Wraps the runner directly to access AgentRunResult.metadata,
-    which invoke_agent does not expose.
-    """
-    from factory.agents.runner import resolve_prompt
-    from factory.runners import get_runner
-
-    prompt = resolve_prompt(
-        "ceo", project_path, use_profile=use_profile, workflow_mode=workflow_mode
-    )
-
-    runner = get_runner(runner_name, project_path=project_path)
-    agent_session_name = session_name or f"factory: {project_path.resolve().name}/ceo"
-
-    from factory.models import AgentRunRequest
-
-    request = AgentRunRequest(
-        prompt=prompt,
-        task=task,
-        cwd=project_path,
-        timeout=timeout,
-        model=model,
-        skip_permissions=True,
-        role="ceo",
-        session_name=agent_session_name,
-        session_id=session_id,
-        resume_session_id=resume_session_id,
-        project_path=project_path,
-        extras={
-            "tmux_persist": tmux_persist,
-            **({"settings_file": settings_file} if settings_file else {}),
-        },
-    )
-
-    result = await runner.headless(request)
-    metadata: dict[str, object] = dict(result.metadata) if result.metadata else {}
-    return result.stdout, result.return_code, metadata
+def _extract_session_id(project_path: Path) -> str | None:
+    """Extract the session_id from the most recent agent.completed event."""
+    events = load_events(project_path)
+    for event in reversed(events):
+        if event.get("type") == "agent.completed" and event.get("agent") == "ceo":
+            sid = event.get("data", {}).get("session_id")
+            if isinstance(sid, str) and sid:
+                return sid
+    return None
 
 
 async def run_ceo_with_completion_guard(
@@ -586,7 +542,8 @@ async def run_ceo_with_completion_guard(
         resume_sid = captured_session_id if attempt > 0 else None
         spawn_sid = session_id if attempt == 0 else None
 
-        result, code, metadata = await _invoke_agent_core(
+        result, code = await invoke_agent(
+            "ceo",
             task,
             project_path,
             timeout=timeout,
@@ -602,8 +559,8 @@ async def run_ceo_with_completion_guard(
         )
         final_output = result
 
-        returned_sid = metadata.get("session_id")
-        if isinstance(returned_sid, str) and returned_sid:
+        returned_sid = _extract_session_id(project_path)
+        if returned_sid and returned_sid != captured_session_id:
             captured_session_id = returned_sid
             cycle_state.claude_session_id = returned_sid
             write_cycle_state(project_path, cycle_state)
