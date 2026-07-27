@@ -44,6 +44,11 @@ Run after standard checks pass.
    ```
    Cross-reference with the project's root stylesheet (discovered during research phase) — new definitions of existing vars are CRITICAL.
 
+7. **Dev server smoke test:**
+   Start the dev server (`npm run dev`), poll common ports (5173, 3000, 4200, 8080) for up to 30 seconds, verify HTTP 200.
+   Kill the dev server after the check.
+   Severity: CRITICAL if the server crashes on startup. SKIPPED if no dev server command exists.
+
 ## Severity Levels
 
 - **CRITICAL** — Build broken or design system integrity violated. Hard stop.
@@ -75,6 +80,7 @@ Write to `.factory/reviews/health_checker-latest.md`:
 | File naming | ... | ... | ... |
 | Export naming | ... | ... | ... |
 | CSS var safety | ... | ... | ... |
+| Dev server | PASS/FAIL/SKIPPED | ... | ... |
 
 ## Gate Result: PASS / FAIL / CRITICAL
 ```

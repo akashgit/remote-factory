@@ -73,7 +73,7 @@ If any are missing, report the gap and exit.
     },
     "user_friendliness": {
       "help_patterns": ["tooltip", "info-icon", "inline-docs"],
-      "empty_states": [{"component": "...", "has_guidance": true}],
+      "empty_states": [{"component": "...", "type": "no_data|api_unavailable", "has_guidance": true, "message": "..."}],
       "feedback_patterns": ["toast", "banner", "progress"]
     }
   }
@@ -102,7 +102,7 @@ Populate `project_info` from what the researchers discovered. The `typography.fa
 - **Status colors:** Use centralized status/state color mappings if the project has them (as discovered during research phase and listed in `design-baseline.json` under `pattern_library.status_patterns`).
 - **Animation choreography:** New components must match entrance stagger timing and easing curves from `ux_patterns.animation_choreography`. Components appearing alongside existing animated elements must participate in the same stagger sequence.
 - **Information hierarchy:** Match heading level semantics and visual weight from `ux_patterns.information_hierarchy`. Data presented to users must include units, labels, and contextual comparisons.
-- **User-friendliness:** Labels and messages must avoid jargon. Empty states must provide guidance. Error messages must be actionable (what happened + what to do next).
+- **User-friendliness:** Labels and messages must avoid jargon. Empty states must provide guidance. Components that fetch data must distinguish "no data yet" from "API unavailable" — both must show designed states, never error messages. Error messages must be actionable (what happened + what to do next).
 
 4. **Preserve manual overrides.** If `rules.md` already exists and contains a `## MANUAL OVERRIDES` section, preserve it verbatim at the end of the new file.
 

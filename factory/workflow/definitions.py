@@ -2276,8 +2276,8 @@ def frontend_design_workflow() -> Workflow:
 
     Fork(4 design researchers) → Join → CEO gate → Design Auditor →
     CEO gate → Spec Writer → User gate → Builder → Build gate →
-    deep-QA (design variant) → Consistency gate(max 3) →
-    Doc freshness → Precheck → Archivist(async)
+    Render gate → CI gate → deep-QA (design variant) →
+    Consistency gate(max 3) → Doc freshness → Precheck → Archivist(async)
     """
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
@@ -2455,6 +2455,9 @@ def frontend_design_workflow() -> Workflow:
             "components, justify any new ones), Token Usage (map each element to "
             "specific tokens), Layout, State Management, Dark Mode (both light and "
             "dark values), Accessibility, Motion, Constraints. "
+            "For every data-fetching component, specify what it shows when the "
+            "backend API returns 404 or is unreachable — this must be a designed "
+            "empty state with guidance text, not an error message. "
             "Be precise — reference actual component names and token values."
         ),
         reads={
@@ -2490,6 +2493,13 @@ def frontend_design_workflow() -> Workflow:
             "imports in feature code), established spacing values, dark mode pairs "
             "required if the project uses dark mode, aria-labels on interactive "
             "elements, the project's established icon library only. "
+            "CRITICAL: every data-fetching component must handle 3 states: "
+            "(1) loading/skeleton, (2) populated, (3) unavailable (API 404 or "
+            "network error). The unavailable state must show a designed message "
+            "like 'Coming soon' or 'Not yet configured' — NEVER 'Unable to load' "
+            "or 'Failed to fetch'. Treat missing backend APIs as expected. "
+            "After implementation, start the dev server and verify the feature "
+            "renders without error messages. "
             "Run tests. Commit and open a draft PR."
         ),
         reads={
@@ -2510,6 +2520,73 @@ def frontend_design_workflow() -> Workflow:
         reads={".factory/reviews/builder-latest.md"},
     )
 
+    # ── Phase 4b: Render Verification Gate ──
+
+    nodes["gate_render"] = GateNode(
+        id="gate_render",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && ( "
+            "ROOT='.'; "
+            "if [ -f package.json ] && node -e "
+            "\"process.exit(JSON.parse(require('fs').readFileSync("
+            "'package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
+            "ROOT='.'; "
+            "else for d in studio web app frontend client; do "
+            "if [ -f \"$d/package.json\" ] && node -e "
+            "\"process.exit(JSON.parse(require('fs').readFileSync("
+            "'$d/package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
+            "ROOT=\"$d\"; break; fi; done; fi; "
+            "if [ \"$ROOT\" = '.' ] && ! node -e "
+            "\"process.exit(JSON.parse(require('fs').readFileSync("
+            "'package.json','utf8')).scripts?.dev?0:1)\" 2>/dev/null; then "
+            "echo 'pass: no dev server script found'; exit 0; fi; "
+            "cd \"$ROOT\" && npm run dev </dev/null >/dev/null 2>&1 & "
+            "DEV_PID=$!; FOUND=0; "
+            "for i in $(seq 1 30); do "
+            "for port in 5173 3000 4200 8080; do "
+            "if curl -s -o /dev/null -w '%{http_code}' "
+            "http://localhost:$port 2>/dev/null | grep -qE '^(200|304)$'; then "
+            "FOUND=1; break 2; fi; done; "
+            "if ! kill -0 $DEV_PID 2>/dev/null; then "
+            "echo 'reloop: dev server crashed on startup'; exit 0; fi; "
+            "sleep 2; done; "
+            "kill $DEV_PID 2>/dev/null; wait $DEV_PID 2>/dev/null; "
+            "if [ \"$FOUND\" -eq 1 ]; then "
+            "echo 'pass: dev server started and responded'; "
+            "else echo 'reloop: dev server did not respond within 60s'; fi "
+            ")"
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    # ── Phase 4c: CI Verification Gate ──
+
+    nodes["gate_ci"] = GateNode(
+        id="gate_ci",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && ( "
+            "PR=$(gh pr view --json number -q .number 2>/dev/null) || true; "
+            "if [ -z \"$PR\" ]; then echo 'pass: no PR found'; exit 0; fi; "
+            "for i in $(seq 1 20); do "
+            "BUCKETS=$(gh pr checks \"$PR\" --json bucket "
+            "--jq '.[].bucket' 2>/dev/null) || true; "
+            "if [ -z \"$BUCKETS\" ]; then "
+            "echo 'pass: no CI checks configured'; exit 0; fi; "
+            "if echo \"$BUCKETS\" | grep -qE '^(fail|cancel)$'; then "
+            "NAMES=$(gh pr checks \"$PR\" --json name,bucket "
+            "--jq '[.[] | select(.bucket==\"fail\" or .bucket==\"cancel\") "
+            "| .name] | join(\", \")' 2>/dev/null); "
+            "echo \"reloop: CI failed for PR #$PR - $NAMES\"; exit 0; fi; "
+            "if ! echo \"$BUCKETS\" | grep -qE '^pending$'; then "
+            "echo 'pass: all CI checks passed'; exit 0; fi; "
+            "sleep 30; done; "
+            "echo 'reloop: CI timed out after 10 minutes' "
+            ")"
+        ),
+    )
+
     # ── Phase 5: Design-Aware Deep QA ──
 
     nodes["health_checker"] = AgentNode(
@@ -2518,7 +2595,11 @@ def frontend_design_workflow() -> Workflow:
         prompt_template=(
             "Design health check. Standard checks (tsc, lint, build) plus: "
             "verify kebab-case file naming for new .tsx files, PascalCase exports, "
-            "no CSS custom property overrides of existing vars."
+            "no CSS custom property overrides of existing vars. "
+            "Dev server smoke test: start the dev server, verify it responds "
+            "with HTTP 200 on a common port (5173, 3000, 4200, 8080). "
+            "If the server crashes on startup, report as CRITICAL. "
+            "If no dev server command exists, skip this check."
         ),
         reads={
             ".factory/reviews/builder-latest.md",
@@ -2651,10 +2732,16 @@ def frontend_design_workflow() -> Workflow:
         Edge(source="spec_writer", target="gate_spec"),
         Edge(source="gate_spec", target="builder", condition=VerdictType.PROCEED),
         Edge(source="gate_spec", target="spec_writer", condition=VerdictType.RELOOP),
-        # Builder → build gate
+        # Builder → build gate → render gate → CI gate
         Edge(source="builder", target="gate_build"),
-        Edge(source="gate_build", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_build", target="gate_render", condition=VerdictType.PROCEED),
         Edge(source="gate_build", target="builder", condition=VerdictType.RELOOP),
+        # Render verification gate
+        Edge(source="gate_render", target="gate_ci", condition=VerdictType.PROCEED),
+        Edge(source="gate_render", target="builder", condition=VerdictType.RELOOP),
+        # CI verification gate
+        Edge(source="gate_ci", target="health_checker", condition=VerdictType.PROCEED),
+        Edge(source="gate_ci", target="builder", condition=VerdictType.RELOOP),
         # Deep-QA: health_checker → code_reviewer → gate_review → consistency_tester
         Edge(source="health_checker", target="code_reviewer"),
         Edge(source="code_reviewer", target="gate_review"),

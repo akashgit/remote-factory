@@ -82,6 +82,7 @@ Implement the feature described in `ui-spec.md`, following every constraint in `
 ### User-Friendliness
 - No jargon in user-facing labels — use plain language
 - Provide empty states with guidance text for new/no-data scenarios
+- Data-fetching components MUST handle three distinct states: (1) loading/skeleton, (2) populated with data, (3) unavailable — when the API returns 404 or is unreachable. The "unavailable" state MUST show a designed message (e.g., "GPU metrics will appear once monitoring is configured") — NEVER "Unable to load", "Failed to fetch", or any error-styled text. Treat a missing backend API as a normal, expected condition.
 - Error messages must be actionable (what happened + what to do)
 - Include contextual help (tooltips/info icons) for technical concepts
 
@@ -101,6 +102,8 @@ Before committing, verify against the project's baseline:
 6. Animation stagger timing matches existing patterns on the same page
 7. All numeric data values have units and labels
 8. Empty states include guidance text
+9. Data-fetching components show a designed empty state (not an error) when the API returns 404 or is unreachable
+10. Start the dev server and verify the feature renders without error messages or "Unable to load" text
 
 ## Output
 

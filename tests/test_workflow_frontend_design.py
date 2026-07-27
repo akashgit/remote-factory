@@ -35,7 +35,7 @@ class TestFrontendDesignValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_workflow()
-        assert len(wf.nodes) == 21
+        assert len(wf.nodes) == 23
 
     def test_start_node(self) -> None:
         wf = frontend_design_workflow()
@@ -218,6 +218,89 @@ class TestBuilderPhase:
         assert reloop[0].target == "builder"
 
 
+
+# ── Phase 4b: Render Verification Gate ─────────────────────────
+
+
+class TestRenderGatePhase:
+    def test_render_gate_exists(self) -> None:
+        wf = frontend_design_workflow()
+        assert "gate_render" in wf.nodes
+
+    def test_render_gate_is_fn(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_render"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_render_gate_proceeds_to_ci(self) -> None:
+        wf = frontend_design_workflow()
+        proceed = [
+            e
+            for e in wf.edges
+            if e.source == "gate_render" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed) == 1
+        assert proceed[0].target == "gate_ci"
+
+    def test_render_gate_reloops_to_builder(self) -> None:
+        wf = frontend_design_workflow()
+        reloop = [
+            e
+            for e in wf.edges
+            if e.source == "gate_render" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "builder"
+
+    def test_render_gate_checks_dev_server(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_render"]
+        assert isinstance(gate, GateNode)
+        assert "npm run dev" in gate.evaluator_command
+
+
+# ── Phase 4c: CI Verification Gate ─────────────────────────────
+
+
+class TestCIGatePhase:
+    def test_ci_gate_exists(self) -> None:
+        wf = frontend_design_workflow()
+        assert "gate_ci" in wf.nodes
+
+    def test_ci_gate_is_fn(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_ci"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+
+    def test_ci_gate_uses_gh(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_ci"]
+        assert isinstance(gate, GateNode)
+        assert "gh pr" in gate.evaluator_command
+
+    def test_ci_gate_reloops_to_builder(self) -> None:
+        wf = frontend_design_workflow()
+        reloop = [
+            e
+            for e in wf.edges
+            if e.source == "gate_ci" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "builder"
+
+    def test_ci_gate_proceeds_to_health_checker(self) -> None:
+        wf = frontend_design_workflow()
+        proceed = [
+            e
+            for e in wf.edges
+            if e.source == "gate_ci" and e.condition == VerdictType.PROCEED
+        ]
+        assert len(proceed) == 1
+        assert proceed[0].target == "health_checker"
+
+
 # ── Phase 5: Design QA ──────────────────────────────────────────
 
 
@@ -342,6 +425,8 @@ class TestEdgeCompleteness:
             "gate_audit",
             "gate_spec",
             "gate_build",
+            "gate_render",
+            "gate_ci",
             "gate_consistency",
             "gate_doc_freshness",
         ]

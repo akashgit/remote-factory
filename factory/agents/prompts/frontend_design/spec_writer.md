@@ -42,6 +42,7 @@ Map every visual element to a design token from the baseline:
 - New state slices needed, using the project's established state management approach (from the pattern library)
 - Data-fetching queries and endpoints, using the project's established data-fetching approach
 - Loading / error / empty states — which existing patterns to follow
+- API unavailability — what the component renders when the backend endpoint returns 404 or is unreachable. This MUST be a designed empty state with guidance text (e.g., "This feature will appear once [X] is configured"), NOT an error message. Specify the exact text and visual treatment for each data-fetching component.
 
 ### 6. Dark Mode
 Explicit light and dark value pairs for every custom element. No "inherits from token" hand-waving — spell out both values.
