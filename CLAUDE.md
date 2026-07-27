@@ -231,7 +231,7 @@ factory adversarial-state /path/to/project --reset   # Reset to defaults
 factory dashboard --projects-dir ~/factory-projects    # Live web dashboard on :8420
 factory export /path/to/project                 # Dump full project snapshot as JSON
 factory checkpoint /path/to/project             # Save CEO state for crash recovery
-factory resume /path/to/project                 # Resume from saved checkpoint
+factory resume /path/to/project                 # Resume an interrupted CEO session
 factory precheck /path --score-before 0.7 --score-after 0.85  # Hard precheck gate
 factory review --verdict KEEP --pr 42           # Post structured review on GitHub PR
 ```
