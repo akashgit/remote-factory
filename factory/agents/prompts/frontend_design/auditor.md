@@ -10,12 +10,13 @@ These files must exist before you run:
 - `.factory/design-system/token-audit.md`
 - `.factory/design-system/component-inventory.md`
 - `.factory/design-system/pattern-library.md`
+- `.factory/design-system/ux-patterns.md`
 
 If any are missing, report the gap and exit.
 
 ## Task
 
-1. **Read all three research files** completely.
+1. **Read all four research files** completely.
 
 2. **Produce `design-baseline.json`.** Valid JSON with this schema:
 
@@ -57,6 +58,24 @@ If any are missing, report the gap and exit.
     "status_patterns": {},
     "navigation": {},
     "interaction": {}
+  },
+  "ux_patterns": {
+    "animation_choreography": {
+      "entrance_sequences": [{"component": "...", "stagger_delay": "...", "easing": "...", "duration": "..."}],
+      "easing_curves": [{"name": "...", "value": "...", "usage_count": 0}],
+      "duration_scale": ["150ms", "200ms", "300ms"],
+      "loading_patterns": ["skeleton", "pulse", "shimmer"]
+    },
+    "information_hierarchy": {
+      "heading_scale": [{"level": "h1", "size": "...", "weight": "..."}],
+      "section_separators": [{"pattern": "...", "usage": "..."}],
+      "content_density": {"cards_per_row": 0, "standard_gap": "..."}
+    },
+    "user_friendliness": {
+      "help_patterns": ["tooltip", "info-icon", "inline-docs"],
+      "empty_states": [{"component": "...", "has_guidance": true}],
+      "feedback_patterns": ["toast", "banner", "progress"]
+    }
   }
 }
 ```
@@ -81,6 +100,9 @@ Populate `project_info` from what the researchers discovered. The `typography.fa
 - **Icon sizing:** Use the project's established icon sizes (discovered during research phase). Only use the project's established icon library.
 - **Page structure:** Follow established page templates from the pattern library.
 - **Status colors:** Use centralized status/state color mappings if the project has them (as discovered during research phase and listed in `design-baseline.json` under `pattern_library.status_patterns`).
+- **Animation choreography:** New components must match entrance stagger timing and easing curves from `ux_patterns.animation_choreography`. Components appearing alongside existing animated elements must participate in the same stagger sequence.
+- **Information hierarchy:** Match heading level semantics and visual weight from `ux_patterns.information_hierarchy`. Data presented to users must include units, labels, and contextual comparisons.
+- **User-friendliness:** Labels and messages must avoid jargon. Empty states must provide guidance. Error messages must be actionable (what happened + what to do next).
 
 4. **Preserve manual overrides.** If `rules.md` already exists and contains a `## MANUAL OVERRIDES` section, preserve it verbatim at the end of the new file.
 

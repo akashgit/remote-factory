@@ -184,6 +184,19 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path> --focus <feature description>",
     },
+    "frontend-design-scan": {
+        "description": (
+            "Continuous design health monitoring — scans the entire codebase for "
+            "design system drift without building anything. Researches tokens, "
+            "components, patterns, and UX quality, then runs all design check "
+            "scripts against every source file. Produces a structured health "
+            "report with per-dimension scores and trend data. Designed for use "
+            "with --loop for hourly continuous scanning. Use when the user says "
+            "'scan for design drift', 'check design health', or wants passive "
+            "design consistency monitoring."
+        ),
+        "argument_hint": "<project_path>",
+    },
 }
 
 

@@ -35,7 +35,7 @@ class TestFrontendDesignValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_workflow()
-        assert len(wf.nodes) == 20
+        assert len(wf.nodes) == 21
 
     def test_start_node(self) -> None:
         wf = frontend_design_workflow()
@@ -67,7 +67,7 @@ class TestFrontendDesignTrigger:
 
 
 class TestDesignResearchPhase:
-    def test_fork_has_three_researchers(self) -> None:
+    def test_fork_has_four_researchers(self) -> None:
         wf = frontend_design_workflow()
         fork = wf.nodes["fork_design_research"]
         assert isinstance(fork, ForkNode)
@@ -75,11 +75,12 @@ class TestDesignResearchPhase:
             "researcher_tokens",
             "researcher_components",
             "researcher_patterns",
+            "researcher_ux",
         }
 
     def test_researchers_are_researcher_role(self) -> None:
         wf = frontend_design_workflow()
-        for nid in ["researcher_tokens", "researcher_components", "researcher_patterns"]:
+        for nid in ["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"]:
             node = wf.nodes[nid]
             assert isinstance(node, AgentNode)
             assert node.role == AgentRole.RESEARCHER
@@ -92,7 +93,14 @@ class TestDesignResearchPhase:
             "researcher_tokens",
             "researcher_components",
             "researcher_patterns",
+            "researcher_ux",
         }
+
+    def test_ux_researcher_writes_patterns(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["researcher_ux"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/design-system/ux-patterns.md" in node.writes
 
     def test_research_gate_is_ceo(self) -> None:
         wf = frontend_design_workflow()
@@ -127,6 +135,11 @@ class TestAuditorPhase:
         node = wf.nodes["design_auditor"]
         assert ".factory/design-system/design-baseline.json" in node.writes
         assert ".factory/design-system/rules.md" in node.writes
+
+    def test_auditor_reads_ux_patterns(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["design_auditor"]
+        assert ".factory/design-system/ux-patterns.md" in node.reads
 
     def test_audit_gate_reloops_to_auditor(self) -> None:
         wf = frontend_design_workflow()

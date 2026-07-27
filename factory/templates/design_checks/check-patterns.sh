@@ -83,9 +83,13 @@ if ! $HAS_PAGE_PATTERNS && ! $HAS_COMPONENT_PATTERNS; then
   exit 0
 fi
 
-# --- Gather changed files ---
-CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
-CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' || true)
+# --- Gather files to check ---
+if [[ "${SCAN_MODE:-}" == "full" ]]; then
+  CHANGED_TSX=$(find "${SCAN_SRC_DIR:-src}" -type f -name '*.tsx' 2>/dev/null | sort || true)
+else
+  CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
+  CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' || true)
+fi
 
 if [[ -z "$CHANGED_TSX" ]]; then
   if $SCORE_MODE; then

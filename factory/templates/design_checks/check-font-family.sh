@@ -59,9 +59,13 @@ APPROVED_FONTS=$(echo "$APPROVED_FONTS_RAW" | sed 's/[.[\*^$()+?{}|]/\\&/g' | pa
 # Also allow generic CSS keywords and common system fallbacks
 APPROVED_GENERIC="inherit|initial|unset|sans-serif|serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|ui-rounded"
 
-# --- Gather changed files ---
-CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
-CHANGED=$(echo "$CHANGED_FILES" | grep -E '\.(tsx|ts|css)$' || true)
+# --- Gather files to check ---
+if [[ "${SCAN_MODE:-}" == "full" ]]; then
+  CHANGED=$(find "${SCAN_SRC_DIR:-src}" -type f \( -name '*.tsx' -o -name '*.ts' -o -name '*.css' \) 2>/dev/null | sort || true)
+else
+  CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
+  CHANGED=$(echo "$CHANGED_FILES" | grep -E '\.(tsx|ts|css)$' || true)
+fi
 
 if [[ -z "$CHANGED" ]]; then
   if $SCORE_MODE; then

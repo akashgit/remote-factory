@@ -31,9 +31,13 @@ if [[ ! -f "$BASELINE" ]]; then
   exit 0
 fi
 
-# --- Gather changed files (.tsx, .ts, .css) ---
-CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
-CHANGED_TSX_TS=$(echo "$CHANGED_FILES" | grep -E '\.(tsx|ts)$' || true)
+# --- Gather files to check ---
+if [[ "${SCAN_MODE:-}" == "full" ]]; then
+  CHANGED_TSX_TS=$(find "${SCAN_SRC_DIR:-src}" -type f \( -name '*.tsx' -o -name '*.ts' \) 2>/dev/null | sort || true)
+else
+  CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
+  CHANGED_TSX_TS=$(echo "$CHANGED_FILES" | grep -E '\.(tsx|ts)$' || true)
+fi
 
 if [[ -z "$CHANGED_TSX_TS" ]]; then
   if $SCORE_MODE; then

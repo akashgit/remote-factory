@@ -60,6 +60,7 @@ __all__ = [
     "parallel_improve_workflow",
     "founder_workflow",
     "frontend_design_workflow",
+    "frontend_design_scan_workflow",
     "register_all",
 ]
 
@@ -2273,7 +2274,7 @@ def spec_update_workflow() -> Workflow:
 def frontend_design_workflow() -> Workflow:
     """W₁₂: Frontend Design Mode — Feature-to-UI Pipeline.
 
-    Fork(3 design researchers) → Join → CEO gate → Design Auditor →
+    Fork(4 design researchers) → Join → CEO gate → Design Auditor →
     CEO gate → Spec Writer → User gate → Builder → Build gate →
     deep-QA (design variant) → Consistency gate(max 3) →
     Doc freshness → Precheck → Archivist(async)
@@ -2281,7 +2282,7 @@ def frontend_design_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # ── Phase 1: Design System Research (3 parallel researchers) ──
+    # ── Phase 1: Design System Research (4 parallel researchers) ──
 
     nodes["fork_design_research"] = ForkNode(
         id="fork_design_research",
@@ -2289,6 +2290,7 @@ def frontend_design_workflow() -> Workflow:
             "researcher_tokens",
             "researcher_components",
             "researcher_patterns",
+            "researcher_ux",
         ],
     )
 
@@ -2337,15 +2339,33 @@ def frontend_design_workflow() -> Workflow:
         writes={".factory/design-system/pattern-library.md"},
     )
 
+    nodes["researcher_ux"] = AgentNode(
+        id="researcher_ux",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "UX quality research. "
+            "Analyze the project's experiential layer: animation choreography "
+            "(stagger timing, easing curves, entrance sequences, coordinated "
+            "transitions, duration scale, exit animations, loading states), "
+            "information hierarchy (heading structure, visual weight, content "
+            "density, progressive disclosure, data presentation for non-technical "
+            "users), and user-friendliness patterns (plain language, contextual "
+            "help, onboarding/empty states, error messages, feedback patterns). "
+            "Write to .factory/design-system/ux-patterns.md."
+        ),
+        writes={".factory/design-system/ux-patterns.md"},
+    )
+
     # ── Join + Research Quality Gate ──
 
     nodes["join_design_research"] = JoinNode(
         id="join_design_research",
-        sources=["researcher_tokens", "researcher_components", "researcher_patterns"],
+        sources=["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"],
         reads={
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
         },
     )
 
@@ -2354,17 +2374,19 @@ def frontend_design_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Verify all three design research artifacts exist and are substantive. "
+            "Verify all four design research artifacts exist and are substantive. "
             "token-audit.md must list actual CSS custom properties. "
             "component-inventory.md must list actual .tsx files with component names. "
             "pattern-library.md must describe actual page layout patterns. "
+            "ux-patterns.md must describe actual animation, hierarchy, or UX patterns. "
             "RELOOP if any artifact is empty or clearly fabricated. "
-            "PROCEED if all three have real data."
+            "PROCEED if all four have real data."
         ),
         reads={
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
         },
     )
 
@@ -2376,14 +2398,18 @@ def frontend_design_workflow() -> Workflow:
         prompt_template=(
             "Design system auditor. "
             "Read .factory/design-system/token-audit.md, component-inventory.md, "
-            "and pattern-library.md. Synthesize into two outputs: "
+            "pattern-library.md, and ux-patterns.md. Synthesize into two outputs: "
             "(1) .factory/design-system/design-baseline.json — valid JSON with "
-            "token_registry, component_inventory, and pattern_library keys. "
+            "token_registry, component_inventory, pattern_library, and ux_patterns keys. "
+            "The ux_patterns key should capture animation choreography (entrance "
+            "sequences, easing curves, duration scale), information hierarchy "
+            "(heading scale, content density), and user-friendliness patterns. "
             "Extract actual values from the research, do not fabricate. "
             "(2) .factory/design-system/rules.md — HARD RULES section "
             "(token purity, font family, component wrappers, dark mode parity, "
             "accessibility floor) and SOFT GUIDELINES section (spacing, border-radius, "
-            "motion, icons, page structure, status colors). "
+            "motion choreography, icons, page structure, status colors, information "
+            "hierarchy, user-friendliness). "
             "If previous design-baseline.json exists, merge and flag drift. "
             "Preserve any existing MANUAL OVERRIDES section in rules.md."
         ),
@@ -2391,6 +2417,7 @@ def frontend_design_workflow() -> Workflow:
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
         },
         writes={
             ".factory/design-system/design-baseline.json",
@@ -2601,10 +2628,12 @@ def frontend_design_workflow() -> Workflow:
         Edge(source="fork_design_research", target="researcher_tokens"),
         Edge(source="fork_design_research", target="researcher_components"),
         Edge(source="fork_design_research", target="researcher_patterns"),
+        Edge(source="fork_design_research", target="researcher_ux"),
         # Researchers to join
         Edge(source="researcher_tokens", target="join_design_research"),
         Edge(source="researcher_components", target="join_design_research"),
         Edge(source="researcher_patterns", target="join_design_research"),
+        Edge(source="researcher_ux", target="join_design_research"),
         # Join → research gate
         Edge(source="join_design_research", target="gate_research"),
         # Research gate
@@ -2660,6 +2689,231 @@ def frontend_design_workflow() -> Workflow:
         nodes=nodes,
         edges=edges,
         start_node="fork_design_research",
+        trigger=trigger,
+    )
+
+
+# ── W₁₃: Frontend Design Scan — Continuous Health Monitoring ────
+
+
+def frontend_design_scan_workflow() -> Workflow:
+    """W₁₃: Frontend Design Scan — continuous design health monitoring.
+
+    Fork(4 design researchers) → Join → Auditor →
+    Fork(6 check scripts, full codebase) → Join →
+    Health report writer → Archivist(async)
+
+    No builder, no spec writer, no user gates — scan-only.
+    Designed for use with --loop for continuous hourly scanning.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Phase 1: Design System Research (4 parallel researchers) ──
+
+    nodes["fork_scan_research"] = ForkNode(
+        id="fork_scan_research",
+        targets=[
+            "researcher_tokens",
+            "researcher_components",
+            "researcher_patterns",
+            "researcher_ux",
+        ],
+    )
+
+    nodes["researcher_tokens"] = AgentNode(
+        id="researcher_tokens",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Design token research. "
+            "Find the project's main CSS/theme files (index.css, globals.css, "
+            "theme.ts, tailwind.config, etc.). Extract every color token, CSS "
+            "custom property, and theme variable with values for all theme modes. "
+            "Search all component files for hardcoded color values (hex, rgb, hsl) "
+            "that bypass the token system. Count frequencies. "
+            "Document the font families, spacing scale, and border-radius tiers. "
+            "Write to .factory/design-system/token-audit.md."
+        ),
+        writes={".factory/design-system/token-audit.md"},
+    )
+
+    nodes["researcher_components"] = AgentNode(
+        id="researcher_components",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Component inventory research. "
+            "Find the project's component library directory and catalog every "
+            "shared component — names, props, variant systems. Identify the "
+            "primitive UI library (Radix, MUI, Chakra, Headless UI, etc.) and "
+            "which components wrap it. List feature-specific components. "
+            "Document UI dependencies from package.json. Map composition patterns. "
+            "Write to .factory/design-system/component-inventory.md."
+        ),
+        writes={".factory/design-system/component-inventory.md"},
+    )
+
+    nodes["researcher_patterns"] = AgentNode(
+        id="researcher_patterns",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Layout and pattern research. "
+            "Read layout.tsx, router.tsx, and every page.tsx in feature modules. "
+            "Document the shell structure, page templates, data-fetching patterns "
+            "(TanStack Query), state management (Zustand stores), error handling, "
+            "motion/animation vocabulary, and accessibility patterns. "
+            "Write to .factory/design-system/pattern-library.md."
+        ),
+        writes={".factory/design-system/pattern-library.md"},
+    )
+
+    nodes["researcher_ux"] = AgentNode(
+        id="researcher_ux",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "UX quality research. "
+            "Analyze the project's experiential layer: animation choreography "
+            "(stagger timing, easing curves, entrance sequences, coordinated "
+            "transitions, duration scale, exit animations, loading states), "
+            "information hierarchy (heading structure, visual weight, content "
+            "density, progressive disclosure, data presentation for non-technical "
+            "users), and user-friendliness patterns (plain language, contextual "
+            "help, onboarding/empty states, error messages, feedback patterns). "
+            "Write to .factory/design-system/ux-patterns.md."
+        ),
+        writes={".factory/design-system/ux-patterns.md"},
+    )
+
+    nodes["join_scan_research"] = JoinNode(
+        id="join_scan_research",
+        sources=["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"],
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+        },
+    )
+
+    # ── Phase 2: Auditor (synthesize baseline) ──
+
+    nodes["scan_auditor"] = AgentNode(
+        id="scan_auditor",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design system auditor (scan mode). "
+            "Read all four research files: token-audit.md, component-inventory.md, "
+            "pattern-library.md, and ux-patterns.md. Synthesize into "
+            "design-baseline.json and rules.md. "
+            "If previous design-baseline.json exists, diff and report drift. "
+            "This is a scan-only run — no features will be built."
+        ),
+        reads={
+            ".factory/design-system/token-audit.md",
+            ".factory/design-system/component-inventory.md",
+            ".factory/design-system/pattern-library.md",
+            ".factory/design-system/ux-patterns.md",
+        },
+        writes={
+            ".factory/design-system/design-baseline.json",
+            ".factory/design-system/rules.md",
+        },
+    )
+
+    # ── Phase 3: Run all 6 check scripts (full codebase scan) ──
+
+    check_scripts = [
+        ("check_token_purity", "check-token-purity.sh"),
+        ("check_dark_mode", "check-dark-mode.sh"),
+        ("check_a11y", "check-a11y-baseline.sh"),
+        ("check_component_import", "check-component-import.sh"),
+        ("check_font_family", "check-font-family.sh"),
+        ("check_patterns", "check-patterns.sh"),
+    ]
+
+    nodes["fork_scan_checks"] = ForkNode(
+        id="fork_scan_checks",
+        targets=[name for name, _ in check_scripts],
+    )
+
+    for name, script in check_scripts:
+        nodes[name] = FnNode(
+            id=name,
+            command=(
+                f"cd {{project_path}} && SCAN_MODE=full "
+                f"bash .factory/design-system/checks/{script} --score"
+            ),
+            reads={".factory/design-system/design-baseline.json"},
+        )
+
+    nodes["join_scan_checks"] = JoinNode(
+        id="join_scan_checks",
+        sources=[name for name, _ in check_scripts],
+    )
+
+    # ── Phase 4: Health Report Writer ──
+
+    nodes["health_report_writer"] = AgentNode(
+        id="health_report_writer",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Design health report writer. "
+            "Read the output of all 6 design check scripts and the "
+            "design-baseline.json. Produce .factory/design-system/health-report.json "
+            "with overall_score (0.0-1.0), per-dimension scores (token_purity, "
+            "dark_mode_coverage, accessibility, component_wrapping, font_compliance, "
+            "pattern_adherence), issue counts, top issues list, trend data "
+            "(compare with previous report if exists), and actionable recommendations."
+        ),
+        reads={".factory/design-system/design-baseline.json"},
+        writes={".factory/design-system/health-report.json"},
+    )
+
+    # ── Phase 5: Archivist (async) ──
+
+    nodes["archivist_scan"] = AgentNode(
+        id="archivist_scan",
+        role=AgentRole.ARCHIVIST,
+        prompt_template="Archive the design scan results and health report.",
+        reads={".factory/design-system/health-report.json"},
+        writes={".factory/archive/design-scan.md"},
+        blocking=False,
+    )
+
+    # ── Edges ──
+
+    edges = [
+        # Fork to researchers
+        Edge(source="fork_scan_research", target="researcher_tokens"),
+        Edge(source="fork_scan_research", target="researcher_components"),
+        Edge(source="fork_scan_research", target="researcher_patterns"),
+        Edge(source="fork_scan_research", target="researcher_ux"),
+        # Researchers to join
+        Edge(source="researcher_tokens", target="join_scan_research"),
+        Edge(source="researcher_components", target="join_scan_research"),
+        Edge(source="researcher_patterns", target="join_scan_research"),
+        Edge(source="researcher_ux", target="join_scan_research"),
+        # Join → auditor
+        Edge(source="join_scan_research", target="scan_auditor"),
+        # Auditor → fork checks
+        Edge(source="scan_auditor", target="fork_scan_checks"),
+        # Fork to each check
+        *[Edge(source="fork_scan_checks", target=name) for name, _ in check_scripts],
+        # Each check to join
+        *[Edge(source=name, target="join_scan_checks") for name, _ in check_scripts],
+        # Join → health report
+        Edge(source="join_scan_checks", target="health_report_writer"),
+        # Health report → archivist
+        Edge(source="health_report_writer", target="archivist_scan"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "frontend-design-scan"
+
+    return Workflow(
+        name="frontend-design-scan",
+        nodes=nodes,
+        edges=edges,
+        start_node="fork_scan_research",
         trigger=trigger,
     )
 

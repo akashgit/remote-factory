@@ -58,18 +58,26 @@ if [[ -z "$COMPONENT_LIB_DIR" ]] && [[ -z "$PRIMITIVE_LIB" ]]; then
   exit 0
 fi
 
-# --- Gather changed .tsx files, excluding the component library dir ---
-CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
-
+# --- Gather files to check, excluding the component library dir ---
 EXCLUDE_PATTERN=""
 if [[ -n "$COMPONENT_LIB_DIR" ]]; then
   EXCLUDE_PATTERN="$COMPONENT_LIB_DIR/"
 fi
 
-if [[ -n "$EXCLUDE_PATTERN" ]]; then
-  CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' | grep -v "$EXCLUDE_PATTERN" || true)
+if [[ "${SCAN_MODE:-}" == "full" ]]; then
+  ALL_TSX=$(find "${SCAN_SRC_DIR:-src}" -type f -name '*.tsx' 2>/dev/null | sort || true)
+  if [[ -n "$EXCLUDE_PATTERN" ]]; then
+    CHANGED_TSX=$(echo "$ALL_TSX" | grep -v "$EXCLUDE_PATTERN" || true)
+  else
+    CHANGED_TSX="$ALL_TSX"
+  fi
 else
-  CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' || true)
+  CHANGED_FILES=$(git diff --name-only HEAD~1 2>/dev/null || true)
+  if [[ -n "$EXCLUDE_PATTERN" ]]; then
+    CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' | grep -v "$EXCLUDE_PATTERN" || true)
+  else
+    CHANGED_TSX=$(echo "$CHANGED_FILES" | grep -E '\.tsx$' || true)
+  fi
 fi
 
 if [[ -z "$CHANGED_TSX" ]]; then

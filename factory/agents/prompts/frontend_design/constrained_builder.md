@@ -67,6 +67,24 @@ Implement the feature described in `ui-spec.md`, following every constraint in `
   }
   ```
 
+### Animation Choreography
+- Match entrance stagger timing from the baseline (`ux_patterns.animation_choreography`)
+- New sibling elements must use consistent stagger delays (match existing patterns, typically 50-100ms between items)
+- Use the project's established easing curves (from `ux_patterns.animation_choreography.easing_curves`)
+- If a parent container animates, children must coordinate with the same stagger sequence
+
+### Information Hierarchy
+- Match heading level semantics from the baseline (`ux_patterns.information_hierarchy`)
+- Data values MUST include units, labels, and contextual comparisons where applicable
+- Primary content must have greater visual weight than secondary content
+- Content density must match adjacent sections on the same page
+
+### User-Friendliness
+- No jargon in user-facing labels — use plain language
+- Provide empty states with guidance text for new/no-data scenarios
+- Error messages must be actionable (what happened + what to do)
+- Include contextual help (tooltips/info icons) for technical concepts
+
 ## File Naming
 
 - Follow the project's established file naming convention (kebab-case, camelCase, PascalCase — match what exists)
@@ -80,6 +98,9 @@ Before committing, verify against the project's baseline:
 3. No raw HTML buttons/inputs outside the primitive component directory
 4. Dark mode coverage: every new background/text/border class has a dark mode counterpart
 5. All interactive elements have accessible names
+6. Animation stagger timing matches existing patterns on the same page
+7. All numeric data values have units and labels
+8. Empty states include guidance text
 
 ## Output
 

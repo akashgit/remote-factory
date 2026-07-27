@@ -15,7 +15,7 @@ If any file is missing, report the gap and exit.
 
 ## Task
 
-Produce `ui-spec.md` with these 9 sections:
+Produce `ui-spec.md` with these 10 sections:
 
 ### 1. Feature Description
 Brief statement of what is being built and why, derived from `current.md`.
@@ -56,7 +56,17 @@ Explicit light and dark value pairs for every custom element. No "inherits from 
 - Micro-interactions (hover, press, toggle)
 - `prefers-reduced-motion` behavior for each animation
 
-### 9. Constraints
+### 9. UX & Polish
+
+Reference `.factory/design-system/ux-patterns.md` and `ux_patterns` in the baseline:
+
+- **Animation choreography:** Specify entrance sequence — which elements appear first, stagger delays between siblings, easing curve, duration. Match the project's existing stagger timing from the baseline. New elements must coordinate with existing animations on the same page.
+- **Information hierarchy:** Specify heading levels and visual weight for primary vs secondary content. Data values must include units, context labels, and comparisons (e.g., "72% — up 5% from last week") using patterns from the baseline.
+- **User-friendliness:** Specify plain-language labels (no jargon), contextual help (tooltips, info icons), empty states with guidance, and user-friendly error messages. Reference existing patterns from the baseline.
+
+If no UX patterns exist in the baseline, apply general best practices: stagger entrance animations with 50-100ms delays between siblings, include units and labels on all numeric values, provide empty states with guidance text.
+
+### 10. Constraints
 List every applicable rule from `rules.md` that the Builder must follow for this feature. Quote the rule text directly — do not paraphrase.
 
 ## Constraints
