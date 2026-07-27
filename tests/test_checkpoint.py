@@ -200,21 +200,32 @@ def test_cli_checkpoint_show_none(checkpoint_project: Path) -> None:
     assert code == 0
 
 
-def test_cli_checkpoint_save_and_show(checkpoint_project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_checkpoint_save_and_show(
+    checkpoint_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """factory checkpoint --save persists state, then show reads it."""
     from factory.cli import main
 
     # Save
-    code = main([
-        "checkpoint", str(checkpoint_project),
-        "--save",
-        "--mode", "improve",
-        "--experiment", "38",
-        "--completed", "researcher,strategist",
-        "--pending", "builder,qa",
-        "--hypothesis", "Test hypothesis",
-        "--scores", '{"tests": 0.9}',
-    ])
+    code = main(
+        [
+            "checkpoint",
+            str(checkpoint_project),
+            "--save",
+            "--mode",
+            "improve",
+            "--experiment",
+            "38",
+            "--completed",
+            "researcher,strategist",
+            "--pending",
+            "builder,qa",
+            "--hypothesis",
+            "Test hypothesis",
+            "--scores",
+            '{"tests": 0.9}',
+        ]
+    )
     assert code == 0
     capsys.readouterr()  # clear output
 
@@ -228,17 +239,21 @@ def test_cli_checkpoint_save_and_show(checkpoint_project: Path, capsys: pytest.C
     assert "builder" in output
 
 
-def test_cli_resume_no_checkpoint(checkpoint_project: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_resume_no_checkpoint(
+    checkpoint_project: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     """factory resume <path> returns 1 when no checkpoint."""
     from factory.cli import main
 
     code = main(["resume", str(checkpoint_project)])
     assert code == 1
-    output = capsys.readouterr().out
-    assert "No checkpoint" in output
+    output = capsys.readouterr().err
+    assert "No CEO session found to resume." in output
 
 
-def test_cli_resume_with_checkpoint(checkpoint_project: Path, sample_state: CheckpointState, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_resume_with_checkpoint(
+    checkpoint_project: Path, sample_state: CheckpointState, capsys: pytest.CaptureFixture[str]
+) -> None:
     """factory resume <path> displays resume context."""
     save_checkpoint(checkpoint_project, sample_state)
 
@@ -274,20 +289,29 @@ def test_cli_checkpoint_clear_no_file(checkpoint_project: Path) -> None:
 
 
 def test_cli_checkpoint_save_with_completed_hypotheses(
-    checkpoint_project: Path, capsys: pytest.CaptureFixture[str],
+    checkpoint_project: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     """factory checkpoint --save --completed-hypotheses persists experiment IDs."""
     from factory.cli import main
 
-    code = main([
-        "checkpoint", str(checkpoint_project),
-        "--save",
-        "--mode", "improve",
-        "--completed", "researcher,strategist",
-        "--pending", "builder",
-        "--hypothesis", "Add caching",
-        "--completed-hypotheses", "1,2,3",
-    ])
+    code = main(
+        [
+            "checkpoint",
+            str(checkpoint_project),
+            "--save",
+            "--mode",
+            "improve",
+            "--completed",
+            "researcher,strategist",
+            "--pending",
+            "builder",
+            "--hypothesis",
+            "Add caching",
+            "--completed-hypotheses",
+            "1,2,3",
+        ]
+    )
     assert code == 0
 
     loaded = load_checkpoint(checkpoint_project)
@@ -307,6 +331,7 @@ def test_load_checkpoint_corrupt_json(checkpoint_project: Path) -> None:
 def test_load_checkpoint_invalid_schema(checkpoint_project: Path) -> None:
     """load_checkpoint returns None for valid JSON with invalid schema."""
     import json
+
     checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
     checkpoint_path.write_text(json.dumps({"wrong_field": "bad"}))
 
@@ -317,6 +342,7 @@ def test_load_checkpoint_invalid_schema(checkpoint_project: Path) -> None:
 def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
     """load_checkpoint handles old checkpoints without completed_hypotheses."""
     import json
+
     checkpoint_path = checkpoint_project / ".factory" / "checkpoint.json"
     old_data = {
         "mode": "improve",
@@ -333,5 +359,3 @@ def test_load_checkpoint_backwards_compat(checkpoint_project: Path) -> None:
     assert loaded is not None
     assert loaded.completed_hypotheses == []
     assert loaded.completed_agents == ["researcher"]
-
-
