@@ -252,20 +252,26 @@ def test_cli_resume_no_checkpoint(
 
 
 def test_cli_resume_with_checkpoint(
-    checkpoint_project: Path, sample_state: CheckpointState, capsys: pytest.CaptureFixture[str]
+    checkpoint_project: Path, sample_state: CheckpointState
 ) -> None:
-    """factory resume <path> displays resume context."""
+    """factory resume <path> resumes the CEO session when a session ID exists."""
+    from unittest.mock import patch
+
+    from factory.ceo_completion import write_ceo_session_id
+
     save_checkpoint(checkpoint_project, sample_state)
+    write_ceo_session_id(checkpoint_project, "ckpt-session-id")
 
     from factory.cli import main
 
-    code = main(["resume", str(checkpoint_project)])
-    assert code == 0
-    output = capsys.readouterr().out
-    assert "Resume Context" in output
-    assert "improve" in output
-    assert "builder" in output
-    assert "health_checker" in output
+    with patch("os.execvp") as mock_exec, patch("shutil.which", return_value="/usr/bin/claude"):
+        main(["resume", str(checkpoint_project)])
+
+        mock_exec.assert_called_once()
+        call_args = mock_exec.call_args[0]
+        assert call_args[0] == "claude"
+        assert "--resume" in call_args[1]
+        assert "ckpt-session-id" in call_args[1]
 
 
 def test_cli_checkpoint_clear(checkpoint_project: Path, sample_state: CheckpointState) -> None:
