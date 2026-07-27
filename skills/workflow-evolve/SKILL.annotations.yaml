@@ -1,0 +1,362 @@
+baseline:
+  type: FnNode
+  id: baseline
+  command: python3 -c "import json; from pathlib import Path; p = Path('{project_path}/.factory/baseline');
+    p.mkdir(parents=True, exist_ok=True); Path('{project_path}/.factory/evolve').mkdir(parents=True,
+    exist_ok=True); print('Baseline directory ready. CEO must call get_benchmark_info()
+    and evaluate_solution() via MCP, then write initial.py and eval.json to .factory/baseline/.')"
+  reads: []
+  writes:
+  - .factory/baseline/eval.json
+  - .factory/baseline/initial.py
+  - .factory/evolve/current_best.py
+  - .factory/evolve/current_score.json
+  edges_out:
+  - target: researcher
+    condition: null
+researcher:
+  type: AgentNode
+  id: researcher
+  role: researcher
+  blocking: 'true'
+  reads:
+  - .factory/baseline/eval.json
+  - .factory/baseline/initial.py
+  writes:
+  - .factory/strategy/research.md
+  edges_out:
+  - target: gate_research
+    condition: null
+  slots:
+    task_prompt_researcher: 'Optimization technique research for code evolution. Read
+      the initial program at .factory/baseline/initial.py. Identify EVOLVE-BLOCK-START/END
+      markers to understand mutable regions. Analyze the algorithm structure, data
+      representations, and constants. Search the web for optimization techniques relevant
+      to the problem domain (extract domain from the benchmark name in .factory/baseline/eval.json).
+      Read .factory/baseline/eval.json to identify the benchmark problem domain and
+      its target metric. Read the constraints field from .factory/baseline/eval.json
+      (if present). Constraints may include: allowed_modules, forbidden_modules, forbidden_builtins,
+      and syntax_restrictions. Validate ALL proposed optimization techniques against
+      these constraints before recommending them. Filter out any techniques that would
+      require forbidden modules, forbidden builtins, or violate syntax restrictions.
+      Only recommend techniques that use modules listed in allowed_modules (when specified).
+      Based on the discovered domain, search for relevant optimization techniques,
+      heuristics, and algorithmic strategies specific to that problem type. Read .factory/archive/
+      for prior knowledge on similar optimization problems. Write findings to .factory/strategy/research.md
+      covering: Constraint Compliance section (constraints found in eval.json, which
+      techniques are constraint-compatible, which were filtered out and why), code
+      structure analysis (mutable vs fixed regions), candidate optimization techniques
+      ordered by expected impact, parameter tuning opportunities, algorithmic alternatives.
+      If no constraints field exists in eval.json, note that no constraints were declared
+      and skip constraint filtering.
+
+      Read: .factory/baseline/eval.json, .factory/baseline/initial.py
+
+      Write output to: .factory/strategy/research.md'
+    timeout_researcher: '600'
+gate_research:
+  type: GateNode
+  id: gate_research
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/strategy/research.md
+  edges_out:
+  - target: strategist
+    condition: PROCEED
+  - target: researcher
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_research: 'Is the optimization research relevant to the problem
+      domain? Does it identify the EVOLVE-BLOCK boundaries correctly? Are the proposed
+      techniques ordered by expected impact? Are there at least 3 distinct approaches
+      to try? CONSTRAINT COVERAGE: If .factory/baseline/eval.json contains a constraints
+      field, verify that the Researcher identified and documented those constraints.
+      Check that research.md includes a Constraint Compliance section showing which
+      techniques are constraint-compatible and which were filtered out. REDIRECT if
+      constraints exist in eval.json but the Researcher ignored them or failed to
+      document constraint compliance.'
+    max_iterations_gate_research: '3'
+strategist:
+  type: AgentNode
+  id: strategist
+  role: strategist
+  blocking: 'true'
+  reads:
+  - .factory/baseline/eval.json
+  - .factory/evolve/current_best.py
+  - .factory/evolve/current_score.json
+  - .factory/strategy/research.md
+  writes:
+  - .factory/strategy/current.md
+  edges_out:
+  - target: gate_strategy
+    condition: null
+  slots:
+    task_prompt_strategist: 'Generate ONE code modification hypothesis for the evolve
+      loop. Read research at .factory/strategy/research.md. Read the current best
+      code at .factory/evolve/current_best.py. Read experiment history at .factory/results.tsv
+      and .factory/experiments/. Read the current score from .factory/evolve/current_score.json.
+      Read the constraints field from .factory/baseline/eval.json (if present). Constraints
+      may include: allowed_modules, forbidden_modules, forbidden_builtins, and syntax_restrictions.
+      Before finalizing the hypothesis, verify that the proposed code modification
+      does NOT use any forbidden modules, does NOT call any forbidden builtins, and
+      respects all syntax restrictions. Only use modules listed in allowed_modules
+      (when specified). The hypothesis MUST be a specific code change within EVOLVE-BLOCK
+      boundaries. Follow FEEC priority: Fix (bugs) > Exploit (tune parameters of proven
+      approach) > Explore (new algorithm) > Combine (hybrid strategies). If the last
+      3 experiments were all reverted, note this — the CEO will trigger fresh research.
+      Write a single hypothesis to .factory/strategy/current.md with: Category (algorithm-change|parameter-tuning|data-structure|initialization),
+      Constraint Compliance (constraints found in eval.json, allowed modules used,
+      forbidden modules avoided, forbidden builtins avoided, syntax restrictions respected
+      — or note that no constraints were declared), Rationale, Modification (specific
+      code), Expected Impact, Risk.
+
+      Read: .factory/baseline/eval.json, .factory/evolve/current_best.py, .factory/evolve/current_score.json,
+      .factory/strategy/research.md
+
+      Write output to: .factory/strategy/current.md'
+    timeout_strategist: '600'
+gate_strategy:
+  type: GateNode
+  id: gate_strategy
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/baseline/eval.json
+  - .factory/strategy/current.md
+  edges_out:
+  - target: begin
+    condition: PROCEED
+  - target: strategist
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_strategy: 'Review the code modification hypothesis. MANDATORY
+      checks in order:
+
+      1) CONSTRAINT VALIDATION (check FIRST): Read .factory/baseline/eval.json. If
+      a constraints field exists, verify the hypothesis does NOT violate any constraints
+      (forbidden_modules, forbidden_builtins, syntax_restrictions, allowed_modules).
+      Read current.md for the Constraint Compliance section. RELOOP to strategist
+      IMMEDIATELY if any constraint is violated.
+
+      2) STUCK DETECTION — THIS CHECK IS MANDATORY AND NON-NEGOTIABLE: Read .factory/results.tsv.
+      Count the consecutive REVERT verdicts from the most recent experiments. If the
+      last 3 experiments were ALL REVERT, you MUST trigger RELOOP to researcher for
+      fresh perspective. Do NOT proceed to builder when stuck. Do NOT rationalize
+      skipping this check. Three consecutive reverts means the current research is
+      exhausted — fresh research is REQUIRED.
+
+      3) Is it a specific code change, not vague prose?
+
+      4) Does it target only EVOLVE-BLOCK regions?
+
+      5) Is the FEEC category correct?
+
+      6) Is the expected impact plausible?
+
+      PROCEED only if ALL checks pass. RELOOP to strategist if constraint violations
+      found or hypothesis is vague or wrong category. RELOOP to researcher if stuck
+      (3 consecutive reverts — MANDATORY, no exceptions).'
+    max_iterations_gate_strategy: '3'
+begin:
+  type: FnNode
+  id: begin
+  command: factory begin {project_path} --hypothesis "$HYPOTHESIS"
+  reads: []
+  writes:
+  - .factory/experiments/current_id
+  edges_out:
+  - target: builder
+    condition: null
+  slots:
+    finalize_command_begin: factory begin $PROJECT_PATH --hypothesis "$HYPOTHESIS"
+builder:
+  type: AgentNode
+  id: builder
+  role: builder
+  blocking: 'true'
+  reads:
+  - .factory/evolve/current_best.py
+  - .factory/strategy/current.md
+  writes:
+  - .factory/evolve/candidate.py
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: gate_build
+    condition: null
+  slots:
+    task_prompt_builder: 'Apply the code modification hypothesis to produce a candidate
+      program. Read the hypothesis at .factory/strategy/current.md. Read the current
+      best code at .factory/evolve/current_best.py. CRITICAL CONSTRAINTS:
+
+      - ONLY modify code between EVOLVE-BLOCK-START and EVOLVE-BLOCK-END markers
+
+      - Preserve ALL code outside evolution markers (imports, helpers, return format)
+
+      - Maintain function signatures and return types expected by the evaluator
+
+      - No external dependencies beyond what''s in the initial program
+
+      - Validate Python syntax (AST parse check)
+
+      Write the complete modified program to .factory/experiments/$EXP_ID/candidate.py.
+      Also copy it to .factory/evolve/candidate.py for the evaluator.
+
+      Read: .factory/evolve/current_best.py, .factory/strategy/current.md
+
+      Write output to: .factory/evolve/candidate.py, .factory/reviews/builder-latest.md'
+    timeout_builder: '1200'
+gate_build:
+  type: GateNode
+  id: gate_build
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/builder-latest.md
+  edges_out:
+  - target: health_checker
+    condition: PROCEED
+  - target: builder
+    condition: RELOOP
+  slots:
+    gate_prompt_gate_build: 'Review builder output. Check:
+
+      1) candidate.py exists at .factory/evolve/candidate.py
+
+      2) Only EVOLVE-BLOCK regions were modified (diff the candidate against current_best.py)
+
+      3) Python syntax is valid
+
+      4) No external dependencies were added
+
+      REDIRECT to builder if constraints violated.'
+    max_iterations_gate_build: '3'
+health_checker:
+  type: AgentNode
+  id: health_checker
+  role: health_checker
+  blocking: 'true'
+  reads:
+  - .factory/baseline/eval.json
+  - .factory/evolve/candidate.py
+  - .factory/evolve/current_score.json
+  writes:
+  - .factory/reviews/health-check.md
+  edges_out:
+  - target: gate_eval
+    condition: null
+  slots:
+    task_prompt_health_checker: "Evaluate the candidate program via MCP and compare\
+      \ scores. 1. Read the candidate code from .factory/evolve/candidate.py\n2. Call\
+      \ evaluate_solution(candidate_code) via MCP tool\n3. Parse the evaluate_solution()\
+      \ response fields (combined_score, validity, eval_time, and any domain-specific\
+      \ metrics)\n4. Read current best score from .factory/evolve/current_score.json\n\
+      5. Read baseline eval_time from .factory/baseline/eval.json\n6. Apply verdict\
+      \ logic:\n   - If validity == false: REVERT ('Invalid solution')\n   - If combined_score\
+      \ <= current_score: REVERT ('Score degraded or unchanged')\n   - If eval_time\
+      \ > 10 * baseline_eval_time: REVERT ('Unacceptable slowdown')\n   - Otherwise:\
+      \ KEEP ('Score improved')\n7. Write eval results to .factory/experiments/$EXP_ID/eval_after.json\n\
+      8. Write verdict with KEEP/REVERT and rationale to .factory/reviews/health-check.md\n\
+      Include in the verdict: score_before, score_after, delta, validity, eval_time.\n\
+      Read: .factory/baseline/eval.json, .factory/evolve/candidate.py, .factory/evolve/current_score.json\n\
+      Write output to: .factory/reviews/health-check.md"
+    timeout_health_checker: '600'
+gate_eval:
+  type: GateNode
+  id: gate_eval
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/reviews/health-check.md
+  edges_out:
+  - target: finalize
+    condition: PROCEED
+  slots:
+    gate_prompt_gate_eval: "Review the evaluation verdict at .factory/reviews/health-check.md.\n\
+      Read the Health Checker's KEEP/REVERT recommendation and rationale.\nIf KEEP:\n\
+      \  - Update .factory/evolve/current_best.py with the candidate code\n  - Update\
+      \ .factory/evolve/current_score.json with the new score\n  - Set $VERDICT=keep\
+      \ for finalize\nIf REVERT:\n  - Keep current_best.py unchanged\n  - Set $VERDICT=revert\
+      \ for finalize\nThen PROCEED to finalize and archival."
+finalize:
+  type: FnNode
+  id: finalize
+  command: factory finalize {project_path} --id $EXP_ID --verdict $VERDICT --hypothesis
+    "$HYPOTHESIS"
+  reads:
+  - .factory/reviews/health-check.md
+  writes:
+  - .factory/experiments/verdict.json
+  edges_out:
+  - target: archivist
+    condition: null
+  slots:
+    finalize_command_finalize: factory finalize $PROJECT_PATH --id $EXP_ID --verdict
+      $VERDICT --hypothesis "$HYPOTHESIS"
+archivist:
+  type: AgentNode
+  id: archivist
+  role: archivist
+  blocking: 'false'
+  reads:
+  - .factory/experiments/verdict.json
+  - .factory/reviews/health-check.md
+  writes:
+  - .factory/archive/experiment.md
+  edges_out:
+  - target: gate_convergence
+    condition: null
+  slots:
+    task_prompt_archivist: 'Archive evolve experiment results and learnings. Read
+      the experiment verdict at .factory/experiments/verdict.json. Read the hypothesis
+      at .factory/strategy/current.md. Read the eval results at .factory/reviews/health-check.md.
+      If KEEP: document what worked (algorithm insight, parameter sweet spot). If
+      REVERT: document why it failed (validity issue, wrong assumption, local optimum).
+      Write learnings to .factory/archive/experiments/$EXP_ID.md.
+
+      Read: .factory/experiments/verdict.json, .factory/reviews/health-check.md
+
+      Write output to: .factory/archive/experiment.md'
+    timeout_archivist: '300'
+gate_convergence:
+  type: GateNode
+  id: gate_convergence
+  evaluator_type: agent
+  evaluator_role: ceo
+  reads:
+  - .factory/evolve/current_score.json
+  edges_out:
+  - target: strategist
+    condition: RELOOP
+  - target: archivist_final
+    condition: PROCEED
+  slots:
+    gate_prompt_gate_convergence: "Check convergence criteria. Read .factory/evolve/current_score.json\
+      \ and .factory/results.tsv.\nExit (PROCEED) if ANY of:\n  1. Target score reached\
+      \ (check factory.md convergence.target_score)\n  2. Max cycles reached (check\
+      \ factory.md convergence.max_cycles, default 50)\n  3. Diminishing returns:\
+      \ 5 consecutive cycles with improvement < 0.001\nContinue (RELOOP to strategist)\
+      \ otherwise.\nLog the convergence status: current_score, target, cycles_completed,\
+      \ recent_improvement_deltas."
+    max_iterations_gate_convergence: '3'
+archivist_final:
+  type: AgentNode
+  id: archivist_final
+  role: archivist
+  blocking: 'true'
+  reads:
+  - .factory/evolve/current_score.json
+  writes:
+  - .factory/archive/evolve-summary.md
+  edges_out: []
+  slots:
+    task_prompt_archivist_final: 'Final evolution summary. Write a comprehensive summary
+      of the evolution run: total experiments, keep/revert counts, score trajectory
+      (baseline to final), best-performing hypothesis categories, key learnings. Read
+      .factory/results.tsv for full history. Write to .factory/archive/evolve-summary.md.
+
+      Read: .factory/evolve/current_score.json
+
+      Write output to: .factory/archive/evolve-summary.md'
+    timeout_archivist_final: '300'

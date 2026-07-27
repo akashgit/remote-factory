@@ -142,6 +142,19 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
+    "optimize": {
+        "description": (
+            "Optimize an existing factory mode by analyzing its performance across "
+            "recent cycles, identifying weaknesses (high redirect rates, agent timeouts, "
+            "low keep rates), and generating targeted workflow changes. Delegates "
+            "implementation to create mode (update-existing-mode path) which runs "
+            "its own full QA pipeline. "
+            "Use when the user says 'optimize the improve mode', 'tune the build workflow', "
+            "or wants to improve factory mode effectiveness based on historical data. "
+            "Requires --focus <target_mode_name>."
+        ),
+        "argument_hint": '"<project_path> --focus <target_mode>"',
+    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "
@@ -159,6 +172,22 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "annotations. Use to regenerate skills after workflow definition changes."
         ),
         "argument_hint": "<project_path>",
+    },
+    "evolve": {
+        "description": (
+            "Evolve mode — iterative code evolution via external MCP evaluation. "
+            "Optimizes a single scalar metric by mutating code within EVOLVE-BLOCK "
+            "boundaries and evaluating via an MCP server. Use when the project has "
+            "an MCP evaluator configured and the user says 'evolve', 'optimize', "
+            "or wants evolutionary code search on a benchmark."
+        ),
+        "argument_hint": "<project_path> --mode evolve",
+        "preamble": (
+            "**MCP Evaluation Mode:** This workflow evaluates code via an external MCP server, "
+            "NOT via local tests/lint/types. The CEO must have access to the MCP tools "
+            "`get_benchmark_info()` and `evaluate_solution()`. All code modifications "
+            "MUST stay within EVOLVE-BLOCK-START/END markers."
+        ),
     },
 }
 
