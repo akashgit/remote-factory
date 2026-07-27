@@ -1,6 +1,6 @@
 # Behavioral Specification — Remote Factory
 
-> **Revision:** 2026-07-07 · **Status:** Normative · **Notation:** [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119)
+> **Revision:** 2026-07-27 · **Status:** Normative · **Notation:** [RFC 2119](https://datatracker.ietf.org/doc/html/rfc2119)
 
 ---
 
@@ -149,7 +149,7 @@ factory/models.py                    ← Foundation: all Pydantic types
     ├── factory/spec/
     │   ├── generate.py              ← Batch extraction + annotation pipeline
     │   └── ops.py                   ← Validate, scope, update, impact operations
-    ├── factory/ceo_completion.py     ← Completion guard + respawn logic
+    ├── factory/ceo_completion.py     ← Completion guard + respawn logic + session state
     ├── factory/registry.py           ← Global project registry (~/.factory/registry.json)
     ├── factory/user_config.py        ← Five-tier config resolution
     ├── factory/telemetry.py          ← Langfuse tracing (optional)
@@ -168,7 +168,7 @@ factory/models.py                    ← Foundation: all Pydantic types
 |---|---|---|
 | **ProjectState** | `no_repo`, `incomplete`, `no_factory`, `evals_pending_review`, `has_factory` | Five-state project lifecycle |
 | **VerdictType** | `proceed`, `reloop`, `halt` | Gate evaluation outcomes |
-| **AgentRole** | `researcher`, `strategist`, `builder`, `qa`, `health_checker`, `code_reviewer`, `adversarial_tester`, `failure_analyst`, `ceo`, `archivist`, `refiner`, `skill_reviewer` | 12 specialist roles |
+| **AgentRole** | `researcher`, `strategist`, `builder`, `qa`, `health_checker`, `code_reviewer`, `adversarial_tester`, `failure_analyst`, `ceo`, `archivist`, `refiner`, `profiler`, `refactory` | 13 specialist roles |
 | **FEECCategory** | `FIX=0`, `EXPLOIT=1`, `EXPLORE=2`, `COMBINE=3` | Hypothesis priority (IntEnum; lower = higher priority) |
 | **RunStatus** | `PASS`, `FAIL`, `ERROR`, `TIMEOUT` | Research run outcomes |
 | **AggregateMethod** | `mean`, `median`, `max`, `all_pass` | Multi-run metric aggregation |
@@ -179,20 +179,21 @@ All models use `ConfigDict(strict=True, extra="forbid")` — extra fields MUST r
 
 | Entity | Key Fields | Invariants |
 |---|---|---|
-| **FactoryConfig** | `goal`, `scope`, `guards`, `eval_command`, `eval_threshold`, `hypothesis_budget`, `research_target`, `mutable_surfaces`, `fixed_surfaces`, `hard_constraints`, `clean_pr`, `eval_spec`, `hygiene_weights`, `growth_weights` | `test_timeout` ≥ 1 (Field ge=1); `research_target` nullable; incomplete research target → `None` not error |
+| **FactoryConfig** | `goal`, `scope`, `guards`, `eval_command`, `eval_threshold`, `hypothesis_budget`, `research_target`, `mutable_surfaces`, `fixed_surfaces`, `hard_constraints`, `clean_pr`, `eval_spec`, `hygiene_weights`, `growth_weights`, `parallel` | `test_timeout` ≥ 1 (Field ge=1); `research_target` nullable; `parallel` nullable (`ParallelConfig`); incomplete research target → `None` not error |
 | **EvalProfile** | `project_type`, `dimensions[]`, `tier`, `confidence`, `human_reviewed` | `human_reviewed` defaults `false`; tier ∈ {explicit, discovered, researched, fallback}; weights MUST sum to 1.0 |
 | **HypothesisBudget** | `min_growth`, `max_new` | Defaults: `min_growth=2`, `max_new=2` |
 | **ResearchTarget** | `objective`, `metric`, `target`, `run_command`, `result_path`, `timeout` | `result_parser` MUST be `"json"`; all 4 required fields or `None` |
 | **InnerLoopConfig** | `runs_per_cycle`, `aggregate`, `plateau_threshold` | `runs_per_cycle` ≥ 1; `aggregate` coerced from string via `@field_validator` |
 | **HardConstraint** | `name`, `check`, `description` | Shell command; exit 0 = pass; non-zero = mandatory revert |
 | **EvalWeights** | `hygiene`, `growth`, `project` | Defaults: 0.50, 0.50, 0.0; normalized to sum 1.0 |
+| **ParallelConfig** | `parallel_hypotheses`, `selection_strategy` | `parallel_hypotheses` ∈ [1, 8] (Field ge=1, le=8), defaults 1; `selection_strategy` = `"best_score"` |
 | **TierWeights** | per-dimension weight overrides | Sparse — `None` fields keep defaults |
 
 ### §6.3 Experiment Models
 
 | Entity | Key Fields | Invariants |
 |---|---|---|
-| **ExperimentRecord** | `id`, `timestamp`, `hypothesis`, `verdict`, `score_before`, `score_after`, `delta`, `cost_usd`, `research_citations` | `verdict` ∈ {keep, revert, error}; `delta` auto-computed on finalize; `research_citations` defaults to `[]` (backward compat) |
+| **ExperimentRecord** | `id`, `timestamp`, `hypothesis`, `verdict`, `score_before`, `score_after`, `delta`, `cost_usd`, `research_citations` | `verdict` ∈ {keep, revert, error, superseded}; `delta` auto-computed on finalize; `research_citations` defaults to `[]` (backward compat) |
 | **CompositeScore** | `total`, `results[]`, `guard_violations`, `passed` | `passed = (no guard_violations) ∧ (total ≥ threshold)` |
 | **EvalResult** | `name`, `score`, `weight`, `passed`, `details` | Score clamped to [0.0, 1.0] at construction (via `EvalFragment`) |
 | **CheckResult** | `name`, `passed`, `detail` | Dataclass — outcome of a single precheck |
@@ -217,13 +218,13 @@ All models use `ConfigDict(strict=True, extra="forbid")` — extra fields MUST r
 
 | Entity | Key Fields | Invariants |
 |---|---|---|
-| **AgentRunRequest** | `prompt`, `task`, `cwd`, `timeout`, `model`, `skip_permissions`, `role`, `extras` | `timeout` defaults 600.0; `extras` carries `tmux_persist`, `background` |
+| **AgentRunRequest** | `prompt`, `task`, `cwd`, `timeout`, `model`, `skip_permissions`, `role`, `session_name`, `session_id`, `resume_session_id`, `extras` | `timeout` defaults 600.0; `session_id` and `resume_session_id` nullable (session threading); `extras` carries `tmux_persist`, `background`, `settings_file` |
 | **AgentRunResult** | `stdout`, `return_code`, `usage`, `metadata` | `usage` nullable (only Claude returns telemetry) |
 | **AgentUsage** | `input_tokens`, `output_tokens`, `cache_read_tokens`, `total_cost_usd`, `duration_ms`, `num_turns`, `model` | All default 0 |
-| **CycleState** | `cycle_id`, `started_at`, `mode`, `initial_prompt`, `respawns`, `runner_name` | `initial_prompt` truncated to ≤1000 chars; staleness at 24h |
-| **CheckpointState** | `mode`, `active_experiment_id`, `completed_agents`, `pending_agents`, `last_eval_scores`, `current_hypothesis`, `completed_hypotheses` | `completed_hypotheses` defaults `[]` (backward compat) |
+| **CycleState** | `cycle_id`, `started_at`, `mode`, `initial_prompt`, `respawns`, `runner_name`, `claude_session_id` | `initial_prompt` truncated to ≤1000 chars; staleness at 24h; `claude_session_id` nullable (captured from `agent.completed` events for session resume) |
+| **CheckpointState** | `mode`, `active_experiment_id`, `active_experiment_ids`, `completed_agents`, `pending_agents`, `last_eval_scores`, `current_hypothesis`, `completed_hypotheses`, `parallel_branch_status`, `plateau_count`, `loop_level` | `completed_hypotheses` defaults `[]` (backward compat); `active_experiment_ids` and `parallel_branch_status` support parallel experiment tracking; `loop_level` ∈ {inner, outer} defaults `"inner"` |
 | **SessionSummary** | `project_name`, `mode`, `experiments_kept`, `experiments_reverted`, `score_start`, `score_end`, `total_cost_usd` | Strict model — rejects extra fields |
-| **RunnerMeta** | `name`, `display_name`, `binary`, `install_hint`, `required_env_vars`, `custom_auth_check` | `is_available()` checks `shutil.which(binary)` |
+| **RunnerMeta** | `name`, `display_name`, `binary`, `install_hint`, `required_env_vars`, `supports_session_resume`, `custom_auth_check` | `is_available()` checks `shutil.which(binary)`; `supports_session_resume` defaults `False` (only Claude returns `True`) |
 
 ### §6.6 Cross-Project Models
 
@@ -270,6 +271,7 @@ store.init() → store.begin(hypothesis) → [exp_id allocated, FileLock]
 - `finalize()` MUST auto-create experiment dir if deleted (crash resilience)
 - `finalize()` MUST compute `delta = score_after - score_before` when `delta is None`
 - `load_history()` MUST handle missing `research_citations` column (backward compat)
+- Valid verdict values: `keep`, `revert`, `error`, `superseded`
 - Invalid verdict values MUST be coerced to `"error"`
 
 ### §7.3 Workflow Execution
@@ -302,14 +304,16 @@ WorkflowExecutor.execute() →
 run_with_completion_guard() →
   check existing cycle_state → restore mode + runner
   OR create new CycleState → persist to cycle.json
-  → invoke CEO → check exit code
+  → invoke CEO (with session_id on first spawn) → check exit code
+  → _extract_session_id() → capture claude session_id from agent.completed event
+  → persist session_id to CycleState.claude_session_id
   → user interrupt (signal >128) → preserve cycle state, return
-  → explicit ABORT event → delete cycle state, return
+  → explicit ABORT event → delete cycle state + session state, return
   → _detect_incomplete():
     improve/research/meta: verdict_count < hypothesis_count → incomplete
     build: phase_count < total_phases → incomplete
     discover: no eval_profile.json → incomplete
-  → if incomplete: _build_continuation_task → respawn (max 5)
+  → if incomplete: _build_continuation_task → respawn with resume_session_id (max 5)
   → if cap hit: write cycle-incomplete.md, return error
 ```
 
@@ -320,6 +324,29 @@ run_with_completion_guard() →
 - Continuation tasks MUST include `## CRITICAL: Mode Override` section with `cycle_id`
 - Each respawn MUST emit `ceo.respawn` event with `cycle_id` and `mode`
 - `_count_verdicts` MUST use `since_ts` parameter to scope to current cycle only
+- Session ID MUST be captured from `agent.completed` events after each CEO spawn | MUST |
+- Respawns MUST use `resume_session_id` (not `session_id`) to continue the Claude session | MUST |
+- `delete_cycle_state` MUST also delete `.factory/state/session.json` | MUST |
+
+#### §7.4.1 CEO Session State Persistence
+
+```
+write_ceo_session_id(project_path, session_id) →
+  persist to .factory/state/session.json
+  {session_id, created: ISO timestamp}
+
+read_ceo_session_id(project_path) →
+  read .factory/state/session.json → return session_id or None
+  missing/corrupt → None
+
+_extract_session_id(project_path) →
+  scan events.jsonl backwards for agent.completed where agent=ceo
+  return data.session_id from first match, or None
+```
+
+- `cmd_ceo` MUST generate a UUID session ID and write it via `write_ceo_session_id` before spawning the CEO | MUST |
+- `cmd_resume` MUST check `CycleState.claude_session_id` first, then fall back to `read_ceo_session_id` | MUST |
+- `cmd_resume` MUST use `claude --resume <session_id>` to resume the session | MUST |
 
 ### §7.5 Precheck Gate (Non-Overridable)
 
@@ -472,6 +499,7 @@ check_ceilings(project_path, cycle_start):
 | `finalize` computes delta when not pre-set | MUST |
 | `finalize` auto-creates experiment dir if deleted | MUST |
 | `load_history` handles missing `research_citations` column | MUST |
+| `load_history` MUST accept `"superseded"` as a valid verdict value | MUST |
 | `read_config` uses `strict=False` for enum coercion from JSON | MUST |
 | `reparse_config` parses `factory.md` sections, HTML comments, code blocks, list continuations | MUST |
 | `reparse_config`: incomplete research target → `None` (not crash) | MUST |
@@ -543,6 +571,8 @@ check_ceilings(project_path, cycle_start):
 | Auto-generate numeric review tags for duplicate roles in parallel invocations | MUST |
 | Event emissions MUST be swallowed on error (never block agent invocation) | MUST |
 | Telemetry spans MUST be swallowed on error | MUST |
+| Pass `session_id` and `resume_session_id` through to `AgentRunRequest` for session threading | MUST |
+| Emit `session_id` from agent metadata in `agent.completed` event data | SHOULD |
 
 ### §8.8 `factory/workflow/primitives.py` — Workflow Primitives
 
@@ -596,7 +626,7 @@ check_ceilings(project_path, cycle_start):
 | Resolution order: explicit name → `FACTORY_RUNNER` env var → `"claude"` | MUST |
 | Each runner implements `headless() → AgentRunResult` | MUST |
 | Only Claude returns `usage` telemetry; others `usage=None` | MUST |
-| Only Claude has `supports_background=True` | MUST |
+| Only Claude has `supports_background=True` and `supports_session_resume=True` | MUST |
 | Bob Shell ceiling enforcement via `check_ceilings()` using cycle `started_at` | MUST |
 | Bob ceiling uses `started_at` from `cycle.json`, not `now()` | MUST |
 | Bob `sanitize=True` (strips ANSI from dest, keeps raw in buffer) | MUST |
@@ -605,6 +635,8 @@ check_ceilings(project_path, cycle_start):
 | Dry-run modes: `FACTORY_BOB_DRY_RUN`, `FACTORY_CODEX_DRY_RUN`, `FACTORY_OPENCODE_DRY_RUN` | MUST |
 | Inactivity watchdog kills silent processes; genuine blank lines preserved | MUST |
 | 1MB readline limit on subprocess output | SHOULD |
+| Claude `build_command`: `--resume` flag when `resume_session_id` set; `--session-id` when `session_id` set (mutually exclusive, resume takes precedence) | MUST |
+| Claude `build_interactive_command`: same `--resume`/`--session-id` flag logic; persists CEO prompt to `.claude/CLAUDE.md` and `disallowedTools` to `.claude/settings.local.json` for session resilience | MUST |
 | Plugin discovery via `entry_points("factory.runners")` — lazy, once-per-process | SHOULD |
 
 ### §8.12 `factory/registry.py` — Global Project Registry
@@ -674,7 +706,7 @@ async def headless(request: AgentRunRequest) -> AgentRunResult
 def interactive_run(request: AgentRunRequest) -> int
 ```
 
-`RunnerMeta` describes capabilities: `is_available()` checks `shutil.which(binary)`; `check_auth()` validates credentials.
+`RunnerMeta` describes capabilities: `is_available()` checks `shutil.which(binary)`; `check_auth()` validates credentials; `supports_session_resume` declares whether `--resume` flag is supported.
 
 ### §9.5 Notifier Protocol
 
@@ -750,6 +782,8 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 | Configuration | `config show`, `config edit`, `config migrate` |
 | Validation & Recovery | `checkpoint`, `resume`, `baseline`, `precheck`, `guard`, `review`, `spec` |
 
+`resume` checks `CycleState.claude_session_id` (headless mid-cycle interrupt) then `.factory/state/session.json` (any CEO run), and invokes `claude --resume <session_id>`. Accepts optional `--model` override.
+
 ### §11.2 Mode Dispatch Rules
 
 | Mode | Preconditions | Rejects |
@@ -762,6 +796,7 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 | `qa`/`deep-qa` | Existing directory + `--pr` | Missing `--pr` |
 | `refine` | Existing directory | `--mode`, `--prompt`, `--focus` (mutually exclusive) |
 | `create` | Any + `--focus` (mode description) | — |
+| `parallel-improve` | `HAS_FACTORY` + `parallel` config | — |
 | `auto` | Default; auto-detects | — |
 
 ---
@@ -848,6 +883,10 @@ ANTHROPIC_API_KEY = "sk-ant-..."
 | 18 | ANSI sanitization: genuine blank lines preserved; redraw-only lines dropped | `_stream.py` |
 | 19 | Review file convention: `<role>[-<tag>]-latest.md`; parallel auto-tags | `_save_review` |
 | 20 | Config parsing: incomplete research target → `None` (not crash) | `reparse_config` |
+| 21 | Session resume: `CycleState.claude_session_id` captured from events, used for `--resume` on respawn | `ceo_completion.py` |
+| 22 | `delete_cycle_state` cleans both `cycle.json` and `session.json` | `ceo_completion.py` |
+| 23 | `cmd_resume` checks cycle state first, then session file, then errors | `cli/infra.py` |
+| 24 | Checkpoint backward compat: missing `active_experiment_ids`, `parallel_branch_status` → `[]`/`{}` | `load_checkpoint` |
 
 ### §14.2 Test Infrastructure
 
