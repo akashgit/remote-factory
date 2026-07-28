@@ -642,6 +642,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         finally:
             _stop_ceo_tailer(ceo_tailer)
             complete_cycle_session(project_path, cycle_span_id)
+            from factory.ceo_completion import print_resume_hint
+
+            print_resume_hint(project_path)
             if not no_worktree:
                 assert wt_branch is not None
                 remove_worktree(project_path, wt_path, wt_branch)
@@ -681,6 +684,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     finally:
         _stop_ceo_tailer(ceo_tailer)
         complete_cycle_session(project_path, cycle_span_id)
+        from factory.ceo_completion import print_resume_hint
+
+        print_resume_hint(project_path)
         if not no_worktree:
             assert wt_branch is not None
             remove_worktree(project_path, wt_path, wt_branch)

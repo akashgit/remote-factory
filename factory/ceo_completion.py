@@ -156,6 +156,20 @@ def delete_cycle_state(project_path: Path) -> bool:
     return deleted
 
 
+def print_resume_hint(project_path: Path) -> None:
+    """Print session ID and resume instructions to stderr if the session is still active.
+
+    Only prints when session.json still exists — if delete_cycle_state() already
+    cleaned it up (cycle completed normally), this is a no-op.
+    """
+    import sys
+
+    sid = read_ceo_session_id(project_path)
+    if sid:
+        print(f"\nSession: {sid}", file=sys.stderr)
+        print(f"Resume with: factory resume {project_path}", file=sys.stderr)
+
+
 def create_cycle_state(
     mode: str, initial_prompt: str = "", runner_name: str | None = None
 ) -> CycleState:
@@ -591,6 +605,7 @@ async def run_ceo_with_completion_guard(
         # User interrupt — respect it (but don't delete cycle state for later resume)
         if code in (130, 143) or code > 128:
             log.info("ceo_user_interrupt", code=code)
+            print_resume_hint(project_path)
             return result, code
 
         # Explicit ABORT — respect it and clean up cycle state
@@ -612,6 +627,7 @@ async def run_ceo_with_completion_guard(
         if not _budget_allows_respawn(runner_name, project_path):
             log.warning("ceo_budget_exceeded", gap=gap)
             _write_cycle_incomplete(project_path, gap, "budget_exceeded")
+            print_resume_hint(project_path)
             return result, 1
 
         # Update cycle state with incremented respawn count
@@ -643,4 +659,5 @@ async def run_ceo_with_completion_guard(
         log.warning("ceo_respawn_cap_hit", attempts=max_respawns + 1, gap=gap)
         _write_cycle_incomplete(project_path, gap, "respawn_cap_hit")
 
+    print_resume_hint(project_path)
     return final_output, 1
