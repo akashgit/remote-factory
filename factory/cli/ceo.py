@@ -390,11 +390,48 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 file=sys.stderr,
             )
             return 1
+    if mode == "optimize":
+        for flag in ("headless", "bg"):
+            if getattr(args, flag, False):
+                print(
+                    f"Error: --mode optimize requires foreground mode (incompatible with {flag})",
+                    file=sys.stderr,
+                )
+                return 1
+        if prompt_file:
+            print(
+                "Error: --mode optimize and --prompt are mutually exclusive.",
+                file=sys.stderr,
+            )
+            return 1
+        if not focus:
+            print(
+                "Error: --mode optimize requires --focus <target_mode_name>. "
+                "Example: factory ceo /path --mode optimize --focus improve\n"
+                "  With target project: --focus evolve:/path/to/target/project",
+                file=sys.stderr,
+            )
+            return 1
+        if not Path(raw_path).expanduser().resolve().is_dir():
+            print(
+                "Error: --mode optimize requires an existing project directory.",
+                file=sys.stderr,
+            )
+            return 1
+
     if mode == "research":
         if prompt_file:
             print(
                 "Error: --mode research and --prompt are mutually exclusive. "
                 "Research ideation generates the spec; --prompt provides one.",
+                file=sys.stderr,
+            )
+            return 1
+    if mode == "evolve":
+        if prompt_file:
+            print(
+                "Error: --mode evolve and --prompt are mutually exclusive. "
+                "Evolve mode generates hypotheses from MCP benchmark info.",
                 file=sys.stderr,
             )
             return 1
@@ -540,7 +577,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in ("improve", "research", "create") and not design_existing:
+    if focus and mode not in ("improve", "research", "create", "optimize", "evolve") and not design_existing:
         print(
             f"Error: --focus (targeted mode) only works in improve, research, or create mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",
@@ -584,18 +621,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path, mode=mode)
-
-    verification_settings = wt_path / ".factory" / "hooks" / f"settings-{mode}.json"
-    _verification_settings_file = str(verification_settings) if verification_settings.exists() else None
+    ensure_skills(wt_path)
 
     interactive = (
-        design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
+        design_existing or bool(design_idea) or bool(research_ideation)
+        or mode == "create" or mode == "optimize"
     )
     if mode == "create":
         ceo_mode = "create"
+    elif mode == "optimize":
+        ceo_mode = "optimize"
     elif mode == "design":
         ceo_mode = "design"
+    elif mode == "evolve":
+        ceo_mode = "evolve"
     elif interactive:
         ceo_mode = "build"
     else:
@@ -686,7 +725,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                     tmux_persist=tmux_persist,
                     background=background,
                     workflow_mode=ceo_mode,
-                    settings_file=_verification_settings_file,
                 )
             )
             print(result)
@@ -733,9 +771,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode)
         runner = get_runner(runner_name)
-        extras: dict[str, object] = {}
-        if _verification_settings_file:
-            extras["settings_file"] = _verification_settings_file
         return runner.interactive_run(
             _RunReq(
                 prompt=prompt,
@@ -745,7 +780,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 role="ceo",
                 skip_permissions=True,
                 session_name=session_name,
-                extras=extras,
             )
         )
     finally:
@@ -1801,7 +1835,14 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
-    if focus and not create_description:
+    if focus and mode == "evolve":
+        task += (
+            f"\n\n## Benchmark Target\n\n"
+            f"Benchmark: {focus}\n\n"
+            f"Pass this benchmark name to get_benchmark_info() in the Baseline step "
+            f"to retrieve the initial program and evaluation criteria.\n"
+        )
+    elif focus and not create_description:
         task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
         if issue_number:
             issue_label = f"#{issue_number}"
@@ -1892,20 +1933,96 @@ def _build_ceo_task(
             "make a keep/revert decision. Respect research_constraints and cost_budget. "
             "The full step-by-step playbook is in your system prompt above."
         )
+    elif mode == "evolve":
+        task += (
+            "\n\nRun Evolve mode: iterative code evolution via external MCP evaluation. "
+            "The project has an MCP evaluator configured. Follow the Evolve workflow playbook:\n\n"
+            "1. BASELINE: Call get_benchmark_info() to retrieve the initial program. "
+            "Write it to .factory/baseline/initial.py. Call evaluate_solution() on the "
+            "initial program to get the baseline score. Write to .factory/baseline/eval.json "
+            "and .factory/evolve/current_score.json. Copy the program to "
+            ".factory/evolve/current_best.py.\n\n"
+            "2. RESEARCH: Spawn Researcher to analyze the code structure and search for "
+            "optimization techniques relevant to the problem domain.\n\n"
+            "3. EVOLUTION LOOP: Repeat until convergence:\n"
+            "   a. Strategist proposes ONE code hypothesis (within EVOLVE-BLOCK boundaries)\n"
+            "   b. CEO reviews and approves hypothesis\n"
+            "   c. Builder applies the modification to produce candidate.py\n"
+            "   d. CEO verifies EVOLVE-BLOCK constraints respected\n"
+            "   e. Health Checker calls evaluate_solution() via MCP and compares scores\n"
+            "   f. CEO reviews: KEEP if score improved + valid, REVERT otherwise\n"
+            "   g. Update current_best.py if KEEP, finalize experiment\n"
+            "   h. Archivist records results\n"
+            "   i. Check convergence: target score reached, max cycles, or diminishing returns\n\n"
+            "4. STUCK DETECTION: If 3 consecutive experiments are reverted, re-trigger "
+            "Researcher for fresh optimization perspective before next Strategist cycle.\n\n"
+            "5. CONVERGENCE: When target score is reached or max cycles exhausted, "
+            "run final Archivist to summarize the evolution run.\n\n"
+            "The full step-by-step playbook is in your system prompt above."
+        )
     elif mode == "create":
         task += (
             "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above. "
             "The full step-by-step playbook is in your system prompt above."
         )
-    elif mode == "founder":
+    elif mode == "optimize":
+        optimize_target = focus
+        optimize_project = None
+        optimize_benchmark = None
+        if focus and ":" in focus:
+            parts = focus.split(":")
+            optimize_target = parts[0].strip()
+            if len(parts) >= 2:
+                optimize_project = parts[1].strip()
+            if len(parts) >= 3:
+                optimize_benchmark = parts[2].strip()
         task += (
-            "\n\nRun Founder mode: rapid prototyping — one hypothesis, one build, "
-            "minimal verification. Pick the highest-leverage idea, prototype it fast, "
-            "run tests once. No research, no code review, no adversarial QA, no eval "
-            "scoring. Record the experiment and stop. This is NOT production-quality — "
-            "run --mode improve afterward to harden what works. "
-            "The full step-by-step playbook is in your system prompt above."
+            f"\n\n## Optimize Mode\n\n"
+            f"**Target mode:** {optimize_target}\n"
+        )
+        if optimize_project:
+            task += f"**Target project:** {optimize_project}\n"
+        if optimize_benchmark:
+            task += f"**Target benchmark:** {optimize_benchmark}\n"
+        task += (
+            f"\nYou are analyzing the `{optimize_target}` workflow mode to identify performance "
+            f"weaknesses and generate targeted improvements.\n\n"
+        )
+        if optimize_project:
+            task += (
+                f"**Inner loop execution:** When running the target mode, use the target project:\n"
+                f"```\nfactory ceo {optimize_project} --mode {optimize_target} --no-worktree\n```\n"
+                f"The target project has its own `.mcp.json` and evaluator configuration. "
+                f"After each inner loop cycle, collect results from `{optimize_project}/.factory/`.\n\n"
+            )
+        if optimize_benchmark:
+            task += (
+                f"**Benchmark focus:** Optimize specifically for the `{optimize_benchmark}` benchmark. "
+                f"The evaluator in the target project should be configured to run this benchmark. "
+                f"Research and hypotheses should target this benchmark's characteristics.\n\n"
+            )
+        task += (
+            f"**Workflow:**\n"
+            f"1. Study the project to gather baseline context\n"
+            f"2. Spawn the Researcher to analyze `{optimize_target}` mode performance:\n"
+            f"   - Keep/revert rates from .factory/results.tsv\n"
+            f"   - Agent redirect/timeout patterns from .factory/events.jsonl\n"
+            f"   - CEO verdict patterns from .factory/reviews/\n"
+            f"   - Workflow definition via `factory workflow show {optimize_target}`\n"
+            f"   - SKILL.md at skills/workflow-{optimize_target}/SKILL.md\n"
+            f"3. Review the analysis (CEO gate)\n"
+            f"4. Spawn the Strategist to generate a change specification\n"
+            f"5. Present changes to user for approval\n"
+            f"6. Run the inner loop → collect results → reflect → repeat until convergence\n"
+            f"7. Delegate to create mode: "
+            f"`factory ceo {{project_path}} --mode create --focus \"{optimize_target}: <changes>\"`\n\n"
+            f"**Constraints:**\n"
+            f"- Max 1 optimization per invocation\n"
+            f"- Do NOT propose removing safety gates or QA verification steps\n"
+            f"- Prefer prompt/gate/timeout changes over structural graph rewiring\n"
+            f"- The change spec must be implementable in a single PR\n"
+            f"- Create mode handles all QA — do NOT run your own deep-QA pipeline\n"
         )
     else:
         task += (
@@ -2198,7 +2315,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-    if focus and mode not in ("improve", "research"):
+    if focus and mode not in ("improve", "research", "evolve"):
         print(
             f"Error: --focus (targeted mode) only works in improve or research mode, got '{mode}'. "
             "The project must already be built before targeting specific items.",

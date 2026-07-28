@@ -158,6 +158,88 @@ class ResultParseError(Exception):
     """Raised when a result file cannot be parsed to extract the target metric."""
 
 
+# ── research baseline & queue ──────────────────────────────────
+
+
+class BaselineState(BaseModel):
+    """Snapshot of a single baseline measurement tagged to a commit."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    commit_sha: str
+    metric_value: float
+    metric: str
+    run_id: str
+    timestamp: str
+    source: Literal["run", "promoted"] = "run"
+    source_experiment_id: int | None = None
+
+
+class BaselineRecord(BaseModel):
+    """On-disk state at .factory/research/baseline.json."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    current: BaselineState
+    history: list[BaselineState] = []
+    analysis_commit: str | None = None
+    analysis_metric: float | None = None
+
+
+class QueueItemStatus(str, Enum):
+    """Lifecycle status of a queued research hypothesis."""
+
+    PENDING = "pending"
+    BUILDING = "building"
+    BUILT = "built"
+    RUNNING = "running"
+    VERDICT_PENDING = "verdict_pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    FAILED = "failed"
+
+
+_VALID_TRANSITIONS: dict[QueueItemStatus, set[QueueItemStatus]] = {
+    QueueItemStatus.PENDING: {QueueItemStatus.BUILDING, QueueItemStatus.FAILED},
+    QueueItemStatus.BUILDING: {QueueItemStatus.BUILT, QueueItemStatus.FAILED},
+    QueueItemStatus.BUILT: {QueueItemStatus.RUNNING, QueueItemStatus.FAILED},
+    QueueItemStatus.RUNNING: {QueueItemStatus.VERDICT_PENDING, QueueItemStatus.FAILED},
+    QueueItemStatus.VERDICT_PENDING: {QueueItemStatus.ACCEPTED, QueueItemStatus.REJECTED},
+    QueueItemStatus.ACCEPTED: set(),
+    QueueItemStatus.REJECTED: set(),
+    QueueItemStatus.FAILED: {QueueItemStatus.PENDING},
+}
+
+
+class QueueItem(BaseModel):
+    """A single hypothesis in the research queue."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    id: str
+    hypothesis: str
+    status: QueueItemStatus = QueueItemStatus.PENDING
+    experiment_id: int | None = None
+    pr_number: int | None = None
+    issue_number: int | None = None
+    baseline_commit: str = ""
+    metric_before: float | None = None
+    metric_after: float | None = None
+    verdict: Literal["keep", "revert"] | None = None
+    error: str = ""
+    cycle_id: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class HypothesisQueue(BaseModel):
+    """On-disk state at .factory/research/queue.json."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    items: list[QueueItem] = []
+
+
 class TierWeights(BaseModel):
     """Sparse within-tier weight overrides for hygiene or growth dimensions.
 
@@ -519,8 +601,8 @@ class CycleState(BaseModel):
     started_at: datetime
     mode: Literal[
         "build", "create", "deep-qa", "design", "discover",
-        "founder", "improve", "meta", "parallel-improve", "qa",
-        "refine", "research", "review", "swebench",
+        "improve", "meta", "optimize", "parallel-improve", "qa", "refine",
+        "research", "review", "swebench",
     ]
     initial_prompt: str = ""
     respawns: int = 0

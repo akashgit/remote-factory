@@ -142,15 +142,18 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": '"mode description" or "existing_mode: change description"',
     },
-    "founder": {
+    "optimize": {
         "description": (
-            "Founder mode — rapid prototyping pipeline for fast hypothesis iteration. "
-            "Use when you want to test ideas quickly without full QA overhead. "
-            "Picks one hypothesis, builds a prototype, runs tests once, records the result. "
-            "No research, no code review, no adversarial QA, no eval scoring. "
-            "Terminal — does not chain to other modes. Run --mode improve to harden."
+            "Optimize an existing factory mode by analyzing its performance across "
+            "recent cycles, identifying weaknesses (high redirect rates, agent timeouts, "
+            "low keep rates), and generating targeted workflow changes. Delegates "
+            "implementation to create mode (update-existing-mode path) which runs "
+            "its own full QA pipeline. "
+            "Use when the user says 'optimize the improve mode', 'tune the build workflow', "
+            "or wants to improve factory mode effectiveness based on historical data. "
+            "Requires --focus <target_mode_name>."
         ),
-        "argument_hint": "<project_path>",
+        "argument_hint": '"<project_path> --focus <target_mode>"',
     },
     "swebench": {
         "description": (
@@ -169,6 +172,22 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "annotations. Use to regenerate skills after workflow definition changes."
         ),
         "argument_hint": "<project_path>",
+    },
+    "evolve": {
+        "description": (
+            "Evolve mode — iterative code evolution via external MCP evaluation. "
+            "Optimizes a single scalar metric by mutating code within EVOLVE-BLOCK "
+            "boundaries and evaluating via an MCP server. Use when the project has "
+            "an MCP evaluator configured and the user says 'evolve', 'optimize', "
+            "or wants evolutionary code search on a benchmark."
+        ),
+        "argument_hint": "<project_path> --mode evolve",
+        "preamble": (
+            "**MCP Evaluation Mode:** This workflow evaluates code via an external MCP server, "
+            "NOT via local tests/lint/types. The CEO must have access to the MCP tools "
+            "`get_benchmark_info()` and `evaluate_solution()`. All code modifications "
+            "MUST stay within EVOLVE-BLOCK-START/END markers."
+        ),
     },
 }
 
@@ -297,14 +316,6 @@ def _agent_to_instruction(
 
     if not node.blocking:
         lines.append("*(fire-and-forget — CEO continues immediately)*")
-    elif not is_parallel and (node.writes or node.post_checks):
-        from factory.workflow.verification import compile_agent_verification
-
-        verify_script = compile_agent_verification(node)
-        if verify_script:
-            lines.append("")
-            lines.append(f"```bash\n{verify_script}\n```")
-            lines.append("*(harness verification — DO NOT SKIP)*")
 
     return "\n".join(lines)
 
@@ -497,26 +508,8 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
         if isinstance(target_node, AgentNode):
             lines.append(_agent_to_instruction(target_node, workflow, is_parallel=True))
             lines.append("")
-        elif isinstance(target_node, FnNode):
-            lines.append(_fn_to_instruction(target_node, workflow))
-            lines.append("")
 
     lines.append("```bash\nwait\n```")
-
-    agent_nodes: list[AgentNode] = [
-        workflow.nodes[tid]  # type: ignore[misc]
-        for tid in node.targets
-        if isinstance(workflow.nodes.get(tid), AgentNode)
-    ]
-    if agent_nodes:
-        from factory.workflow.verification import compile_fork_verification
-
-        verify_script = compile_fork_verification(agent_nodes)
-        if verify_script:
-            lines.append("")
-            lines.append(f"```bash\n{verify_script}\n```")
-            lines.append("*(post-barrier harness verification — DO NOT SKIP)*")
-
     return "\n".join(lines)
 
 
