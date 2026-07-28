@@ -8,6 +8,7 @@ import pytest
 import structlog
 
 from factory.cli._helpers import DEPRECATED_MODES, CEO_MODES, RUN_MODES, warn_deprecated_mode
+from factory.cli._wizard import _warn_wizard_deprecated
 
 
 EXPECTED_DEPRECATED = frozenset({
@@ -110,3 +111,23 @@ class TestWarnDeprecatedMode:
             warn_deprecated_mode(mode)
         captured = capsys.readouterr()
         assert f"--mode {mode} is deprecated" in captured.err
+
+
+class TestWarnWizardDeprecated:
+    def test_wizard_deprecation_emits_structlog(self):
+        with patch("factory.cli._wizard.log") as mock_log:
+            _warn_wizard_deprecated()
+        mock_log.warning.assert_called_once_with(
+            "deprecated_wizard",
+            replacement="factory ceo --mode design <path>",
+        )
+
+    def test_wizard_deprecation_prints_stderr(self, capsys):
+        with patch("factory.cli._wizard.log"):
+            _warn_wizard_deprecated()
+        captured = capsys.readouterr()
+        assert "WARNING" in captured.err
+        assert "welcome wizard is deprecated" in captured.err
+        assert "factory ceo --mode design" in captured.err
+        assert "factory ceo --mode create" in captured.err
+        assert "remains functional" in captured.err

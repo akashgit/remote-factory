@@ -392,11 +392,28 @@ def _substitute_answers(
     return result
 
 
+def _warn_wizard_deprecated() -> None:
+    """Emit a deprecation warning for the welcome wizard."""
+    log.warning(
+        "deprecated_wizard",
+        replacement="factory ceo --mode design <path>",
+    )
+    print(
+        "WARNING: The welcome wizard is deprecated. "
+        "Use 'factory ceo --mode design <path>' for new projects or "
+        "'factory ceo --mode create <idea>' to build from an idea. "
+        "The wizard remains functional but will be removed in a future release.",
+        file=sys.stderr,
+    )
+
+
 def _welcome_wizard() -> int:
     """Interactive welcome: banner -> input -> classify -> present -> dispatch."""
     from factory.cli.ceo import cmd_ceo
 
     no_color = bool(os.environ.get("NO_COLOR")) or not sys.stderr.isatty()
+
+    _warn_wizard_deprecated()
 
     _print_banner("welcome")
 
