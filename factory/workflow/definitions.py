@@ -2458,6 +2458,10 @@ def frontend_design_workflow() -> Workflow:
             "For every data-fetching component, specify what it shows when the "
             "backend API returns 404 or is unreachable — this must be a designed "
             "empty state with guidance text, not an error message. "
+            "List all API endpoints the feature depends on and whether each "
+            "already exists in the backend. If an endpoint is missing, specify "
+            "the backend route, data source, and response model so the Builder "
+            "can implement it. "
             "Be precise — reference actual component names and token values."
         ),
         reads={
@@ -2498,6 +2502,9 @@ def frontend_design_workflow() -> Workflow:
             "network error). The unavailable state must show a designed message "
             "like 'Coming soon' or 'Not yet configured' — NEVER 'Unable to load' "
             "or 'Failed to fetch'. Treat missing backend APIs as expected. "
+            "END-TO-END: if the frontend calls a backend API that does not exist, "
+            "implement the backend endpoint too. Check the project's API routes — "
+            "the feature must work end-to-end, not just render a loading spinner. "
             "After implementation, start the dev server and verify the feature "
             "renders without error messages. "
             "Run tests. Commit and open a draft PR."

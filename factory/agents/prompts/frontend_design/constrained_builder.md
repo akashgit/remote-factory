@@ -86,6 +86,12 @@ Implement the feature described in `ui-spec.md`, following every constraint in `
 - Error messages must be actionable (what happened + what to do)
 - Include contextual help (tooltips/info icons) for technical concepts
 
+### End-to-End Completeness
+- If the UI feature fetches data from a backend API endpoint, verify that endpoint exists in the codebase. If it does not exist, implement it as part of this feature — the frontend and backend must ship together.
+- Check the project's API router registration (e.g., `main.py`, `app.py`, `routes/`) to confirm the endpoint is wired up.
+- After implementing both frontend and backend, start the dev server and verify the feature works end-to-end — data flows from the backend through the API to the UI.
+- NEVER ship a frontend component that calls a non-existent API endpoint. A feature that shows "Unable to load" on first render is not complete.
+
 ## File Naming
 
 - Follow the project's established file naming convention (kebab-case, camelCase, PascalCase — match what exists)
@@ -104,6 +110,7 @@ Before committing, verify against the project's baseline:
 8. Empty states include guidance text
 9. Data-fetching components show a designed empty state (not an error) when the API returns 404 or is unreachable
 10. Start the dev server and verify the feature renders without error messages or "Unable to load" text
+11. Every API endpoint called by the frontend exists and is registered in the backend — if not, implement it
 
 ## Output
 
