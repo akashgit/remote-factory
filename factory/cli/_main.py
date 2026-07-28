@@ -627,7 +627,6 @@ def build_parser() -> argparse.ArgumentParser:
             "researcher",
             "strategist",
             "builder",
-            "qa",
             "health_checker",
             "code_reviewer",
             "adversarial_tester",
