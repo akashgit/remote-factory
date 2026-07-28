@@ -10,6 +10,7 @@ Read these files BEFORE writing ANY code:
 - `.factory/design-system/ui-spec.md`
 - `.factory/design-system/design-baseline.json`
 - `.factory/design-system/rules.md`
+- `.factory/design-system/infra-context.md`
 
 If any file is missing, report the gap and exit.
 
@@ -86,9 +87,13 @@ Implement the feature described in `ui-spec.md`, following every constraint in `
 - Error messages must be actionable (what happened + what to do)
 - Include contextual help (tooltips/info icons) for technical concepts
 
-### End-to-End Completeness
+### End-to-End Completeness (Infrastructure-Aware)
 - If the UI feature fetches data from a backend API endpoint, verify that endpoint exists in the codebase. If it does not exist, implement it as part of this feature — the frontend and backend must ship together.
-- Check the project's API router registration (e.g., `main.py`, `app.py`, `routes/`) to confirm the endpoint is wired up.
+- Before implementing a backend endpoint, read `.factory/design-system/infra-context.md` to understand the deployment environment.
+- Use ONLY tools available in the container — check `infrastructure.container_capabilities` in `design-baseline.json`. If a tool is listed as unavailable (e.g., `nvidia-smi`, `docker`, `systemctl`), find the alternative listed in infra-context.md.
+- Access resources through the established patterns — if the backend runs in K8s, use the Kubernetes Python client with in-cluster config, not subprocess calls to kubectl or direct node access.
+- Register new API routes using the exact pattern documented in `infrastructure.api_architecture.router_pattern` — check existing routes for examples.
+- Verify data sources are accessible from the deployment environment — a K8s pod cannot call nvidia-smi on the host, but it can query node resources via the K8s API.
 - After implementing both frontend and backend, start the dev server and verify the feature works end-to-end — data flows from the backend through the API to the UI.
 - NEVER ship a frontend component that calls a non-existent API endpoint. A feature that shows "Unable to load" on first render is not complete.
 
@@ -111,6 +116,7 @@ Before committing, verify against the project's baseline:
 9. Data-fetching components show a designed empty state (not an error) when the API returns 404 or is unreachable
 10. Start the dev server and verify the feature renders without error messages or "Unable to load" text
 11. Every API endpoint called by the frontend exists and is registered in the backend — if not, implement it
+12. Every new backend endpoint uses only tools and access patterns available in the deployment environment (per infra-context.md) — no calls to unavailable system tools
 
 ## Output
 

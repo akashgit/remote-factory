@@ -35,7 +35,7 @@ class TestFrontendDesignValid:
 
     def test_node_count(self) -> None:
         wf = frontend_design_workflow()
-        assert len(wf.nodes) == 23
+        assert len(wf.nodes) == 24
 
     def test_start_node(self) -> None:
         wf = frontend_design_workflow()
@@ -67,7 +67,7 @@ class TestFrontendDesignTrigger:
 
 
 class TestDesignResearchPhase:
-    def test_fork_has_four_researchers(self) -> None:
+    def test_fork_has_five_researchers(self) -> None:
         wf = frontend_design_workflow()
         fork = wf.nodes["fork_design_research"]
         assert isinstance(fork, ForkNode)
@@ -76,11 +76,15 @@ class TestDesignResearchPhase:
             "researcher_components",
             "researcher_patterns",
             "researcher_ux",
+            "researcher_infra",
         }
 
     def test_researchers_are_researcher_role(self) -> None:
         wf = frontend_design_workflow()
-        for nid in ["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"]:
+        for nid in [
+            "researcher_tokens", "researcher_components", "researcher_patterns",
+            "researcher_ux", "researcher_infra",
+        ]:
             node = wf.nodes[nid]
             assert isinstance(node, AgentNode)
             assert node.role == AgentRole.RESEARCHER
@@ -94,6 +98,7 @@ class TestDesignResearchPhase:
             "researcher_components",
             "researcher_patterns",
             "researcher_ux",
+            "researcher_infra",
         }
 
     def test_ux_researcher_writes_patterns(self) -> None:
@@ -101,6 +106,17 @@ class TestDesignResearchPhase:
         node = wf.nodes["researcher_ux"]
         assert isinstance(node, AgentNode)
         assert ".factory/design-system/ux-patterns.md" in node.writes
+
+    def test_infra_researcher_writes_context(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["researcher_infra"]
+        assert isinstance(node, AgentNode)
+        assert ".factory/design-system/infra-context.md" in node.writes
+
+    def test_research_gate_reads_infra_context(self) -> None:
+        wf = frontend_design_workflow()
+        gate = wf.nodes["gate_research"]
+        assert ".factory/design-system/infra-context.md" in gate.reads
 
     def test_research_gate_is_ceo(self) -> None:
         wf = frontend_design_workflow()
@@ -140,6 +156,11 @@ class TestAuditorPhase:
         wf = frontend_design_workflow()
         node = wf.nodes["design_auditor"]
         assert ".factory/design-system/ux-patterns.md" in node.reads
+
+    def test_auditor_reads_infra_context(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["design_auditor"]
+        assert ".factory/design-system/infra-context.md" in node.reads
 
     def test_audit_gate_reloops_to_auditor(self) -> None:
         wf = frontend_design_workflow()
@@ -193,6 +214,11 @@ class TestBuilderPhase:
         node = wf.nodes["builder"]
         assert isinstance(node, AgentNode)
         assert node.role == AgentRole.BUILDER
+
+    def test_builder_reads_infra_context(self) -> None:
+        wf = frontend_design_workflow()
+        node = wf.nodes["builder"]
+        assert ".factory/design-system/infra-context.md" in node.reads
 
     def test_builder_reads_design_artifacts(self) -> None:
         wf = frontend_design_workflow()

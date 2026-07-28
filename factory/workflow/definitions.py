@@ -2291,6 +2291,7 @@ def frontend_design_workflow() -> Workflow:
             "researcher_components",
             "researcher_patterns",
             "researcher_ux",
+            "researcher_infra",
         ],
     )
 
@@ -2356,16 +2357,41 @@ def frontend_design_workflow() -> Workflow:
         writes={".factory/design-system/ux-patterns.md"},
     )
 
+    nodes["researcher_infra"] = AgentNode(
+        id="researcher_infra",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Infrastructure context research. "
+            "Discover the backend deployment architecture by reading Dockerfile, "
+            "docker-compose.yml, k8s/ manifests, and Helm charts. Identify what "
+            "environment the backend runs in (container, K8s pod, VM, serverless) "
+            "and what system tools are available inside the container. "
+            "Examine the backend API architecture: framework (FastAPI, Flask, etc.), "
+            "router registration pattern, how new endpoints are added, existing "
+            "endpoint inventory. Map resource access patterns: how the backend "
+            "reaches external resources — K8s API via in-cluster config, SSH "
+            "backends, database connections, external APIs. Document data sources: "
+            "where data comes from (K8s node resources, subprocess calls, database "
+            "queries, external APIs) and which client libraries are available. "
+            "Write to .factory/design-system/infra-context.md."
+        ),
+        writes={".factory/design-system/infra-context.md"},
+    )
+
     # ── Join + Research Quality Gate ──
 
     nodes["join_design_research"] = JoinNode(
         id="join_design_research",
-        sources=["researcher_tokens", "researcher_components", "researcher_patterns", "researcher_ux"],
+        sources=[
+            "researcher_tokens", "researcher_components", "researcher_patterns",
+            "researcher_ux", "researcher_infra",
+        ],
         reads={
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
             ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
         },
     )
 
@@ -2374,19 +2400,22 @@ def frontend_design_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Verify all four design research artifacts exist and are substantive. "
+            "Verify all five design research artifacts exist and are substantive. "
             "token-audit.md must list actual CSS custom properties. "
             "component-inventory.md must list actual .tsx files with component names. "
             "pattern-library.md must describe actual page layout patterns. "
             "ux-patterns.md must describe actual animation, hierarchy, or UX patterns. "
+            "infra-context.md must describe the deployment environment and backend "
+            "API architecture. "
             "RELOOP if any artifact is empty or clearly fabricated. "
-            "PROCEED if all four have real data."
+            "PROCEED if all five have real data."
         ),
         reads={
             ".factory/design-system/token-audit.md",
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
             ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
         },
     )
 
@@ -2398,16 +2427,21 @@ def frontend_design_workflow() -> Workflow:
         prompt_template=(
             "Design system auditor. "
             "Read .factory/design-system/token-audit.md, component-inventory.md, "
-            "pattern-library.md, and ux-patterns.md. Synthesize into two outputs: "
+            "pattern-library.md, ux-patterns.md, and infra-context.md. "
+            "Synthesize into two outputs: "
             "(1) .factory/design-system/design-baseline.json — valid JSON with "
-            "token_registry, component_inventory, pattern_library, and ux_patterns keys. "
-            "The ux_patterns key should capture animation choreography (entrance "
-            "sequences, easing curves, duration scale), information hierarchy "
-            "(heading scale, content density), and user-friendliness patterns. "
+            "token_registry, component_inventory, pattern_library, ux_patterns, "
+            "and infrastructure keys. The infrastructure key must include: "
+            "deployment (type, orchestrator), container_capabilities (available "
+            "and unavailable tools), resource_access (how the backend reaches "
+            "external resources), api_architecture (framework, router pattern, "
+            "existing endpoints), and data_sources (where data comes from). "
             "Extract actual values from the research, do not fabricate. "
             "(2) .factory/design-system/rules.md — HARD RULES section "
             "(token purity, font family, component wrappers, dark mode parity, "
-            "accessibility floor) and SOFT GUIDELINES section (spacing, border-radius, "
+            "accessibility floor, infrastructure fidelity — no unavailable system "
+            "tools, use established resource access patterns, follow API registration "
+            "pattern) and SOFT GUIDELINES section (spacing, border-radius, "
             "motion choreography, icons, page structure, status colors, information "
             "hierarchy, user-friendliness). "
             "If previous design-baseline.json exists, merge and flag drift. "
@@ -2418,6 +2452,7 @@ def frontend_design_workflow() -> Workflow:
             ".factory/design-system/component-inventory.md",
             ".factory/design-system/pattern-library.md",
             ".factory/design-system/ux-patterns.md",
+            ".factory/design-system/infra-context.md",
         },
         writes={
             ".factory/design-system/design-baseline.json",
@@ -2448,25 +2483,28 @@ def frontend_design_workflow() -> Workflow:
         role=AgentRole.STRATEGIST,
         prompt_template=(
             "UI spec writer. "
-            "Read .factory/design-system/design-baseline.json and rules.md "
-            "for the design system constraints. The feature goal is in the CEO's "
-            "task prompt (from --focus). Produce .factory/design-system/ui-spec.md "
-            "with sections: Feature Description, Component Plan (reference existing "
-            "components, justify any new ones), Token Usage (map each element to "
-            "specific tokens), Layout, State Management, Dark Mode (both light and "
-            "dark values), Accessibility, Motion, Constraints. "
+            "Read .factory/design-system/design-baseline.json, rules.md, and "
+            "infra-context.md for design system and infrastructure constraints. "
+            "The feature goal is in the CEO's task prompt (from --focus). "
+            "Produce .factory/design-system/ui-spec.md with sections: Feature "
+            "Description, Component Plan (reference existing components, justify "
+            "any new ones), Token Usage (map each element to specific tokens), "
+            "Layout, State Management, Dark Mode (both light and dark values), "
+            "Accessibility, Motion, Constraints. "
             "For every data-fetching component, specify what it shows when the "
             "backend API returns 404 or is unreachable — this must be a designed "
             "empty state with guidance text, not an error message. "
             "List all API endpoints the feature depends on and whether each "
             "already exists in the backend. If an endpoint is missing, specify "
-            "the backend route, data source, and response model so the Builder "
-            "can implement it. "
+            "the backend route, data source, access method (referencing "
+            "infra-context.md), and response model so the Builder can implement "
+            "it using only tools available in the deployment environment. "
             "Be precise — reference actual component names and token values."
         ),
         reads={
             ".factory/design-system/design-baseline.json",
             ".factory/design-system/rules.md",
+            ".factory/design-system/infra-context.md",
         },
         writes={".factory/design-system/ui-spec.md"},
     )
@@ -2490,7 +2528,8 @@ def frontend_design_workflow() -> Workflow:
         prompt_template=(
             "Design-constrained builder. "
             "Read .factory/design-system/ui-spec.md (the approved spec), "
-            "design-baseline.json (the design system), and rules.md (the rules). "
+            "design-baseline.json (the design system), rules.md (the rules), "
+            "and infra-context.md (infrastructure constraints). "
             "Implement exactly what the spec describes. Constraints: "
             "only approved color tokens from the baseline, only declared font families, "
             "only the project's shared component library (no direct primitive library "
@@ -2505,6 +2544,11 @@ def frontend_design_workflow() -> Workflow:
             "END-TO-END: if the frontend calls a backend API that does not exist, "
             "implement the backend endpoint too. Check the project's API routes — "
             "the feature must work end-to-end, not just render a loading spinner. "
+            "INFRASTRUCTURE: when implementing backend endpoints, check "
+            "infra-context.md for deployment constraints. Use only system tools "
+            "available in the container. Use established resource access patterns "
+            "(e.g., K8s API client, not subprocess calls to unavailable tools). "
+            "Follow the existing API router registration pattern. "
             "After implementation, start the dev server and verify the feature "
             "renders without error messages. "
             "Run tests. Commit and open a draft PR."
@@ -2513,6 +2557,7 @@ def frontend_design_workflow() -> Workflow:
             ".factory/design-system/ui-spec.md",
             ".factory/design-system/design-baseline.json",
             ".factory/design-system/rules.md",
+            ".factory/design-system/infra-context.md",
         },
         writes={".factory/reviews/builder-latest.md"},
     )
@@ -2717,11 +2762,13 @@ def frontend_design_workflow() -> Workflow:
         Edge(source="fork_design_research", target="researcher_components"),
         Edge(source="fork_design_research", target="researcher_patterns"),
         Edge(source="fork_design_research", target="researcher_ux"),
+        Edge(source="fork_design_research", target="researcher_infra"),
         # Researchers to join
         Edge(source="researcher_tokens", target="join_design_research"),
         Edge(source="researcher_components", target="join_design_research"),
         Edge(source="researcher_patterns", target="join_design_research"),
         Edge(source="researcher_ux", target="join_design_research"),
+        Edge(source="researcher_infra", target="join_design_research"),
         # Join → research gate
         Edge(source="join_design_research", target="gate_research"),
         # Research gate

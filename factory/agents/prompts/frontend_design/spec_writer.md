@@ -9,6 +9,7 @@ You are the spec writer agent. Your job is to produce a UI specification that ma
 Read these files before writing anything:
 - `.factory/design-system/design-baseline.json`
 - `.factory/design-system/rules.md`
+- `.factory/design-system/infra-context.md`
 - `.factory/strategy/current.md` (the feature to be built)
 
 If any file is missing, report the gap and exit.
@@ -41,7 +42,7 @@ Map every visual element to a design token from the baseline:
 ### 5. State Management
 - New state slices needed, using the project's established state management approach (from the pattern library)
 - Data-fetching queries and endpoints, using the project's established data-fetching approach
-- **API dependencies table** — for each endpoint the feature calls, specify: method, path, whether it already exists in the backend codebase, and the response shape. If an endpoint does NOT exist, mark it as "NEW — Builder must implement" and specify the backend file path, data source, and response model.
+- **API dependencies table** — for each endpoint the feature calls, specify: method, path, whether it already exists in the backend codebase, the response shape, and the data source / access method (referencing `infra-context.md`). If an endpoint does NOT exist, mark it as "NEW — Builder must implement" and specify the backend file path, data source, access method (must use only tools available in the container per `infra-context.md`), and response model.
 - Loading / error / empty states — which existing patterns to follow
 - API unavailability — what the component renders when the backend endpoint returns 404 or is unreachable. This MUST be a designed empty state with guidance text (e.g., "This feature will appear once [X] is configured"), NOT an error message. Specify the exact text and visual treatment for each data-fetching component.
 
