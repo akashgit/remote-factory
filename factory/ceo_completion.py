@@ -53,16 +53,39 @@ def read_ceo_session_id(project_path: Path) -> str | None:
         return None
 
 
-def write_ceo_session_id(project_path: Path, session_id: str) -> None:
-    """Write a CEO session ID to .factory/state/session.json."""
+def read_ceo_session(project_path: Path) -> dict | None:
+    """Read the full CEO session metadata from .factory/state/session.json.
+
+    Returns dict with keys: session_id, created, interactive, mode.
+    Returns None if the file doesn't exist or is malformed.
+    """
+    path = _session_state_path(project_path)
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
+def write_ceo_session_id(
+    project_path: Path,
+    session_id: str,
+    *,
+    interactive: bool = False,
+    mode: str = "",
+) -> None:
+    """Write a CEO session ID and metadata to .factory/state/session.json."""
     path = _session_state_path(project_path)
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "session_id": session_id,
         "created": datetime.now(timezone.utc).isoformat(),
+        "interactive": interactive,
+        "mode": mode,
     }
     path.write_text(json.dumps(data, indent=2))
-    log.info("ceo_session_id_written", session_id=session_id)
+    log.info("ceo_session_id_written", session_id=session_id, interactive=interactive, mode=mode)
 
 
 def read_cycle_state(project_path: Path) -> CycleState | None:

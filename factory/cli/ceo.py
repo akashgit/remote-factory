@@ -593,7 +593,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     from factory.ceo_completion import write_ceo_session_id
 
     ceo_session_id = str(_uuid.uuid4())
-    write_ceo_session_id(wt_path, ceo_session_id)
+    write_ceo_session_id(wt_path, ceo_session_id, interactive=interactive, mode=mode)
 
     if headless:
         # Non-interactive pipe mode (for scripting, cron, tmux)

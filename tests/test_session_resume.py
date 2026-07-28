@@ -253,7 +253,7 @@ class TestClaudeBuildInteractiveCommandSessionFlags:
 
 
 class TestSessionPersistence:
-    """Tests for read_ceo_session_id and write_ceo_session_id."""
+    """Tests for read_ceo_session_id, read_ceo_session, and write_ceo_session_id."""
 
     def test_write_and_read(self, tmp_path: Path) -> None:
         from factory.ceo_completion import read_ceo_session_id, write_ceo_session_id
@@ -268,7 +268,7 @@ class TestSessionPersistence:
         assert read_ceo_session_id(tmp_path) is None
 
     def test_read_malformed(self, tmp_path: Path) -> None:
-        from factory.ceo_completion import read_ceo_session_id, _session_state_path
+        from factory.ceo_completion import _session_state_path, read_ceo_session_id
 
         path = _session_state_path(tmp_path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +277,7 @@ class TestSessionPersistence:
         assert read_ceo_session_id(tmp_path) is None
 
     def test_write_creates_directory(self, tmp_path: Path) -> None:
-        from factory.ceo_completion import write_ceo_session_id, _session_state_path
+        from factory.ceo_completion import _session_state_path, write_ceo_session_id
 
         write_ceo_session_id(tmp_path, "sid-abc")
         path = _session_state_path(tmp_path)
@@ -286,6 +286,49 @@ class TestSessionPersistence:
         data = json.loads(path.read_text())
         assert data["session_id"] == "sid-abc"
         assert "created" in data
+
+    def test_write_stores_metadata(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import _session_state_path, write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "sid-meta", interactive=True, mode="design")
+        path = _session_state_path(tmp_path)
+        data = json.loads(path.read_text())
+        assert data["session_id"] == "sid-meta"
+        assert data["interactive"] is True
+        assert data["mode"] == "design"
+
+    def test_write_defaults_metadata(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import _session_state_path, write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "sid-defaults")
+        path = _session_state_path(tmp_path)
+        data = json.loads(path.read_text())
+        assert data["interactive"] is False
+        assert data["mode"] == ""
+
+    def test_read_ceo_session_full(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import read_ceo_session, write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "sid-full", interactive=False, mode="improve")
+        result = read_ceo_session(tmp_path)
+        assert result is not None
+        assert result["session_id"] == "sid-full"
+        assert result["interactive"] is False
+        assert result["mode"] == "improve"
+        assert "created" in result
+
+    def test_read_ceo_session_nonexistent(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import read_ceo_session
+
+        assert read_ceo_session(tmp_path) is None
+
+    def test_read_ceo_session_malformed(self, tmp_path: Path) -> None:
+        from factory.ceo_completion import _session_state_path, read_ceo_session
+
+        path = _session_state_path(tmp_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("not json")
+        assert read_ceo_session(tmp_path) is None
 
     def test_delete_cycle_state_also_deletes_session(self, tmp_path: Path) -> None:
         from factory.ceo_completion import (
@@ -430,7 +473,8 @@ class TestCompletionGuardSessionThreading:
 class TestCmdResume:
     """Tests for the factory resume command."""
 
-    def test_resume_from_cycle_state(self, tmp_path: Path) -> None:
+    def test_resume_from_cycle_state_is_headless(self, tmp_path: Path) -> None:
+        """CycleState presence means headless — should include -p and continuation prompt."""
         from factory.ceo_completion import create_cycle_state, write_cycle_state
 
         state = create_cycle_state("improve")
@@ -441,7 +485,11 @@ class TestCmdResume:
 
         args = argparse.Namespace(path=str(tmp_path), model=None)
 
-        with patch("os.execvp") as mock_exec, patch("shutil.which", return_value="/usr/bin/claude"):
+        with (
+            patch("os.execvp") as mock_exec,
+            patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("factory.agents.runner.resolve_prompt", return_value="# CEO prompt"),
+        ):
             from factory.cli.infra import cmd_resume
 
             cmd_resume(args)
@@ -449,27 +497,65 @@ class TestCmdResume:
             mock_exec.assert_called_once()
             call_args = mock_exec.call_args[0]
             assert call_args[0] == "claude"
-            assert "--resume" in call_args[1]
-            assert "cycle-session-id" in call_args[1]
+            cmd_list = call_args[1]
+            assert "--resume" in cmd_list
+            assert "cycle-session-id" in cmd_list
+            assert "-p" in cmd_list
+            assert "--disallowedTools" in cmd_list
 
-    def test_resume_from_session_file(self, tmp_path: Path) -> None:
+    def test_resume_interactive_session_no_continuation(self, tmp_path: Path) -> None:
+        """Interactive sessions get a bare resume — no -p flag."""
         from factory.ceo_completion import write_ceo_session_id
 
-        write_ceo_session_id(tmp_path, "file-session-id")
+        write_ceo_session_id(tmp_path, "interactive-sid", interactive=True, mode="design")
 
         import argparse
 
         args = argparse.Namespace(path=str(tmp_path), model=None)
 
-        with patch("os.execvp") as mock_exec, patch("shutil.which", return_value="/usr/bin/claude"):
+        with (
+            patch("os.execvp") as mock_exec,
+            patch("shutil.which", return_value="/usr/bin/claude"),
+        ):
             from factory.cli.infra import cmd_resume
 
             cmd_resume(args)
 
             mock_exec.assert_called_once()
             call_args = mock_exec.call_args[0]
-            assert "--resume" in call_args[1]
-            assert "file-session-id" in call_args[1]
+            cmd_list = call_args[1]
+            assert "--resume" in cmd_list
+            assert "interactive-sid" in cmd_list
+            assert "-p" not in cmd_list
+            assert "--disallowedTools" not in cmd_list
+
+    def test_resume_headless_session_has_continuation(self, tmp_path: Path) -> None:
+        """Headless sessions from session.json get a continuation prompt."""
+        from factory.ceo_completion import write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "headless-sid", interactive=False, mode="improve")
+
+        import argparse
+
+        args = argparse.Namespace(path=str(tmp_path), model=None)
+
+        with (
+            patch("os.execvp") as mock_exec,
+            patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("factory.agents.runner.resolve_prompt", return_value="# CEO prompt"),
+        ):
+            from factory.cli.infra import cmd_resume
+
+            cmd_resume(args)
+
+            mock_exec.assert_called_once()
+            call_args = mock_exec.call_args[0]
+            cmd_list = call_args[1]
+            assert "-p" in cmd_list
+            p_idx = cmd_list.index("-p")
+            assert "Resume from where you left off" in cmd_list[p_idx + 1]
+            assert "--append-system-prompt-file" in cmd_list
+            assert "--disallowedTools" in cmd_list
 
     def test_resume_prefers_cycle_state(self, tmp_path: Path) -> None:
         """CycleState.claude_session_id takes precedence over session.json."""
@@ -482,19 +568,25 @@ class TestCmdResume:
         state = create_cycle_state("improve")
         state.claude_session_id = "cycle-sid"
         write_cycle_state(tmp_path, state)
-        write_ceo_session_id(tmp_path, "file-sid")
+        write_ceo_session_id(tmp_path, "file-sid", interactive=True, mode="design")
 
         import argparse
 
         args = argparse.Namespace(path=str(tmp_path), model=None)
 
-        with patch("os.execvp") as mock_exec, patch("shutil.which", return_value="/usr/bin/claude"):
+        with (
+            patch("os.execvp") as mock_exec,
+            patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("factory.agents.runner.resolve_prompt", return_value="# CEO prompt"),
+        ):
             from factory.cli.infra import cmd_resume
 
             cmd_resume(args)
 
             call_args = mock_exec.call_args[0]
-            assert "cycle-sid" in call_args[1]
+            cmd_list = call_args[1]
+            assert "cycle-sid" in cmd_list
+            assert "-p" in cmd_list
 
     def test_resume_no_session_found(self, tmp_path: Path) -> None:
         import argparse
@@ -509,13 +601,16 @@ class TestCmdResume:
     def test_resume_with_model(self, tmp_path: Path) -> None:
         from factory.ceo_completion import write_ceo_session_id
 
-        write_ceo_session_id(tmp_path, "model-test-sid")
+        write_ceo_session_id(tmp_path, "model-test-sid", interactive=True, mode="design")
 
         import argparse
 
         args = argparse.Namespace(path=str(tmp_path), model="claude-opus-4-7")
 
-        with patch("os.execvp") as mock_exec, patch("shutil.which", return_value="/usr/bin/claude"):
+        with (
+            patch("os.execvp") as mock_exec,
+            patch("shutil.which", return_value="/usr/bin/claude"),
+        ):
             from factory.cli.infra import cmd_resume
 
             cmd_resume(args)
@@ -540,3 +635,24 @@ class TestCmdResume:
 
             code = cmd_resume(args)
             assert code == 1
+
+    def test_resume_resolve_prompt_called_with_mode(self, tmp_path: Path) -> None:
+        """Headless resume passes the correct workflow_mode to resolve_prompt."""
+        from factory.ceo_completion import write_ceo_session_id
+
+        write_ceo_session_id(tmp_path, "mode-sid", interactive=False, mode="research")
+
+        import argparse
+
+        args = argparse.Namespace(path=str(tmp_path), model=None)
+
+        with (
+            patch("os.execvp"),
+            patch("shutil.which", return_value="/usr/bin/claude"),
+            patch("factory.agents.runner.resolve_prompt", return_value="# prompt") as mock_resolve,
+        ):
+            from factory.cli.infra import cmd_resume
+
+            cmd_resume(args)
+
+            mock_resolve.assert_called_once_with("ceo", tmp_path, workflow_mode="research")

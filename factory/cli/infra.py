@@ -131,16 +131,22 @@ def cmd_resume(args: argparse.Namespace) -> int:
     Checks two sources for a session ID:
     1. CycleState.claude_session_id (headless run interrupted mid-cycle)
     2. .factory/state/session.json (any CEO run)
+
+    For headless sessions, injects a continuation prompt so the CEO
+    auto-continues from where it left off. Interactive sessions get a bare
+    resume (the user drives the conversation).
     """
     import os
     import shutil
+    import tempfile
 
-    from factory.ceo_completion import read_ceo_session_id, read_cycle_state
+    from factory.ceo_completion import read_ceo_session, read_cycle_state
 
     project_path = Path(args.path).resolve()
     model = getattr(args, "model", None)
 
     session_id: str | None = None
+    session_meta: dict | None = None
 
     cycle_state = read_cycle_state(project_path)
     if cycle_state and cycle_state.claude_session_id:
@@ -148,9 +154,11 @@ def cmd_resume(args: argparse.Namespace) -> int:
         log.info("resume_from_cycle_state", session_id=session_id)
 
     if not session_id:
-        session_id = read_ceo_session_id(project_path)
-        if session_id:
-            log.info("resume_from_session_file", session_id=session_id)
+        session_meta = read_ceo_session(project_path)
+        if session_meta:
+            session_id = session_meta.get("session_id")
+            if session_id:
+                log.info("resume_from_session_file", session_id=session_id)
 
     if not session_id:
         print("No CEO session found to resume.", file=sys.stderr)
@@ -162,11 +170,54 @@ def cmd_resume(args: argparse.Namespace) -> int:
         print("Error: 'claude' CLI not found. Install Claude Code first.", file=sys.stderr)
         return 1
 
+    interactive = True
+    resume_mode = ""
+    if session_meta:
+        interactive = session_meta.get("interactive", True)
+        resume_mode = session_meta.get("mode", "")
+    if cycle_state:
+        interactive = False
+        resume_mode = cycle_state.mode
+
     cmd = ["claude", "--resume", session_id]
     if model:
         cmd.extend(["--model", model])
 
-    print(f"Resuming CEO session: {session_id[:12]}...")
+    if not interactive:
+        from factory.agents.runner import resolve_prompt
+
+        prompt_text = resolve_prompt("ceo", project_path, workflow_mode=resume_mode or None)
+        prompt_file = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", prefix="factory-resume-prompt-", delete=False
+        )
+        prompt_file.write(prompt_text)
+        prompt_file.close()
+
+        continuation = (
+            "You were interrupted mid-cycle. Resume from where you left off.\n"
+            "Read .factory/strategy/current.md and .factory/state/cycle.json "
+            "to determine your current phase.\n"
+            "Continue executing the remaining planned work. "
+            "Do not restart completed phases."
+        )
+        cmd.extend(
+            [
+                "-p",
+                continuation,
+                "--append-system-prompt-file",
+                prompt_file.name,
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--disallowedTools",
+                "Agent",
+            ]
+        )
+        log.info("resume_headless", mode=resume_mode, prompt_file=prompt_file.name)
+        print(f"Resuming headless CEO session ({resume_mode}): {session_id[:12]}...")
+    else:
+        print(f"Resuming interactive CEO session: {session_id[:12]}...")
+
     os.chdir(project_path)
     os.execvp("claude", cmd)
     return 0
