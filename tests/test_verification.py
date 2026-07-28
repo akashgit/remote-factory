@@ -196,12 +196,12 @@ class TestGenerateHookScript:
                     id="builder", role=AgentRole.BUILDER,
                     writes={".factory/reviews/builder-latest.md"},
                 ),
-                "qa": AgentNode(
-                    id="qa", role=AgentRole.QA,
-                    writes={".factory/reviews/qa-latest.md"},
+                "health_checker": AgentNode(
+                    id="health_checker", role=AgentRole.HEALTH_CHECKER,
+                    writes={".factory/reviews/health-check.md"},
                 ),
             },
-            edges=[Edge(source="builder", target="qa")],
+            edges=[Edge(source="builder", target="health_checker")],
             start_node="builder",
         )
 
@@ -209,7 +209,7 @@ class TestGenerateHookScript:
         script = generate_hook_script(self._make_workflow())
         assert script.startswith("#!/usr/bin/env bash")
         assert "factory agent builder" in script
-        assert "factory agent qa" in script
+        assert "factory agent health_checker" in script
         assert "if" in script
         assert "elif" in script
         assert "fi" in script
@@ -223,12 +223,12 @@ class TestGenerateHookScript:
     def test_logs_verify_ok(self) -> None:
         script = generate_hook_script(self._make_workflow())
         assert "VERIFY_OK node=builder" in script
-        assert "VERIFY_OK node=qa" in script
+        assert "VERIFY_OK node=health_checker" in script
 
     def test_logs_verify_fail(self) -> None:
         script = generate_hook_script(self._make_workflow())
         assert "VERIFY_FAIL node=builder" in script
-        assert "VERIFY_FAIL node=qa" in script
+        assert "VERIFY_FAIL node=health_checker" in script
 
     def test_reads_stdin_json(self) -> None:
         script = generate_hook_script(self._make_workflow())

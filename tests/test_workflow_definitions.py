@@ -212,13 +212,14 @@ class TestAgentPool:
             "researcher": "sonnet",
             "strategist": "opus",
             "builder": "opus",
-            "qa": "opus",
             "health_checker": "opus",
             "code_reviewer": "opus",
             "adversarial_tester": "opus",
             "failure_analyst": "opus",
             "ceo": "opus",
             "archivist": "haiku",
+            "refiner": "opus",
+            "skill_reviewer": "opus",
         }
 
         for role, model in expected.items():
