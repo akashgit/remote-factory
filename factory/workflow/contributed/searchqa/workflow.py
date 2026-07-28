@@ -38,7 +38,7 @@ _FIXED_INSTRUCTIONS = (
 
 
 def _resolve_prompt() -> str:
-    b64 = os.environ.get("SEARCHQA_SKILL_B64")
+    b64 = os.environ.get("FACTORY_SKILL_B64")
     skill = base64.b64decode(b64).decode() if b64 else _DEFAULT_SKILL
     return skill + _FIXED_INSTRUCTIONS
 
