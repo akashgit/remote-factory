@@ -705,7 +705,7 @@ def build_parser() -> argparse.ArgumentParser:
         "research (autonomous research optimization), review (on-demand PR review), "
         "qa (QA verification pipeline for PRs), "
         "or create (meta-mode for creating or updating factory modes — "
-        "use --focus \"mode_name: change\" to update an existing mode)",
+        'use --focus "mode_name: change" to update an existing mode)',
     )
     p.add_argument(
         "--focus",
@@ -1107,6 +1107,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_spec_scope.add_argument("--experiment", type=int, default=None, help="Experiment ID to scope")
     p_spec_update = spec_sub.add_parser("update", help="Update the repo spec from recent changes")
     p_spec_update.add_argument("path", help="Path to the project")
+    p_spec_apply_diff = spec_sub.add_parser(
+        "apply-diff", help="Apply SPEC Diff from strategy to SPEC.md"
+    )
+    p_spec_apply_diff.add_argument("path", help="Path to the project")
+    p_spec_apply_diff.add_argument(
+        "--strategy",
+        default=None,
+        help="Path to strategy file (default: .factory/strategy/current.md)",
+    )
     p_spec_impact = spec_sub.add_parser("impact", help="Show impact subgraph for a module")
     p_spec_impact.add_argument("module", help="Module name to query")
     p_spec_impact.add_argument("--project", required=True, help="Path to the project")
@@ -1217,10 +1226,13 @@ def main(argv: list[str] | None = None) -> int:
             "validate": _cli.cmd_spec_validate,
             "scope": _cli.cmd_spec_scope,
             "update": _cli.cmd_spec_update,
+            "apply-diff": _cli.cmd_spec_apply_diff,
             "impact": _cli.cmd_spec_impact,
         }.get(
             str(getattr(a, "spec_command", "")),
-            lambda args: print("Usage: factory spec {generate,validate,scope,update,impact}") or 1,
+            lambda args: (
+                print("Usage: factory spec {generate,validate,scope,update,apply-diff,impact}") or 1
+            ),
         )(a),
         "workflow": lambda a: __import__(
             "factory.workflow.cli", fromlist=["cmd_workflow"]

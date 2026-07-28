@@ -133,6 +133,33 @@ def cmd_spec_update(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_spec_apply_diff(args: argparse.Namespace) -> int:
+    """Apply a SPEC Diff from strategy to SPEC.md."""
+    from factory.spec.apply_diff import apply_spec_diff
+
+    project_path = Path(args.path).resolve()
+    if not project_path.is_dir():
+        print(f"Error: not a directory: {project_path}", file=sys.stderr)
+        return 1
+
+    _emit_cli_event(project_path, "spec.apply_diff.started", {"path": str(project_path)})
+
+    strategy_path = None
+    if hasattr(args, "strategy") and args.strategy:
+        strategy_path = Path(args.strategy).resolve()
+
+    applied = apply_spec_diff(project_path, strategy_path=strategy_path)
+
+    if applied:
+        _emit_cli_event(project_path, "spec.apply_diff.completed", {"applied": True})
+        print("SPEC Diff applied to SPEC.md")
+    else:
+        _emit_cli_event(project_path, "spec.apply_diff.completed", {"applied": False})
+        print("No SPEC Diff to apply (skipped)")
+
+    return 0
+
+
 def cmd_spec_impact(args: argparse.Namespace) -> int:
     """Print the impact subgraph for a module from the repo spec."""
     from factory.discovery.spec import resolve_spec

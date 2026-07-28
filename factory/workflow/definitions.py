@@ -172,7 +172,11 @@ def build_workflow() -> Workflow:
             "differentiation opportunities."
         ),
         writes={".factory/strategy/research-similar.md"},
-        post_checks=[ArtifactCheck(path=".factory/strategy/research-similar.md", must_exist=True, min_size=50)],
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-similar.md", must_exist=True, min_size=50
+            )
+        ],
     )
     nodes["researcher_techstack"] = AgentNode(
         id="researcher_techstack",
@@ -187,7 +191,11 @@ def build_workflow() -> Workflow:
             "framework comparisons."
         ),
         writes={".factory/strategy/research-techstack.md"},
-        post_checks=[ArtifactCheck(path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50)],
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50
+            )
+        ],
     )
     nodes["researcher_pitfalls"] = AgentNode(
         id="researcher_pitfalls",
@@ -202,7 +210,11 @@ def build_workflow() -> Workflow:
             "lessons from similar past builds."
         ),
         writes={".factory/strategy/research-pitfalls.md"},
-        post_checks=[ArtifactCheck(path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50)],
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50
+            )
+        ],
     )
 
     # Join
@@ -243,12 +255,14 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/research-combined.md"},
         writes={".factory/strategy/current.md"},
-        post_checks=[ArtifactCheck(
-            path=".factory/strategy/current.md",
-            must_exist=True,
-            min_size=200,
-            must_contain=["### Phase 1", "### Architecture"],
-        )],
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+                must_contain=["### Phase 1", "### Architecture"],
+            )
+        ],
     )
 
     # CEO gate on strategy quality — HARD GATE
@@ -291,12 +305,14 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
-        post_checks=[ArtifactCheck(
-            path=".factory/reviews/builder-latest.md",
-            must_exist=True,
-            min_size=500,
-            must_contain=["commit"],
-        )],
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/builder-latest.md",
+                must_exist=True,
+                min_size=500,
+                must_contain=["commit"],
+            )
+        ],
     )
 
     nodes["gate_build"] = GateNode(
@@ -526,6 +542,15 @@ def improve_workflow() -> Workflow:
         reads={".factory/strategy/current.md"},
     )
 
+    # Apply SPEC Diff from strategy to SPEC.md (no-op if absent)
+    nodes["apply_spec_diff"] = FnNode(
+        id="apply_spec_diff",
+        command="factory spec apply-diff {project_path}",
+        notes="Apply the SPEC Diff section from the strategist's plan to SPEC.md. No-op if no SPEC Diff section exists.",
+        reads={".factory/strategy/current.md"},
+        writes={"SPEC.md"},
+    )
+
     # Per-hypothesis: begin → builder → gate → deep-QA → gate_qa(max 3) → precheck → finalize → archivist
     nodes["begin"] = FnNode(
         id="begin",
@@ -642,9 +667,11 @@ def improve_workflow() -> Workflow:
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
         # Strategist → strategy gate
         Edge(source="strategist", target="gate_strategy"),
-        # Strategy gate
-        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        # Strategy gate → apply spec diff → begin
+        Edge(source="gate_strategy", target="apply_spec_diff", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # apply_spec_diff → begin
+        Edge(source="apply_spec_diff", target="begin"),
         # begin → builder
         Edge(source="begin", target="builder"),
         # Builder → build gate
@@ -865,10 +892,12 @@ def research_workflow() -> Workflow:
         Edge(source="researcher", target="gate_research"),
         Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
         Edge(source="gate_research", target="researcher", condition=VerdictType.RELOOP),
-        # Strategist → strategy gate
+        # Strategist → strategy gate → apply spec diff → begin
         Edge(source="strategist", target="gate_strategy"),
-        Edge(source="gate_strategy", target="begin", condition=VerdictType.PROCEED),
+        Edge(source="gate_strategy", target="apply_spec_diff", condition=VerdictType.PROCEED),
         Edge(source="gate_strategy", target="strategist", condition=VerdictType.RELOOP),
+        # apply_spec_diff → begin
+        Edge(source="apply_spec_diff", target="begin"),
         # begin → builder
         Edge(source="begin", target="builder"),
         # Builder → build gate
@@ -2442,11 +2471,13 @@ def parallel_improve_workflow() -> Workflow:
         new_node = node.model_copy(update={"id": new_id})
         exp_dq_nodes[new_id] = new_node
     for edge in dq_edges:
-        exp_dq_edges.append(Edge(
-            source=dq_rename[edge.source],
-            target=dq_rename[edge.target],
-            condition=edge.condition,
-        ))
+        exp_dq_edges.append(
+            Edge(
+                source=dq_rename[edge.source],
+                target=dq_rename[edge.target],
+                condition=edge.condition,
+            )
+        )
     nodes.update(exp_dq_nodes)
 
     nodes["exp_gate_qa"] = GateNode(
@@ -2537,25 +2568,31 @@ def parallel_improve_workflow() -> Workflow:
     ]
 
     # Per-experiment subgraph edges
-    edges.extend([
-        Edge(source="exp_begin", target="exp_builder"),
-        Edge(source="exp_builder", target="exp_gate_build"),
-        Edge(source="exp_gate_build", target="exp_health_checker", condition=VerdictType.PROCEED),
-        Edge(source="exp_gate_build", target="exp_builder", condition=VerdictType.RELOOP),
-        *exp_dq_edges,
-        Edge(source="exp_adversarial_tester", target="exp_gate_qa"),
-        Edge(source="exp_gate_qa", target="exp_gate_precheck", condition=VerdictType.PROCEED),
-        Edge(source="exp_gate_qa", target="exp_builder", condition=VerdictType.RELOOP),
-        Edge(source="exp_gate_precheck", target="exp_eval", condition=VerdictType.PROCEED),
-        Edge(source="exp_gate_precheck", target="exp_eval", condition=VerdictType.HALT),
-    ])
+    edges.extend(
+        [
+            Edge(source="exp_begin", target="exp_builder"),
+            Edge(source="exp_builder", target="exp_gate_build"),
+            Edge(
+                source="exp_gate_build", target="exp_health_checker", condition=VerdictType.PROCEED
+            ),
+            Edge(source="exp_gate_build", target="exp_builder", condition=VerdictType.RELOOP),
+            *exp_dq_edges,
+            Edge(source="exp_adversarial_tester", target="exp_gate_qa"),
+            Edge(source="exp_gate_qa", target="exp_gate_precheck", condition=VerdictType.PROCEED),
+            Edge(source="exp_gate_qa", target="exp_builder", condition=VerdictType.RELOOP),
+            Edge(source="exp_gate_precheck", target="exp_eval", condition=VerdictType.PROCEED),
+            Edge(source="exp_gate_precheck", target="exp_eval", condition=VerdictType.HALT),
+        ]
+    )
 
     # Fork → Join → Select → Archive
-    edges.extend([
-        Edge(source="fork_experiments", target="join_experiments"),
-        Edge(source="join_experiments", target="select_best"),
-        Edge(source="select_best", target="archivist"),
-    ])
+    edges.extend(
+        [
+            Edge(source="fork_experiments", target="join_experiments"),
+            Edge(source="join_experiments", target="select_best"),
+            Edge(source="select_best", target="archivist"),
+        ]
+    )
 
     def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
         return state == ProjectState.HAS_FACTORY and ctx.get("mode") == "parallel-improve"

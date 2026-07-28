@@ -111,6 +111,7 @@ from factory.cli.review import (
     cmd_review as cmd_review,
 )
 from factory.cli.spec import (
+    cmd_spec_apply_diff as cmd_spec_apply_diff,
     cmd_spec_generate as cmd_spec_generate,
     cmd_spec_impact as cmd_spec_impact,
     cmd_spec_scope as cmd_spec_scope,
