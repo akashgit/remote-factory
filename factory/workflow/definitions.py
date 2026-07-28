@@ -26,6 +26,7 @@ from factory.models import ProjectState
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
+    ArtifactCheck,
     Edge,
     FnNode,
     ForkNode,
@@ -57,6 +58,7 @@ __all__ = [
     "spec_generate_workflow",
     "spec_update_workflow",
     "parallel_improve_workflow",
+    "founder_workflow",
     "register_all",
 ]
 
@@ -170,6 +172,7 @@ def build_workflow() -> Workflow:
             "differentiation opportunities."
         ),
         writes={".factory/strategy/research-similar.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-similar.md", must_exist=True, min_size=50)],
     )
     nodes["researcher_techstack"] = AgentNode(
         id="researcher_techstack",
@@ -184,6 +187,7 @@ def build_workflow() -> Workflow:
             "framework comparisons."
         ),
         writes={".factory/strategy/research-techstack.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-techstack.md", must_exist=True, min_size=50)],
     )
     nodes["researcher_pitfalls"] = AgentNode(
         id="researcher_pitfalls",
@@ -198,6 +202,7 @@ def build_workflow() -> Workflow:
             "lessons from similar past builds."
         ),
         writes={".factory/strategy/research-pitfalls.md"},
+        post_checks=[ArtifactCheck(path=".factory/strategy/research-pitfalls.md", must_exist=True, min_size=50)],
     )
 
     # Join
@@ -238,6 +243,12 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/research-combined.md"},
         writes={".factory/strategy/current.md"},
+        post_checks=[ArtifactCheck(
+            path=".factory/strategy/current.md",
+            must_exist=True,
+            min_size=200,
+            must_contain=["### Phase 1", "### Architecture"],
+        )],
     )
 
     # CEO gate on strategy quality — HARD GATE
@@ -280,6 +291,12 @@ def build_workflow() -> Workflow:
         ),
         reads={".factory/strategy/current.md"},
         writes={".factory/reviews/builder-latest.md"},
+        post_checks=[ArtifactCheck(
+            path=".factory/reviews/builder-latest.md",
+            must_exist=True,
+            min_size=500,
+            must_contain=["commit"],
+        )],
     )
 
     nodes["gate_build"] = GateNode(
@@ -1479,7 +1496,12 @@ def create_workflow() -> Workflow:
         role=AgentRole.RESEARCHER,
         prompt_template=(
             "Existing workflow analysis. "
-            "Read factory/workflow/definitions.py and analyze all existing workflow "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', read the "
+            "**Target mode:** field and focus your analysis on that specific mode's workflow "
+            "definition via `factory workflow show <target_mode>`. Document its current node "
+            "sequences, gate logic, edge wiring, trigger function, and reads/writes. Also read "
+            "its SKILL.md at skills/workflow-<target_mode>/SKILL.md for the generated playbook. "
+            "Otherwise, read factory/workflow/definitions.py and analyze all existing workflow "
             "definitions (build, design, improve, research, meta, discover, review, refine). "
             "Document common patterns: node sequences, gate conventions, fork/join patterns, "
             "archivist placement, edge wiring, trigger functions, reads/writes declarations. "
@@ -1498,7 +1520,11 @@ def create_workflow() -> Workflow:
         prompt_template=(
             "Mode description analysis. "
             "Read the user's mode description from the CEO task. "
-            "Parse and structure it into a workflow specification: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', parse the "
+            "**Requested changes:** field and structure the requested modifications against "
+            "the existing mode's current behavior. Identify which nodes, edges, prompts, or "
+            "gates need to change and which must remain untouched. "
+            "Otherwise, parse and structure the description into a new workflow specification: "
             "- Purpose and trigger conditions "
             "- Agent roles needed (which specialists) "
             "- Gate logic (user vs agent vs fn evaluators) "
@@ -1556,9 +1582,14 @@ def create_workflow() -> Workflow:
         id="strategist",
         role=AgentRole.STRATEGIST,
         prompt_template=(
-            "Synthesize a complete workflow specification for a new factory mode. "
+            "Synthesize a workflow specification. "
             "Read ALL tagged research files at .factory/strategy/research-*.md. "
-            "Produce a complete specification including: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', produce a "
+            "change spec describing modifications to the existing workflow: which nodes/edges/"
+            "prompts/gates to modify, what to add or remove, and a diff-oriented implementation "
+            "plan. Include the 20-point verification checklist from the CEO task. Do NOT produce "
+            "a complete new workflow definition — describe changes to the existing one. "
+            "Otherwise, produce a complete specification for a new factory mode including: "
             "1) Python code for the workflow function (nodes dict, edges list, trigger) "
             "2) WORKFLOW_META entry (description, argument_hint) "
             "3) CLI wiring changes (build_parser mode choices, cmd_ceo routing, _build_ceo_task section) "
@@ -1597,10 +1628,16 @@ def create_workflow() -> Workflow:
         role=AgentRole.BUILDER,
         timeout=1800,
         prompt_template=(
-            "Implement the new factory mode from the approved workflow specification. "
+            "Implement the workflow changes from the approved specification. "
             "Read the approved spec at .factory/strategy/current.md. "
             "Read CLAUDE.md for project conventions. "
-            "Implementation checklist: "
+            "If the CEO task includes '## Create Mode (Update Existing Mode)', follow the "
+            "update checklist: modify the existing workflow function in definitions.py, verify "
+            "the register_all() entry still resolves, update WORKFLOW_META if needed, verify all "
+            "20 registration points from the CEO task, run factory workflow validate <name>, "
+            "regenerate SKILL.md via factory workflow export-skills, update tests, run pytest "
+            "and ruff check. "
+            "Otherwise, follow the new-mode checklist: "
             "1) Add the workflow function to factory/workflow/definitions.py "
             "2) Register it in register_all() "
             "3) Add WORKFLOW_META entry in factory/workflow/skill_export.py "
@@ -2532,6 +2569,109 @@ def parallel_improve_workflow() -> Workflow:
     )
 
 
+# ── W₁₃: Founder Mode ──────────────────────────────────────────
+
+
+def founder_workflow() -> Workflow:
+    """W₁₃: Founder Mode — rapid prototyping pipeline for fast hypothesis iteration.
+
+    Study → Strategist → Builder → gate_tests → finalize(async)
+
+    No research, no deep-QA, no eval scoring. Terminal — does not chain to
+    other modes. Uses pass/fail tests only.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # Study
+    nodes["study"] = Study(
+        id="study",
+        command="factory study {project_path}",
+        writes={".factory/strategy/observations.md"},
+    )
+
+    # Strategist — pick ONE hypothesis, skip FEEC/backlog
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Pick ONE high-leverage hypothesis to prototype. "
+            "Read observations at .factory/strategy/observations.md. "
+            "Skip FEEC classification and backlog grooming — just pick the most "
+            "promising idea and write it to .factory/strategy/current.md. "
+            "Keep it scoped: one idea, one PR, fast to implement."
+        ),
+        reads={".factory/strategy/observations.md"},
+        writes={".factory/strategy/current.md"},
+    )
+
+    # Builder — prototype quickly
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        prompt_template=(
+            "Prototype the hypothesis from .factory/strategy/current.md. "
+            "Read CLAUDE.md and factory.md for project context. "
+            "Prioritize getting something working over code quality. "
+            "Skip edge cases and comprehensive error handling. "
+            "Run tests to verify it works. Commit the changes."
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/reviews/builder-latest.md"},
+    )
+
+    # Gate — pytest + ruff pass/fail
+    nodes["gate_tests"] = GateNode(
+        id="gate_tests",
+        evaluator_type="fn",
+        evaluator_command=(
+            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && "
+            "ruff check . 2>&1"
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+    )
+
+    # Finalize — record results, bypassing precheck (no eval scores in founder mode)
+    nodes["finalize"] = FnNode(
+        id="finalize",
+        command=(
+            "factory finalize {project_path}"
+            " --id $EXP_ID"
+            " --verdict $VERDICT"
+            ' --hypothesis "$HYPOTHESIS"'
+            " --force"
+        ),
+        notes=(
+            "Record experiment to .factory/results.tsv, bypassing precheck gates "
+            "(no QA agents or eval scores in founder mode). "
+            "The CEO must substitute $EXP_ID, $VERDICT (keep/revert), and $HYPOTHESIS."
+        ),
+        reads={".factory/reviews/builder-latest.md"},
+        writes={".factory/experiments/verdict.json"},
+        blocking=False,
+    )
+
+    edges = [
+        Edge(source="study", target="strategist"),
+        Edge(source="strategist", target="builder"),
+        Edge(source="builder", target="gate_tests"),
+        Edge(source="gate_tests", target="finalize", condition=VerdictType.PROCEED),
+        Edge(source="gate_tests", target="builder", condition=VerdictType.RELOOP),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return state == ProjectState.HAS_FACTORY and ctx.get("mode") == "founder"
+
+    return Workflow(
+        name="founder",
+        nodes=nodes,
+        edges=edges,
+        start_node="study",
+        trigger=trigger,
+        terminal=True,
+    )
+
+
 def register_all() -> dict[str, Workflow]:
     """Build and return all workflow definitions."""
     from factory.workflow.deep_qa import workflow as deep_qa_workflow
@@ -2566,4 +2706,5 @@ def register_all() -> dict[str, Workflow]:
         "doc-update": doc_update_workflow(),
         "spec-generate": spec_generate_workflow(),
         "spec-update": spec_update_workflow(),
+        "founder": founder_workflow(),
     }

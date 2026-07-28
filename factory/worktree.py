@@ -49,8 +49,22 @@ def create_worktree(
         cwd=project_path,
         capture_output=True,
         text=True,
-        check=True,
     )
+    if result.returncode != 0:
+        if _is_unborn_repo(project_path):
+            _bootstrap_unborn_repo(project_path)
+            result = subprocess.run(
+                ["git", "rev-parse", base_branch],
+                cwd=project_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            raise RuntimeError(
+                f"Branch '{base_branch}' does not exist in {project_path}. "
+                "Set `target_branch` in .factory/config.json or check your git state."
+            )
     base_commit = result.stdout.strip()
 
     if run_id is not None:
@@ -310,6 +324,28 @@ def prune_stale(project_path: Path) -> list[str]:
     return pruned
 
 
+def _is_unborn_repo(project_path: Path) -> bool:
+    """Return True if the repo exists but has no commits (unborn HEAD)."""
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode != 0
+
+
+def _bootstrap_unborn_repo(project_path: Path) -> None:
+    """Create an initial empty commit so worktrees can branch from it."""
+    log.info("bootstrap_unborn_repo", path=str(project_path))
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-m", "init (factory bootstrap)"],
+        cwd=project_path,
+        capture_output=True,
+        check=True,
+    )
+
+
 def detect_default_branch(project_path: Path) -> str:
     """Detect the default branch for a git repository.
 
@@ -343,7 +379,7 @@ def detect_default_branch(project_path: Path) -> str:
             log.debug("detect_default_branch", source="probe", branch=candidate)
             return candidate
 
-    # Current branch
+    # Current branch (works on repos with commits)
     result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         cwd=project_path,
@@ -355,6 +391,18 @@ def detect_default_branch(project_path: Path) -> str:
         if branch != "HEAD":
             log.debug("detect_default_branch", source="current_head", branch=branch)
             return branch
+
+    # Unborn repo: rev-parse fails but symbolic-ref still resolves HEAD
+    result = subprocess.run(
+        ["git", "symbolic-ref", "--short", "HEAD"],
+        cwd=project_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and result.stdout.strip():
+        branch = result.stdout.strip()
+        log.debug("detect_default_branch", source="symbolic_ref", branch=branch)
+        return branch
 
     log.debug("detect_default_branch", source="fallback", branch="main")
     return "main"

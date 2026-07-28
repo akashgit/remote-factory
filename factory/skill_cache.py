@@ -39,21 +39,24 @@ def _compute_checksum(workflows: dict[str, Workflow]) -> str:
     return hashlib.sha256(blob).hexdigest()[:16]
 
 
-def ensure_skills(project_dir: Path) -> list[Path]:
+def ensure_skills(project_dir: Path, *, mode: str | None = None) -> list[Path]:
     """Generate workflow skills into *project_dir*/skills/, using a local cache.
 
     Cache location: ``~/.factory/cache/skills/{checksum}/``.
     Only ``workflow-*`` subdirectories are copied — hand-written skills are
     never touched.  Returns an empty list on any I/O error (non-fatal).
+
+    If *mode* is given, also generates PostToolUse verification hooks for that
+    workflow into *project_dir*/.factory/hooks/.
     """
     try:
-        return _ensure_skills_inner(project_dir)
+        return _ensure_skills_inner(project_dir, mode=mode)
     except OSError as exc:
         log.warning("skill_cache.error", error=str(exc))
         return []
 
 
-def _ensure_skills_inner(project_dir: Path) -> list[Path]:
+def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[Path]:
     from factory.workflow.definitions import register_all
     from factory.workflow.skill_export import export_all_skills
 
@@ -92,4 +95,12 @@ def _ensure_skills_inner(project_dir: Path) -> list[Path]:
             generated.append(skill_md)
 
     log.info("skill_cache.copied", count=len(generated), target=str(skills_target))
+
+    if mode and mode in workflows:
+        from factory.workflow.verification import write_verification_hooks
+
+        settings_path = write_verification_hooks(workflows[mode], project_dir)
+        if settings_path:
+            log.info("skill_cache.hooks_generated", mode=mode, settings=str(settings_path))
+
     return generated

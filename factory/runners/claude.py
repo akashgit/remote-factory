@@ -107,6 +107,9 @@ class ClaudeRunner:
             "--verbose",
             "--disallowedTools", "Agent",
         ]
+        settings_file = request.extras.get("settings_file")
+        if settings_file:
+            cmd.extend(["--settings", str(settings_file)])
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         if request.model:
@@ -241,6 +244,9 @@ class ClaudeRunner:
             "claude",
             "--append-system-prompt-file", prompt_file.name,
         ]
+        settings_file = request.extras.get("settings_file")
+        if settings_file:
+            cmd.extend(["--settings", str(settings_file)])
         if request.skip_permissions:
             cmd.append("--dangerously-skip-permissions")
         cmd.append(request.task)

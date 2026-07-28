@@ -317,6 +317,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
 
     create_description: str | None = None
+    update_existing_mode: str | None = None
     design_idea: str | None = None
     design_existing: bool = False
     research_ideation: str | None = None
@@ -333,6 +334,15 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         create_description = focus if focus else context
+        if create_description and ":" in create_description:
+            m = re.match(r"^([a-z_-]+):\s*(.+)$", create_description, re.DOTALL)
+            if m:
+                from factory.workflow.definitions import register_all
+
+                registered = register_all()
+                if m.group(1) in registered:
+                    update_existing_mode = m.group(1)
+                    create_description = m.group(2).strip()
     elif mode == "design" and _design_is_existing:
         project_path, context = _resolve_input(raw_path, dir_name=dir_name)
         design_existing = True
@@ -491,7 +501,10 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     from factory.skill_cache import ensure_skills
 
-    ensure_skills(wt_path)
+    ensure_skills(wt_path, mode=mode)
+
+    verification_settings = wt_path / ".factory" / "hooks" / f"settings-{mode}.json"
+    _verification_settings_file = str(verification_settings) if verification_settings.exists() else None
 
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
@@ -538,6 +551,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,
         create_description=create_description,
+        update_existing_mode=update_existing_mode,
     )
 
     session_name = _derive_session_name(
@@ -589,6 +603,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                     tmux_persist=tmux_persist,
                     background=background,
                     workflow_mode=ceo_mode,
+                    settings_file=_verification_settings_file,
                 )
             )
             print(result)
@@ -635,6 +650,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         prompt = resolve_prompt("ceo", wt_path, use_profile=use_profile, workflow_mode=ceo_mode)
         runner = get_runner(runner_name)
+        extras: dict[str, object] = {}
+        if _verification_settings_file:
+            extras["settings_file"] = _verification_settings_file
         return runner.interactive_run(
             _RunReq(
                 prompt=prompt,
@@ -644,6 +662,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
                 role="ceo",
                 skip_permissions=True,
                 session_name=session_name,
+                extras=extras,
             )
         )
     finally:
@@ -1577,6 +1596,7 @@ def _build_ceo_task(
     clean_pr: bool = False,
     display_mode: str | None = None,
     create_description: str | None = None,
+    update_existing_mode: str | None = None,
 ) -> str:
     """Build the CEO agent task string from mode and optional context."""
     shown_mode = display_mode if display_mode is not None else mode
@@ -1640,7 +1660,40 @@ def _build_ceo_task(
             f"from the approved spec.\n"
         )
 
-    if create_description:
+    if create_description and update_existing_mode:
+        task += (
+            f"\n\n## Create Mode (Update Existing Mode)\n\n"
+            f"**Target mode:** {update_existing_mode}\n"
+            f"**Requested changes:** {create_description}\n\n"
+            f"You are updating an EXISTING factory workflow mode, not creating a new one.\n\n"
+            f"**Before making any changes:**\n"
+            f"1. Read the existing workflow definition: `factory workflow show {update_existing_mode}`\n"
+            f"2. Read the current SKILL.md: `cat skills/workflow-{update_existing_mode}/SKILL.md`\n"
+            f"3. Understand the current behavior before modifying it.\n\n"
+            f"**After implementing changes, verify ALL 20 registration points:**\n"
+            f"1. `factory workflow validate {update_existing_mode}` passes (exit 0)\n"
+            f"2. `factory workflow show {update_existing_mode}` reflects the changes\n"
+            f"3. `factory workflow export-skills --verify` succeeds\n"
+            f"4. SKILL.md under skills/workflow-{update_existing_mode}/ is regenerated\n"
+            f"5. WORKFLOW_META description in skill_export.py is still accurate\n"
+            f"6. CLI help text (factory ceo --help) still lists the mode correctly\n"
+            f"7. register_all() entry still resolves\n"
+            f"8. CycleState.mode Literal in models.py still includes the mode\n"
+            f"9. CEO_MODES and RUN_MODES in _helpers.py still include the mode\n"
+            f"10. CEO prompt (ceo.md) mode detection table is still correct\n"
+            f"11. All existing tests for this mode still pass\n"
+            f"12. No import errors in any factory module\n"
+            f"13. __all__ in definitions.py still exports the workflow function\n"
+            f"14. factory/workflow/registry.py resolves the mode\n"
+            f"15. factory/skill_cache.py will auto-invalidate (no action needed, but verify)\n"
+            f"16. _wizard.py examples are consistent\n"
+            f"17. CLAUDE.md mentions the mode correctly\n"
+            f"18. workflow/README.md references are accurate\n"
+            f"19. Trigger function still returns True for the correct context\n"
+            f"20. Start node is still valid and reachable from all edges\n\n"
+            f"Follow the Create workflow playbook in skills/workflow-create/SKILL.md.\n"
+        )
+    elif create_description:
         task += (
             f"\n\n## Create Mode (New Factory Mode)\n\n"
             f"**Mode description from user:**\n{create_description}\n\n"
@@ -1760,6 +1813,15 @@ def _build_ceo_task(
         task += (
             "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
             "CLI wiring + tests) from the user's description above. "
+            "The full step-by-step playbook is in your system prompt above."
+        )
+    elif mode == "founder":
+        task += (
+            "\n\nRun Founder mode: rapid prototyping — one hypothesis, one build, "
+            "minimal verification. Pick the highest-leverage idea, prototype it fast, "
+            "run tests once. No research, no code review, no adversarial QA, no eval "
+            "scoring. Record the experiment and stop. This is NOT production-quality — "
+            "run --mode improve afterward to harden what works. "
             "The full step-by-step playbook is in your system prompt above."
         )
     else:

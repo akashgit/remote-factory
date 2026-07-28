@@ -14,6 +14,7 @@ from factory.workflow.definitions import (
     design_workflow,
     doc_generate_workflow,
     doc_update_workflow,
+    founder_workflow,
     improve_workflow,
     meta_workflow,
     qa_workflow,
@@ -248,6 +249,7 @@ class TestRegisterAll:
             "skill-refine",
             "spec-generate",
             "spec-update",
+            "founder",
         }
         assert required.issubset(set(all_wf.keys())), f"Missing: {required - set(all_wf.keys())}"
 
@@ -592,6 +594,54 @@ class TestTerminalFlagDefaults:
         assert design_workflow().terminal is False
 
 
+# ── W₁₆: Founder structure ──────────────────────────────────────
+
+
+class TestFounderStructure:
+    def test_founder_valid(self) -> None:
+        wf = founder_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"founder workflow has issues: {issues}"
+
+    def test_founder_name(self) -> None:
+        wf = founder_workflow()
+        assert wf.name == "founder"
+
+    def test_founder_terminal(self) -> None:
+        wf = founder_workflow()
+        assert wf.terminal is True
+
+    def test_founder_trigger(self) -> None:
+        wf = founder_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+        assert not wf.trigger(ProjectState.NO_FACTORY, {"mode": "founder"})
+
+    def test_founder_node_count(self) -> None:
+        wf = founder_workflow()
+        assert len(wf.nodes) == 5
+
+    def test_founder_has_no_deep_qa(self) -> None:
+        wf = founder_workflow()
+        assert "health_checker" not in wf.nodes
+        assert "code_reviewer" not in wf.nodes
+        assert "adversarial_tester" not in wf.nodes
+
+    def test_founder_builder_max_iterations(self) -> None:
+        wf = founder_workflow()
+        builder = wf.nodes["builder"]
+        assert builder.max_iterations == 1
+
+    def test_founder_skill_export(self) -> None:
+        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
+        wf = founder_workflow()
+        skill_md = workflow_to_skill_md(wf)
+        issues = validate_skill(skill_md)
+        assert issues == [], f"founder skill has issues: {issues}"
+        assert "workflow-founder" in skill_md
+
+
 # ── W₁₁: Doc Generate structure ──────────────────────────────────
 
 
@@ -748,3 +798,82 @@ class TestDocUpdateWorkflow:
         ]
         for src, tgt, cond in expected_reloops:
             assert (src, tgt, cond) in edge_set, f"missing reloop edge {src} -> {tgt}"
+
+
+# ── W₁₃: Founder Mode ───────────────────────────────────────────
+
+
+class TestFounderWorkflow:
+    def test_founder_workflow_graph(self) -> None:
+        wf = founder_workflow()
+        issues = wf.validate_graph()
+        assert issues == [], f"founder workflow has issues: {issues}"
+
+    def test_founder_workflow_registration(self) -> None:
+        all_wf = register_all()
+        assert "founder" in all_wf
+
+    def test_founder_workflow_trigger(self) -> None:
+        wf = founder_workflow()
+        assert wf.trigger is not None
+        assert wf.trigger(ProjectState.HAS_FACTORY, {"mode": "founder"})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {})
+        assert not wf.trigger(ProjectState.HAS_FACTORY, {"mode": "improve"})
+        assert not wf.trigger(ProjectState.NO_REPO, {"mode": "founder"})
+
+    def test_founder_name(self) -> None:
+        wf = founder_workflow()
+        assert wf.name == "founder"
+
+    def test_founder_is_terminal(self) -> None:
+        wf = founder_workflow()
+        assert wf.terminal is True
+
+    def test_founder_start_node(self) -> None:
+        wf = founder_workflow()
+        assert wf.start_node == "study"
+
+    def test_founder_has_no_deep_qa(self) -> None:
+        wf = founder_workflow()
+        for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
+            assert nid not in wf.nodes, f"founder should not have {nid}"
+
+    def test_founder_nodes(self) -> None:
+        wf = founder_workflow()
+        assert "study" in wf.nodes
+        assert "strategist" in wf.nodes
+        assert "builder" in wf.nodes
+        assert "gate_tests" in wf.nodes
+        assert "finalize" in wf.nodes
+
+    def test_founder_gate_tests_is_fn(self) -> None:
+        wf = founder_workflow()
+        gate = wf.nodes["gate_tests"]
+        assert isinstance(gate, GateNode)
+        assert gate.evaluator_type == "fn"
+        assert "pytest" in gate.evaluator_command
+        assert "ruff" in gate.evaluator_command
+
+    def test_founder_finalize_uses_force(self) -> None:
+        wf = founder_workflow()
+        finalize = wf.nodes["finalize"]
+        assert isinstance(finalize, FnNode)
+        assert "--force" in finalize.command
+
+    def test_founder_reloop_to_builder(self) -> None:
+        wf = founder_workflow()
+        reloop_edges = [
+            e for e in wf.edges
+            if e.source == "gate_tests" and e.target == "builder"
+            and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop_edges) == 1
+
+    def test_founder_skill_export(self) -> None:
+        from factory.workflow.skill_export import validate_skill, workflow_to_skill_md
+
+        wf = founder_workflow()
+        skill_md = workflow_to_skill_md(wf)
+        issues = validate_skill(skill_md)
+        assert issues == [], f"founder skill has issues: {issues}"
+        assert "workflow-founder" in skill_md

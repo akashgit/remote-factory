@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -1024,3 +1025,483 @@ class TestParseHypothesesEdgeCases:
         result = _parse_hypotheses(f)
         assert len(result) == 1
         assert "caching" in result[0].lower()
+
+
+# ── Integration tests for live execution paths ─────────────────
+
+
+def _git_project(tmp_path: Path) -> Path:
+    """Create a git-initialised project with .factory/ scaffolding for live tests."""
+    import subprocess as sp
+
+    project = tmp_path / "live-project"
+    project.mkdir()
+    sp.run(["git", "init"], cwd=project, capture_output=True, check=True)
+    sp.run(
+        ["git", "commit", "--allow-empty", "-m", "initial"],
+        cwd=project, capture_output=True, check=True,
+        env={
+            "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+            "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+            "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+        },
+    )
+    factory_dir = project / ".factory"
+    factory_dir.mkdir()
+    (factory_dir / "strategy").mkdir()
+    (factory_dir / "reviews").mkdir()
+    (factory_dir / "experiments").mkdir()
+    (factory_dir / "archive").mkdir()
+    (factory_dir / "config.json").write_text("{}")
+    (factory_dir / "results.tsv").write_text(
+        "id\ttimestamp\thypothesis\tchange_summary\tissue_number\tpr_number\t"
+        "score_before\tscore_after\tdelta\tverdict\tcost_usd\tnotes\tresearch_citations\n"
+    )
+    return project
+
+
+@pytest.mark.real_worktree
+class TestSubgraphForkLiveExecution:
+    """Integration tests for _execute_subgraph_fork with real git worktrees."""
+
+    async def test_live_worktree_creation_and_cleanup(self, tmp_path: Path) -> None:
+        """Verify worktrees are actually created on disk and subgraph runs in them."""
+        project = _git_project(tmp_path)
+
+        (project / ".factory" / "strategy" / "current.md").write_text(
+            "## Hypothesis 1\nAdd logging\n\n## Hypothesis 2\nAdd metrics\n"
+        )
+
+        wf = Workflow(
+            name="test-live-fork",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=2, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo start", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        result = await executor.execute()
+
+        results = json.loads(result.node_outputs["fork"])
+        assert len(results) == 2
+        for r in results:
+            assert r["success"] is True
+            assert r["branch"].startswith("factory/exp-")
+            wt = Path(r["worktree_path"])
+            assert wt.name.startswith("exp-")
+
+    async def test_live_fork_respects_parallelism_cap(self, tmp_path: Path) -> None:
+        """When hypotheses > parallelism, branch_count is capped at parallelism."""
+        project = _git_project(tmp_path)
+
+        (project / ".factory" / "strategy" / "current.md").write_text(
+            "## Hypothesis 1\nH1\n\n## Hypothesis 2\nH2\n\n## Hypothesis 3\nH3\n"
+        )
+
+        wf = Workflow(
+            name="test-cap",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=2, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo ok", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        result = await executor.execute()
+
+        results = json.loads(result.node_outputs["fork"])
+        assert len(results) == 2, "Should cap at parallelism=2 despite 3 hypotheses"
+
+    async def test_live_fork_uses_real_head_commit(self, tmp_path: Path) -> None:
+        """Verify the live path resolves HEAD via git rev-parse (not a dummy hash)."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        head = sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        (project / ".factory" / "strategy" / "current.md").write_text(
+            "## Hypothesis 1\nTest commit resolution\n"
+        )
+
+        wf = Workflow(
+            name="test-head",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=1, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo ok", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        result = await executor.execute()
+
+        results = json.loads(result.node_outputs["fork"])
+        assert results[0]["success"] is True
+        branch = results[0]["branch"]
+        branch_commit = sp.run(
+            ["git", "rev-parse", branch], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        assert branch_commit == head
+
+    async def test_live_fork_no_strategy_file_defaults_to_parallelism(
+        self, tmp_path: Path,
+    ) -> None:
+        """When no strategy file exists, branch_count falls back to parallelism."""
+        project = _git_project(tmp_path)
+
+        wf = Workflow(
+            name="test-no-strat",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=2, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo ok", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        result = await executor.execute()
+
+        results = json.loads(result.node_outputs["fork"])
+        assert len(results) == 2
+
+
+@pytest.mark.real_worktree
+class TestSelectionLiveExecution:
+    """Integration tests for _execute_selection with real git repos."""
+
+    async def test_live_merge_winner_into_baseline(self, tmp_path: Path) -> None:
+        """Verify the winning branch is actually merged into the project."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        head = sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        from factory.worktree import create_experiment_worktree
+
+        wt_path, branch = create_experiment_worktree(project, 1, head)
+
+        (wt_path / "new_file.txt").write_text("winner content")
+        sp.run(["git", "add", "new_file.txt"], cwd=wt_path, capture_output=True, check=True)
+        sp.run(
+            ["git", "commit", "-m", "winner commit"],
+            cwd=wt_path, capture_output=True, check=True,
+            env={
+                "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+                "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+                "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            },
+        )
+
+        (wt_path / ".factory").mkdir(exist_ok=True)
+        (wt_path / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.95}))
+
+        wf = Workflow(
+            name="test-merge",
+            nodes={
+                "pre": FnNode(id="pre", command="echo pre", writes={"pre.txt"}),
+                "select": SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            },
+            edges=[Edge(source="pre", target="select")],
+            start_node="pre",
+        )
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        executor.result.node_outputs["fork"] = json.dumps([{
+            "exp_id": 1, "success": True, "halted": False, "halt_reason": "",
+            "worktree_path": str(wt_path), "branch": branch, "hypothesis": "winner",
+        }])
+        executor.completed_files = {"pre.txt"}
+
+        await executor._execute_selection(
+            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+        )
+
+        assert not executor.result.halted
+        merged_file = project / "new_file.txt"
+        assert merged_file.exists(), "Winner's file should be merged into project"
+        assert merged_file.read_text() == "winner content"
+
+    async def test_live_loser_worktree_removed(self, tmp_path: Path) -> None:
+        """Verify losing worktrees are cleaned up after selection."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        head = sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        from factory.worktree import create_experiment_worktree
+
+        wt1, br1 = create_experiment_worktree(project, 1, head)
+        wt2, br2 = create_experiment_worktree(project, 2, head)
+
+        for wt in (wt1, wt2):
+            (wt / ".factory").mkdir(exist_ok=True)
+
+        (wt1 / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.6}))
+        (wt2 / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.9}))
+
+        for wt, name in ((wt1, "file1.txt"), (wt2, "file2.txt")):
+            (wt / name).write_text("content")
+            sp.run(["git", "add", name], cwd=wt, capture_output=True, check=True)
+            sp.run(
+                ["git", "commit", "-m", f"add {name}"],
+                cwd=wt, capture_output=True, check=True,
+                env={
+                    "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+                    "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+                    "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+                },
+            )
+
+        wf = Workflow(
+            name="test-cleanup",
+            nodes={
+                "pre": FnNode(id="pre", command="echo pre", writes={"pre.txt"}),
+                "select": SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            },
+            edges=[Edge(source="pre", target="select")],
+            start_node="pre",
+        )
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        executor.result.node_outputs["fork"] = json.dumps([
+            {"exp_id": 1, "success": True, "halted": False, "halt_reason": "",
+             "worktree_path": str(wt1), "branch": br1, "hypothesis": "h1"},
+            {"exp_id": 2, "success": True, "halted": False, "halt_reason": "",
+             "worktree_path": str(wt2), "branch": br2, "hypothesis": "h2"},
+        ])
+        executor.completed_files = {"pre.txt"}
+
+        await executor._execute_selection(
+            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+        )
+
+        assert not executor.result.halted
+        selection = json.loads(executor.result.node_outputs["select"])
+        assert selection["winner_exp_id"] == 2
+        assert not wt1.exists(), "Loser worktree should be removed"
+
+
+@pytest.mark.real_worktree
+class TestErrorRecoveryPaths:
+    """Integration tests for error handling and recovery in live execution."""
+
+    async def test_fork_worktree_creation_failure_captured(self, tmp_path: Path) -> None:
+        """When create_experiment_worktree raises, the branch result is marked failed."""
+        project = _git_project(tmp_path)
+
+        (project / ".factory" / "strategy" / "current.md").write_text(
+            "## Hypothesis 1\nH1\n"
+        )
+
+        wf = Workflow(
+            name="test-wt-fail",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=1, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo ok", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+
+        with patch(
+            "factory.worktree.create_experiment_worktree",
+            side_effect=RuntimeError("disk full"),
+        ):
+            result = await executor.execute()
+
+        results = json.loads(result.node_outputs["fork"])
+        assert len(results) == 1
+        assert results[0]["success"] is False
+        assert results[0]["halted"] is True
+
+    async def test_fork_subprocess_timeout_captured(self, tmp_path: Path) -> None:
+        """When git rev-parse times out, the fork halts gracefully."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        (project / ".factory" / "strategy" / "current.md").write_text(
+            "## Hypothesis 1\nH1\n"
+        )
+
+        wf = Workflow(
+            name="test-timeout",
+            nodes={
+                "fork": SubgraphForkNode(
+                    id="fork", subgraph_entry="step_a", subgraph_exit="step_b",
+                    parallelism=1, writes={"fork.json"},
+                ),
+                "step_a": FnNode(id="step_a", command="echo ok", writes={"a.txt"}),
+                "step_b": FnNode(id="step_b", command="echo done", reads={"a.txt"}, writes={"b.txt"}),
+            },
+            edges=[Edge(source="step_a", target="step_b")],
+            start_node="fork",
+        )
+
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+
+        with patch(
+            "subprocess.run",
+            side_effect=sp.CalledProcessError(128, "git rev-parse"),
+        ):
+            result = await executor.execute()
+
+        assert result.halted is True
+
+    async def test_selection_merge_conflict_halts(self, tmp_path: Path) -> None:
+        """When merging the winner causes a conflict, selection halts."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        head = sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        from factory.worktree import create_experiment_worktree
+
+        wt, branch = create_experiment_worktree(project, 1, head)
+
+        (project / "conflict.txt").write_text("base content")
+        sp.run(["git", "add", "conflict.txt"], cwd=project, capture_output=True, check=True)
+        sp.run(
+            ["git", "commit", "-m", "base change"],
+            cwd=project, capture_output=True, check=True,
+            env={
+                "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+                "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+                "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            },
+        )
+
+        (wt / "conflict.txt").write_text("branch content")
+        sp.run(["git", "add", "conflict.txt"], cwd=wt, capture_output=True, check=True)
+        sp.run(
+            ["git", "commit", "-m", "branch change"],
+            cwd=wt, capture_output=True, check=True,
+            env={
+                "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+                "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+                "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            },
+        )
+
+        wf = Workflow(
+            name="test-conflict",
+            nodes={
+                "pre": FnNode(id="pre", command="echo pre", writes={"pre.txt"}),
+                "select": SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            },
+            edges=[Edge(source="pre", target="select")],
+            start_node="pre",
+        )
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        executor.result.node_outputs["fork"] = json.dumps([{
+            "exp_id": 1, "success": True, "halted": False, "halt_reason": "",
+            "worktree_path": str(wt), "branch": branch, "hypothesis": "h1",
+        }])
+        executor.completed_files = {"pre.txt"}
+
+        await executor._execute_selection(
+            SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+        )
+
+        assert executor.result.halted is True
+        assert "failed to merge winner branch" in executor.result.halt_reason
+
+    async def test_selection_worktree_cleanup_failure_non_fatal(
+        self, tmp_path: Path,
+    ) -> None:
+        """When worktree removal fails, selection still succeeds."""
+        import subprocess as sp
+
+        project = _git_project(tmp_path)
+
+        head = sp.run(
+            ["git", "rev-parse", "HEAD"], cwd=project,
+            capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+        from factory.worktree import create_experiment_worktree
+
+        wt, branch = create_experiment_worktree(project, 1, head)
+
+        (wt / "ok.txt").write_text("ok")
+        sp.run(["git", "add", "ok.txt"], cwd=wt, capture_output=True, check=True)
+        sp.run(
+            ["git", "commit", "-m", "ok"],
+            cwd=wt, capture_output=True, check=True,
+            env={
+                "GIT_AUTHOR_NAME": "test", "GIT_AUTHOR_EMAIL": "t@t.com",
+                "GIT_COMMITTER_NAME": "test", "GIT_COMMITTER_EMAIL": "t@t.com",
+                "HOME": str(tmp_path), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            },
+        )
+        (wt / ".factory").mkdir(exist_ok=True)
+        (wt / ".factory" / "last_eval.json").write_text(json.dumps({"total": 0.8}))
+
+        wf = Workflow(
+            name="test-cleanup-fail",
+            nodes={
+                "pre": FnNode(id="pre", command="echo pre", writes={"pre.txt"}),
+                "select": SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            },
+            edges=[Edge(source="pre", target="select")],
+            start_node="pre",
+        )
+        executor = WorkflowExecutor(wf, project, dry_run=False)
+        executor.result.node_outputs["fork"] = json.dumps([{
+            "exp_id": 1, "success": True, "halted": False, "halt_reason": "",
+            "worktree_path": str(wt), "branch": branch, "hypothesis": "h1",
+        }])
+        executor.completed_files = {"pre.txt"}
+
+        with patch("factory.worktree.remove_worktree", side_effect=OSError("perm denied")):
+            await executor._execute_selection(
+                SelectionNode(id="select", reads={"pre.txt"}, writes={"result.json"}),
+            )
+
+        assert not executor.result.halted
+        selection = json.loads(executor.result.node_outputs["select"])
+        assert selection["winner_exp_id"] == 1

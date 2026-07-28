@@ -73,6 +73,7 @@ Given the user's input, return a JSON object with two keys: "follow_ups" and "su
 | `factory ceo {path} --mode design` | Discuss what to work on in an existing project |
 | `factory ceo {path} --mode meta` | Self-improve the factory's own agents |
 | `factory ceo {path} --mode create` | Create a new factory mode (workflow + skill) |
+| `factory ceo {path} --mode create --focus "improve: add plateau detection"` | Update an existing factory mode |
 
 ## Information requirements per mode
 
@@ -269,7 +270,10 @@ _CLI_REF = """\
     factory ceo /path/to/factory --mode meta
 
   Create a new factory mode:
-    factory ceo /path/to/factory --mode create\
+    factory ceo /path/to/factory --mode create
+
+  Update an existing factory mode:
+    factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"\
 """
 
 

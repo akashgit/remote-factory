@@ -133,13 +133,24 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
     },
     "create": {
         "description": (
-            "Create mode — meta-mode for creating new factory modes from user descriptions. "
-            "Takes a description (text, spec file, or flow) and produces a fully working "
-            "workflow definition, SKILL.md, CLI wiring, and tests. Use when the user says "
-            "'create a mode for X', 'add a new workflow', or wants to extend the factory "
-            "with a custom pipeline."
+            "Create mode — meta-mode for creating new factory modes or updating existing ones. "
+            "For new modes: takes a description and produces a fully working workflow definition, "
+            "SKILL.md, CLI wiring, and tests. For updates: use --focus \"mode_name: change description\" "
+            "to modify an existing registered mode (e.g. --focus \"improve: add plateau detection\"). "
+            "Use when the user says 'create a mode for X', 'update the improve mode', "
+            "'add a new workflow', or wants to extend/modify factory pipelines."
         ),
-        "argument_hint": '"mode description" or /path/to/spec.md',
+        "argument_hint": '"mode description" or "existing_mode: change description"',
+    },
+    "founder": {
+        "description": (
+            "Founder mode — rapid prototyping pipeline for fast hypothesis iteration. "
+            "Use when you want to test ideas quickly without full QA overhead. "
+            "Picks one hypothesis, builds a prototype, runs tests once, records the result. "
+            "No research, no code review, no adversarial QA, no eval scoring. "
+            "Terminal — does not chain to other modes. Run --mode improve to harden."
+        ),
+        "argument_hint": "<project_path>",
     },
     "swebench": {
         "description": (
@@ -286,6 +297,14 @@ def _agent_to_instruction(
 
     if not node.blocking:
         lines.append("*(fire-and-forget — CEO continues immediately)*")
+    elif not is_parallel and (node.writes or node.post_checks):
+        from factory.workflow.verification import compile_agent_verification
+
+        verify_script = compile_agent_verification(node)
+        if verify_script:
+            lines.append("")
+            lines.append(f"```bash\n{verify_script}\n```")
+            lines.append("*(harness verification — DO NOT SKIP)*")
 
     return "\n".join(lines)
 
@@ -478,8 +497,26 @@ def _fork_to_instruction(node: ForkNode, workflow: Workflow) -> str:
         if isinstance(target_node, AgentNode):
             lines.append(_agent_to_instruction(target_node, workflow, is_parallel=True))
             lines.append("")
+        elif isinstance(target_node, FnNode):
+            lines.append(_fn_to_instruction(target_node, workflow))
+            lines.append("")
 
     lines.append("```bash\nwait\n```")
+
+    agent_nodes: list[AgentNode] = [
+        workflow.nodes[tid]  # type: ignore[misc]
+        for tid in node.targets
+        if isinstance(workflow.nodes.get(tid), AgentNode)
+    ]
+    if agent_nodes:
+        from factory.workflow.verification import compile_fork_verification
+
+        verify_script = compile_fork_verification(agent_nodes)
+        if verify_script:
+            lines.append("")
+            lines.append(f"```bash\n{verify_script}\n```")
+            lines.append("*(post-barrier harness verification — DO NOT SKIP)*")
+
     return "\n".join(lines)
 
 

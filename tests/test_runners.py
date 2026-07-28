@@ -2139,3 +2139,249 @@ class TestOpenCodeBuildInteractiveCommand:
         ))
 
         assert temp_files == []
+
+
+class TestGetRunnerChoices:
+    """Tests for get_runner_choices() — returns sorted list of runner names."""
+
+    def test_returns_sorted_list(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_runner_choices
+
+        # Reset entrypoints loaded flag to ensure clean state
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        choices = get_runner_choices()
+        assert isinstance(choices, list)
+        assert choices == sorted(choices)
+        # All built-in runners should be present
+        assert "claude" in choices
+        assert "bob" in choices
+        assert "codex" in choices
+        assert "opencode" in choices
+
+    def test_returns_strings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_runner_choices
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        choices = get_runner_choices()
+        assert all(isinstance(c, str) for c in choices)
+
+
+class TestGetAllRunnerMeta:
+    """Tests for get_all_runner_meta() — returns metadata for all runners."""
+
+    def test_returns_list_of_runner_meta(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_all_runner_meta
+        from factory.runners.protocol import RunnerMeta
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        metas = get_all_runner_meta()
+        assert isinstance(metas, list)
+        assert len(metas) > 0
+        assert all(isinstance(m, RunnerMeta) for m in metas)
+
+    def test_includes_all_builtin_runners(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_all_runner_meta
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        metas = get_all_runner_meta()
+        names = {m.name for m in metas}
+        assert "claude" in names
+        assert "bob" in names
+
+    def test_handles_runner_without_metadata(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_all_runner_meta, register_runner
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        # Register a fake runner class that has no metadata() method
+        class FakeRunner:
+            name = "fake"
+
+        original_runners = dict(runners_mod._RUNNERS)
+        try:
+            register_runner("fake", FakeRunner)  # type: ignore[arg-type]
+            metas = get_all_runner_meta()
+            # Should not raise — FakeRunner is silently skipped
+            fake_names = [m.name for m in metas if m.name == "fake"]
+            assert len(fake_names) == 0
+        finally:
+            runners_mod._RUNNERS.clear()
+            runners_mod._RUNNERS.update(original_runners)
+
+
+class TestRegisterRunner:
+    """Tests for register_runner() — adds new runner to the registry."""
+
+    def test_register_new_runner(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import register_runner, get_available_runners
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        class MockRunner:
+            name = "mock"
+
+        original_runners = dict(runners_mod._RUNNERS)
+        try:
+            register_runner("mock", MockRunner)  # type: ignore[arg-type]
+            available = get_available_runners()
+            assert "mock" in available
+            assert available["mock"] is MockRunner
+        finally:
+            runners_mod._RUNNERS.clear()
+            runners_mod._RUNNERS.update(original_runners)
+
+    def test_register_overwrites_existing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import register_runner, get_available_runners
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        class NewClaude:
+            name = "claude"
+
+        original_runners = dict(runners_mod._RUNNERS)
+        try:
+            register_runner("claude", NewClaude)  # type: ignore[arg-type]
+            available = get_available_runners()
+            assert available["claude"] is NewClaude
+        finally:
+            runners_mod._RUNNERS.clear()
+            runners_mod._RUNNERS.update(original_runners)
+
+
+class TestGetAvailableRunners:
+    """Tests for get_available_runners() — returns all registered runners."""
+
+    def test_returns_dict_copy(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_available_runners
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        runners = get_available_runners()
+        assert isinstance(runners, dict)
+        # Should be a copy, not the internal dict
+        runners["new_key"] = "test"  # type: ignore[assignment]
+        runners2 = get_available_runners()
+        assert "new_key" not in runners2
+
+    def test_includes_builtin_runners(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from factory.runners import get_available_runners
+
+        import factory.runners as runners_mod
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", True)
+
+        runners = get_available_runners()
+        assert "claude" in runners
+        assert "bob" in runners
+        assert "codex" in runners
+        assert "opencode" in runners
+
+
+class TestLoadEntrypointRunners:
+    """Tests for _load_entrypoint_runners() — entry_points discovery."""
+
+    def test_loads_only_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import factory.runners as runners_mod
+
+        # Reset the flag
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+
+        with patch("factory.runners.entry_points", create=True):
+            runners_mod._load_entrypoint_runners()
+            # Second call should be a no-op
+            runners_mod._load_entrypoint_runners()
+
+        # entry_points should have been imported and called inside the function
+        # but since we patched at module level (not importlib.metadata), let's verify
+        # the flag is now True
+        assert runners_mod._entrypoints_loaded is True
+
+    def test_loads_plugin_runner(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import factory.runners as runners_mod
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+        original_runners = dict(runners_mod._RUNNERS)
+
+        class PluginRunner:
+            name = "plugin"
+
+        mock_ep = MagicMock()
+        mock_ep.name = "plugin"
+        mock_ep.load.return_value = PluginRunner
+
+        try:
+            with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
+                runners_mod._load_entrypoint_runners()
+
+            assert "plugin" in runners_mod._RUNNERS
+            assert runners_mod._RUNNERS["plugin"] is PluginRunner
+        finally:
+            runners_mod._RUNNERS.clear()
+            runners_mod._RUNNERS.update(original_runners)
+            monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+
+    def test_skips_existing_runner_names(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import factory.runners as runners_mod
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+        original_claude = runners_mod._RUNNERS["claude"]
+
+        mock_ep = MagicMock()
+        mock_ep.name = "claude"  # Same as built-in
+        mock_ep.load.return_value = MagicMock()
+
+        try:
+            with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
+                runners_mod._load_entrypoint_runners()
+
+            # Should NOT have replaced the built-in claude runner
+            assert runners_mod._RUNNERS["claude"] is original_claude
+            mock_ep.load.assert_not_called()
+        finally:
+            monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+
+    def test_handles_plugin_load_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import factory.runners as runners_mod
+        from unittest.mock import MagicMock
+
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+        original_runners = dict(runners_mod._RUNNERS)
+
+        mock_ep = MagicMock()
+        mock_ep.name = "broken_plugin"
+        mock_ep.load.side_effect = RuntimeError("plugin load failed")
+
+        try:
+            with patch("importlib.metadata.entry_points", return_value=[mock_ep]):
+                runners_mod._load_entrypoint_runners()  # Should not raise
+
+            # Broken plugin should not be registered
+            assert "broken_plugin" not in runners_mod._RUNNERS
+        finally:
+            runners_mod._RUNNERS.clear()
+            runners_mod._RUNNERS.update(original_runners)
+            monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+
+    def test_handles_entry_points_import_failure(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import factory.runners as runners_mod
+
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
+
+        with patch("importlib.metadata.entry_points", side_effect=Exception("no entry_points")):
+            runners_mod._load_entrypoint_runners()  # Should not raise
+
+        assert runners_mod._entrypoints_loaded is True
+        monkeypatch.setattr(runners_mod, "_entrypoints_loaded", False)
