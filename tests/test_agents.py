@@ -27,7 +27,7 @@ class TestResolvePrompt:
 
     def test_all_default_prompts_exist(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist", "qa",
+            "researcher", "strategist",
             "archivist", "ceo", "failure_analyst",
         ]
         for role in roles:
@@ -69,7 +69,7 @@ class TestResolvePrompt:
 
     def test_each_prompt_has_header(self):
         roles: list[AgentRole] = [
-            "researcher", "strategist", "qa",
+            "researcher", "strategist",
             "archivist", "ceo", "failure_analyst",
         ]
         for role in roles:
@@ -122,7 +122,7 @@ class TestInvokeAgentsParallel:
 
         tasks: list[tuple[AgentRole, str]] = [
             ("builder", "task 1"),
-            ("qa", "task 2"),
+            ("health_checker", "task 2"),
         ]
         results = await invoke_agents_parallel(tasks, tmp_path)
         assert len(results) == 2
@@ -140,7 +140,7 @@ class TestInvokeAgentsParallel:
 
         tasks: list[tuple[AgentRole, str]] = [
             ("builder", "task 1"),
-            ("qa", "task 2"),
+            ("health_checker", "task 2"),
             ("archivist", "task 3"),
         ]
         results = await invoke_agents_parallel(tasks, tmp_path)

@@ -276,7 +276,7 @@ class TestCheckQaExecution:
                 "type": "agent.completed",
                 "timestamp": "2026-06-27T10:10:00+00:00",
                 "project": "test",
-                "agent": "qa",
+                "agent": "health_checker",
                 "data": {},
             },
         ])

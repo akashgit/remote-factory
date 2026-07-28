@@ -129,8 +129,8 @@ class TestPlaybookHygiene:
                     break
 
     def test_expected_roles_present(self):
-        """All six agent roles should have a shipped default playbook."""
-        expected = {"archivist", "builder", "ceo", "qa", "strategist"}
+        """All agent roles should have a shipped default playbook."""
+        expected = {"archivist", "builder", "ceo", "strategist"}
         actual = {p.stem for p in PLAYBOOKS_DIR.glob("*.md")}
         assert expected == actual
 

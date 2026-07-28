@@ -34,7 +34,9 @@ from langfuse_client import (
 AGENT_COLORS = {
     "ceo": "#2196F3",
     "builder": "#4CAF50",
-    "qa": "#FF9800",
+    "health_checker": "#FF9800",
+    "code_reviewer": "#FF5722",
+    "adversarial_tester": "#E91E63",
     "researcher": "#9C27B0",
     "strategist": "#F44336",
     "archivist": "#607D8B",
@@ -204,7 +206,8 @@ def make_gantt_chart(timeline: list[dict], output_dir: str, title: str = "") -> 
         return None
 
     # Determine swim lanes from the roles present
-    role_order = ["researcher", "strategist", "builder", "qa", "archivist",
+    role_order = ["researcher", "strategist", "builder", "health_checker",
+                  "code_reviewer", "adversarial_tester", "archivist",
                   "refiner", "failure_analyst"]
     present_roles = []
     for r in role_order:

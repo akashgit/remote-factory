@@ -266,13 +266,13 @@ class TestGateToCheckpoint:
         gate = GateNode(
             id="gate_review",
             evaluator_type="agent",
-            reads={"reviews/qa-latest.md"},
+            reads={"reviews/health-check.md"},
             gate_prompt="Assess quality.",
         )
         wf = _minimal_workflow(nodes={"gate_review": gate}, start="gate_review")
         result = _gate_to_checkpoint(gate, [], wf)
         assert "CEO Review" in result
-        assert "qa-latest.md" in result
+        assert "health-check.md" in result
         assert "Assess quality" in result
 
     def test_reloop_edges_shown(self) -> None:

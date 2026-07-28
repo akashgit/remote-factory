@@ -46,11 +46,11 @@ class TestAgentTracking:
 
     def test_agent_failed_removes_from_active(self):
         events = [
-            _event("agent.started", agent="qa", data={"task": "review code"}),
-            _event("agent.failed", agent="qa"),
+            _event("agent.started", agent="code_reviewer", data={"task": "review code"}),
+            _event("agent.failed", agent="code_reviewer"),
         ]
         state = infer_state(events)
-        assert "qa" not in state.active_agents
+        assert "code_reviewer" not in state.active_agents
 
     def test_agent_timeout_removes_from_active(self):
         events = [
@@ -92,7 +92,10 @@ class TestPhaseInference:
             ("researcher", "Research"),
             ("strategist", "Strategize"),
             ("builder", "Build"),
-            ("qa", "QA"),
+            ("qa", "Review"),
+            ("health_checker", "Review"),
+            ("code_reviewer", "Review"),
+            ("adversarial_tester", "Review"),
             ("archivist", "Archive"),
         ]
         for agent, expected_phase in cases:
@@ -249,7 +252,7 @@ class TestActiveAgentCount:
     def test_with_agents(self):
         state = FactoryLiveState()
         state.active_agents["builder"] = AgentActivity(role="builder", task="work", started_at="2026-05-03T12:00:00Z")
-        state.active_agents["qa"] = AgentActivity(role="qa", task="review", started_at="2026-05-03T12:00:00Z")
+        state.active_agents["code_reviewer"] = AgentActivity(role="code_reviewer", task="review", started_at="2026-05-03T12:00:00Z")
         assert active_agent_count(state) == 2
 
 
@@ -296,13 +299,13 @@ class TestModeAwarePhaseInference:
         state = infer_state(events)
         assert state.current_phase == "Analyze"
 
-    def test_research_qa_sets_qa(self):
+    def test_research_health_checker_sets_run(self):
         events = [
             _event("cycle.started", data={"mode": "research"}),
-            _event("agent.started", agent="qa", data={"task": "verify"}),
+            _event("agent.started", agent="health_checker", data={"task": "verify"}),
         ]
         state = infer_state(events)
-        assert state.current_phase == "QA"
+        assert state.current_phase == "Run"
 
     def test_build_strategist_sets_plan(self):
         events = [

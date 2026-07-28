@@ -47,7 +47,7 @@ tmux attach -t <session_name>
 
 When a CEO session finishes:
 
-1. **Read agent outputs:** Check `.factory/reviews/` in the project directory — `ceo-latest.md`, `builder-latest.md`, `qa-latest.md` contain the latest agent outputs
+1. **Read agent outputs:** Check `.factory/reviews/` in the project directory — `ceo-latest.md`, `builder-latest.md`, `health-check.md`, `code-review.md`, `adversarial-qa.md` contain the latest agent outputs
 2. **Check scores:** `factory eval <project_path>` for the current composite score
 3. **Check history:** `factory history <project_path>` for the experiment log — look at the latest entry for the verdict (KEEP/REVERT) and score delta
 4. **Check strategy:** Read `.factory/strategy/current.md` for what the CEO planned and `.factory/strategy/observations.md` for what was observed

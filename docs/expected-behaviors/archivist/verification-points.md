@@ -37,7 +37,7 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 | No `&` in spawn command during mid-cycle archival | Blocking when should be async |
 
 ## Inputs & Outputs
-- **Reads:** experiment verdicts, `.factory/reviews/builder-latest.md`, `.factory/reviews/qa-latest.md`, `.factory/archive/memory.json`, `.factory/strategy/current.md`
+- **Reads:** experiment verdicts, `.factory/reviews/builder-latest.md`, `.factory/reviews/health-check.md`, `.factory/reviews/code-review.md`, `.factory/reviews/adversarial-qa.md`, `.factory/archive/memory.json`, `.factory/strategy/current.md`
 - **Writes:** `.factory/archive/experiments/{project}-{NNN}.md`, `.factory/archive/experiments/{NNN}.json`, `.factory/archive/memory.json`, `.factory/archive/patterns/patterns.md`, `.factory/archive/sources/*.md`, performance report (via `factory report-update`)
 - **Spawned by:** CEO (`factory agent archivist --model haiku`)
 - **Hands off to:** nobody — Archivist is always the last agent in any workflow phase

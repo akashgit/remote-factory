@@ -31,7 +31,7 @@ def sample_state() -> CheckpointState:
         mode="improve",
         active_experiment_id=38,
         completed_agents=["researcher", "strategist"],
-        pending_agents=["builder", "qa"],
+        pending_agents=["builder", "health_checker"],
         last_eval_scores={"tests": 0.95, "lint": 1.0},
         current_hypothesis="Add checkpoint serialization",
         completed_hypotheses=[35, 36, 37],
@@ -117,7 +117,7 @@ def test_save_and_load(checkpoint_project: Path, sample_state: CheckpointState) 
     assert loaded.mode == "improve"
     assert loaded.active_experiment_id == 38
     assert loaded.completed_agents == ["researcher", "strategist"]
-    assert loaded.pending_agents == ["builder", "qa"]
+    assert loaded.pending_agents == ["builder", "health_checker"]
     assert loaded.last_eval_scores == {"tests": 0.95, "lint": 1.0}
     assert loaded.current_hypothesis == "Add checkpoint serialization"
 
@@ -250,7 +250,7 @@ def test_cli_resume_with_checkpoint(checkpoint_project: Path, sample_state: Chec
     assert "Resume Context" in output
     assert "improve" in output
     assert "builder" in output
-    assert "qa" in output
+    assert "health_checker" in output
 
 
 def test_cli_checkpoint_clear(checkpoint_project: Path, sample_state: CheckpointState) -> None:

@@ -5,7 +5,8 @@ candidate bullets based on statistical patterns. This is deterministic pattern
 extraction (no LLM needed) — the data speaks for itself.
 
 Factory v2: generates bullets for all agent roles (researcher, strategist,
-builder, qa, archivist, ceo) by parsing structured CEO notes
+builder, health_checker, code_reviewer, adversarial_tester, archivist, ceo)
+by parsing structured CEO notes
 from the experiment record notes field.
 
 Counter wiring: after generating candidates, the Reflector also loads the
@@ -38,7 +39,9 @@ log = structlog.get_logger()
 _ROLE_PREFIX = {
     "strategist": "strat",
     "builder": "build",
-    "qa": "qa",
+    "health_checker": "hchk",
+    "code_reviewer": "crev",
+    "adversarial_tester": "atest",
     "researcher": "res",
     "archivist": "arch",
     "ceo": "ceo",
@@ -228,7 +231,7 @@ def _qa_health_bullets(
     ]
     if len(misleading) >= 2:
         bullets.append(PlaybookItem(
-            id=_make_id("qa", counter),
+            id=_make_id("health_checker", counter),
             content=f"Flag score regressions even on kept experiments — {len(misleading)} experiments were kept despite negative deltas, eval may be misleading",
             helpful=0,
             harmful=len(misleading),
@@ -299,17 +302,16 @@ def _qa_review_bullets(
     records: list[ExperimentRecord],
     counter_offset: int = 0,
 ) -> list[PlaybookItem]:
-    """Generate QA code-review playbook bullets from guard/review patterns."""
+    """Generate code-review playbook bullets from guard/review patterns."""
     bullets: list[PlaybookItem] = []
     counter = 1 + counter_offset
 
-    # Parse CEO notes to find QA failures
     qa_failures = [r for r in records if "qa_failed=true" in (r.notes or "")]
     if len(qa_failures) >= 2:
         failure_cats = Counter(classify_hypothesis(r.hypothesis) for r in qa_failures)
         top_cat, top_count = failure_cats.most_common(1)[0]
         bullets.append(PlaybookItem(
-            id=_make_id("qa", counter),
+            id=_make_id("code_reviewer", counter),
             content=f"Pay extra attention to {top_cat} changes — {top_count} guard violations in this category",
             helpful=0,
             harmful=top_count,
@@ -317,15 +319,13 @@ def _qa_review_bullets(
         ))
         counter += 1
 
-    # Detect false positives: experiments that were reverted despite positive delta
-    # (suggests QA or CEO was too strict)
     strict_reverts = [
         r for r in records
         if r.verdict == "revert" and r.delta is not None and r.delta > 0.02
     ]
     if len(strict_reverts) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("qa", counter),
+            id=_make_id("code_reviewer", counter),
             content=f"Review strictness may be too high — {len(strict_reverts)} experiments reverted despite positive deltas (>+0.02). Check if guard rules are too conservative",
             helpful=0,
             harmful=len(strict_reverts),
@@ -333,14 +333,13 @@ def _qa_review_bullets(
         ))
         counter += 1
 
-    # Detect kept experiments with very small positive delta (near-zero improvement)
     marginal_keeps = [
         r for r in records
         if r.verdict == "keep" and r.delta is not None and 0 < r.delta < 0.005
     ]
     if len(marginal_keeps) >= 3:
         bullets.append(PlaybookItem(
-            id=_make_id("qa", counter),
+            id=_make_id("code_reviewer", counter),
             content=f"Raise the bar on marginal improvements — {len(marginal_keeps)} experiments kept with delta < 0.005. These add complexity without meaningful gain",
             helpful=0,
             harmful=len(marginal_keeps),
@@ -937,10 +936,9 @@ def reflect_on_experiments(
     candidates: dict[str, list[PlaybookItem]] = {
         "strategist": _strategist_bullets(outcomes, all_records),
         "builder": _builder_bullets(outcomes, all_records),
-        "qa": (
-            _qa_h := _qa_health_bullets(outcomes, all_records),
-            _qa_h + _qa_review_bullets(outcomes, all_records, counter_offset=len(_qa_h)),
-        )[-1],
+        "health_checker": _qa_health_bullets(outcomes, all_records),
+        "code_reviewer": _qa_review_bullets(outcomes, all_records),
+        "adversarial_tester": [],
         "researcher": _researcher_bullets(outcomes, all_records),
         "archivist": _archivist_bullets(outcomes, all_records),
         "ceo": _ceo_bullets(outcomes, all_records),

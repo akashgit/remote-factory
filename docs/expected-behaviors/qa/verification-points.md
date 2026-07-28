@@ -1,4 +1,8 @@
-# QA Agent — Verification Points
+# Deep-QA Pipeline — Verification Points
+
+> **Note:** The monolithic QA agent has been replaced by three specialists:
+> health_checker, code_reviewer, and adversarial_tester. This document
+> describes the combined verification points for the deep-QA pipeline.
 
 ## Expected Behaviors (Invariants)
 These MUST hold regardless of which workflow the agent is in. Check these against the agent's trace.
@@ -47,8 +51,8 @@ These MUST hold regardless of which workflow the agent is in. Check these agains
 
 ## Inputs & Outputs
 - **Reads:** PR diff (per-file), GitHub issue, `.factory/reviews/builder-latest.md`, `factory.md`, `.factory/strategy/current.md`
-- **Writes:** `.factory/reviews/qa-latest.md` (structured report with verdict)
-- **Spawned by:** CEO (`factory agent qa`)
+- **Writes:** `.factory/reviews/health-check.md`, `.factory/reviews/code-review.md`, `.factory/reviews/adversarial-qa.md`
+- **Spawned by:** CEO (`factory agent health_checker`, `factory agent code_reviewer`, `factory agent adversarial_tester`)
 - **Hands off to:** CEO for keep/revert decision
 
 ## Forbidden Actions

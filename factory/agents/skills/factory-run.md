@@ -64,7 +64,7 @@ factory tmux-stop --path <project_path>
 1. Read `.factory/reviews/ceo-latest.md` in the project directory for the CEO's final output
 2. Run `factory eval <project_path>` for the current composite score
 3. Run `factory history <project_path>` for the full experiment log
-4. Read `.factory/reviews/` for individual agent outputs (builder-latest.md, qa-latest.md, etc.)
+4. Read `.factory/reviews/` for individual agent outputs (builder-latest.md, health-check.md, code-review.md, adversarial-qa.md, etc.)
 
 ## When to Use Which
 

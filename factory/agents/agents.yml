@@ -24,16 +24,6 @@ builder:
     Reads issues, writes code, runs tests, and creates PRs on feature branches.
     Use when the user wants a specific feature built or bug fixed.
 
-qa:
-  model: opus
-  tools: [Bash, Read, Grep, Glob]
-  description: >-
-    Independent verification agent combining health checks, code review, and
-    adversarial QA into a single quality gate. Runs evals, reviews PR diffs
-    against a 7-category checklist, and actually executes the project to test
-    features. Read-only — cannot modify source files. Use when the user wants
-    thorough post-Builder verification.
-
 archivist:
   model: haiku
   tools: [Bash, Read, Write, Grep, Glob]

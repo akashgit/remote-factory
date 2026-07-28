@@ -107,4 +107,4 @@ class TestFormatContextForAgent:
         ctx = derive_context(wf)
         text = format_context_for_agent(ctx)
         assert "builder" in text
-        assert "qa" in text
+        assert "health_checker" in text

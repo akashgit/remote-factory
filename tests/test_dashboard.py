@@ -460,7 +460,9 @@ def phase_projects_dir(tmp_path: Path) -> Path:
     (factory / "reviews" / "researcher-latest.md").write_text("Researcher output here")
     (factory / "reviews" / "strategist-latest.md").write_text("Strategist output here")
     (factory / "reviews" / "builder-latest.md").write_text("Builder output here")
-    (factory / "reviews" / "qa-latest.md").write_text("QA output here")
+    (factory / "reviews" / "health-check.md").write_text("Health check output here")
+    (factory / "reviews" / "code-review.md").write_text("Code review output here")
+    (factory / "reviews" / "adversarial-qa.md").write_text("Adversarial QA output here")
     (factory / "reviews" / "archivist-latest.md").write_text("Archivist output here")
     (factory / "reviews" / "session-summary.md").write_text("# Session Summary\nAll good.")
 
@@ -541,8 +543,8 @@ def phase_projects_dir(tmp_path: Path) -> Path:
     emit_event(proj, "experiment.begin", data={"exp_id": 1, "hypothesis": "Add structlog"})
     emit_event(proj, "agent.started", agent="builder", data={"task": "implement"})
     emit_event(proj, "agent.completed", agent="builder", data={"return_code": 0})
-    emit_event(proj, "agent.started", agent="qa", data={"task": "verify"})
-    emit_event(proj, "agent.completed", agent="qa", data={"return_code": 0})
+    emit_event(proj, "agent.started", agent="health_checker", data={"task": "verify"})
+    emit_event(proj, "agent.completed", agent="health_checker", data={"return_code": 0})
     emit_event(proj, "eval.started", data={"command": "python eval/score.py"})
     emit_event(proj, "eval.completed", data={"composite": 0.78, "passed": True, "dimensions": 2})
 
@@ -692,7 +694,9 @@ class TestPhaseDetailAPI:
         body = resp.json()
         assert body["status"] == "completed"
         data = body["data"]
-        assert data["agent_output"] == "QA output here"
+        assert "Health check output here" in data["agent_output"]
+        assert "Code review output here" in data["agent_output"]
+        assert "Adversarial QA output here" in data["agent_output"]
         verdict = body["verdict"]
         assert verdict["decision"] == "ABORT"
 

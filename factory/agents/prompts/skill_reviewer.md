@@ -24,7 +24,9 @@ You receive:
 ### Timeouts (`{{timeout_<id>::N}}`)
 - Adjust based on what the agent actually does (read the agent's prompt from context)
 - Builder agents doing multi-file implementations: 1200-1800s
-- QA agents running eval + code review + adversarial QA: 1800s
+- Health checker agents running eval: 600s
+- Code reviewer agents doing 7-category review: 900s
+- Adversarial tester agents running feature verification: 1800s
 - Researchers doing web search: 600s
 - Archivists: 300s
 

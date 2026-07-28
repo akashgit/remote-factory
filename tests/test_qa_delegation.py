@@ -1,11 +1,11 @@
-"""Tests for QA Agent delegation patterns in CEO and QA prompts.
+"""Tests for deep-QA delegation patterns in CEO and specialist prompts.
 
 Verifies that:
-- The QA prompt covers all 3 verification sections
+- The specialist prompts exist for health_checker, code_reviewer, adversarial_tester
 - The CEO prompt references skill-based routing (mode sections moved to SKILL.md)
 - Generated workflow skills do not reference nonexistent agent roles
-- Builder precedes Evaluator in generated workflow skills (graph ordering)
-- Event-based flow validation detects Builder→QA sequencing
+- Builder precedes deep-QA pipeline in generated workflow skills (graph ordering)
+- Event-based flow validation detects Builder→specialist sequencing
 """
 
 from __future__ import annotations
@@ -23,24 +23,21 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture
-def qa_prompt() -> str:
-    return (PROMPTS_DIR / "qa.md").read_text()
-
-
-@pytest.fixture
 def ceo_prompt() -> str:
     return (PROMPTS_DIR / "ceo.md").read_text()
 
 
-# ── QA Prompt Structure ──────────────────────────────────────────
+# ── Specialist Prompt Structure ─────────────────────────────────
 
 
-class TestQAPromptStructure:
-    def test_qa_agent_prompt_covers_all_sections(self, qa_prompt: str) -> None:
-        """QA prompt must define all 3 verification sections."""
-        assert "### Section 1: Health Check" in qa_prompt
-        assert "### Section 2: Code Review" in qa_prompt
-        assert "### Section 3: Adversarial QA" in qa_prompt
+class TestSpecialistPromptStructure:
+    def test_specialist_prompts_exist(self) -> None:
+        """All 3 specialist agent prompts must exist."""
+        for role in ("health_checker", "code_reviewer", "adversarial_tester"):
+            prompt_path = PROMPTS_DIR / f"{role}.md"
+            assert prompt_path.exists(), f"Missing prompt for {role}"
+            content = prompt_path.read_text()
+            assert len(content) > 50, f"Prompt for {role} is too short"
 
 
 # ── CEO Delegation Patterns ──────────────────────────────────────
@@ -52,9 +49,9 @@ class TestCEODelegation:
     ) -> None:
         """CEO prompt must not contain standalone `factory eval` calls.
 
-        The CEO delegates all eval to QA Agent. Mode-specific pipelines
-        now live in SKILL.md files, but the core CEO prompt should not
-        contain any direct eval invocations.
+        The CEO delegates all eval to the deep-QA pipeline. Mode-specific
+        pipelines now live in SKILL.md files, but the core CEO prompt should
+        not contain any direct eval invocations.
         """
         for match in re.finditer(r"`?factory eval`?", ceo_prompt):
             hit = match.group()
@@ -62,14 +59,14 @@ class TestCEODelegation:
                 continue
             pos = match.start()
             preceding = ceo_prompt[:pos]
-            last_qa_task = preceding.rfind('factory agent qa --task')
+            last_agent_task = preceding.rfind('factory agent')
             last_code_block_end = preceding.rfind('```\n')
-            if last_qa_task > last_code_block_end:
+            if last_agent_task > last_code_block_end:
                 continue
             context = ceo_prompt[max(0, pos - 80):pos + 40]
             pytest.fail(
                 f"Direct 'factory eval' found in CEO prompt outside "
-                f"QA Agent task. Context: ...{context}..."
+                f"agent task. Context: ...{context}..."
             )
 
     def test_ceo_prompt_delegates_to_qa_after_builder(
@@ -108,40 +105,41 @@ class TestCEODelegation:
 # ── Event-Based Flow Validation ──────────────────────────────────
 
 
-def _check_builder_qa_sequence(events: list[dict]) -> bool:
-    """Return True if every builder.completed is followed by a qa agent start."""
+def _check_builder_deep_qa_sequence(events: list[dict]) -> bool:
+    """Return True if every builder.completed is followed by a deep-QA specialist start."""
+    deep_qa_roles = {"health_checker", "code_reviewer", "adversarial_tester"}
     for i, event in enumerate(events):
         if event.get("type") == "agent.completed" and event.get("role") == "builder":
             remaining = events[i + 1:]
-            found_qa = any(
-                e.get("type") == "agent.started" and e.get("role") == "qa"
+            found_specialist = any(
+                e.get("type") == "agent.started" and e.get("role") in deep_qa_roles
                 for e in remaining
             )
-            if not found_qa:
+            if not found_specialist:
                 return False
     return True
 
 
 class TestEventsFlowValidation:
-    def test_events_jsonl_qa_after_builder(self) -> None:
-        """Helper detects correct Builder→QA sequencing in events."""
+    def test_events_jsonl_deep_qa_after_builder(self) -> None:
+        """Helper detects correct Builder→deep-QA sequencing in events."""
         events = [
             {"type": "agent.started", "role": "builder"},
             {"type": "agent.completed", "role": "builder"},
-            {"type": "agent.started", "role": "qa"},
-            {"type": "agent.completed", "role": "qa"},
+            {"type": "agent.started", "role": "health_checker"},
+            {"type": "agent.completed", "role": "health_checker"},
         ]
-        assert _check_builder_qa_sequence(events) is True
+        assert _check_builder_deep_qa_sequence(events) is True
 
-    def test_events_jsonl_detects_missing_qa(self) -> None:
-        """Helper detects missing QA after Builder in events."""
+    def test_events_jsonl_detects_missing_deep_qa(self) -> None:
+        """Helper detects missing deep-QA after Builder in events."""
         events = [
             {"type": "agent.started", "role": "builder"},
             {"type": "agent.completed", "role": "builder"},
             {"type": "agent.started", "role": "archivist"},
             {"type": "agent.completed", "role": "archivist"},
         ]
-        assert _check_builder_qa_sequence(events) is False
+        assert _check_builder_deep_qa_sequence(events) is False
 
 
 # ── Test Fixture Validation ──────────────────────────────────────

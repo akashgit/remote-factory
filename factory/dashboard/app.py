@@ -303,11 +303,13 @@ def _phase_data_review(
     verdict = _parse_single_verdict(
         factory_dir / "reviews" / "ceo-verdict-qa.md"
     )
+    parts: list[str] = []
+    for fname in ("health-check.md", "code-review.md", "adversarial-qa.md"):
+        content = _read_text_safe(factory_dir / "reviews" / fname)
+        if content:
+            parts.append(content)
     return {
-        "agent_output": _read_text_safe(
-            factory_dir / "reviews" / "qa-latest.md"
-        )
-        or "",
+        "agent_output": "\n\n---\n\n".join(parts) if parts else "",
     }, verdict
 
 
@@ -321,7 +323,7 @@ def _phase_data_eval(
         "delta": None,
         "last_eval": _read_json_safe(factory_dir / "last_eval.json"),
         "agent_output": _read_text_safe(
-            factory_dir / "reviews" / "qa-latest.md"
+            factory_dir / "reviews" / "health-check.md"
         )
         or "",
     }
