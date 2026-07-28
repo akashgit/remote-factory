@@ -2490,7 +2490,7 @@ def frontend_design_workflow() -> Workflow:
             "Description, Component Plan (reference existing components, justify "
             "any new ones), Token Usage (map each element to specific tokens), "
             "Layout, State Management, Dark Mode (both light and dark values), "
-            "Accessibility, Motion, Constraints. "
+            "Accessibility, Motion, Visual Mockups, Constraints. "
             "For every data-fetching component, specify what it shows when the "
             "backend API returns 404 or is unreachable — this must be a designed "
             "empty state with guidance text, not an error message. "
@@ -2499,6 +2499,10 @@ def frontend_design_workflow() -> Workflow:
             "the backend route, data source, access method (referencing "
             "infra-context.md), and response model so the Builder can implement "
             "it using only tools available in the deployment environment. "
+            "VISUAL MOCKUPS: for each designed state (loading, populated, empty, "
+            "unreachable), draw an ASCII wireframe using box-drawing characters "
+            "showing the card layout, labels, status indicators, and content "
+            "hierarchy. The user approves the spec based on these mockups. "
             "Be precise — reference actual component names and token values."
         ),
         reads={

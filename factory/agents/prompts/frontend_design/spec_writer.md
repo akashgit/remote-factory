@@ -16,7 +16,7 @@ If any file is missing, report the gap and exit.
 
 ## Task
 
-Produce `ui-spec.md` with these 10 sections:
+Produce `ui-spec.md` with these 11 sections:
 
 ### 1. Feature Description
 Brief statement of what is being built and why, derived from `current.md`.
@@ -69,7 +69,48 @@ Reference `.factory/design-system/ux-patterns.md` and `ux_patterns` in the basel
 
 If no UX patterns exist in the baseline, apply general best practices: stagger entrance animations with 50-100ms delays between siblings, include units and labels on all numeric values, provide empty states with guidance text.
 
-### 10. Constraints
+### 10. Visual Mockups
+
+For each designed state of the feature, draw an ASCII wireframe showing the layout. The user approves the spec based on these mockups — text descriptions alone are not enough.
+
+Draw one mockup per state. Common states: loading/skeleton, populated with data, empty/no-data, backend unreachable. Use box-drawing characters (`┌ ─ ┐ │ └ ┘ ├ ┤ ┬ ┴ ┼`) for card/container borders, block characters (`█ ░`) for progress bars, and placeholder text for real content.
+
+Example format:
+
+```
+State: Populated (2 GPUs detected)
+┌─────────────────────────────────────────────┐
+│ [Cpu] Compute Resources          [2 GPUs ●] │
+├─────────────────────────────────────────────┤
+│ ⚡ Ready for training                        │
+│ ████████████████░░░░  2 / 8 slots           │
+│                                             │
+│  GPU 1  NVIDIA H100 80GB HBM3     Healthy   │
+│  GPU 2  NVIDIA H100 80GB HBM3     Healthy   │
+│                                             │
+│ Training jobs will use these GPUs            │
+│ automatically.                               │
+└─────────────────────────────────────────────┘
+
+State: No GPU detected
+┌─────────────────────────────────────────────┐
+│ [Cpu] Compute Resources                     │
+├─────────────────────────────────────────────┤
+│                                             │
+│         [Cpu icon, large, muted]            │
+│                                             │
+│         No accelerator detected             │
+│  Connect an SSH backend with GPU access,    │
+│  or run on a GPU-enabled machine.           │
+│                                             │
+│            [ Check Settings ]               │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+
+Show real labels, real token/color names for status indicators, real spacing relationships. The mockup must be specific enough that a non-technical reviewer can judge the layout and information hierarchy.
+
+### 11. Constraints
 List every applicable rule from `rules.md` that the Builder must follow for this feature. Quote the rule text directly — do not paraphrase.
 
 ## Constraints
