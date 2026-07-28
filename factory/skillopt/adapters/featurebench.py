@@ -1,7 +1,9 @@
 """FeatureBench adapter — runs Harbor FeatureBench benchmarks and collects traces."""
 from __future__ import annotations
 
+import base64
 import json
+import os
 import re
 import subprocess
 import sys
@@ -75,6 +77,15 @@ class FeaturebenchAdapter(EnvAdapter):
             if limit > 0:
                 cmd += ["--limit", str(limit)]
 
+        env = dict(os.environ)
+        env["FACTORY_SKILL_B64"] = base64.b64encode(
+            skill_content.encode()
+        ).decode()
+
+        git_ref = _get_git_ref()
+        if git_ref:
+            env["FACTORY_GIT_REF"] = git_ref
+
         log.info("running harbor", cmd=" ".join(cmd))
 
         try:
@@ -83,6 +94,7 @@ class FeaturebenchAdapter(EnvAdapter):
                 capture_output=True,
                 text=True,
                 timeout=9000,
+                env=env,
             )
             log.info("benchmark finished", returncode=result.returncode)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
@@ -105,6 +117,19 @@ class FeaturebenchAdapter(EnvAdapter):
 
     def get_task_types(self) -> list[str]:
         return ["feature_implementation"]
+
+
+def _get_git_ref() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
 
 
 def _clean_result_files() -> None:

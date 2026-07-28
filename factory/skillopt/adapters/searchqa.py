@@ -122,7 +122,7 @@ class SearchQAAdapter(EnvAdapter):
         env = dict(os.environ)
         env["SEARCHQA_SPLIT"] = split
         prompt = self._extract_prompt_slot(skill_content)
-        env["SEARCHQA_SKILL_B64"] = base64.b64encode(
+        env["FACTORY_SKILL_B64"] = base64.b64encode(
             prompt.encode()
         ).decode()
 
