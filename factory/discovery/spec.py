@@ -28,6 +28,7 @@ def generate_spec(project_path: Path) -> str:
     """Generate a SPEC by delegating to the agent-driven pipeline.
 
     Wraps the async factory.spec.generate.generate_spec() for sync callers.
+    Graph extraction via graphify runs as a prerequisite inside generate_spec().
     Returns the spec content as a string.
     """
     from factory.spec.generate import generate_spec as _generate_spec

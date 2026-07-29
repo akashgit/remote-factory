@@ -35,3 +35,5 @@ skills/workflow-*/SKILL.annotations.yaml
 .playwright-mcp/
 screenshots/
 docs/factory-slides/
+graphify-out/
+graph.json

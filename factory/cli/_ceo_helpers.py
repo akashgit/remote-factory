@@ -1,4 +1,5 @@
 """CEO flag validation, project resolution, and execution logic."""
+
 from __future__ import annotations
 
 import argparse
@@ -97,9 +98,7 @@ def _validate_ceo_flags(
             return 1
 
     _design_is_existing = (
-        mode == "design"
-        and raw_path
-        and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode == "design" and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "design":
@@ -184,9 +183,7 @@ def _resolve_ceo_project(
     context: str | None = None
 
     _design_is_existing = (
-        mode == "design"
-        and raw_path
-        and _safe_is_dir(Path(raw_path).expanduser().resolve())
+        mode == "design" and raw_path and _safe_is_dir(Path(raw_path).expanduser().resolve())
     )
 
     if mode == "create":
@@ -268,8 +265,14 @@ def _resolve_ceo_project(
         context = _read_prompt_file(project_path, prompt_file)
 
     return (
-        project_path, context, design_idea, research_ideation,
-        deferred_spec, needs_materialize, design_existing, create_description,
+        project_path,
+        context,
+        design_idea,
+        research_ideation,
+        deferred_spec,
+        needs_materialize,
+        design_existing,
+        create_description,
         update_existing_mode,
     )
 
@@ -398,6 +401,11 @@ def _execute_ceo(
     from factory.skill_cache import ensure_skills
 
     ensure_skills(wt_path, mode=mode)
+
+    from factory.graph import extract_graph, is_graphify_installed
+
+    if is_graphify_installed():
+        extract_graph(wt_path)
 
     verification_settings = wt_path / ".factory" / "hooks" / f"settings-{mode}.json"
     _verification_settings_file = (

@@ -9,25 +9,44 @@ from pathlib import Path
 from factory.cli._helpers import _emit_cli_event, _run
 
 
+def _run_spec_workflow(name: str, project_path: Path) -> tuple[int, str]:
+    """Run a spec workflow (spec-generate or spec-update) through the gated executor.
+
+    Returns (exit_code, error_reason). error_reason is empty on success.
+    """
+    import asyncio
+
+    from factory.workflow.definitions import spec_generate_workflow, spec_update_workflow
+    from factory.workflow.executor import WorkflowExecutor
+    from factory.workflow.primitives import DEFAULT_AGENT_POOL
+
+    wf = spec_generate_workflow() if name == "spec-generate" else spec_update_workflow()
+    executor = WorkflowExecutor(wf, project_path, agent_pool=DEFAULT_AGENT_POOL)
+    result = asyncio.run(executor.execute())
+
+    if not result.success:
+        reason = result.halt_reason or "unknown error"
+        print(f"Error: {name} workflow failed: {reason}", file=sys.stderr)
+        return 1, reason
+    return 0, ""
+
+
 def cmd_spec_generate(args: argparse.Namespace) -> int:
     """Generate a repo spec for a project."""
-    from factory.spec.generate import generate_spec
-
     project_path = Path(args.path).resolve()
     if not project_path.is_dir():
         print(f"Error: not a directory: {project_path}", file=sys.stderr)
         return 1
 
     _emit_cli_event(project_path, "spec.generate.started", {"path": str(project_path)})
-    try:
-        result_path = _run(generate_spec(project_path))
-    except (ValueError, RuntimeError, FileNotFoundError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        _emit_cli_event(project_path, "spec.generate.failed", {"error": str(exc)[:200]})
-        return 1
+    rc, reason = _run_spec_workflow("spec-generate", project_path)
+    if rc != 0:
+        _emit_cli_event(project_path, "spec.generate.failed", {"error": reason[:200]})
+        return rc
 
-    _emit_cli_event(project_path, "spec.generate.completed", {"output": str(result_path)})
-    print(f"Repo spec generated: {result_path}")
+    spec_path = project_path / "SPEC.md"
+    _emit_cli_event(project_path, "spec.generate.completed", {"output": str(spec_path)})
+    print(f"Repo spec generated: {spec_path}")
     return 0
 
 
@@ -108,7 +127,6 @@ def cmd_spec_scope(args: argparse.Namespace) -> int:
 def cmd_spec_update(args: argparse.Namespace) -> int:
     """Update a repo spec based on changes since last spec commit."""
     from factory.discovery.spec import resolve_spec
-    from factory.spec.ops import update_spec
 
     project_path = Path(args.path).resolve()
     if not project_path.is_dir():
@@ -121,15 +139,13 @@ def cmd_spec_update(args: argparse.Namespace) -> int:
         return 1
 
     _emit_cli_event(project_path, "spec.update.started", {"path": str(project_path)})
-    try:
-        result_path = _run(update_spec(project_path))
-    except (ValueError, RuntimeError, FileNotFoundError) as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        _emit_cli_event(project_path, "spec.update.failed", {"error": str(exc)[:200]})
-        return 1
+    rc, reason = _run_spec_workflow("spec-update", project_path)
+    if rc != 0:
+        _emit_cli_event(project_path, "spec.update.failed", {"error": reason[:200]})
+        return rc
 
-    _emit_cli_event(project_path, "spec.update.completed", {"output": str(result_path)})
-    print(f"Repo spec updated: {result_path}")
+    _emit_cli_event(project_path, "spec.update.completed", {"output": str(spec_path)})
+    print(f"Repo spec updated: {spec_path}")
     return 0
 
 

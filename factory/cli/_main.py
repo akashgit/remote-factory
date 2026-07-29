@@ -215,6 +215,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_validation_recovery_parsers(sub)
     add_entry_point_parsers(sub)
 
+    # graph — code knowledge graph operations
+    graph_parser = sub.add_parser("graph", help="Code knowledge graph via graphify")
+    graph_sub = graph_parser.add_subparsers(dest="graph_command")
+    p_graph_extract = graph_sub.add_parser("extract", help="Extract a code knowledge graph")
+    p_graph_extract.add_argument("path", help="Path to the project")
+    p_graph_update = graph_sub.add_parser("update", help="Incrementally update the knowledge graph")
+    p_graph_update.add_argument("path", help="Path to the project")
+    p_graph_status = graph_sub.add_parser("status", help="Show graph freshness and stats")
+    p_graph_status.add_argument("path", help="Path to the project")
+
     return parser
 
 

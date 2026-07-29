@@ -373,8 +373,8 @@ def build_workflow() -> Workflow:
 
     nodes["spec_generate"] = FnNode(
         id="spec_generate",
-        command="factory spec generate {project_path}",
-        notes="Generate the project specification from current state. Runs non-blocking after archival.",
+        command="factory workflow run spec-generate {project_path}",
+        notes="Generate the project specification via the gated spec-generate workflow. Runs non-blocking after archival.",
         blocking=False,
     )
 
@@ -647,13 +647,13 @@ def improve_workflow() -> Workflow:
             "from pathlib import Path; "
             "import subprocess, sys; "
             "sys.exit(0) if not Path('{project_path}/SPEC.md').is_file() else None; "
-            "r = subprocess.run(['factory', 'spec', 'update', '{project_path}'], "
+            "r = subprocess.run(['factory', 'workflow', 'run', 'spec-update', '{project_path}'], "
             "capture_output=True, text=True); "
             "print(r.stdout); print(r.stderr, file=sys.stderr); "
             "sys.exit(0)"
             '"'
         ),
-        notes="Update SPEC.md if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
+        notes="Update SPEC.md via the gated spec-update workflow if it exists. Runs non-blocking after archival; skips silently if no spec file is present.",
         blocking=False,
     )
 
@@ -2125,20 +2125,12 @@ def spec_generate_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
-    # Opus extraction — produces spec_raw.md
-    nodes["extract"] = AgentNode(
+    # Graphify extraction — produces graph.json (local AST, no LLM cost)
+    nodes["extract"] = FnNode(
         id="extract",
-        role=AgentRole.RESEARCHER,
-        model="opus",
-        prompt_template=(
-            "Extract a behavioral module map from the project. "
-            "Read the spec_extractor prompt at factory/agents/prompts/spec_extractor.md. "
-            "Identify module boundaries, domain entities, state machines, error types, "
-            "and module relationships expressed as prose. "
-            "Stay at module-level granularity. "
-            "Write output to .factory/spec_raw.md in the structured Markdown format."
-        ),
-        writes={".factory/spec_raw.md"},
+        command="factory graph extract {project_path}",
+        notes="Run graphify to extract a code knowledge graph from the project source.",
+        writes={"graph.json"},
     )
 
     # CEO gate — check extraction quality
@@ -2147,26 +2139,25 @@ def spec_generate_workflow() -> Workflow:
         evaluator_type="agent",
         evaluator_role=AgentRole.CEO,
         gate_prompt=(
-            "Review the extracted spec at .factory/spec_raw.md. "
-            "Check: are modules identified correctly? Are domain entities captured? "
-            "Are state machines documented? Any major gaps? "
-            "PROCEED if the extraction is usable. RELOOP if major gaps."
+            "Check that graph.json was produced. "
+            "Verify it contains nodes and edges. "
+            "PROCEED if the graph was extracted successfully. RELOOP if missing or empty."
         ),
-        reads={".factory/spec_raw.md"},
+        reads={"graph.json"},
     )
 
-    # Researcher annotation — produces SPEC.md at project root
+    # Researcher annotation — reads graph.json directly, produces SPEC.md
     nodes["annotate"] = AgentNode(
         id="annotate",
         role=AgentRole.RESEARCHER,
         prompt_template=(
-            "Annotate the raw spec at .factory/spec_raw.md. "
+            "Read the code knowledge graph at graph.json. "
             "Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md. "
-            "Produce a behavioral spec with RFC 2119 normative language, "
-            "domain model, state machines, failure model, and module behavioral contracts. "
+            "Produce a two-tier behavioral spec with RFC 2119 normative language. "
+            "Use [[graph:...]] reference links for granular module details. "
             "Write output to SPEC.md in the project root."
         ),
-        reads={".factory/spec_raw.md"},
+        reads={"graph.json"},
         writes={"SPEC.md"},
     )
 
@@ -2260,6 +2251,14 @@ def spec_update_workflow() -> Workflow:
     nodes: dict[str, Any] = {}
     edges: list[Edge] = []
 
+    # Incremental graph refresh — local AST, no LLM cost
+    nodes["graph_update"] = FnNode(
+        id="graph_update",
+        command="factory graph update {project_path}",
+        notes="Refresh the code knowledge graph with latest source changes before scoping the diff.",
+        writes={"graph.json"},
+    )
+
     # Diff scoping — map changed files to affected modules
     nodes["diff_scope"] = FnNode(
         id="diff_scope",
@@ -2325,6 +2324,7 @@ def spec_update_workflow() -> Workflow:
     )
 
     edges = [
+        Edge(source="graph_update", target="diff_scope"),
         Edge(source="diff_scope", target="patch"),
         Edge(source="patch", target="gate_patch"),
         Edge(source="gate_patch", target="revalidate", condition=VerdictType.PROCEED),
@@ -2337,7 +2337,7 @@ def spec_update_workflow() -> Workflow:
         name="spec-update",
         nodes=nodes,
         edges=edges,
-        start_node="diff_scope",
+        start_node="graph_update",
         trigger=None,
     )
 
@@ -2662,8 +2662,7 @@ def founder_workflow() -> Workflow:
         id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && "
-            "ruff check . 2>&1"
+            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && ruff check . 2>&1"
         ),
         reads={".factory/reviews/builder-latest.md"},
     )

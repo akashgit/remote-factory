@@ -1,263 +1,59 @@
-"""Spec generation orchestration — collect source files, batch for Opus, run pipeline."""
+"""Spec generation orchestration — graphify extraction + single annotator agent."""
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 
 import structlog
 
 log = structlog.get_logger()
 
-EXCLUDED_DIRS = frozenset(
-    {
-        "node_modules",
-        ".factory",
-        "__pycache__",
-        ".git",
-        ".venv",
-        "venv",
-        ".mypy_cache",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".tox",
-        "dist",
-        "build",
-        ".eggs",
-        "*.egg-info",
-    }
-)
 
-SOURCE_EXTENSIONS = frozenset(
-    {
-        ".py",
-        ".ts",
-        ".tsx",
-        ".js",
-        ".jsx",
-        ".go",
-        ".rs",
-        ".java",
-        ".kt",
-        ".kts",
-        ".rb",
-        ".ex",
-        ".exs",
-        ".c",
-        ".h",
-        ".cpp",
-        ".hpp",
-        ".cs",
-        ".swift",
-        ".scala",
-        ".clj",
-        ".proto",
-        ".graphql",
-        ".sql",
-    }
-)
+def _build_annotate_prompt(project_path: Path) -> str:
+    """Build the annotator agent prompt for producing SPEC.md.
 
-BATCH_TOKEN_LIMIT = 80_000
-APPROX_CHARS_PER_TOKEN = 4
-
-
-def _get_gitignored(paths: list[Path], project_path: Path) -> set[Path]:
-    """Return the subset of paths that are gitignored, using a single subprocess."""
-    if not paths:
-        return set()
-    result = subprocess.run(
-        ["git", "check-ignore", "--stdin"],
-        input="\n".join(str(p) for p in paths),
-        cwd=project_path,
-        capture_output=True,
-        text=True,
-        timeout=600,
-    )
-    if result.returncode not in (0, 1):
-        return set()
-    return {Path(line) for line in result.stdout.splitlines() if line}
-
-
-def _is_excluded_dir(part: str) -> bool:
-    """Check if a directory component matches an exclusion pattern."""
-    for excluded in EXCLUDED_DIRS:
-        if excluded.startswith("*"):
-            if part.endswith(excluded[1:]):
-                return True
-        elif part == excluded:
-            return True
-    return False
-
-
-def collect_source_files(project_path: Path) -> list[Path]:
-    """Collect source files from a project, respecting .gitignore and exclusions.
-
-    Uses os.walk with pruning so excluded directories are never descended into.
-    Returns paths relative to project_path, sorted for deterministic output.
+    All format, section, and graph reference instructions live in
+    factory/agents/prompts/spec_annotator.md — this prompt just points the
+    agent at the template and the graph data.
     """
-    has_git = (project_path / ".git").is_dir()
-    candidates: list[Path] = []
-
-    for dirpath, dirnames, filenames in os.walk(project_path):
-        dirnames[:] = sorted(d for d in dirnames if not _is_excluded_dir(d))
-        for fname in filenames:
-            full = Path(dirpath) / fname
-            if full.suffix not in SOURCE_EXTENSIONS:
-                continue
-            candidates.append(full.relative_to(project_path))
-
-    candidates.sort()
-
-    if has_git and candidates:
-        ignored = _get_gitignored([project_path / c for c in candidates], project_path)
-        candidates = [c for c in candidates if (project_path / c) not in ignored]
-
-    log.info("spec.collect_source_files", count=len(candidates), project=str(project_path))
-    return candidates
-
-
-def group_into_batches(
-    files: list[Path],
-    project_path: Path,
-    token_limit: int = BATCH_TOKEN_LIMIT,
-) -> list[list[Path]]:
-    """Group source files into batches that fit within a token limit.
-
-    Each batch contains files whose combined content fits within the limit.
-    Files larger than the limit are placed in their own batch.
-    """
-    char_limit = token_limit * APPROX_CHARS_PER_TOKEN
-    batches: list[list[Path]] = []
-    current_batch: list[Path] = []
-    current_chars = 0
-
-    for rel_path in files:
-        full_path = project_path / rel_path
-        try:
-            file_chars = full_path.stat().st_size
-        except OSError:
-            continue
-
-        if file_chars > char_limit:
-            if current_batch:
-                batches.append(current_batch)
-                current_batch = []
-                current_chars = 0
-            log.warning(
-                "spec.batch.oversized_file",
-                file=str(rel_path),
-                size=file_chars,
-                limit=char_limit,
-            )
-            batches.append([rel_path])
-            continue
-
-        if current_batch and current_chars + file_chars > char_limit:
-            batches.append(current_batch)
-            current_batch = []
-            current_chars = 0
-
-        current_batch.append(rel_path)
-        current_chars += file_chars
-
-    if current_batch:
-        batches.append(current_batch)
-
-    log.info(
-        "spec.group_into_batches",
-        total_files=len(files),
-        batches=len(batches),
-        token_limit=token_limit,
+    graph_path = project_path / "graph.json"
+    return (
+        f"Generate a behavioral overview spec for the project at {project_path}.\n\n"
+        f"Read the spec_annotator prompt at factory/agents/prompts/spec_annotator.md "
+        f"and follow it exactly — it defines the output format, required sections, "
+        f"graph reference link syntax, and completeness checklist.\n\n"
+        f"Read the code knowledge graph at {graph_path}.\n\n"
+        f"Write the annotated repo spec to {project_path / 'SPEC.md'}."
     )
-    return batches
-
-
-async def _extract_batch(
-    batch_index: int,
-    batch_files: list[Path],
-    project_path: Path,
-    total_batches: int,
-) -> str:
-    """Extract spec content from a single batch of source files."""
-    from factory.agents.runner import invoke_agent
-
-    file_listing = "\n".join(f"- {f}" for f in batch_files)
-    task = (
-        f"Extract a behavioral module map from batch {batch_index + 1}/{total_batches} "
-        f"of the project at {project_path}.\n\n"
-        f"## Files in This Batch ({len(batch_files)} files)\n\n"
-        f"{file_listing}\n\n"
-        f"Read ONLY the files listed above and extract their spec content.\n"
-        f"Extract domain entities, state machines, error types, and module relationships.\n"
-        f"Output the spec section as text — do NOT write any files."
-    )
-
-    log.info(
-        "spec.extract_batch.start",
-        batch=batch_index + 1,
-        total=total_batches,
-        files=len(batch_files),
-    )
-    result, code = await invoke_agent(
-        "researcher",
-        task,
-        project_path,
-        timeout=600.0,
-        dangerously_skip_permissions=True,
-        model="opus",
-    )
-    if code != 0:
-        raise RuntimeError(
-            f"Spec extraction failed for batch {batch_index + 1}/{total_batches} "
-            f"(exit {code}): {result[:500]}"
-        )
-
-    log.info("spec.extract_batch.done", batch=batch_index + 1, total=total_batches)
-    return result
 
 
 async def generate_spec(project_path: Path) -> Path:
     """Generate a repo spec for a project.
 
-    Runs the extraction → annotation pipeline:
-    1. Collect source files and batch them
-    2. Run Opus extraction agents in parallel (one per batch) to produce spec_raw.md
-    3. Run Researcher annotation agent to produce SPEC.md
+    1. Run graphify extract → graph.json (local AST, no LLM cost)
+    2. Annotator agent reads graph.json directly → produces SPEC.md
 
     Returns the path to the generated SPEC.md.
+    Raises RuntimeError if graphify is not installed or extraction fails.
     """
-    import asyncio
-
     from factory.agents.runner import invoke_agent
+    from factory.graph import extract_graph, is_graphify_installed
+
+    if not is_graphify_installed():
+        raise RuntimeError(
+            "graphify is required for spec generation. Install with: uv tool install graphifyy"
+        )
 
     factory_dir = project_path / ".factory"
     factory_dir.mkdir(parents=True, exist_ok=True)
 
-    source_files = collect_source_files(project_path)
-    if not source_files:
-        raise ValueError(f"No source files found in {project_path}")
+    graph_path = extract_graph(project_path)
+    if graph_path is None:
+        raise RuntimeError("graphify extraction failed — check logs for details")
 
-    batches = group_into_batches(source_files, project_path)
-    log.info("spec.generate", files=len(source_files), batches=len(batches))
+    log.info("spec.generate.graph", graph_path=str(graph_path))
 
-    tasks = [
-        _extract_batch(i, batch, project_path, len(batches)) for i, batch in enumerate(batches)
-    ]
-    results = await asyncio.gather(*tasks)
-    spec_raw_content = "\n\n".join(r for r in results if r)
-
-    spec_raw = factory_dir / "spec_raw.md"
-    spec_raw.write_text(spec_raw_content)
-    log.info("spec.extract.complete", batches=len(batches), raw_size=len(spec_raw_content))
-
-    annotate_task = (
-        f"Annotate and enrich the raw spec at {spec_raw} for the project at {project_path}.\n\n"
-        f"Read {spec_raw} and key source files.\n"
-        f"Produce a behavioral spec with RFC 2119 normative language, domain model,\n"
-        f"state machines, failure model, and module behavioral contracts.\n"
-        f"Write the annotated repo spec to {project_path / 'SPEC.md'}."
-    )
+    annotate_task = _build_annotate_prompt(project_path)
 
     result, code = await invoke_agent(
         "researcher",

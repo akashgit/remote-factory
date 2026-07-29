@@ -45,6 +45,11 @@ from factory.cli.ceo import (
 from factory.cli.run import (
     cmd_run as cmd_run,
 )
+from factory.cli.graph import (
+    cmd_graph_extract as cmd_graph_extract,
+    cmd_graph_status as cmd_graph_status,
+    cmd_graph_update as cmd_graph_update,
+)
 from factory.cli.eval_cmds import (
     cmd_adversarial_state as cmd_adversarial_state,
     cmd_baseline as cmd_baseline,
