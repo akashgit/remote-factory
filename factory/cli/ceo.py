@@ -565,11 +565,11 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
+    base_branch = branch or _read_target_branch(project_path)
     if no_worktree:
         wt_path = project_path
         wt_branch = None
     else:
-        base_branch = branch or _read_target_branch(project_path)
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     from factory.skill_cache import ensure_skills
@@ -608,7 +608,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         prompt_file=prompt_file,
         min_growth=min_growth,
         max_new=max_new,
-        branch=branch,
+        branch=base_branch,
         discover_only=discover_only,
         no_github=no_github,
         design_idea=design_idea,
@@ -2003,11 +2003,11 @@ def _run_single_cycle(
     pending = read_pending(project_path)
     pending_ids = [m.id for m in pending]
 
+    base_branch = branch or _read_target_branch(project_path)
     if no_worktree:
         wt_path = project_path
         wt_branch = None
     else:
-        base_branch = branch or _read_target_branch(project_path)
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     from factory.skill_cache import ensure_skills
@@ -2023,7 +2023,7 @@ def _run_single_cycle(
             prompt_file=prompt_file,
             min_growth=min_growth,
             max_new=max_new,
-            branch=branch,
+            branch=base_branch,
             discover_only=discover_only,
             no_github=no_github,
             messages=pending,
