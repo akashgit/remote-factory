@@ -52,9 +52,12 @@ jobs:
           fi
 
           python3 -c "
-          import json, subprocess, sys
+          import json, subprocess, sys, os
 
-          latest_ts = '$LATEST_TS'
+          latest_ts = os.environ.get('LATEST_TS', '')
+          if not latest_ts:
+              sys.exit(0)
+
           events = []
           with open('conflicts.jsonl') as f:
               for line in f:

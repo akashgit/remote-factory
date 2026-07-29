@@ -105,7 +105,11 @@ def run_report(args: argparse.Namespace) -> int:
             line = line.strip()
             if not line:
                 continue
-            event = json.loads(line)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError as e:
+                print(f"Warning: skipping malformed line: {e}", file=sys.stderr)
+                continue
             ts = datetime.fromisoformat(event["timestamp"].replace("Z", "+00:00"))
             if ts < cutoff:
                 continue

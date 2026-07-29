@@ -182,6 +182,51 @@ class TestReport:
         rc = conflict_detector.main(["report", "--data-file", str(data_file)])
         assert rc == 0
 
+    def test_issue_flag_success(self, tmp_path: Path) -> None:
+        """Test --issue flag posts report to GitHub issue (success path)."""
+        data_file = tmp_path / "conflicts.jsonl"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        events = [
+            {"timestamp": now, "pr_number": 1, "pr_branch": "feat/a", "conflict_files": ["x.py"], "total_open_prs": 1},
+        ]
+        with open(data_file, "w") as f:
+            for ev in events:
+                f.write(json.dumps(ev) + "\n")
+
+        # Mock _run to capture gh issue comment call
+        def _mock_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[:3] == ["gh", "issue", "comment"]:
+                assert cmd[3] == "42"
+                assert cmd[4] == "--body"
+                assert "Conflict Hotspots" in cmd[5]
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(conflict_detector, "_run", side_effect=_mock_run):
+            rc = conflict_detector.main(["report", "--data-file", str(data_file), "--issue", "42"])
+        assert rc == 0
+
+    def test_issue_flag_failure(self, tmp_path: Path) -> None:
+        """Test --issue flag handles gh CLI failure (error path)."""
+        data_file = tmp_path / "conflicts.jsonl"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        events = [
+            {"timestamp": now, "pr_number": 1, "pr_branch": "feat/a", "conflict_files": ["x.py"], "total_open_prs": 1},
+        ]
+        with open(data_file, "w") as f:
+            for ev in events:
+                f.write(json.dumps(ev) + "\n")
+
+        # Mock _run to simulate gh CLI failure
+        def _mock_run(cmd: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            if cmd[:3] == ["gh", "issue", "comment"]:
+                return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="API error: issue not found")
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with patch.object(conflict_detector, "_run", side_effect=_mock_run):
+            rc = conflict_detector.main(["report", "--data-file", str(data_file), "--issue", "999"])
+        assert rc == 1
+
 
 class TestCLI:
     def test_no_command_shows_help(self, capsys: pytest.CaptureFixture[str]) -> None:
