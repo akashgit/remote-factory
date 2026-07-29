@@ -8,7 +8,6 @@ All functions take a project_path and return an EvalResult-compatible dict.
 """
 
 import ast
-import csv
 import json
 import re
 import time
@@ -105,9 +104,9 @@ def eval_experiment_diversity(project_path: Path) -> dict:
             }
 
         from factory.insights import classify_hypothesis
+        from factory.store import read_results_tsv
 
-        with open(tsv_path) as f:
-            rows = list(csv.DictReader(f, dialect="excel-tab"))
+        rows = read_results_tsv(tsv_path)
 
         if len(rows) < 3:
             return {
@@ -239,8 +238,9 @@ def eval_research_grounding(project_path: Path) -> dict:
         referenced = 0
         total_checked = 0
         if tsv_path.exists() and source_keywords:
-            with open(tsv_path) as f:
-                rows = list(csv.DictReader(f, dialect="excel-tab"))
+            from factory.store import read_results_tsv
+
+            rows = read_results_tsv(tsv_path)
             for row in rows[-10:]:
                 hyp = row.get("hypothesis", "").lower()
                 summary = row.get("change_summary", "").lower()
@@ -366,8 +366,9 @@ def eval_factory_effectiveness(project_path: Path) -> dict:
                 "details": "No experiment history yet — neutral score",
             }
 
-        with open(tsv_path) as f:
-            rows = list(csv.DictReader(f, dialect="excel-tab"))
+        from factory.store import read_results_tsv
+
+        rows = read_results_tsv(tsv_path)
 
         if len(rows) < 3:
             return {

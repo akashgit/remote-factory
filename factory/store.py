@@ -57,6 +57,19 @@ TSV_COLUMNS = [
 ]
 
 
+def read_results_tsv(tsv_path: Path) -> list[dict[str, str]]:
+    """Read results.tsv, handling files with or without a header row."""
+    with open(tsv_path, newline="") as f:
+        first_line = f.readline()
+        f.seek(0)
+        first_field = first_line.split("\t")[0].strip()
+        if first_field == "id":
+            reader = csv.DictReader(f, dialect="excel-tab")
+        else:
+            reader = csv.DictReader(f, fieldnames=TSV_COLUMNS, dialect="excel-tab")
+        return list(reader)
+
+
 def _parse_kv_list(
     items: str | list[str] | float,
     value_type: type = str,

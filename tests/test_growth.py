@@ -3,12 +3,15 @@
 import csv
 import io
 from pathlib import Path
-
+from unittest.mock import patch
 
 from factory.eval.growth import (
     _discover_managed_projects,
+    eval_experiment_diversity,
     eval_factory_effectiveness,
+    eval_research_grounding,
 )
+from factory.store import TSV_COLUMNS
 
 
 def _make_managed_project(path: Path) -> None:
@@ -184,3 +187,114 @@ class TestEvalFactoryEffectiveness:
 
         result = eval_factory_effectiveness(project)
         assert "managed_projects=2" in result["details"]
+
+
+def _write_tsv_no_header(project_path: Path, data_rows: list[list[str]]) -> None:
+    """Write results.tsv without a header row (legacy format)."""
+    factory_dir = project_path / ".factory"
+    factory_dir.mkdir(parents=True, exist_ok=True)
+    buf = io.StringIO()
+    writer = csv.writer(buf, dialect="excel-tab")
+    for row in data_rows:
+        writer.writerow(row)
+    (factory_dir / "results.tsv").write_text(buf.getvalue())
+
+
+def _write_tsv_with_header(project_path: Path, data_rows: list[list[str]]) -> None:
+    """Write results.tsv with a header row."""
+    factory_dir = project_path / ".factory"
+    factory_dir.mkdir(parents=True, exist_ok=True)
+    buf = io.StringIO()
+    writer = csv.writer(buf, dialect="excel-tab")
+    writer.writerow(TSV_COLUMNS)
+    for row in data_rows:
+        writer.writerow(row)
+    (factory_dir / "results.tsv").write_text(buf.getvalue())
+
+
+def _sample_row(
+    exp_id: int, hypothesis: str, verdict: str = "keep",
+) -> list[str]:
+    return [
+        str(exp_id), "2025-01-01T00:00:00", hypothesis, "changes",
+        "", "", "0.7", "0.8", "0.1", verdict, "", "", "",
+    ]
+
+
+class TestEvalExperimentDiversity:
+    def test_diverse_hypotheses_score_high(self, tmp_path):
+        _write_tsv_with_header(tmp_path, [
+            _sample_row(1, "Fix crash in parser"),
+            _sample_row(2, "Add structured logging"),
+            _sample_row(3, "Refactor auth module"),
+            _sample_row(4, "Add new endpoint for users"),
+            _sample_row(5, "Improve test coverage"),
+            _sample_row(6, "Fix mypy type errors"),
+            _sample_row(7, "Add CI pipeline"),
+            _sample_row(8, "Optimize query performance"),
+            _sample_row(9, "Update eval scoring"),
+            _sample_row(10, "Fix agent timeout issue"),
+        ])
+        result = eval_experiment_diversity(tmp_path)
+        assert result["score"] > 0.4
+        assert "distinct categories" in result["details"]
+
+    def test_all_same_category_scores_low(self, tmp_path):
+        _write_tsv_with_header(tmp_path, [
+            _sample_row(i, f"Add feature {i}") for i in range(1, 11)
+        ])
+        result = eval_experiment_diversity(tmp_path)
+        assert result["score"] < 0.3
+
+    def test_headerless_tsv_reads_correctly(self, tmp_path):
+        """TSV without header row should still classify hypotheses correctly."""
+        _write_tsv_no_header(tmp_path, [
+            _sample_row(1, "Fix crash in parser"),
+            _sample_row(2, "Add structured logging"),
+            _sample_row(3, "Refactor module"),
+            _sample_row(4, "Add new endpoint"),
+        ])
+        result = eval_experiment_diversity(tmp_path)
+        assert result["score"] > 0.4
+        assert "distinct categories" in result["details"]
+
+    def test_headerless_tsv_with_enough_rows(self, tmp_path):
+        """Headerless TSV with 10+ rows correctly classifies hypotheses."""
+        _write_tsv_no_header(tmp_path, [
+            _sample_row(1, "Fix crash in parser"),
+            _sample_row(2, "Add structured logging to core"),
+            _sample_row(3, "Refactor auth module"),
+            _sample_row(4, "Add new endpoint for users"),
+            _sample_row(5, "Improve test coverage"),
+            _sample_row(6, "Fix mypy type errors"),
+            _sample_row(7, "Add CI pipeline"),
+            _sample_row(8, "Optimize query performance"),
+            _sample_row(9, "Update eval scoring"),
+            _sample_row(10, "Fix agent timeout issue"),
+        ])
+        result = eval_experiment_diversity(tmp_path)
+        assert result["score"] > 0.4
+        assert "Error" not in result["details"]
+
+
+class TestEvalResearchGrounding:
+    def test_no_error_with_headerless_tsv(self, tmp_path):
+        """research_grounding should not KeyError on headerless results.tsv."""
+        _write_tsv_no_header(tmp_path, [
+            _sample_row(i, f"Hypothesis {i}") for i in range(1, 6)
+        ])
+        (tmp_path / ".factory" / "archive").mkdir(parents=True, exist_ok=True)
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+        assert "Error" not in result["details"]
+        assert result["score"] >= 0.0
+
+    def test_no_error_with_header_tsv(self, tmp_path):
+        """research_grounding works normally with headered results.tsv."""
+        _write_tsv_with_header(tmp_path, [
+            _sample_row(i, f"Hypothesis {i}") for i in range(1, 6)
+        ])
+        (tmp_path / ".factory" / "archive").mkdir(parents=True, exist_ok=True)
+        with patch("factory.obsidian.notes.vault_path", return_value=None):
+            result = eval_research_grounding(tmp_path)
+        assert "Error" not in result["details"]

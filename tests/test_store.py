@@ -1,7 +1,10 @@
 """Tests for factory.store — filesystem experiment store."""
 
+import csv
+import io
 import json
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -11,7 +14,7 @@ from factory.models import (
     EvalProfile,
     ExperimentRecord,
 )
-from factory.store import ExperimentStore, ensure_factory_dir
+from factory.store import ExperimentStore, TSV_COLUMNS, ensure_factory_dir, read_results_tsv
 
 
 @pytest.fixture
@@ -801,3 +804,61 @@ class TestParseTestTimeout:
             store.factory_dir.mkdir(exist_ok=True)
             config = await store.reparse_config()
             assert config.test_timeout == 600, f"Expected 600 for input '{invalid_value}'"
+
+
+class TestReadResultsTsv:
+    def _write_tsv_with_header(self, path: Path, data_rows: list[list[str]]) -> None:
+        buf = io.StringIO()
+        writer = csv.writer(buf, dialect="excel-tab")
+        writer.writerow(TSV_COLUMNS)
+        for row in data_rows:
+            writer.writerow(row)
+        path.write_text(buf.getvalue())
+
+    def _write_tsv_without_header(self, path: Path, data_rows: list[list[str]]) -> None:
+        buf = io.StringIO()
+        writer = csv.writer(buf, dialect="excel-tab")
+        for row in data_rows:
+            writer.writerow(row)
+        path.write_text(buf.getvalue())
+
+    def _sample_row(self, exp_id: int = 1, hypothesis: str = "Fix bug") -> list[str]:
+        return [
+            str(exp_id), "2025-01-01T00:00:00", hypothesis, "changes",
+            "", "", "0.7", "0.8", "0.1", "keep", "", "", "",
+        ]
+
+    def test_reads_file_with_header(self, tmp_path):
+        tsv_path = tmp_path / "results.tsv"
+        self._write_tsv_with_header(tsv_path, [self._sample_row(1, "Fix bug")])
+        rows = read_results_tsv(tsv_path)
+        assert len(rows) == 1
+        assert rows[0]["id"] == "1"
+        assert rows[0]["hypothesis"] == "Fix bug"
+
+    def test_reads_file_without_header(self, tmp_path):
+        tsv_path = tmp_path / "results.tsv"
+        self._write_tsv_without_header(tsv_path, [self._sample_row(1, "Fix bug")])
+        rows = read_results_tsv(tsv_path)
+        assert len(rows) == 1
+        assert rows[0]["id"] == "1"
+        assert rows[0]["hypothesis"] == "Fix bug"
+
+    def test_multiple_rows_without_header(self, tmp_path):
+        tsv_path = tmp_path / "results.tsv"
+        self._write_tsv_without_header(tsv_path, [
+            self._sample_row(1, "Fix crash"),
+            self._sample_row(2, "Add logging"),
+            self._sample_row(3, "Refactor module"),
+        ])
+        rows = read_results_tsv(tsv_path)
+        assert len(rows) == 3
+        assert rows[0]["id"] == "1"
+        assert rows[2]["hypothesis"] == "Refactor module"
+
+    def test_preserves_all_columns(self, tmp_path):
+        tsv_path = tmp_path / "results.tsv"
+        self._write_tsv_with_header(tsv_path, [self._sample_row()])
+        rows = read_results_tsv(tsv_path)
+        for col in TSV_COLUMNS:
+            assert col in rows[0], f"Missing column: {col}"
