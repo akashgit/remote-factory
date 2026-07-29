@@ -17,7 +17,7 @@ from factory.workflow.definitions import (
     founder_workflow,
     improve_workflow,
     meta_workflow,
-    qa_workflow,
+
     refine_workflow,
     register_all,
     research_workflow,
@@ -396,9 +396,6 @@ class TestDocFreshnessGate:
             for e in edges
         ), "missing gate_doc_freshness -> builder RELOOP edge"
 
-    def test_qa_workflow_excludes_gate(self) -> None:
-        wf = qa_workflow()
-        assert "gate_doc_freshness" not in wf.nodes
 
 
 # ── Builder → QA reachability audit ────────────────────────────

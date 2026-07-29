@@ -145,6 +145,10 @@ def handle_review_mode(
         f"REVERT otherwise.\n"
     )
 
+    from factory.skill_cache import ensure_skills
+
+    ensure_skills(project_path)
+
     if not headless:
         from factory.models import AgentRunRequest
 
@@ -238,6 +242,10 @@ def handle_deep_qa_mode(
     )
 
     cycle_span_id = begin_cycle_session(project_path, cycle_id="deep-qa", model=model)
+
+    from factory.skill_cache import ensure_skills
+
+    ensure_skills(project_path)
 
     if not headless:
         from factory.models import AgentRunRequest

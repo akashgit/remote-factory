@@ -1390,8 +1390,8 @@ class TestCmdCeoReview:
         assert call_kwargs.get("timeout") == 7200.0
 
 
-class TestCmdCeoQa:
-    def test_qa_mode_without_pr_errors(self, capsys):
+class TestCmdCeoDeepQa:
+    def test_deep_qa_mode_without_pr_errors(self, capsys):
         result = main(["ceo", "/some/path", "--mode", "deep-qa"])
         assert result == 1
         assert "--pr" in capsys.readouterr().err

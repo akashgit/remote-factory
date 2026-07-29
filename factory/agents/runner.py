@@ -152,8 +152,10 @@ def _maybe_inject_skill(prompt: str, project_path: Path, workflow_mode: str) -> 
     """Append the workflow SKILL.md to the CEO prompt so it survives compaction."""
     skill_path = project_path / "skills" / f"workflow-{workflow_mode}" / "SKILL.md"
     if not skill_path.exists():
-        logger.warning("SKILL.md not found for mode %s at %s", workflow_mode, skill_path)
-        return prompt
+        raise FileNotFoundError(
+            f"SKILL.md not found for mode {workflow_mode} at {skill_path}. "
+            f"Run 'factory workflow export-skills' or check ensure_skills() was called."
+        )
     skill_content = skill_path.read_text()
     logger.info("Injected SKILL.md for workflow-%s into CEO prompt", workflow_mode)
     return prompt + f"\n\n# Workflow Playbook ({workflow_mode})\n\n{skill_content}"
