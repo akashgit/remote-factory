@@ -17,9 +17,15 @@ import pytest
 from factory.cli import main, build_parser
 from factory.cli._task_builder import _build_ceo_task
 from factory.cli._path_resolver import (
-    _slugify, _extract_project_name, _dedupe_project_path,
-    _persist_spec, _has_research_target, _ensure_repo, _materialize_project,
-    _is_scaffold_only, _resolve_input,
+    _slugify,
+    _extract_project_name,
+    _dedupe_project_path,
+    _persist_spec,
+    _has_research_target,
+    _ensure_repo,
+    _materialize_project,
+    _is_scaffold_only,
+    _resolve_input,
 )
 from factory.cli._helpers import _is_github_url
 from factory.cli._wizard import _quick_classify, _welcome_wizard
@@ -41,14 +47,19 @@ def _mock_foreground():
     """Mock the interactive foreground path: subprocess.run inside ClaudeRunner,
     worktree lifecycle, and dashboard.  Yields the subprocess.run mock."""
     mock_run = MagicMock(return_value=MagicMock(returncode=0))
-    with patch("factory.runners.claude.subprocess.run", mock_run), \
-         patch("factory.worktree.create_worktree",
-               side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test")), \
-         patch("factory.worktree.remove_worktree"), \
-         patch("factory.worktree.prune_stale", return_value=[]), \
-         patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"), \
-         patch("factory.cli._path_resolver._is_scaffold_only", return_value=False), \
-         patch("factory.cli._helpers._ensure_dashboard"):
+    with (
+        patch("factory.runners.claude.subprocess.run", mock_run),
+        patch(
+            "factory.worktree.create_worktree",
+            side_effect=lambda p, b="main", run_id=None: (p, "factory/run-test"),
+        ),
+        patch("factory.worktree.remove_worktree"),
+        patch("factory.worktree.prune_stale", return_value=[]),
+        patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+        patch("factory.cli._path_resolver._is_scaffold_only", return_value=False),
+        patch("factory.cli._helpers._ensure_dashboard"),
+        patch("factory.graph.is_graphify_installed", return_value=False),
+    ):
         yield mock_run
 
 
@@ -88,20 +99,43 @@ class TestParser:
 
     def test_finalize_subcommand(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "finalize", "/path", "--id", "1", "--verdict", "keep",
-            "--hypothesis", "h", "--summary", "s",
-        ])
+        args = parser.parse_args(
+            [
+                "finalize",
+                "/path",
+                "--id",
+                "1",
+                "--verdict",
+                "keep",
+                "--hypothesis",
+                "h",
+                "--summary",
+                "s",
+            ]
+        )
         assert args.id == 1
         assert args.verdict == "keep"
 
     def test_finalize_with_scores(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "finalize", "/path", "--id", "1", "--verdict", "keep",
-            "--hypothesis", "h", "--summary", "s",
-            "--score-before", "0.80", "--score-after", "0.85",
-        ])
+        args = parser.parse_args(
+            [
+                "finalize",
+                "/path",
+                "--id",
+                "1",
+                "--verdict",
+                "keep",
+                "--hypothesis",
+                "h",
+                "--summary",
+                "s",
+                "--score-before",
+                "0.80",
+                "--score-after",
+                "0.85",
+            ]
+        )
         assert args.score_before == 0.80
         assert args.score_after == 0.85
 
@@ -110,7 +144,9 @@ class TestParser:
 
     def test_emit_subcommand(self):
         parser = build_parser()
-        args = parser.parse_args(["emit", "agent.started", "--agent", "researcher", "--project", "/p"])
+        args = parser.parse_args(
+            ["emit", "agent.started", "--agent", "researcher", "--project", "/p"]
+        )
         assert args.command == "emit"
         assert args.event_type == "agent.started"
         assert args.agent == "researcher"
@@ -173,6 +209,7 @@ class TestGroupedHelp:
 
     def test_all_subcommands_covered_by_groups(self):
         from factory.cli._main import _COMMAND_GROUPS
+
         grouped = {cmd for _, cmds in _COMMAND_GROUPS for cmd in cmds}
         parser = build_parser()
         sub_action = None
@@ -187,6 +224,7 @@ class TestGroupedHelp:
 
     def test_no_command_in_multiple_groups(self):
         from factory.cli._main import _COMMAND_GROUPS
+
         seen: dict[str, str] = {}
         duplicates: list[str] = []
         for group_name, cmds in _COMMAND_GROUPS:
@@ -198,10 +236,13 @@ class TestGroupedHelp:
 
     def test_no_ungrouped_other_section(self):
         help_text = build_parser().format_help()
-        assert "\nOther:\n" not in help_text, "Help has an 'Other' section — some commands are ungrouped"
+        assert "\nOther:\n" not in help_text, (
+            "Help has an 'Other' section — some commands are ungrouped"
+        )
 
     def test_group_count_is_nine(self):
         from factory.cli._main import _COMMAND_GROUPS
+
         assert len(_COMMAND_GROUPS) == 9
 
 
@@ -209,11 +250,25 @@ class TestRefactoryAgentFilter:
     """Tests for --refactory-agent help filtering."""
 
     EXPECTED_COMMANDS = {
-        "ceo", "run", "tmux", "tmux-ls", "tmux-stop", "tmux-capture",
-        "discover", "init", "detect",
-        "eval", "history", "study", "status", "backlog-list", "backlog-add",
-        "checkpoint", "resume",
-        "ace", "ace-stats",
+        "ceo",
+        "run",
+        "tmux",
+        "tmux-ls",
+        "tmux-stop",
+        "tmux-capture",
+        "discover",
+        "init",
+        "detect",
+        "eval",
+        "history",
+        "study",
+        "status",
+        "backlog-list",
+        "backlog-add",
+        "checkpoint",
+        "resume",
+        "ace",
+        "ace-stats",
     }
 
     def test_filtered_help_shows_only_expected_commands(self, monkeypatch):
@@ -221,14 +276,20 @@ class TestRefactoryAgentFilter:
         parser = build_parser()
         help_text = parser.format_help()
         import re as _re
+
         displayed = set(_re.findall(r"^  (\S+)", help_text, _re.MULTILINE))
         assert displayed == self.EXPECTED_COMMANDS
 
     def test_filtered_help_has_group_headers(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["factory", "--help", "--refactory-agent"])
         help_text = build_parser().format_help()
-        for header in ("Entry Points:", "Project Setup:", "Project Intelligence:",
-                       "Validation & Recovery:", "Self-Evolution:"):
+        for header in (
+            "Entry Points:",
+            "Project Setup:",
+            "Project Intelligence:",
+            "Validation & Recovery:",
+            "Self-Evolution:",
+        ):
             assert header in help_text, f"Missing group header: {header}"
 
     def test_filtered_help_omits_empty_groups(self, monkeypatch):
@@ -382,9 +443,13 @@ class TestHasResearchTarget:
         (tmp_path / ".git").mkdir()
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
-        rt = {"objective": "maximize accuracy", "metric": "accuracy",
-              "target": 0.9, "run_command": "python run.py",
-              "result_path": "results.json"}
+        rt = {
+            "objective": "maximize accuracy",
+            "metric": "accuracy",
+            "target": 0.9,
+            "run_command": "python run.py",
+            "result_path": "results.json",
+        }
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         assert _has_research_target(tmp_path) is True
 
@@ -405,9 +470,13 @@ class TestCmdCeoResearchIdeation:
         (tmp_path / ".git").mkdir()
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
-        rt = {"objective": "maximize accuracy", "metric": "accuracy",
-              "target": 0.9, "run_command": "python run.py",
-              "result_path": "results.json"}
+        rt = {
+            "objective": "maximize accuracy",
+            "metric": "accuracy",
+            "target": 0.9,
+            "run_command": "python run.py",
+            "result_path": "results.json",
+        }
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "research", "--focus", "tokenizer"])
@@ -494,9 +563,13 @@ class TestCmdCeoResearchIdeation:
         (tmp_path / ".git").mkdir()
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
-        rt = {"objective": "maximize accuracy", "metric": "accuracy",
-              "target": 0.9, "run_command": "python run.py",
-              "result_path": "results.json"}
+        rt = {
+            "objective": "maximize accuracy",
+            "metric": "accuracy",
+            "target": 0.9,
+            "run_command": "python run.py",
+            "result_path": "results.json",
+        }
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
         with _mock_foreground() as mock_run:
             main(["ceo", str(tmp_path), "--mode", "research"])
@@ -546,12 +619,18 @@ class TestCmdStatus:
         asyncio.run(store.init(sample_config))
         exp_id = asyncio.run(store.begin("Improve performance"))
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
+            id=exp_id,
+            timestamp=datetime.now(),
             hypothesis="Improve performance",
             change_summary="Optimized hot path",
-            issue_number=None, pr_number=None,
-            score_before=0.8, score_after=0.95, delta=0.15,
-            verdict="keep", cost_usd=None, notes="",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.8,
+            score_after=0.95,
+            delta=0.15,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         asyncio.run(store.finalize(exp_id, record))
 
@@ -581,6 +660,7 @@ class TestCmdHistory:
     def test_history_no_experiments(self, tmp_project, capsys, sample_config):
         import asyncio
         from factory.store import ExperimentStore
+
         store = ExperimentStore(tmp_project)
         asyncio.run(store.init(sample_config))
         result = main(["history", str(tmp_project)])
@@ -701,21 +781,28 @@ class TestCmdArchive:
         asyncio.run(store.init(sample_config))
         exp_id = asyncio.run(store.begin("Improve throughput"))
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
+            id=exp_id,
+            timestamp=datetime.now(),
             hypothesis="Improve throughput",
             change_summary="Optimized pipeline",
-            issue_number=None, pr_number=None,
-            score_before=0.7, score_after=0.85, delta=0.15,
-            verdict="keep", cost_usd=0.5, notes="",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.7,
+            score_after=0.85,
+            delta=0.15,
+            verdict="keep",
+            cost_usd=0.5,
+            notes="",
         )
         asyncio.run(store.finalize(exp_id, record))
 
-        with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
-             patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
-             patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
-             patch("factory.obsidian.notes.update_memory_index"), \
-             patch("factory.obsidian.notes._get_vault_path",
-                   return_value=tmp_project / "vault"):
+        with (
+            patch("factory.obsidian.notes.write_experiment_note") as mock_exp,
+            patch("factory.obsidian.notes.write_project_dashboard") as mock_dash,
+            patch("factory.obsidian.notes.write_strategy_note") as mock_strat,
+            patch("factory.obsidian.notes.update_memory_index"),
+            patch("factory.obsidian.notes._get_vault_path", return_value=tmp_project / "vault"),
+        ):
             result = main(["archive", str(tmp_project)])
 
         assert result == 0
@@ -730,29 +817,35 @@ class TestCmdArchive:
         asyncio.run(store.init(sample_config))
         exp_id = asyncio.run(store.begin("Test hypothesis"))
         record = ExperimentRecord(
-            id=exp_id, timestamp=datetime.now(),
+            id=exp_id,
+            timestamp=datetime.now(),
             hypothesis="Test hypothesis",
             change_summary="Changed stuff",
-            issue_number=None, pr_number=None,
-            score_before=0.8, score_after=0.85, delta=0.05,
-            verdict="keep", cost_usd=None, notes="",
+            issue_number=None,
+            pr_number=None,
+            score_before=0.8,
+            score_after=0.85,
+            delta=0.05,
+            verdict="keep",
+            cost_usd=None,
+            notes="",
         )
         asyncio.run(store.finalize(exp_id, record))
         asyncio.run(store.write_strategy("Focus on reliability."))
 
-        with patch("factory.obsidian.notes.write_experiment_note") as mock_exp, \
-             patch("factory.obsidian.notes.write_project_dashboard") as mock_dash, \
-             patch("factory.obsidian.notes.write_strategy_note") as mock_strat, \
-             patch("factory.obsidian.notes.update_memory_index"), \
-             patch("factory.obsidian.notes._get_vault_path",
-                   return_value=tmp_project / "vault"):
+        with (
+            patch("factory.obsidian.notes.write_experiment_note") as mock_exp,
+            patch("factory.obsidian.notes.write_project_dashboard") as mock_dash,
+            patch("factory.obsidian.notes.write_strategy_note") as mock_strat,
+            patch("factory.obsidian.notes.update_memory_index"),
+            patch("factory.obsidian.notes._get_vault_path", return_value=tmp_project / "vault"),
+        ):
             result = main(["archive", str(tmp_project)])
 
         assert result == 0
         mock_exp.assert_called_once()
         mock_dash.assert_called_once()
         mock_strat.assert_called_once()
-
 
 
 class TestCmdVaultInit:
@@ -817,15 +910,18 @@ class TestRunWithGitHubUrl:
     def test_run_clones_https_url(self, capsys):
         """cmd_run clones a GitHub HTTPS URL into a temp dir and invokes CEO."""
         url = "https://github.com/user/repo"
-        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
-             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-abc"), \
-             patch("factory.cli.run._read_target_branch", return_value="main"):
+        with (
+            patch("factory.cli._path_resolver.subprocess.run") as mock_clone,
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-abc"),
+            patch("factory.cli.run._read_target_branch", return_value="main"),
+        ):
             result = main(["run", url])
 
         assert result == 0
         mock_clone.assert_called_once_with(
-            ["git", "clone", url, "/tmp/factory-abc"], check=True,
+            ["git", "clone", url, "/tmp/factory-abc"],
+            check=True,
         )
         out = capsys.readouterr().out
         assert "Cloned https://github.com/user/repo" in out
@@ -833,23 +929,28 @@ class TestRunWithGitHubUrl:
     def test_run_clones_ssh_url(self, capsys):
         """cmd_run clones a GitHub SSH URL into a temp dir."""
         url = "git@github.com:user/repo.git"
-        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
-             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-xyz"), \
-             patch("factory.cli.run._read_target_branch", return_value="main"):
+        with (
+            patch("factory.cli._path_resolver.subprocess.run") as mock_clone,
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-xyz"),
+            patch("factory.cli.run._read_target_branch", return_value="main"),
+        ):
             result = main(["run", url])
 
         assert result == 0
         mock_clone.assert_called_once_with(
-            ["git", "clone", url, "/tmp/factory-xyz"], check=True,
+            ["git", "clone", url, "/tmp/factory-xyz"],
+            check=True,
         )
         out = capsys.readouterr().out
         assert f"Cloned {url}" in out
 
     def test_run_local_path_no_clone(self, tmp_path):
         """cmd_run with a local path does not clone — just invokes CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path)])
 
         assert result == 0
@@ -857,8 +958,10 @@ class TestRunWithGitHubUrl:
 
     def test_run_discover_mode(self, tmp_path):
         """cmd_run with --mode=discover passes discover task to CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path), "--mode", "discover"])
 
         assert result == 0
@@ -868,8 +971,10 @@ class TestRunWithGitHubUrl:
 
     def test_run_meta_mode(self, tmp_path):
         """cmd_run with --mode=meta passes meta task to CEO."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path), "--mode", "meta"])
 
         assert result == 0
@@ -922,19 +1027,31 @@ class TestHeartbeatParserFlags:
 class TestHeartbeatLoop:
     def test_no_loop_single_run(self, tmp_path):
         """Without --loop, cmd_run executes exactly one cycle."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path)])
         assert result == 0
         mock_agent.assert_called_once()
 
     def test_loop_exits_after_max_cycles(self, tmp_path, capsys):
         """With --loop --max-cycles=3, runs exactly 3 cycles then exits."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli.run._chain_modes", return_value=0):
-            result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "3", "--interval", "0",
-            ])
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
+            result = main(
+                [
+                    "run",
+                    str(tmp_path),
+                    "--loop",
+                    "--max-cycles",
+                    "3",
+                    "--interval",
+                    "0",
+                ]
+            )
         assert result == 0
         assert mock_agent.call_count == 3
 
@@ -946,11 +1063,19 @@ class TestHeartbeatLoop:
 
     def test_loop_single_cycle(self, tmp_path, capsys):
         """--max-cycles=1 runs one cycle, no sleep, then exits."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.run._chain_modes", return_value=0):
-            result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "1",
-            ])
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
+            result = main(
+                [
+                    "run",
+                    str(tmp_path),
+                    "--loop",
+                    "--max-cycles",
+                    "1",
+                ]
+            )
         assert result == 0
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 started at" in out
@@ -971,9 +1096,14 @@ class TestHeartbeatLoop:
                 threading.Timer(0.05, handler, args=(signal.SIGTERM, None)).start()
             return ("ok", 0)
 
-        with patch("signal.signal", side_effect=_capture_signal), \
-             patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_trigger_sigterm_after_cycle)), \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("signal.signal", side_effect=_capture_signal),
+            patch(
+                "factory.agents.runner.invoke_agent",
+                AsyncMock(side_effect=_trigger_sigterm_after_cycle),
+            ),
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
@@ -995,9 +1125,14 @@ class TestHeartbeatLoop:
                 threading.Timer(0.05, handler, args=(signal.SIGINT, None)).start()
             return ("ok", 0)
 
-        with patch("signal.signal", side_effect=_capture_signal), \
-             patch("factory.agents.runner.invoke_agent", AsyncMock(side_effect=_trigger_sigint_after_cycle)), \
-             patch("factory.cli.run._chain_modes", return_value=0):
+        with (
+            patch("signal.signal", side_effect=_capture_signal),
+            patch(
+                "factory.agents.runner.invoke_agent",
+                AsyncMock(side_effect=_trigger_sigint_after_cycle),
+            ),
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
             result = main(["run", str(tmp_path), "--loop", "--interval", "30"])
 
         assert result == 0
@@ -1006,11 +1141,21 @@ class TestHeartbeatLoop:
 
     def test_loop_logs_sleep_message(self, tmp_path, capsys):
         """Verify the sleep log message appears between cycles."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli.run._chain_modes", return_value=0):
-            result = main([
-                "run", str(tmp_path), "--loop", "--max-cycles", "2", "--interval", "0",
-            ])
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.cli.run._chain_modes", return_value=0),
+        ):
+            result = main(
+                [
+                    "run",
+                    str(tmp_path),
+                    "--loop",
+                    "--max-cycles",
+                    "2",
+                    "--interval",
+                    "0",
+                ]
+            )
         assert result == 0
         out = capsys.readouterr().out
         assert "[factory] Cycle 1 completed. Sleeping for 0s..." in out
@@ -1022,9 +1167,16 @@ class TestHeartbeatLoop:
 class TestCmdAgentParser:
     def test_agent_subcommand(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "agent", "researcher", "--task", "Research the project", "--project", "/some/path",
-        ])
+        args = parser.parse_args(
+            [
+                "agent",
+                "researcher",
+                "--task",
+                "Research the project",
+                "--project",
+                "/some/path",
+            ]
+        )
         assert args.command == "agent"
         assert args.role == "researcher"
         assert args.task == "Research the project"
@@ -1032,22 +1184,46 @@ class TestCmdAgentParser:
 
     def test_agent_default_timeout(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "agent", "builder", "--task", "Build it", "--project", "/path",
-        ])
+        args = parser.parse_args(
+            [
+                "agent",
+                "builder",
+                "--task",
+                "Build it",
+                "--project",
+                "/path",
+            ]
+        )
         assert args.timeout == 600.0
 
     def test_agent_custom_timeout(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "agent", "health_checker", "--task", "Eval", "--project", "/path", "--timeout", "300",
-        ])
+        args = parser.parse_args(
+            [
+                "agent",
+                "health_checker",
+                "--task",
+                "Eval",
+                "--project",
+                "/path",
+                "--timeout",
+                "300",
+            ]
+        )
         assert args.timeout == 300.0
 
     def test_agent_all_roles_valid(self):
         parser = build_parser()
-        for role in ["researcher", "strategist", "builder", "health_checker",
-                     "code_reviewer", "adversarial_tester", "archivist", "ceo"]:
+        for role in [
+            "researcher",
+            "strategist",
+            "builder",
+            "health_checker",
+            "code_reviewer",
+            "adversarial_tester",
+            "archivist",
+            "ceo",
+        ]:
             args = parser.parse_args(["agent", role, "--task", "test", "--project", "/path"])
             assert args.role == role
 
@@ -1056,9 +1232,16 @@ class TestCmdAgent:
     def test_agent_invokes_invoke_agent(self, tmp_path, capsys):
         """cmd_agent delegates to invoke_agent with correct args."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main([
-                "agent", "researcher", "--task", "Research", "--project", str(tmp_path),
-            ])
+            result = main(
+                [
+                    "agent",
+                    "researcher",
+                    "--task",
+                    "Research",
+                    "--project",
+                    str(tmp_path),
+                ]
+            )
         assert result == 0
         mock_agent.assert_called_once()
         call_args = mock_agent.call_args
@@ -1070,9 +1253,16 @@ class TestCmdAgent:
     def test_agent_returns_nonzero_on_failure(self, tmp_path):
         """cmd_agent returns agent exit code on failure."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_fail()):
-            result = main([
-                "agent", "builder", "--task", "Build", "--project", str(tmp_path),
-            ])
+            result = main(
+                [
+                    "agent",
+                    "builder",
+                    "--task",
+                    "Build",
+                    "--project",
+                    str(tmp_path),
+                ]
+            )
         assert result == 1
 
 
@@ -1101,7 +1291,9 @@ class TestCmdCeoParser:
 
     def test_ceo_review_mode_with_repo(self):
         parser = build_parser()
-        args = parser.parse_args(["ceo", "/some/path", "--mode", "review", "--pr", "42", "--repo", "owner/repo"])
+        args = parser.parse_args(
+            ["ceo", "/some/path", "--mode", "review", "--pr", "42", "--repo", "owner/repo"]
+        )
         assert args.repo == "owner/repo"
 
     def test_ceo_pr_default_none(self):
@@ -1146,8 +1338,19 @@ class TestCmdCeoReview:
     def test_review_mode_headless_with_repo(self, tmp_path, capsys):
         """--mode review --pr 42 --repo owner/repo includes repo in task."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42",
-                           "--repo", "owner/repo", "--headless"])
+            result = main(
+                [
+                    "ceo",
+                    str(tmp_path),
+                    "--mode",
+                    "review",
+                    "--pr",
+                    "42",
+                    "--repo",
+                    "owner/repo",
+                    "--headless",
+                ]
+            )
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "owner/repo" in task
@@ -1156,16 +1359,20 @@ class TestCmdCeoReview:
 
     def test_review_mode_skips_worktree(self, tmp_path):
         """Review mode does not create worktrees or touch experiment store."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.worktree.create_worktree") as mock_wt:
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.worktree.create_worktree") as mock_wt,
+        ):
             main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42", "--headless"])
         mock_wt.assert_not_called()
 
     def test_review_mode_foreground(self, tmp_path):
         """Review mode without --headless launches interactively."""
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
-        with patch("factory.runners.claude.subprocess.run", mock_run), \
-             patch("factory.cli._helpers._ensure_dashboard"):
+        with (
+            patch("factory.runners.claude.subprocess.run", mock_run),
+            patch("factory.cli._helpers._ensure_dashboard"),
+        ):
             main(["ceo", str(tmp_path), "--mode", "review", "--pr", "42"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -1211,8 +1418,19 @@ class TestCmdCeoQa:
     def test_qa_mode_headless_with_repo(self, tmp_path, capsys):
         """--mode deep-qa --pr 42 --repo owner/repo includes repo in task."""
         with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
-            result = main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42",
-                           "--repo", "owner/repo", "--headless"])
+            result = main(
+                [
+                    "ceo",
+                    str(tmp_path),
+                    "--mode",
+                    "deep-qa",
+                    "--pr",
+                    "42",
+                    "--repo",
+                    "owner/repo",
+                    "--headless",
+                ]
+            )
         assert result == 0
         task = mock_agent.call_args[0][1]
         assert "owner/repo" in task
@@ -1220,16 +1438,20 @@ class TestCmdCeoQa:
 
     def test_qa_mode_skips_worktree(self, tmp_path):
         """Deep-QA mode does not create worktrees or touch experiment store."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.worktree.create_worktree") as mock_wt:
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.worktree.create_worktree") as mock_wt,
+        ):
             main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42", "--headless"])
         mock_wt.assert_not_called()
 
     def test_qa_mode_foreground(self, tmp_path):
         """Deep-QA mode without --headless launches interactively."""
         mock_run = MagicMock(return_value=MagicMock(returncode=0))
-        with patch("factory.runners.claude.subprocess.run", mock_run), \
-             patch("factory.cli._helpers._ensure_dashboard"):
+        with (
+            patch("factory.runners.claude.subprocess.run", mock_run),
+            patch("factory.cli._helpers._ensure_dashboard"),
+        ):
             main(["ceo", str(tmp_path), "--mode", "deep-qa", "--pr", "42"])
         mock_run.assert_called_once()
         cmd = mock_run.call_args[0][0]
@@ -1250,8 +1472,10 @@ class TestCmdCeoQa:
 class TestCmdCeo:
     def test_ceo_headless_invokes_ceo_agent(self, tmp_path, capsys):
         """cmd_ceo --headless spawns CEO agent via invoke_agent."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+        ):
             result = main(["ceo", str(tmp_path), "--headless"])
         assert result == 0
         mock_agent.assert_called_once()
@@ -1261,8 +1485,10 @@ class TestCmdCeo:
 
     def test_ceo_headless_meta_mode_task(self, tmp_path):
         """cmd_ceo --headless with --mode=meta includes meta instructions."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+        ):
             result = main(["ceo", str(tmp_path), "--mode", "meta", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
@@ -1271,21 +1497,27 @@ class TestCmdCeo:
     def test_ceo_headless_clones_github_url(self, capsys):
         """cmd_ceo --headless clones a GitHub URL then invokes CEO."""
         url = "https://github.com/user/repo"
-        with patch("factory.cli._path_resolver.subprocess.run") as mock_clone, \
-             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()), \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0), \
-             patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-ceo"), \
-             patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"):
+        with (
+            patch("factory.cli._path_resolver.subprocess.run") as mock_clone,
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()),
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+            patch("factory.cli._path_resolver.tempfile.mkdtemp", return_value="/tmp/factory-ceo"),
+            patch("factory.cli._ceo_helpers._read_target_branch", return_value="main"),
+            patch("factory.graph.is_graphify_installed", return_value=False),
+        ):
             result = main(["ceo", url, "--headless"])
         assert result == 0
         mock_clone.assert_called_once_with(
-            ["git", "clone", url, "/tmp/factory-ceo"], check=True,
+            ["git", "clone", url, "/tmp/factory-ceo"],
+            check=True,
         )
 
     def test_ceo_headless_timeout_is_2_hours(self, tmp_path):
         """CEO agent gets 7200s timeout in headless mode."""
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+        ):
             main(["ceo", str(tmp_path), "--headless"])
         call_kwargs = mock_agent.call_args[1]
         assert call_kwargs["timeout"] == 7200.0
@@ -1345,8 +1577,6 @@ class TestSlugify:
         assert _slugify("!!!") == "factory-project"
 
 
-
-
 class TestExtractProjectName:
     def test_strips_build_verb(self):
         assert _extract_project_name("Build a weather CLI tool") == "weather-cli-tool"
@@ -1355,7 +1585,10 @@ class TestExtractProjectName:
         assert _extract_project_name("Create an API server") == "api-server"
 
     def test_strips_filler_adjectives(self):
-        assert _extract_project_name("Build a comprehensive e-commerce platform with payments") == "e-commerce-platform-payments"
+        assert (
+            _extract_project_name("Build a comprehensive e-commerce platform with payments")
+            == "e-commerce-platform-payments"
+        )
 
     def test_caps_at_four_words(self):
         result = _extract_project_name("distributed eval runner for multi-node benchmarks on GPUs")
@@ -1399,7 +1632,9 @@ class TestDedupeProjectPath:
         path = tmp_path / "projects" / "rest-api"
         spec_dir = path / ".factory" / "strategy"
         spec_dir.mkdir(parents=True)
-        (spec_dir / "current.md").write_text("## Project Specification\n\nBuild a REST API for users\n")
+        (spec_dir / "current.md").write_text(
+            "## Project Specification\n\nBuild a REST API for users\n"
+        )
         result = _dedupe_project_path(path, "Build a REST API for payments")
         assert result == tmp_path / "projects" / "rest-api-2"
 
@@ -1414,7 +1649,9 @@ class TestDedupeProjectPath:
         assert result == tmp_path / "projects" / "rest-api-4"
 
     def test_resolve_input_dedupes_raw_prompt(self, tmp_path):
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             p1, ctx1 = _resolve_input("Build a REST API")
             _materialize_project(p1, ctx1)
             p2, _ = _resolve_input("Create a new REST API")
@@ -1451,7 +1688,9 @@ class TestResolveInput:
         idea_file = tmp_path / "My Project \u2014 Something Cool.md"
         idea_file.write_text("# Build something cool")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input(str(idea_file))
 
         assert project_path.name == "my-project"
@@ -1460,7 +1699,9 @@ class TestResolveInput:
         assert "Build something cool" in context
 
     def test_raw_prompt(self, tmp_path):
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input("Build a todo app with FastAPI")
 
         assert project_path.parent == tmp_path / "projects"
@@ -1472,7 +1713,9 @@ class TestResolveInput:
         py_file = tmp_path / "script.py"
         py_file.write_text("print('hello')")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input(str(py_file))
 
         assert project_path.name == "script"
@@ -1483,8 +1726,12 @@ class TestResolveInput:
         bin_file = tmp_path / "data.bin"
         bin_file.write_bytes(b"\x00\x01\x02\xff")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"), \
-             pytest.raises(UnicodeDecodeError):
+        with (
+            patch(
+                "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+            ),
+            pytest.raises(UnicodeDecodeError),
+        ):
             _resolve_input(str(bin_file))
 
     def test_ceo_receives_context(self, tmp_path):
@@ -1492,9 +1739,13 @@ class TestResolveInput:
         idea_file = tmp_path / "Test Idea \u2014 Details.md"
         idea_file.write_text("# Test Idea\nBuild X that does Y")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"), \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0), \
-             patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent:
+        with (
+            patch(
+                "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+            ),
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+        ):
             main(["ceo", str(idea_file), "--headless"])
 
         task_arg = mock_agent.call_args[0][1]  # second positional = task
@@ -1502,8 +1753,12 @@ class TestResolveInput:
         assert "Project Specification" in task_arg
 
     def test_dir_overrides_slug_for_raw_prompt(self, tmp_path):
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
-            project_path, context = _resolve_input("Build a todo app with FastAPI", dir_name="my-todo")
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
+            project_path, context = _resolve_input(
+                "Build a todo app with FastAPI", dir_name="my-todo"
+            )
 
         assert project_path.name == "my-todo"
         assert not (project_path / ".git").is_dir()
@@ -1512,7 +1767,9 @@ class TestResolveInput:
         idea_file = tmp_path / "Long Idea Name — Details.md"
         idea_file.write_text("# Build something")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input(str(idea_file), dir_name="custom-name")
 
         assert project_path.name == "custom-name"
@@ -1525,7 +1782,9 @@ class TestResolveInput:
         assert context is None
 
     def test_dir_is_slugified(self, tmp_path):
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input("Build something", dir_name="My Cool Project!")
 
         assert project_path.name == "my-cool-project"
@@ -1557,12 +1816,18 @@ class TestResearchMode:
         (tmp_path / ".git").mkdir()
         factory_dir = tmp_path / ".factory"
         factory_dir.mkdir()
-        rt = {"objective": "maximize accuracy", "metric": "accuracy",
-              "target": 0.9, "run_command": "python run.py",
-              "result_path": "results.json"}
+        rt = {
+            "objective": "maximize accuracy",
+            "metric": "accuracy",
+            "target": 0.9,
+            "run_command": "python run.py",
+            "result_path": "results.json",
+        }
         (factory_dir / "config.json").write_text(json.dumps(_make_config(research_target=rt)))
-        with patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent, \
-             patch("factory.cli._ceo_helpers._chain_modes", return_value=0):
+        with (
+            patch("factory.agents.runner.invoke_agent", _mock_invoke_agent_ok()) as mock_agent,
+            patch("factory.cli._ceo_helpers._chain_modes", return_value=0),
+        ):
             result = main(["ceo", str(tmp_path), "--mode", "research", "--headless"])
         assert result == 0
         task = mock_agent.call_args[0][1]
@@ -1586,6 +1851,7 @@ class TestResearchMode:
         asyncio.run(store.init(config_with_research))
 
         from factory.cli._mode_handlers import _auto_detect_mode
+
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
         assert mode == "research"
 
@@ -1595,6 +1861,7 @@ class TestResearchMode:
         asyncio.run(store.init(sample_config))
 
         from factory.cli._mode_handlers import _auto_detect_mode
+
         mode = _auto_detect_mode(tmp_project, force_fresh=True)
         assert mode == "improve"
 
@@ -1720,9 +1987,17 @@ class TestProfileParser:
 
     def test_use_profile_flag_on_agent(self):
         parser = build_parser()
-        args = parser.parse_args([
-            "agent", "researcher", "--task", "test", "--project", "/p", "--use-profile",
-        ])
+        args = parser.parse_args(
+            [
+                "agent",
+                "researcher",
+                "--task",
+                "test",
+                "--project",
+                "/p",
+                "--use-profile",
+            ]
+        )
         assert args.use_profile is True
 
 
@@ -1762,6 +2037,7 @@ class TestCmdHomeReturnsFactoryDir:
     def test_cmd_home_returns_package_root(self, capsys):
         from factory.cli import cmd_home
         import argparse
+
         result = cmd_home(argparse.Namespace())
         assert result == 0
         output = capsys.readouterr().out.strip()
@@ -1776,14 +2052,16 @@ class TestCmdTmuxBareCLI:
         from factory.cli import cmd_tmux
         import argparse
 
-        with patch("factory.cli._tmux_commands._tmux_available", return_value=True), \
-             patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True), \
-             patch("factory.cli._tmux_commands.time.sleep"), \
-             patch("subprocess.run") as mock_run:
+        with (
+            patch("factory.cli._tmux_commands._tmux_available", return_value=True),
+            patch("factory.cli._tmux_commands._tmux_session_alive", return_value=True),
+            patch("factory.cli._tmux_commands.time.sleep"),
+            patch("subprocess.run") as mock_run,
+        ):
             mock_run.return_value = type("R", (), {"returncode": 1})()  # has-session fails
             mock_run.side_effect = [
                 type("R", (), {"returncode": 1})(),  # has-session → no existing session
-                type("R", (), {"returncode": 0})(),   # new-session → success
+                type("R", (), {"returncode": 0})(),  # new-session → success
                 type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),  # capture-pane
             ]
             args = argparse.Namespace(
@@ -1814,6 +2092,7 @@ class TestPluginAgentsDirGuard:
     def test_plugin_agents_dir_none_when_missing(self, tmp_path):
         """_PLUGIN_AGENTS_DIR is None when the agents/ dir doesn't exist."""
         from factory.agents import plugin
+
         original = plugin._PLUGIN_AGENTS_DIR
         try:
             plugin._PLUGIN_AGENTS_DIR = None
@@ -1829,8 +2108,10 @@ class TestResolveProjectPath:
         from factory.cli import cmd_notify
         import argparse
 
-        with patch("factory.cli.admin._run", side_effect=lambda c: []), \
-             patch("factory.notify.telegram.TelegramNotifier") as MockNotifier:
+        with (
+            patch("factory.cli.admin._run", side_effect=lambda c: []),
+            patch("factory.notify.telegram.TelegramNotifier") as MockNotifier,
+        ):
             mock_instance = MockNotifier.return_value
             mock_instance.send_digest = AsyncMock()
             args = argparse.Namespace(path=str(tmp_path))
@@ -1868,6 +2149,7 @@ class TestNoBareUvRunPythonMFactory:
 
     def test_no_hardcoded_uv_run_python_m_factory(self):
         import glob
+
         repo_root = Path(__file__).resolve().parent.parent
         violations: list[str] = []
         for pattern in self.SCAN_GLOBS:
@@ -1904,7 +2186,7 @@ class TestSacredRule8Present:
         """Rule 8 must be in the numbered Sacred Rules list, not just mentioned elsewhere."""
         repo_root = Path(__file__).resolve().parent.parent
         ceo_prompt = (repo_root / "factory" / "agents" / "prompts" / "ceo.md").read_text()
-        assert '8. **Do not do another agent\'s job**' in ceo_prompt, (
+        assert "8. **Do not do another agent's job**" in ceo_prompt, (
             "Sacred Rule 8 must be a numbered item (8.) in the Sacred Rules section"
         )
 
@@ -1918,7 +2200,9 @@ class TestEnsureRepo:
         _ensure_repo(project)
         result = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         assert int(result.stdout.strip()) >= 1
@@ -1929,7 +2213,9 @@ class TestEnsureRepo:
         _ensure_repo(project)
         result = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         )
         assert result.returncode == 0
         branch = result.stdout.strip()
@@ -1941,12 +2227,16 @@ class TestEnsureRepo:
         _ensure_repo(project)
         count_before = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         _ensure_repo(project)
         count_after = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert count_before == count_after
 
@@ -1977,8 +2267,10 @@ class TestDesignFileInput:
 
     def test_raw_idea_persists_spec(self, tmp_path):
         """When --mode design receives a raw string, the spec should be persisted."""
-        with _mock_foreground(), \
-             patch("factory.cli._ceo_helpers._get_projects_dir", return_value=tmp_path):
+        with (
+            _mock_foreground(),
+            patch("factory.cli._ceo_helpers._get_projects_dir", return_value=tmp_path),
+        ):
             main(["ceo", "Build a CLI todo app", "--mode", "design"])
         matches = [p for p in tmp_path.iterdir() if p.is_dir()]
         assert len(matches) == 1
@@ -2022,7 +2314,9 @@ class TestRefineFlag:
         prompt_file = tmp_path / "spec.md"
         prompt_file.write_text("some spec")
         with _mock_foreground():
-            result = main(["ceo", str(tmp_path), "--refine", "fix bug", "--prompt", str(prompt_file)])
+            result = main(
+                ["ceo", str(tmp_path), "--refine", "fix bug", "--prompt", str(prompt_file)]
+            )
         assert result == 1
         assert "mutually exclusive" in capsys.readouterr().err
 
@@ -2074,7 +2368,11 @@ class TestRefinerPromptExists:
         prompt_path = Path(__file__).parent.parent / "factory" / "agents" / "prompts" / "refiner.md"
         content = prompt_path.read_text()
         assert "Tier" in content, "refiner.md should reference Tier classification"
-        assert "Builder" in content or "builder" in content, "refiner.md should reference the Builder agent"
+        assert "Builder" in content or "builder" in content, (
+            "refiner.md should reference the Builder agent"
+        )
+
+
 class TestWizardLongInputRedirect:
     """Tests for wizard long-input redirect to ~/.factory/wizard_input.md."""
 
@@ -2116,9 +2414,19 @@ class TestWizardLongInputRedirect:
         short_input = "Build a weather CLI"
         monkeypatch.setattr("builtins.input", self._make_input_fn(short_input))
 
-        with patch("factory.cli._wizard._classify_with_llm", return_value=([], [
-            {"label": "Build", "explanation": "Build it.", "command": "factory ceo 'Build a weather CLI' --mode build"},
-        ])):
+        with patch(
+            "factory.cli._wizard._classify_with_llm",
+            return_value=(
+                [],
+                [
+                    {
+                        "label": "Build",
+                        "explanation": "Build it.",
+                        "command": "factory ceo 'Build a weather CLI' --mode build",
+                    },
+                ],
+            ),
+        ):
             _welcome_wizard()
 
         assert not wizard_file.exists()
@@ -2233,12 +2541,16 @@ class TestMaterializeProject:
         _materialize_project(project, "first spec")
         count_before = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         _materialize_project(project, "second spec")
         count_after = subprocess.run(
             ["git", "rev-list", "--count", "HEAD"],
-            cwd=project, capture_output=True, text=True,
+            cwd=project,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         assert count_before == count_after
 
@@ -2268,9 +2580,9 @@ class TestIsScaffoldOnly:
         (project / "README.md").write_text("# Hello")
         subprocess.run(["git", "add", "README.md"], cwd=project, capture_output=True)
         subprocess.run(
-            ["git", "-c", "user.name=Test", "-c", "user.email=t@t",
-             "commit", "-m", "second"],
-            cwd=project, capture_output=True,
+            ["git", "-c", "user.name=Test", "-c", "user.email=t@t", "commit", "-m", "second"],
+            cwd=project,
+            capture_output=True,
         )
         assert _is_scaffold_only(project) is False
 
@@ -2290,7 +2602,9 @@ class TestDeferredCreationFlow:
         idea_file = tmp_path / "my-app.md"
         idea_file.write_text("Build something cool")
 
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input(str(idea_file))
 
         assert not project_path.exists()
@@ -2299,15 +2613,18 @@ class TestDeferredCreationFlow:
         assert (project_path / ".factory" / "strategy" / "current.md").exists()
 
     def test_resolve_then_materialize_raw_prompt(self, tmp_path):
-        with patch("factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"):
+        with patch(
+            "factory.cli._path_resolver._get_projects_dir", return_value=tmp_path / "projects"
+        ):
             project_path, context = _resolve_input("Build a weather CLI")
 
         assert not project_path.exists()
         _materialize_project(project_path, context)
         assert (project_path / ".git").is_dir()
-        assert "Build a weather CLI" in (
-            project_path / ".factory" / "strategy" / "current.md"
-        ).read_text()
+        assert (
+            "Build a weather CLI"
+            in (project_path / ".factory" / "strategy" / "current.md").read_text()
+        )
 
     def test_existing_dir_not_affected(self, tmp_path):
         """_resolve_input on existing dir returns it unchanged, _materialize_project is no-op."""

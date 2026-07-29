@@ -104,7 +104,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
             "backfill-archive",
         ],
     ),
-    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow"]),
+    ("Self-Evolution", ["ace", "ace-stats", "digest", "workflow", "graph"]),
     (
         "Configuration",
         [
