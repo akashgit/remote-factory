@@ -56,7 +56,7 @@ def git_project(tmp_path: Path) -> Path:
 
 class TestCreateWorktree:
     def test_creates_worktree_dir(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         assert wt_path.exists()
         assert wt_path.is_dir()
@@ -64,20 +64,20 @@ class TestCreateWorktree:
         assert wt_path.parent == git_project / ".factory-worktrees"
 
     def test_worktree_has_factory_symlink(self, git_project: Path) -> None:
-        wt_path, _ = create_worktree(git_project)
+        wt_path, _, _target = create_worktree(git_project)
 
         symlink = wt_path / ".factory"
         assert symlink.is_symlink()
         assert symlink.resolve() == (git_project / ".factory").resolve()
 
     def test_worktree_contains_project_files(self, git_project: Path) -> None:
-        wt_path, _ = create_worktree(git_project)
+        wt_path, _, _target = create_worktree(git_project)
 
         assert (wt_path / "README.md").exists()
         assert (wt_path / "README.md").read_text() == "hello"
 
     def test_worktree_branch_is_checked_out(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         result = subprocess.run(
             ["git", "branch", "--show-current"],
@@ -109,32 +109,32 @@ class TestCreateWorktree:
             cwd=git_project, capture_output=True, check=True,
         )
 
-        wt_path, _ = create_worktree(git_project, base_branch="develop")
+        wt_path, _, _target = create_worktree(git_project, base_branch="develop")
         assert (wt_path / "extra.txt").exists()
 
     def test_uses_provided_run_id(self, git_project: Path) -> None:
         uuid_str = "d854881a-800d-44ff-beb5-b9fd77cc3fb9"
-        wt_path, branch = create_worktree(git_project, run_id=uuid_str)
+        wt_path, branch, _target = create_worktree(git_project, run_id=uuid_str)
 
         # First 8 chars of UUID should be used
         assert branch == "factory/run-d854881a"
         assert wt_path.name == "run-d854881a"
 
     def test_run_id_truncated_to_8_chars(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project, run_id="abcdef1234567890")
+        wt_path, branch, _target = create_worktree(git_project, run_id="abcdef1234567890")
 
         assert branch == "factory/run-abcdef12"
         assert wt_path.name == "run-abcdef12"
 
     def test_short_run_id_used_as_is(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project, run_id="abc")
+        wt_path, branch, _target = create_worktree(git_project, run_id="abc")
 
         assert branch == "factory/run-abc"
         assert wt_path.name == "run-abc"
 
     def test_multiple_worktrees_coexist(self, git_project: Path) -> None:
-        wt1, br1 = create_worktree(git_project)
-        wt2, br2 = create_worktree(git_project)
+        wt1, br1, _t1 = create_worktree(git_project)
+        wt2, br2, _t2 = create_worktree(git_project)
 
         assert wt1 != wt2
         assert br1 != br2
@@ -144,7 +144,7 @@ class TestCreateWorktree:
 
 class TestRemoveWorktree:
     def test_removes_worktree_completely(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         assert wt_path.exists()
 
         remove_worktree(git_project, wt_path, branch)
@@ -158,12 +158,12 @@ class TestRemoveWorktree:
         assert branch not in result.stdout
 
     def test_safe_on_already_removed_path(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         remove_worktree(git_project, wt_path, branch)
         remove_worktree(git_project, wt_path, branch)
 
     def test_removes_from_worktree_list(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         remove_worktree(git_project, wt_path, branch)
 
         result = subprocess.run(
@@ -176,7 +176,7 @@ class TestRemoveWorktree:
 class TestTelemetryPreservation:
     def test_trace_id_preserved_with_symlink(self, git_project: Path) -> None:
         """trace_id.txt written via symlink is already in main .factory/."""
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         # Write trace_id.txt via the worktree's .factory symlink
         trace_id = "test-trace-12345"
@@ -193,7 +193,7 @@ class TestTelemetryPreservation:
 
     def test_trace_id_preserved_with_separate_directory(self, git_project: Path) -> None:
         """trace_id.txt in a separate .factory/ dir is copied to main before cleanup."""
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         # Remove the symlink and create a separate directory
         wt_factory = wt_path / ".factory"
@@ -216,7 +216,7 @@ class TestTelemetryPreservation:
 
     def test_no_trace_id_no_error(self, git_project: Path) -> None:
         """Cleanup succeeds when trace_id.txt doesn't exist."""
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         # No trace_id.txt written
         assert not (wt_path / ".factory" / "trace_id.txt").exists()
@@ -248,7 +248,7 @@ class TestPruneStale:
         assert not orphan.exists()
 
     def test_preserves_active_worktrees(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         pruned = prune_stale(git_project)
         assert wt_path.exists()
@@ -257,7 +257,7 @@ class TestPruneStale:
 
     def test_crash_recovery_cleans_all_artifacts(self, git_project: Path) -> None:
         """Simulate a crash: create worktree, delete dir manually, then prune."""
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         import shutil
         shutil.rmtree(wt_path)
 
@@ -344,7 +344,7 @@ class TestDetectDefaultBranch:
 
 class TestCreateWorktreeWithMaster:
     def test_create_worktree_on_master_repo(self, git_project_master: Path) -> None:
-        wt_path, branch = create_worktree(git_project_master, base_branch="master")
+        wt_path, branch, _target = create_worktree(git_project_master, base_branch="master")
         try:
             assert wt_path.exists()
             assert branch.startswith("factory/run-")
@@ -361,7 +361,7 @@ class TestSHAResolution:
             cwd=git_project, capture_output=True, text=True, check=True,
         ).stdout.strip()
 
-        wt_path, branch = create_worktree(git_project, "HEAD")
+        wt_path, branch, _target = create_worktree(git_project, "HEAD")
 
         wt_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -392,7 +392,7 @@ class TestSHAResolution:
             cwd=git_project, capture_output=True, text=True, check=True,
         ).stdout.strip()
 
-        wt_path, branch = create_worktree(git_project, "HEAD")
+        wt_path, branch, _target = create_worktree(git_project, "HEAD")
 
         wt_sha = subprocess.run(
             ["git", "rev-parse", "HEAD"],
@@ -408,13 +408,13 @@ class TestSymlinkResolution:
         """ExperimentStore via worktree symlink writes to main .factory/."""
         from factory.store import ExperimentStore
 
-        wt_path, _ = create_worktree(git_project)
+        wt_path, _, _target = create_worktree(git_project)
         store = ExperimentStore(wt_path)
 
         assert store.factory_dir.resolve() == (git_project / ".factory").resolve()
 
     def test_config_readable_through_symlink(self, git_project: Path) -> None:
-        wt_path, _ = create_worktree(git_project)
+        wt_path, _, _target = create_worktree(git_project)
 
         config_via_symlink = (wt_path / ".factory" / "config.json").read_text()
         config_direct = (git_project / ".factory" / "config.json").read_text()
@@ -484,7 +484,7 @@ class TestSessionGuard:
             assert _has_active_sessions(tmp_path) is False
 
     def test_remove_worktree_skips_when_active_sessions(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         assert wt_path.exists()
 
         with patch("factory.worktree._has_active_sessions", return_value=True):
@@ -493,7 +493,7 @@ class TestSessionGuard:
         assert wt_path.exists()
 
     def test_remove_worktree_proceeds_when_no_active_sessions(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
         assert wt_path.exists()
 
         with patch("factory.worktree._has_active_sessions", return_value=False):
@@ -793,7 +793,7 @@ class TestCreateWorktreeUnbornRepo:
             "PATH": "/usr/bin:/bin:/usr/local/bin",
         }
         with patch.dict("os.environ", env):
-            wt_path, branch = create_worktree(unborn_repo)
+            wt_path, branch, _target = create_worktree(unborn_repo)
 
         assert wt_path.exists()
         assert branch.startswith("factory/run-")
@@ -862,13 +862,13 @@ class TestEventEmissionFailure:
 class TestCreateWorktreeEventFailure:
     def test_create_worktree_swallows_event_error(self, git_project: Path) -> None:
         with patch("factory.events.emit_event", side_effect=RuntimeError("boom")):
-            wt_path, branch = create_worktree(git_project)
+            wt_path, branch, _target = create_worktree(git_project)
 
         assert wt_path.exists()
         assert branch.startswith("factory/run-")
 
     def test_remove_worktree_swallows_event_error(self, git_project: Path) -> None:
-        wt_path, branch = create_worktree(git_project)
+        wt_path, branch, _target = create_worktree(git_project)
 
         with patch("factory.events.emit_event", side_effect=RuntimeError("boom")):
             remove_worktree(git_project, wt_path, branch)
@@ -901,7 +901,7 @@ class TestCreateWorktreeExistingFactory:
             cwd=project, capture_output=True, check=True, env=env,
         )
 
-        wt_path, _ = create_worktree(project)
+        wt_path, _, _target = create_worktree(project)
 
         assert (wt_path / ".factory").is_symlink()
         assert (wt_path / ".factory").resolve() == factory_dir.resolve()
@@ -948,3 +948,82 @@ class TestDetectDefaultBranchUnborn:
 
         result = detect_default_branch(project)
         assert result == "trunk"
+
+
+class TestCreateWorktreeReturnsTargetBranch:
+    """BUG #1046: create_worktree must return the target branch."""
+
+    def test_returns_default_target_branch(self, git_project: Path) -> None:
+        wt_path, branch, target = create_worktree(git_project)
+        assert target == "main"
+
+    def test_returns_custom_target_branch(self, git_project: Path) -> None:
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(git_project.parent),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        subprocess.run(
+            ["git", "checkout", "-b", "develop"],
+            cwd=git_project, capture_output=True, check=True,
+        )
+        (git_project / "dev.txt").write_text("dev")
+        subprocess.run(["git", "add", "."], cwd=git_project, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "dev"],
+            cwd=git_project, capture_output=True, check=True, env=env,
+        )
+        subprocess.run(
+            ["git", "checkout", "main"],
+            cwd=git_project, capture_output=True, check=True,
+        )
+
+        wt_path, branch, target = create_worktree(git_project, base_branch="develop")
+        assert target == "develop"
+        assert branch.startswith("factory/run-")
+
+    def test_target_differs_from_worktree_branch(self, git_project: Path) -> None:
+        _, wt_branch, target = create_worktree(git_project)
+        assert wt_branch.startswith("factory/run-")
+        assert target == "main"
+        assert wt_branch != target
+
+
+class TestBootstrapCalledProcessError:
+    """BUG #1034: bootstrap failures must raise RuntimeError, not CalledProcessError."""
+
+    def test_bootstrap_failure_raises_runtime_error(self, unborn_repo: Path) -> None:
+        with patch(
+            "factory.worktree.subprocess.run",
+            side_effect=[
+                subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
+                subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr=""),
+                subprocess.CalledProcessError(128, "git", stderr=b"no user configured"),
+            ],
+        ):
+            with pytest.raises(RuntimeError, match="Failed to bootstrap"):
+                create_worktree(unborn_repo)
+
+    def test_post_bootstrap_branch_mismatch_raises_runtime_error(self, tmp_path: Path) -> None:
+        """After bootstrapping, if base_branch still doesn't exist, raise RuntimeError."""
+        project = tmp_path / "mismatch"
+        project.mkdir()
+        subprocess.run(
+            ["git", "init", "-b", "trunk"],
+            cwd=project, capture_output=True, check=True,
+        )
+
+        env = {
+            "GIT_AUTHOR_NAME": "test",
+            "GIT_AUTHOR_EMAIL": "test@test.com",
+            "GIT_COMMITTER_NAME": "test",
+            "GIT_COMMITTER_EMAIL": "test@test.com",
+            "HOME": str(tmp_path),
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+        }
+        with patch.dict("os.environ", env):
+            with pytest.raises(RuntimeError, match="does not exist.*after bootstrapping"):
+                create_worktree(project, base_branch="main")

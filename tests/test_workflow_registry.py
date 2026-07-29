@@ -214,6 +214,38 @@ class TestListWorkflows:
 # ── reset ────────────────────────────────────────────────────────
 
 
+class TestGetAllWorkflows:
+    def test_returns_workflow_objects(self) -> None:
+        from factory.workflow.primitives import Workflow
+
+        workflows = WorkflowRegistry.get_all_workflows()
+        assert len(workflows) >= 11
+        assert "improve" in workflows
+        assert isinstance(workflows["improve"], Workflow)
+
+    def test_includes_external_workflows(self, tmp_workflows: Path) -> None:
+        WorkflowRegistry.register_search_path(str(tmp_workflows))
+        workflows = WorkflowRegistry.get_all_workflows()
+        assert "example" in workflows
+        assert workflows["example"].name == "example"
+
+    def test_includes_project_local_workflows(self, tmp_path: Path) -> None:
+        wf_dir = tmp_path / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "proj_wf.py").write_text(
+            'from factory.workflow.definitions import improve_workflow\n'
+            '\n'
+            'meta = {"name": "proj_wf", "description": "Project-local"}\n'
+            '\n'
+            'def workflow():\n'
+            '    wf = improve_workflow()\n'
+            '    wf.name = "proj_wf"\n'
+            '    return wf\n'
+        )
+        workflows = WorkflowRegistry.get_all_workflows(project_path=tmp_path)
+        assert "proj_wf" in workflows
+
+
 class TestReset:
     def test_clears_state(self, tmp_workflows: Path) -> None:
         WorkflowRegistry.register_search_path(str(tmp_workflows))

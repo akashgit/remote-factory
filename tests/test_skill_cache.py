@@ -130,3 +130,50 @@ class TestEnsureSkills:
         ensure_skills(project)
 
         assert marker.read_text() == "hand-written"
+
+    def test_uses_workflow_registry(self, tmp_path: Path, monkeypatch: object) -> None:
+        """BUG #1039: ensure_skills must go through WorkflowRegistry, not register_all."""
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        with patch(
+            "factory.workflow.registry.WorkflowRegistry.get_all_workflows",
+            wraps=None,
+        ) as mock_get:
+            mock_get.return_value = {"test": _make_workflow("test")}
+            ensure_skills(project)
+            mock_get.assert_called_once_with(project)
+
+    def test_includes_project_local_workflows(self, tmp_path: Path, monkeypatch: object) -> None:
+        """BUG #1039: project-local workflows must be included in skill generation."""
+        from factory.workflow.registry import WorkflowRegistry
+
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: tmp_path))  # type: ignore[arg-type]
+        WorkflowRegistry.reset()
+
+        project = tmp_path / "proj"
+        project.mkdir()
+
+        wf_dir = project / ".factory" / "workflows"
+        wf_dir.mkdir(parents=True)
+        (wf_dir / "custom.py").write_text(
+            'from factory.workflow.primitives import FnNode, Workflow\n'
+            '\n'
+            'meta = {"name": "custom", "description": "A custom workflow"}\n'
+            '\n'
+            'def workflow():\n'
+            '    return Workflow(\n'
+            '        name="custom",\n'
+            '        nodes={"a": FnNode(id="a", command="echo custom")},\n'
+            '        edges=[],\n'
+            '        start_node="a",\n'
+            '    )\n'
+        )
+
+        paths = ensure_skills(project)
+        skill_names = [p.parent.name for p in paths]
+        assert "workflow-custom" in skill_names
+
+        WorkflowRegistry.reset()
