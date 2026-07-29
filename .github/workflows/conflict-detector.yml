@@ -1,0 +1,94 @@
+name: PR Conflict Detector
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: conflict-detector
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch all remote branches
+        run: git fetch --all
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run conflict detection
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/conflict_detector.py detect --data-file conflicts.jsonl || true
+
+      - name: Post comments on conflicting PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ ! -f conflicts.jsonl ]; then
+            echo "No conflicts.jsonl found, skipping."
+            exit 0
+          fi
+
+          # Read the last detection run's events (same timestamp)
+          LATEST_TS=$(tail -1 conflicts.jsonl | python3 -c "import sys,json; print(json.load(sys.stdin)['timestamp'])" 2>/dev/null || echo "")
+          if [ -z "$LATEST_TS" ]; then
+            echo "No events to process."
+            exit 0
+          fi
+
+          python3 -c "
+          import json, subprocess, sys
+
+          latest_ts = '$LATEST_TS'
+          events = []
+          with open('conflicts.jsonl') as f:
+              for line in f:
+                  line = line.strip()
+                  if not line:
+                      continue
+                  ev = json.loads(line)
+                  if ev['timestamp'] == latest_ts:
+                      events.append(ev)
+
+          for ev in events:
+              pr = ev['pr_number']
+              files = ev['conflict_files']
+              body = (
+                  '⚠️ **Merge conflict detected** with \`main\`\n\n'
+                  'The following files conflict:\n'
+                  + '\n'.join(f'- \`{f}\`' for f in files)
+                  + '\n\nPlease rebase or merge \`main\` to resolve.'
+              )
+              result = subprocess.run(
+                  ['gh', 'pr', 'comment', str(pr), '--body', body],
+                  capture_output=True, text=True
+              )
+              if result.returncode == 0:
+                  print(f'Commented on PR #{pr}')
+              else:
+                  print(f'Failed to comment on PR #{pr}: {result.stderr}', file=sys.stderr)
+          "
+
+      - name: Commit conflicts.jsonl
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add conflicts.jsonl
+          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: update conflicts.jsonl [skip ci]"
+          git push
