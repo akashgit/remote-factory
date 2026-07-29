@@ -56,13 +56,18 @@ def cmd_discover(args: argparse.Namespace) -> int:
     if eval_spec:
         (store.factory_dir / "eval_spec.json").write_text(json.dumps(eval_spec, indent=2) + "\n")
 
-    from factory.discovery.spec import generate_spec, resolve_spec
+    from factory.discovery.spec import resolve_spec
 
     spec_path = resolve_spec(project_path)
     if spec_path is None:
         try:
-            generate_spec(project_path)
-            spec_path = project_path / "SPEC.md"
+            from factory.cli.spec import _run_spec_workflow
+
+            rc, reason = _run_spec_workflow("spec-generate", project_path)
+            if rc == 0:
+                spec_path = project_path / "SPEC.md"
+            else:
+                log.warning("spec_generate_skipped", reason=reason or "workflow failed")
         except Exception as exc:
             log.warning("spec_generate_skipped", reason=str(exc))
 

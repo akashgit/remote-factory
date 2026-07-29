@@ -1028,7 +1028,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_returns_cycle_mode_when_inflight(self, tmp_path: Path) -> None:
         """_auto_detect_mode returns cycle mode when cycle.json exists."""
-        from factory.cli._mode_handlers import _auto_detect_mode
+        from factory.cli import _auto_detect_mode
         from factory.ceo_completion import create_cycle_state, write_cycle_state
 
         # Create a git repo so state detection doesn't return NO_REPO
@@ -1044,7 +1044,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_ignores_cycle_when_force_fresh(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores cycle.json when force_fresh=True."""
-        from factory.cli._mode_handlers import _auto_detect_mode
+        from factory.cli import _auto_detect_mode
         from factory.ceo_completion import create_cycle_state, write_cycle_state
 
         # Create a git repo
@@ -1060,7 +1060,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_detects_normally_when_no_cycle(self, tmp_path: Path) -> None:
         """_auto_detect_mode detects from project state when no cycle.json."""
-        from factory.cli._mode_handlers import _auto_detect_mode
+        from factory.cli import _auto_detect_mode
 
         # Create a git repo
         (tmp_path / ".git").mkdir()
@@ -1071,7 +1071,7 @@ class TestAutoDetectModeWithCycle:
 
     def test_detects_normally_when_cycle_stale(self, tmp_path: Path) -> None:
         """_auto_detect_mode ignores stale cycle.json."""
-        from factory.cli._mode_handlers import _auto_detect_mode
+        from factory.cli import _auto_detect_mode
         from factory.ceo_completion import CYCLE_STALENESS_HOURS, _cycle_state_path
 
         # Create a git repo

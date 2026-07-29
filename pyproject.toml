@@ -13,6 +13,7 @@ dependencies = [
     "filelock>=3.0",
     "networkx>=3.6.1",
     "langfuse>=3.0",
+    "graphifyy>=0.9",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

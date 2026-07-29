@@ -172,7 +172,7 @@ class TestResolveInputWithoutVault:
     """_resolve_input works for directory and prompt inputs."""
 
     def test_existing_dir_works(self, tmp_path: Path) -> None:
-        from factory.cli._path_resolver import _resolve_input
+        from factory.cli import _resolve_input
 
         project = tmp_path / "my-project"
         project.mkdir()
@@ -183,10 +183,10 @@ class TestResolveInputWithoutVault:
     def test_raw_prompt_creates_project(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        import factory.cli._path_resolver as pr_mod
-        from factory.cli._path_resolver import _materialize_project, _resolve_input
+        import factory.cli as cli_mod
+        from factory.cli import _materialize_project, _resolve_input
 
-        monkeypatch.setattr(pr_mod, "_get_projects_dir", lambda: tmp_path)
+        monkeypatch.setattr(cli_mod, "_get_projects_dir", lambda: tmp_path)
         path, ctx = _resolve_input("build a weather dashboard")
         assert path.parent == tmp_path
         assert not path.exists()
@@ -198,10 +198,10 @@ class TestResolveInputWithoutVault:
     def test_idea_file(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
     ) -> None:
-        import factory.cli._path_resolver as pr_mod
-        from factory.cli._path_resolver import _resolve_input
+        import factory.cli as cli_mod
+        from factory.cli import _resolve_input
 
-        monkeypatch.setattr(pr_mod, "_get_projects_dir", lambda: tmp_path / "projects")
+        monkeypatch.setattr(cli_mod, "_get_projects_dir", lambda: tmp_path / "projects")
         idea_file = tmp_path / "Weather Dashboard \u2014 live forecast.md"
         idea_file.write_text("# Weather Dashboard\nShow forecasts.")
 

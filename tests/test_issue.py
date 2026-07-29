@@ -275,12 +275,12 @@ class TestFocusIssueIntegration:
     """Test that --focus with issue refs works correctly via _resolve_focus_issue."""
 
     def test_focus_plain_text_not_resolved(self) -> None:
-        from factory.cli._path_resolver import _resolve_focus_issue
+        from factory.cli import _resolve_focus_issue
         result = _resolve_focus_issue("dashboard UI", Path("/tmp/fake"))
         assert result is None
 
     def test_focus_bare_number_resolved(self) -> None:
-        from factory.cli._path_resolver import _resolve_focus_issue
+        from factory.cli import _resolve_focus_issue
 
         gh_response = json.dumps({
             "number": 42,
@@ -317,7 +317,7 @@ class TestFocusIssueIntegration:
         assert code == 1
 
     def test_focus_url_resolved(self) -> None:
-        from factory.cli._path_resolver import _resolve_focus_issue
+        from factory.cli import _resolve_focus_issue
 
         gh_response = json.dumps({
             "number": 99,
@@ -347,7 +347,7 @@ class TestFocusIssueIntegration:
 
     def test_focus_updates_name_with_issue_title(self) -> None:
         """When --focus resolves to an issue, the focus name should include the issue title."""
-        from factory.cli._path_resolver import _resolve_focus_issue
+        from factory.cli import _resolve_focus_issue
 
         gh_response = json.dumps({
             "number": 42,
@@ -380,7 +380,7 @@ class TestBuildCeoTaskIssue:
     """Test that _build_ceo_task embeds issue metadata in the CEO task string."""
 
     def test_focus_with_issue_number(self) -> None:
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(
             Path("/tmp/fake"), "improve",
@@ -394,7 +394,7 @@ class TestBuildCeoTaskIssue:
         assert "--issue 42" in task
 
     def test_focus_with_issue_number_and_url(self) -> None:
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(
             Path("/tmp/fake"), "improve",
@@ -406,7 +406,7 @@ class TestBuildCeoTaskIssue:
         assert "## Issue Tracking" in task
 
     def test_focus_without_issue(self) -> None:
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(
             Path("/tmp/fake"), "improve",

@@ -852,10 +852,10 @@ def _load_cross_project_insights(
     """Load and format cross-project insights. Writes insights.md as side effect."""
     from factory.insights import (
         analyze,
+        discover_projects,
         format_insights,
         load_all_histories,
     )
-    from factory.registry import discover_projects
 
     project_paths = discover_projects(projects_dir)
     if not project_paths:
@@ -902,13 +902,23 @@ def _load_cross_project_insights(
     return "\n".join(summary_lines)
 
 
-def _build_log_analysis_section(
-    log_files: list[Path],
-    all_messages: list[dict],
-    user_msgs: list[dict],
-    errors: list[dict],
-) -> list[str]:
-    lines: list[str] = []
+def study_project_local(project_path: Path, *, focus: str | None = None, **kwargs: object) -> str:
+    """Read interaction logs and produce an observations summary (local only)."""
+    log_files = _find_log_files(project_path)
+
+    all_messages: list[dict] = []
+    for lf in log_files:
+        all_messages.extend(_extract_messages(lf))
+
+    # Categorize
+    user_msgs = [m for m in all_messages if m["role"] == "user"]
+    errors = [m for m in all_messages if m["role"] == "error"]
+
+    lines = [
+        f"# Interaction Study — {project_path.name}",
+        "",
+    ]
+
     if log_files:
         lines.append(
             f"Analyzed {len(log_files)} conversation log(s), {len(all_messages)} relevant messages."
@@ -917,20 +927,21 @@ def _build_log_analysis_section(
         lines.append(f"## User Messages ({len(user_msgs)})")
         for m in user_msgs:
             lines.append(f"- {m['text'][:200]}")
-        lines.extend([
-            "",
-            f"## Errors and Issues ({len(errors)})",
-        ])
+
+        lines.extend(
+            [
+                "",
+                f"## Errors and Issues ({len(errors)})",
+            ]
+        )
         for m in errors:
             lines.append(f"- {m['text'][:200]}")
     else:
         lines.append("No interaction logs found.")
-    return lines
 
-
-def _build_similar_projects_section(project_path: Path) -> list[str]:
+    # Similar projects from GitHub
     similar = _search_similar_projects(project_path)
-    lines = ["", "## Similar Projects"]
+    lines.extend(["", "## Similar Projects"])
     if similar:
         for proj in similar:
             stars = proj.get("stars", 0)
@@ -939,15 +950,11 @@ def _build_similar_projects_section(project_path: Path) -> list[str]:
             lines.append(f"- [{proj['name']}]({proj['url']}) ({stars} stars){desc_part}")
     else:
         lines.append("No similar projects found.")
-    return lines
 
-
-
-def _build_spec_section(project_path: Path) -> list[str]:
     from factory.discovery.spec import resolve_spec
 
     spec_path = resolve_spec(project_path)
-    lines = ["", "## SPEC"]
+    lines.extend(["", "## SPEC"])
     if spec_path is not None:
         lines.append(
             "SPEC.md found at project root. "
@@ -969,10 +976,8 @@ def _build_spec_section(project_path: Path) -> list[str]:
                     lines.append(f"  {sl}")
         except OSError:
             pass
-    return lines
 
-
-def _build_github_issues_section(project_path: Path) -> list[str]:
+    # Open GitHub issues — split by ownership
     open_issues = _fetch_open_issues(project_path)
     gh_user = _get_github_user()
 
@@ -993,7 +998,7 @@ def _build_github_issues_section(project_path: Path) -> list[str]:
                     out.append(f"  > {body_preview}")
         return out
 
-    lines = ["", "## Open GitHub Issues"]
+    lines.extend(["", "## Open GitHub Issues"])
     if not open_issues:
         lines.append("No open issues found (or not a GitHub repo).")
     else:
@@ -1022,42 +1027,43 @@ def _build_github_issues_section(project_path: Path) -> list[str]:
 
         if not own_issues and not community_issues:
             lines.append("No open issues found (or not a GitHub repo).")
-    return lines
 
-
-def _build_backlog_section(
-    project_path: Path, focus: str | None, backlog_items: list[str],
-) -> list[str]:
+    # Backlog — unified queue of features/items to build
     _migrate_legacy_backlog(project_path)
-    items = backlog_items or _parse_backlog_items(project_path)
-    if items:
-        _persist_backlog_items(project_path, items)
+    backlog_items = _parse_backlog_items(project_path)
+    if backlog_items:
+        _persist_backlog_items(project_path, backlog_items)
 
-    lines = ["", "## Backlog", ""]
+    lines.extend(
+        [
+            "",
+            "## Backlog",
+            "",
+        ]
+    )
     if focus:
-        lines.append(f"**TARGETED MODE** — building exactly one item: {focus}")
-        lines.append("")
-        lines.append(f"- {focus}")
-    elif items:
         lines.append(
-            f"**{len(items)} items** in the backlog. "
-            "Clear as many as possible this cycle.",
+            f"**TARGETED MODE** — building exactly one item: {focus}",
         )
         lines.append("")
-        for item in items:
+        lines.append(f"- {focus}")
+    elif backlog_items:
+        lines.append(
+            f"**{len(backlog_items)} items** in the backlog. Clear as many as possible this cycle.",
+        )
+        lines.append("")
+        for item in backlog_items:
             lines.append(f"- {item}")
     else:
         lines.append("Backlog is empty. Focus on new improvements and hygiene.")
-    return lines
 
-
-def _build_observability_section(project_path: Path) -> list[str]:
+    # Observability coverage analysis
     from factory.discovery.introspect import _detect_language
 
     language = _detect_language(project_path)
     obs = _analyze_observability(project_path, language)
 
-    lines = ["", "## Observability Coverage"]
+    lines.extend(["", "## Observability Coverage"])
     lines.append(f"- **Score:** {obs['observability_score']:.1%}")
     lines.append(
         f"- **Function coverage:** {obs['logged_functions']}/{obs['total_functions']} "
@@ -1078,63 +1084,58 @@ def _build_observability_section(project_path: Path) -> list[str]:
         lines.extend(["", "### Observability Recommendations"])
         for rec in obs["recommendations"]:
             lines.append(f"- {rec}")
-    return lines
 
-
-def _build_prior_knowledge_section(project_path: Path) -> list[str]:
+    # Prior knowledge from Obsidian vault
     project_name = project_path.name
     notes = _read_obsidian_notes(project_name)
-    lines = ["", "## Prior Knowledge (Obsidian)"]
+    lines.extend(["", "## Prior Knowledge (Obsidian)"])
     if notes:
         for note in notes:
             lines.append(f"- {note}")
     else:
         lines.append("No prior notes found.")
-    return lines
 
-
-def _build_cross_project_insights_section(
-    project_path: Path, projects_dir: Path | None,
-) -> list[str]:
-    lines: list[str] = []
+    # Cross-project insights
+    projects_dir = kwargs.get("projects_dir")
     if projects_dir:
-        insights_text = _load_cross_project_insights(project_path, projects_dir)
+        insights_text = _load_cross_project_insights(project_path, Path(str(projects_dir)))
         if insights_text:
             lines.extend(["", insights_text])
-    return lines
 
-
-def _build_self_improvement_section(project_path: Path) -> list[str]:
-    lines: list[str] = []
+    # Self-improvement context
     if _detect_self_improvement(project_path):
-        lines.extend([
-            "",
-            "## Self-Improvement Context",
-            "",
-            "This project IS the factory. The Strategist should explore the full design space:",
-            "",
-            "| Dimension | Description |",
-            "|---|---|",
-            "| Features | New user-facing capabilities |",
-            "| Bug fixes | Crash fixes, error handling |",
-            "| Instrumentation | Logging, tracing, telemetry |",
-            "| Flow changes | Architectural refactors |",
-            "| New agents | Adding or splitting agent roles |",
-            "| Prompt engineering | Agent prompt rewrites |",
-            "| Eval improvements | Scoring refinements, new dimensions |",
-            "| Knowledge management | Vault structure, archival quality |",
-            "| Infrastructure | CI/CD, tmux, scheduling |",
-            "| Self-evolution | Meta-learning, self-analysis |",
-            "",
-            "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
-        ])
-    return lines
+        lines.extend(
+            [
+                "",
+                "## Self-Improvement Context",
+                "",
+                "This project IS the factory. The Strategist should explore the full design space:",
+                "",
+                "| Dimension | Description |",
+                "|---|---|",
+                "| Features | New user-facing capabilities |",
+                "| Bug fixes | Crash fixes, error handling |",
+                "| Instrumentation | Logging, tracing, telemetry |",
+                "| Flow changes | Architectural refactors |",
+                "| New agents | Adding or splitting agent roles |",
+                "| Prompt engineering | Agent prompt rewrites |",
+                "| Eval improvements | Scoring refinements, new dimensions |",
+                "| Knowledge management | Vault structure, archival quality |",
+                "| Infrastructure | CI/CD, tmux, scheduling |",
+                "| Self-evolution | Meta-learning, self-analysis |",
+                "",
+                "Prioritize: Self-evolution, Prompt engineering, Knowledge management.",
+            ]
+        )
 
-
-def _build_hypothesis_budget_section(
-    project_path: Path, focus: str | None, backlog_items: list[str],
-) -> list[str]:
-    lines = ["", "## Hypothesis Budget", ""]
+    # Hypothesis budget — backlog-first (overridden in targeted mode)
+    lines.extend(
+        [
+            "",
+            "## Hypothesis Budget",
+            "",
+        ]
+    )
 
     if focus:
         lines.extend(
@@ -1170,58 +1171,28 @@ def _build_hypothesis_budget_section(
 
         backlog_count = len(backlog_items)
 
-        lines.extend([
-            f"**Backlog items: {backlog_count}** (clear as many as possible this cycle)",
-            f"**New items: at most {config_budget.max_new}** (researcher/strategist may add new ideas)",
-            f"**Growth minimum: {config_budget.min_growth}** (at least {config_budget.min_growth} hypotheses must target growth dimensions)",
-            "",
-            "### Rules",
-            "",
-            "- Read the backlog first. Pick items to implement this cycle — no cap on clearing.",
-            f"- You may add at most {config_budget.max_new} NEW items that aren't already in the backlog.",
-            f"- At least {config_budget.min_growth} hypotheses must target growth dimensions "
-            "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
-            "Each MUST have a `**Growth dimension:**` tag.",
-            "- FEEC ordering applies for prioritizing within the backlog (FIX > EXPLOIT > EXPLORE > COMBINE).",
-            "- Your open GitHub issues and critical bugs should be addressed as FIX hypotheses.",
-            "- Community issues (filed by others) must NOT be auto-fixed — suggest the author creates a PR instead.",
-            "- Write any new items not implemented this cycle to a `## New Backlog Items` section in current.md.",
-            "",
-            "*Budget is configurable: set `min_growth`, `max_new` in factory.md under `## Hypothesis Budget`, "
-            "or pass `--min-growth`, `--max-new` on the CLI.*",
-        ])
-    return lines
-
-
-def study_project_local(
-    project_path: Path, *, focus: str | None = None, **kwargs: object
-) -> str:
-    """Read interaction logs and produce an observations summary (local only)."""
-    log_files = _find_log_files(project_path)
-
-    all_messages: list[dict] = []
-    for lf in log_files:
-        all_messages.extend(_extract_messages(lf))
-
-    user_msgs = [m for m in all_messages if m["role"] == "user"]
-    errors = [m for m in all_messages if m["role"] == "error"]
-
-    backlog_items = _parse_backlog_items(project_path)
-    projects_dir = kwargs.get("projects_dir")
-    projects_dir_path = Path(str(projects_dir)) if projects_dir else None
-
-    lines = [f"# Interaction Study — {project_path.name}", ""]
-
-    lines.extend(_build_log_analysis_section(log_files, all_messages, user_msgs, errors))
-    lines.extend(_build_similar_projects_section(project_path))
-    lines.extend(_build_spec_section(project_path))
-    lines.extend(_build_github_issues_section(project_path))
-    lines.extend(_build_backlog_section(project_path, focus, backlog_items))
-    lines.extend(_build_observability_section(project_path))
-    lines.extend(_build_prior_knowledge_section(project_path))
-    lines.extend(_build_cross_project_insights_section(project_path, projects_dir_path))
-    lines.extend(_build_self_improvement_section(project_path))
-    lines.extend(_build_hypothesis_budget_section(project_path, focus, backlog_items))
+        lines.extend(
+            [
+                f"**Backlog items: {backlog_count}** (clear as many as possible this cycle)",
+                f"**New items: at most {config_budget.max_new}** (researcher/strategist may add new ideas)",
+                f"**Growth minimum: {config_budget.min_growth}** (at least {config_budget.min_growth} hypotheses must target growth dimensions)",
+                "",
+                "### Rules",
+                "",
+                "- Read the backlog first. Pick items to implement this cycle — no cap on clearing.",
+                f"- You may add at most {config_budget.max_new} NEW items that aren't already in the backlog.",
+                f"- At least {config_budget.min_growth} hypotheses must target growth dimensions "
+                "(capability_surface, factory_effectiveness, research_grounding, experiment_diversity, observability). "
+                "Each MUST have a `**Growth dimension:**` tag.",
+                "- FEEC ordering applies for prioritizing within the backlog (FIX > EXPLOIT > EXPLORE > COMBINE).",
+                "- Your open GitHub issues and critical bugs should be addressed as FIX hypotheses.",
+                "- Community issues (filed by others) must NOT be auto-fixed — suggest the author creates a PR instead.",
+                "- Write any new items not implemented this cycle to a `## New Backlog Items` section in current.md.",
+                "",
+                "*Budget is configurable: set `min_growth`, `max_new` in factory.md under `## Hypothesis Budget`, "
+                "or pass `--min-growth`, `--max-new` on the CLI.*",
+            ]
+        )
 
     return "\n".join(lines)
 

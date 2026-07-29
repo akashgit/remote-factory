@@ -393,13 +393,13 @@ class TestDashboardCLI:
 
 class TestBanner:
     def test_banner_function_exists(self):
-        from factory.cli._helpers import _print_banner
+        from factory.cli import _print_banner
         # Should not raise
         _print_banner("improve")
 
     def test_banner_no_color(self, monkeypatch, capsys):
         monkeypatch.setenv("NO_COLOR", "1")
-        from factory.cli._helpers import _print_banner
+        from factory.cli import _print_banner
         _print_banner("meta")
         captured = capsys.readouterr()
         assert "Factory v2" in captured.err

@@ -1426,7 +1426,7 @@ class TestStudyTargetedMode:
 
 class TestBuildCeoTaskFocus:
     def test_focus_task_contains_targeted_mode(self, tmp_path):
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "improve", focus="Add caching")
         assert "Targeted Mode" in task
@@ -1434,13 +1434,13 @@ class TestBuildCeoTaskFocus:
         assert "Add caching" in task
 
     def test_no_focus_no_targeted_mode(self, tmp_path):
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(tmp_path, "improve")
         assert "Targeted Mode" not in task
 
     def test_build_ceo_task_does_not_write_backlog(self, tmp_path):
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         _build_ceo_task(tmp_path, "improve", focus="Add caching")
         backlog_path = tmp_path / ".factory" / "strategy" / "backlog.md"

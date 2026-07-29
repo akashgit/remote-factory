@@ -522,13 +522,13 @@ class TestDetectProjectEvals:
 
 class TestBuildCeoTaskBranch:
     def test_no_branch(self) -> None:
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(Path("/test"), "improve")
         assert "Branch Override" not in task
 
     def test_with_branch(self) -> None:
-        from factory.cli._task_builder import _build_ceo_task
+        from factory.cli import _build_ceo_task
 
         task = _build_ceo_task(Path("/test"), "improve", branch="factory/dev")
         assert "## Branch Override" in task
