@@ -506,7 +506,9 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     ensure_skills(wt_path, mode=mode)
 
     verification_settings = wt_path / ".factory" / "hooks" / f"settings-{mode}.json"
-    _verification_settings_file = str(verification_settings) if verification_settings.exists() else None
+    _verification_settings_file = (
+        str(verification_settings) if verification_settings.exists() else None
+    )
 
     interactive = (
         design_existing or bool(design_idea) or bool(research_ideation) or mode == "create"
@@ -1496,7 +1498,8 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
-            "--disallowedTools", "Agent",
+            "--disallowedTools",
+            "Agent",
             "--dangerously-skip-permissions",
         ]
     else:
@@ -1506,7 +1509,8 @@ def cmd_refactory(args: argparse.Namespace) -> int:
             session_id,
             "--append-system-prompt-file",
             prompt_file.name,
-            "--disallowedTools", "Agent",
+            "--disallowedTools",
+            "Agent",
             "--dangerously-skip-permissions",
         ]
 
@@ -1874,7 +1878,24 @@ def _build_ceo_task(
             "If stripping breaks tests, fall back to the full diff.\n"
         )
 
+    summary = _load_session_summary(project_path)
+    if summary:
+        task += f"\n\n{summary}"
+
     return task
+
+
+def _load_session_summary(project_path: Path) -> str | None:
+    """Load a fresh session summary for injection into the CEO task."""
+    try:
+        from factory.ceo_completion import read_cycle_state
+        from factory.statefulness import load_summary_if_fresh
+
+        cycle_state = read_cycle_state(project_path)
+        cycle_id = cycle_state.cycle_id if cycle_state else None
+        return load_summary_if_fresh(project_path, cycle_id=cycle_id)
+    except Exception:
+        return None
 
 
 def _chain_modes(

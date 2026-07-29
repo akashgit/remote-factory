@@ -18,6 +18,7 @@ import structlog
 
 from factory.events import emit_event, load_events
 from factory.models import CycleState
+from factory.statefulness import clear_session_summary
 
 log = structlog.get_logger()
 
@@ -26,6 +27,14 @@ CYCLE_STALENESS_HOURS = 24
 
 # Hard cap on re-spawns per cycle (env-overridable)
 DEFAULT_MAX_RESPAWNS = 5
+
+
+def _save_session_summary_safe(project_path: Path) -> None:
+    """Save session summary, swallowing all exceptions."""
+    try:
+        save_session_summary(project_path)
+    except Exception as exc:
+        log.warning("session_summary_save_failed", error=str(exc))
 
 
 # ── cycle state persistence ──────────────────────────────────────
@@ -81,7 +90,9 @@ def write_cycle_state(project_path: Path, state: CycleState) -> None:
     # Use model_dump with mode="json" for proper datetime serialization
     data = state.model_dump(mode="json")
     path.write_text(json.dumps(data, indent=2))
-    log.info("cycle_state_written", cycle_id=state.cycle_id, mode=state.mode, respawns=state.respawns)
+    log.info(
+        "cycle_state_written", cycle_id=state.cycle_id, mode=state.mode, respawns=state.respawns
+    )
 
 
 def delete_cycle_state(project_path: Path) -> bool:
@@ -297,8 +308,7 @@ def _build_continuation_task(gap: IncompleteGap, cycle_state: CycleState | None 
 
     if cycle_state:
         mode_directive += (
-            f"Cycle ID: {cycle_state.cycle_id}\n"
-            f"Respawn count: {cycle_state.respawns}\n\n"
+            f"Cycle ID: {cycle_state.cycle_id}\nRespawn count: {cycle_state.respawns}\n\n"
         )
 
     if gap.mode == "research":
@@ -419,9 +429,15 @@ async def run_ceo_with_completion_guard(
     if background:
         log.info("ceo_background_dispatch", reason="--bg: single dispatch, no respawn loop")
         return await invoke_agent(
-            "ceo", initial_task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
-            background=True, session_name=session_name, use_profile=use_profile,
+            "ceo",
+            initial_task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
+            background=True,
+            session_name=session_name,
+            use_profile=use_profile,
             workflow_mode=workflow_mode,
             settings_file=settings_file,
         )
@@ -432,8 +448,12 @@ async def run_ceo_with_completion_guard(
     if resolve("ceo_respawn_disabled", env_var="FACTORY_CEO_RESPAWN_DISABLED") == "1":
         log.info("ceo_respawn_disabled", reason="FACTORY_CEO_RESPAWN_DISABLED=1")
         return await invoke_agent(
-            "ceo", initial_task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
+            "ceo",
+            initial_task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
@@ -443,7 +463,11 @@ async def run_ceo_with_completion_guard(
 
     if max_respawns is None:
         max_respawns = int(
-            resolve("ceo_max_respawns", env_var="FACTORY_CEO_MAX_RESPAWNS", default=str(DEFAULT_MAX_RESPAWNS))
+            resolve(
+                "ceo_max_respawns",
+                env_var="FACTORY_CEO_MAX_RESPAWNS",
+                default=str(DEFAULT_MAX_RESPAWNS),
+            )
             or DEFAULT_MAX_RESPAWNS
         )
 
@@ -475,8 +499,12 @@ async def run_ceo_with_completion_guard(
         log.info("ceo_spawn", attempt=attempt, task_preview=task[:100], mode=mode)
 
         result, code = await invoke_agent(
-            "ceo", task, project_path,
-            timeout=timeout, model=model, runner_name=runner_name,
+            "ceo",
+            task,
+            project_path,
+            timeout=timeout,
+            model=model,
+            runner_name=runner_name,
             session_name=session_name,
             use_profile=use_profile,
             tmux_persist=tmux_persist,
@@ -488,6 +516,7 @@ async def run_ceo_with_completion_guard(
         # User interrupt — respect it (but don't delete cycle state for later resume)
         if code in (130, 143) or code > 128:
             log.info("ceo_user_interrupt", code=code)
+            _save_session_summary_safe(project_path)
             return result, code
 
         # Explicit ABORT — respect it and clean up cycle state
@@ -503,6 +532,7 @@ async def run_ceo_with_completion_guard(
             log.info("ceo_complete", attempt=attempt)
             # Cycle complete — delete cycle state so next invocation starts fresh
             delete_cycle_state(project_path)
+            clear_session_summary(project_path)
             return result, code
 
         # Check budget before re-spawning
