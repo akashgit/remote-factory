@@ -21,20 +21,24 @@ server = Server("factory")
 
 async def handle_get_score(project_path: str) -> str:
     """Read .factory/last_eval.json and return its contents as JSON text."""
+    log.info("handle_get_score.start", project_path=project_path)
     p = Path(project_path).resolve()
     last_eval = p / ".factory" / "last_eval.json"
     if not last_eval.exists():
+        log.error("handle_get_score.error", reason="missing_last_eval", path=str(last_eval))
         return json.dumps({"error": f"No last_eval.json found at {last_eval}"})
     return last_eval.read_text()
 
 
 async def handle_list_experiments(project_path: str, last_n: int = 10) -> str:
     """Read .factory/results.tsv, parse last N rows, return as JSON."""
+    log.info("handle_list_experiments.start", project_path=project_path, last_n=last_n)
     from factory.store import ExperimentStore
 
     p = Path(project_path).resolve()
     factory_dir = p / ".factory"
     if not factory_dir.is_dir():
+        log.error("handle_list_experiments.error", reason="no_factory_dir", path=str(p))
         return json.dumps({"error": f"No .factory/ directory at {p}"})
 
     store = ExperimentStore(p)
@@ -49,6 +53,7 @@ async def handle_list_experiments(project_path: str, last_n: int = 10) -> str:
 
 async def handle_get_status(project_path: str) -> str:
     """Return project state + config summary."""
+    log.info("handle_get_status.start", project_path=project_path)
     from factory.state import detect_state
 
     p = Path(project_path).resolve()
@@ -64,8 +69,10 @@ async def handle_get_status(project_path: str) -> str:
 
 async def handle_list_projects(projects_dir: str) -> str:
     """Scan for subdirectories containing .factory/config.json."""
+    log.info("handle_list_projects.start", projects_dir=projects_dir)
     d = Path(projects_dir).resolve()
     if not d.is_dir():
+        log.error("handle_list_projects.error", reason="dir_not_found", path=str(d))
         return json.dumps({"error": f"Directory not found: {d}"})
 
     projects: list[dict[str, str]] = []
@@ -167,14 +174,17 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
 
     handler = handlers.get(name)
     if handler is None:
+        log.error("call_tool.error", reason="unknown_tool", name=name)
         return [TextContent(type="text", text=json.dumps({"error": f"Unknown tool: {name}"}))]
 
+    log.info("call_tool.start", tool=name)
     result_text = await handler(arguments)
     return [TextContent(type="text", text=result_text)]
 
 
 async def run_server() -> None:
     """Start the MCP stdio server."""
+    log.info("run_server.start")
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,

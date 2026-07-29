@@ -10,6 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import structlog
+
+log = structlog.get_logger()
+
 SETTINGS_JSON: dict[str, Any] = {
     "mcpServers": {
         "factory": {
@@ -41,6 +45,7 @@ def setup_workspace(project_path: Path) -> Path:
 
     Returns the workspace path (.refactory/).
     """
+    log.info("setup_workspace.start", project=str(project_path))
     workspace = project_path / ".refactory"
     workspace.mkdir(parents=True, exist_ok=True)
 
@@ -100,6 +105,7 @@ def setup_workspace(project_path: Path) -> Path:
     claude_md_path = workspace / "CLAUDE.md"
     claude_md_path.write_text(CLAUDE_MD_CONTENT)
 
+    log.info("setup_workspace.done", workspace=str(workspace))
     return workspace
 
 
@@ -115,6 +121,7 @@ def get_session_id(project_path: Path, reset: bool = False) -> str:
     Returns:
         The session ID string.
     """
+    log.info("get_session_id.start", project=str(project_path), reset=reset)
     session_file = project_path / ".refactory" / "session.json"
     if not reset and session_file.exists():
         try:
@@ -123,15 +130,17 @@ def get_session_id(project_path: Path, reset: bool = False) -> str:
             if isinstance(sid, str) and sid:
                 return sid
         except (json.JSONDecodeError, KeyError):
-            pass
+            log.error("get_session_id.error", reason="corrupt_session_file", path=str(session_file))
 
     sid = str(uuid.uuid4())
     save_session_id(project_path, sid)
+    log.info("get_session_id.created", session_id=sid)
     return sid
 
 
 def save_session_id(project_path: Path, session_id: str) -> None:
     """Write session state to <project>/.refactory/session.json."""
+    log.info("save_session_id.start", project=str(project_path), session_id=session_id)
     session_file = project_path / ".refactory" / "session.json"
     session_file.parent.mkdir(parents=True, exist_ok=True)
     data = {

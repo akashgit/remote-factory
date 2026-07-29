@@ -6,11 +6,14 @@ import functools
 from dataclasses import dataclass
 from pathlib import Path
 
+import structlog
 import yaml
 
 from factory.ace.injector import inject_playbook
 from factory.ace.paths import DEFAULTS_DIR as _PLAYBOOKS_DIR
 from factory.agents.runner import _PROMPTS_DIR
+
+log = structlog.get_logger()
 
 _AGENTS_YML = Path(__file__).parent / "agents.yml"
 _PLUGIN_AGENTS_DIR_CANDIDATE = Path(__file__).resolve().parent.parent.parent / "agents"
@@ -34,6 +37,7 @@ def load_agent_config() -> dict[str, AgentMeta]:
 
     Only includes roles that also have a prompt file in prompts/.
     """
+    log.info("load_agent_config.start", yml_path=str(_AGENTS_YML))
     raw: dict[str, dict] = yaml.safe_load(_AGENTS_YML.read_text())
     config: dict[str, AgentMeta] = {}
     for role, entry in raw.items():
@@ -44,6 +48,7 @@ def load_agent_config() -> dict[str, AgentMeta]:
             model=entry["model"],
             tools=entry.get("tools", []),
         )
+    log.info("load_agent_config.done", role_count=len(config))
     return config
 
 
@@ -53,8 +58,10 @@ def generate_agent_content(role: str) -> str:
     Reads the source prompt from factory/agents/prompts/<role>.md and prepends
     YAML frontmatter and a generated-file header.
     """
+    log.info("generate_agent_content.start", role=role)
     config = load_agent_config()
     if role not in config:
+        log.error("generate_agent_content.error", reason="unknown_role", role=role)
         raise ValueError(f"Unknown agent role: {role!r}")
 
     meta = config[role]
@@ -126,8 +133,10 @@ def generate_codex_agent_toml(role: str) -> str:
     Reads the same agents.yml + prompts/*.md sources as generate_agent_content
     but emits TOML with fields: name, description, developer_instructions, sandbox_mode.
     """
+    log.info("generate_codex_agent_toml.start", role=role)
     config = load_agent_config()
     if role not in config:
+        log.error("generate_codex_agent_toml.error", reason="unknown_role", role=role)
         raise ValueError(f"Unknown agent role: {role!r}")
 
     meta = config[role]
@@ -167,6 +176,7 @@ def check_codex_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
 
     Returns a list of role names that are out of sync (empty = all good).
     """
+    log.info("check_codex_agents_in_sync.start", agents_dir=str(agents_dir))
     if agents_dir is None:
         agents_dir = _CODEX_PLUGIN_AGENTS_DIR
     if agents_dir is None:
@@ -185,6 +195,7 @@ def check_codex_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
         if agent_path.read_text() != expected:
             out_of_sync.append(role)
 
+    log.info("check_codex_agents_in_sync.done", out_of_sync_count=len(out_of_sync))
     return out_of_sync
 
 
@@ -193,6 +204,7 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
 
     Returns a list of role names that are out of sync (empty = all good).
     """
+    log.info("check_agents_in_sync.start", agents_dir=str(agents_dir))
     if agents_dir is None:
         agents_dir = _PLUGIN_AGENTS_DIR
     if agents_dir is None:
@@ -211,4 +223,5 @@ def check_agents_in_sync(agents_dir: Path | None = None) -> list[str]:
         if agent_path.read_text() != expected:
             out_of_sync.append(role)
 
+    log.info("check_agents_in_sync.done", out_of_sync_count=len(out_of_sync))
     return out_of_sync

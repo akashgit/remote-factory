@@ -7,7 +7,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
+import structlog
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+log = structlog.get_logger()
 
 
 # ── project state ─────────────────────────────────────────────────
@@ -109,6 +112,7 @@ class InnerLoopConfig(BaseModel):
     @classmethod
     def _coerce_aggregate(cls, v: object) -> AggregateMethod:
         if isinstance(v, str):
+            log.debug("_coerce_aggregate.coerced", value=v)
             return AggregateMethod(v)
         return v  # type: ignore[return-value]
 
