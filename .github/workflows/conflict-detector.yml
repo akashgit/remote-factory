@@ -45,7 +45,7 @@ jobs:
           fi
 
           # Read the last detection run's events (same timestamp)
-          LATEST_TS=$(tail -1 conflicts.jsonl | python3 -c "import sys,json; print(json.load(sys.stdin)['timestamp'])" 2>/dev/null || echo "")
+          export LATEST_TS=$(tail -1 conflicts.jsonl | python3 -c "import sys,json; print(json.load(sys.stdin)['timestamp'])" 2>/dev/null || echo "")
           if [ -z "$LATEST_TS" ]; then
             echo "No events to process."
             exit 0
