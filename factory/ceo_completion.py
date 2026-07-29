@@ -18,7 +18,7 @@ import structlog
 
 from factory.events import emit_event, load_events
 from factory.models import CycleState
-from factory.statefulness import clear_session_summary
+from factory.statefulness import clear_session_summary, save_session_summary
 
 log = structlog.get_logger()
 
