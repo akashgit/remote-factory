@@ -182,6 +182,19 @@ class TestBuildTmuxRunArgs:
         result = _build_tmux_run_args(args, Path("/tmp/p"), None)
         assert result == "factory ceo /tmp/p"
 
+    @pytest.mark.parametrize("mode", ["design", "interactive", "review", "create", "deep-qa"])
+    def test_ceo_only_modes_propagated(self, mode: str) -> None:
+        args = argparse.Namespace(
+            mode=mode, loop=False, interval=0, max_cycles=None,
+            no_github=False, profile=None, focus=None, refine=None,
+            clean_pr=None, runner=None, prompt=None, branch=None,
+            min_growth=None, max_new=None, discover_only=False,
+            bg_agents=False, tmux_persist=False, use_profile=False,
+        )
+        result = _build_tmux_run_args(args, Path("/tmp/p"), None)
+        assert f"--mode {mode}" in result
+        assert result.startswith("factory ceo ")
+
 
 class TestCmdTmuxStop:
     def test_requires_all_when_no_session_or_path(self) -> None:

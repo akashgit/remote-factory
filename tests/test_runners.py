@@ -2013,14 +2013,14 @@ class TestDisallowedAgentTool:
             assert cmd[dt_idx + 1] == "Agent"
 
     async def test_tmux_command_includes_disallowed_tools(self, tmp_path: Path) -> None:
-        from factory.runners._tmux_persist import run_in_tmux
+        from factory.runners._dispatch_modes import run_in_tmux
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._session_exists", return_value=True),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
-            patch("factory.runners._tmux_persist._generate_settings") as mock_settings,
-            patch("factory.runners._tmux_persist._cleanup"),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._session_exists", return_value=True),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._generate_settings") as mock_settings,
+            patch("factory.runners._dispatch_modes._cleanup"),
         ):
             mock_settings.return_value = tmp_path / "settings.json"
             (tmp_path / "settings.json").write_text("{}")

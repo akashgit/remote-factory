@@ -141,7 +141,7 @@ factory/models.py                    ← Foundation: all Pydantic types
     │   ├── _subprocess.py           ← Shared subprocess execution
     │   ├── _stream.py               ← Stream processing, ANSI stripping, watchdog
     │   ├── _background.py           ← claude --bg background dispatch
-    │   ├── _tmux_persist.py         ← Tmux window-based persistent sessions
+    │   ├── _dispatch_modes.py       ← Tmux window-based and background dispatch modes
     │   └── usage.py                 ← Bob-specific usage logging + ceiling
     ├── factory/research/
     │   ├── runner.py                ← Research run execution + result parsing
