@@ -25,6 +25,7 @@ AgentRole = Literal[
     "failure_analyst",
     "refiner",
     "profiler",
+    "reporter",
     "refactory",
 ]
 

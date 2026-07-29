@@ -9,6 +9,17 @@ from factory.cli._helpers import _emit_cli_event
 
 log = structlog.get_logger()
 
+def cmd_report(args: argparse.Namespace) -> int:
+    """Generate a self-contained HTML report for a project."""
+    from factory.report import generate_html_report
+
+    project_path = Path(args.path).resolve()
+    output_path = Path(args.output).resolve() if args.output else None
+    result = generate_html_report(project_path, output_path, assess=args.assess)
+    print(f"Report written to {result}")
+    return 0
+
+
 def cmd_report_update(args: argparse.Namespace) -> int:
     """Generate a performance report for a project."""
     from factory.report import save_performance_report

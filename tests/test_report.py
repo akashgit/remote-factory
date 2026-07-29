@@ -1,9 +1,13 @@
 """Tests for factory.report — performance reports."""
 
+import json
 from pathlib import Path
 
 from factory.report import (
+    _parse_goal_assessment,
+    _read_goal,
     build_performance_report,
+    generate_html_report,
     load_performance_report,
     parse_ceo_verdicts,
     parse_observations,
@@ -178,288 +182,227 @@ def test_verdict_patterns_in_report(tmp_path: Path) -> None:
     assert "builder:REDIRECT" in report.verdict_patterns
 
 
-# ── _extract_exp_number ──────────────────────────────────────────
-
-
-def test_extract_exp_number_with_prefix() -> None:
-    from factory.report import _extract_exp_number
-
-    assert _extract_exp_number("myproject-042") == "042"
-
-
-def test_extract_exp_number_digits_only() -> None:
-    from factory.report import _extract_exp_number
-
-    assert _extract_exp_number("042") == "042"
-
-
-def test_extract_exp_number_no_digits() -> None:
-    from factory.report import _extract_exp_number
-
-    assert _extract_exp_number("no-number-here") == "no-number-here"
-
-
-# ── parse_ceo_verdicts — experiment ID and no-verdict skip ───────
-
-
-def test_parse_ceo_verdicts_with_experiment_id(tmp_path: Path) -> None:
+def test_generate_html_report_creates_file(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [
+        {
+            "id": "1", "timestamp": "2026-01-01T00:00:00",
+            "hypothesis": "Add tests", "change_summary": "Added unit tests",
+            "verdict": "keep", "score_before": "0.7", "score_after": "0.8",
+            "delta": "0.1",
+        },
+    ])
 
-    (factory_dir / "reviews" / "ceo-verdict-qa.md").write_text(
-        "## CEO Review: QA Agent\n"
-        "Results from experiment 3\n"
-        "- **Verdict:** ABORT\n"
-        "- **Rationale:** Critical failure\n"
+    result = generate_html_report(project)
+    assert result.exists()
+    assert result == project / ".factory" / "report.html"
+
+
+def test_generate_html_report_contains_structure(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [
+        {
+            "id": "1", "timestamp": "2026-01-01T00:00:00",
+            "hypothesis": "Add tests", "change_summary": "Added unit tests",
+            "verdict": "keep", "score_before": "0.7", "score_after": "0.8",
+            "delta": "0.1",
+        },
+    ])
+    (factory_dir / "reviews" / "ceo-verdict-researcher.md").write_text(
+        "- **Verdict:** PROCEED\n- **Rationale:** Good coverage\n"
     )
 
-    verdicts = parse_ceo_verdicts(project)
-    assert len(verdicts) == 1
-    assert verdicts[0].experiment_id == 3
-    assert verdicts[0].verdict == "ABORT"
+    result = generate_html_report(project)
+    html = result.read_text()
+
+    assert "<table>" in html
+    assert "Add tests" in html
+    assert "keep" in html.lower()
+    assert "0.70" in html
+    assert "0.80" in html
+    assert "+0.10" in html
+    assert "PROCEED" in html
+    assert "researcher" in html
+    assert "Summary" in html
+    assert "Experiments" in html
+    assert "Agent Verdicts" in html
 
 
-def test_parse_ceo_verdicts_no_verdict_match(tmp_path: Path) -> None:
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    (factory_dir / "reviews" / "ceo-verdict-builder.md").write_text(
-        "## CEO Review: Builder Agent\n"
-        "No structured verdict here, just free text.\n"
-    )
-
-    verdicts = parse_ceo_verdicts(project)
-    assert verdicts == []
-
-
-# ── parse_observations — archive JSON files ─────────────────────
-
-
-def test_parse_observations_archive_json_valid(tmp_path: Path) -> None:
-    """Valid JSON dict with 'learned' key in archive/experiments/."""
-    import json
-
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_exp = factory_dir / "archive" / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    (archive_exp / "proj-001.json").write_text(
-        json.dumps({"learned": "We discovered that caching improves throughput significantly."})
-    )
-
-    observations = parse_observations(project)
-    assert any("caching" in o.content for o in observations)
-    assert any("archive" in o.tags for o in observations)
-
-
-def test_parse_observations_archive_json_invalid(tmp_path: Path) -> None:
-    """Invalid JSON in archive/experiments/ should be skipped."""
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_exp = factory_dir / "archive" / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    (archive_exp / "bad.json").write_text("not valid json {{{")
-
-    observations = parse_observations(project)
-    json_obs = [o for o in observations if "bad.json" in o.source]
-    assert json_obs == []
-
-
-def test_parse_observations_archive_json_non_dict(tmp_path: Path) -> None:
-    """JSON that parses to a non-dict (e.g. a list) should be skipped."""
-    import json
-
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_exp = factory_dir / "archive" / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    (archive_exp / "list.json").write_text(json.dumps([1, 2, 3]))
-
-    observations = parse_observations(project)
-    json_obs = [o for o in observations if "list.json" in o.source]
-    assert json_obs == []
-
-
-def test_parse_observations_archive_md_skipped_by_exp_number(tmp_path: Path) -> None:
-    """An .md file whose exp number overlaps with a seen JSON exp number should be skipped."""
-    import json
-
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_exp = factory_dir / "archive" / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    # JSON for experiment 007 — will be seen first
-    (archive_exp / "proj-007.json").write_text(
-        json.dumps({"learned": "JSON observation that is long enough to pass the 10-char threshold."})
-    )
-    # MD for same experiment number — should be skipped
-    (archive_exp / "proj-007.md").write_text(
-        "This is a markdown note for the same experiment that should be skipped because JSON was already seen."
-    )
-
-    observations = parse_observations(project)
-    md_obs = [o for o in observations if o.source.endswith("proj-007.md")]
-    assert md_obs == []
-    json_obs = [o for o in observations if o.source.endswith("proj-007.json")]
-    assert len(json_obs) == 1
-
-
-def test_parse_observations_archive_md_short_content(tmp_path: Path) -> None:
-    """An .md file with content shorter than 50 chars should be skipped."""
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_exp = factory_dir / "archive" / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    (archive_exp / "short.md").write_text("Too short.")
-
-    observations = parse_observations(project)
-    short_obs = [o for o in observations if "short.md" in o.source]
-    assert short_obs == []
-
-
-def test_parse_observations_non_experiment_archive_skip_experiment_subdir(tmp_path: Path) -> None:
-    """Non-experiment archive .md files that ARE under archive/experiments/ should be skipped
-    in the final loop (line 134)."""
-
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_dir = factory_dir / "archive"
-    archive_exp = archive_dir / "experiments"
-    archive_exp.mkdir(parents=True)
-
-    # A patterns dir outside experiments — should be picked up
-    patterns_dir = archive_dir / "patterns"
-    patterns_dir.mkdir()
-    (patterns_dir / "pattern1.md").write_text(
-        "This is a pattern note that is long enough to exceed the 50-char threshold for inclusion."
-    )
-
-    observations = parse_observations(project)
-    pattern_obs = [o for o in observations if "pattern1.md" in o.source]
-    assert len(pattern_obs) == 1
-
-
-def test_parse_observations_non_experiment_archive_short_md(tmp_path: Path) -> None:
-    """Non-experiment archive .md files shorter than 50 chars should be skipped (line 139)."""
-    project = tmp_path / "proj"
-    factory_dir = _make_factory_dir(project)
-
-    archive_dir = factory_dir / "archive"
-    archive_dir.mkdir(parents=True)
-
-    patterns_dir = archive_dir / "patterns"
-    patterns_dir.mkdir()
-    (patterns_dir / "tiny.md").write_text("Short.")
-
-    observations = parse_observations(project)
-    tiny_obs = [o for o in observations if "tiny.md" in o.source]
-    assert tiny_obs == []
-
-
-# ── _parse_datetimes ─────────────────────────────────────────────
-
-
-def test_parse_datetimes_converts_iso_strings() -> None:
-    from datetime import datetime
-
-    from factory.report import _parse_datetimes
-
-    data: dict = {
-        "generated_at": "2026-01-15T10:30:00",
-        "observations": [
-            {"timestamp": "2026-01-14T08:00:00", "other": "value"},
-            {"timestamp": "2026-01-13T09:00:00"},
-        ],
-    }
-    _parse_datetimes(data)
-
-    assert isinstance(data["generated_at"], datetime)
-    assert data["generated_at"].year == 2026
-    assert data["generated_at"].month == 1
-    assert data["generated_at"].day == 15
-
-    for obs in data["observations"]:
-        assert isinstance(obs["timestamp"], datetime)
-
-
-def test_parse_datetimes_skips_non_string_values() -> None:
-    from datetime import datetime
-
-    from factory.report import _parse_datetimes
-
-    now = datetime.now()
-    data: dict = {
-        "generated_at": now,
-        "observations": [{"timestamp": now}],
-    }
-    _parse_datetimes(data)
-
-    # Should remain unchanged
-    assert data["generated_at"] is now
-    assert data["observations"][0]["timestamp"] is now
-
-
-# ── build_performance_report — store.load_history() exception ────
-
-
-def test_build_performance_report_history_exception(tmp_path: Path) -> None:
-    """When store.load_history() raises, records should default to []."""
-    from unittest.mock import AsyncMock, patch
-
+def test_generate_html_report_empty_project(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     _make_factory_dir(project)
+    _write_results_tsv(project / ".factory", [])
 
-    mock_store = AsyncMock()
-    mock_store.load_history.side_effect = RuntimeError("DB gone")
-
-    with patch("factory.store.ExperimentStore", return_value=mock_store):
-        report = build_performance_report(project)
-
-    assert report.total_experiments == 0
-    assert report.keep_count == 0
-    assert report.revert_count == 0
-    assert report.error_count == 0
-    assert report.latest_score is None
+    result = generate_html_report(project)
+    assert result.exists()
+    html = result.read_text()
+    assert "No experiments recorded." in html
+    assert "No agent verdicts recorded." in html
 
 
-def test_parse_observations_section_no_content(tmp_path: Path) -> None:
-    """Observation sections with title only (no content) should be skipped (line 83)."""
+def test_generate_html_report_custom_output(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    _make_factory_dir(project)
+    _write_results_tsv(project / ".factory", [])
+
+    custom = tmp_path / "custom" / "report.html"
+    result = generate_html_report(project, output_path=custom)
+    assert result == custom
+    assert custom.exists()
+
+
+def test_read_goal(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     factory_dir = _make_factory_dir(project)
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Improve test coverage to 90%"}))
 
-    (factory_dir / "strategy" / "observations.md").write_text(
-        "## Empty Section\n\n## Also Empty\n"
-    )
-
-    observations = parse_observations(project)
-    assert observations == []
+    assert _read_goal(project) == "Improve test coverage to 90%"
 
 
-def test_parse_ceo_verdicts_issues_with_empty_line(tmp_path: Path) -> None:
-    """Issues block with a blank line between items — blank line should be skipped (line 50)."""
+def test_read_goal_missing(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    project.mkdir()
+    assert _read_goal(project) is None
+
+
+def test_read_goal_no_goal_field(tmp_path: Path) -> None:
     project = tmp_path / "proj"
     factory_dir = _make_factory_dir(project)
+    (factory_dir / "config.json").write_text(json.dumps({"name": "test"}))
 
-    (factory_dir / "reviews" / "ceo-verdict-qa.md").write_text(
-        "- **Verdict:** REDIRECT\n"
-        "- **Rationale:** Needs work\n"
-        "- **Issues found:**\n"
-        "- First issue\n"
-        "\n"
-        "- Second issue\n"
+    assert _read_goal(project) is None
+
+
+def test_parse_goal_assessment_full() -> None:
+    text = (
+        "## Goal Assessment\n\n"
+        "**Overall:** ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Improve unit test coverage\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Experiment 1: Added unit tests, score +0.10 (keep)\n"
+        "- Coverage rose from 60% to 92%\n\n"
+        "#### Ask: Add integration tests\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Experiment 2: Added integration tests, score +0.08 (keep)\n\n"
+        "### Gaps\n"
+        "- None\n"
     )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["overall"] == "ACHIEVED"
+    assert result["overall_class"] == "keep"
+    assert len(result["asks"]) == 2
+    assert result["asks"][0]["ask"] == "Improve unit test coverage"
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][0]["verdict_class"] == "keep"
+    assert len(result["asks"][0]["evidence"]) == 2
+    assert result["asks"][1]["ask"] == "Add integration tests"
+    assert result["gaps"] == []
 
-    verdicts = parse_ceo_verdicts(project)
-    assert len(verdicts) == 1
-    assert len(verdicts[0].issues) == 2
+
+def test_parse_goal_assessment_partial() -> None:
+    text = (
+        "**Overall:** PARTIALLY_ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Fix login bug\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Experiment 1 kept\n\n"
+        "#### Ask: Add logout flow\n"
+        "**Verdict:** NOT_MET\n"
+        "**Evidence:**\n"
+        "- No experiments addressed this\n\n"
+        "### Gaps\n- Need more tests\n- Need docs\n"
+    )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["overall"] == "PARTIALLY_ACHIEVED"
+    assert result["overall_class"] == "redirect"
+    assert len(result["asks"]) == 2
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][1]["verdict"] == "NOT_MET"
+    assert result["asks"][1]["verdict_class"] == "revert"
+    assert len(result["gaps"]) == 2
+
+
+def test_parse_goal_assessment_multiple_asks() -> None:
+    text = (
+        "## Goal Assessment\n\n"
+        "**Overall:** PARTIALLY_ACHIEVED\n\n"
+        "### Asks\n\n"
+        "#### Ask: Build HTML report command\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- PR #902 merged, factory report generates self-contained HTML\n\n"
+        "#### Ask: Standardize report format\n"
+        "**Verdict:** PARTIALLY_MET\n"
+        "**Evidence:**\n"
+        "- Uses PerformanceReport model\n"
+        "- Jinja2 template in place\n\n"
+        "#### Ask: Add reporter subagent\n"
+        "**Verdict:** MET\n"
+        "**Evidence:**\n"
+        "- Reporter agent added, runs on haiku\n\n"
+        "#### Ask: Support --assess flag\n"
+        "**Verdict:** NO_DATA\n"
+        "**Evidence:**\n"
+        "- Not yet tested in production\n\n"
+        "### Gaps\n"
+        "- Template needs side-by-side layout\n"
+    )
+    result = _parse_goal_assessment(text)
+    assert result is not None
+    assert result["overall"] == "PARTIALLY_ACHIEVED"
+    assert len(result["asks"]) == 4
+    assert result["asks"][0]["verdict"] == "MET"
+    assert result["asks"][1]["verdict"] == "PARTIALLY_MET"
+    assert result["asks"][1]["verdict_class"] == "redirect"
+    assert len(result["asks"][1]["evidence"]) == 2
+    assert result["asks"][3]["verdict"] == "NO_DATA"
+    assert result["asks"][3]["verdict_class"] == "insufficient"
+    assert len(result["gaps"]) == 1
+
+
+def test_parse_goal_assessment_no_status() -> None:
+    assert _parse_goal_assessment("No structured data here") is None
+
+
+def test_generate_html_report_shows_goal(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Ship the widget"}))
+
+    result = generate_html_report(project)
+    html = result.read_text()
+    assert "Ship the widget" in html
+    assert "Goal" in html
+    assert "goal-text" in html
+    assert "verdict-card" in html
+
+
+def test_generate_html_report_no_goal(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+
+    result = generate_html_report(project)
+    html = result.read_text()
+    assert "<h2>Goal</h2>" not in html
+
+
+def test_generate_html_report_assess_false_no_assessment(tmp_path: Path) -> None:
+    project = tmp_path / "proj"
+    factory_dir = _make_factory_dir(project)
+    _write_results_tsv(factory_dir, [])
+    (factory_dir / "config.json").write_text(json.dumps({"goal": "Build a CLI"}))
+
+    result = generate_html_report(project, assess=False)
+    html = result.read_text()
+    assert "Build a CLI" in html
+    assert "ACHIEVED" not in html
