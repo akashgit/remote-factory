@@ -160,7 +160,7 @@ class ClaudeRunner:
 
         tmux_persist = request.extras.get("tmux_persist", False)
         if tmux_persist:
-            from factory.runners._tmux_persist import find_project_path, run_in_tmux, tmux_available
+            from factory.runners._dispatch_modes import find_project_path, run_in_tmux, tmux_available
 
             if tmux_available():
                 stdout, rc, usage = await run_in_tmux(

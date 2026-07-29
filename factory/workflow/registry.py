@@ -193,6 +193,22 @@ class WorkflowRegistry:
         return entry._workflow_fn()
 
     @classmethod
+    def get_all_workflows(cls, project_path: Path | None = None) -> dict[str, Workflow]:
+        """Return all discovered workflows as Workflow objects.
+
+        Includes built-in, user-global, and project-local workflows.
+        """
+        entries = cls.discover(project_path)
+        workflows: dict[str, Workflow] = {}
+        for name, entry in entries.items():
+            if entry._workflow_fn is not None:
+                try:
+                    workflows[name] = entry._workflow_fn()
+                except Exception:
+                    log.debug("workflow_registry.resolve_failed", name=name)
+        return workflows
+
+    @classmethod
     def list_workflows(cls, project_path: Path | None = None) -> list[WorkflowEntry]:
         """List all discovered workflows."""
         if not cls._entries:

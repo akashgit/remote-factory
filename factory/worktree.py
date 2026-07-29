@@ -28,7 +28,7 @@ def create_worktree(
     project_path: Path,
     base_branch: str = "main",
     run_id: str | None = None,
-) -> tuple[Path, str]:
+) -> tuple[Path, str, str]:
     """Create an isolated worktree for a factory run.
 
     Args:
@@ -37,7 +37,9 @@ def create_worktree(
         run_id: Optional run identifier. If provided, uses the first 8 chars.
                 If None, generates a random 8-char hex ID.
 
-    Returns (worktree_path, branch_name).
+    Returns (worktree_path, branch_name, target_branch) where target_branch
+    is the base_branch the worktree was created from — callers use this to
+    set the PR target correctly.
     """
     project_path = project_path.resolve()
 
@@ -58,8 +60,14 @@ def create_worktree(
                 cwd=project_path,
                 capture_output=True,
                 text=True,
-                check=True,
             )
+            if result.returncode != 0:
+                raise RuntimeError(
+                    f"Branch '{base_branch}' does not exist in {project_path} "
+                    f"after bootstrapping. The repo's default branch may differ "
+                    f"from '{base_branch}'. Set `target_branch` in "
+                    f".factory/config.json to match your repo's branch."
+                )
         else:
             raise RuntimeError(
                 f"Branch '{base_branch}' does not exist in {project_path}. "
@@ -109,7 +117,7 @@ def create_worktree(
     except Exception:
         pass
 
-    return wt_dir, branch
+    return wt_dir, branch, base_branch
 
 
 def create_experiment_worktree(
@@ -338,12 +346,19 @@ def _is_unborn_repo(project_path: Path) -> bool:
 def _bootstrap_unborn_repo(project_path: Path) -> None:
     """Create an initial empty commit so worktrees can branch from it."""
     log.info("bootstrap_unborn_repo", path=str(project_path))
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-m", "init (factory bootstrap)"],
-        cwd=project_path,
-        capture_output=True,
-        check=True,
-    )
+    try:
+        subprocess.run(
+            ["git", "commit", "--allow-empty", "-m", "init (factory bootstrap)"],
+            cwd=project_path,
+            capture_output=True,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b"").decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+        raise RuntimeError(
+            f"Failed to bootstrap repo at {project_path}: {stderr.strip()}. "
+            "Ensure git user.name and user.email are configured."
+        ) from exc
 
 
 def detect_default_branch(project_path: Path) -> str:

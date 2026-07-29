@@ -10,7 +10,10 @@ import re
 from datetime import date
 from typing import Literal
 
+import structlog
 from pydantic import BaseModel, ConfigDict
+
+log = structlog.get_logger()
 
 
 class PlaybookItem(BaseModel):
@@ -39,6 +42,7 @@ class PlaybookItem(BaseModel):
             line.strip(),
         )
         if not m:
+            log.debug("PlaybookItem.from_line.skip", line=line[:80])
             return None
         return cls(
             id=m.group(1),
@@ -59,6 +63,7 @@ class Playbook(BaseModel):
 
     def to_markdown(self) -> str:
         """Serialize to markdown with frontmatter."""
+        log.info("Playbook.to_markdown.start", role=self.role, item_count=len(self.items))
         self.updated = date.today().isoformat()
         lines = [
             "---",
@@ -91,6 +96,7 @@ class Playbook(BaseModel):
     @classmethod
     def from_markdown(cls, text: str) -> Playbook:
         """Parse a playbook from markdown. Tolerant of missing sections."""
+        log.info("Playbook.from_markdown.start", text_len=len(text))
         role = "unknown"
         updated = ""
         items: list[PlaybookItem] = []
@@ -119,8 +125,10 @@ class Playbook(BaseModel):
                 item.section = current_section
                 items.append(item)
 
+        log.info("Playbook.from_markdown.done", role=role, item_count=len(items))
         return cls(role=role, updated=updated, items=items)
 
     @classmethod
     def empty(cls, role: str) -> Playbook:
+        log.debug("Playbook.empty.start", role=role)
         return cls(role=role, items=[])

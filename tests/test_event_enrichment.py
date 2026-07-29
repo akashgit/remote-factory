@@ -394,10 +394,11 @@ def test_create_worktree_event_exception_swallowed(tmp_path: Path) -> None:
     with patch("subprocess.run", side_effect=fake_subprocess_run), \
          patch("factory.events.emit_event", side_effect=RuntimeError("boom")):
         from factory.worktree import create_worktree
-        wt_path, branch = create_worktree(project, "main")
+        wt_path, branch, target = create_worktree(project, "main")
 
     assert wt_path.exists()
     assert branch.startswith("factory/run-")
+    assert target == "main"
 
 
 @pytest.mark.real_worktree
@@ -566,7 +567,7 @@ def test_create_worktree_cleans_existing_factory_dir(tmp_path: Path) -> None:
 
     with patch("subprocess.run", side_effect=fake_subprocess_run):
         from factory.worktree import create_worktree
-        wt_path, branch = create_worktree(project, "main")
+        wt_path, branch, _target = create_worktree(project, "main")
 
     wt_factory = wt_path / ".factory"
     assert wt_factory.is_symlink()
@@ -591,7 +592,7 @@ def test_create_worktree_cleans_existing_factory_symlink(tmp_path: Path) -> None
 
     with patch("subprocess.run", side_effect=fake_subprocess_run):
         from factory.worktree import create_worktree
-        wt_path, branch = create_worktree(project, "main")
+        wt_path, branch, _target = create_worktree(project, "main")
 
     wt_factory = wt_path / ".factory"
     assert wt_factory.is_symlink()

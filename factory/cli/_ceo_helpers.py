@@ -393,7 +393,7 @@ def _execute_ceo(
         wt_branch = None
     else:
         base_branch = branch or _read_target_branch(project_path)
-        wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+        wt_path, wt_branch, target_branch = create_worktree(project_path, base_branch, run_id=run_id)
 
     from factory.skill_cache import ensure_skills
 
@@ -437,7 +437,7 @@ def _execute_ceo(
         prompt_file=prompt_file,
         min_growth=min_growth,
         max_new=max_new,
-        branch=branch,
+        branch=target_branch if not no_worktree else branch,
         discover_only=discover_only,
         no_github=no_github,
         design_idea=design_idea,

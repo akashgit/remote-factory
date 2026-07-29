@@ -1,6 +1,5 @@
 """Research citation index — tracks which experiments cite research sources."""
 
-import csv
 import json
 import re
 from pathlib import Path
@@ -46,19 +45,22 @@ def backfill_citations(project_path: Path) -> dict[str, list[str]]:
     if not tsv_path.exists():
         return {}
 
+    from factory.store import read_results_tsv
+
     index: dict[str, list[str]] = {}
-    with open(tsv_path, newline="") as f:
-        reader = csv.DictReader(f, dialect="excel-tab")
-        for row in reader:
-            exp_id = row["id"]
-            text = " ".join([
-                row.get("hypothesis", ""),
-                row.get("change_summary", ""),
-                row.get("notes", ""),
-            ])
-            citations = extract_citations(text)
-            if citations:
-                index[exp_id] = citations
+    rows = read_results_tsv(tsv_path)
+    for row in rows:
+        exp_id = row.get("id", "")
+        if not exp_id:
+            continue
+        text = " ".join([
+            row.get("hypothesis", ""),
+            row.get("change_summary", ""),
+            row.get("notes", ""),
+        ])
+        citations = extract_citations(text)
+        if citations:
+            index[exp_id] = citations
 
     out_path = project_path / ".factory" / "citations.json"
     out_path.write_text(json.dumps(index, indent=2) + "\n")
@@ -76,18 +78,22 @@ def _load_citations_from_tsv(project_path: Path) -> list[tuple[int, list[str]]]:
     if not tsv_path.exists():
         return []
 
+    from factory.store import read_results_tsv
+
     backfill = _load_backfill(project_path)
 
     results: list[tuple[int, list[str]]] = []
-    with open(tsv_path, newline="") as f:
-        reader = csv.DictReader(f, dialect="excel-tab")
-        for row in reader:
-            exp_id = int(row["id"])
-            raw = row.get("research_citations", "")
-            citations = [c.strip() for c in raw.split("|") if c.strip()] if raw else []
-            if not citations:
-                citations = backfill.get(str(exp_id), [])
-            results.append((exp_id, citations))
+    rows = read_results_tsv(tsv_path)
+    for row in rows:
+        exp_id_raw = row.get("id", "")
+        if not exp_id_raw:
+            continue
+        exp_id = int(exp_id_raw)
+        raw = row.get("research_citations", "")
+        citations = [c.strip() for c in raw.split("|") if c.strip()] if raw else []
+        if not citations:
+            citations = backfill.get(str(exp_id), [])
+        results.append((exp_id, citations))
     return results
 
 

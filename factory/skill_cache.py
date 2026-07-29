@@ -57,10 +57,10 @@ def ensure_skills(project_dir: Path, *, mode: str | None = None) -> list[Path]:
 
 
 def _ensure_skills_inner(project_dir: Path, *, mode: str | None = None) -> list[Path]:
-    from factory.workflow.definitions import register_all
+    from factory.workflow.registry import WorkflowRegistry
     from factory.workflow.skill_export import export_all_skills
 
-    workflows = register_all()
+    workflows = WorkflowRegistry.get_all_workflows(project_dir)
     checksum = _compute_checksum(workflows)
 
     cache_dir = Path.home() / ".factory" / "cache" / "skills" / checksum

@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from factory.runners._tmux_persist import (
+from factory.runners._dispatch_modes import (
     _generate_settings,
     _strip_ansi,
     _wait_for_exitcode,
@@ -21,20 +21,20 @@ from factory.runners.claude import ClaudeRunner
 
 class TestTmuxAvailable:
     def test_returns_true_when_tmux_found(self) -> None:
-        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+        with patch("factory.runners._dispatch_modes.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             assert tmux_available() is True
             mock_run.assert_called_once_with(["tmux", "-V"], capture_output=True, check=True)
 
     def test_returns_false_when_tmux_not_found(self) -> None:
-        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+        with patch("factory.runners._dispatch_modes.subprocess.run") as mock_run:
             mock_run.side_effect = FileNotFoundError
             assert tmux_available() is False
 
     def test_returns_false_when_tmux_fails(self) -> None:
         import subprocess
 
-        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+        with patch("factory.runners._dispatch_modes.subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.CalledProcessError(1, "tmux")
             assert tmux_available() is False
 
@@ -64,7 +64,7 @@ class TestStripAnsi:
 
 class TestWindowExists:
     def test_returns_true_when_window_alive(self) -> None:
-        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+        with patch("factory.runners._dispatch_modes.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=0)
             assert _window_exists("mysession", "mywindow") is True
             mock_run.assert_called_once_with(
@@ -73,7 +73,7 @@ class TestWindowExists:
             )
 
     def test_returns_false_when_window_dead(self) -> None:
-        with patch("factory.runners._tmux_persist.subprocess.run") as mock_run:
+        with patch("factory.runners._dispatch_modes.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(returncode=1)
             assert _window_exists("mysession", "mywindow") is False
 
@@ -154,7 +154,7 @@ class TestWaitForSentinel:
 
     async def test_returns_false_on_timeout(self, tmp_path: Path) -> None:
         sentinel = tmp_path / "sentinel"
-        with patch("factory.runners._tmux_persist._SENTINEL_POLL_INITIAL", 0.01):
+        with patch("factory.runners._dispatch_modes._SENTINEL_POLL_INITIAL", 0.01):
             result = await _wait_for_sentinel(sentinel, timeout=0.03)
         assert result is False
 
@@ -171,8 +171,8 @@ class TestWaitForSentinel:
             await original_sleep(0)
 
         with (
-            patch("factory.runners._tmux_persist.asyncio.sleep", side_effect=mock_sleep),
-            patch("factory.runners._tmux_persist._SENTINEL_POLL_INITIAL", 0.01),
+            patch("factory.runners._dispatch_modes.asyncio.sleep", side_effect=mock_sleep),
+            patch("factory.runners._dispatch_modes._SENTINEL_POLL_INITIAL", 0.01),
         ):
             result = await _wait_for_sentinel(sentinel, timeout=10.0)
         assert result is True
@@ -192,9 +192,9 @@ class TestWaitForSentinel:
             await original_sleep(0)
 
         with (
-            patch("factory.runners._tmux_persist.asyncio.sleep", side_effect=mock_sleep),
-            patch("factory.runners._tmux_persist._SENTINEL_POLL_INITIAL", 0.1),
-            patch("factory.runners._tmux_persist._SENTINEL_POLL_CAP", 2.0),
+            patch("factory.runners._dispatch_modes.asyncio.sleep", side_effect=mock_sleep),
+            patch("factory.runners._dispatch_modes._SENTINEL_POLL_INITIAL", 0.1),
+            patch("factory.runners._dispatch_modes._SENTINEL_POLL_CAP", 2.0),
         ):
             await _wait_for_sentinel(sentinel, timeout=60.0)
 
@@ -214,8 +214,8 @@ class TestWaitForExitcode:
     async def test_returns_1_on_timeout(self, tmp_path: Path) -> None:
         exitcode_file = tmp_path / "exitcode"
         with (
-            patch("factory.runners._tmux_persist._EXITCODE_POLL_TIMEOUT", 0.05),
-            patch("factory.runners._tmux_persist._EXITCODE_POLL_INTERVAL", 0.01),
+            patch("factory.runners._dispatch_modes._EXITCODE_POLL_TIMEOUT", 0.05),
+            patch("factory.runners._dispatch_modes._EXITCODE_POLL_INTERVAL", 0.01),
         ):
             result = await _wait_for_exitcode(exitcode_file)
         assert result == 1
@@ -233,8 +233,8 @@ class TestWaitForExitcode:
             await original_sleep(0)
 
         with (
-            patch("factory.runners._tmux_persist.asyncio.sleep", side_effect=mock_sleep),
-            patch("factory.runners._tmux_persist._EXITCODE_POLL_TIMEOUT", 10.0),
+            patch("factory.runners._dispatch_modes.asyncio.sleep", side_effect=mock_sleep),
+            patch("factory.runners._dispatch_modes._EXITCODE_POLL_TIMEOUT", 10.0),
         ):
             result = await _wait_for_exitcode(exitcode_file)
         assert result == 42
@@ -247,19 +247,19 @@ class TestRunInTmux:
         (project_path / ".factory").mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("agent output here")
@@ -280,19 +280,19 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=True),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=True),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-window
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -320,12 +320,12 @@ class TestRunInTmux:
             original_write_text(self_path, content, *args, **kwargs)
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
             patch.object(Path, "write_text", spy_write_text),
         ):
             mock_run.side_effect = [
@@ -333,7 +333,7 @@ class TestRunInTmux:
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("agent output")
@@ -362,12 +362,12 @@ class TestRunInTmux:
             original_write_text(self_path, content, *args, **kwargs)
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
             patch.object(Path, "write_text", spy_write_text),
         ):
             mock_run.side_effect = [
@@ -375,7 +375,7 @@ class TestRunInTmux:
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -394,8 +394,8 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=1, stderr=b"error"),  # new-session fails
@@ -413,9 +413,9 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=False),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=False),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
@@ -439,19 +439,19 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("\x1b[32mgreen text\x1b[0m")
@@ -469,19 +469,19 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -501,12 +501,12 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=True),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=True),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
@@ -514,7 +514,7 @@ class TestRunInTmux:
                 MagicMock(returncode=0),  # kill-window fallback
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -534,19 +534,19 @@ class TestRunInTmux:
         project_path.mkdir()
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", new_callable=AsyncMock, return_value=0),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -577,19 +577,19 @@ class TestRunInTmux:
             return 1
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run") as mock_run,
-            patch("factory.runners._tmux_persist._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
-            patch("factory.runners._tmux_persist._wait_for_window_exit", new_callable=AsyncMock),
-            patch("factory.runners._tmux_persist._wait_for_exitcode", side_effect=mock_wait_for_exitcode),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=False),
+            patch("factory.runners._dispatch_modes.subprocess.run") as mock_run,
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", new_callable=AsyncMock, return_value=True),
+            patch("factory.runners._dispatch_modes._wait_for_window_exit", new_callable=AsyncMock),
+            patch("factory.runners._dispatch_modes._wait_for_exitcode", side_effect=mock_wait_for_exitcode),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=False),
         ):
             mock_run.side_effect = [
                 MagicMock(returncode=0),  # new-session
                 MagicMock(returncode=0),  # send-keys /exit
             ]
 
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
                 (tmpdir / "output.log").write_text("output")
@@ -623,12 +623,12 @@ class TestRunInTmux:
             return MagicMock(returncode=0)
 
         with (
-            patch("factory.runners._tmux_persist.subprocess.run", side_effect=track_subprocess_run),
-            patch("factory.runners._tmux_persist._wait_for_sentinel", side_effect=sentinel_raises_cancelled),
-            patch("factory.runners._tmux_persist._session_exists", return_value=False),
-            patch("factory.runners._tmux_persist._window_exists", return_value=True),
+            patch("factory.runners._dispatch_modes.subprocess.run", side_effect=track_subprocess_run),
+            patch("factory.runners._dispatch_modes._wait_for_sentinel", side_effect=sentinel_raises_cancelled),
+            patch("factory.runners._dispatch_modes._session_exists", return_value=False),
+            patch("factory.runners._dispatch_modes._window_exists", return_value=True),
         ):
-            with patch("factory.runners._tmux_persist.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
+            with patch("factory.runners._dispatch_modes.tempfile.mkdtemp", return_value=str(tmp_path / "tmp")):
                 tmpdir = tmp_path / "tmp"
                 tmpdir.mkdir()
 
@@ -657,8 +657,8 @@ class TestClaudeRunnerTmuxPersist:
         )
 
         with (
-            patch("factory.runners._tmux_persist.tmux_available", return_value=True),
-            patch("factory.runners._tmux_persist.run_in_tmux", new_callable=AsyncMock, return_value=("tmux output", 0, None)) as mock_run,
+            patch("factory.runners._dispatch_modes.tmux_available", return_value=True),
+            patch("factory.runners._dispatch_modes.run_in_tmux", new_callable=AsyncMock, return_value=("tmux output", 0, None)) as mock_run,
         ):
             result = await runner.headless(request)
 
@@ -680,7 +680,7 @@ class TestClaudeRunnerTmuxPersist:
         mock_result = AgentRunResult(stdout="headless output", return_code=0)
 
         with (
-            patch("factory.runners._tmux_persist.tmux_available", return_value=False),
+            patch("factory.runners._dispatch_modes.tmux_available", return_value=False),
             patch("factory.runners.claude.run_subprocess", new_callable=AsyncMock, return_value=mock_result),
         ):
             await runner.headless(request)
