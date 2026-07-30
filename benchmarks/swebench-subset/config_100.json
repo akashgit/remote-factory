@@ -1,0 +1,16 @@
+{
+  "instruction": "Generate embeddings that capture the core technical problem described in GitHub issue reports for open-source Python projects, ensuring diversity across problem types, affected modules, and difficulty levels.",
+  "query_description": "GitHub issue / bug report",
+  "templates": {
+    "default": "{{ text }}",
+    "swebench": "Repository: {{ repo }}\nDifficulty: {{ difficulty }}\n\nProblem Statement:\n{{ problem_statement }}"
+  },
+  "batch_size": 500,
+  "num_folds": 5,
+  "subset_sizes": ["20%"],
+  "seed": 42,
+  "template_name": "swebench",
+  "combine_files": false,
+  "encoder_type": "bge",
+  "encoder_model": "BAAI/bge-m3"
+}
