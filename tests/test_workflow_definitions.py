@@ -17,7 +17,6 @@ from factory.workflow.definitions import (
     founder_workflow,
     improve_workflow,
     meta_workflow,
-
     refine_workflow,
     register_all,
     research_workflow,

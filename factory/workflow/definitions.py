@@ -45,7 +45,6 @@ __all__ = [
     "build_workflow",
     "design_workflow",
     "improve_workflow",
-
     "research_workflow",
     "meta_workflow",
     "discover_workflow",
@@ -751,6 +750,9 @@ def improve_workflow() -> Workflow:
         start_node="study",
         trigger=trigger,
     )
+
+
+# ── W₃b: QA Mode ───────────────────────────────────────────────
 
 
 # ── W₄: Research Mode ───────────────────────────────────────────
@@ -4566,7 +4568,6 @@ def register_all() -> dict[str, Workflow]:
         "discover": discover_workflow(),
         "review": review_workflow(),
         "improve": improve_workflow(),
-        "qa": qa_workflow(),
         "deep-qa": deep_qa_workflow(),
         "legacybench": legacybench_workflow(),
         "featurebench": featurebench_workflow(),
