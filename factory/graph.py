@@ -13,7 +13,6 @@ log = structlog.get_logger()
 
 GRAPH_FILE = "graph.json"
 GRAPHIFY_OUT_DIR = ".factory/graphify-out"
-CACHE_DIR = "cache"
 
 
 def _graph_path(project_path: Path) -> Path:
