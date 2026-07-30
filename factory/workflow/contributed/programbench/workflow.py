@@ -25,6 +25,7 @@ from factory.workflow.primitives import (
     VerdictType,
     Workflow,
 )
+from factory.workflow.shell import PORTABLE_TIMEOUT_PREAMBLE
 
 meta = {
     "name": "programbench",
@@ -208,14 +209,15 @@ def workflow() -> Workflow:
         id="gate_verify",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && "
+            PORTABLE_TIMEOUT_PREAMBLE
+            + "cd {project_path} && "
             "if [ -f /workspace/todos.md ] && [ -s /workspace/todos.md ] && "
             "grep -q '## TODO' /workspace/todos.md; then "
             "echo 'reloop: todos remain — see /workspace/todos.md'; exit 0; fi && "
             "if [ ! -f compile.sh ]; then "
             "echo 'reloop: compile.sh not found — builder must create a build script'; "
             "exit 0; fi && "
-            "BUILD_OUT=$(timeout 7200 bash compile.sh 2>&1); BUILD_EC=$?; "
+            "BUILD_OUT=$(run_with_timeout 7200 bash compile.sh 2>&1); BUILD_EC=$?; "
             "if [ $BUILD_EC -ne 0 ]; then "
             "printf 'Command: compile.sh\\nExit code: %d\\n\\n%s\\n' "
             "\"$BUILD_EC\" \"$BUILD_OUT\" > /workspace/test-results.txt; "
@@ -232,7 +234,7 @@ def workflow() -> Workflow:
             "if [ -z \"$TEST_CMD\" ]; then "
             "echo 'pass: compilation succeeded, no test infrastructure found'; "
             "exit 0; fi; "
-            "TEST_OUT=$(timeout 7200 $TEST_CMD 2>&1); TEST_EC=$?; "
+            "TEST_OUT=$(run_with_timeout 7200 $TEST_CMD 2>&1); TEST_EC=$?; "
             "printf 'Command: %s\\nExit code: %d\\n\\n%s\\n' "
             "\"$TEST_CMD\" \"$TEST_EC\" \"$TEST_OUT\" "
             "> /workspace/test-results.txt; "

@@ -156,8 +156,8 @@ The factory supports multiple CLI backends via the runner abstraction (`factory/
 **Codex specifics:**
 - Requires `CODEX_API_KEY` (or `OPENAI_API_KEY`) environment variable (or set via config.toml profile)
 - `CODEX_API_KEY` is auto-mapped to `OPENAI_API_KEY` in subprocess env if needed
-- Headless mode uses `codex exec` with `--sandbox workspace-write --ask-for-approval never`
-- Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`)
+- Headless mode uses `codex exec` with `--sandbox workspace-write --skip-git-repo-check` (`codex exec` is non-interactive and never prompts for approval; the old `--ask-for-approval` flag was removed from the Codex CLI and is no longer passed)
+- Model selection via `--model` flag (e.g., `gpt-5.4`, `gpt-5.2-codex`). Claude model aliases (`sonnet`/`opus`/`haiku`/`claude-*`) are dropped rather than forwarded — the per-role defaults in `factory/agents/agents.yml` are Claude-specific, and OpenAI rejects them outright. Without an explicit OpenAI model, the Codex CLI uses its own default.
 - Progress streams to stderr, final message to stdout (matches factory capture model)
 - Install: `npm install -g @openai/codex`
 

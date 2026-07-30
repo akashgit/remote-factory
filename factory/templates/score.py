@@ -24,7 +24,7 @@ def eval_tests() -> dict:
     """Run the test suite and score based on pass/fail."""
     try:
         result = subprocess.run(
-            ["python", "-m", "pytest", "--tb=short", "-q"],
+            [sys.executable, "-m", "pytest", "--tb=short", "-q"],
             capture_output=True,
             text=True,
             timeout=300,
@@ -51,7 +51,7 @@ def eval_lint() -> dict:
     """Run the linter and score based on clean output."""
     try:
         result = subprocess.run(
-            ["python", "-m", "ruff", "check", "."],
+            [sys.executable, "-m", "ruff", "check", "."],
             capture_output=True,
             text=True,
             timeout=60,

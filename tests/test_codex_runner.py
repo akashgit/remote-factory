@@ -515,6 +515,55 @@ class TestCodexBuildInteractiveCommand:
         if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
             runner._tmpdir.cleanup()
 
+    @pytest.mark.parametrize("model", ["sonnet", "opus", "haiku", "claude-opus-4"])
+    def test_claude_model_alias_dropped(
+        self, model: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Claude model aliases must not be forwarded to the Codex CLI.
+
+        Per-role defaults in ``factory/agents/agents.yml`` are Claude aliases and
+        are resolved before a runner is chosen, so they reach the Codex runner
+        whenever the caller passes no explicit ``--model``. Forwarding one makes
+        OpenAI reject the request outright, so the flag is dropped and the Codex
+        CLI falls back to its own configured default.
+        """
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            cmd, _, _ = runner.build_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path, model=model,
+            ))
+            interactive, _, _ = runner.build_interactive_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path, model=model,
+            ))
+
+        assert "--model" not in cmd
+        assert model not in cmd
+        assert "--model" not in interactive
+        assert model not in interactive
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
+    def test_openai_model_still_forwarded(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An explicit OpenAI model is passed through untouched."""
+        monkeypatch.setenv("CODEX_API_KEY", "test-key")
+        runner = CodexRunner()
+
+        with patch("factory.runners.codex._has_codex_oauth", return_value=False):
+            cmd, _, _ = runner.build_command(AgentRunRequest(
+                prompt="Test", task="Test", cwd=tmp_path, model="gpt-5.4",
+            ))
+
+        assert "--model" in cmd
+        assert cmd[cmd.index("--model") + 1] == "gpt-5.4"
+
+        if hasattr(runner, "_tmpdir") and runner._tmpdir is not None:
+            runner._tmpdir.cleanup()
+
     def test_env_from_make_codex_env(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

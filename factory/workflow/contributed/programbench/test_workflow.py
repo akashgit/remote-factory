@@ -12,6 +12,7 @@ from factory.workflow.primitives import (
     GateNode,
     VerdictType,
 )
+from factory.workflow.shell import PORTABLE_TIMEOUT_PREAMBLE
 
 
 class TestProgrambenchWorkflow:
@@ -158,12 +159,18 @@ class TestProgrambenchWorkflow:
         assert "test.sh" in node.evaluator_command
 
     def test_gate_verify_timeout(self) -> None:
-        """Gate uses timeout 7200 for compilation and test execution."""
+        """Gate caps compilation and test execution at 7200s, portably.
+
+        ``timeout`` is GNU coreutils and absent from stock macOS, so the gate
+        must go through the ``run_with_timeout`` shim rather than calling the
+        binary directly.
+        """
         wf = workflow()
         node = wf.nodes["gate_verify"]
         assert isinstance(node, GateNode)
         assert node.evaluator_command is not None
-        assert "timeout 7200" in node.evaluator_command
+        assert node.evaluator_command.count("run_with_timeout 7200") == 2
+        assert PORTABLE_TIMEOUT_PREAMBLE in node.evaluator_command
 
     def test_gate_verify_command_references_test_results(self) -> None:
         """Gate command writes structured results to /workspace/test-results.txt."""

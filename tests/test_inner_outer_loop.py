@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -700,7 +701,7 @@ class TestSpecFormatRoundTrip:
         scores: list[float] = []
         for _ in range(runs):
             result = subprocess.run(
-                ["python", "eval.py"],
+                [sys.executable, "eval.py"],
                 cwd=math_benchmark_project,
                 capture_output=True,
                 text=True,

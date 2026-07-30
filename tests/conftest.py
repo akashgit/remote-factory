@@ -26,6 +26,28 @@ def _isolate_registry(tmp_path: Path) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _restore_cwd() -> None:
+    """Restore the process working directory after every test.
+
+    Several CLI entry points (``factory/cli/ceo.py``, ``factory/cli/infra.py``)
+    call ``os.chdir(project_path)`` immediately before ``os.execvp`` so the
+    exec'd ``claude`` process starts in the project. In production the chdir is
+    invisible because ``execvp`` replaces the process. Tests, however, patch
+    ``os.execvp`` and leave ``os.chdir`` live, so the pytest process is left
+    sitting in a ``tmp_path`` project directory.
+
+    That leak silently breaks any later test whose behavior depends on the
+    working directory — most visibly the ``factory`` CLI subprocess tests, which
+    would resolve the package via ``sys.path[0]`` and fail with "No module named
+    factory" depending on test ordering.
+    """
+    original = os.getcwd()
+    yield  # type: ignore[misc]
+    if os.getcwd() != original:
+        os.chdir(original)
+
+
+@pytest.fixture(autouse=True)
 def _reset_agent_failure_counter() -> None:
     """Reset consecutive agent failure counter between tests."""
     from factory.agents.runner import reset_failure_counter

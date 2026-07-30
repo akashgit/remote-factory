@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from io import StringIO
 from pathlib import Path
@@ -560,7 +561,7 @@ def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) ->
         env.pop("CODEX_API_KEY", None)
     result = subprocess.run(
         [
-            "uv", "run", "factory", "agent", "researcher",
+            sys.executable, "-m", "factory", "agent", "researcher",
             "--task", "List files in this project. Be concise.",
             "--runner", runner_name,
             "--project", str(sample_project),
@@ -586,7 +587,7 @@ def test_factory_agent_cli_per_runner(runner_name: str, sample_project: Path) ->
 def test_factory_eval_runs(sample_project: Path) -> None:
     """factory eval produces JSON with results."""
     result = subprocess.run(
-        ["uv", "run", "factory", "eval", str(sample_project)],
+        [sys.executable, "-m", "factory", "eval", str(sample_project)],
         cwd=sample_project,
         capture_output=True,
         text=True,
@@ -607,7 +608,7 @@ def test_factory_eval_runs(sample_project: Path) -> None:
 def test_factory_runners_list_all_present() -> None:
     """factory runners list --json shows all 4 runners with correct metadata."""
     result = subprocess.run(
-        ["uv", "run", "factory", "runners", "list", "--json"],
+        [sys.executable, "-m", "factory", "runners", "list", "--json"],
         capture_output=True,
         text=True,
         timeout=30,

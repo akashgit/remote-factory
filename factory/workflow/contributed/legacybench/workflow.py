@@ -24,6 +24,7 @@ from factory.workflow.primitives import (
     VerdictType,
     Workflow,
 )
+from factory.workflow.shell import PORTABLE_TIMEOUT_PREAMBLE
 
 meta = {
     "name": "legacybench",
@@ -125,7 +126,8 @@ def workflow() -> Workflow:
         id="gate_verify",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && "
+            PORTABLE_TIMEOUT_PREAMBLE
+            + "cd {project_path} && "
             "CHANGES=$(git diff HEAD~1 --stat 2>/dev/null || echo 'NO_COMMITS') && "
             "if [ \"$CHANGES\" = 'NO_COMMITS' ] || [ -z \"$CHANGES\" ]; then "
             "echo 'fail: builder did not commit any changes'; "
@@ -136,14 +138,14 @@ def workflow() -> Workflow:
             "if [ ! -f Makefile ]; then "
             "echo 'reloop: no Makefile found — cannot independently verify correctness'; "
             "exit 0; fi && "
-            "BUILD_OUT=$(timeout 600 make 2>&1) || "
+            "BUILD_OUT=$(run_with_timeout 600 make 2>&1) || "
             "{ TAIL=$(echo \"$BUILD_OUT\" | tail -50); "
             "echo \"reloop: compilation failed — $TAIL\"; exit 0; } && "
             "TEST_PROBE=$(make -n test 2>&1); "
             "if [ $? -ne 0 ]; then "
             "echo 'reloop: no test target in Makefile — cannot verify correctness'; "
             "exit 0; fi && "
-            "TEST_OUT=$(timeout 600 make test 2>&1) || "
+            "TEST_OUT=$(run_with_timeout 600 make test 2>&1) || "
             "{ TAIL=$(echo \"$TEST_OUT\" | tail -50); "
             "echo \"reloop: tests failed — $TAIL\"; exit 0; } && "
             "echo 'pass: compilation and tests succeeded'"

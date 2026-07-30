@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -308,7 +309,7 @@ class TestCLIE2E:
     def test_workflow_list(self) -> None:
         """factory workflow list prints all 5 workflows."""
         result = subprocess.run(
-            ["python", "-m", "factory", "workflow", "list"],
+            [sys.executable, "-m", "factory", "workflow", "list"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -320,7 +321,7 @@ class TestCLIE2E:
     def test_workflow_show_build(self) -> None:
         """factory workflow show build prints node/edge table."""
         result = subprocess.run(
-            ["python", "-m", "factory", "workflow", "show", "build"],
+            [sys.executable, "-m", "factory", "workflow", "show", "build"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -334,7 +335,7 @@ class TestCLIE2E:
         """factory workflow validate passes for all workflows."""
         for name in ("build", "design", "improve", "research", "meta"):
             result = subprocess.run(
-                ["python", "-m", "factory", "workflow", "validate", name],
+                [sys.executable, "-m", "factory", "workflow", "validate", name],
                 capture_output=True,
                 text=True,
                 timeout=30,
@@ -345,7 +346,7 @@ class TestCLIE2E:
     def test_workflow_show_unknown(self) -> None:
         """factory workflow show <unknown> returns error."""
         result = subprocess.run(
-            ["python", "-m", "factory", "workflow", "show", "nonexistent"],
+            [sys.executable, "-m", "factory", "workflow", "show", "nonexistent"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -357,7 +358,7 @@ class TestCLIE2E:
         project = _init_test_project(tmp_path / "cli-dry-run", with_factory=True)
         result = subprocess.run(
             [
-                "python", "-m", "factory", "workflow", "run",
+                sys.executable, "-m", "factory", "workflow", "run",
                 "improve", str(project), "--dry-run",
             ],
             capture_output=True,

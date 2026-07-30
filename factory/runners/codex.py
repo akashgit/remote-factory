@@ -21,6 +21,24 @@ log = structlog.get_logger()
 
 _auth_checked = False
 
+#: Claude model families that must never be forwarded to the Codex CLI.
+#:
+#: The factory's per-role default models (``factory/agents/agents.yml``, e.g.
+#: ``researcher: sonnet``) are Claude-specific aliases. They are resolved before
+#: a runner is selected, so a role default reaches this runner unchanged when the
+#: caller did not pass an explicit ``--model``. Forwarding one produces
+#: ``codex exec --model sonnet``, which OpenAI rejects outright:
+#: ``The 'sonnet' model is not supported when using Codex with a ChatGPT account``.
+#:
+#: Dropping the flag lets the Codex CLI fall back to its own configured default.
+#: An explicit ``--model gpt-5.4`` is still forwarded normally.
+_CLAUDE_MODEL_PREFIXES = ("sonnet", "opus", "haiku", "claude")
+
+
+def _is_claude_model(model: str) -> bool:
+    """Return True if ``model`` names a Claude model the Codex CLI cannot serve."""
+    return model.strip().lower().startswith(_CLAUDE_MODEL_PREFIXES)
+
 
 class CodexAuthError(Exception):
     """Raised when neither CODEX_API_KEY nor OPENAI_API_KEY is set."""
@@ -128,7 +146,14 @@ class CodexRunner:
             cmd.extend(["--sandbox", "workspace-write"])
 
         if request.model:
-            cmd.extend(["--model", request.model])
+            if _is_claude_model(request.model):
+                log.warning(
+                    "codex_model_ignored",
+                    model=request.model,
+                    reason="Claude model alias cannot be served by the Codex CLI",
+                )
+            else:
+                cmd.extend(["--model", request.model])
 
         cmd.append("--skip-git-repo-check")
         cmd.extend(["--", full_prompt])
@@ -193,7 +218,14 @@ class CodexRunner:
             cmd.append("--full-auto")
 
         if request.model:
-            cmd.extend(["--model", request.model])
+            if _is_claude_model(request.model):
+                log.warning(
+                    "codex_model_ignored",
+                    model=request.model,
+                    reason="Claude model alias cannot be served by the Codex CLI",
+                )
+            else:
+                cmd.extend(["--model", request.model])
 
         env, tmpdir = _make_codex_env()
         self._tmpdir = tmpdir
