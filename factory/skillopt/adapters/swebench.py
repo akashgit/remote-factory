@@ -1,7 +1,9 @@
 """SWE-bench adapter — runs Harbor SWE-bench benchmarks and collects traces."""
 from __future__ import annotations
 
+import base64
 import json
+import os
 import re
 import subprocess
 import sys
@@ -18,9 +20,27 @@ log = structlog.get_logger()
 _BENCHMARKS_DIR = Path(__file__).resolve().parents[3] / "benchmarks"
 _RESULTS_DIR = _BENCHMARKS_DIR / "results"
 _SKILLS_DIR = Path(__file__).resolve().parents[3] / "skills" / "workflow-swebench"
+_SPLITS_DIR = _BENCHMARKS_DIR / "swebench-subset" / "splits"
 
 _JOBS_DIR_PATTERN = re.compile(r"Jobs directory:\s*(.+)")
 _TRIAL_SUFFIX_PATTERN = re.compile(r"__[A-Za-z0-9]{7}$")
+
+
+def _load_split_ids(split_file: Path) -> list[str]:
+    if not split_file.exists():
+        return []
+    ids: list[str] = []
+    for line in split_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            data = json.loads(line)
+            if isinstance(data, dict) and "instance_id" in data:
+                ids.append(data["instance_id"])
+        except json.JSONDecodeError:
+            continue
+    return ids
 
 
 class SwebenchAdapter(EnvAdapter):
@@ -28,15 +48,32 @@ class SwebenchAdapter(EnvAdapter):
     def __init__(self) -> None:
         self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
         self.instances: list[str] = []
+        self._train_ids: list[str] = []
+        self._val_ids: list[str] = []
+        self._test_ids: list[str] = []
 
     def setup(self, cfg: dict) -> None:
         self.skill_path = Path(cfg.get("skill_path", str(self.skill_path)))
         self.instances = cfg.get("instances", [])
+        self._train_ids = _load_split_ids(_SPLITS_DIR / "train.jsonl")
+        self._val_ids = _load_split_ids(_SPLITS_DIR / "val.jsonl")
+        self._test_ids = _load_split_ids(_SPLITS_DIR / "test.jsonl")
+        log.info(
+            "splits loaded",
+            train=len(self._train_ids),
+            val=len(self._val_ids),
+            test=len(self._test_ids),
+        )
 
     def build_train_env(self, batch_size: int, seed: int) -> Any:
         if self.instances:
             log.info("train env built (pinned instances)", count=len(self.instances), seed=seed)
             return self.instances
+        if self._train_ids:
+            start = (seed * batch_size) % max(len(self._train_ids), 1)
+            selected = self._train_ids[start:start + batch_size]
+            log.info("train env built (split)", count=len(selected), seed=seed)
+            return selected
         log.info("train env built", limit=batch_size, seed=seed)
         return batch_size
 
@@ -44,8 +81,32 @@ class SwebenchAdapter(EnvAdapter):
         if self.instances:
             log.info("eval env built (pinned instances)", count=len(self.instances), split=split, seed=seed)
             return self.instances
+        if split == "test" and self._test_ids:
+            log.info("eval env built (test split)", count=len(self._test_ids), seed=seed)
+            return self._test_ids
+        if self._val_ids:
+            log.info("eval env built (val split)", count=len(self._val_ids), seed=seed)
+            return self._val_ids
         log.info("eval env built", limit=env_num, split=split, seed=seed)
         return env_num
+
+    def _extract_prompt_slot(self, skill_content: str) -> str:
+        if not skill_content.startswith("---"):
+            return skill_content
+        from factory.skillopt.yaml_surface import load_yaml, extract_prompt_slots
+        ann_path = self.skill_path.parent / "SKILL.annotations.yaml"
+        if ann_path.exists():
+            surface = load_yaml(ann_path)
+            slots = extract_prompt_slots(surface)
+            if slots:
+                return next(iter(slots.values()))
+        match = re.search(
+            r'factory agent builder --task "(.*?)"\s*--project',
+            skill_content, re.DOTALL,
+        )
+        if match:
+            return match.group(1).strip()
+        return skill_content
 
     def rollout(
         self, env_manager: Any, skill_content: str, out_dir: str,
@@ -67,13 +128,27 @@ class SwebenchAdapter(EnvAdapter):
             "--timeout", "7200",
             "--preserve",
         ]
-        if self.instances:
-            for instance_id in self.instances:
+        instances: list[str] = []
+        if isinstance(env_manager, list):
+            instances = env_manager
+        elif self.instances:
+            instances = self.instances
+
+        if instances:
+            for instance_id in instances:
                 cmd += ["--include-task-name", f"*{instance_id}"]
         else:
             limit = int(env_manager) if env_manager else 0
             if limit > 0:
                 cmd += ["--limit", str(limit)]
+
+        env = dict(os.environ)
+        prompt = self._extract_prompt_slot(skill_content)
+        env["FACTORY_SKILL_B64"] = base64.b64encode(prompt.encode()).decode()
+
+        git_ref = _get_git_ref()
+        if git_ref:
+            env["FACTORY_GIT_REF"] = git_ref
 
         log.info("running harbor", cmd=" ".join(cmd))
 
@@ -83,6 +158,7 @@ class SwebenchAdapter(EnvAdapter):
                 capture_output=True,
                 text=True,
                 timeout=9000,
+                env=env,
             )
             log.info("benchmark finished", returncode=result.returncode)
         except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
@@ -105,6 +181,19 @@ class SwebenchAdapter(EnvAdapter):
 
     def get_task_types(self) -> list[str]:
         return ["bug_fix"]
+
+
+def _get_git_ref() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return ""
 
 
 def _clean_result_files() -> None:
