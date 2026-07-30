@@ -70,6 +70,10 @@ def _resolve_prompt() -> str:
     return _DEFAULT_PROMPT
 
 
+def _resolve_model() -> str:
+    return os.environ.get("FACTORY_STUDENT_MODEL", "opus")
+
+
 def workflow() -> Workflow:
     """Build the SWE-bench workflow from scratch (not composed from improve)."""
     nodes: dict[str, Any] = {}
@@ -100,7 +104,7 @@ def workflow() -> Workflow:
     nodes["builder"] = AgentNode(
         id="builder",
         role=AgentRole.BUILDER,
-        model="opus",
+        model=_resolve_model(),
         timeout=7200,
         max_iterations=3,
         prompt_template=_resolve_prompt(),

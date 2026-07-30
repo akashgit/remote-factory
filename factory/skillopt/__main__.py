@@ -126,6 +126,11 @@ def main() -> int:
         action="store_true",
         help="Enable epoch-level slow update (longitudinal skill refinement)",
     )
+    parser.add_argument(
+        "--student-model",
+        default="",
+        help="Override the student model (e.g. haiku, sonnet, opus)",
+    )
     args = parser.parse_args()
 
     adapter_name = args.adapter or args.benchmark
@@ -137,6 +142,7 @@ def main() -> int:
         "skill_path": args.skill_path,
         "instances": instances,
         "dataset_dir": args.dataset_dir,
+        "student_model": args.student_model,
     })
 
     from factory.skillopt.trainer import SkillOptTrainer

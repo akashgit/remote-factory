@@ -47,6 +47,7 @@ class SwebenchAdapter(EnvAdapter):
     def __init__(self) -> None:
         self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
         self.instances: list[str] = []
+        self.student_model: str = ""
         self._train_ids: list[str] = []
         self._val_ids: list[str] = []
         self._test_ids: list[str] = []
@@ -54,6 +55,7 @@ class SwebenchAdapter(EnvAdapter):
     def setup(self, cfg: dict) -> None:
         self.skill_path = Path(cfg.get("skill_path", str(self.skill_path)))
         self.instances = cfg.get("instances", [])
+        self.student_model = cfg.get("student_model", "")
         self._train_ids = _load_split_ids(_SPLITS_DIR / "train.jsonl")
         self._val_ids = _load_split_ids(_SPLITS_DIR / "val.jsonl")
         self._test_ids = _load_split_ids(_SPLITS_DIR / "test.jsonl")
@@ -144,6 +146,8 @@ class SwebenchAdapter(EnvAdapter):
         env = dict(os.environ)
         prompt = self._extract_prompt_slot(skill_content)
         env["FACTORY_SKILL_B64"] = base64.b64encode(prompt.encode()).decode()
+        if self.student_model:
+            env["FACTORY_STUDENT_MODEL"] = self.student_model
 
         git_ref = _get_git_ref()
         if git_ref:
