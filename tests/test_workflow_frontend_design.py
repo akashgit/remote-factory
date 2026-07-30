@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import (
@@ -12,7 +11,6 @@ from factory.workflow.definitions import (
 from factory.workflow.primitives import (
     AgentNode,
     AgentRole,
-    FnNode,
     ForkNode,
     GateNode,
     JoinNode,

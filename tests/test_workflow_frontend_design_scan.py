@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from factory.models import ProjectState
 from factory.workflow.definitions import (
