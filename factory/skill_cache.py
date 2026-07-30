@@ -48,7 +48,7 @@ def ensure_skills(project_dir: Path) -> list[Path]:
     """
     try:
         return _ensure_skills_inner(project_dir)
-    except OSError as exc:
+    except Exception as exc:
         log.warning("skill_cache.error", error=str(exc))
         return []
 

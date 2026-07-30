@@ -124,6 +124,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
 
         _print_banner("review")
 
+        # Ensure workflow skills are generated before resolving prompt
+        from factory.skill_cache import ensure_skills
+        ensure_skills(project_path)
+
+        # Verify the required workflow skill exists
+        review_skill = project_path / "skills" / "workflow-review" / "SKILL.md"
+        if not review_skill.exists():
+            print(
+                f"Error: workflow skill not found: {review_skill}\n"
+                f"This usually indicates a failure in skill generation.",
+                file=sys.stderr,
+            )
+            return 1
+
         repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""
         task = (
@@ -177,88 +191,6 @@ def cmd_ceo(args: argparse.Namespace) -> int:
         print(result)
         return code
 
-    # ── qa mode early exit ─────────────────────────────────────
-    if mode == "qa":
-        pr_number = getattr(args, "pr", None)
-        if pr_number is None:
-            print("Error: --mode qa requires --pr <number>", file=sys.stderr)
-            return 1
-
-        repo = getattr(args, "repo", None)
-        model = _resolve_model(args)
-        runner_name = _resolve_runner(args)
-
-        project_path = Path(raw_path).expanduser().resolve()
-        if not project_path.is_dir():
-            print(
-                f"Error: project path must be an existing directory for qa mode: {raw_path}",
-                file=sys.stderr,
-            )
-            return 1
-
-        _print_banner("qa")
-
-        repo_flag = f" --repo {repo}" if repo else ""
-        repo_clause = f" in repo `{repo}`" if repo else ""
-        task = (
-            f"Project: {project_path}\nMode: qa\n\n"
-            f"## QA Verification Directive\n\n"
-            f"Run the QA verification pipeline for PR #{pr_number}{repo_clause}.\n\n"
-            f"Read and follow the workflow-qa SKILL.md playbook at "
-            f"skills/workflow-qa/SKILL.md.\n\n"
-            f"Key parameters:\n"
-            f"- PR_NUMBER={pr_number}\n"
-            f"- PROJECT_PATH={project_path}\n"
-            f"{f'- REPO={repo}' + chr(10) if repo else ''}"
-            f"\nPost the final verdict via:\n"
-            f"factory review --verdict <KEEP|REVERT> --pr {pr_number} "
-            f'--reason "$REASON" '
-            f"--qa-body-file .factory/reviews/qa-latest.md"
-            f"{repo_flag}\n"
-            f'\nSet $REASON to the QA verdict summary (e.g. "QA: CLEAN — 2854 tests pass, 0 issues" '
-            f'or "QA: ISSUES_FOUND — 3 critical issues"). Set $VERDICT to KEEP if QA is CLEAN, REVERT otherwise.\n'
-            f"\nIMPORTANT: Do NOT post any PR comments (gh pr comment, gh issue comment). "
-            f"The factory review command above is the ONLY GitHub output artifact.\n"
-        )
-
-        from factory.agents.runner import begin_cycle_session, complete_cycle_session
-
-        cycle_span_id = begin_cycle_session(project_path, cycle_id="qa", model=model)
-
-        if not headless:
-            from factory.models import AgentRunRequest
-
-            prompt = resolve_prompt("ceo", project_path)
-            runner = get_runner(runner_name)
-            rc = runner.interactive_run(
-                AgentRunRequest(
-                    prompt=prompt,
-                    task=task,
-                    cwd=project_path,
-                    model=model,
-                    role="ceo",
-                    skip_permissions=True,
-                )
-            )
-            complete_cycle_session(project_path, cycle_span_id)
-            return rc
-
-        from factory.ceo_completion import run_ceo_with_completion_guard
-
-        result, code = _run(
-            run_ceo_with_completion_guard(
-                project_path,
-                task,
-                mode="qa",
-                runner_name=runner_name,
-                model=model,
-                timeout=7200.0,
-                max_respawns=1,
-            )
-        )
-        complete_cycle_session(project_path, cycle_span_id)
-        print(result)
-        return code
 
     # ── deep-qa mode early exit ───────────────────────────────
     if mode == "deep-qa":
@@ -280,6 +212,20 @@ def cmd_ceo(args: argparse.Namespace) -> int:
             return 1
 
         _print_banner("deep-qa")
+
+        # Ensure workflow skills are generated before resolving prompt
+        from factory.skill_cache import ensure_skills
+        ensure_skills(project_path)
+
+        # Verify the required workflow skill exists
+        deep_qa_skill = project_path / "skills" / "workflow-deep-qa" / "SKILL.md"
+        if not deep_qa_skill.exists():
+            print(
+                f"Error: workflow skill not found: {deep_qa_skill}\n"
+                f"This usually indicates a failure in skill generation.",
+                file=sys.stderr,
+            )
+            return 1
 
         repo_flag = f" --repo {repo}" if repo else ""
         repo_clause = f" in repo `{repo}`" if repo else ""

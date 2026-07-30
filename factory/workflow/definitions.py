@@ -42,7 +42,6 @@ __all__ = [
     "build_workflow",
     "design_workflow",
     "improve_workflow",
-    "qa_workflow",
     "research_workflow",
     "meta_workflow",
     "discover_workflow",
@@ -659,78 +658,6 @@ def improve_workflow() -> Workflow:
 
 
 # ── W₃b: QA Mode ───────────────────────────────────────────────
-
-
-def qa_workflow() -> Workflow:
-    """W₃b: QA Mode — standalone PR verification via the deep-QA pipeline.
-
-    Extracts the deep-QA subgraph + gate_qa + gate_precheck from W₃,
-    removes builder RELOOP (no fix loop in QA mode), and adds post_review.
-
-    health_checker → code_reviewer → gate_review → adversarial_tester →
-    gate_qa → gate_precheck → post_review
-    """
-    wf = improve_workflow()
-    deep_qa_nodes = {
-        "health_checker",
-        "code_reviewer",
-        "gate_review",
-        "adversarial_tester",
-        "gate_qa",
-        "gate_precheck",
-    }
-    sub = wf.subgraph(
-        deep_qa_nodes,
-        name="qa",
-        start_node="health_checker",
-    )
-
-    # Clear predecessor reads — in QA mode there's no prior builder output.
-    for nid in ("health_checker", "code_reviewer", "adversarial_tester"):
-        node = sub.nodes[nid]
-        assert isinstance(node, AgentNode)
-        sub.nodes[nid] = node.model_copy(update={"reads": set()})
-
-    # Replace gate_qa RELOOP with HALT — no builder fix loop in QA mode.
-    gate_qa = sub.nodes["gate_qa"]
-    assert isinstance(gate_qa, GateNode)
-    sub.nodes["gate_qa"] = gate_qa.model_copy(
-        update={
-            "gate_prompt": gate_qa.gate_prompt.replace(
-                "RELOOP to builder (max 3 iterations) if issues found.",
-                "HALT if issues found — no fix loop in QA mode.",
-            ),
-        }
-    )
-
-    sub.nodes["post_review"] = FnNode(
-        id="post_review",
-        command=(
-            "factory review --verdict $VERDICT --pr $PR_NUMBER"
-            " --reason $REASON"
-            " --qa-body-file .factory/reviews/adversarial-qa.md"
-        ),
-        reads={".factory/reviews/adversarial-qa.md"},
-    )
-
-    sub.edges = [
-        # Deep-QA internal edges
-        Edge(source="health_checker", target="code_reviewer"),
-        Edge(source="code_reviewer", target="gate_review"),
-        Edge(source="gate_review", target="adversarial_tester", condition=VerdictType.PROCEED),
-        # adversarial_tester → gate_qa
-        Edge(source="adversarial_tester", target="gate_qa"),
-        Edge(source="gate_qa", target="gate_precheck", condition=VerdictType.PROCEED),
-        Edge(source="gate_qa", target="post_review", condition=VerdictType.HALT),
-        Edge(source="gate_precheck", target="post_review", condition=VerdictType.PROCEED),
-        Edge(source="gate_precheck", target="post_review", condition=VerdictType.HALT),
-    ]
-
-    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
-        return ctx.get("mode") == "qa"
-
-    sub.trigger = trigger
-    return sub
 
 
 # ── W₄: Research Mode ───────────────────────────────────────────
@@ -2264,7 +2191,6 @@ def register_all() -> dict[str, Workflow]:
         "discover": discover_workflow(),
         "review": review_workflow(),
         "improve": improve_workflow(),
-        "qa": qa_workflow(),
         "deep-qa": deep_qa_workflow(),
         "legacybench": legacybench_workflow(),
         "featurebench": featurebench_workflow(),
