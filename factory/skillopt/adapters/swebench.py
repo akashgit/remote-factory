@@ -6,7 +6,6 @@ import json
 import os
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -227,69 +226,87 @@ def _find_latest_result_file() -> Path | None:
     return candidates[0] if candidates else None
 
 
-def _extract_trace_ids_from_jobs(jobs_dir: str) -> dict[str, str]:
-    """Map instance_id → trace_id by scanning trace_id.txt files in JOBS_DIR."""
-    mapping: dict[str, str] = {}
+def _find_trial_dir(jobs_dir: str, instance_id: str) -> Path | None:
+    """Find the trial directory for a given instance_id in the jobs dir."""
     if not jobs_dir:
-        return mapping
+        return None
     jobs_path = Path(jobs_dir)
     if not jobs_path.is_dir():
-        return mapping
-
-    for trace_file in jobs_path.rglob("trace_id.txt"):
-        trace_id = trace_file.read_text().strip()
-        if not trace_id:
-            continue
-        trial_dir = trace_file.parent
-        if trial_dir.name in ("verifier", "agent"):
-            trial_dir = trial_dir.parent
-        instance_id = _TRIAL_SUFFIX_PATTERN.sub("", trial_dir.name)
-        if instance_id:
-            mapping[instance_id] = trace_id
-
-    return mapping
+        return None
+    for d in jobs_path.iterdir():
+        if d.is_dir() and _TRIAL_SUFFIX_PATTERN.sub("", d.name) == instance_id:
+            return d
+    return None
 
 
-def _fetch_trace_dump(trace_id: str) -> str:
-    """Fetch a trace from Langfuse and return a formatted dump string."""
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "langfuse"))
-        from langfuse_client import fetch_trace  # type: ignore[import-untyped,import-not-found]
+def _parse_trial_trajectory(trial_dir: Path) -> str:
+    """Extract formatted trajectory from Harbor trial session files + verifier output."""
+    parts: list[str] = []
 
-        trace: dict[str, Any] = fetch_trace(trace_id, use_cache=True)
-        observations: list[dict[str, Any]] = trace.get("observations", [])
-        parts = [f"Trace: {trace_id}"]
-        parts.append(f"Name: {trace.get('name', 'unknown')}")
-        parts.append(f"Latency: {trace.get('latency', 0):.0f}s")
-        parts.append(f"Cost: ${trace.get('totalCost', 0):.4f}")
-        parts.append(f"Observations: {len(observations)}")
+    session_files = list(trial_dir.rglob("sessions/projects/*/??*-*-*-*-*.jsonl"))
+    if session_files:
+        session = max(session_files, key=lambda p: p.stat().st_mtime)
+        for line in session.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            msg = entry.get("message", {})
+            if not isinstance(msg, dict):
+                continue
+            role = msg.get("role")
+            content = msg.get("content", [])
 
-        agent_spans = sorted(
-            [o for o in observations
-             if o.get("type") == "SPAN" and o.get("name", "").startswith("agent:")],
-            key=lambda o: o.get("startTime", ""),
-        )
-        for span in agent_spans:
-            inp = span.get("input", {})
-            task_text = ""
-            if isinstance(inp, dict):
-                task_text = str(inp.get("task") or inp.get("prompt") or "")[:500]
-            out = span.get("output", "")
-            out_text = ""
-            if isinstance(out, dict):
-                out_text = json.dumps(out)[:500]
-            elif out:
-                out_text = str(out)[:500]
-            parts.append(f"\n[{span.get('name', '')}] {span.get('startTime', '')[:19]}")
-            if task_text:
-                parts.append(f"  Input: {task_text}")
-            if out_text:
-                parts.append(f"  Output: {out_text}")
+            if role == "assistant" and isinstance(content, list):
+                for block in content:
+                    if not isinstance(block, dict):
+                        continue
+                    if block.get("type") == "text":
+                        parts.append(f"[assistant] {block['text'][:300]}")
+                    elif block.get("type") == "tool_use":
+                        tool = block.get("name", "")
+                        inp = block.get("input", {})
+                        if tool == "Bash":
+                            parts.append(f"[bash] {str(inp.get('command', ''))[:200]}")
+                        elif tool == "Read":
+                            parts.append(f"[read] {inp.get('file_path', '')}")
+                        elif tool == "Edit":
+                            parts.append(f"[edit] {inp.get('file_path', '')}")
+                        elif tool == "Write":
+                            parts.append(f"[write] {inp.get('file_path', '')}")
+                        else:
+                            parts.append(f"[{tool}] {str(inp)[:100]}")
 
-        return "\n".join(parts)
-    except Exception as exc:
-        log.warning("failed to fetch trace", trace_id=trace_id, error=str(exc))
+    verifier_stdout = trial_dir / "verifier" / "test-stdout.txt"
+    if verifier_stdout.exists():
+        vtext = verifier_stdout.read_text()
+        summary_lines: list[str] = []
+        for line in vtext.splitlines():
+            if any(kw in line for kw in ["PASSED", "FAILED", "ERROR", "passed", "failed", "error"]):
+                summary_lines.append(line)
+        if summary_lines:
+            parts.append("\n[VERIFIER TEST RESULTS]")
+            parts.append("\n".join(summary_lines[:30]))
+
+    return "\n".join(parts)
+
+
+def _build_fail_reason(trial_dir: Path | None) -> str:
+    """Derive a fail_reason string from the verifier test output."""
+    if not trial_dir:
         return ""
+    verifier_stdout = trial_dir / "verifier" / "test-stdout.txt"
+    if not verifier_stdout.exists():
+        return ""
+    failed: list[str] = []
+    for line in verifier_stdout.read_text().splitlines():
+        if "FAILED" in line or "failed" in line:
+            failed.append(line.strip())
+    if not failed:
+        return ""
+    return f"{len(failed)} tests FAILED: " + "; ".join(failed[:5])
 
 
 def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:
@@ -309,29 +326,30 @@ def _collect_results(out_dir: str, jobs_dir: str) -> list[RolloutResult]:
         log.warning("no tasks in result file", path=str(result_file))
         return []
 
-    trace_map = _extract_trace_ids_from_jobs(jobs_dir)
-    log.info("trace ids extracted", count=len(trace_map))
-
     results: list[RolloutResult] = []
     for task in tasks:
         instance_id = task.get("instance_id", "")
         resolved = task.get("resolved", False)
-        trace_id = trace_map.get(instance_id, "")
+
+        trial_dir = _find_trial_dir(jobs_dir, instance_id)
 
         extras: dict[str, Any] = {}
-        if trace_id:
-            dump = _fetch_trace_dump(trace_id)
-            if dump:
-                extras["trace_dump"] = dump
+        if trial_dir:
+            trajectory = _parse_trial_trajectory(trial_dir)
+            if trajectory:
+                extras["trace_dump"] = trajectory
+
+        fail_reason = task.get("fail_reason", "")
+        if not fail_reason and not resolved and trial_dir:
+            fail_reason = _build_fail_reason(trial_dir)
 
         results.append(RolloutResult(
             id=instance_id,
             hard=1.0 if resolved else 0.0,
             soft=float(task.get("score", 1.0 if resolved else 0.0)),
             n_turns=int(task.get("n_turns", 0)),
-            fail_reason=task.get("fail_reason", ""),
+            fail_reason=fail_reason,
             task_type="bug_fix",
-            trace_id=trace_id,
             extras=extras,
         ))
 
