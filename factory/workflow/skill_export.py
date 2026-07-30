@@ -135,8 +135,8 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         "description": (
             "Create mode — meta-mode for creating new factory modes or updating existing ones. "
             "For new modes: takes a description and produces a fully working workflow definition, "
-            "SKILL.md, CLI wiring, and tests. For updates: use --focus \"mode_name: change description\" "
-            "to modify an existing registered mode (e.g. --focus \"improve: add plateau detection\"). "
+            'SKILL.md, CLI wiring, and tests. For updates: use --focus "mode_name: change description" '
+            'to modify an existing registered mode (e.g. --focus "improve: add plateau detection"). '
             "Use when the user says 'create a mode for X', 'update the improve mode', "
             "'add a new workflow', or wants to extend/modify factory pipelines."
         ),
@@ -151,6 +151,22 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
             "Terminal — does not chain to other modes. Run --mode improve to harden."
         ),
         "argument_hint": "<project_path>",
+    },
+    "analyze-optimize": {
+        "description": (
+            "Analyze-Optimize mode — closed-loop planner routing optimization "
+            "for an external LangGraph agent. Runs journey success eval on a "
+            "36-question curated subset (4 tiers x 9) with --planner-only, "
+            "performs GEPA-style reflective trace analysis via Langfuse to "
+            "diagnose WHY routing fails, evolves routing rules as an ACE-style "
+            "playbook with helpful/harmful counters and typed deltas "
+            "(add/modify/remove — never full rewrites), tracks per-question "
+            "scorecard with flip attribution, gates on both aggregate and "
+            "per-tier scores to prevent fixing hard questions by breaking easy "
+            "ones. Loops until 0.80 threshold, 3-iteration stall, or max 5 "
+            "iterations."
+        ),
+        "argument_hint": "",
     },
     "swebench": {
         "description": (
@@ -342,8 +358,15 @@ def _fn_to_instruction(node: FnNode, workflow: Workflow) -> str:
 
 def _has_template_placeholders(text: str) -> bool:
     """Check if a command has $VARIABLE placeholders that need CEO substitution."""
-    placeholders = {"$EXP_ID", "$VERDICT", "$HYPOTHESIS", "$REQUEST",
-                     "$PR_NUMBER", "$SCORE_BEFORE", "$SCORE_AFTER"}
+    placeholders = {
+        "$EXP_ID",
+        "$VERDICT",
+        "$HYPOTHESIS",
+        "$REQUEST",
+        "$PR_NUMBER",
+        "$SCORE_BEFORE",
+        "$SCORE_AFTER",
+    }
     return any(p in text for p in placeholders)
 
 
@@ -429,7 +452,9 @@ def _gate_to_checkpoint(
 
         if proceed_edges:
             proceed_target = proceed_edges[0].target
-            lines.append(f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`")
+            lines.append(
+                f"\n- **PROCEED** (exit 0 / no FAIL in output) → continue to `{proceed_target}`"
+            )
             lines.append(
                 f"- **HALT** (exit non-zero / FAIL in output) → do NOT spawn `{proceed_target}`. "
                 "Skip to the next CEO review gate or finalize as error."
@@ -657,7 +682,10 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             fork_targets.update(node.targets)
         elif isinstance(node, SubgraphForkNode):
             from factory.workflow.executor import _collect_subgraph_nodes
-            subgraph_nodes |= _collect_subgraph_nodes(workflow, node.subgraph_entry, node.subgraph_exit)
+
+            subgraph_nodes |= _collect_subgraph_nodes(
+                workflow, node.subgraph_entry, node.subgraph_exit
+            )
 
     sections: list[str] = []
     phase_num = 1
@@ -691,9 +719,7 @@ def workflow_to_skill_md(workflow: Workflow) -> str:
             sections.append(_join_to_instruction(node, workflow))
 
         elif isinstance(node, GateNode):
-            sections.append(
-                _gate_to_checkpoint(node, reloop_map.get(nid, []), workflow)
-            )
+            sections.append(_gate_to_checkpoint(node, reloop_map.get(nid, []), workflow))
 
         elif isinstance(node, Study):
             node_title = "Observe"
@@ -750,6 +776,7 @@ def export_all_skills(
 
     if workflows is None:
         from factory.workflow.definitions import register_all
+
         workflows = register_all()
 
     generated: list[Path] = []

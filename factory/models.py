@@ -518,6 +518,7 @@ class CycleState(BaseModel):
     cycle_id: str
     started_at: datetime
     mode: Literal[
+        "analyze-optimize",
         "build",
         "create",
         "deep-qa",

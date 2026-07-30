@@ -1,4 +1,5 @@
 """Build the CEO agent task string from mode and optional context."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -256,6 +257,16 @@ def _build_ceo_task(
             "scoring. Record the experiment and stop. This is NOT production-quality — "
             "run --mode improve afterward to harden what works. "
             "The full step-by-step playbook is in your system prompt above."
+        )
+    elif mode == "analyze-optimize":
+        task += (
+            f"\n\n## Mode: analyze-optimize\n\n"
+            f"Project: {project_path}\n\n"
+            f"Your instructions are in skills/workflow-analyze-optimize/"
+            f"SKILL.md. Read it now and follow the pipeline.\n\n"
+            f"This mode is fully headless. All gates are automated fn "
+            f"evaluators. Run the optimization loop until threshold is met, "
+            f"stall is detected, or max iterations (5) are reached.\n"
         )
     else:
         task += (

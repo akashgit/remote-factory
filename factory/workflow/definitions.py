@@ -59,6 +59,7 @@ __all__ = [
     "spec_update_workflow",
     "parallel_improve_workflow",
     "founder_workflow",
+    "analyze_optimize_workflow",
     "register_all",
 ]
 
@@ -2662,8 +2663,7 @@ def founder_workflow() -> Workflow:
         id="gate_tests",
         evaluator_type="fn",
         evaluator_command=(
-            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && "
-            "ruff check . 2>&1"
+            "cd {project_path} && python -m pytest --tb=short -q 2>&1 && ruff check . 2>&1"
         ),
         reads={".factory/reviews/builder-latest.md"},
     )
@@ -2709,6 +2709,496 @@ def founder_workflow() -> Workflow:
     )
 
 
+def analyze_optimize_workflow() -> Workflow:
+    """W₁₅: Analyze-Optimize Mode — closed-loop planner routing optimization.
+
+    run_eval → researcher_reflect → analyst → gate_insights →
+    strategist_curate → builder → re_eval → gate_compare → report
+
+    Two RELOOP cycles:
+    - gate_insights → run_eval (insufficient signal, max 2)
+    - gate_compare → analyst (improvement + no regression, max 5)
+
+    gate_compare HALT+revert: fn handles git revert internally, then
+    routes to report via PROCEED (not HALT edge).
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Node 1: run_eval (FnNode) ──────────────────────────────────
+
+    nodes["run_eval"] = FnNode(
+        id="run_eval",
+        command=(
+            "cd {project_path} && ./scripts/eval run journey "
+            "-i evals/planner_representative_subset.json --planner-only"
+        ),
+        notes=(
+            "Execute the journey eval on the 36-question planner subset. "
+            "On first run (iteration 0): establish baseline scores, initialize "
+            "run_state.json and question_scorecard.json. On subsequent runs "
+            "(after gate_insights RELOOP): re-run eval to capture fresh Langfuse "
+            "traces for the researcher. Parse aggregate scores and per-tier scores "
+            "(easy, medium_depth, medium_combination, hard) from eval output JSON. "
+            "Exit 0 if eval completed (regardless of score). "
+            "Exit 1 if eval command failed (missing dataset, auth failure, etc.)."
+        ),
+        writes={
+            ".factory/run_state.json",
+            ".factory/question_scorecard.json",
+        },
+    )
+
+    # ── Node 2: researcher_reflect (AgentNode, RESEARCHER) ─────────
+
+    nodes["researcher_reflect"] = AgentNode(
+        id="researcher_reflect",
+        role=AgentRole.RESEARCHER,
+        timeout=600,
+        prompt_template=(
+            "Perform reflective trace analysis on the most recent eval run.\n\n"
+            "Read the current iteration number from .factory/run_state.json.\n"
+            "Read the question scorecard at .factory/question_scorecard.json to "
+            "identify which questions failed.\n"
+            "Read the current routing rules playbook at .factory/routing_rules.md.\n\n"
+            "Query Langfuse traces for the latest journey eval run.\n\n"
+            "For each **failing** question:\n"
+            "- Read the planner's full reasoning chain — what departments it "
+            "considered, how it scored them, why it selected or rejected each\n"
+            "- Extract routing decisions: which departments were selected as "
+            "Primary vs Supporting, which were missed, which were wrong\n"
+            "- Categorize the failure by root cause: wrong_depth, "
+            "missed_supporting, wrong_department, dataverse_confusion, "
+            "capability_naming\n"
+            "- Note what the planner's prompt and department metadata showed when "
+            "it made the wrong decision\n\n"
+            "For each **passing** question:\n"
+            "- Note which routing rules (if any) contributed to the correct "
+            "decision\n\n"
+            "Update helpful/harmful counters on existing routing rules:\n"
+            "- If question Q passes and routing rule R was relevant → increment "
+            "R.helpful\n"
+            "- If question Q fails and routing rule R was relevant to the failure "
+            "→ increment R.harmful\n\n"
+            "Produce a structured observation report:\n"
+            "- Per-question analysis with reasoning chain excerpts\n"
+            "- Failure pattern distribution by tier (how many wrong_depth, "
+            "missed_supporting, etc. in each tier)\n"
+            "- Counter updates for existing routing rules\n"
+            "- Summary of dominant failure patterns across the eval run\n\n"
+            "Write the observation report to "
+            ".factory/observations/iter_N_observation.md "
+            "(where N is the current iteration number).\n"
+            "Update .factory/routing_rules.md with new counter values."
+        ),
+        reads={
+            ".factory/run_state.json",
+            ".factory/question_scorecard.json",
+            ".factory/routing_rules.md",
+        },
+        writes={
+            ".factory/observations/",
+            ".factory/routing_rules.md",
+        },
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/routing_rules.md",
+                must_exist=True,
+                min_size=10,
+            ),
+        ],
+    )
+
+    # ── Node 3: analyst (AgentNode, STRATEGIST) ────────────────────
+
+    nodes["analyst"] = AgentNode(
+        id="analyst",
+        role=AgentRole.STRATEGIST,
+        timeout=600,
+        prompt_template=(
+            "Read the observation report from the latest iteration at "
+            ".factory/observations/ (use the most recent "
+            "iter_N_observation.md).\n\n"
+            "Read the full question scorecard at "
+            ".factory/question_scorecard.json to understand per-question "
+            "history across all iterations.\n\n"
+            "Read the current routing rules playbook at "
+            ".factory/routing_rules.md with helpful/harmful counters.\n\n"
+            "Read the improvement history at .factory/improvements.jsonl to "
+            "avoid repeating failed approaches.\n\n"
+            "Propose routing rule deltas — typed updates to the playbook:\n"
+            "- action: add | modify | remove\n"
+            "- rule_id: (for modify/remove)\n"
+            "- content: (the rule text for add/modify)\n"
+            "- rationale: (which questions this targets, why it should help, "
+            "what root cause it addresses)\n"
+            "- predicted_impact: (which questions should flip from fail to pass, "
+            "which might regress)\n\n"
+            "Use FEEC categorization:\n"
+            "- Fix: broken routing for known departments\n"
+            "- Exploit: improve descriptions for poorly-performing departments\n"
+            "- Explore: try different prompting strategy\n"
+            "- Combine: cross-department routing improvements\n\n"
+            "Consider per-tier balance:\n"
+            "- If easy tier is at 9/9, prioritize medium/hard improvements "
+            "that won't regress easy\n"
+            "- If a tier has regressed in prior iterations, be cautious about "
+            "changes that might affect it\n\n"
+            "Each delta must include:\n"
+            "- Which questions it targets\n"
+            "- What root cause category it addresses\n"
+            "- Predicted impact on aggregate and per-tier scores\n\n"
+            "Write the proposed deltas to .factory/strategy/current.md in a "
+            "structured format (JSON array or markdown table)."
+        ),
+        reads={
+            ".factory/observations/",
+            ".factory/question_scorecard.json",
+            ".factory/routing_rules.md",
+            ".factory/improvements.jsonl",
+        },
+        writes={
+            ".factory/strategy/current.md",
+        },
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=50,
+            ),
+        ],
+    )
+
+    # ── Node 4: gate_insights (GateNode, fn) ───────────────────────
+
+    nodes["gate_insights"] = GateNode(
+        id="gate_insights",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "from pathlib import Path; "
+            "text = Path('{project_path}/.factory/strategy/current.md')"
+            ".read_text(); "
+            "has_delta = any(w in text.lower() "
+            "for w in ['action', 'add', 'modify', 'remove']); "
+            "has_rationale = 'rationale' in text.lower() "
+            "or 'target' in text.lower(); "
+            "print('PROCEED' if has_delta and has_rationale "
+            "else 'RELOOP')"
+            '"'
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # ── Node 5: strategist_curate (AgentNode, STRATEGIST) ──────────
+
+    nodes["strategist_curate"] = AgentNode(
+        id="strategist_curate",
+        role=AgentRole.STRATEGIST,
+        timeout=600,
+        prompt_template=(
+            "Review the proposed routing rule deltas at "
+            ".factory/strategy/current.md.\n\n"
+            "Select the single highest-leverage delta (or a small batch of "
+            "non-conflicting deltas).\n\n"
+            "Run the delta through ACE curator logic:\n"
+            "- Dedup: check if the proposed rule is semantically similar "
+            "(SequenceMatcher >= 0.75) to an existing rule. If so, merge "
+            "them (sum counters).\n"
+            "- Conflict check: verify the delta doesn't conflict with "
+            "existing rules.\n"
+            "- Cap check: verify that applying this delta won't exceed 15 "
+            "total routing rules. If at cap, identify the lowest-value rule "
+            "(harmful - helpful most negative) to prune before adding.\n\n"
+            "Write the finalized change spec to "
+            ".factory/strategy/current.md:\n"
+            "- Exact routing rule delta(s) to apply\n"
+            "- Which questions they target\n"
+            "- What regressions to watch for\n"
+            "- If any existing rule needs to be pruned to make room\n\n"
+            "Consider the full improvement history at "
+            ".factory/improvements.jsonl to avoid repeating failed approaches."
+        ),
+        reads={
+            ".factory/strategy/current.md",
+            ".factory/routing_rules.md",
+            ".factory/improvements.jsonl",
+        },
+        writes={
+            ".factory/strategy/current.md",
+        },
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=50,
+            ),
+        ],
+    )
+
+    # ── Node 6: builder (AgentNode, BUILDER) ───────────────────────
+
+    nodes["builder"] = AgentNode(
+        id="builder",
+        role=AgentRole.BUILDER,
+        timeout=900,
+        prompt_template=(
+            "Read the finalized change spec at "
+            ".factory/strategy/current.md.\n\n"
+            "Apply the routing rule delta(s) to the routing rules playbook "
+            "file at .factory/routing_rules.md.\n\n"
+            "For each delta:\n"
+            "- action=add: append the new rule to the appropriate section "
+            "(DO/DON'T) with helpful=0, harmful=0\n"
+            "- action=modify: find the rule by rule_id and update its "
+            "content (preserve counters)\n"
+            "- action=remove: delete the rule by rule_id\n\n"
+            "If the delta requires changes beyond the playbook (per the "
+            "change spec), make ONE focused change to the relevant file:\n"
+            "- Department metadata\n"
+            "- Planner prompt template (packages/redhat-agents/src/"
+            "redhat_agents/pipeline/nodes/retriever/strategies/planner/)\n"
+            "- Planner model selection (config/base.json)\n"
+            "- Recursive routing parameters (config/base.json)\n\n"
+            "Do NOT modify:\n"
+            "- LangGraph topology (5-node pipeline is an architectural "
+            "guard)\n"
+            "- Safety/guardrail logic\n"
+            "- Synthesis step\n"
+            "- Eval infrastructure\n"
+            "- Routing rules playbook structure itself\n\n"
+            "Commit the change with a descriptive message.\n\n"
+            "Write a summary of what was changed to "
+            ".factory/reviews/builder-latest.md."
+        ),
+        reads={
+            ".factory/strategy/current.md",
+            ".factory/routing_rules.md",
+        },
+        writes={
+            ".factory/routing_rules.md",
+            ".factory/reviews/builder-latest.md",
+        },
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/reviews/builder-latest.md",
+                must_exist=True,
+                min_size=50,
+            ),
+        ],
+    )
+
+    # ── Node 7: re_eval (FnNode) ───────────────────────────────────
+
+    nodes["re_eval"] = FnNode(
+        id="re_eval",
+        command=(
+            "cd {project_path} && ./scripts/eval run journey "
+            "-i evals/planner_representative_subset.json --planner-only"
+        ),
+        notes=(
+            "Re-run eval after builder's changes to measure impact. "
+            "Increment iteration counter in run_state.json. "
+            "Parse aggregate scores and per-tier scores from eval output. "
+            "Update question_scorecard.json with per-question pass/fail. "
+            "Compute which questions flipped (fail->pass) and which "
+            "regressed (pass->fail). "
+            "Write entry to improvements.jsonl: {iteration, delta_applied, "
+            "questions_targeted, score_before, score_after, per_tier_before, "
+            "per_tier_after, questions_flipped, questions_regressed}. "
+            "Exit 0 if eval completed. Exit 1 if eval command failed."
+        ),
+        reads={
+            ".factory/run_state.json",
+            ".factory/question_scorecard.json",
+            ".factory/strategy/current.md",
+        },
+        writes={
+            ".factory/run_state.json",
+            ".factory/question_scorecard.json",
+            ".factory/improvements.jsonl",
+        },
+    )
+
+    # ── Node 8: gate_compare (GateNode, fn) ────────────────────────
+
+    nodes["gate_compare"] = GateNode(
+        id="gate_compare",
+        evaluator_type="fn",
+        evaluator_command=(
+            'python3 -c "'
+            "import json, subprocess; from pathlib import Path; "
+            "state = json.loads("
+            "Path('{project_path}/.factory/run_state.json').read_text()); "
+            "history = state.get('history', []); "
+            "if len(history) < 2: print('PROCEED'); exit(); "
+            "curr = history[-1]; prev = history[-2]; "
+            "agg_delta = curr['aggregate_score'] - prev['aggregate_score']; "
+            "tier_deltas = {t: curr['per_tier_scores'][t] - "
+            "prev['per_tier_scores'][t] for t in curr['per_tier_scores']}; "
+            "if agg_delta < -0.05: "
+            "subprocess.run(['git', 'revert', '--no-edit', 'HEAD'], "
+            "cwd='{project_path}'); "
+            "Path('{project_path}/.factory/improvements.jsonl').open('a')"
+            ".write(json.dumps({'outcome': 'reverted', "
+            "'reason': 'aggregate_regression', "
+            "'delta': agg_delta}) + chr(10)); "
+            "print('PROCEED'); exit(); "
+            "tier_reg = [t for t, d in tier_deltas.items() if d < -0.22]; "
+            "if tier_reg: "
+            "subprocess.run(['git', 'revert', '--no-edit', 'HEAD'], "
+            "cwd='{project_path}'); "
+            "Path('{project_path}/.factory/improvements.jsonl').open('a')"
+            ".write(json.dumps({'outcome': 'reverted', "
+            "'reason': 'tier_regression', "
+            "'tiers': tier_reg}) + chr(10)); "
+            "print('PROCEED'); exit(); "
+            "threshold = state.get('score_threshold', 0.80); "
+            "if curr['aggregate_score'] >= threshold: "
+            "print('PROCEED'); exit(); "
+            "if len(history) >= 3: "
+            "recent = [history[i]['aggregate_score'] - "
+            "history[i-1]['aggregate_score'] for i in range(-2, 0)]; "
+            "recent.append(agg_delta); "
+            "if all(d < 0.02 for d in recent): "
+            "print('PROCEED'); exit(); "
+            "tier_minor = [t for t, d in tier_deltas.items() if d < -0.11]; "
+            "if tier_minor: "
+            "subprocess.run(['git', 'revert', '--no-edit', 'HEAD'], "
+            "cwd='{project_path}'); "
+            "Path('{project_path}/.factory/improvements.jsonl').open('a')"
+            ".write(json.dumps({'outcome': 'reverted', "
+            "'reason': 'tier_regression', "
+            "'tiers': tier_minor}) + chr(10)); "
+            "print('PROCEED'); exit(); "
+            "if agg_delta > 0: print('RELOOP'); "
+            "else: print('PROCEED')"
+            '"'
+        ),
+        reads={".factory/run_state.json"},
+    )
+
+    # ── Node 9: report (FnNode) ────────────────────────────────────
+
+    nodes["report"] = FnNode(
+        id="report",
+        command=(
+            'python3 -c "'
+            "import json; from pathlib import Path; "
+            "state = json.loads("
+            "Path('{project_path}/.factory/run_state.json').read_text()); "
+            "scorecard = json.loads("
+            "Path('{project_path}/.factory/question_scorecard.json')"
+            ".read_text()); "
+            "rules = Path('{project_path}/.factory/routing_rules.md')"
+            ".read_text() "
+            "if Path('{project_path}/.factory/routing_rules.md').exists() "
+            "else 'No rules'; "
+            "imp_path = Path('{project_path}/.factory/improvements.jsonl'); "
+            "improvements = [json.loads(l) for l in "
+            "imp_path.read_text().strip().splitlines()] "
+            "if imp_path.exists() else []; "
+            "history = state.get('history', []); "
+            "baseline = history[0] if history else {}; "
+            "final_iter = history[-1] if history else {}; "
+            "report_lines = ['# Analyze-Optimize Report', '']; "
+            "report_lines.append('## Summary'); "
+            "report_lines.append(f'- Baseline: "
+            '{baseline.get("aggregate_score", "N/A")}\'); '
+            "report_lines.append(f'- Final: "
+            '{final_iter.get("aggregate_score", "N/A")}\'); '
+            "report_lines.append(f'- Iterations: {len(history)}'); "
+            "report_lines.append(''); "
+            "report_lines.append('## Per-Tier Trajectory'); "
+            "report_lines.append('| Iter | Aggregate | Easy | Med Depth "
+            "| Med Combo | Hard |'); "
+            "report_lines.append('|---|---|---|---|---|---|'); "
+            '[report_lines.append(f\'| {h.get("iteration", i)} '
+            '| {h.get("aggregate_score", "")} '
+            '| {h.get("per_tier_scores", {}).get("easy", "")} '
+            '| {h.get("per_tier_scores", {}).get("medium_depth", "")} '
+            '| {h.get("per_tier_scores", {}).get("medium_combination", "")} '
+            '| {h.get("per_tier_scores", {}).get("hard", "")} |\') '
+            "for i, h in enumerate(history)]; "
+            "report_lines.append(''); "
+            "report_lines.append('## Routing Rules (Final State)'); "
+            "report_lines.append(rules); "
+            "report_lines.append(''); "
+            "report_lines.append('## Improvement Log'); "
+            "[report_lines.append(f'- {json.dumps(imp)}') "
+            "for imp in improvements]; "
+            "Path('{project_path}/.factory/analyze_report.md')"
+            ".write_text(chr(10).join(report_lines)); "
+            "print('Report written to .factory/analyze_report.md')"
+            '"'
+        ),
+        notes=(
+            "Generate final markdown report summarizing the optimization run. "
+            "Reads run_state.json, question_scorecard.json, improvements.jsonl, "
+            "and routing_rules.md. Produces summary, per-tier trajectory table, "
+            "routing rules final state, and improvement log."
+        ),
+        reads={
+            ".factory/run_state.json",
+            ".factory/question_scorecard.json",
+            ".factory/improvements.jsonl",
+            ".factory/routing_rules.md",
+        },
+        writes={
+            ".factory/analyze_report.md",
+        },
+    )
+
+    # ── Edges ──────────────────────────────────────────────────────
+
+    edges = [
+        # Linear: run_eval → researcher_reflect → analyst → gate_insights
+        Edge(source="run_eval", target="researcher_reflect"),
+        Edge(source="researcher_reflect", target="analyst"),
+        Edge(source="analyst", target="gate_insights"),
+        # gate_insights: PROCEED → strategist_curate,
+        #                RELOOP → run_eval (max 2)
+        Edge(
+            source="gate_insights",
+            target="strategist_curate",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_insights",
+            target="run_eval",
+            condition=VerdictType.RELOOP,
+        ),
+        # strategist_curate → builder → re_eval → gate_compare
+        Edge(source="strategist_curate", target="builder"),
+        Edge(source="builder", target="re_eval"),
+        Edge(source="re_eval", target="gate_compare"),
+        # gate_compare: PROCEED → report, RELOOP → analyst (max 5)
+        Edge(
+            source="gate_compare",
+            target="report",
+            condition=VerdictType.PROCEED,
+        ),
+        Edge(
+            source="gate_compare",
+            target="analyst",
+            condition=VerdictType.RELOOP,
+        ),
+    ]
+
+    # ── Trigger ────────────────────────────────────────────────────
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "analyze-optimize"
+
+    return Workflow(
+        name="analyze-optimize",
+        nodes=nodes,
+        edges=edges,
+        start_node="run_eval",
+        trigger=trigger,
+    )
+
+
 def register_all() -> dict[str, Workflow]:
     """Build and return all workflow definitions."""
     from factory.workflow.deep_qa import workflow as deep_qa_workflow
@@ -2720,6 +3210,7 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.contributed.tomswe import workflow as tomswe_workflow
 
     return {
+        "analyze-optimize": analyze_optimize_workflow(),
         "build": build_workflow(),
         "design": design_workflow(),
         "discover": discover_workflow(),
