@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from factory.runners._subprocess import run_subprocess
+from factory.sandbox import in_sandbox
 
 if TYPE_CHECKING:
     from factory.models import AgentRunRequest, AgentRunResult, AgentUsage
@@ -54,6 +55,30 @@ def _make_ceo_message_emitter(project_path: Path) -> Callable[[bytes], None]:
         )
 
     return _on_line
+
+
+def _mcp_config_flags(cwd: Path | None) -> list[str]:
+    """Pass a project-scoped `.mcp.json` to Claude Code explicitly.
+
+    Claude Code does not pick up a project `.mcp.json` on its own in a non-interactive run: the
+    session starts with `"mcp_servers":[]` and every tool the file describes is simply absent. The
+    agent then reports, accurately, that it has no way to call the server — which reads as a design
+    limit rather than a missing flag. `factory contained --division local` writes this file to give
+    the agent the podman endpoint, so without the flag the division is configured and inert.
+
+    Ancestors are searched because agents run inside `.factory-worktrees/run-<id>/`, one or two
+    levels below the project root where the file is written.
+    """
+    if cwd is None:
+        return []
+    start = Path(cwd)
+    for directory in (start, *start.parents):
+        config = directory / ".mcp.json"
+        if config.is_file():
+            return ["--mcp-config", str(config)]
+        if (directory / ".factory").is_dir() and directory != start:
+            break  # the project root; do not wander into the operator's home directory
+    return []
 
 
 def _parse_usage(data: dict) -> AgentUsage:
@@ -119,6 +144,12 @@ class ClaudeRunner:
             "--disallowedTools",
             "Agent",
         ]
+        if in_sandbox():
+            # Inside an OpenShell sandbox there is no browser and no way to complete an OAuth
+            # login, so Claude Code must be told not to try. Scoped to sandbox mode: adding it
+            # unconditionally would change every ordinary invocation on a developer's machine.
+            cmd.append("--bare")
+        cmd.extend(_mcp_config_flags(request.cwd))
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])
@@ -284,6 +315,9 @@ class ClaudeRunner:
             "--append-system-prompt-file",
             prompt_file.name,
         ]
+        if in_sandbox():
+            cmd.append("--bare")
+        cmd.extend(_mcp_config_flags(request.cwd))
         settings_file = request.extras.get("settings_file")
         if settings_file:
             cmd.extend(["--settings", str(settings_file)])

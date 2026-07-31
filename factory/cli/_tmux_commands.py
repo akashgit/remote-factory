@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path
 
 from factory.cli._mode_handlers import _resolve_model
+from factory.cli._run_args import TMUX_ENV_POLICY, build_env_exports, build_run_args
 
 log = structlog.get_logger()
 
@@ -64,43 +65,12 @@ def _tmux_session_alive(session: str) -> bool:
 
 
 def _build_tmux_run_args(args: argparse.Namespace, project_path: Path, model: str | None) -> str:
-    """Build the 'factory ceo ...' command string from parsed args."""
-    parts = [f"factory ceo {project_path}"]
-    if args.mode:
-        parts.append(f"--mode {args.mode}")
-    if model:
-        parts.append(f"--model {shlex.quote(model)}")
-    if getattr(args, "no_github", False):
-        parts.append("--no-github")
-    if getattr(args, "profile", None):
-        parts.append(f"--profile {shlex.quote(args.profile)}")
-    if getattr(args, "focus", None):
-        parts.append(f"--focus {shlex.quote(args.focus)}")
-    if getattr(args, "refine", None):
-        parts.append(f"--refine {shlex.quote(args.refine)}")
-    if getattr(args, "clean_pr", None) is True:
-        parts.append("--clean-pr")
-    elif getattr(args, "clean_pr", None) is False:
-        parts.append("--no-clean-pr")
-    if getattr(args, "runner", None):
-        parts.append(f"--runner {shlex.quote(args.runner)}")
-    if getattr(args, "prompt", None):
-        parts.append(f"--prompt {shlex.quote(args.prompt)}")
-    if getattr(args, "branch", None):
-        parts.append(f"--branch {shlex.quote(args.branch)}")
-    if getattr(args, "min_growth", None) is not None:
-        parts.append(f"--min-growth {args.min_growth}")
-    if getattr(args, "max_new", None) is not None:
-        parts.append(f"--max-new {args.max_new}")
-    if getattr(args, "discover_only", False):
-        parts.append("--discover-only")
-    if getattr(args, "bg_agents", False):
-        parts.append("--bg-agents")
-    if getattr(args, "tmux_persist", False):
-        parts.append("--tmux-persist")
-    if getattr(args, "use_profile", False):
-        parts.append("--use-profile")
-    return " ".join(parts)
+    """Build the 'factory ceo ...' command string from parsed args.
+
+    Retained as a thin alias: the implementation moved to `factory.cli._run_args` so that
+    `factory contained` can reuse it with a different environment policy.
+    """
+    return build_run_args(args, project_path, model)
 
 
 def cmd_tmux(args: argparse.Namespace) -> int:
@@ -124,11 +94,7 @@ def cmd_tmux(args: argparse.Namespace) -> int:
         print(f"  tmux attach -t {session}")
         return 0
 
-    _ENV_PREFIXES = ("FACTORY_", "ANTHROPIC_", "BOBSHELL_", "OPENAI_", "CODEX_", "CLAUDE_CODE_", "CLOUD_ML_")
-    run_cmd_parts = []
-    for key, val in sorted(os.environ.items()):
-        if key.startswith(_ENV_PREFIXES):
-            run_cmd_parts.append(f"export {key}={shlex.quote(val)}")
+    run_cmd_parts = build_env_exports(dict(os.environ), TMUX_ENV_POLICY)
     run_cmd_parts.append(f"export PATH={shlex.quote(os.environ.get('PATH', '/usr/bin'))}")
 
     model = _resolve_model(args)

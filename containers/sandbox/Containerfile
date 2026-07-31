@@ -1,0 +1,129 @@
+# The factory's OpenShell sandbox image.
+#
+# `remote-factory` is not on PyPI, so a sandbox cannot `pip install` it — the factory has to be
+# baked in. This image is built and published by CI (.github/workflows/sandbox-image.yml) rather
+# than on demand: building on demand would add minutes to every cold start and would need a build
+# host, which is circular given the sandbox is precisely the thing that cannot build (spec §2.1).
+#
+# Claude Code, Codex, OpenCode, and Copilot CLI all ship in the OpenShell community base image, so
+# every runner the factory supports already has a home here and none of them are installed below.
+#
+# What the base image provides — inspected via `skopeo inspect --config`, not assumed:
+#   USER sandbox   WORKDIR /sandbox   ENTRYPOINT ["/bin/bash"]   Ubuntu, multi-arch amd64 + arm64
+#   PATH=/sandbox/.venv/bin:/usr/local/bin:/usr/bin:/bin
+#   VIRTUAL_ENV=/sandbox/.venv        UV_PYTHON_INSTALL_DIR=/sandbox/.uv/python
+#
+# Three consequences drive the layout below. /sandbox is the *workspace* — it is where the project is
+# uploaded or bind-mounted — so the factory must not live there or a context transfer would land on
+# top of its own installation. The base entrypoint is bash, so this image sets no CMD: overriding
+# it would hand bash an argument list to run as a script.
+#
+# And the install prefix is `/usr/local`, not `/opt`, because the sandbox's default policy
+# (/etc/openshell/policy.yaml in the base image) lists `/usr` read-only and does not list `/opt` at
+# all — an unlisted path is inaccessible. The failure mode is nasty: `stat` still succeeds, so
+# `ls -ld /opt/factory` prints a healthy-looking directory while reading or executing anything under
+# it returns EACCES. Verified inside a live sandbox, not inferred.
+#
+# For the same reason nothing here may rely on this image's `ENV`: OpenShell composes the sandbox
+# environment itself and does not inherit the image's. PATH is always
+# `/sandbox/.venv/bin:/usr/local/bin:/usr/bin:/bin`, so the factory entry point is symlinked into
+# /usr/local/bin below rather than added to PATH here.
+
+ARG OPENSHELL_BASE=ghcr.io/nvidia/openshell-community/sandboxes/base
+# Alpha software with an explicitly unstable surface (spec §11). Pin this to a digest or release tag
+# for anything beyond local experimentation; the pin is recorded in every evidence file so a sandbox
+# failure can be attributed to the runtime rather than to the factory.
+ARG OPENSHELL_BASE_TAG=latest
+
+FROM ${OPENSHELL_BASE}:${OPENSHELL_BASE_TAG}
+
+# The base image's non-root identity. OpenShell rejects root process identities outright, so this is
+# the identity everything installed below must be readable by.
+ARG SANDBOX_USER=sandbox
+ARG FACTORY_HOME=/usr/local/factory
+
+ENV FACTORY_HOME=${FACTORY_HOME} \
+    UV_PROJECT_ENVIRONMENT=${FACTORY_HOME}/.venv \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1
+# Appended rather than prepended: the base image's own /sandbox/.venv/bin keeps priority.
+ENV PATH=/sandbox/.venv/bin:${FACTORY_HOME}/.venv/bin:/usr/local/bin:/usr/bin:/bin
+
+USER root
+
+# uv, pinned. Written to be idempotent because the base image sets UV_PYTHON_INSTALL_DIR, which
+# implies uv is already there — but that is an inference about an alpha image, not a guarantee.
+ARG UV_VERSION=0.9.7
+RUN set -eux; \
+    if ! command -v uv >/dev/null 2>&1; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends ca-certificates curl git; \
+        rm -rf /var/lib/apt/lists/*; \
+        curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | \
+            env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh; \
+    fi; \
+    uv --version
+
+WORKDIR ${FACTORY_HOME}
+
+# Dependency layer first, so a change to factory source does not re-resolve the world. README.md is
+# copied because pyproject.toml points at it and the build backend reads it.
+COPY pyproject.toml uv.lock README.md ./
+RUN set -eux; \
+    uv sync --frozen --no-install-project --no-dev
+
+COPY factory ./factory
+COPY skills ./skills
+RUN set -eux; \
+    uv sync --frozen --no-dev; \
+    "${FACTORY_HOME}/.venv/bin/factory" --help >/dev/null; \
+    ln -sf "${FACTORY_HOME}/.venv/bin/factory" /usr/local/bin/factory
+
+# OpenShell does not adopt the image's OCI working directory and requires /sandbox to exist and be
+# writable by the selected identity (spec §6). The user's home directory is looked up rather than
+# guessed: the factory writes ~/.factory (registry, playbooks, skills cache) on first run, and a
+# read-only home turns that into a crash deep inside a provisioning run, where it reads as an
+# OpenShell fault.
+RUN set -eux; \
+    home="$(getent passwd "${SANDBOX_USER}" | cut -d: -f6)"; \
+    test -n "$home"; \
+    install -d -o "${SANDBOX_USER}" -g "${SANDBOX_USER}" -m 0775 \
+        /sandbox "$home" "$home/.factory" "$home/.claude"; \
+    chown -R "${SANDBOX_USER}:${SANDBOX_USER}" "${FACTORY_HOME}"; \
+    printf 'sandbox home resolved to %s\n' "$home"
+
+# `--division local` bind-mounts the project into the sandbox at its own host path, and the host's
+# ownership comes through the mount unchanged. The sandbox identity therefore has to be a UID that
+# can write those files, or the division is read-only: the agent cannot write `.mcp.json`, cannot
+# edit a Containerfile, and cannot run the build-fix-rebuild loop the division exists for. The
+# failure is a bare `Permission denied` on a path that is visibly present, which reads like a mount
+# problem rather than an identity one.
+#
+# Left unset the image keeps the base image's UID and this is a no-op — correct for the no-division
+# case, where nothing from the host is mounted. Set it to the UID that owns the project on the host
+# (`id -u`) when building an image for a local division.
+ARG SANDBOX_UID=
+RUN set -eux; \
+    if [ -n "${SANDBOX_UID}" ]; then \
+        current="$(id -u "${SANDBOX_USER}")"; \
+        if [ "$current" != "${SANDBOX_UID}" ]; then \
+            # /etc/passwd is edited in place because the base image ships no usermod — the
+            # shadow-utils package is not installed and `usermod: not found` fails the build.
+            sed -i "s/^${SANDBOX_USER}:x:${current}:/${SANDBOX_USER}:x:${SANDBOX_UID}:/" /etc/passwd; \
+            find / -xdev -uid "$current" -exec chown -h "${SANDBOX_UID}" {} + 2>/dev/null || true; \
+        fi; \
+        printf 'sandbox uid is now %s\n' "$(id -u "${SANDBOX_USER}")"; \
+    fi
+
+USER ${SANDBOX_USER}
+WORKDIR /sandbox
+
+# Marks the process tree as contained. Everything that must behave differently inside a sandbox —
+# `--bare` on the Claude runner, the inference endpoint — reads this via factory.sandbox.in_sandbox.
+#
+# Declared here for anyone who runs this image directly with `podman run`. It is NOT how the value
+# reaches an OpenShell sandbox: the gateway composes the sandbox environment and drops the image's,
+# so `factory contained` passes FACTORY_SANDBOX=1 with `--env`. Both paths must stay in place.
+ENV FACTORY_SANDBOX=1
+
+# Deliberately no CMD: the base entrypoint is bash and OpenShell drives the command itself.

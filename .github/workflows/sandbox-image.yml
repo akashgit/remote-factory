@@ -1,0 +1,101 @@
+name: Sandbox Image
+
+# Builds and publishes the factory's OpenShell sandbox image. On-demand building is rejected by
+# design (spec §6): it would add minutes to every cold start and need a build host, which is
+# circular given the sandbox cannot build.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "containers/sandbox/**"
+      - "factory/**"
+      - "skills/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/sandbox-image.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "containers/sandbox/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/sandbox-image.yml"
+  workflow_dispatch:
+    inputs:
+      openshell_base_tag:
+        description: "Tag of the OpenShell community base image to build from"
+        required: false
+        default: "latest"
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/factory-sandbox
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Only pushes land in the registry. A pull request builds the image to prove the Containerfile
+      # still works, but publishing from a PR would let an untrusted branch overwrite the tag the
+      # sandbox pulls.
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=sha,format=long
+            type=ref,event=branch
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/sandbox/Containerfile
+          # The factory runs on arm64 laptops and amd64 cluster nodes, and an image built for the
+          # wrong architecture fails at sandbox start rather than at build time.
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          load: ${{ github.event_name == 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            OPENSHELL_BASE_TAG=${{ github.event.inputs.openshell_base_tag || 'latest' }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A sandbox image whose `factory` entry point is broken fails deep inside a provisioning run,
+      # where the error is attributed to OpenShell. Check it here instead.
+      - name: Smoke test the entry point
+        if: github.event_name == 'pull_request'
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          tag="$(printf '%s' "$IMAGE_TAGS" | head -n1)"
+          # --entrypoint= clears the base image's bash entrypoint, which would otherwise treat
+          # these argument lists as script names.
+          docker run --rm --entrypoint= "$tag" factory --help > /dev/null
+          docker run --rm --entrypoint= "$tag" test -w /sandbox
+          docker run --rm --entrypoint= "$tag" sh -c '[ "$FACTORY_SANDBOX" = "1" ]'
+          # The factory must be runnable as the non-root identity OpenShell forces, and must be able
+          # to write ~/.factory — the two things that fail late and confusingly if they fail at all.
+          docker run --rm --entrypoint= "$tag" sh -c 'test "$(id -un)" != root && touch "$HOME/.factory/.probe"'
+          echo "sandbox image entry point OK: $tag"
