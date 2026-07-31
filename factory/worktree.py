@@ -1,4 +1,5 @@
 """Git worktree lifecycle management for experiment isolation."""
+
 from __future__ import annotations
 
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Final
 
 import structlog
+
 
 log = structlog.get_logger()
 
@@ -101,12 +103,17 @@ def create_worktree(
 
     try:
         from factory.events import emit_event
-        emit_event(project_path, "worktree.created", data={
-            "run_id": run_id,
-            "worktree_path": str(wt_dir),
-            "branch": branch,
-            "base_branch": base_branch,
-        })
+
+        emit_event(
+            project_path,
+            "worktree.created",
+            data={
+                "run_id": run_id,
+                "worktree_path": str(wt_dir),
+                "branch": branch,
+                "base_branch": base_branch,
+            },
+        )
     except Exception:
         pass
 
@@ -149,12 +156,17 @@ def create_experiment_worktree(
 
     try:
         from factory.events import emit_event
-        emit_event(project_path, "experiment_worktree.created", data={
-            "exp_id": exp_id,
-            "worktree_path": str(wt_dir),
-            "branch": branch,
-            "base_commit": base_commit,
-        })
+
+        emit_event(
+            project_path,
+            "experiment_worktree.created",
+            data={
+                "exp_id": exp_id,
+                "worktree_path": str(wt_dir),
+                "branch": branch,
+                "base_commit": base_commit,
+            },
+        )
     except Exception:
         pass
 
@@ -232,11 +244,27 @@ def _has_active_sessions(worktree_path: Path) -> bool:
         if not isinstance(sessions, list):
             return False
         return any(
-            isinstance(s, dict) and s.get("state") in ("working", "blocked")
-            for s in sessions
+            isinstance(s, dict) and s.get("state") in ("working", "blocked") for s in sessions
         )
     except (subprocess.TimeoutExpired, json.JSONDecodeError, ValueError, OSError):
         return False
+
+
+def _should_remove_worktree(branch: str) -> bool:
+    """Check whether a worktree should be removed based on config.
+
+    Experiment branches (factory/exp-*) are always removed regardless of config.
+    For run branches, consults FACTORY_REMOVE_WORKTREE (default: true).
+    """
+    if branch.startswith("factory/exp-"):
+        return True
+
+    from factory import user_config
+
+    value = user_config.resolve(
+        "remove_worktree", env_var="FACTORY_REMOVE_WORKTREE", default="true"
+    )
+    return (value or "true").lower() in ("true", "1", "yes")
 
 
 def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> None:
@@ -244,14 +272,6 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
     log.info("worktree_remove", branch=branch, path=str(worktree_path))
 
     run_id = branch.removeprefix("factory/run-")
-    try:
-        from factory.events import emit_event
-        emit_event(project_path, "worktree.removed", data={
-            "run_id": run_id,
-            "branch": branch,
-        })
-    except Exception:
-        pass
 
     if worktree_path.exists():
         if _has_active_sessions(worktree_path):
@@ -262,8 +282,51 @@ def remove_worktree(project_path: Path, worktree_path: Path, branch: str) -> Non
                 branch=branch,
             )
             return
+        if not _should_remove_worktree(branch):
+            log.info(
+                "worktree_remove_skipped",
+                reason="retention_enabled",
+                path=str(worktree_path),
+                branch=branch,
+            )
+            try:
+                from factory.events import emit_event
+
+                emit_event(
+                    project_path,
+                    "worktree.retained",
+                    data={
+                        "run_id": run_id,
+                        "branch": branch,
+                        "worktree_path": str(worktree_path),
+                    },
+                )
+            except Exception:
+                pass
+            import sys
+
+            print(
+                f"Worktree retained: {worktree_path}\n"
+                f"To clean up: git worktree remove {worktree_path} && git branch -D {branch}",
+                file=sys.stderr,
+            )
+            return
         _preserve_telemetry(worktree_path, project_path)
         shutil.rmtree(worktree_path)
+
+    try:
+        from factory.events import emit_event
+
+        emit_event(
+            project_path,
+            "worktree.removed",
+            data={
+                "run_id": run_id,
+                "branch": branch,
+            },
+        )
+    except Exception:
+        pass
 
     subprocess.run(
         ["git", "worktree", "prune"],
@@ -310,6 +373,9 @@ def prune_stale(project_path: Path) -> list[str]:
                     branch = f"factory/{name}"
                 else:
                     branch = f"factory/run-{name.removeprefix('run-')}"
+                    if not _should_remove_worktree(branch):
+                        log.info("worktree_prune_skipped", reason="retention_enabled", name=name)
+                        continue
                 shutil.rmtree(d)
                 pruned.append(f"Removed orphaned directory: {name}")
                 log.info("worktree_pruned_orphan", name=name)
@@ -418,7 +484,5 @@ def _list_active_worktrees(project_path: Path) -> set[str]:
         text=True,
     )
     return {
-        line.split(" ", 1)[1]
-        for line in result.stdout.splitlines()
-        if line.startswith("worktree ")
+        line.split(" ", 1)[1] for line in result.stdout.splitlines() if line.startswith("worktree ")
     }

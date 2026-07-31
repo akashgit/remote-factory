@@ -37,6 +37,7 @@ _CONFIG_TEMPLATE = """\
 # tmux_persist = false                 # Launch agents in tmux windows
 # bg = false                           # Dispatch agents via claude --bg (agent view)
 # bg_agents = false                    # Background sub-agents only (CEO stays foreground)
+# remove_worktree = true               # Set to false to retain run worktrees after sessions
 
 # [credentials.vertex]
 # FACTORY_RUNNER = "claude"
@@ -54,17 +55,13 @@ _CONFIG_TEMPLATE = """\
 
 def _validate_profile_name(name: str) -> None:
     if not _PROFILE_NAME_RE.match(name):
-        raise ValueError(
-            f"Invalid profile name {name!r}: must match [a-zA-Z0-9_-]+"
-        )
+        raise ValueError(f"Invalid profile name {name!r}: must match [a-zA-Z0-9_-]+")
 
 
 def _validate_credential_keys(keys: dict[str, Any]) -> None:
     for k in keys:
         if not _CREDENTIAL_KEY_RE.match(k):
-            raise ValueError(
-                f"Invalid credential key {k!r}: must match [A-Z_][A-Z0-9_]*"
-            )
+            raise ValueError(f"Invalid credential key {k!r}: must match [A-Z_][A-Z0-9_]*")
 
 
 def ensure_config_file() -> Path:
@@ -104,10 +101,7 @@ def load_config(profile: str | None = None) -> dict:
         creds = data.get("credentials", {}).get(profile)
         if creds is None:
             available = list(data.get("credentials", {}).keys())
-            raise KeyError(
-                f"Profile {profile!r} not found in config.toml. "
-                f"Available: {available}"
-            )
+            raise KeyError(f"Profile {profile!r} not found in config.toml. Available: {available}")
         _validate_credential_keys(creds)
         for k, v in creds.items():
             os.environ.setdefault(k, str(v))
@@ -232,9 +226,7 @@ def migrate_env_to_config() -> str:
     try:
         import tomli_w  # type: ignore[import-untyped,import-not-found]
     except ImportError:
-        raise ImportError(
-            "tomli_w is required for migration: pip install tomli_w"
-        ) from None
+        raise ImportError("tomli_w is required for migration: pip install tomli_w") from None
 
     env_map = {
         "FACTORY_RUNNER": "runner",
@@ -249,6 +241,7 @@ def migrate_env_to_config() -> str:
         "FACTORY_BOB_MAX_INVOCATIONS_PER_CYCLE": "bob_max_invocations_per_cycle",
         "FACTORY_CEO_RESPAWN_DISABLED": "ceo_respawn_disabled",
         "FACTORY_CEO_MAX_RESPAWNS": "ceo_max_respawns",
+        "FACTORY_REMOVE_WORKTREE": "remove_worktree",
     }
 
     defaults: dict[str, str] = {}
@@ -266,8 +259,7 @@ def migrate_env_to_config() -> str:
         fd = os.open(str(CONFIG_PATH), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     except FileExistsError:
         raise FileExistsError(
-            f"Config file already exists at {CONFIG_PATH}. "
-            "Remove it first or edit manually."
+            f"Config file already exists at {CONFIG_PATH}. Remove it first or edit manually."
         ) from None
     try:
         content = tomli_w.dumps(data)
