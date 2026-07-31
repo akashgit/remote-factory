@@ -112,6 +112,7 @@ class SearchQAAdapter(EnvAdapter):
             "--all",
             "--timeout", "3600",
             "--preserve",
+            "--concurrency", "25",
         ]
         if instances:
             for instance_id in instances:

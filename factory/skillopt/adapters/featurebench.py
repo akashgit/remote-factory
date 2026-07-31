@@ -87,6 +87,7 @@ class FeaturebenchAdapter(EnvAdapter):
             "--all",
             "--timeout", "7200",
             "--preserve",
+            "--concurrency", "25",
         ]
         if self.instances:
             for instance_id in self.instances:

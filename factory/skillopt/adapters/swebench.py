@@ -48,6 +48,7 @@ class SwebenchAdapter(EnvAdapter):
         self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
         self.instances: list[str] = []
         self.student_model: str = ""
+        self.concurrency: int = 25
         self._train_ids: list[str] = []
         self._val_ids: list[str] = []
         self._test_ids: list[str] = []
@@ -128,6 +129,7 @@ class SwebenchAdapter(EnvAdapter):
             "--all",
             "--timeout", "7200",
             "--preserve",
+            "--concurrency", str(self.concurrency),
         ]
         instances: list[str] = []
         if isinstance(env_manager, list):
