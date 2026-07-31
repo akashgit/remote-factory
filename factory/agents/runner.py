@@ -26,6 +26,7 @@ AgentRole = Literal[
     "refiner",
     "profiler",
     "refactory",
+    "contained_evaluator",
 ]
 
 # Consecutive failure tracking

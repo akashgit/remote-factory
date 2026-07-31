@@ -338,7 +338,8 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("role", choices=["researcher", "strategist", "builder",
                                      "health_checker", "code_reviewer", "adversarial_tester",
                                      "archivist", "ceo",
-                                     "failure_analyst", "refiner"],
+                                     "failure_analyst", "refiner",
+                                     "contained_evaluator"],
                     help="Agent role to invoke")
     p.add_argument("--task", required=True, help="Task description for the agent")
     p.add_argument("--project", required=True, help="Path to the project")
@@ -514,6 +515,10 @@ def add_entry_point_parsers(sub: argparse._SubParsersAction) -> None:  # type: i
     p.add_argument("--no-worktree", action="store_true", default=False, dest="no_worktree",
                     help="Run directly in the project directory without creating a worktree "
                          "(useful for testing in-flight branch changes)")
+
+    from factory.cli.contained import build_contained_parser
+
+    build_contained_parser(sub)
 
     p = sub.add_parser("tmux", help="Launch factory run in a detached tmux session")
     p.add_argument("path", help="Path to the project")

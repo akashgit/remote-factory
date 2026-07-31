@@ -1,0 +1,46 @@
+#	Criteria manifest for `factory contained`.
+#	Transcribed from the feature's eval plan, which is kept outside this repository.
+#	This file is the single source of truth for which criteria exist, which tier gates them,
+#	which implementation phase introduces them, and how heavily they weigh.
+#
+#	tier      a tier expression. "t0" = one tier. "t0+t2" = ALL listed tiers must be available
+#	          (the criterion is only fully provable with both). "t2|t3" = ANY listed tier suffices.
+#	phase     implementation phase (spec §13) that introduces the behavior. Criteria from a later
+#	          phase are reported NOT_APPLICABLE, never FAIL, when judging an earlier phase.
+#
+#	          Phase assignment follows GOAL.md §4, with one deliberate divergence. GOAL §4 lists
+#	          C1-C10 against phase 2, but C8/C9/C10 test bind-mount scoping, driver-key selection,
+#	          and the enable_bind_mounts precondition — all introduced by phase 3's --division=local,
+#	          which phase 2's own description ("no division") excludes. They are assigned to phase 3
+#	          so phase 2 is not failed for a feature it does not build. C11-C14 stay at phase 3 per
+#	          GOAL: they are t0 criteria over the rendered build-pod manifest, which the templates
+#	          land in phase 3 even though exercising it against a real cluster is phase 4.
+#	weight    contribution to the composite. Changing a weight is a spec change (eval plan §7).
+#
+#	id	tier	phase	weight	property	pass_condition
+C1	t1	2	3.0	Vertex vars stripped and no credential crosses	Composed sandbox env contains neither CLAUDE_CODE_USE_VERTEX nor CLOUD_ML_REGION, contains ANTHROPIC_BASE_URL=https://inference.local, and carries no live credential value (ANTHROPIC_API_KEY=unused is the pinned placeholder)
+C2	t1	2	1.0	Base URL has no /v1	ANTHROPIC_BASE_URL is exactly https://inference.local
+C3	t1	1	1.0	--bare present in sandbox mode	Composed claude argv contains --bare when the factory runs in sandbox mode
+C4	t1	1	1.0	--bare absent outside sandboxes	Composed claude argv does NOT contain --bare for a normal invocation
+C5	t2	2	2.0	.factory/ survives transfer	.factory/config.json present in sandbox AND results.tsv retains all 3 rows, for a project whose .gitignore lists .factory/
+C6	t2	2	1.0	Transfer failure is loud	Non-zero exit with a message naming .factory/; never a silent fresh-project boot
+C7	t2	2	1.0	State detection unchanged	factory detect inside the sandbox reports the same ProjectState as on the host
+C8	t0+t2	3	1.0	Bind mount scoped	Generated driver-config JSON source equals the project path exactly — not $HOME, not /, no parent
+C9	t0	3	1.0	Driver key matches gateway	Top-level driver-config key is podman for a podman-backed gateway and docker for a docker-backed gateway
+C10	t1	3	1.0	Bind-mount precondition	--division=local against a gateway without enable_bind_mounts fails fast with an actionable message and does not provision
+C11	t0	3	1.0	Build pod is unprivileged	Rendered manifest has no privileged true, no SYS_ADMIN, no hostPath; on-cluster the pod carries annotation openshift.io/scc nested-container
+C12	t0	3	1.0	Rootless prerequisites	BUILDAH_ISOLATION=chroot set; emptyDir mounted at the container-storage path; subuid/subgid present
+C13	t0	3	1.0	--pod-patch merges	Only the patched field changes; C11 and C12 still hold on the patched output
+C14	t0	3	1.0	--pod-manifest replaces	Supplied manifest used verbatim; a privileged override warns rather than being silently accepted
+C15	t1	4	1.0	Namespace from context	Resources target the kube context namespace
+C16	t1	4	1.0	--namespace overrides	Resources target the flag value
+C17	t0	4	1.0	No hardcoded namespace	No literal factory-division in the implementation outside docs and tests
+C18	t0	3	1.0	MCP policy allowlist exact	Division policy tool-name rules match the intended set exactly — no extra tools, no wildcard
+C19	t2|t3	3	10.0	Iterate loop closes	Deliberately broken Containerfile produces error text the agent reads; the fix rebuilds successfully; a validation container runs and reports its exit code
+C20	t3	4	1.0	Logless failure diagnosable	events_list surfaces ImagePullBackOff for a nonexistent image; a cause is reported, not a timeout
+C21	t1	1	2.0	factory tmux unchanged	Composed tmux command is byte-identical to the recorded golden for a fixed arg set
+C22	t1	2	1.0	--tmux-persist rejected	Parse-time error naming tmux's absence; not a runtime failure
+C23	t1	2	1.0	--division requires a value	Parse error; no inheritance from --target
+C24	t1	2	1.0	Growth-context warning	Warning on stderr naming FACTORY_MANAGED_DIRS and FACTORY_VAULT_PATH, with exit code 0
+C25	t1	2	1.0	Growth context forwarded	Both variables present in the composed sandbox env
+C26	t2	2	1.0	Labels, not a mapping file	Sandbox discoverable via openshell sandbox list --selector; no tmux_sessions.json analogue written

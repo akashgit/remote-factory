@@ -58,6 +58,12 @@ SOURCE_DIRS = [
 ALLOWLIST_ABSOLUTE = {
     Path("tests/test_playbook_hygiene.py"),
     Path("factory/study.py"),  # docstring example: "e.g. /home/dev/projects/my-app"
+    # The build pod's container-storage path (/home/build/...) is a path *inside* the buildah image,
+    # belonging to that image's build user. It is not a developer's home directory, and it has to be
+    # absolute: a Kubernetes volumeMount cannot use ~ or an env var, and the rootless overlay
+    # storage location is fixed by the image. This rule is about developer paths leaking into
+    # shipped code, which is a different thing.
+    Path("factory/division.py"),
 }
 ALLOWLIST_SUBSTRINGS = {
     Path("tests/test_playbook_hygiene.py"),
