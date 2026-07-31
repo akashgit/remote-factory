@@ -42,6 +42,9 @@ from factory.cli.ceo import (
     cmd_ceo as cmd_ceo,
     cmd_refactory as cmd_refactory,
 )
+from factory.cli.contained import (
+    cmd_contained as cmd_contained,
+)
 from factory.cli.run import (
     cmd_run as cmd_run,
 )

@@ -39,6 +39,7 @@ _COMMAND_GROUPS: list[tuple[str, list[str]]] = [
         [
             "ceo",
             "run",
+            "contained",
             "tmux",
             "tmux-ls",
             "tmux-capture",
@@ -290,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
         "agent": _cli.cmd_agent,
         "ceo": _cli.cmd_ceo,
         "run": _cli.cmd_run,
+        "contained": _cli.cmd_contained,
         "tmux": _cli.cmd_tmux,
         "tmux-ls": _cli.cmd_tmux_ls,
         "tmux-capture": _cli.cmd_tmux_capture,
