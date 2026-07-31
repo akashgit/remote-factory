@@ -239,7 +239,7 @@ def _find_trial_dir(jobs_dir: str, instance_id: str) -> Path | None:
     jobs_path = Path(jobs_dir)
     if not jobs_path.is_dir():
         return None
-    for d in jobs_path.iterdir():
+    for d in jobs_path.rglob("*__*"):
         if d.is_dir() and _TRIAL_SUFFIX_PATTERN.sub("", d.name) == instance_id:
             return d
     return None
