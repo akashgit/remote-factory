@@ -79,6 +79,8 @@ Eight specialist Claude Code subprocesses spawned by the CEO via `factory agent 
 8. **Checkpoint** (`factory/checkpoint.py`): Saves and loads CEO state for crash-resilient resume
 9. **Analysis** (`factory/analysis.py`): Experiment comparison (`diff`) and FEEC analysis (`explain`)
 10. **Adversarial** (`factory/adversarial.py`): GAN-style adversarial eval loop state machine — phase transitions with hysteresis, per-role streak counters, convergence detection. State persisted at `.factory/adversarial_state.json`
+11. **Contained** (`factory/openshell.py` + `factory/cli/contained.py`): `factory contained` runs the factory inside an [NVIDIA OpenShell](https://github.com/NVIDIA/OpenShell) sandbox. `openshell.py` is the only module that knows the `openshell` CLI — OpenShell is alpha with an unstable surface, so when a flag changes there is one file to fix. It composes commands and does not execute them, which is what makes `FACTORY_OPENSHELL_DRY_RUN=1` print the same argv the real path runs instead of a separate rendering that can drift. Four behaviors are load-bearing and fail quietly if broken. **Ordering:** `sandbox create` blocks until its command exits, so the sandbox is created with a no-op, the transfers follow, and the factory starts with `sandbox exec --name` — `exec <name>` without the flag silently targets the last-used sandbox. **Transfers:** an upload lands *inside* its destination under its own basename, so `dest` is always the parent; `.factory/` and `.git/` each need a **separate** upload with `--no-git-ignore` (OpenShell filters uploads through `.gitignore`, this project gitignores `.factory/`, and `.git` never survives a filtered upload — without it the CEO detects `no_repo` and drops into build mode), and `.factory/` is then **asserted** rather than trusted. **Environment:** OpenShell composes the sandbox env itself and ignores the image's `ENV`, so everything the factory needs is passed with `--env`; `SANDBOX_ENV_POLICY` in `factory/cli/_run_args.py` forwards `FACTORY_` only and pins `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` — credentials live on the gateway, never in the sandbox — and `--env KEY=VALUE` is the escape hatch for backend quirks. **Headless:** the in-sandbox invocation always gets `--headless`, because an interactive CEO session on a pipe with no terminal produces no visible output while real agents run, and `--mode design` is rejected outright for the same reason. `factory.sandbox.in_sandbox()` is the single answer to "am I contained?" and is what scopes `--bare` on the Claude runner. Sandbox names are capped at 19 characters by the gateway.
+12. **Division** (`factory/division.py`): the container-manufacturing plane, opt-in via `--division`. It exists because OpenShell's seccomp filter blocks `mount` and `CLONE_NEWUSER` for the agent *and every child*, so no build tool can run inside the sandbox — builds must happen outside its process tree. `--division` therefore opens the isolation boundary on purpose; this module's job is keeping the opening as narrow as designed. A generated policy is a **complete** policy: `--policy` replaces the sandbox default rather than merging, so `factory/templates/sandbox-policy.yaml` carries filesystem/landlock/process and the division block is layered on top. Rules are `allow:`-wrapped and key the tool as `tool`; the endpoint needs `mcp.allow_all_known_mcp_methods` or the handshake itself is denied, and a policy with no `binaries:` list matches no process and denies everything. `--division local` bind-mounts the project at the **same absolute path** inside and out (forced by `image_build` taking a host path), runs the factory in that directory rather than a copy, and probes that the sandbox identity can actually write it — the mount carries the host's ownership through, so the image must be built with `--build-arg SANDBOX_UID=$(id -u)` or every write fails. `--division k8s` builds through a standalone OpenShift `Build` with a ConfigMap-carried context and an inline Dockerfile: rootless buildah in an ordinary pod cannot work on a cluster that denies `uid_map` writes, and a BuildConfig with a binary source would need a fresh host-side upload per iteration, whereas fixing an inline Dockerfile and resubmitting is a call the agent can make.
 
 ### Target project's `.factory/` layout
 
@@ -198,6 +200,21 @@ factory ceo /path/to/factory --mode create --focus "improve: add plateau detecti
 factory ceo /path/to/project                    # Single improvement cycle
 factory run /path/to/project --loop --interval 1800  # Continuous heartbeat
 factory tmux /path/to/project --loop            # In detached tmux session
+
+# Contained — run the factory inside an NVIDIA OpenShell sandbox
+factory contained /path/to/project                        # Sandboxed on a local gateway
+factory contained /path --division local                  # ...plus builds on the host's podman
+factory contained /path --division k8s                    # ...or builds in the current kube context
+factory contained /path --env MAX_THINKING_TOKENS=0       # Extra sandbox env, repeatable
+FACTORY_OPENSHELL_DRY_RUN=1 factory contained /path       # Compose the commands, provision nothing
+
+# The sandbox image is built from containers/sandbox/Containerfile. For --division local it must
+# carry the UID that owns the project on the host, or the bind mount is read-only:
+#   podman build --build-arg SANDBOX_UID=$(id -u) -f containers/sandbox/Containerfile -t <ref> .
+#   FACTORY_SANDBOX_IMAGE=<ref> factory contained /path --division local
+# Each division needs its MCP server listening on the host first — podman-mcp-server on 8430,
+# kubernetes-mcp-server on 8440. Both exit silently if stdin closes, so keep it open:
+#   nohup sh -c 'tail -f /dev/null | npx -y podman-mcp-server --port 8430' >/tmp/mcp.log 2>&1 &
 
 # Focus — build exactly one thing
 factory ceo /path/to/project --focus "dashboard UI"  # One item, one hypothesis, done
