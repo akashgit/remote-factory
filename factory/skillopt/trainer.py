@@ -211,6 +211,26 @@ class SkillOptTrainer:
             yaml_surface="yes" if self.yaml_surface else "no",
         )
 
+        if self.current_score < 0:
+            log.info("running baseline eval on validation set")
+            eval_env = self.adapter.build_eval_env(
+                env_num=0, split="eval", seed=self.eval_split_seed,
+            )
+            self._save_skill(self.current_skill)
+            baseline_dir = str(self.out_dir / "baseline_eval")
+            Path(baseline_dir).mkdir(parents=True, exist_ok=True)
+            baseline_results = self.adapter.rollout(
+                eval_env, self.current_skill, baseline_dir,
+            )
+            base_hard, base_soft = self._compute_score(baseline_results)
+            self.current_score = select_gate_score(base_hard, base_soft, self.metric)
+            self.best_score = self.current_score
+            log.info(
+                "baseline eval complete",
+                score=round(self.current_score, 4),
+                items=len(baseline_results),
+            )
+
         for epoch in range(self.epochs):
             log.info("epoch started", epoch=epoch + 1, total=self.epochs)
 
@@ -333,9 +353,6 @@ class SkillOptTrainer:
             log.info("rollout complete", results=len(results))
 
         hard_before, soft_before = self._compute_score(results)
-        if self.current_score < 0:
-            self.current_score = select_gate_score(hard_before, soft_before, self.metric)
-            self.best_score = self.current_score
 
         step_buffer_context = self._build_step_buffer_context() if self.overfit else ""
 
