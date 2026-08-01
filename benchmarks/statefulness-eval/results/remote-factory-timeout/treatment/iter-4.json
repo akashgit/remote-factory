@@ -1,0 +1,19 @@
+{
+  "project": "remote-factory-timeout",
+  "condition": "treatment",
+  "iteration": 4,
+  "exit_code": 142,
+  "duration_s": 120.03,
+  "metrics": {
+    "factory_read_count": 0,
+    "factory_files_read": [],
+    "agent_reinvocations": 0,
+    "time_to_first_meaningful_action_s": null,
+    "total_tool_calls": 0
+  },
+  "events": {
+    "agent_starts": 8,
+    "agent_completions": 0,
+    "agents": []
+  }
+}
