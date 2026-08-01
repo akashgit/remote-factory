@@ -84,10 +84,10 @@ async def test_statefulness_iteration(
             log.info("deleted_session_summary", path=str(summary_path))
     elif condition == "treatment" and iteration > 1:
         if not summary_path.exists():
-            pytest.skip(
-                f"session_summary.md missing for treatment iter {iteration} — "
-                "prior iteration may not have generated it"
-            )
+            from factory.statefulness import save_session_summary
+
+            save_session_summary(Path(project_path))
+            log.info("generated_session_summary", path=str(summary_path))
 
     import time
 
