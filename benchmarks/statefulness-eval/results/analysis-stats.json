@@ -4,7 +4,87 @@
     "remote-factory-eval",
     "remote-factory-timeout"
   ],
-  "metrics": {
+  "events_metrics": {
+    "agent_starts": {
+      "label": "Agent Starts (events.jsonl)",
+      "control": {
+        "n": 15,
+        "median": 4.0,
+        "mean": 4.8,
+        "stddev": 2.808151400069855,
+        "min": 2.0,
+        "max": 8.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 4.0,
+        "mean": 5.066666666666666,
+        "stddev": 2.604026186687143,
+        "min": 2.0,
+        "max": 8.0
+      },
+      "cohens_d": 0.09847319278346615,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": -1.6,
+        "high": 2.1333333333333333
+      },
+      "wilcoxon": null
+    },
+    "agent_completions": {
+      "label": "Agent Completions (events.jsonl)",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    },
+    "duration_s": {
+      "label": "Wall-Clock Duration (s)",
+      "control": {
+        "n": 15,
+        "median": 120.02,
+        "mean": 120.03399999999998,
+        "stddev": 0.029952343099377263,
+        "min": 120.01,
+        "max": 120.13
+      },
+      "treatment": {
+        "n": 15,
+        "median": 120.03,
+        "mean": 120.02666666666666,
+        "stddev": 0.01543033499620941,
+        "min": 120.01,
+        "max": 120.06
+      },
+      "cohens_d": -0.3078030690330615,
+      "effect_size": "small",
+      "bootstrap_ci_95": {
+        "low": -0.025333333333350083,
+        "high": 0.007333333333320979
+      },
+      "wilcoxon": null
+    }
+  },
+  "stream_metrics": {
     "factory_read_count": {
       "label": ".factory/ Read Count",
       "control": {
@@ -133,7 +213,210 @@
       "wilcoxon": null
     }
   },
-  "per_project": {
+  "per_project_events": {
+    "factory-ui": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 4.0,
+          "mean": 3.2,
+          "stddev": 1.0954451150103321,
+          "min": 2.0,
+          "max": 4.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 4.0,
+          "mean": 3.2,
+          "stddev": 1.0954451150103321,
+          "min": 2.0,
+          "max": 4.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.02,
+          "mean": 120.04199999999999,
+          "stddev": 0.04969909455915469,
+          "min": 120.01,
+          "max": 120.13
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.03200000000001,
+          "stddev": 0.01923538406167195,
+          "min": 120.01,
+          "max": 120.06
+        },
+        "cohens_d": -0.2653724462165275,
+        "wilcoxon": {
+          "statistic": 2.0,
+          "p_value": 0.75
+        }
+      }
+    },
+    "remote-factory-eval": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 5.6,
+          "stddev": 3.286335345030997,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 6.0,
+          "stddev": 2.8284271247461903,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "cohens_d": 0.13046561461068854,
+        "wilcoxon": {
+          "statistic": 1.0,
+          "p_value": 1.0
+        }
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.02,
+          "mean": 120.02799999999999,
+          "stddev": 0.013038404810405973,
+          "min": 120.02,
+          "max": 120.05
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.01,
+          "mean": 120.02000000000001,
+          "stddev": 0.014142135623730649,
+          "min": 120.01,
+          "max": 120.04
+        },
+        "cohens_d": -0.5881716976736682,
+        "wilcoxon": {
+          "statistic": 5.0,
+          "p_value": 0.6875
+        }
+      }
+    },
+    "remote-factory-timeout": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 5.6,
+          "stddev": 3.286335345030997,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 6.0,
+          "stddev": 2.8284271247461903,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "cohens_d": 0.13046561461068854,
+        "wilcoxon": {
+          "statistic": 1.0,
+          "p_value": 1.0
+        }
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.03200000000001,
+          "stddev": 0.01923538406167195,
+          "min": 120.01,
+          "max": 120.06
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.02799999999999,
+          "stddev": 0.013038404810407063,
+          "min": 120.01,
+          "max": 120.04
+        },
+        "cohens_d": -0.24343224778122055,
+        "wilcoxon": {
+          "statistic": 4.0,
+          "p_value": 0.875
+        }
+      }
+    }
+  },
+  "per_project_stream": {
     "factory-ui": {
       "factory_read_count": {
         "control": {
@@ -339,6 +622,716 @@
       }
     },
     "remote-factory-timeout": {
+      "factory_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "factory_files_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "agent_reinvocations": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "time_to_first_meaningful_action_s": {
+        "control": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "treatment": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "cohens_d": null,
+        "wilcoxon": null
+      },
+      "total_tool_calls": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      }
+    }
+  },
+  "metrics": {
+    "agent_starts": {
+      "label": "Agent Starts (events.jsonl)",
+      "control": {
+        "n": 15,
+        "median": 4.0,
+        "mean": 4.8,
+        "stddev": 2.808151400069855,
+        "min": 2.0,
+        "max": 8.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 4.0,
+        "mean": 5.066666666666666,
+        "stddev": 2.604026186687143,
+        "min": 2.0,
+        "max": 8.0
+      },
+      "cohens_d": 0.09847319278346615,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": -1.6,
+        "high": 2.1333333333333333
+      },
+      "wilcoxon": null
+    },
+    "agent_completions": {
+      "label": "Agent Completions (events.jsonl)",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    },
+    "duration_s": {
+      "label": "Wall-Clock Duration (s)",
+      "control": {
+        "n": 15,
+        "median": 120.02,
+        "mean": 120.03399999999998,
+        "stddev": 0.029952343099377263,
+        "min": 120.01,
+        "max": 120.13
+      },
+      "treatment": {
+        "n": 15,
+        "median": 120.03,
+        "mean": 120.02666666666666,
+        "stddev": 0.01543033499620941,
+        "min": 120.01,
+        "max": 120.06
+      },
+      "cohens_d": -0.3078030690330615,
+      "effect_size": "small",
+      "bootstrap_ci_95": {
+        "low": -0.025333333333350083,
+        "high": 0.007333333333320979
+      },
+      "wilcoxon": null
+    },
+    "factory_read_count": {
+      "label": ".factory/ Read Count",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    },
+    "factory_files_read_count": {
+      "label": "Unique .factory/ Files Read",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    },
+    "agent_reinvocations": {
+      "label": "Agent Re-invocations",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    },
+    "time_to_first_meaningful_action_s": {
+      "label": "Time to First Meaningful Action (s)",
+      "control": {
+        "n": 0,
+        "median": null,
+        "mean": null,
+        "stddev": null,
+        "min": null,
+        "max": null
+      },
+      "treatment": {
+        "n": 0,
+        "median": null,
+        "mean": null,
+        "stddev": null,
+        "min": null,
+        "max": null
+      },
+      "cohens_d": null,
+      "effect_size": "insufficient data",
+      "bootstrap_ci_95": null,
+      "wilcoxon": null
+    },
+    "total_tool_calls": {
+      "label": "Total Tool Calls",
+      "control": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "treatment": {
+        "n": 15,
+        "median": 0.0,
+        "mean": 0.0,
+        "stddev": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "cohens_d": 0.0,
+      "effect_size": "negligible",
+      "bootstrap_ci_95": {
+        "low": 0.0,
+        "high": 0.0
+      },
+      "wilcoxon": null
+    }
+  },
+  "per_project": {
+    "factory-ui": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 4.0,
+          "mean": 3.2,
+          "stddev": 1.0954451150103321,
+          "min": 2.0,
+          "max": 4.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 4.0,
+          "mean": 3.2,
+          "stddev": 1.0954451150103321,
+          "min": 2.0,
+          "max": 4.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.02,
+          "mean": 120.04199999999999,
+          "stddev": 0.04969909455915469,
+          "min": 120.01,
+          "max": 120.13
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.03200000000001,
+          "stddev": 0.01923538406167195,
+          "min": 120.01,
+          "max": 120.06
+        },
+        "cohens_d": -0.2653724462165275,
+        "wilcoxon": {
+          "statistic": 2.0,
+          "p_value": 0.75
+        }
+      },
+      "factory_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "factory_files_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "agent_reinvocations": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "time_to_first_meaningful_action_s": {
+        "control": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "treatment": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "cohens_d": null,
+        "wilcoxon": null
+      },
+      "total_tool_calls": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      }
+    },
+    "remote-factory-eval": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 5.6,
+          "stddev": 3.286335345030997,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 6.0,
+          "stddev": 2.8284271247461903,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "cohens_d": 0.13046561461068854,
+        "wilcoxon": {
+          "statistic": 1.0,
+          "p_value": 1.0
+        }
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.02,
+          "mean": 120.02799999999999,
+          "stddev": 0.013038404810405973,
+          "min": 120.02,
+          "max": 120.05
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.01,
+          "mean": 120.02000000000001,
+          "stddev": 0.014142135623730649,
+          "min": 120.01,
+          "max": 120.04
+        },
+        "cohens_d": -0.5881716976736682,
+        "wilcoxon": {
+          "statistic": 5.0,
+          "p_value": 0.6875
+        }
+      },
+      "factory_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "factory_files_read_count": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "agent_reinvocations": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "time_to_first_meaningful_action_s": {
+        "control": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "treatment": {
+          "n": 0,
+          "median": null,
+          "mean": null,
+          "stddev": null,
+          "min": null,
+          "max": null
+        },
+        "cohens_d": null,
+        "wilcoxon": null
+      },
+      "total_tool_calls": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      }
+    },
+    "remote-factory-timeout": {
+      "agent_starts": {
+        "control": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 5.6,
+          "stddev": 3.286335345030997,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 8.0,
+          "mean": 6.0,
+          "stddev": 2.8284271247461903,
+          "min": 2.0,
+          "max": 8.0
+        },
+        "cohens_d": 0.13046561461068854,
+        "wilcoxon": {
+          "statistic": 1.0,
+          "p_value": 1.0
+        }
+      },
+      "agent_completions": {
+        "control": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "treatment": {
+          "n": 5,
+          "median": 0.0,
+          "mean": 0.0,
+          "stddev": 0.0,
+          "min": 0.0,
+          "max": 0.0
+        },
+        "cohens_d": 0.0,
+        "wilcoxon": null
+      },
+      "duration_s": {
+        "control": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.03200000000001,
+          "stddev": 0.01923538406167195,
+          "min": 120.01,
+          "max": 120.06
+        },
+        "treatment": {
+          "n": 5,
+          "median": 120.03,
+          "mean": 120.02799999999999,
+          "stddev": 0.013038404810407063,
+          "min": 120.01,
+          "max": 120.04
+        },
+        "cohens_d": -0.24343224778122055,
+        "wilcoxon": {
+          "statistic": 4.0,
+          "p_value": 0.875
+        }
+      },
       "factory_read_count": {
         "control": {
           "n": 5,
