@@ -69,7 +69,9 @@ async def run_ceo_subprocess(
         timeout_s=timeout_s,
     )
 
-    start_time = asyncio.get_event_loop().time()
+    loop = asyncio.get_event_loop()
+    start_time = loop.time()
+    deadline = start_time + timeout_s
 
     proc = await asyncio.create_subprocess_exec(
         *cmd,
@@ -78,13 +80,28 @@ async def run_ceo_subprocess(
         start_new_session=True,
     )
 
+    stdout_lines: list[bytes] = []
+    timed_out = False
+
+    assert proc.stdout is not None
     try:
-        stdout_bytes, stderr_bytes = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=timeout_s,
-        )
-        exit_code = proc.returncode or 0
-    except asyncio.TimeoutError:
+        while True:
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                timed_out = True
+                break
+            try:
+                line = await asyncio.wait_for(proc.stdout.readline(), timeout=remaining)
+            except asyncio.TimeoutError:
+                timed_out = True
+                break
+            if not line:
+                break
+            stdout_lines.append(line)
+    except Exception:
+        timed_out = True
+
+    if timed_out:
         log.warning("ceo_subprocess_timeout", pid=proc.pid, timeout_s=timeout_s)
         try:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -95,16 +112,13 @@ async def run_ceo_subprocess(
                 await proc.wait()
         except ProcessLookupError:
             pass
-        stdout_bytes = b""
-        if proc.stdout:
-            try:
-                stdout_bytes = await asyncio.wait_for(proc.stdout.read(), timeout=1)
-            except (asyncio.TimeoutError, Exception):
-                pass
         exit_code = 142
+    else:
+        await proc.wait()
+        exit_code = proc.returncode or 0
 
-    duration_s = asyncio.get_event_loop().time() - start_time
-    stdout_text = stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else ""
+    duration_s = loop.time() - start_time
+    stdout_text = b"".join(stdout_lines).decode("utf-8", errors="replace")
 
     log.info(
         "ceo_subprocess_done",

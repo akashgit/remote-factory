@@ -45,6 +45,8 @@ ITERATIONS = list(range(1, 6))
 TIMEOUT_S = 120
 EXPECTED_TIMEOUT_CODES = {130, 142}
 
+_iter1_failures: dict[tuple[str, str], int] = {}
+
 
 def _session_summary_path(project_path: str) -> Path:
     """Return the session_summary.md path for a project."""
@@ -66,6 +68,13 @@ async def test_statefulness_iteration(
     statefulness_results_dir: Path,
 ) -> None:
     """Run a single CEO iteration and collect statefulness metrics."""
+    key = (project["name"], condition)
+    if key in _iter1_failures:
+        pytest.skip(
+            f"Iteration 1 failed with exit code {_iter1_failures[key]} — "
+            "skipping remaining iterations"
+        )
+
     project_path = str(Path(project["path"]).expanduser())
     summary_path = _session_summary_path(project_path)
 
@@ -100,6 +109,7 @@ async def test_statefulness_iteration(
     )
 
     if iteration == 1 and exit_code != 0 and exit_code not in EXPECTED_TIMEOUT_CODES:
+        _iter1_failures[key] = exit_code
         pytest.skip(
             f"Iteration 1 failed with exit code {exit_code} — aborting remaining iterations"
         )
