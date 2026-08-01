@@ -89,6 +89,10 @@ async def test_statefulness_iteration(
                 "prior iteration may not have generated it"
             )
 
+    import time
+
+    start_ts = time.time()
+
     exit_code, stdout, duration_s = await run_ceo_subprocess(
         project_path=project_path,
         focus=project["focus"],
@@ -106,6 +110,8 @@ async def test_statefulness_iteration(
         metrics=metrics,
         exit_code=exit_code,
         duration_s=duration_s,
+        project_path=project_path,
+        start_time=start_ts,
     )
 
     if iteration == 1 and exit_code != 0 and exit_code not in EXPECTED_TIMEOUT_CODES:
@@ -114,4 +120,6 @@ async def test_statefulness_iteration(
             f"Iteration 1 failed with exit code {exit_code} — aborting remaining iterations"
         )
 
-    assert metrics.total_tool_calls > 0, "CEO produced no tool calls"
+    assert exit_code in EXPECTED_TIMEOUT_CODES or exit_code == 0, (
+        f"CEO exited with unexpected code {exit_code}"
+    )

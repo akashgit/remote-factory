@@ -55,10 +55,8 @@ async def run_ceo_subprocess(
         "improve",
         "--focus",
         focus,
-        "--output-format",
-        "stream-json",
-        "--verbose",
         "--headless",
+        "--no-worktree",
     ]
 
     log.info(
@@ -73,11 +71,14 @@ async def run_ceo_subprocess(
     start_time = loop.time()
     deadline = start_time + timeout_s
 
+    env = {**os.environ, "FACTORY_CEO_RESPAWN_DISABLED": "1"}
+
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         start_new_session=True,
+        env=env,
     )
 
     stdout_lines: list[bytes] = []
@@ -135,6 +136,50 @@ def parse_trace(stdout: str) -> TraceMetrics:
     return parse_stream_json(stdout)
 
 
+def _count_events_since(project_path: str | Path, since_time: float) -> dict[str, Any]:
+    """Count agent events from events.jsonl written after since_time."""
+    events_path = Path(project_path) / ".factory" / "events.jsonl"
+    if not events_path.is_file():
+        return {"agent_starts": 0, "agent_completions": 0, "agents": []}
+
+    agents: list[dict[str, Any]] = []
+    starts = 0
+    completions = 0
+    try:
+        for raw_line in events_path.read_text().splitlines():
+            if not raw_line.strip():
+                continue
+            try:
+                ev = json.loads(raw_line)
+            except json.JSONDecodeError:
+                continue
+            ts_str = ev.get("timestamp", "")
+            if not ts_str:
+                continue
+            from datetime import datetime
+
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
+            except (ValueError, TypeError):
+                continue
+            if ts < since_time:
+                continue
+            etype = ev.get("type", "")
+            if etype == "agent.started":
+                starts += 1
+            elif etype == "agent.completed":
+                completions += 1
+                agents.append(
+                    {
+                        "role": ev.get("agent", "?"),
+                        "duration_s": ev.get("data", {}).get("duration_s"),
+                    }
+                )
+    except OSError:
+        pass
+    return {"agent_starts": starts, "agent_completions": completions, "agents": agents}
+
+
 def save_iteration_result(
     results_dir: Path,
     project: str,
@@ -143,6 +188,8 @@ def save_iteration_result(
     metrics: TraceMetrics,
     exit_code: int,
     duration_s: float,
+    project_path: str | None = None,
+    start_time: float | None = None,
 ) -> Path:
     """Save per-iteration metrics to a JSON file.
 
@@ -154,6 +201,8 @@ def save_iteration_result(
         metrics: Parsed trace metrics.
         exit_code: Process exit code.
         duration_s: Wall-clock duration.
+        project_path: Path to project (for events.jsonl extraction).
+        start_time: Unix timestamp when the iteration started.
 
     Returns:
         Path to the written JSON file.
@@ -161,6 +210,10 @@ def save_iteration_result(
     out_dir = results_dir / project / condition
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"iter-{iteration}.json"
+
+    event_data: dict[str, Any] = {}
+    if project_path and start_time:
+        event_data = _count_events_since(project_path, start_time)
 
     result: dict[str, Any] = {
         "project": project,
@@ -175,6 +228,7 @@ def save_iteration_result(
             "time_to_first_meaningful_action_s": metrics.time_to_first_meaningful_action_s,
             "total_tool_calls": metrics.total_tool_calls,
         },
+        "events": event_data,
     }
 
     out_path.write_text(json.dumps(result, indent=2) + "\n")
