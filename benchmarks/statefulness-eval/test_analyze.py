@@ -181,3 +181,142 @@ class TestLoadResults:
         results = load_results(tmp_path)
         assert len(results) == 3
         assert [r.iteration for r in results] == [1, 2, 3]
+
+    def test_loads_events_field(self, tmp_path: Path) -> None:
+        proj_dir = tmp_path / "proj-c" / "control"
+        proj_dir.mkdir(parents=True)
+
+        data = {
+            "project": "proj-c",
+            "condition": "control",
+            "iteration": 1,
+            "exit_code": 0,
+            "duration_s": 60.0,
+            "metrics": {"factory_read_count": 0, "total_tool_calls": 0},
+            "events": {"agent_starts": 4, "agent_completions": 2, "agents": []},
+        }
+        (proj_dir / "iter-1.json").write_text(json.dumps(data))
+
+        results = load_results(tmp_path)
+        assert len(results) == 1
+        assert results[0].events["agent_starts"] == 4
+        assert results[0].events["agent_completions"] == 2
+
+    def test_missing_events_defaults_to_empty(self, tmp_path: Path) -> None:
+        proj_dir = tmp_path / "proj-d" / "treatment"
+        proj_dir.mkdir(parents=True)
+
+        data = {
+            "project": "proj-d",
+            "condition": "treatment",
+            "iteration": 1,
+            "exit_code": 0,
+            "duration_s": 30.0,
+            "metrics": {"factory_read_count": 0},
+        }
+        (proj_dir / "iter-1.json").write_text(json.dumps(data))
+
+        results = load_results(tmp_path)
+        assert results[0].events == {}
+
+
+def _make_iteration_json(
+    project: str,
+    condition: str,
+    iteration: int,
+    agent_starts: int,
+    duration_s: float = 120.0,
+) -> dict:
+    """Helper to create an iteration result dict with events data."""
+    return {
+        "project": project,
+        "condition": condition,
+        "iteration": iteration,
+        "exit_code": 142,
+        "duration_s": duration_s,
+        "metrics": {
+            "factory_read_count": 0,
+            "factory_files_read": [],
+            "agent_reinvocations": 0,
+            "time_to_first_meaningful_action_s": None,
+            "total_tool_calls": 0,
+        },
+        "events": {
+            "agent_starts": agent_starts,
+            "agent_completions": 0,
+            "agents": [],
+        },
+    }
+
+
+class TestAnalyzeWithEvents:
+    def test_events_metrics_in_analysis(self, tmp_path: Path) -> None:
+        from analyze import EVENTS_METRICS, analyze
+
+        for cond in ("control", "treatment"):
+            d = tmp_path / "proj" / cond
+            d.mkdir(parents=True)
+            for i in range(1, 6):
+                starts = 2 if cond == "control" else 4
+                data = _make_iteration_json("proj", cond, i, starts)
+                (d / f"iter-{i}.json").write_text(json.dumps(data))
+
+        result = analyze(tmp_path)
+        assert "events_metrics" in result
+        assert "stream_metrics" in result
+        for m in EVENTS_METRICS:
+            assert m in result["events_metrics"]
+        agent_starts = result["events_metrics"]["agent_starts"]
+        assert agent_starts["control"]["mean"] == 2.0
+        assert agent_starts["treatment"]["mean"] == 4.0
+        assert agent_starts["cohens_d"] is not None
+
+    def test_stream_metrics_still_present(self, tmp_path: Path) -> None:
+        from analyze import STREAM_METRICS, analyze
+
+        for cond in ("control", "treatment"):
+            d = tmp_path / "proj" / cond
+            d.mkdir(parents=True)
+            for i in range(1, 3):
+                data = _make_iteration_json("proj", cond, i, 2)
+                (d / f"iter-{i}.json").write_text(json.dumps(data))
+
+        result = analyze(tmp_path)
+        for m in STREAM_METRICS:
+            assert m in result["stream_metrics"]
+
+    def test_generate_report_includes_events_section(self, tmp_path: Path) -> None:
+        from analyze import analyze, generate_report
+
+        for cond in ("control", "treatment"):
+            d = tmp_path / "proj" / cond
+            d.mkdir(parents=True)
+            for i in range(1, 6):
+                starts = 2 if cond == "control" else 6
+                data = _make_iteration_json("proj", cond, i, starts, duration_s=100.0 + i)
+                (d / f"iter-{i}.json").write_text(json.dumps(data))
+
+        analysis = analyze(tmp_path)
+        report = generate_report(analysis)
+        assert "Events-Based Metrics (Primary)" in report
+        assert "Agent Starts (events.jsonl)" in report
+        assert "Stream-JSON Metrics (Deprecated)" in report
+
+    def test_per_project_events_in_analysis(self, tmp_path: Path) -> None:
+        from analyze import analyze
+
+        for cond in ("control", "treatment"):
+            d = tmp_path / "proj-x" / cond
+            d.mkdir(parents=True)
+            for i in range(1, 6):
+                starts = 3 if cond == "control" else 7
+                data = _make_iteration_json("proj-x", cond, i, starts)
+                (d / f"iter-{i}.json").write_text(json.dumps(data))
+
+        result = analyze(tmp_path)
+        assert "per_project_events" in result
+        assert "proj-x" in result["per_project_events"]
+        pp = result["per_project_events"]["proj-x"]
+        assert "agent_starts" in pp
+        assert pp["agent_starts"]["control"]["mean"] == 3.0
+        assert pp["agent_starts"]["treatment"]["mean"] == 7.0

@@ -5,6 +5,12 @@ and produces:
 - analysis-report.md (human-readable markdown)
 - analysis-stats.json (machine-readable statistics)
 
+Two metric sources:
+- **Events metrics** (primary): extracted from .factory/events.jsonl — agent starts,
+  completions, duration. These have real data from all 30 iterations.
+- **Stream-JSON metrics** (deprecated): parsed from stdout. Factory CEO is a Python
+  subprocess so stdout isn't structured JSONL — these are typically all zeros.
+
 Statistical methods:
 - Cohen's d effect size per metric
 - Bootstrap 95% CI for mean difference (10,000 resamples)
@@ -24,7 +30,19 @@ from scipy import stats
 
 RESULTS_DIR = Path(".factory/experiments/statefulness")
 
-METRICS = [
+EVENTS_METRICS = [
+    "agent_starts",
+    "agent_completions",
+    "duration_s",
+]
+
+EVENTS_METRIC_LABELS = {
+    "agent_starts": "Agent Starts (events.jsonl)",
+    "agent_completions": "Agent Completions (events.jsonl)",
+    "duration_s": "Wall-Clock Duration (s)",
+}
+
+STREAM_METRICS = [
     "factory_read_count",
     "factory_files_read_count",
     "agent_reinvocations",
@@ -32,13 +50,15 @@ METRICS = [
     "total_tool_calls",
 ]
 
-METRIC_LABELS = {
+STREAM_METRIC_LABELS = {
     "factory_read_count": ".factory/ Read Count",
     "factory_files_read_count": "Unique .factory/ Files Read",
     "agent_reinvocations": "Agent Re-invocations",
     "time_to_first_meaningful_action_s": "Time to First Meaningful Action (s)",
     "total_tool_calls": "Total Tool Calls",
 }
+
+ALL_METRIC_LABELS = {**EVENTS_METRIC_LABELS, **STREAM_METRIC_LABELS}
 
 
 @dataclass
@@ -49,6 +69,7 @@ class IterationResult:
     exit_code: int
     duration_s: float
     metrics: dict
+    events: dict
 
 
 def load_results(results_dir: Path) -> list[IterationResult]:
@@ -59,6 +80,7 @@ def load_results(results_dir: Path) -> list[IterationResult]:
         metrics = data.get("metrics", {})
         if "factory_files_read" in metrics:
             metrics["factory_files_read_count"] = len(metrics["factory_files_read"])
+        events = data.get("events", {})
         results.append(
             IterationResult(
                 project=data["project"],
@@ -67,19 +89,28 @@ def load_results(results_dir: Path) -> list[IterationResult]:
                 exit_code=data["exit_code"],
                 duration_s=data["duration_s"],
                 metrics=metrics,
+                events=events,
             )
         )
     return results
 
 
 def _get_values(results: list[IterationResult], condition: str, metric: str) -> list[float]:
-    """Extract metric values for a given condition."""
+    """Extract metric values for a given condition.
+
+    Checks events dict first (primary), then metrics dict, then top-level fields.
+    """
     values = []
     for r in results:
-        if r.condition == condition:
+        if r.condition != condition:
+            continue
+        val = r.events.get(metric)
+        if val is None:
             val = r.metrics.get(metric)
-            if val is not None:
-                values.append(float(val))
+        if val is None and metric == "duration_s":
+            val = r.duration_s
+        if val is not None:
+            values.append(float(val))
     return values
 
 
@@ -89,12 +120,16 @@ def _get_paired_values(
     metric: str,
 ) -> tuple[list[float], list[float]]:
     """Get paired control/treatment values for a project, matched by iteration."""
-    control_by_iter = {}
-    treatment_by_iter = {}
+    control_by_iter: dict[int, float] = {}
+    treatment_by_iter: dict[int, float] = {}
     for r in results:
         if r.project != project:
             continue
-        val = r.metrics.get(metric)
+        val = r.events.get(metric)
+        if val is None:
+            val = r.metrics.get(metric)
+        if val is None and metric == "duration_s":
+            val = r.duration_s
         if val is None:
             continue
         if r.condition == "control":
@@ -194,17 +229,17 @@ def _effect_size_label(d: float | None) -> str:
         return "large"
 
 
-def analyze(results_dir: Path) -> dict:
-    """Run full statistical analysis and return results dict."""
-    results = load_results(results_dir)
-    if not results:
-        print(f"No results found in {results_dir}", file=sys.stderr)
-        return {}
+def _analyze_metric_set(
+    results: list[IterationResult],
+    projects: list[str],
+    metrics: list[str],
+    labels: dict[str, str],
+) -> tuple[dict, dict]:
+    """Analyze a set of metrics, returning (overall_metrics, per_project)."""
+    overall: dict = {}
+    per_project: dict = {}
 
-    projects = sorted({r.project for r in results})
-    analysis: dict = {"projects": projects, "metrics": {}, "per_project": {}}
-
-    for metric in METRICS:
+    for metric in metrics:
         control_vals = _get_values(results, "control", metric)
         treatment_vals = _get_values(results, "treatment", metric)
 
@@ -215,8 +250,8 @@ def analyze(results_dir: Path) -> dict:
             c_paired, t_paired = _get_paired_values(results, projects[0], metric)
             w_test = wilcoxon_test(c_paired, t_paired)
 
-        analysis["metrics"][metric] = {
-            "label": METRIC_LABELS.get(metric, metric),
+        overall[metric] = {
+            "label": labels.get(metric, metric),
             "control": descriptive_stats(control_vals),
             "treatment": descriptive_stats(treatment_vals),
             "cohens_d": d,
@@ -227,38 +262,71 @@ def analyze(results_dir: Path) -> dict:
 
     for project in projects:
         project_results = [r for r in results if r.project == project]
-        per_project: dict = {}
-        for metric in METRICS:
+        pp: dict = {}
+        for metric in metrics:
             c_vals = _get_values(project_results, "control", metric)
             t_vals = _get_values(project_results, "treatment", metric)
             c_paired, t_paired = _get_paired_values(results, project, metric)
             w = wilcoxon_test(c_paired, t_paired)
-            per_project[metric] = {
+            pp[metric] = {
                 "control": descriptive_stats(c_vals),
                 "treatment": descriptive_stats(t_vals),
                 "cohens_d": cohens_d(c_vals, t_vals),
                 "wilcoxon": {"statistic": w[0], "p_value": w[1]} if w else None,
             }
-        analysis["per_project"][project] = per_project
+        per_project[project] = pp
+
+    return overall, per_project
+
+
+def analyze(results_dir: Path) -> dict:
+    """Run full statistical analysis and return results dict."""
+    results = load_results(results_dir)
+    if not results:
+        print(f"No results found in {results_dir}", file=sys.stderr)
+        return {}
+
+    projects = sorted({r.project for r in results})
+
+    events_overall, events_per_project = _analyze_metric_set(
+        results, projects, EVENTS_METRICS, EVENTS_METRIC_LABELS
+    )
+    stream_overall, stream_per_project = _analyze_metric_set(
+        results, projects, STREAM_METRICS, STREAM_METRIC_LABELS
+    )
+
+    analysis: dict = {
+        "projects": projects,
+        "events_metrics": events_overall,
+        "stream_metrics": stream_overall,
+        "per_project_events": events_per_project,
+        "per_project_stream": stream_per_project,
+        # Backward-compat: "metrics" merges both (events first)
+        "metrics": {**events_overall, **stream_overall},
+        "per_project": {
+            p: {**events_per_project.get(p, {}), **stream_per_project.get(p, {})} for p in projects
+        },
+    }
 
     return analysis
 
 
-def generate_report(analysis: dict) -> str:
-    """Generate a markdown analysis report."""
-    lines = ["# Statefulness Eval — Analysis Report\n"]
-
-    lines.append("## Overall Results\n")
+def _render_metric_table(
+    lines: list[str],
+    metrics_data: dict,
+    metric_keys: list[str],
+    labels: dict[str, str],
+) -> None:
+    """Render a markdown table for a set of metrics."""
     lines.append(
         "| Metric | Control (mean ± sd) | Treatment (mean ± sd) | Cohen's d | Effect | 95% CI |"
     )
     lines.append(
         "|--------|--------------------|-----------------------|-----------|--------|--------|"
     )
-
-    for metric in METRICS:
-        data = analysis["metrics"].get(metric, {})
-        label = data.get("label", metric)
+    for metric in metric_keys:
+        data = metrics_data.get(metric, {})
+        label = data.get("label", labels.get(metric, metric))
         c = data.get("control", {})
         t = data.get("treatment", {})
 
@@ -272,20 +340,77 @@ def generate_report(analysis: dict) -> str:
 
         lines.append(f"| {label} | {c_str} | {t_str} | {d_str} | {effect} | {ci_str} |")
 
-    lines.append("\n## Per-Project Wilcoxon Signed-Rank Tests\n")
-    for project in analysis.get("projects", []):
+
+def _render_wilcoxon_table(
+    lines: list[str],
+    per_project_data: dict,
+    projects: list[str],
+    metric_keys: list[str],
+    labels: dict[str, str],
+) -> None:
+    """Render per-project Wilcoxon signed-rank test tables."""
+    for project in projects:
         lines.append(f"### {project}\n")
-        pp = analysis.get("per_project", {}).get(project, {})
+        pp = per_project_data.get(project, {})
         lines.append("| Metric | W statistic | p-value | Significant (α=0.05) |")
         lines.append("|--------|------------|---------|---------------------|")
-        for metric in METRICS:
-            label = METRIC_LABELS.get(metric, metric)
+        for metric in metric_keys:
+            label = labels.get(metric, metric)
             w = pp.get(metric, {}).get("wilcoxon")
             if w:
                 sig = "Yes" if w["p_value"] < 0.05 else "No"
                 lines.append(f"| {label} | {w['statistic']:.1f} | {w['p_value']:.4f} | {sig} |")
             else:
                 lines.append(f"| {label} | — | — | insufficient data |")
+
+
+def generate_report(analysis: dict) -> str:
+    """Generate a markdown analysis report."""
+    lines = ["# Statefulness Eval — Analysis Report\n"]
+
+    lines.append("## Events-Based Metrics (Primary)\n")
+    lines.append(
+        "These metrics come from `.factory/events.jsonl` and represent actual agent "
+        "orchestration activity observed during each CEO session.\n"
+    )
+    _render_metric_table(
+        lines,
+        analysis.get("events_metrics", {}),
+        EVENTS_METRICS,
+        EVENTS_METRIC_LABELS,
+    )
+
+    lines.append("\n## Per-Project Wilcoxon Tests — Events Metrics\n")
+    _render_wilcoxon_table(
+        lines,
+        analysis.get("per_project_events", {}),
+        analysis.get("projects", []),
+        EVENTS_METRICS,
+        EVENTS_METRIC_LABELS,
+    )
+
+    lines.append("\n---\n")
+    lines.append("## Stream-JSON Metrics (Deprecated)\n")
+    lines.append(
+        "These metrics were parsed from stdout stream-JSON. Since `factory ceo` is a Python "
+        "subprocess (not raw Claude Code), stdout is not structured JSONL — these are typically "
+        "all zeros.\n"
+    )
+    _render_metric_table(
+        lines,
+        analysis.get("stream_metrics", {}),
+        STREAM_METRICS,
+        STREAM_METRIC_LABELS,
+    )
+
+    lines.append("\n## Per-Project Wilcoxon Tests — Stream Metrics\n")
+    _render_wilcoxon_table(
+        lines,
+        analysis.get("per_project_stream", {}),
+        analysis.get("projects", []),
+        STREAM_METRICS,
+        STREAM_METRIC_LABELS,
+    )
 
     lines.append("\n## Interpretation Guide\n")
     lines.append("- **Cohen's d**: < 0.2 negligible, 0.2–0.5 small, 0.5–0.8 medium, > 0.8 large")

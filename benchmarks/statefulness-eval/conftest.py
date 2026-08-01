@@ -137,14 +137,40 @@ def parse_trace(stdout: str) -> TraceMetrics:
 
 
 def _count_events_since(project_path: str | Path, since_time: float) -> dict[str, Any]:
-    """Count agent events from events.jsonl written after since_time."""
+    """Count agent events from events.jsonl written after since_time.
+
+    Returns a dict with:
+    - agent_starts: number of agent.started events
+    - agent_completions: number of agent.completed events
+    - total_events: total number of events in the time window
+    - factory_reads: count of ceo.message events mentioning .factory/ file reads
+    - first_agent_delay_s: seconds from first event to first agent.started
+    - agents: list of completed agent details
+    - event_types: counter of event types seen
+    """
     events_path = Path(project_path) / ".factory" / "events.jsonl"
     if not events_path.is_file():
-        return {"agent_starts": 0, "agent_completions": 0, "agents": []}
+        return {
+            "agent_starts": 0,
+            "agent_completions": 0,
+            "total_events": 0,
+            "factory_reads": 0,
+            "first_agent_delay_s": None,
+            "agents": [],
+            "event_types": {},
+        }
+
+    from datetime import datetime
 
     agents: list[dict[str, Any]] = []
     starts = 0
     completions = 0
+    total_events = 0
+    factory_reads = 0
+    first_event_ts: float | None = None
+    first_agent_ts: float | None = None
+    event_type_counts: dict[str, int] = {}
+
     try:
         for raw_line in events_path.read_text().splitlines():
             if not raw_line.strip():
@@ -156,17 +182,24 @@ def _count_events_since(project_path: str | Path, since_time: float) -> dict[str
             ts_str = ev.get("timestamp", "")
             if not ts_str:
                 continue
-            from datetime import datetime
-
             try:
                 ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp()
             except (ValueError, TypeError):
                 continue
             if ts < since_time:
                 continue
+
+            total_events += 1
+            if first_event_ts is None:
+                first_event_ts = ts
+
             etype = ev.get("type", "")
+            event_type_counts[etype] = event_type_counts.get(etype, 0) + 1
+
             if etype == "agent.started":
                 starts += 1
+                if first_agent_ts is None:
+                    first_agent_ts = ts
             elif etype == "agent.completed":
                 completions += 1
                 agents.append(
@@ -175,9 +208,26 @@ def _count_events_since(project_path: str | Path, since_time: float) -> dict[str
                         "duration_s": ev.get("data", {}).get("duration_s"),
                     }
                 )
+            elif etype == "ceo.message":
+                msg = ev.get("data", {}).get("message", "")
+                if ".factory/" in msg:
+                    factory_reads += 1
     except OSError:
         pass
-    return {"agent_starts": starts, "agent_completions": completions, "agents": agents}
+
+    first_agent_delay: float | None = None
+    if first_event_ts is not None and first_agent_ts is not None:
+        first_agent_delay = round(first_agent_ts - first_event_ts, 2)
+
+    return {
+        "agent_starts": starts,
+        "agent_completions": completions,
+        "total_events": total_events,
+        "factory_reads": factory_reads,
+        "first_agent_delay_s": first_agent_delay,
+        "agents": agents,
+        "event_types": event_type_counts,
+    }
 
 
 def save_iteration_result(
