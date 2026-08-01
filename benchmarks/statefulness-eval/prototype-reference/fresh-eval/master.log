@@ -1,0 +1,14 @@
+[10:26:43] === STATEFULNESS FRESH-SESSION EVAL ===
+[10:26:43] Each iteration = FRESH claude session (new UUID, no --resume)
+[10:26:43] Between iterations: generate session_summary.md
+[10:26:43] Key question: does iter 2+ read session_summary.md instead of scattered files?
+[10:26:43] 
+[10:26:43] 
+[10:26:43] ══════════════════════════════════════
+[10:26:43] TASK: factory-ui
+[10:26:43] Project: /Users/mathale/factory-projects/factory-ui
+[10:26:43] Focus: dashboard rendering performance
+[10:26:43] ══════════════════════════════════════
+[10:26:43] 
+[10:26:43] ━━━ factory-ui | Iteration 1/5 ━━━
+[10:26:43]   [BEFORE] session_summary.md: no (0B)

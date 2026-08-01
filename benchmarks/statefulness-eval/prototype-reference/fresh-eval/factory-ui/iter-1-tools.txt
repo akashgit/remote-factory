@@ -1,0 +1,30 @@
+TOTAL_TOOL_CALLS=20
+FACTORY_READS=10
+TOOL_BREAKDOWN={'Read': 8, 'Bash': 7, 'TaskCreate': 4, 'TaskUpdate': 1}
+FACTORY_TARGETS=['/Users/mathale/factory-projects/factory-ui/.factory/state/session_summary.md', '/Users/mathale/factory-projects/factory-ui/.factory/strategy/current.md', '/Users/mathale/factory-projects/factory-ui/.factory/config.json', '/Users/mathale/factory-projects/factory-ui/.factory/last_eval.json', '/Users/mathale/factory-projects/factory-ui/.factory/strategy/backlog.md', 'tail -20 /Users/mathale/factory-projects/factory-ui/.factory/events.jsonl', '/Users/mathale/factory-projects/factory-ui/.factory/results.tsv', 'ls /Users/mathale/factory-projects/factory-ui/.factory/archive/experiments/', '/Users/mathale/factory-projects/factory-ui/.factory/archive/factory-ui.md', 'cat /Users/mathale/factory-projects/factory-ui/.factory/reviews/researcher-lates']
+
+--- All tool calls (ordered) ---
+    1. Read            /Users/mathale/factory-projects/factory-ui/.factory/state/session_summary.md [.factory/]
+    2. Read            /Users/mathale/factory-projects/factory-ui/skills/workflow-improve/SKILL.md
+    3. Read            /Users/mathale/factory-projects/factory-ui/.factory/strategy/current.md [.factory/]
+    4. Read            /Users/mathale/factory-projects/factory-ui/.factory/config.json [.factory/]
+    5. Read            /Users/mathale/factory-projects/factory-ui/.factory/last_eval.json [.factory/]
+    6. Read            /Users/mathale/factory-projects/factory-ui/.factory/strategy/backlog.md [.factory/]
+    7. Bash            tail -20 /Users/mathale/factory-projects/factory-ui/.factory/events.jsonl [.factory/]
+    8. Bash            gh issue list --state open --limit 10 2>/dev/null; gh pr list --state open --limit 10 2>/dev/null
+    9. Read            /Users/mathale/factory-projects/factory-ui/.factory/results.tsv [.factory/]
+   10. Bash            ls /Users/mathale/factory-projects/factory-ui/.factory/archive/experiments/ [.factory/]
+   11. Read            /Users/mathale/factory-projects/factory-ui/.factory/archive/factory-ui.md [.factory/]
+   12. TaskCreate      {"subject": "Observe \u2014 local study + Researcher", "description": "Run factory study and spawn R
+   13. TaskCreate      {"subject": "Hypothesize \u2014 Strategist agent", "description": "Generate hypotheses that improve 
+   14. TaskCreate      {"subject": "Execute \u2014 Builder + Review + Eval", "description": "Execute approved hypotheses th
+   15. TaskCreate      {"subject": "Final Archive & Summary", "description": "Run final Archivist archive (blocking) and su
+   16. TaskUpdate      {"taskId": "1", "status": "in_progress"}
+   17. Bash            factory study . 2>&1 | tail -60
+   18. Bash            PROJECT_PATH="/Users/mathale/factory-projects/factory-ui"
+
+factory agent researcher --task "Analyze the factory-ui proje
+   19. Bash            cat /Users/mathale/factory-projects/factory-ui/.factory/reviews/researcher-latest.md [.factory/]
+   20. Bash            PROJECT_PATH="/Users/mathale/factory-projects/factory-ui"
+
+factory agent researcher --task "Read eval/score.py and analy

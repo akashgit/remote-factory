@@ -1,0 +1,23 @@
+TOTAL_TOOL_CALLS=16
+FACTORY_READS=4
+TOOL_BREAKDOWN={'Bash': 10, 'Read': 1, 'TaskCreate': 4, 'TaskUpdate': 1}
+FACTORY_TARGETS=['cat /Users/mathale/redhat-projects/remote-factory/.factory/state/session_summary', 'cat /Users/mathale/redhat-projects/remote-factory/.factory/strategy/current.md 2', 'cat /Users/mathale/redhat-projects/remote-factory/.factory/config.json 2>/dev/nu', 'cat /Users/mathale/redhat-projects/remote-factory/.factory/strategy/backlog.md 2']
+
+--- All tool calls (ordered) ---
+    1. Bash            cat /Users/mathale/redhat-projects/remote-factory/.factory/state/session_summary.md 2>/dev/null || echo "NO_SESSION_SUMM [.factory/]
+    2. Read            /Users/mathale/redhat-projects/remote-factory/skills/workflow-improve/SKILL.md
+    3. Bash            factory detect .
+    4. Bash            find /Users/mathale/redhat-projects/remote-factory/skills/workflow-improve -type f 2>/dev/null || echo "NOT_FOUND"
+    5. Bash            cat /Users/mathale/redhat-projects/remote-factory/.factory/strategy/current.md 2>/dev/null || echo "NO_STRATEGY" [.factory/]
+    6. Bash            factory history . 2>/dev/null | tail -20
+    7. Bash            cat /Users/mathale/redhat-projects/remote-factory/.factory/config.json 2>/dev/null | python3 -m json.tool 2>/dev/null |  [.factory/]
+    8. Bash            gh issue list --state open --repo mathale/remote-factory 2>/dev/null | head -10 || echo "NO_ISSUES"
+    9. Bash            cat /Users/mathale/redhat-projects/remote-factory/.factory/strategy/backlog.md 2>/dev/null || echo "NO_BACKLOG" [.factory/]
+   10. TaskCreate      {"subject": "Observe \u2014 local study + Researcher", "description": "Run factory study and spawn t
+   11. TaskCreate      {"subject": "Hypothesize \u2014 Strategist agent", "description": "Send observations to the Strategi
+   12. TaskCreate      {"subject": "Execute \u2014 Builder + Review + Eval", "description": "Execute approved hypotheses: B
+   13. TaskCreate      {"subject": "Final Archive & Summary", "description": "Run the final blocking archive and summarize 
+   14. TaskUpdate      {"taskId": "1", "status": "in_progress"}
+   15. Bash            factory study . 2>&1 | tail -30
+   16. Bash            PROJECT_PATH="/Users/mathale/redhat-projects/remote-factory"
+factory agent researcher --task "FOCUS: Agent timeout error

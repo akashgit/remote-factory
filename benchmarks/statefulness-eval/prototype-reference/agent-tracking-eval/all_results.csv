@@ -1,0 +1,10 @@
+task,iteration,exit_code,duration_s,new_events,agents_started,agents_completed,has_strategy,has_config,src_files,pr_count
+weather,1,142,120,9,"researcher,researcher,researcher,researcher","",yes,no,0,0
+weather,2,142,120,12,"researcher,researcher,researcher,researcher","researcher,researcher",yes,no,0,0
+weather,3,142,120,9,"researcher,researcher,researcher","researcher",yes,no,0,0
+weather,4,142,120,15,"researcher,researcher,researcher,researcher,strategist","researcher,researcher,researcher,researcher",yes,no,0,0
+weather,5,142,120,13,"strategist","researcher,researcher,researcher,strategist",yes,no,0,0
+todo,1,142,121,9,"researcher,researcher,researcher","",yes,no,0,0
+todo,2,142,120,9,"researcher,researcher,researcher","researcher",yes,no,0,0
+todo,3,142,120,10,"researcher,researcher,researcher","researcher,researcher",yes,no,0,0
+todo,4,142,120,10,"strategist,researcher,researcher,researcher","researcher",yes,no,0,0

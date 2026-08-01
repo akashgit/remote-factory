@@ -1,0 +1,10 @@
+task,iteration,exit_code,duration_s,output_lines,src_files,loc,total_files,tool_calls
+weather-cli,1,0,118,141,792,296052,1292,"none_detected"
+weather-cli,2,142,120,107,792,296278,1292,"none_detected"
+weather-cli,3,0,60,58,792,296278,1293,"none_detected"
+weather-cli,4,142,120,93,792,296396,1294,"none_detected"
+weather-cli,5,0,70,79,792,296398,1294,"none_detected"
+todo-cli,1,142,120,100,536,184519,602,"none_detected"
+todo-cli,2,0,69,66,649,234295,935,"none_detected"
+todo-cli,3,0,18,35,649,234295,935,"none_detected"
+todo-cli,4,0,102,148,649,234479,935,"none_detected"
