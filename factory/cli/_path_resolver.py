@@ -238,6 +238,45 @@ def _resolve_focus_issue(
     return issue_spec.title, context, issue_spec.number, issue_spec.url
 
 
+def _resolve_focus_issues(
+    focus: str,
+    project_path: Path,
+) -> list[tuple[str, str, int, str]] | None:
+    """If *focus* contains one or more issue refs, fetch each and return a list of results.
+
+    Each element is ``(title, context, number, url)``. All specs are concatenated
+    and written to ``.factory/strategy/current.md``. Returns ``None`` when *focus*
+    is plain text with no issue refs.
+    """
+    from factory.issue import parse_multi_issue_refs
+
+    refs = parse_multi_issue_refs(focus)
+    if not refs:
+        return None
+
+    from factory.issue import fetch_issue, format_issue_as_spec
+
+    results: list[tuple[str, str, int, str]] = []
+    spec_parts: list[str] = []
+    for ref in refs:
+        issue_spec = fetch_issue(ref, project_path)
+        context = format_issue_as_spec(issue_spec)
+        results.append((issue_spec.title, context, issue_spec.number, issue_spec.url))
+        spec_parts.append(context)
+
+    strategy_dir = project_path / ".factory" / "strategy"
+    strategy_dir.mkdir(parents=True, exist_ok=True)
+    separator = "\n\n---\n\n"
+    combined = separator.join(spec_parts)
+    (strategy_dir / "current.md").write_text(f"## Project Specification\n\n{combined}\n")
+    issue_labels = ", ".join(f"#{r[2]}" for r in results)
+    print(
+        f"  Issues: {issue_labels} → .factory/strategy/current.md",
+        file=sys.stderr,
+    )
+    return results
+
+
 def _derive_session_name(
     *,
     focus: str | None = None,

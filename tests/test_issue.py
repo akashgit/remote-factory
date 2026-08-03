@@ -13,9 +13,11 @@ from factory.issue import (
     IssueSpec,
     fetch_issue,
     format_issue_as_spec,
+    has_multi_issue_refs,
     infer_remote,
     is_issue_ref,
     parse_issue_ref,
+    parse_multi_issue_refs,
 )
 
 
@@ -436,3 +438,209 @@ class TestCmdRunFocusNoGithub:
 
             code = main()
         assert code == 1
+
+
+# ── parse_multi_issue_refs ───────────────────────────────────
+
+
+class TestParseMultiIssueRefs:
+    def test_and_separator(self) -> None:
+        assert parse_multi_issue_refs("111 and 112") == ["111", "112"]
+
+    def test_issue_keyword_and(self) -> None:
+        assert parse_multi_issue_refs("issue 111 and issue 112") == ["111", "112"]
+
+    def test_hash_prefix(self) -> None:
+        assert parse_multi_issue_refs("#111 #112") == ["111", "112"]
+
+    def test_comma_no_space(self) -> None:
+        assert parse_multi_issue_refs("111,112") == ["111", "112"]
+
+    def test_comma_with_space(self) -> None:
+        assert parse_multi_issue_refs("111, 112") == ["111", "112"]
+
+    def test_space_separated(self) -> None:
+        assert parse_multi_issue_refs("111 112") == ["111", "112"]
+
+    def test_single_ref(self) -> None:
+        assert parse_multi_issue_refs("42") == ["42"]
+
+    def test_plain_text_returns_empty(self) -> None:
+        assert parse_multi_issue_refs("dashboard UI") == []
+
+    def test_owner_repo_shorthand_pair(self) -> None:
+        result = parse_multi_issue_refs("owner/repo#111 owner/repo#112")
+        assert result == ["owner/repo#111", "owner/repo#112"]
+
+    def test_mixed_bare_and_url(self) -> None:
+        result = parse_multi_issue_refs("111 and https://github.com/o/r/issues/112")
+        assert result == ["111", "https://github.com/o/r/issues/112"]
+
+    def test_empty_string(self) -> None:
+        assert parse_multi_issue_refs("") == []
+
+    def test_whitespace_only(self) -> None:
+        assert parse_multi_issue_refs("   ") == []
+
+    def test_freeform_with_number(self) -> None:
+        assert parse_multi_issue_refs("fix issue 42 in the dashboard") == []
+
+    def test_three_issues(self) -> None:
+        assert parse_multi_issue_refs("1, 2, 3") == ["1", "2", "3"]
+
+    def test_hash_prefix_single(self) -> None:
+        assert parse_multi_issue_refs("#42") == ["42"]
+
+    def test_issue_keyword_single(self) -> None:
+        assert parse_multi_issue_refs("issue 42") == ["42"]
+
+
+# ── has_multi_issue_refs ─────────────────────────────────────
+
+
+class TestHasMultiIssueRefs:
+    def test_true_for_multi(self) -> None:
+        assert has_multi_issue_refs("111 and 112") is True
+
+    def test_true_for_single(self) -> None:
+        assert has_multi_issue_refs("42") is True
+
+    def test_false_for_plain_text(self) -> None:
+        assert has_multi_issue_refs("dashboard UI") is False
+
+    def test_false_for_empty(self) -> None:
+        assert has_multi_issue_refs("") is False
+
+
+# ── _resolve_focus_issues integration ────────────────────────
+
+
+class TestResolveFocusIssues:
+    """Test that _resolve_focus_issues fetches multiple issues and writes combined spec."""
+
+    def test_single_issue(self) -> None:
+        from factory.cli._path_resolver import _resolve_focus_issues
+
+        gh_response = json.dumps({
+            "number": 42,
+            "title": "Add widgets",
+            "body": "Details.",
+            "labels": [],
+            "url": "https://github.com/org/repo/issues/42",
+        })
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run") as mock_run,
+            patch("pathlib.Path.mkdir"),
+            patch("pathlib.Path.write_text"),
+        ):
+            mock_run.return_value = subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=gh_response, stderr="",
+            )
+            result = _resolve_focus_issues("42", Path("/tmp/fake"))
+
+        assert result is not None
+        assert len(result) == 1
+        assert result[0][2] == 42
+
+    def test_multi_issues(self) -> None:
+        from factory.cli._path_resolver import _resolve_focus_issues
+
+        responses = [
+            json.dumps({
+                "number": 111,
+                "title": "First issue",
+                "body": "Body 1.",
+                "labels": [],
+                "url": "https://github.com/org/repo/issues/111",
+            }),
+            json.dumps({
+                "number": 112,
+                "title": "Second issue",
+                "body": "Body 2.",
+                "labels": [],
+                "url": "https://github.com/org/repo/issues/112",
+            }),
+        ]
+        call_count = 0
+
+        def fake_run(*a: object, **kw: object) -> subprocess.CompletedProcess[str]:
+            nonlocal call_count
+            resp = responses[call_count]
+            call_count += 1
+            return subprocess.CompletedProcess(args=[], returncode=0, stdout=resp, stderr="")
+
+        with (
+            patch("factory.issue.infer_remote", return_value=("github", "org/repo")),
+            patch("factory.issue.subprocess.run", side_effect=fake_run),
+            patch("pathlib.Path.mkdir"),
+            patch("pathlib.Path.write_text") as mock_write,
+        ):
+            result = _resolve_focus_issues("111 and 112", Path("/tmp/fake"))
+
+        assert result is not None
+        assert len(result) == 2
+        assert result[0][2] == 111
+        assert result[1][2] == 112
+        written = mock_write.call_args[0][0]
+        assert "First issue" in written
+        assert "Second issue" in written
+        assert "---" in written
+
+    def test_plain_text_returns_none(self) -> None:
+        from factory.cli._path_resolver import _resolve_focus_issues
+
+        result = _resolve_focus_issues("dashboard UI", Path("/tmp/fake"))
+        assert result is None
+
+
+# ── _build_ceo_task multi-issue ──────────────────────────────
+
+
+class TestBuildCeoTaskMultiIssue:
+    """Test that _build_ceo_task embeds multi-issue metadata correctly."""
+
+    def test_multi_issue_focus_directive(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="First (issue #111) + Second (issue #112)",
+            issue_numbers=[111, 112],
+            issue_urls=[
+                "https://github.com/org/repo/issues/111",
+                "https://github.com/org/repo/issues/112",
+            ],
+        )
+        assert "## Focus Directive (Targeted Mode)" in task
+        assert "These targets are from issues" in task
+        assert "#111" in task
+        assert "#112" in task
+        assert "## Issue Tracking" in task
+        assert "--issue 111" in task
+        assert "--issue 112" in task
+
+    def test_single_issue_still_works(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="Add widgets (issue #42)",
+            issue_number=42,
+            issue_url="https://github.com/org/repo/issues/42",
+        )
+        assert "This target is from issue #42" in task
+        assert "## Issue Tracking" in task
+        assert "--issue 42" in task
+
+    def test_empty_issue_numbers_uses_single(self) -> None:
+        from factory.cli._task_builder import _build_ceo_task
+
+        task = _build_ceo_task(
+            Path("/tmp/fake"), "improve",
+            focus="Add widgets (issue #42)",
+            issue_number=42,
+            issue_numbers=[],
+            issue_urls=[],
+        )
+        assert "This target is from issue #42" in task

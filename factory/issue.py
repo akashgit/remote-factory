@@ -175,6 +175,73 @@ def is_issue_ref(ref: str) -> bool:
     return False
 
 
+_NOISE_WORDS = frozenset({"issue", "issues", "and"})
+
+
+def parse_multi_issue_refs(text: str) -> list[str]:
+    """Extract multiple issue references from a single ``--focus`` string.
+
+    Splits on commas, "and", and whitespace, strips noise words
+    (``issue``, ``and``, ``#`` prefix on bare numbers). Returns a list
+    of individual refs that each pass ``is_issue_ref()``.
+
+    Only activates when ALL non-noise tokens are valid issue refs —
+    freeform text like ``"dashboard UI"`` returns an empty list.
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    parts = re.split(r"[,]+", text)
+
+    tokens: list[str] = []
+    for part in parts:
+        sub_tokens = part.strip().split()
+        i = 0
+        while i < len(sub_tokens):
+            token = sub_tokens[i].strip()
+            if not token or token.lower() in _NOISE_WORDS:
+                i += 1
+                continue
+            if token.startswith("#") and token[1:].isdigit():
+                tokens.append(token[1:])
+                i += 1
+                continue
+            if "/" in token and "#" not in token and not token.startswith("http"):
+                maybe_shorthand = []
+                while i < len(sub_tokens):
+                    maybe_shorthand.append(sub_tokens[i].strip())
+                    combined = " ".join(maybe_shorthand)
+                    if is_issue_ref(combined):
+                        tokens.append(combined)
+                        i += 1
+                        break
+                    i += 1
+                else:
+                    return []
+                continue
+            if token.startswith("http"):
+                tokens.append(token)
+                i += 1
+                continue
+            tokens.append(token)
+            i += 1
+
+    if not tokens:
+        return []
+
+    for t in tokens:
+        if not is_issue_ref(t):
+            return []
+
+    return tokens
+
+
+def has_multi_issue_refs(text: str) -> bool:
+    """Return True when *text* contains one or more parseable issue refs."""
+    return len(parse_multi_issue_refs(text)) > 0
+
+
 def format_issue_as_spec(spec: IssueSpec) -> str:
     """Format an ``IssueSpec`` as a markdown build specification."""
     lines = [f"# {spec.title}", ""]

@@ -31,7 +31,7 @@ from factory.cli._mode_handlers import (
 from factory.cli._path_resolver import (
     _materialize_project,
     _read_prompt_file,
-    _resolve_focus_issue,
+    _resolve_focus_issues,
     _resolve_input,
 )
 from factory.cli._task_builder import _build_ceo_task
@@ -68,6 +68,8 @@ def _run_single_cycle(
     model: str | None = None,
     issue_number: int | None = None,
     issue_url: str | None = None,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
     use_profile: bool = False,
     clean_pr: bool = False,
     tmux_persist: bool = False,
@@ -125,6 +127,8 @@ def _run_single_cycle(
             messages=pending,
             issue_number=issue_number,
             issue_url=issue_url,
+            issue_numbers=issue_numbers,
+            issue_urls=issue_urls,
             clean_pr=clean_pr,
         )
 
@@ -238,6 +242,8 @@ def _run_heartbeat_loop(
     model: str | None,
     issue_number: int | None,
     issue_url: str | None,
+    issue_numbers: list[int] | None,
+    issue_urls: list[str] | None,
     use_profile_flag: bool,
     clean_pr_resolved: bool,
     tmux_persist: bool,
@@ -280,6 +286,8 @@ def _run_heartbeat_loop(
                 model=model,
                 issue_number=issue_number,
                 issue_url=issue_url,
+                issue_numbers=issue_numbers,
+                issue_urls=issue_urls,
                 use_profile=use_profile_flag,
                 clean_pr=clean_pr_resolved,
                 tmux_persist=tmux_persist,
@@ -371,20 +379,31 @@ def cmd_run(args: argparse.Namespace) -> int:
         context = _read_prompt_file(project_path, prompt_file)
     issue_number: int | None = None
     issue_url: str | None = None
+    issue_numbers: list[int] = []
+    issue_urls: list[str] = []
     if focus:
-        from factory.issue import is_issue_ref
+        from factory.issue import has_multi_issue_refs
 
-        if is_issue_ref(focus) and no_github:
+        if has_multi_issue_refs(focus) and no_github:
             print(
                 "Error: --focus resolved to an issue reference, but --no-github is set. "
                 "Issue fetching requires GitHub/GitLab CLI access.",
                 file=sys.stderr,
             )
             return 1
-        issue_resolved = _resolve_focus_issue(focus, project_path)
-        if issue_resolved:
-            title, context, issue_number, issue_url = issue_resolved
-            focus = f"{title} (issue #{issue_number})"
+        multi_resolved = _resolve_focus_issues(focus, project_path)
+        if multi_resolved:
+            if len(multi_resolved) == 1:
+                title, context, issue_number, issue_url = multi_resolved[0]
+                focus = f"{title} (issue #{issue_number})"
+            else:
+                parts = []
+                for title, ctx, num, url in multi_resolved:
+                    parts.append(f"{title} (issue #{num})")
+                    issue_numbers.append(num)
+                    issue_urls.append(url)
+                focus = " + ".join(parts)
+                context = None
     mode = getattr(args, "mode", "auto")
     warn_deprecated_mode(mode)
     force_fresh = mode == "auto-fresh"
@@ -462,6 +481,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             model=model,
             issue_number=issue_number,
             issue_url=issue_url,
+            issue_numbers=issue_numbers,
+            issue_urls=issue_urls,
             use_profile=use_profile_flag,
             clean_pr=clean_pr_resolved,
             tmux_persist=tmux_persist,
@@ -502,6 +523,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         model=model,
         issue_number=issue_number,
         issue_url=issue_url,
+        issue_numbers=issue_numbers,
+        issue_urls=issue_urls,
         use_profile_flag=use_profile_flag,
         clean_pr_resolved=clean_pr_resolved,
         tmux_persist=tmux_persist,

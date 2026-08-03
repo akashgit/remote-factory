@@ -344,8 +344,10 @@ def _execute_ceo(
     refine_request: str | None,
     issue_number: int | None,
     issue_url: str | None,
-    no_github: bool,
-    raw_path: str,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
+    no_github: bool = False,
+    raw_path: str = "",
 ) -> int:
     """Set up worktree, build task, and run the CEO agent."""
     from factory.agents.runner import begin_cycle_session, complete_cycle_session, resolve_prompt
@@ -466,6 +468,8 @@ def _execute_ceo(
         messages=pending,
         issue_number=issue_number,
         issue_url=issue_url,
+        issue_numbers=issue_numbers,
+        issue_urls=issue_urls,
         refine_request=refine_request,
         clean_pr=clean_pr_resolved,
         display_mode=banner_mode,

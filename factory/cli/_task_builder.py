@@ -25,6 +25,8 @@ def _build_ceo_task(
     messages: list[Message] | None = None,
     issue_number: int | None = None,
     issue_url: str | None = None,
+    issue_numbers: list[int] | None = None,
+    issue_urls: list[str] | None = None,
     refine_request: str | None = None,
     clean_pr: bool = False,
     display_mode: str | None = None,
@@ -151,9 +153,23 @@ def _build_ceo_task(
             f"execute exactly what it describes. Do not infer or improvise beyond what the prompt asks for."
         )
 
+    _issue_numbers = issue_numbers or []
+    _issue_urls = issue_urls or []
     if focus and not create_description:
         task += f"\n\n## Focus Directive (Targeted Mode)\n\nTarget: {focus}\n\n"
-        if issue_number:
+        if _issue_numbers:
+            issue_labels = []
+            for i, num in enumerate(_issue_numbers):
+                label = f"#{num}"
+                if i < len(_issue_urls) and _issue_urls[i]:
+                    label += f" ({_issue_urls[i]})"
+                issue_labels.append(label)
+            task += (
+                f"These targets are from issues {', '.join(issue_labels)}. "
+                f"All issue specs have been written to `.factory/strategy/current.md`. "
+                f"Read it for the complete requirements.\n\n"
+            )
+        elif issue_number:
             issue_label = f"#{issue_number}"
             if issue_url:
                 issue_label += f" ({issue_url})"
@@ -169,7 +185,15 @@ def _build_ceo_task(
             "After this single experiment completes (keep or revert), skip to final archival. "
             "Do not loop back for more hypotheses.\n"
         )
-        if issue_number:
+        if _issue_numbers:
+            nums_str = ", ".join(f"#{n}" for n in _issue_numbers)
+            finalize_flags = " ".join(f"--issue {n}" for n in _issue_numbers)
+            task += (
+                f"\n## Issue Tracking\n\n"
+                f"This cycle is working on issues {nums_str}. "
+                f"When finalizing, pass `{finalize_flags}` to `factory finalize`."
+            )
+        elif issue_number:
             task += (
                 f"\n## Issue Tracking\n\n"
                 f"This cycle is working on issue #{issue_number}. "
