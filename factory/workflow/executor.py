@@ -82,11 +82,13 @@ class WorkflowExecutor:
         agent_pool: dict[str, AgentConfig] | None = None,
         *,
         dry_run: bool = False,
+        auto_approve: bool = False,
     ) -> None:
         self.workflow = workflow
         self.project_path = project_path
         self.agent_pool = agent_pool or {}
         self.dry_run = dry_run
+        self.auto_approve = auto_approve
         self.run_id = uuid.uuid4().hex[:12]
         self.completed_files: set[str] = set()
         self.node_context: dict[str, str] = {}
@@ -824,6 +826,8 @@ class WorkflowExecutor:
             return Verdict.proceed()
 
         if node.evaluator_type == "user":
+            if self.auto_approve:
+                log.info("gate.auto_approved", gate_id=node.id, workflow=self.workflow.name)
             return Verdict.proceed()
 
         if node.evaluator_type == "fn":

@@ -36,7 +36,7 @@ def cmd_ceo(args: argparse.Namespace) -> int:
     validated = _validate_ceo_flags(args)
     if isinstance(validated, int):
         return validated
-    mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request = validated
+    mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve = validated
 
     assert raw_path is not None
 

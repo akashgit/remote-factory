@@ -352,3 +352,56 @@ class TestErrorHandling:
 
         assert result.halted
         assert "failed" in result.halt_reason.lower()
+
+
+# ── Auto-approve ────────────────────────────────────────────────
+
+
+class TestAutoApprove:
+    async def test_executor_auto_approve_logs(self, tmp_project: Path) -> None:
+        """WorkflowExecutor(auto_approve=True) logs gate.auto_approved for user gates."""
+        wf = Workflow(
+            name="auto_approve_test",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, auto_approve=True)
+        result = await executor.execute()
+
+        assert result.success
+        gate_events = [e for e in result.events if e["type"] == "gate.verdict"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["verdict_type"] == VerdictType.PROCEED
+
+    async def test_executor_default_still_proceeds(self, tmp_project: Path) -> None:
+        """WorkflowExecutor(auto_approve=False) still proceeds through user gates."""
+        wf = Workflow(
+            name="default_user_gate",
+            nodes={
+                "a": FnNode(id="a", command="echo a", writes={"a.txt"}),
+                "gate": GateNode(id="gate", evaluator_type="user", reads={"a.txt"}),
+                "b": FnNode(id="b", command="echo b", writes={"b.txt"}),
+            },
+            edges=[
+                Edge(source="a", target="gate"),
+                Edge(source="gate", target="b", condition=VerdictType.PROCEED),
+            ],
+            start_node="a",
+        )
+
+        executor = WorkflowExecutor(wf, tmp_project, dry_run=True, auto_approve=False)
+        result = await executor.execute()
+
+        assert result.success
+        gate_events = [e for e in result.events if e["type"] == "gate.verdict"]
+        assert len(gate_events) == 1
+        assert gate_events[0]["verdict_type"] == VerdictType.PROCEED

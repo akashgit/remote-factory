@@ -13,6 +13,7 @@ from pathlib import Path
 
 from factory.cli._ceo_dispatch import _start_ceo_tailer, _stop_ceo_tailer
 from factory.cli._helpers import (
+    _emit_cli_event,
     _ensure_dashboard,
     _print_banner,
     _read_target_branch,
@@ -51,7 +52,7 @@ log = structlog.get_logger()
 
 def _validate_ceo_flags(
     args: argparse.Namespace,
-) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None] | int:
+) -> tuple[str, bool, bool, bool, str | None, str | None, str | None, str | None, bool] | int:
     """Validate and resolve top-level CLI flags. Returns parsed values or an error code."""
     mode: str = getattr(args, "mode", "auto")
     if mode == "interactive":
@@ -66,6 +67,11 @@ def _validate_ceo_flags(
     prompt_file: str | None = getattr(args, "prompt", None)
     focus: str | None = getattr(args, "focus", None)
     dir_name: str | None = getattr(args, "dir", None)
+    auto_approve: bool = getattr(args, "auto_approve", False)
+
+    if auto_approve and mode != "design":
+        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+        return 1
 
     raw_path = getattr(args, "path", None)
     if not raw_path:
@@ -102,7 +108,9 @@ def _validate_ceo_flags(
     )
 
     if mode == "design":
-        if headless:
+        if auto_approve:
+            headless = True
+        elif headless:
             flag = "--bg" if bg else "--headless"
             print(
                 f"Error: --mode design requires foreground mode (incompatible with {flag})",
@@ -149,7 +157,7 @@ def _validate_ceo_flags(
         )
         return 1
 
-    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request)
+    return (mode, headless, bg, bg_agents, prompt_file, focus, dir_name, refine_request, auto_approve)
 
 
 # ── project resolution ────────────────────────────────────────
@@ -397,6 +405,10 @@ def _execute_ceo(
         wt_branch = None
     else:
         wt_path, wt_branch = create_worktree(project_path, base_branch, run_id=run_id)
+
+    auto_approve = getattr(args, "auto_approve", False)
+    if auto_approve:
+        _emit_cli_event(wt_path, "auto_approve.enabled", {"mode": mode})
 
     from factory.skill_cache import ensure_skills
 

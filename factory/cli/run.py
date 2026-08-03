@@ -387,6 +387,10 @@ def cmd_run(args: argparse.Namespace) -> int:
             focus = f"{title} (issue #{issue_number})"
     mode = getattr(args, "mode", "auto")
     warn_deprecated_mode(mode)
+    auto_approve: bool = getattr(args, "auto_approve", False)
+    if auto_approve and mode != "design":
+        print("Error: --auto-approve only applies to --mode design", file=sys.stderr)
+        return 1
     force_fresh = mode == "auto-fresh"
     if mode in ("auto", "auto-fresh"):
         mode = _auto_detect_mode(
