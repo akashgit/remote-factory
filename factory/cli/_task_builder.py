@@ -8,6 +8,66 @@ if TYPE_CHECKING:
     from factory.messages import Message
 
 
+def _mode_suffix(mode: str, discover_only: bool) -> str:
+    _SIMPLE_MODE_SUFFIXES = {
+        "build": (
+            "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
+            "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
+            "(B3-B6): Build phases → E2E verification. "
+            "Do NOT skip to Improve mode — the project needs to be built first. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
+        "meta": (
+            "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
+            "on this project (experiments, keep/revert decisions). Then run ACE playbook "
+            "evolution for all agent roles using cross-project experiment data. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
+        "research": (
+            "\n\nRun Research mode: the project has a research target defined in factory.md. "
+            "Read the research_target from config.json to understand the objective, metric, "
+            "target value, and run command. Each cycle: form a hypothesis to improve the "
+            "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
+            "untouched), run the research command, compare results against the target, and "
+            "make a keep/revert decision. Respect research_constraints and cost_budget. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
+        "create": (
+            "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
+            "CLI wiring + tests) from the user's description above. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
+        "founder": (
+            "\n\nRun Founder mode: rapid prototyping — one hypothesis, one build, "
+            "minimal verification. Pick the highest-leverage idea, prototype it fast, "
+            "run tests once. No research, no code review, no adversarial QA, no eval "
+            "scoring. Record the experiment and stop. This is NOT production-quality — "
+            "run --mode improve afterward to harden what works. "
+            "The full step-by-step playbook is in your system prompt above."
+        ),
+    }
+    if mode == "discover":
+        if discover_only:
+            return (
+                "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+                "and generate the eval harness. Then complete Review mode to initialize the "
+                "factory. Do NOT run the Improve loop."
+            )
+        return (
+            "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
+            "and generate the eval harness. Then complete Review mode: verify the eval "
+            "harness works, mark as reviewed, and initialize the factory. "
+            "After initialization, proceed to Improve mode for one experiment cycle."
+        )
+    if mode in _SIMPLE_MODE_SUFFIXES:
+        return _SIMPLE_MODE_SUFFIXES[mode]
+    return (
+        f"\n\nRun {mode} mode. Follow the step-by-step playbook in your system prompt "
+        f"exactly as written — do not add additional steps, research, or ceremony "
+        f"beyond what the playbook describes."
+    )
+
+
 def _build_ceo_task(
     project_path: Path,
     mode: str,
@@ -203,66 +263,7 @@ def _build_ceo_task(
     if context:
         task += f"\n\n## Project Specification\n\n{context}"
 
-    if mode == "build":
-        task += (
-            "\n\nRun Build mode: the project is new or incomplete. Run the Plan Loop "
-            "(P0-P3) to produce an approved build plan, then follow the Build pipeline "
-            "(B3-B6): Build phases → E2E verification. "
-            "Do NOT skip to Improve mode — the project needs to be built first. "
-            "The full step-by-step playbook is in your system prompt above."
-        )
-    elif mode == "discover":
-        if discover_only:
-            task += (
-                "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
-                "and generate the eval harness. Then complete Review mode to initialize the "
-                "factory. Do NOT run the Improve loop."
-            )
-        else:
-            task += (
-                "\n\nRun Discover mode: introspect the project, auto-detect eval dimensions, "
-                "and generate the eval harness. Then complete Review mode: verify the eval "
-                "harness works, mark as reviewed, and initialize the factory. "
-                "After initialization, proceed to Improve mode for one experiment cycle."
-            )
-    elif mode == "meta":
-        task += (
-            "\n\nRun Meta mode: full self-improvement. First, run the complete Improve loop "
-            "on this project (experiments, keep/revert decisions). Then run ACE playbook "
-            "evolution for all agent roles using cross-project experiment data. "
-            "The full step-by-step playbook is in your system prompt above."
-        )
-    elif mode == "research":
-        task += (
-            "\n\nRun Research mode: the project has a research target defined in factory.md. "
-            "Read the research_target from config.json to understand the objective, metric, "
-            "target value, and run command. Each cycle: form a hypothesis to improve the "
-            "metric, implement the change within mutable_surfaces only (leave fixed_surfaces "
-            "untouched), run the research command, compare results against the target, and "
-            "make a keep/revert decision. Respect research_constraints and cost_budget. "
-            "The full step-by-step playbook is in your system prompt above."
-        )
-    elif mode == "create":
-        task += (
-            "\n\nRun Create mode: this mode creates a new factory mode (workflow + skill + "
-            "CLI wiring + tests) from the user's description above. "
-            "The full step-by-step playbook is in your system prompt above."
-        )
-    elif mode == "founder":
-        task += (
-            "\n\nRun Founder mode: rapid prototyping — one hypothesis, one build, "
-            "minimal verification. Pick the highest-leverage idea, prototype it fast, "
-            "run tests once. No research, no code review, no adversarial QA, no eval "
-            "scoring. Record the experiment and stop. This is NOT production-quality — "
-            "run --mode improve afterward to harden what works. "
-            "The full step-by-step playbook is in your system prompt above."
-        )
-    else:
-        task += (
-            f"\n\nRun {mode} mode. Follow the step-by-step playbook in your system prompt "
-            f"exactly as written — do not add additional steps, research, or ceremony "
-            f"beyond what the playbook describes."
-        )
+    task += _mode_suffix(mode, discover_only)
 
     if no_github:
         task += (

@@ -417,20 +417,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
-    clean_pr_flag = getattr(args, "clean_pr", None)
     no_worktree = getattr(args, "no_worktree", False)
-    if clean_pr_flag is not None:
-        clean_pr_resolved = clean_pr_flag
-    else:
-        config_path = project_path / ".factory" / "config.json"
-        if config_path.exists():
-            try:
-                _cfg = json.loads(config_path.read_text())
-                clean_pr_resolved = bool(_cfg.get("clean_pr", False))
-            except (json.JSONDecodeError, OSError):
-                clean_pr_resolved = False
-        else:
-            clean_pr_resolved = False
+    clean_pr_resolved = _resolve_clean_pr(args, project_path)
 
     _print_banner(mode)
     _ensure_dashboard(project_path)
