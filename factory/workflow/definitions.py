@@ -2274,7 +2274,7 @@ def spec_update_workflow() -> Workflow:
 def frontend_design_workflow() -> Workflow:
     """W₁₂: Frontend Design Mode — Feature-to-UI Pipeline.
 
-    Fork(4 design researchers) → Join → CEO gate → Design Auditor →
+    Fork(5 design researchers) → Join → CEO gate → Design Auditor →
     CEO gate → Spec Writer → User gate → Builder → Build gate →
     Render gate → CI gate → deep-QA (design variant) →
     Consistency gate(max 3) → Doc freshness → Precheck → Archivist(async)
