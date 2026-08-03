@@ -48,7 +48,7 @@ class SwebenchAdapter(EnvAdapter):
         self.skill_path: Path = _SKILLS_DIR / "SKILL.md"
         self.instances: list[str] = []
         self.student_model: str = ""
-        self.concurrency: int = 15
+        self.concurrency: int = 10
         self._train_ids: list[str] = []
         self._val_ids: list[str] = []
         self._test_ids: list[str] = []
