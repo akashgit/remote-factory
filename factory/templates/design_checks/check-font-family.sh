@@ -149,7 +149,8 @@ if $SCORE_MODE; then
     SCORE="0.0"
   fi
   DETAILS="Found ${VIOLATION_COUNT} unapproved font-family declaration(s)."
-  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS}\"}"
+  DETAILS_ESC=$(printf '%s' "$DETAILS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS_ESC}\"}"
   if [[ $VIOLATION_COUNT -gt 0 ]]; then
     exit 1
   fi

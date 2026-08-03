@@ -359,6 +359,16 @@ class TestDesignQA:
         node = wf.nodes["consistency_tester"]
         assert ".factory/design-system/consistency-report.json" in node.writes
 
+    def test_review_gate_reloops_to_builder(self) -> None:
+        wf = frontend_design_workflow()
+        reloop = [
+            e
+            for e in wf.edges
+            if e.source == "gate_review" and e.condition == VerdictType.RELOOP
+        ]
+        assert len(reloop) == 1
+        assert reloop[0].target == "builder"
+
     def test_consistency_gate_reloops_to_builder(self) -> None:
         wf = frontend_design_workflow()
         reloop = [
@@ -451,6 +461,7 @@ class TestEdgeCompleteness:
             "gate_build",
             "gate_render",
             "gate_ci",
+            "gate_review",
             "gate_consistency",
             "gate_doc_freshness",
         ]

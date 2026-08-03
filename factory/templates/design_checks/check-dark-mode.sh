@@ -104,7 +104,8 @@ if $SCORE_MODE; then
     SCORE=$(awk "BEGIN { printf \"%.2f\", $PAIRED_COUNT / $TOTAL_COLOR_CLASSES }")
   fi
   DETAILS="Found ${PAIRED_COUNT}/${TOTAL_COLOR_CLASSES} color class(es) with dark: pair. ${VIOLATION_COUNT} orphaned."
-  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS}\"}"
+  DETAILS_ESC=$(printf '%s' "$DETAILS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS_ESC}\"}"
   if [[ $VIOLATION_COUNT -gt 0 ]]; then
     exit 1
   fi

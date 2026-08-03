@@ -148,7 +148,8 @@ if $SCORE_MODE; then
     SCORE=$(awk "BEGIN { s = 1 - ($VIOLATION_COUNT / $TOTAL_ELEMENTS); if (s < 0) s = 0; printf \"%.2f\", s }")
   fi
   DETAILS="Found ${VIOLATION_COUNT} a11y violation(s) across ${TOTAL_ELEMENTS} element(s)."
-  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS}\"}"
+  DETAILS_ESC=$(printf '%s' "$DETAILS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS_ESC}\"}"
   if [[ $VIOLATION_COUNT -gt 0 ]]; then
     exit 1
   fi

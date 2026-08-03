@@ -2268,6 +2268,71 @@ def spec_update_workflow() -> Workflow:
     )
 
 
+def _design_researcher_nodes() -> dict[str, AgentNode]:
+    """Shared researcher nodes used by both frontend-design and frontend-design-scan."""
+    return {
+        "researcher_tokens": AgentNode(
+            id="researcher_tokens",
+            role=AgentRole.RESEARCHER,
+            prompt_template=(
+                "Design token research. "
+                "Find the project's main CSS/theme files (index.css, globals.css, "
+                "theme.ts, tailwind.config, etc.). Extract every color token, CSS "
+                "custom property, and theme variable with values for all theme modes. "
+                "Search all component files for hardcoded color values (hex, rgb, hsl) "
+                "that bypass the token system. Count frequencies. "
+                "Document the font families, spacing scale, and border-radius tiers. "
+                "Write to .factory/design-system/token-audit.md."
+            ),
+            writes={".factory/design-system/token-audit.md"},
+        ),
+        "researcher_components": AgentNode(
+            id="researcher_components",
+            role=AgentRole.RESEARCHER,
+            prompt_template=(
+                "Component inventory research. "
+                "Find the project's component library directory and catalog every "
+                "shared component — names, props, variant systems. Identify the "
+                "primitive UI library (Radix, MUI, Chakra, Headless UI, etc.) and "
+                "which components wrap it. List feature-specific components. "
+                "Document UI dependencies from package.json. Map composition patterns. "
+                "Write to .factory/design-system/component-inventory.md."
+            ),
+            writes={".factory/design-system/component-inventory.md"},
+        ),
+        "researcher_patterns": AgentNode(
+            id="researcher_patterns",
+            role=AgentRole.RESEARCHER,
+            prompt_template=(
+                "Layout and pattern research. "
+                "Read layout.tsx, router.tsx, and every page.tsx in feature modules. "
+                "Document the shell structure, page templates, data-fetching patterns "
+                "(e.g. TanStack Query, SWR, Apollo, RTK Query), state management "
+                "(e.g. Zustand, Redux, Pinia, Context), error handling, "
+                "motion/animation vocabulary, and accessibility patterns. "
+                "Write to .factory/design-system/pattern-library.md."
+            ),
+            writes={".factory/design-system/pattern-library.md"},
+        ),
+        "researcher_ux": AgentNode(
+            id="researcher_ux",
+            role=AgentRole.RESEARCHER,
+            prompt_template=(
+                "UX quality research. "
+                "Analyze the project's experiential layer: animation choreography "
+                "(stagger timing, easing curves, entrance sequences, coordinated "
+                "transitions, duration scale, exit animations, loading states), "
+                "information hierarchy (heading structure, visual weight, content "
+                "density, progressive disclosure, data presentation for non-technical "
+                "users), and user-friendliness patterns (plain language, contextual "
+                "help, onboarding/empty states, error messages, feedback patterns). "
+                "Write to .factory/design-system/ux-patterns.md."
+            ),
+            writes={".factory/design-system/ux-patterns.md"},
+        ),
+    }
+
+
 # ── W₁₂: Frontend Design Mode ───────────────────────────────────
 
 
@@ -2295,67 +2360,7 @@ def frontend_design_workflow() -> Workflow:
         ],
     )
 
-    nodes["researcher_tokens"] = AgentNode(
-        id="researcher_tokens",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Design token research. "
-            "Find the project's main CSS/theme files (index.css, globals.css, "
-            "theme.ts, tailwind.config, etc.). Extract every color token, CSS "
-            "custom property, and theme variable with values for all theme modes. "
-            "Search all component files for hardcoded color values (hex, rgb, hsl) "
-            "that bypass the token system. Count frequencies. "
-            "Document the font families, spacing scale, and border-radius tiers. "
-            "Write to .factory/design-system/token-audit.md."
-        ),
-        writes={".factory/design-system/token-audit.md"},
-    )
-
-    nodes["researcher_components"] = AgentNode(
-        id="researcher_components",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Component inventory research. "
-            "Find the project's component library directory and catalog every "
-            "shared component — names, props, variant systems. Identify the "
-            "primitive UI library (Radix, MUI, Chakra, Headless UI, etc.) and "
-            "which components wrap it. List feature-specific components. "
-            "Document UI dependencies from package.json. Map composition patterns. "
-            "Write to .factory/design-system/component-inventory.md."
-        ),
-        writes={".factory/design-system/component-inventory.md"},
-    )
-
-    nodes["researcher_patterns"] = AgentNode(
-        id="researcher_patterns",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Layout and pattern research. "
-            "Read layout.tsx, router.tsx, and every page.tsx in feature modules. "
-            "Document the shell structure, page templates, data-fetching patterns "
-            "(TanStack Query), state management (Zustand stores), error handling, "
-            "motion/animation vocabulary, and accessibility patterns. "
-            "Write to .factory/design-system/pattern-library.md."
-        ),
-        writes={".factory/design-system/pattern-library.md"},
-    )
-
-    nodes["researcher_ux"] = AgentNode(
-        id="researcher_ux",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "UX quality research. "
-            "Analyze the project's experiential layer: animation choreography "
-            "(stagger timing, easing curves, entrance sequences, coordinated "
-            "transitions, duration scale, exit animations, loading states), "
-            "information hierarchy (heading structure, visual weight, content "
-            "density, progressive disclosure, data presentation for non-technical "
-            "users), and user-friendliness patterns (plain language, contextual "
-            "help, onboarding/empty states, error messages, feedback patterns). "
-            "Write to .factory/design-system/ux-patterns.md."
-        ),
-        writes={".factory/design-system/ux-patterns.md"},
-    )
+    nodes.update(_design_researcher_nodes())
 
     nodes["researcher_infra"] = AgentNode(
         id="researcher_infra",
@@ -2688,7 +2693,7 @@ def frontend_design_workflow() -> Workflow:
         evaluator_command=(
             "if grep -q 'CRITICAL_FOUND' "
             "{project_path}/.factory/reviews/code-review.md; "
-            "then echo 'FAIL: critical design violations found'; "
+            "then echo 'reloop: critical design violations found — builder must fix'; "
             "else echo 'PROCEED'; fi"
         ),
         reads={".factory/reviews/code-review.md"},
@@ -2806,6 +2811,7 @@ def frontend_design_workflow() -> Workflow:
         Edge(
             source="gate_review", target="consistency_tester", condition=VerdictType.PROCEED
         ),
+        Edge(source="gate_review", target="builder", condition=VerdictType.RELOOP),
         # Consistency tester → consistency gate
         Edge(source="consistency_tester", target="gate_consistency"),
         Edge(
@@ -2866,67 +2872,7 @@ def frontend_design_scan_workflow() -> Workflow:
         ],
     )
 
-    nodes["researcher_tokens"] = AgentNode(
-        id="researcher_tokens",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Design token research. "
-            "Find the project's main CSS/theme files (index.css, globals.css, "
-            "theme.ts, tailwind.config, etc.). Extract every color token, CSS "
-            "custom property, and theme variable with values for all theme modes. "
-            "Search all component files for hardcoded color values (hex, rgb, hsl) "
-            "that bypass the token system. Count frequencies. "
-            "Document the font families, spacing scale, and border-radius tiers. "
-            "Write to .factory/design-system/token-audit.md."
-        ),
-        writes={".factory/design-system/token-audit.md"},
-    )
-
-    nodes["researcher_components"] = AgentNode(
-        id="researcher_components",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Component inventory research. "
-            "Find the project's component library directory and catalog every "
-            "shared component — names, props, variant systems. Identify the "
-            "primitive UI library (Radix, MUI, Chakra, Headless UI, etc.) and "
-            "which components wrap it. List feature-specific components. "
-            "Document UI dependencies from package.json. Map composition patterns. "
-            "Write to .factory/design-system/component-inventory.md."
-        ),
-        writes={".factory/design-system/component-inventory.md"},
-    )
-
-    nodes["researcher_patterns"] = AgentNode(
-        id="researcher_patterns",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "Layout and pattern research. "
-            "Read layout.tsx, router.tsx, and every page.tsx in feature modules. "
-            "Document the shell structure, page templates, data-fetching patterns "
-            "(TanStack Query), state management (Zustand stores), error handling, "
-            "motion/animation vocabulary, and accessibility patterns. "
-            "Write to .factory/design-system/pattern-library.md."
-        ),
-        writes={".factory/design-system/pattern-library.md"},
-    )
-
-    nodes["researcher_ux"] = AgentNode(
-        id="researcher_ux",
-        role=AgentRole.RESEARCHER,
-        prompt_template=(
-            "UX quality research. "
-            "Analyze the project's experiential layer: animation choreography "
-            "(stagger timing, easing curves, entrance sequences, coordinated "
-            "transitions, duration scale, exit animations, loading states), "
-            "information hierarchy (heading structure, visual weight, content "
-            "density, progressive disclosure, data presentation for non-technical "
-            "users), and user-friendliness patterns (plain language, contextual "
-            "help, onboarding/empty states, error messages, feedback patterns). "
-            "Write to .factory/design-system/ux-patterns.md."
-        ),
-        writes={".factory/design-system/ux-patterns.md"},
-    )
+    nodes.update(_design_researcher_nodes())
 
     nodes["join_scan_research"] = JoinNode(
         id="join_scan_research",

@@ -244,7 +244,8 @@ if $SCORE_MODE; then
     SCORE=$(awk "BEGIN { printf \"%.2f\", $PASSED / $TOTAL_CHECKS }")
   fi
   DETAILS="Checked ${TOTAL_CHECKS} pattern(s), ${VIOLATION_COUNT} violation(s)."
-  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS}\"}"
+  DETAILS_ESC=$(printf '%s' "$DETAILS" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  echo "{\"score\": ${SCORE}, \"details\": \"${DETAILS_ESC}\"}"
   if [[ $VIOLATION_COUNT -gt 0 ]]; then
     exit 1
   fi
