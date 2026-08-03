@@ -25,6 +25,16 @@ jobs:
       - name: Fetch all remote branches
         run: git fetch --all
 
+      - name: Load historical conflict data from conflict-data branch
+        run: |
+          git fetch origin conflict-data || true
+          git show origin/conflict-data:conflicts.jsonl > conflicts.jsonl 2>/dev/null || true
+          if [ -f conflicts.jsonl ]; then
+            echo "Loaded existing conflicts.jsonl from conflict-data branch"
+          else
+            echo "No existing conflicts.jsonl found, starting fresh"
+          fi
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -92,11 +102,35 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/conflict_detector.py summary --days 30 --top 10 --data-file conflicts.jsonl >> $GITHUB_STEP_SUMMARY
 
-      - name: Commit conflicts.jsonl
+      - name: Commit conflicts.jsonl to conflict-data branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Check if there are changes to conflicts.jsonl
+          if [ ! -f conflicts.jsonl ]; then
+            echo "No conflicts.jsonl file to commit"
+            exit 0
+          fi
+
+          # Checkout or create conflict-data branch
+          git fetch origin conflict-data || true
+          if git show-ref --verify --quiet refs/remotes/origin/conflict-data; then
+            git checkout -b conflict-data origin/conflict-data
+          else
+            git checkout --orphan conflict-data
+            git rm -rf . 2>/dev/null || true
+          fi
+
+          # Copy the updated conflicts.jsonl to the branch
+          git checkout main -- conflicts.jsonl
+
+          # Commit and push if there are changes
           git add conflicts.jsonl
-          git diff --cached --quiet && echo "No changes to commit" && exit 0
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
           git commit -m "chore: update conflicts.jsonl [skip ci]"
-          git push
+          git push origin conflict-data
