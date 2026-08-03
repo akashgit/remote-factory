@@ -228,6 +228,67 @@ class TestReport:
         assert rc == 1
 
 
+class TestSummary:
+    def test_summary_no_conflicts(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Summary shows green checkmark when no conflicts exist."""
+        prs = json.dumps([
+            {"number": 1, "headRefName": "feat/a", "isDraft": False},
+            {"number": 2, "headRefName": "feat/b", "isDraft": False},
+        ])
+        data_file = tmp_path / "conflicts.jsonl"
+        with patch.object(conflict_detector, "_run", side_effect=_make_run_mock(prs)):
+            rc = conflict_detector.main(["summary", "--data-file", str(data_file)])
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "✅" in captured.out
+        assert "No conflicts detected" in captured.out
+
+    def test_summary_with_conflicts(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Summary contains Mermaid chart and hotspot table when conflicts exist."""
+        prs = json.dumps([
+            {"number": 42, "headRefName": "feat/x", "isDraft": False},
+        ])
+        merge_output = "CONFLICT (content): Merge conflict in src/config.py\n"
+        data_file = tmp_path / "conflicts.jsonl"
+
+        # Write historical data
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        events = [
+            {"timestamp": now, "pr_number": 42, "pr_branch": "feat/x", "conflict_files": ["src/config.py", "README.md"], "total_open_prs": 1},
+            {"timestamp": now, "pr_number": 43, "pr_branch": "feat/y", "conflict_files": ["src/config.py"], "total_open_prs": 2},
+        ]
+        with open(data_file, "w") as f:
+            for ev in events:
+                f.write(json.dumps(ev) + "\n")
+
+        with patch.object(
+            conflict_detector,
+            "_run",
+            side_effect=_make_run_mock(prs, {"origin/feat/x": (1, merge_output)}),
+        ):
+            rc = conflict_detector.main(["summary", "--data-file", str(data_file)])
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "```mermaid" in captured.out
+        assert "xychart-beta" in captured.out
+        assert "Hotspot Files" in captured.out
+        assert "Currently Conflicting PRs" in captured.out
+        assert "#42" in captured.out
+        assert "src/config.py" in captured.out
+
+    def test_summary_no_data_file(self, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+        """Summary handles missing data file gracefully."""
+        prs = json.dumps([
+            {"number": 1, "headRefName": "feat/a", "isDraft": False},
+        ])
+        data_file = tmp_path / "nonexistent.jsonl"
+        with patch.object(conflict_detector, "_run", side_effect=_make_run_mock(prs)):
+            rc = conflict_detector.main(["summary", "--data-file", str(data_file)])
+        assert rc == 0
+        captured = capsys.readouterr()
+        assert "✅" in captured.out or "Checked:" in captured.out
+
+
 class TestCLI:
     def test_no_command_shows_help(self, capsys: pytest.CaptureFixture[str]) -> None:
         rc = conflict_detector.main([])

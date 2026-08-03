@@ -87,6 +87,11 @@ jobs:
                   print(f'Failed to comment on PR #{pr}: {result.stderr}', file=sys.stderr)
           "
 
+      - name: Generate summary dashboard
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/conflict_detector.py summary --days 30 --top 10 --data-file conflicts.jsonl >> $GITHUB_STEP_SUMMARY
+
       - name: Commit conflicts.jsonl
         run: |
           git config user.name "github-actions[bot]"
