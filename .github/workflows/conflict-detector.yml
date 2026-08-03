@@ -113,6 +113,9 @@ jobs:
             exit 0
           fi
 
+          # Save the updated conflicts.jsonl before switching branches
+          cp conflicts.jsonl /tmp/conflicts.jsonl.updated
+
           # Checkout or create conflict-data branch
           git fetch origin conflict-data || true
           if git show-ref --verify --quiet refs/remotes/origin/conflict-data; then
@@ -122,8 +125,8 @@ jobs:
             git rm -rf . 2>/dev/null || true
           fi
 
-          # Copy the updated conflicts.jsonl to the branch
-          git checkout main -- conflicts.jsonl
+          # Restore the updated file
+          cp /tmp/conflicts.jsonl.updated conflicts.jsonl
 
           # Commit and push if there are changes
           git add conflicts.jsonl
