@@ -3384,6 +3384,7 @@ def register_all() -> dict[str, Workflow]:
     from factory.workflow.contributed.programbench import workflow as programbench_workflow
     from factory.workflow.contributed.terminalbench import workflow as terminalbench_workflow
     from factory.workflow.contributed.tomswe import workflow as tomswe_workflow
+    from factory.workflow.contributed.salitrap import workflow as salitrap_workflow
 
     return {
         "build": build_workflow(),
@@ -3400,6 +3401,7 @@ def register_all() -> dict[str, Workflow]:
         "swebench": swebench_workflow(),
         "terminalbench": terminalbench_workflow(),
         "tomswe": tomswe_workflow(),
+        "salitrap": salitrap_workflow(),
         "research": research_workflow(),
         "meta": meta_workflow(),
         "refine": refine_workflow(),
