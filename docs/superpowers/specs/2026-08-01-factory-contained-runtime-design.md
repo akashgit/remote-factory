@@ -3,7 +3,8 @@
 **Date:** 2026-08-01
 **Revised:** 2026-08-03 — the local runtime is a plain podman container on a Red Hat UBI base. NVIDIA
 OpenShell is removed from the design entirely.
-**Status:** Design — awaiting review
+**Status:** Implemented 2026-08-04. Phases 1-2 verified end to end on this machine; phases 3-4 are
+implemented and unit-verified but have never been run against a cluster (see §13).
 
 ---
 
@@ -349,12 +350,21 @@ default connection is **rootful**:
   VM's filesystem sharing. `$HOME` is shared by default; a path outside it is not mounted at all
   rather than mounted empty.
 
-Rather than encode a rule that is wrong for one of these, **provisioning probes writability** — it
-writes and removes a file at the mount point as the container identity, and aborts with the mount
-path, the container UID, and the mount's owner when it cannot. The probe is the contract; the
-`--userns` flag is an implementation detail that may change per platform. §3.6 step 0 pins down which
-mechanism this machine actually needs, and that result is recorded here once it is known rather than
-assumed now.
+Rather than encode a rule that is wrong for one of these, **provisioning probes** — it asks a
+throwaway container who owns the mount, matches the run's identity to the answer, and then writes and
+removes a file at the mount point to confirm. It aborts naming the mount path, the container UID and
+the mount's owner when it cannot. The probe is the contract; the `--userns` flag is an implementation
+detail that may change per platform.
+
+**Settled empirically on this machine (2026-08-04), which resolves F5.** macOS 15 / arm64, podman
+5.7.1 with a libkrun machine, default connection **rootful**. A workspace under `$HOME` is reported
+inside a container as owned by `501:20` — the host user, carried through the VM's sharing layer
+unchanged. The run therefore uses `--user 501:0`; group 0 rather than the mount's own GID because the
+runtime image is built for arbitrary UIDs (group-owned by root with group permissions equal to user
+permissions), which is also what the cluster's restricted SCC requires. One image, one identity
+story. `--userns=keep-id` is used instead when podman reports a rootless connection, where it is both
+correct and the only mechanism available. The writability probe passed on the first run; there was no
+abort to diagnose.
 
 ### 3.3 User-local context
 
@@ -643,13 +653,27 @@ Three mechanical details:
   background spawn leaves nothing listening and writes no error. The factory holds stdin open for the
   process's lifetime.
 - The container reaches it at **`host.containers.internal`**, podman's name for the host. On macOS
-  this resolves to the podman machine's gateway rather than to macOS itself, so where the server runs
-  and what address the container must use are platform-dependent and must be probed rather than
-  assumed (§5.5 step 0).
+  the container runs inside the podman machine VM, so that name may resolve to the VM's gateway
+  rather than to macOS itself — it must be probed rather than assumed (§5.5 step 0). **Probed on this
+  machine (2026-08-04), which resolves F6:** with the server bound on `*:8430` on macOS, a container
+  reaches it at all three of `host.containers.internal`, `192.168.127.254` (the gvproxy host gateway)
+  and `host.docker.internal`. The canonical name works, and the implementation tries the three in
+  that order and records which one answered.
+- **The server must outlive the command that started it.** This corrects the sentence above: the
+  launch returns as soon as the detached tmux session exists — that is what lets it print the run's
+  identifier rather than block for a cycle (§3.1) — while the run continues for minutes or hours. A
+  server whose lifetime was the launcher's would be gone before the agent's first build. It is
+  therefore detached into its own process group, its PGID recorded beside the workspace, and
+  `factory contained rm <name>` stops it. The launch warning says so.
+- **Readiness is waited for before reachability is probed.** `npx` downloads the package on a cold
+  first run, so a probe issued immediately concludes the host is unreachable and tears down a
+  division that was seconds from working. The host waits for the port to bind first, and reports a
+  slow start differently from a routing fault — they have different fixes.
 
 It must bind an interface reachable from the container, and it has **no authentication**. For the
 life of the run, anything that can reach port 8430 can build and run containers on the host. The
-mitigation is disclosure, not technology: warn loudly at start, confirm shutdown at exit.
+mitigation is disclosure, not technology: warn loudly at start — naming the endpoint, the absence of
+authentication, and how long it lives — and stop it on `rm`.
 
 ### 5.2 Tool surface
 
@@ -699,10 +723,11 @@ scoped 165 lines of new CLI code to wrap them, while its own task text forbade m
 #   expect: a response from podman-mcp-server. If the name does not resolve, or resolves
 #   to the podman machine rather than the host, the working address is recorded in §5.1.
 
-# 1. The server comes up and goes down with the run
+# 1. The server comes up with the run and goes down with `rm`
 factory contained --division -- backlog-list ~/code/rta
-#   expect: a launch warning naming the unauthenticated endpoint; after exit,
-#   nothing listening on 8430.
+#   expect: a launch warning naming the unauthenticated endpoint and its lifetime;
+#   the endpoint still listening after the launch command returns (the run outlives it);
+#   and after `factory contained rm <name>`, nothing listening on 8430.
 
 # 2. The agent knows it has the capability
 factory contained --division -- agent builder \
@@ -871,14 +896,19 @@ bringing the clean room back belongs.
 `podman build`. Acceptable for cycles measured in minutes, but measure rather than assume.
 *Decision: accepted.*
 
-**F5 — podman rootful vs rootless (new, 2026-08-03).** This machine's default connection is rootful,
-and the identity mechanism in §3.2 differs between the two. §3.6 step 0 settles it empirically; until
-then the writability probe is what stands between a wrong assumption and a silently read-only
-workspace.
+**F5 — podman rootful vs rootless.** *Settled 2026-08-04, see §3.2.* Rootful on this machine; the
+mount reports `501:20` inside a container and the run uses `--user 501:0`. Rootless still takes
+`--userns=keep-id`. The mechanism is chosen by probe rather than by rule, so neither answer is
+hardcoded.
 
-**F6 — `host.containers.internal` on macOS (new, 2026-08-03).** The container runs inside the podman
-machine VM, so podman's name for "the host" may resolve to the VM's gateway rather than to macOS.
-§5.5 step 0 settles it. This affects the local division only.
+**F6 — `host.containers.internal` on macOS.** *Settled 2026-08-04, see §5.1.* All three candidate
+addresses reach a host-bound server from inside a container on this machine. The implementation
+probes in order and records which answered, so a platform where only one works still gets it right.
+
+**F7 — the division server's lifetime (new, 2026-08-04).** Implementation found that a server tied to
+the launching command dies before the agent's first build, because the launch returns as soon as the
+tmux session exists. Now detached into its own process group and stopped by `rm`. *Decision:
+accepted; §5.1 and §5.5 step 1 rewritten.*
 
 ## 11. Risks
 
@@ -914,16 +944,29 @@ machine VM, so podman's name for "the host" may resolve to the VM's gateway rath
 Each phase ships as its own PR and is complete only when its verification block has been run and its
 output pasted into the PR.
 
-| Phase | Contents | Evidence it owes |
-|---|---|---|
-| 1 | `setup`/`verify`, passthrough surface, copy-mount, path rewriting, credential model, tmux + attach/ls/rm/sync | §3.6 steps 0–6 |
-| 2 | Local division: managed `podman-mcp-server`, brief | §5.5 steps 0–4 |
-| 3 | K8s runtime: image, pod, PVC + tarball transport, secret scan, bundle + verify, attach | §4.7 steps 1–5 |
-| 4 | K8s division: MCP server in-pod, build sidecar, validation-pod Role, brief | §6.6 steps 1–5 |
+| Phase | Contents | Evidence it owes | Status |
+|---|---|---|---|
+| 1 | `setup`/`verify`, passthrough surface, copy-mount, path rewriting, credential model, tmux + attach/ls/rm/sync | §3.6 steps 0–6 | **Done.** All seven steps run; F5 settled (§3.2). |
+| 2 | Local division: managed `podman-mcp-server`, brief | §5.5 steps 0–4 | **Done** apart from step 3. Steps 0, 1, 4 run; F6 settled (§5.1), F7 found and fixed. |
+| 3 | K8s runtime: image, pod, PVC + tarball transport, secret scan, bundle + verify, attach | §4.7 steps 1–5 | **Implemented, unverified.** |
+| 4 | K8s division: MCP server in-pod, build sidecar, validation-pod Role, brief | §6.6 steps 1–5 | **Implemented, unverified.** |
 
 Phases 1–2 need no cluster. Phase 3 is the prerequisite for phase 4. Phase 1 is materially smaller
 than it was before the pivot: no gateway install, no certificates, no policy generation, no clean
 room.
+
+**What "implemented, unverified" means, precisely.** Phases 3 and 4 have unit coverage over the
+parts that can be checked without a cluster — the bundle and the pod both parse as YAML and are
+asserted namespace-scoped, exec-free and privilege-free; the packer keeps `.factory/` and drops
+host-shaped directories; the generated `start_build` server parses as Python and contains no cluster
+client; `verify` degrades to a list rather than a traceback with no `oc` present. What has *not*
+happened is a pod running on a real cluster. §4.7 and §6.6 are the outstanding evidence, and neither
+phase should be called done before they are run.
+
+**Two steps of phases 1–2 are also outstanding**, both for the same reason: this machine has no
+inference credentials configured, so no agent call can be made. §3.6 step 3 (`study` writing
+observations into the copy) and §5.5 step 3 (one real build-validate cycle) are the two that need
+one. Everything up to and including the first agent call is verified; the agent call itself is not.
 
 ## 14. Out of scope
 
