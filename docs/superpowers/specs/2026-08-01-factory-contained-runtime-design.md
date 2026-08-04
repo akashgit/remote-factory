@@ -81,7 +81,7 @@ survives the pod.
 |---|---|---|
 | Runtime | podman container on the developer's machine | plain pod on Kubernetes/OpenShift |
 | Syscall confinement | podman's default seccomp profile only | the container runtime's default only |
-| Filesystem | container image is read-only in practice; project is a **copy** bind-mounted read-write, host tree untouched | restricted SCC; workspace is a **copy** on a PVC |
+| Filesystem | container image is read-only in practice; project is a **copy** bind-mounted read-write, host *working* tree untouched — but the source repo's `.git` is writable (§3.2) | restricted SCC; workspace is a **copy** on a PVC |
 | Identity | non-root, matched to the mount's owner (§3.2) | restricted SCC, arbitrary namespace UID |
 | Egress | **none** — full network access | NetworkPolicy only — no L7, no per-binary rules |
 | Credentials | **inside the container** (§3.5) | a Secret in the namespace, mounted into the pod |
@@ -322,9 +322,21 @@ out.
 - **Everything else:** `rsync -a` honoring `.gitignore`, plus `.factory/` explicitly.
 
 A git worktree's `.git` is a **file** pointing at the original repository's object store, not a
-directory. The original repository's `.git` directory must therefore also be mounted, read-only, or
-every git command inside the container fails on a path that exists on the host and not in the
-container.
+directory. The original repository's `.git` directory must therefore also be mounted, or every git
+command inside the container fails on a path that exists on the host and not in the container.
+
+**Read-write, not read-only — corrected 2026-08-04 by running it.** This section said read-only, and
+§3.3 said that was enough to make the copy "a valid git worktree parent". It is not. The CEO creates
+its own experiment worktrees inside the copy (§3.3), and `git worktree add` writes into the *common*
+dir: a ref lock, a worktree registration, objects. Read-only, the first cycle dies on `cannot lock
+ref 'refs/heads/...': Read-only file system`, which reads as a git bug rather than as a mount mode.
+
+The cost is real and belongs in §1.2's honest admissions rather than in a footnote: **the container
+can write the source repository's git directory.** "The host tree is untouched" survives — that is a
+statement about the *working* tree, and it still holds — and the object store was already shared by
+construction, which is what makes the worktree cheap and what puts the run's branch somewhere
+`sync`'s merge command can find it. But the blast radius is the copy *plus* the source repo's
+`.git`, not the copy alone.
 
 Why the copy is mounted at its own path rather than the original: see §2.5. The division's builds run
 outside the container and resolve paths in the host engine's namespace.
@@ -380,7 +392,8 @@ host scores. Warn, never fail.
 at `<project>/.factory-worktrees/`, inside the project — so inside the *copy*, which is correct and
 needs no special handling. Two things must hold anyway, and both belong in the phase-1 tests:
 
-- the copy is a valid git worktree parent, which is what the read-only `.git` mount in §3.2 provides;
+- the copy is a valid git worktree parent, which is what the **read-write** `.git` mount in §3.2
+  provides — read-only is not enough, and §3.2 records why;
 - the registry in the mounted `~/.factory/registry.json` records the *copy's* path, so the host's
   registry gains an entry pointing into `~/.factory-contained/`. `rm` cleans it up.
 
@@ -396,6 +409,25 @@ attach` is the only route to the running process's stdio and `Ctrl-C` sends SIGI
 The container **persists** after the run. `ls`/`rm` manage it; nothing is auto-reaped, because a
 failed run is exactly when its state is worth reading. `--mode design` is permitted, because an
 interactive session has a real terminal.
+
+**A real terminal also means real prompts, and that is the trap** (found 2026-08-04, F10). A fresh
+`~/.claude` makes Claude Code ask three questions *only in interactive mode* — `-p` skips all of
+them, which is why headless specialist agents never hit this and the interactive CEO does: whether
+the folder is trusted, whether to enable the project's `.mcp.json` server, and whether Bypass
+Permissions mode is accepted. Unanswered, the run sits at a menu in a terminal nobody is watching,
+having already spent the tokens it took to get there. It reads as a hang, not an error.
+
+None of the three has an open answer here: the workspace is a copy the runtime just made of a
+project the user named, the MCP server is one the runtime just registered because `--division` was
+passed, and the factory always runs Claude Code with `--dangerously-skip-permissions` — a contained
+run *is* the sandboxed container that dialog asks you to be in. `factory.contained.claude_state`
+records those answers before the run starts, merging into the file rather than replacing it, since
+`~/.claude` may be a mount the user opted into.
+
+One of them cannot be answered per-project: the CEO works inside an experiment worktree whose
+directory carries a per-run id, and Claude Code resolves the project from the current directory. So
+MCP approval is given as `enableAllProjectMcpServers` in `~/.claude/settings.json`, which is the
+only form of the answer that reaches a directory that does not exist yet.
 
 ### 3.5 Inference and credentials
 
@@ -909,6 +941,22 @@ probes in order and records which answered, so a platform where only one works s
 the launching command dies before the agent's first build, because the launch returns as soon as the
 tmux session exists. Now detached into its own process group and stopped by `rm`. *Decision:
 accepted; §5.1 and §5.5 step 1 rewritten.*
+
+**F8 — the source `.git` mount must be read-write (new, 2026-08-04).** Found by §5.5 step 3, on the
+first cycle: the CEO's own experiment worktrees cannot be created under a read-only common dir.
+§3.2 and §3.3 corrected, and §1.2's filesystem row now says the source repo's `.git` is writable.
+*Decision: accepted — the alternative is a full clone per run, which gives up the property that
+makes the worktree cheap.*
+
+**F10 — interactive prompts stall an unattended run (new, 2026-08-04).** Found by §5.5 step 3, three
+times in a row, each a different dialog. §3.4 now records all three and the form of each answer.
+*Decision: accepted — the answers are implied by the invocation, and pre-recording them is not the
+same as deciding them.*
+
+**F9 — one division port, one run (new, 2026-08-04).** A second `--division` run found port 8430
+already bound, took that as its own server coming up, and silently drove the first run's endpoint;
+`rm` on either then pulled the tools out from under the other. Now refused at launch, naming the run
+that owns it. *Decision: accepted; a per-run port is the obvious extension when it is needed.*
 
 ## 11. Risks
 
