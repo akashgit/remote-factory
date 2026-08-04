@@ -152,6 +152,17 @@ WORKFLOW_META: dict[str, dict[str, str | list[str]]] = {
         ),
         "argument_hint": "<project_path>",
     },
+    "plan": {
+        "description": (
+            "Plan mode — prior plan check + research + strategy + keep/seed approve + archive, "
+            "with NO implementation. Checks for prior plans on the same topic before researching. "
+            "Produces a phased plan at .factory/strategy/current.md. Two sequential gates: "
+            "Keep plan? (yes/no), then Seed backlog? (yes/no). Terminal — "
+            "does not chain to build or improve. Use when the user says 'plan X', 'just plan', "
+            "'research and plan but don't build', or wants strategic analysis without code changes."
+        ),
+        "argument_hint": "<project_path> [--focus <topic>]",
+    },
     "swebench": {
         "description": (
             "SWE-bench benchmark mode — minimal 4-node pipeline for solving "

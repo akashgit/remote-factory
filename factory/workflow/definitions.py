@@ -62,6 +62,7 @@ __all__ = [
     "frontend_design_workflow",
     "frontend_design_scan_workflow",
     "evolve_workflow",
+    "plan_workflow",
     "register_all",
 ]
 
@@ -4089,6 +4090,325 @@ def founder_workflow() -> Workflow:
     )
 
 
+# ── W₁₅: Plan Mode ───────────────────────────────────────────────
+
+
+def plan_workflow() -> Workflow:
+    """W₁₅: Plan Mode — prior plan check + research + strategy + approve + archive. Terminal.
+
+    CheckPriorPlans → [matches?] → GatePriorPlans(user) → Fork(3 researchers) →
+    Join → CEO gate → Strategist → GateKeepPlan(user) →
+      Keep (PROCEED):    GateSeedBacklog(user) →
+        Seed (PROCEED):    SeedBacklog → Archivist(async) → done
+        No seed (HALT):    Archivist(async) → done
+      Discard (HALT):    done (no archive, no backlog)
+
+    Planning-only mode. Produces a phased plan at .factory/strategy/current.md.
+    Does NOT chain to build/improve — user must explicitly invoke those modes
+    to execute the plan.
+    """
+    nodes: dict[str, Any] = {}
+    edges: list[Edge] = []
+
+    # ── Prior plan detection ──────────────────────────────────
+
+    nodes["check_prior_plans"] = GateNode(
+        id="check_prior_plans",
+        evaluator_type="fn",
+        evaluator_command=(
+            'grep -rl "$FOCUS" "$PROJECT_PATH/.factory/archive/" --include="plan-*.md" '
+            '> "$PROJECT_PATH/.factory/strategy/prior-plans.md" 2>/dev/null; '
+            '[ -s "$PROJECT_PATH/.factory/strategy/prior-plans.md" ]'
+        ),
+        gate_prompt=(
+            "Check .factory/archive/ for prior plan files matching the focus keywords. "
+            "Write matching file paths to .factory/strategy/prior-plans.md. "
+            "PROCEED if matches exist (file is non-empty), HALT if no matches (skip to fresh research)."
+        ),
+        writes={".factory/strategy/prior-plans.md"},
+    )
+
+    nodes["gate_prior_plans"] = GateNode(
+        id="gate_prior_plans",
+        evaluator_type="user",
+        gate_prompt=(
+            "Prior plan(s) found matching this topic. "
+            "Present the matching plans from .factory/strategy/prior-plans.md to the user. "
+            "If one match: ask 'Found a prior plan on this topic. Continue this plan or start fresh?' "
+            "If multiple matches: list them and let user pick which to continue, or start fresh. "
+            "The selected prior plan (if any) will be passed as context to researchers and strategist."
+        ),
+        reads={".factory/strategy/prior-plans.md"},
+    )
+
+    # ── Research fork ─────────────────────────────────────────
+
+    nodes["fork_research"] = ForkNode(
+        id="fork_research",
+        targets=["researcher_domain", "researcher_practices", "researcher_constraints"],
+    )
+
+    nodes["researcher_domain"] = AgentNode(
+        id="researcher_domain",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Domain research. "
+            "Research the domain for this project. Investigate similar projects, "
+            "existing solutions, the state of the art, and market landscape. "
+            "If this is an existing project, study the codebase structure, "
+            "architecture, eval scores, experiment history, and .factory/archive/. "
+            "If .factory/strategy/backlog.md exists, read it for context on pending work. "
+            "If prior plans exist in .factory/archive/ on this topic "
+            "(listed in .factory/strategy/prior-plans.md if non-empty), "
+            "read and build on them rather than starting fresh. "
+            "Write findings to .factory/strategy/research-domain.md covering: "
+            "domain landscape, similar projects (with links), gaps and opportunities."
+        ),
+        reads={".factory/strategy/prior-plans.md"},
+        writes={".factory/strategy/research-domain.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-domain.md",
+                must_exist=True,
+                min_size=50,
+            )
+        ],
+    )
+
+    nodes["researcher_practices"] = AgentNode(
+        id="researcher_practices",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Best practices research. "
+            "Research best practices, design patterns, and proven approaches "
+            "for this type of project. Look for architecture patterns, "
+            "framework recommendations, and lessons from production systems. "
+            "Check .factory/archive/ for prior knowledge. "
+            "If prior plans exist in .factory/archive/ on this topic "
+            "(listed in .factory/strategy/prior-plans.md if non-empty), "
+            "read and build on them rather than starting fresh. "
+            "Write findings to .factory/strategy/research-practices.md covering: "
+            "recommended approaches, anti-patterns to avoid, proven patterns."
+        ),
+        reads={".factory/strategy/prior-plans.md"},
+        writes={".factory/strategy/research-practices.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-practices.md",
+                must_exist=True,
+                min_size=50,
+            )
+        ],
+    )
+
+    nodes["researcher_constraints"] = AgentNode(
+        id="researcher_constraints",
+        role=AgentRole.RESEARCHER,
+        prompt_template=(
+            "Constraints and risks research. "
+            "Research technical constraints, risks, and feasibility for this project. "
+            "Identify integration points, dependencies, scalability concerns, "
+            "security considerations, and potential blockers. "
+            "If this is an existing project, review current eval scores and "
+            "identify weakest dimensions. "
+            "If prior plans exist in .factory/archive/ on this topic "
+            "(listed in .factory/strategy/prior-plans.md if non-empty), "
+            "read and build on them rather than starting fresh. "
+            "Write findings to .factory/strategy/research-constraints.md covering: "
+            "technical constraints, risks, dependencies, feasibility assessment."
+        ),
+        reads={".factory/strategy/prior-plans.md"},
+        writes={".factory/strategy/research-constraints.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/research-constraints.md",
+                must_exist=True,
+                min_size=50,
+            )
+        ],
+    )
+
+    nodes["join_research"] = JoinNode(
+        id="join_research",
+        sources=["researcher_domain", "researcher_practices", "researcher_constraints"],
+        reads={
+            ".factory/strategy/research-domain.md",
+            ".factory/strategy/research-practices.md",
+            ".factory/strategy/research-constraints.md",
+        },
+        writes={".factory/strategy/research-combined.md"},
+    )
+
+    nodes["gate_research"] = GateNode(
+        id="gate_research",
+        evaluator_type="agent",
+        evaluator_role=AgentRole.CEO,
+        gate_prompt=(
+            "Is the research comprehensive? Does it cover the domain landscape, "
+            "best practices, and technical constraints adequately? "
+            "Check for gaps in coverage. No calendar-time estimates allowed. "
+            "REDIRECT if any research dimension is thin or missing."
+        ),
+        reads={".factory/strategy/research-combined.md"},
+    )
+
+    # ── Strategist ────────────────────────────────────────────
+
+    nodes["strategist"] = AgentNode(
+        id="strategist",
+        role=AgentRole.STRATEGIST,
+        prompt_template=(
+            "Synthesize a phased implementation plan from research findings. "
+            "Read ALL tagged research files at .factory/strategy/research-*.md. "
+            "If .factory/strategy/backlog.md exists, read it for context on pending work. "
+            "If prior plans exist in .factory/archive/ on this topic "
+            "(listed in .factory/strategy/prior-plans.md if non-empty), "
+            "build on them rather than starting fresh — incorporate prior decisions, "
+            "learnings, and partially-completed work into the new plan. "
+            "Produce a structured plan with phased approach, dependencies, "
+            "success criteria, and open questions. "
+            "Each phase must be scoped to one PR's worth of work. "
+            "Include at least one growth-focused phase. "
+            "Write the plan to .factory/strategy/current.md."
+        ),
+        reads={
+            ".factory/strategy/research-combined.md",
+            ".factory/strategy/prior-plans.md",
+        },
+        writes={".factory/strategy/current.md"},
+        post_checks=[
+            ArtifactCheck(
+                path=".factory/strategy/current.md",
+                must_exist=True,
+                min_size=200,
+            )
+        ],
+    )
+
+    # ── Two sequential binary user gates ─────────────────────
+
+    nodes["gate_keep_plan"] = GateNode(
+        id="gate_keep_plan",
+        evaluator_type="user",
+        gate_prompt=(
+            "Present the plan to the user. Ask: 'Keep this plan? "
+            "(yes → archive it, no → discard)'\n"
+            "Map: yes → PROCEED, no → HALT"
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    nodes["gate_seed_backlog"] = GateNode(
+        id="gate_seed_backlog",
+        evaluator_type="user",
+        gate_prompt=(
+            "Ask the user: 'Seed backlog? "
+            "(yes → commit phases as backlog items, no → archive only)'\n"
+            "Map: yes → PROCEED, no → HALT"
+        ),
+        reads={".factory/strategy/current.md"},
+    )
+
+    # ── Backlog seeding ───────────────────────────────────────
+
+    nodes["seed_backlog"] = FnNode(
+        id="seed_backlog",
+        command=(
+            'python3 -c "'
+            "import re, datetime, os; "
+            "project = os.environ.get('PROJECT_PATH', '.'); "
+            "plan = open(f'{project}/.factory/strategy/current.md').read(); "
+            "focus = os.environ.get('FOCUS', 'plan'); "
+            "slug = re.sub(r'[^a-z0-9]+', '-', focus.lower()).strip('-'); "
+            "date = datetime.date.today().isoformat(); "
+            "archive_name = f'plan-{slug}-{date}.md'; "
+            "phases = re.findall(r'### Phase \\d+:.*', plan); "
+            "backlog_path = f'{project}/.factory/strategy/backlog.md'; "
+            "existing = open(backlog_path).read() if os.path.exists(backlog_path) else ''; "
+            "items = '\\n'.join(f'- [ ] {p.lstrip(\"# \")} (see .factory/archive/{archive_name})' for p in phases); "
+            "open(backlog_path, 'a').write('\\n' + items + '\\n') if items else None; "
+            "print(f'Seeded {len(phases)} backlog items from plan')"
+            '"'
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/strategy/backlog.md"},
+        notes=(
+            "Extracts phase headers from the approved plan at current.md and appends them "
+            "as backlog items to backlog.md. Each item references the archived plan file "
+            "for traceability. Example format: "
+            "'- [ ] Phase 1: Set up auth middleware (see .factory/archive/plan-auth-redesign-2026-08-04.md)'"
+        ),
+    )
+
+    # ── Archivist ─────────────────────────────────────────────
+
+    nodes["archivist_plan"] = AgentNode(
+        id="archivist_plan",
+        role=AgentRole.ARCHIVIST,
+        prompt_template=(
+            "Archive the approved plan. Read .factory/strategy/current.md "
+            "and summarize the key decisions, phased approach, and next steps. "
+            "Write the archive to .factory/archive/ using the naming convention: "
+            "plan-<topic-slug>-<YYYY-MM-DD>.md where topic-slug is derived from "
+            "the --focus argument or project name (lowercase, hyphens for spaces). "
+            "Check for existing files with the same name and append a numeric suffix "
+            "(e.g., plan-auth-redesign-2026-08-04-2.md) if a collision exists on the same day. "
+            "Example: .factory/archive/plan-auth-redesign-2026-08-04.md"
+        ),
+        reads={".factory/strategy/current.md"},
+        writes={".factory/archive/"},
+        blocking=False,
+    )
+
+    # ── Edges ─────────────────────────────────────────────────
+
+    edges = [
+        # Prior plan detection
+        Edge(source="check_prior_plans", target="gate_prior_plans", condition=VerdictType.PROCEED),
+        Edge(source="check_prior_plans", target="fork_research", condition=VerdictType.HALT),
+        # User chose (continue or fresh) → research
+        Edge(source="gate_prior_plans", target="fork_research", condition=VerdictType.PROCEED),
+        # Fork to researchers
+        Edge(source="fork_research", target="researcher_domain"),
+        Edge(source="fork_research", target="researcher_practices"),
+        Edge(source="fork_research", target="researcher_constraints"),
+        # Researchers to join
+        Edge(source="researcher_domain", target="join_research"),
+        Edge(source="researcher_practices", target="join_research"),
+        Edge(source="researcher_constraints", target="join_research"),
+        # Join → research gate
+        Edge(source="join_research", target="gate_research"),
+        # Research gate → strategist (proceed) or back to fork (reloop)
+        Edge(source="gate_research", target="strategist", condition=VerdictType.PROCEED),
+        Edge(source="gate_research", target="fork_research", condition=VerdictType.RELOOP),
+        # Strategist → first user gate (keep or discard?)
+        Edge(source="strategist", target="gate_keep_plan"),
+        # Keep gate:
+        #   Keep (PROCEED) → second user gate (seed backlog?)
+        #   Discard (HALT) has no outgoing edge — implicit workflow termination
+        Edge(source="gate_keep_plan", target="gate_seed_backlog", condition=VerdictType.PROCEED),
+        # Seed backlog gate:
+        #   Seed (PROCEED) → seed_backlog → archivist
+        #   No seed (HALT) → archivist (archive without backlog)
+        Edge(source="gate_seed_backlog", target="seed_backlog", condition=VerdictType.PROCEED),
+        Edge(source="gate_seed_backlog", target="archivist_plan", condition=VerdictType.HALT),
+        # Backlog seeding → archivist
+        Edge(source="seed_backlog", target="archivist_plan"),
+    ]
+
+    def trigger(state: ProjectState, ctx: dict[str, Any]) -> bool:
+        return ctx.get("mode") == "plan"
+
+    return Workflow(
+        name="plan",
+        nodes=nodes,
+        edges=edges,
+        start_node="check_prior_plans",
+        trigger=trigger,
+        terminal=True,
+    )
+
+
 def register_all() -> dict[str, Workflow]:
     """Build and return all workflow definitions."""
     from factory.workflow.deep_qa import workflow as deep_qa_workflow
@@ -4126,6 +4446,7 @@ def register_all() -> dict[str, Workflow]:
         "spec-generate": spec_generate_workflow(),
         "spec-update": spec_update_workflow(),
         "founder": founder_workflow(),
+        "plan": plan_workflow(),
         "frontend-design": frontend_design_workflow(),
         "frontend-design-discover": frontend_design_discover_workflow(),
         "frontend-design-scan": frontend_design_scan_workflow(),
