@@ -1,0 +1,149 @@
+# The factory runtime image — one image for both `--target local` and `--target k8s` (spec §7).
+#
+# `remote-factory` is not on PyPI, so a runtime cannot `pip install` it: the factory is baked in.
+# Built and published by CI (.github/workflows/runtime-image.yml) rather than on demand, because
+# building on demand adds minutes to every cold start. `factory contained setup` pulls; it does not
+# build.
+#
+# Sharing one image between the two targets is a direct consequence of the 2026-08-03 pivot: the
+# local runtime no longer needs a sandbox-specific base, a baked-in UID, or a workaround for an
+# ignored ENV. Sharing it means local behaviour is evidence about cluster behaviour, which it
+# previously was not.
+#
+# **Arbitrary UID is the load-bearing property.** Both targets run this image as a UID it was not
+# built with: locally, the UID that owns the bind-mounted workspace (spec §3.2); on OpenShift, a
+# UID the namespace picks. So every path the factory writes follows the arbitrary-UID convention —
+# group-owned by root (GID 0) with group permissions equal to user permissions — because GID 0 is
+# the one group both targets guarantee the process is in. A directory that is merely
+# `drwxr-xr-x root:root` reads fine and fails on the first write, several steps away from the cause.
+
+ARG BASE=registry.access.redhat.com/ubi9/python-312
+ARG BASE_TAG=latest
+
+# ---------------------------------------------------------------------------------------------
+# Stage 1 — tmux.
+#
+# tmux holds the detached factory session. It is what makes attach/detach safe: without a
+# multiplexer the only route to the running process's stdio is the exec channel itself, and closing
+# that takes the run's visibility with it while the run keeps going (spec §3.4, §4.6). It is not
+# optional, and it is not packaged: UBI's repository subset omits it, and EPEL deliberately does not
+# ship packages RHEL itself carries — so neither source has it and it is built here.
+#
+# A separate stage so the compiler and the -devel packages never reach the runtime image. Only the
+# installed tree is copied forward.
+#
+# `yacc` is stubbed rather than installed: configure hard-requires it, no yacc is available in any
+# UBI repository, and the release tarball already ships the generated `cmd-parse.c` that yacc would
+# otherwise produce. `touch` on that file keeps make from deciding to regenerate it with the stub.
+FROM ${BASE}:${BASE_TAG} AS tmux-builder
+ARG TMUX_VERSION=3.5a
+USER root
+RUN set -eux; \
+    dnf install -y --setopt=install_weak_deps=False gcc make libevent-devel ncurses-devel; \
+    printf '#!/bin/sh\nexit 0\n' > /usr/bin/yacc; chmod +x /usr/bin/yacc; \
+    curl -fsSLo /tmp/tmux.tar.gz \
+        "https://github.com/tmux/tmux/releases/download/${TMUX_VERSION}/tmux-${TMUX_VERSION}.tar.gz"; \
+    tar -C /tmp -xzf /tmp/tmux.tar.gz; \
+    cd "/tmp/tmux-${TMUX_VERSION}"; \
+    touch cmd-parse.c; \
+    ./configure --prefix=/usr/local; \
+    make -j"$(nproc)"; \
+    make install DESTDIR=/out; \
+    /out/usr/local/bin/tmux -V
+
+# ---------------------------------------------------------------------------------------------
+# Stage 2 — the runtime image.
+FROM ${BASE}:${BASE_TAG}
+
+ARG FACTORY_HOME=/opt/factory
+# Not the host's home and not the base image's: the container runs under a UID with no
+# /etc/passwd entry, so `$HOME` has to be a real directory that any UID can write. Everything
+# home-relative the factory needs — ~/.factory (mounted), ~/.claude, the runners' state — lands
+# here. Kept in sync with `factory.podman.CONTAINER_HOME`.
+ARG CONTAINER_HOME=/home/factory
+
+ENV FACTORY_HOME=${FACTORY_HOME} \
+    HOME=${CONTAINER_HOME} \
+    UV_PROJECT_ENVIRONMENT=${FACTORY_HOME}/.venv \
+    UV_LINK_MODE=copy \
+    UV_NO_CACHE=1 \
+    PATH=${FACTORY_HOME}/.venv/bin:/usr/local/bin:/usr/bin:/bin \
+    NPM_CONFIG_PREFIX=/usr/local
+
+USER root
+
+# git is not optional; rsync and tar serve the k8s workspace transport (§4.4). `libevent` and
+# `ncurses-libs` are what the tmux built in stage 1 links against — the compiler stays behind, the
+# shared libraries do not.
+RUN set -eux; \
+    dnf install -y --setopt=install_weak_deps=False \
+        git rsync tar gzip which procps-ng jq openssh-clients libevent ncurses-libs; \
+    dnf clean all; \
+    rm -rf /var/cache/dnf
+
+COPY --from=tmux-builder /out/usr/local /usr/local
+RUN tmux -V
+
+# The agent CLIs. Node comes from the module stream rather than a curl installer so the image stays
+# describable by its package manifest.
+ARG NODE_STREAM=22
+RUN set -eux; \
+    dnf module enable -y nodejs:${NODE_STREAM} || true; \
+    dnf install -y --setopt=install_weak_deps=False nodejs npm; \
+    dnf clean all; \
+    npm install -g --no-fund --no-audit \
+        @anthropic-ai/claude-code \
+        @openai/codex; \
+    npm cache clean --force; \
+    claude --version; \
+    codex --version
+
+# uv, pinned.
+ARG UV_VERSION=0.9.7
+RUN set -eux; \
+    curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | \
+        env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh; \
+    uv --version
+
+WORKDIR ${FACTORY_HOME}
+
+# Dependency layer first, so a change to factory source does not re-resolve the world. README.md is
+# copied because pyproject.toml points at it and the build backend reads it.
+COPY pyproject.toml uv.lock README.md ./
+RUN set -eux; \
+    uv sync --frozen --no-install-project --no-dev
+
+COPY factory ./factory
+COPY skills ./skills
+RUN set -eux; \
+    uv sync --frozen --no-dev; \
+    "${FACTORY_HOME}/.venv/bin/factory" --help >/dev/null; \
+    ln -sf "${FACTORY_HOME}/.venv/bin/factory" /usr/local/bin/factory
+
+# The arbitrary-UID recipe, applied to every path the running process writes or executes from.
+# `g=u` rather than `g+rwX`: it copies the owner's bits exactly, so an executable stays executable
+# and a plain file does not silently become one.
+#
+# ~/.factory is created here even though `factory contained` bind-mounts the host's over the top:
+# without it, a run on a machine that has no ~/.factory yet gets a mountless container whose first
+# registry write fails on a missing directory.
+RUN set -eux; \
+    mkdir -p "${CONTAINER_HOME}/.factory" "${CONTAINER_HOME}/.claude" "${CONTAINER_HOME}/.config" \
+             "${CONTAINER_HOME}/.cache" "${CONTAINER_HOME}/.npm" /workspace; \
+    chgrp -R 0 "${FACTORY_HOME}" "${CONTAINER_HOME}" /workspace; \
+    chmod -R g=u "${FACTORY_HOME}" "${CONTAINER_HOME}" /workspace; \
+    chmod g=u /etc/passwd
+
+# 1001 is the UBI base image's non-root UID and is only the *default*: both targets override it.
+# Stated anyway so `podman run` with no --user is still non-root.
+USER 1001
+WORKDIR /workspace
+
+# Marks the process tree as contained. Everything that must behave differently in here reads this
+# through `factory.contained.env.in_contained`. `factory contained` also passes it with `--env`, so
+# the marker survives a run that overrides the image's environment.
+ENV FACTORY_CONTAINED=1
+
+# Deliberately no ENTRYPOINT override: `factory contained` supplies the command, and a container
+# started by hand should land in a shell.
+CMD ["/bin/bash"]
