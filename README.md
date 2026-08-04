@@ -60,6 +60,7 @@ uv run factory ceo ~/factory-projects/my-app --mode design
 uv run factory ceo ~/factory-projects/my-app --mode design --focus "auth layer"
 uv run factory ceo ~/my-app --mode design --focus 42                       # GitHub issue
 uv run factory ceo ~/my-app --mode design --focus "owner/repo#42"          # Issue shorthand
+uv run factory ceo ~/my-app --mode design --focus '111 and 112'            # Multiple issues
 ```
 
 ---
@@ -126,6 +127,7 @@ See the [full setup guide](docs/setup.md) for authentication, environment variab
 |---|---|
 | **Start from a raw idea** | `factory ceo "my idea" --mode design` |
 | **Improve an existing project** | `factory ceo /path/to/project --mode design --focus "issue # or area to improve"` |
+| **Target multiple issues** | `factory ceo /path/to/project --focus '111 and 112'` |
 | **Create a new factory mode** | `factory ceo /path/to/factory --mode create --focus "mode description"` |
 | **Update an existing mode** | `factory ceo /path/to/factory --mode create --focus "improve: add plateau detection"` |
 
