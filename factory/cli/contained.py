@@ -96,7 +96,7 @@ _PARSER: argparse.ArgumentParser | None = None
 # whose implementation is not in the tree yet must fail naming the phase it arrives in rather than
 # import a module that does not exist. Raised as each phase lands; when it reaches 4 this constant
 # and `_unsupported` both go away.
-_PHASE = 1
+_PHASE = 2
 
 
 def _unsupported(feature: str, *, phase: int) -> int:
@@ -566,7 +566,13 @@ def _run_local(args: argparse.Namespace) -> int:
             )
             return 1
 
-        return _execute(plan, steps, probes)
+        code = _execute(plan, steps, probes)
+        if division is not None and code == 0:
+            # The run outlives this command, so the endpoint it depends on has to as well. `rm`
+            # stops it; the `finally` below only fires for a launch that never got that far.
+            division.keep()
+            division = None
+        return code
     finally:
         if division is not None:
             division.stop()
