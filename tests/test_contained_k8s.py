@@ -441,3 +441,21 @@ def test_setup_degrades_to_printing_when_apply_is_refused(
     assert code == 1
     err = capsys.readouterr().err
     assert "hand the manifest above" in err.lower()
+
+
+def test_a_sweep_that_matched_nothing_says_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    """`oc delete --ignore-not-found` prints "No resources found" when it matched nothing; echoing
+    that verbatim reads as "swept No resources found"."""
+    with patch("factory.contained.k8s._run",
+               return_value=_completed("No resources found in ns namespace.")):
+        k8s.remove_cluster_runtime("rta-test", namespace="ns")
+    assert "swept" not in capsys.readouterr().out
+
+
+def test_a_sweep_that_deleted_something_reports_a_count(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with patch("factory.contained.k8s._run",
+               return_value=_completed('pod "a" deleted\npod "b" deleted')):
+        k8s.remove_cluster_runtime("rta-test", namespace="ns")
+    assert "swept 2 pod(s)" in capsys.readouterr().out
